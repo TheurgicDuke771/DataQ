@@ -43,6 +43,14 @@ _MAX_HISTORY_POINTS = 180
 _SUMMARY_MAX_CHARS = 2000
 _CAUSE_MAX_CHARS = 500
 _NEXT_CHECK_MAX_CHARS = 300
+#: Per-item and total caps on the all-rejected message (mirrors
+#: llm_checksuggest's _REASON_ECHO_MAX_CHARS/_REASONS_CLAUSE_MAX_CHARS): every
+#: reason here is a short fixed constant today, but the total cap stops a
+#: future echoed value from silently losing execute_invocation's "(+N more)"
+#: suffix past its 1024-char persisted-error truncation (the #1727/#1780
+#: class, #1786 review).
+_REASON_MAX_CHARS = 200
+_REASONS_CLAUSE_MAX_CHARS = 700
 
 _CONFIDENCE_LEVELS = frozenset({"low", "medium", "high"})
 
@@ -329,26 +337,32 @@ def build_prompt(
     return prompt, _SYSTEM, RCA_SCHEMA
 
 
-def _valid_hypothesis(raw: Any) -> dict[str, Any] | None:
+def _valid_hypothesis(raw: Any) -> tuple[dict[str, Any] | None, str | None]:
+    """Returns (accepted hypothesis, None) or (None, rejection reason) — the
+    same shape as `llm_checksuggest._validate_one`. Unlike that sibling, this
+    used to return only `None` on rejection with no reason captured at all
+    (#1781): a raw hypothesis rejected here previously left zero trace of
+    WHY, worse than checksuggest's own pre-#1780 state.
+    """
     if not isinstance(raw, dict):
-        return None
+        return None, "hypothesis was not an object"
     cause = raw.get("cause")
     confidence = raw.get("confidence")
     refs = raw.get("evidence_refs")
     if not isinstance(cause, str) or not cause.strip():
-        return None
+        return None, "cause must be a non-empty string"
     if confidence not in _CONFIDENCE_LEVELS:
-        return None
+        return None, f"confidence must be one of {sorted(_CONFIDENCE_LEVELS)}"
     if not isinstance(refs, list):
-        return None
+        return None, "evidence_refs must be a list"
     valid_refs = [r for r in refs if isinstance(r, str) and r in _EVIDENCE_REFS]
     if not valid_refs:
-        return None
+        return None, "evidence_refs cited no evidence layer from the closed vocabulary"
     return {
         "cause": cause.strip()[:_CAUSE_MAX_CHARS],
         "confidence": confidence,
         "evidence_refs": valid_refs,
-    }
+    }, None
 
 
 def validate_output(
@@ -370,11 +384,34 @@ def validate_output(
     # `maxItems` server-side (the `llm_checksuggest` precedent), so slicing first could drop a
     # valid, evidence-grounded hypothesis past position `_MAX_HYPOTHESES` in favor of keeping
     # earlier malformed ones.
-    hypotheses = [h for h in (_valid_hypothesis(raw) for raw in raw_hypotheses) if h][
-        :_MAX_HYPOTHESES
-    ]
+    validated = [_valid_hypothesis(raw) for raw in raw_hypotheses]
+    hypotheses = [h for h, _reason in validated if h is not None][:_MAX_HYPOTHESES]
     if not hypotheses:
-        raise LLMOutputInvalidError("no ranked hypothesis cited valid evidence")
+        # #1781: every rejection reason, not just the fact that all were
+        # rejected — matches the #1727/#1780 checksuggest precedent, folded
+        # into the message AND (via `detail`) into the failed invocation's
+        # `response`.
+        rejected = [reason for _h, reason in validated if reason is not None]
+        if rejected:
+            shown = rejected[:_MAX_HYPOTHESES]
+            reasons = "; ".join(r[:_REASON_MAX_CHARS] for r in shown)
+            omitted = len(rejected) - len(shown)
+            if len(reasons) > _REASONS_CLAUSE_MAX_CHARS:
+                reasons = reasons[:_REASONS_CLAUSE_MAX_CHARS].rstrip() + "…"
+                omitted = max(omitted, 1)
+            suffix = f" (+{omitted} more)" if omitted else ""
+            raise LLMOutputInvalidError(
+                f"no ranked hypothesis cited valid evidence — {len(rejected)} rejected: "
+                f"{reasons}{suffix}",
+                detail={
+                    "rejected": shown,
+                    "rejected_count": len(rejected),
+                    "truncated": len(shown) < len(rejected),
+                },
+            )
+        raise LLMOutputInvalidError(
+            "no ranked hypothesis cited valid evidence — the provider returned no hypotheses"
+        )
 
     next_checks_raw = payload.get("suggested_next_checks")
     next_checks = (

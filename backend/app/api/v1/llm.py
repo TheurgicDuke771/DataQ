@@ -209,10 +209,16 @@ def suggest_checks(
     see the invocation's `rejected` field for what didn't make it and why.
 
     If EVERY suggestion is rejected, the invocation fails instead — there is no
-    empty-but-successful outcome for "nothing runnable came back" — and
-    `rejected` never gets written (`response` stays null on a failed
-    invocation). The rejection reasons are folded into `error` instead, so
-    they're still readable there rather than lost.
+    empty-but-successful outcome for "nothing runnable came back" — and the
+    top-level `rejected` shape above never gets written. The reasons are still
+    readable, in two forms: folded into `error` as one summary sentence, and
+    as a structured `{rejected, rejected_count, truncated}` object under
+    `response` (unlike a successful run, where `response` is `{suggestions,
+    rejected, coverage_warnings}`) — a failed invocation's `response` field
+    carries only that narrower rejection detail, not the full success shape.
+    `rejected` itself may be shorter than `rejected_count`; `truncated` is
+    `true` when it is, so a caller reading only `response` (not `error`'s own
+    "(+N more)" text) still has a signal the list isn't exhaustive.
     """
     if (
         llm_checksuggest.CHECKSUGGEST_KIND not in REGISTERED_KINDS
@@ -246,6 +252,13 @@ def generate_rca_narrative(
     evidence card + a longer per-check history; poll `GET /llm/invocations/{id}`.
     Read-only — nothing is saved to the suite — so it's gated the same as
     reading the incident itself (`view`), not `edit`.
+
+    If the model's every ranked hypothesis fails validation (cites no evidence
+    layer from the closed vocabulary, or an invalid confidence level), the
+    invocation fails instead of returning an empty narrative — same shape as
+    `/check_suggestions`' all-rejected case: the reasons are folded into
+    `error` and, structured, into `response` as `{rejected, rejected_count,
+    truncated}`.
     """
     if llm_rca.RCA_KIND not in REGISTERED_KINDS:  # pragma: no cover - wiring guard
         raise LlmDispatchFailedError("rca_narrative is not registered in this process")

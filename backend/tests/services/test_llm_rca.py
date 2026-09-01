@@ -339,6 +339,56 @@ def test_validate_output_drops_an_invalid_confidence_level(
         llm_rca.validate_output(db_session, invocation, payload)
 
 
+def test_validate_output_all_rejected_names_the_reasons(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    """#1781: `_valid_hypothesis` used to return bare `None` on rejection —
+    zero reason captured at all, worse than `llm_checksuggest`'s own pre-#1780
+    state (which at least built a `rejected` list, just discarded it on the
+    exception path). Every rejection reason must now be readable, both folded
+    into the message and structured under `exc.detail`.
+    """
+    invocation = _invocation(db_session, world["incident"], world["owner"])
+    payload = _valid_payload(
+        ranked_hypotheses=[
+            {"cause": "x", "confidence": "certain", "evidence_refs": ["metric_trend"]},
+            {"cause": "y", "confidence": "high", "evidence_refs": ["sample_failures"]},
+            "not even an object",
+        ]
+    )
+    with pytest.raises(LLMOutputInvalidError) as exc_info:
+        llm_rca.validate_output(db_session, invocation, payload)
+    exc = exc_info.value
+    assert "3 rejected" in str(exc)
+    assert "confidence must be one of" in str(exc)
+    assert "closed vocabulary" in str(exc)
+    assert "hypothesis was not an object" in str(exc)
+    assert exc.detail["rejected_count"] == 3
+    assert len(exc.detail["rejected"]) == 3
+    assert exc.detail["truncated"] is False  # 3 rejected, all 3 shown — nothing cut
+
+
+def test_validate_output_all_rejected_flags_truncation_past_max_hypotheses(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    """`rejected` is not bounded by `_MAX_HYPOTHESES` the way the accepted list
+    is — a non-compliant provider can send more raw hypotheses than the
+    schema's own maxItems allows.
+    """
+    invocation = _invocation(db_session, world["incident"], world["owner"])
+    overflow = 2
+    payload = _valid_payload(
+        ranked_hypotheses=["not even an object"] * (llm_rca._MAX_HYPOTHESES + overflow)
+    )
+    with pytest.raises(LLMOutputInvalidError) as exc_info:
+        llm_rca.validate_output(db_session, invocation, payload)
+    exc = exc_info.value
+    assert exc.detail["rejected_count"] == llm_rca._MAX_HYPOTHESES + overflow
+    assert len(exc.detail["rejected"]) == llm_rca._MAX_HYPOTHESES
+    assert exc.detail["truncated"] is True
+    assert f"+{overflow} more" in str(exc)
+
+
 def test_validate_output_a_good_hypothesis_survives_a_bad_sibling(
     db_session: Any, world: dict[str, Any]
 ) -> None:

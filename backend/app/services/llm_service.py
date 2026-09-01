@@ -14,6 +14,7 @@ version of the same lifecycle.
 from __future__ import annotations
 
 import hashlib
+import json
 import time
 import uuid
 from collections.abc import Callable
@@ -55,6 +56,12 @@ log = get_logger(__name__)
 _SECRET_REF_PREFIX = "llm-provider"  # noqa: S105 # nosec B105 — ref prefix, not a secret
 _TEST_TIMEOUT_SECONDS = 20.0
 _SETTINGS_ROW_ID = 1
+#: Cap on the serialized size of a DataQError.detail persisted into `response`
+#: (#1786 review) — unlike `terminal["error"][:1024]`, a structured dict has no
+#: single string to slice. A validator's `detail` can echo untrusted, unbounded
+#: provider content (e.g. a suggestion's `expectation_type`), and this is the
+#: one place in the codebase that would persist it without a cap otherwise.
+_DETAIL_MAX_CHARS = 4096
 
 
 class LLMConfigInvalidError(DataQError):
@@ -405,6 +412,16 @@ def execute_invocation(
     except DataQError as exc:
         terminal["status"] = "failed"
         terminal["error"] = str(_scrub_nul(f"{exc.code}: {exc.message}"))[:1024]
+        # #1781: persist structured failure detail (e.g. checksuggest/rca's
+        # rejection reasons) into `response`, not just the flat `error` string.
+        if exc.detail:
+            scrubbed = _scrub_nul(exc.detail)
+            if len(json.dumps(scrubbed, default=str)) > _DETAIL_MAX_CHARS:
+                # `error` was already capped by slicing a string; a dict has no
+                # single string to slice, so an oversized/untrusted-echo detail
+                # (#1786 review) is dropped rather than persisted unbounded.
+                scrubbed = {"truncated": True}
+            terminal["response"] = scrubbed
     except Exception as exc:  # a driver-boundary surprise must still terminate the row
         terminal["status"] = "failed"
         terminal["error"] = f"internal: {exc.__class__.__name__}"[:1024]
