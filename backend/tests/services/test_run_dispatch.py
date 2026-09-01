@@ -125,6 +125,28 @@ def test_dispatch_or_fail_broker_failure_marks_failed(monkeypatch: pytest.Monkey
     assert session.commits == 1
 
 
+def test_dispatch_llm_invocation_sends_the_task_routes_expect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#1789 review: `run_dispatch._LLM_INVOKE_TASK` is imported from
+    `celery_app.LLM_INVOKE_TASK_NAME` rather than a second independent literal
+    — this proves the two haven't silently diverged, which `task_routes`
+    routing on a mismatched name would defeat with no error at dispatch time.
+    """
+    from backend.app.worker.celery_app import LLM_INVOKE_TASK_NAME
+
+    calls: list[tuple[str, list[str]]] = []
+
+    def _send(name: str, args: list[str]) -> SimpleNamespace:
+        calls.append((name, args))
+        return SimpleNamespace()
+
+    monkeypatch.setattr(celery_app, "send_task", _send)
+    invocation_id = uuid.uuid4()
+    run_dispatch.dispatch_llm_invocation(invocation_id)
+    assert calls == [(LLM_INVOKE_TASK_NAME, [str(invocation_id)])]
+
+
 def test_dispatch_auto_classify_sends_task_by_name(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[tuple[str, list[str]]] = []
 

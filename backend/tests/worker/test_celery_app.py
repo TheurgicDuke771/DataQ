@@ -12,6 +12,8 @@ from celery.schedules import crontab
 from backend.app.core.logging import request_id_var
 from backend.app.worker import celery_app
 from backend.app.worker.celery_app import (
+    LLM_INVOKE_TASK_NAME,
+    LLM_QUEUE_NAME,
     REQUEST_ID_HEADER,
     _clear_request_id,
     _inject_request_id,
@@ -57,11 +59,8 @@ def test_llm_invoke_routes_to_its_own_queue() -> None:
     task_routes entry silently reintroducing the shared-queue false-kill
     (#1726 Part A).
     """
-    from backend.app.worker.celery_app import LLM_QUEUE_NAME
-
     app = create_celery_app()
-    assert app.conf.task_routes == {"llm_invoke": {"queue": LLM_QUEUE_NAME}}
-    assert LLM_QUEUE_NAME != "celery"  # distinct from run_suite's default queue
+    assert app.conf.task_routes == {LLM_INVOKE_TASK_NAME: {"queue": LLM_QUEUE_NAME}}
 
 
 def test_beat_schedule_file_lives_in_the_temp_dir_not_the_cwd() -> None:

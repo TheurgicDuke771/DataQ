@@ -9,13 +9,13 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_logger
 from backend.app.db.models import Run, Suite
-from backend.app.worker.celery_app import celery_app
+from backend.app.worker.celery_app import LLM_INVOKE_TASK_NAME, celery_app
 
 log = get_logger(__name__)
 
 _RUN_SUITE_TASK = "run_suite"
 _AUTO_CLASSIFY_TASK = "auto_classify_columns"
-_LLM_INVOKE_TASK = "llm_invoke"
+_LLM_INVOKE_TASK = LLM_INVOKE_TASK_NAME
 
 
 def new_queued_run(suite: Suite, *, triggered_by: str) -> Run:

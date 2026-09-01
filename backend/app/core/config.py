@@ -118,12 +118,13 @@ class Settings(BaseSettings):
     stuck_run_threshold_minutes: int = 60
 
     # llm_invocations reaper (#1644): pending covers a lost dispatch (API died before
-    # send_task, or the broker dropped the message). No dedicated Celery queue exists
-    # yet for `llm_invoke` (#1726/#1777) — it shares the one default queue with
-    # `run_suite`, so a message can sit queued-but-intact behind a backlog of long
-    # runs (this deployment class has 1M-200M-row UC suites) well past a tight
-    # threshold; 15m was measured against dispatch-loss alone and false-killed a
-    # merely-queued request. Running covers a worker SIGKILL/OOM mid-provider-call —
+    # send_task, or the broker dropped the message). `llm_invoke` has its own Celery
+    # queue (#1777) so it no longer waits behind a `run_suite` backlog to be PULLED —
+    # but queue separation adds no execution slot, so a burst of llm_invoke dispatches
+    # (or a mid-rollout window where the worker isn't yet consuming the new queue) can
+    # still leave one queued past a tight threshold; 15m was measured against
+    # dispatch-loss alone and false-killed a merely-queued request, hence the margin.
+    # Running covers a worker SIGKILL/OOM mid-provider-call —
     # 10m was margin above ONLY the 120s provider timeout, but `execute_invocation`
     # marks `running` before the kind builder runs, and the check-suggestion builder
     # does live warehouse work (list_columns + a full profile) inside that window; a
