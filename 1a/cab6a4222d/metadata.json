@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "1acab6a4222d",
+  "strategy": "manual-commit",
+  "branch": "docs/w4-close-and-docs-audit",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "CLAUDE.md",
+    "deploy/README.md",
+    "docs/ops-log.md",
+    "docs/progress.md",
+    "docs/site/adr/0008-mcp-server.md",
+    "docs/site/adr/0042-llm-provider-seam.md",
+    "docs/site/adr/README.md",
+    "docs/site/architecture.md",
+    "docs/site/changelog.md",
+    "docs/site/compliance/data-subject-rights-runbook.md",
+    "docs/site/compliance/dpia-input-sheet.md",
+    "docs/site/compliance/sub-processors.md",
+    "docs/site/evidence-card.md",
+    "docs/site/features.md",
+    "docs/site/glossary.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/1a/cab6a4222d/0/metadata.json",
+      "transcript": "/1a/cab6a4222d/0/full.jsonl",
+      "compact_transcript": "/1a/cab6a4222d/0/transcript.jsonl",
+      "content_hash": "/1a/cab6a4222d/0/content_hash.txt",
+      "prompt": "/1a/cab6a4222d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 466,
+    "cache_creation_tokens": 230398,
+    "cache_read_tokens": 97661046,
+    "output_tokens": 101013,
+    "api_call_count": 233
+  }
+}
