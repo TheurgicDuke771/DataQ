@@ -1,0 +1,58 @@
+<task-notification>
+<task-id>bn0pmk1qa</task-id>
+<summary>Monitor event: "CI status for docs PR #1783"</summary>
+<event>GitGuardian Security Checks: pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bn0pmk1qa</task-id>
+<summary>Monitor event: "CI status for docs PR #1783"</summary>
+<event>Backend — SAST (Bandit): pass
+Frontend — dependency audit (pnpm audit): pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bn0pmk1qa</task-id>
+<summary>Monitor event: "CI status for docs PR #1783"</summary>
+<event>Backend — dependency audit (pip-audit): pass
+Backend — lint &amp; format: pass
+Backend — type check: pass
+Frontend — lint &amp; format: pass
+Secret scanning (betterleaks): pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bn0pmk1qa</task-id>
+<summary>Monitor event: "CI status for docs PR #1783"</summary>
+<event>CodeQL analysis (javascript-typescript): pass
+CodeQL analysis (python): pass
+CodeQL: pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bn0pmk1qa</task-id>
+<summary>Monitor event: "CI status for docs PR #1783"</summary>
+<event>Frontend — browser E2E (Playwright): pass
+Frontend — tests: pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bn0pmk1qa</task-id>
+<summary>Monitor event: "CI status for docs PR #1783"</summary>
+<event>Backend — tests: pass
+ALL CHECKS TERMINAL (14 checks)</event>
+</task-notification>
+
+---
+
+let's fix 1772, 1773, 1777 & 1781

@@ -1,0 +1,37 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "f1d7240b8b2e",
+  "strategy": "manual-commit",
+  "branch": "fix/1773-llm-test-probe-audit-row",
+  "checkpoints_count": 8,
+  "files_touched": [
+    "backend/app/api/v1/admin.py",
+    "backend/app/services/llm_service.py",
+    "backend/tests/api/test_admin_llm.py",
+    "backend/tests/services/test_llm_service.py",
+    "docs/site/security.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f1/d7240b8b2e/0/metadata.json",
+      "transcript": "/f1/d7240b8b2e/0/full.jsonl",
+      "compact_transcript": "/f1/d7240b8b2e/0/transcript.jsonl",
+      "content_hash": "/f1/d7240b8b2e/0/content_hash.txt",
+      "prompt": "/f1/d7240b8b2e/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 128,
+    "cache_creation_tokens": 483178,
+    "cache_read_tokens": 30387110,
+    "output_tokens": 24254,
+    "api_call_count": 64,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  }
+}
