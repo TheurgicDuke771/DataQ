@@ -1,0 +1,65 @@
+<task-notification>
+<task-id>br7prdbuz</task-id>
+<summary>Monitor event: "CI status for PR #1789"</summary>
+<event>Backend — SAST (Bandit): pass
+Backend — dependency audit (pip-audit): pass
+Backend — lint &amp; format: pass
+Backend — type check: pass
+CodeQL analysis (javascript-typescript): pass
+CodeQL analysis (python): pass
+CodeQL: pass
+Frontend — dependency audit (pnpm audit): pass
+Frontend — lint &amp; format: pass
+GitGuardian Security Checks: pass
+Secret scanning (betterleaks): pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ab59e562bb0dbadac</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/73687eb1-c819-42a7-ab35-5fc0e83d0623/tasks/ab59e562bb0dbadac.output</output-file>
+<status>completed</status>
+<summary>Agent "Altitude and conventions angles" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Confirmed: no literal "keep it code not prose" rule exists in CLAUDE.md or CONTRIBUTING.md — it's a memory-only standing convention (`feedback_code_not_prose_comments.md`: "minimal comments; rationale goes in the PR, not the file"). I'll flag it clearly as memory-sourced, not CLAUDE.md-sourced.
+
+Here are my findings for PR #1789.
+
+## Altitude
+
+**1. `backend/app/worker/celery_app.py` — one-off patch, not a general mechanism**
+```python
+task_routes={"llm_invoke": {"queue": LLM_QUEUE_NAME}},
+```
+This hardcodes a single task-name → single-queue mapping. It solves "llm_invoke got false-reaped behind run_suite" but not the general problem "any long-running task type starves behind run_suite's default queue." Celery natively supports `task_routes` as a dict of *patterns* (or a routing function), and separately supports `task_queue_max_priority`/per-message priority — either would express "route anything that isn't a suite run off the shared queue" once, instead of per-task-name. As written, the *next* slow task class (the PR body's own framing implies more will come) requires: a new `task_routes` entry, and editing all 4 deploy artifacts' `-Q` flag again. Nothing in the diff generalizes past task name `"llm_invoke"` — this is the second special-cased queue this codebase will need to hand-wire from scratch when the third one shows up.
+
+**2. Queue identifier duplicated as a raw string across 5 files with no shared source of truth**
+`LLM_QUEUE_NAME = "llm"` is defined once in Python, but is never referenced by the deploy artifacts — `ecs.tf`, `containerapps.tf`, `docker-compose.ghcr.yml`, and `docker-compose.yml` each independently hardcode the literal `-Q celery,llm` string. Nothing enforces that these 5 occurrences (1 Python constant + 4 CLI-flag literals) stay in sync; a future rename of the queue, or an accidental typo in one of the 4 deploy files, is caught by nothing — the new test (`test_llm_invoke_routes_to_its_own_queue`) only asserts the Python side. The comments are the only synchronization mechanism.
+
+**3. `deploy/README.md` documents the deploy-coordination bug rather than closing it, which is inconsistent with how this project has handled the same class of bug before**
+The added note says a worker `command` change "sits inert... until someone runs `tofu apply` separately" and that shipping the routing side "without applying the matching command change... means the worker silently never consumes the new queue." That's exactly the shape of bug this project has previously fixed at the root, not just documented: CLAUDE.md's own history records `#1355 → #1378` (CloudFront origin-secret enforcement moved into nginx config after a docs-only description of it was found not to hold) and `#1363 → #1376` (`ssl_cert_reqs=required` made an **app-level default** on any `rediss://` URL, specifically so a deploy-ordering mistake couldn't silently break Celery again). Both of those were the direct precedent for "a coordination gap between image-roll and Terraform-apply is a class of bug we fix in code/pipeline, not in a runbook note." Here, the PR leaves the actual hazard — a worker running with a stale command array, silently never draining `llm` — live and undetected, exactly the "silently never consumes messages queue forever with no error" failure the note itself calls out. A cheap alternative that would have closed this at the right altitude: emit a queue name from the worker on startup (or a `/healthz`-adjacent readiness check) that fails loudly if `llm` isn't in the consumed set, rather than trusting every future deploy operator to read this README paragraph.
+
+## Conventions
+
+**4. `backend/app/worker/celery_app.py` lines 28–35 (new module comment) — violates the "keep it code, not prose" standing convention**
+This is not literally stated in `CLAUDE.md` (confirmed via grep — no hit for "minimal comment"/"prose" as a code-comment rule in CLAUDE.md or CONTRIBUTING.md); it is the user's explicit standing memory rule (`feedback_code_not_prose_comments.md`): *"minimal comments; rationale goes in the PR, not the file."* The diff adds:
+```python
+#: Dedicated queue for llm_invoke (#1726/#1777) — without this, it shares the
+#: single default "celery" queue with run_suite, and a backlog of long suite
+#: runs (1M-200M-row UC perf suites in this deployment class) can leave an
+#: LLM dispatch queued-but-intact past any static reap threshold, false-killed
+#: by the reaper as "likely lost". A worker that isn't also told to consume
+#: this queue (`-Q celery,llm`) will silently never process it — see
+#: deploy/README.md's rollout note for this change.
+LLM_QUEUE_NAME = "llm"
+```
+7 lines of incident narrative (deployment-class row counts, reaper mechanics, cross-reference to another file) for a single string constant — every other comment already in this file caps at 1–2 lines (e.g. the adjacent `_REQUEST_ID_RESET_ATTR` comment is one line). The `task_routes` line a few lines below repeats the same backstory in another 4-line block. This is exactly the "rationale that belongs in the PR description, not baked into the file" pattern the standing rule targets — flagging per your explicit ask to check this angle, but since it's not textually in CLAUDE.md I'm not treating it as a hard CLAUDE.md-compliance failure, just a convention violation worth a fixup.
+
+## Evaluated, not included as findings
+
+- **"One functionality per commit" (CONTRIBUTING.md rule 1: *"do not bundle two unrelated changes"*)** — the single commit `2aaaa7bf` touches `celery_app.py` + test + `deploy/README.md` + 4 IaC/compose files. I checked this against the literal rule text and conclude it's **not a violation**: these aren't two unrelated changes — the `task_routes` entry is inert without the matching `-Q celery,llm` deploy-command change (confirmed by the PR's own README note), so bundling them is the coordinated single functionality the rule anticipates, not a bundling violation.
+- **CLAUDE.md's "Never hardcode ADF-only logic; always go through the abstraction"** — this is scoped specifically to the `OrchestrationProvider` abstraction (ADF/Airflow/dbt), not queue routing; I did not stretch it to cover the queue-name duplication (finding #2 above stands on its own architectural merits instead).</result>
+<usage><subagent_tokens>130089</subagent_tokens><tool_uses>10</tool_uses><duration_ms>98253</duration_ms></usage>
+</task-notification>

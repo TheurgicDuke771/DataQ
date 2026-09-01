@@ -1,0 +1,41 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "c6a955e9cfc7",
+  "strategy": "manual-commit",
+  "branch": "fix/1777-llm-invoke-dedicated-queue",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "backend/app/core/config.py",
+    "backend/app/services/llm_service.py",
+    "backend/app/services/run_dispatch.py",
+    "backend/app/worker/celery_app.py",
+    "backend/app/worker/tasks.py",
+    "backend/tests/services/test_llm_reaper.py",
+    "backend/tests/services/test_run_dispatch.py",
+    "backend/tests/worker/test_celery_app.py",
+    "deploy/README.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/c6/a955e9cfc7/0/metadata.json",
+      "transcript": "/c6/a955e9cfc7/0/full.jsonl",
+      "compact_transcript": "/c6/a955e9cfc7/0/transcript.jsonl",
+      "content_hash": "/c6/a955e9cfc7/0/content_hash.txt",
+      "prompt": "/c6/a955e9cfc7/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 146,
+    "cache_creation_tokens": 64263,
+    "cache_read_tokens": 61559088,
+    "output_tokens": 29192,
+    "api_call_count": 73,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  }
+}
