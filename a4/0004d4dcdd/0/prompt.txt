@@ -1,0 +1,194 @@
+<task-notification>
+<task-id>bi15ezm6p</task-id>
+<summary>Monitor event: "CI status for PR #1786"</summary>
+<event>Backend — SAST (Bandit): pass
+Backend — dependency audit (pip-audit): pass
+Backend — lint &amp; format: pass
+Backend — type check: pass
+CodeQL analysis (javascript-typescript): pass
+CodeQL analysis (python): pass
+CodeQL: pass
+Frontend — dependency audit (pnpm audit): pass
+Frontend — lint &amp; format: pass
+GitGuardian Security Checks: pass
+Secret scanning (betterleaks): pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a1921f4c24863305a</task-id>
+<tool-use-id>toolu_01QH8JazEg8i5CL8riy4Gkri</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/73687eb1-c819-42a7-ab35-5fc0e83d0623/tasks/a1921f4c24863305a.output</output-file>
+<status>completed</status>
+<summary>Agent "Angles reuse+simplification+efficiency" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Confirmed: no shared `llm_common.py` module exists, and `llm_rca.py` does not import anything from `llm_checksuggest.py` for this logic — the rejection-formatting block is copy-pasted with drifted constants.
+
+## Findings
+
+**1. [Reuse] `backend/app/services/llm_rca.py` lines ~384–392 vs `backend/app/services/llm_checksuggest.py` `_format_rejection_reasons` (lines 391–418)**
+
+`llm_rca.py`'s new all-rejected block hand-rolls the same "join capped per-item reasons + omitted-count suffix" logic that `llm_checksuggest._format_rejection_reasons` already implements, with no shared helper (no `llm_common.py` or similar exists; `llm_rca.py` doesn't import from `llm_checksuggest.py`). The two implementations drifted immediately:
+- Per-item cap: rca hardcodes `r[:200]` inline vs checksuggest's named `_REASON_ECHO_MAX_CHARS = 120`.
+- Display cap: rca reuses `_MAX_HYPOTHESES` (5) vs checksuggest's `MAX_SUGGESTIONS` (8) — different constant, same role.
+- **rca has no equivalent of `_REASONS_CLAUSE_MAX_CHARS` (700)** — the total-clause cap checksuggest's own comment says exists specifically because "a per-item cap alone still lets MAX_SUGGESTIONS reasons joined together exceed the downstream 1024-char persisted-error limit, silently losing the omitted-count suffix (#1780)."
+
+*Failure scenario*: today rca's four rejection-reason strings are all short DataQ-authored literals, so the missing clause cap doesn't currently overflow 1024 chars in practice. But the logic was clearly copied from the sibling specifically to fix the #1780 class, and copying without the clause cap means the fix is incomplete in the copy — the moment a future rejection reason in `_valid_hypothesis` echoes untrusted/raw provider content (the same way checksuggest's `reason`/`expectation_type` do), the exact #1780 bug (silent truncation losing the "(+N more)" suffix) reappears here, unnoticed, because nothing ties the two implementations together. Maintaining two independently-tunable copies of the same safety logic is also strictly harder to keep in sync — a future constant bump in one won't propagate to the other.
+
+**2. [Efficiency] `backend/app/services/llm_checksuggest.py` lines 490–497 (the `detail=` addition in `validate_output`)**
+
+`_format_rejection_reasons(rejected)` internally computes `shown = rejected[:MAX_SUGGESTIONS]` (line 398) to build the message. The new `detail={"rejected": rejected[:MAX_SUGGESTIONS], ...}` on the next few lines independently re-slices the same list with the same bound for the same purpose (bounding what's shown/persisted).
+
+*Failure scenario*: this is a genuine double-computation of the same slice, though at `MAX_SUGGESTIONS = 8` the cost is trivial (a list of ≤8 dict references) — not a real performance problem, but it is duplicated intent that a reader has to notice is deliberately the same bound rather than two independently-chosen numbers; a future edit to one slice's bound (e.g. widening the detail payload without touching the message) could silently desync the two without any test catching it, since nothing asserts they use the same constant for the same reason.
+
+**3. [Simplification — checked, no defect] `backend/app/services/llm_service.py` `if exc.detail: terminal["response"] = _scrub_nul(exc.detail)`**
+
+Verified against `DataQError.__init__` (`backend/app/core/errors.py` line 42): `self.detail: dict[str, Any] = detail or {}` — `detail` is never `None`, it defaults to `{}`. So `if exc.detail:` correctly tests for a non-empty dict and is already the simplest correct form; there's no dead complexity or need for an `is not None` / explicit-empty-check variant here. Not a candidate.
+
+**4. [Simplification — checked, no defect] `llm_rca.py`'s `validated = [...]` followed by two comprehensions**
+
+This mirrors the file's own explicit design comment (lines 373–376): the full list must be validated *before* capping to `_MAX_HYPOTHESES`, or a valid hypothesis past the cap position could be dropped in favor of an earlier malformed one — same precedent as checksuggest. The two downstream comprehensions (`hypotheses`, `rejected`) are cheap single passes over an already-small, schema-bounded list; this reads as intentionally clean separation (accepted vs. rejection-reasons), not unnecessary complexity. Not a candidate.
+
+No candidates stood out for outright O(n²) patterns or other wasted work beyond #2 above — this is a small, contained diff and the rest of the efficiency profile is unremarkable given the tiny bounded list sizes (`MAX_SUGGESTIONS=8`, `_MAX_HYPOTHESES=5`) involved everywhere.</result>
+<usage><subagent_tokens>118206</subagent_tokens><tool_uses>9</tool_uses><duration_ms>117324</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bi15ezm6p</task-id>
+<summary>Monitor event: "CI status for PR #1786"</summary>
+<event>Frontend — browser E2E (Playwright): pass
+Frontend — tests: pass</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a2c20007cde7bf737</task-id>
+<tool-use-id>toolu_01Jb7dcqo3D3Vsh8tpJRvjdU</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/73687eb1-c819-42a7-ab35-5fc0e83d0623/tasks/a2c20007cde7bf737.output</output-file>
+<status>completed</status>
+<summary>Agent "Angles altitude + conventions" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Findings — PR #1786
+
+### Altitude angle
+
+**A1. `execute_invocation`'s generalization is broader than its evidence base, and the next un-audited raise site is one refactor away.**
+`backend/app/services/llm_service.py:416-417`
+```python
+if exc.detail:
+    terminal["response"] = _scrub_nul(exc.detail)
+```
+This is unconditional on exception *type* — any `DataQError` subtype raised anywhere inside the preceding `try` (builder, `build_provider`, `provider.complete_structured`/`complete`, or the validator) with a `detail=` now gets that dict persisted into the API-exposed `response` column. Today only `LLMOutputInvalidError` (checksuggest/rca) and pre-existing `LLMRequestInvalidError` (see A2) reach this path, so the blast radius happens to be small — but the change was made at the `execute_invocation` level rather than gated per-kind or per-exception-type. The next engineer who wires a new LLM feature kind, or reuses an existing service helper inside a builder/validator (as sqlgen already does with `custom_sql.validate_query`), inherits "detail gets persisted to a durable, queryable row" as ambient behavior with no decision point — none of `detail`'s existing producers (`connection_service.py`, `profile_service.py`, `dryrun_service.py`, etc., ~130 call sites repo-wide) were designed with "this may end up in a stored DB row read back by MCP/API clients" in mind; they were designed for the transient HTTP error envelope. The fix band-aids the two known call sites correctly but pushes the trust boundary decision ("is this detail safe to persist?") down to every future/reused raise site instead of resolving it once at the mechanism.
+
+**A2. A pre-existing, unaudited raise site already flows through the new path.**
+`backend/app/services/llm_prompt_context.py:76-78`, reached from `backend/app/services/llm_checksuggest.py:174` and `backend/app/services/llm_sqlgen.py:79` (both inside `execute_invocation`'s try block via `builder(...)`):
+```python
+raise LLMRequestInvalidError(
+    datasource_message, detail={"supported": sorted(SQL_QUERYABLE_TYPES)}
+)
+```
+This call predates #1786 and was never reviewed as part of it, yet as of this PR its `detail` now silently starts landing in `response` on a failed invocation. The payload here is benign (a static list of connection types), but it demonstrates concretely that the generalization changed behavior for a call site nobody looked at — the exact risk the task flagged. A future `detail=` added to `check_sql_target_preconditions` (or any other precondition raised inside a builder) picks up persistence for free.
+
+**A3. The third `KIND_VALIDATORS` registrant (`sql_generation`) was left inconsistent, not omitted for a stated reason.**
+`backend/app/services/llm_sqlgen.py:336-337`:
+```python
+except CustomSqlInvalidError as exc:
+    raise LLMOutputInvalidError(f"generated SQL failed validation: {exc.message}") from exc
+```
+`CustomSqlInvalidError` (raised in `backend/app/services/custom_sql.py`) already carries a structured `detail` (e.g. `{"query_key": ..., "forbidden": [...]}`) — exactly the shape #1781 exists to surface. This is the same "generated output failed validation, and the caller needs to know why" scenario the PR fixed for checksuggest/rca, but `llm_sqlgen.validate_output` drops `exc.detail` on the floor when re-raising. There's no comment recording this as a deliberate scope cut, so it reads as the generalization being applied to two of three sibling kinds and silently missing the third — worth a one-line follow-up or an explicit "why not sqlgen" note.
+
+### Conventions angle
+
+**C1. Comment-to-code ratio far exceeds the project's stated bar.**
+`backend/app/services/llm_service.py:408-417` — 8 comment lines wrap 2 lines of new code (`if exc.detail: terminal["response"] = _scrub_nul(exc.detail)`), a ~4:1 ratio. Project memory (`feedback_prose_trim_lessons.md`, "&lt;0.2 prose-to-code standing bar") and (`feedback_code_not_prose_comments.md`, "minimal comments; rationale goes in the PR, not the file") both call this out as a standing convention for this repo, and the task explicitly asked to check it. The rationale in these 8 lines (why `detail` wasn't persisted before, why it's safe with no migration, what class of bug this generalizes) belongs in the PR description, not inline.
+
+**C2. The same rationale is stated twice in one function.**
+`backend/app/services/llm_checksuggest.py:480-483` and again at `:493-496` — the block comment above `if rejected:` already explains "detail... which `execute_invocation`'s DataQError branch now persists into `response`... (#1781)", then the same fact is restated immediately at the `detail=` line ("#1781: the structured list too... `execute_invocation` now persists this into `response` even on a failed invocation"). Beyond density, this is duplicated prose within ~15 lines describing the identical mechanism.
+
+**C3 (minor, not filed as a hard violation).** `backend/app/services/llm_rca.py:333-337` — a 6-line docstring on `_valid_hypothesis` for a signature change that a one-line comment ("returns (hypothesis, rejection reason)") would cover; flagged for awareness only, not a strong finding on its own — grouping it with C1/C2 as the same "rationale-in-code instead of rationale-in-PR" pattern rather than listing as a separate candidate.
+
+No PII-redaction violation found: `LlmInvocation.response` was already unredacted for successful invocations (checksuggest/rca/sqlgen prompt only on masked schema/profile stats per each file's own "Trust boundary" note, and `expectation_type`/`reason` fields in `rejected` are closed-vocabulary or fixed strings, not raw row data), and the API model (`backend/app/api/v1/llm.py:48`, `LlmInvocationRead.response: dict[str, Any] | None`) serializes it as-is on both paths — so this PR doesn't newly bypass an existing redaction convention, it extends the same (pre-existing) no-redaction posture to the failure path.</result>
+<usage><subagent_tokens>137294</subagent_tokens><tool_uses>14</tool_uses><duration_ms>153269</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bi15ezm6p</task-id>
+<summary>Monitor event: "CI status for PR #1786"</summary>
+<event>Backend — tests: pass
+ALL CHECKS TERMINAL (14 checks)</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a8f1535321ba8e79b</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/73687eb1-c819-42a7-ab35-5fc0e83d0623/tasks/a8f1535321ba8e79b.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle B: removed-behavior auditor" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now I have all the concrete evidence needed. Let me write up the final findings.
+
+## Findings — Angle B (removed-behavior audit) on PR #1786
+
+**Setup confirmed:** `execute_invocation`'s `except DataQError` branch (backend/app/services/llm_service.py:405-417) now runs `if exc.detail: terminal["response"] = _scrub_nul(exc.detail)`. The removed comment guaranteed, unconditionally, that `response` stays NULL whenever `status="failed"`. I verified this new guard is reachable from every `DataQError` raised anywhere inside `execute_invocation`'s try block — not just the two call sites the PR describes — and traced concrete, already-existing raise sites that will now trip it.
+
+**1. Unbounded, attacker/provider-controlled field persisted with no size cap**
+File: `backend/app/services/llm_checksuggest.py:464` (`rejected.append({"expectation_type": raw.get("expectation_type"), "reason": reason})`) → `:497` (`detail={"rejected": rejected[:MAX_SUGGESTIONS], ...}`) → `backend/app/services/llm_service.py:417`.
+The stored `"expectation_type"` is the raw, unvalidated provider value — not the capped `echoed[:_REASON_ECHO_MAX_CHARS]` string used everywhere else in this same file for exactly this reason (`_format_rejection_reasons`, `_validate_one`'s own `echoed = repr(expectation_type)[:_REASON_ECHO_MAX_CHARS]`). Only the *list* is capped (`MAX_SUGGESTIONS=8`); each item's `expectation_type` is not. Previously `exc.detail` was discarded unconditionally, so this was a non-issue by construction. **Failure scenario:** a non-compliant provider returns 8 suggestions each with a multi-MB `expectation_type` string (schema `maxItems`/type isn't enforced server-side, per the file's own comment at line ~449); `validate_output` rejects all 8, and `execute_invocation` now persists all of them raw into `llm_invocations.response` JSONB — the exact truncation discipline the rest of the file applies to this same untrusted value is bypassed on the new persistence path.
+
+**2. The re-established invariant is much narrower than the removed comment's blanket guarantee — reachable today via at least two other unrelated raise sites, untested by this PR**
+File: `backend/app/services/llm_service.py:415-417`; reachable via `backend/app/services/llm_prompt_context.py:77` (`check_sql_target_preconditions` → `LLMRequestInvalidError(..., detail={"supported": sorted(SQL_QUERYABLE_TYPES)})`) and `:140`/`:263` (`detail={"consumer": consumer, "table": table, "schema": schema, "catalog": catalog}`), both called from `llm_checksuggest.build_prompt` (line 279+) via `check_generation_preconditions`/`_profile_prompt`, which run *before* `validate_output` and are not wrapped in any local try/except that discards `.detail`.
+**Failure scenario:** a check-suggestion invocation whose target table/schema was renamed or dropped between suite creation and run fails inside `build_prompt` (TOCTOU precondition re-check, or profiler resolution) with a `DataQError` carrying `detail={"table": ..., "schema": ...}`. That table/schema metadata now lands in `response` on a build-phase failure that has nothing to do with #1781's stated purpose (surfacing validate_output rejection reasons) and was never reviewed or tested for this new sink. This directly falsifies the removed comment's blanket claim and isn't scoped to the two intentional call sites the PR description names.
+
+**3. Persisted `rejected` list can be silently shorter than `rejected_count` with no truncation marker**
+File: `backend/app/services/llm_checksuggest.py:497`; `backend/app/services/llm_rca.py:388-395`.
+Both sites slice `rejected[:MAX_SUGGESTIONS]` / `rejected[:_MAX_HYPOTHESES]` for the persisted `detail["rejected"]`, while `rejected_count` reports the true total. The parallel display-string path (`_format_rejection_reasons` in checksuggest, the inline `omitted`/`suffix` logic in `llm_rca.py:390-391`) appends an explicit "(+N more)" when truncating. The structured `detail` dict carries no equivalent `truncated`/`omitted` field, so a consumer reading only `response["rejected"]` has no signal that it's not exhaustive — exactly the "partial-as-final" honesty defect class this codebase has repeatedly found and fixed on the MCP surface (see project memory on LLM-facing honesty fields).
+
+**4. Docstring updated for one call site, not its structural twin**
+File: `backend/app/api/v1/llm.py:201-224` (`suggest_checks`) vs `:236-263` (`generate_rca_narrative`).
+The PR rewrote `suggest_checks`'s docstring in detail to describe the new failure-shape `response` (`{rejected, rejected_count}` vs the success shape). `llm_rca.validate_output` was changed in this very PR to raise the identical `detail={"rejected": ..., "rejected_count": ...}` shape on all-hypotheses-rejected (`backend/app/services/llm_rca.py:395`), but `generate_rca_narrative`'s docstring got no equivalent update — an API/MCP consumer reading only the RCA route's docstring has no way to know a failed RCA invocation now also carries structured rejection detail under `response`.
+
+**Checks that came back clean (no finding):**
+- Point 1's literal ask — grepped `invocation.response is None` / `.response is None` across the repo; the only other reader of `.response` conditioned on status is `llm_rca.latest_narrative_for_incident` (line 451), which already filters `LlmInvocation.status == "succeeded"` before reading `.response`, so it's unaffected.
+- Point 2 — `_valid_hypothesis` has exactly one caller (`validate_output`, line 379); no other code unpacks it as a bare `dict | None`.
+- Point 3 — no code path stores an accepted-but-invalid suggestion/hypothesis as an actual `Check` row from `validate_output`; there is no "apply a suggestion" endpoint yet in this codebase, so the rejected-detail persistence doesn't risk silent acceptance anywhere downstream today.
+- Point 4 — grepped `.response.get(`/`["response"]` across `backend/app`; no route or MCP tool currently reads `LlmInvocation.response` assuming the success shape (`suggestions`/`ranked_hypotheses`/`coverage_warnings`) unconditionally, and the frontend has no consumer of this field yet — so #4's concern is real but not yet triggered; it's a landmine for the next feature (check-suggestion "apply" UI, or an MCP read tool) rather than a live bug.
+- The `_persist`/fallback path in `execute_invocation` (lines 435-451) already guards against an unstorable JSON payload (e.g., a non-JSON-serializable value slipping into `exc.detail`) by catching the persist failure and re-writing a plain `failed` status with no `response` — so a hypothetical bad-type-in-detail crash degrades safely rather than stranding the row.</result>
+<usage><subagent_tokens>155569</subagent_tokens><tool_uses>40</tool_uses><duration_ms>317985</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a299ebd7314dd8053</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/73687eb1-c819-42a7-ab35-5fc0e83d0623/tasks/a299ebd7314dd8053.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle A: line-by-line diff scan" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Based on a full line-by-line read of the diff plus the enclosing functions (`execute_invocation` in `llm_service.py`, `validate_output`/`_valid_hypothesis` in `llm_rca.py`, `validate_output` in `llm_checksuggest.py`, the docstring in `api/v1/llm.py`, and all three touched test files), plus running the affected test suite (91 passed) and `mypy` (clean) to confirm nothing is outright broken:
+
+**Candidate findings:**
+
+1. **file:** `backend/app/services/llm_checksuggest.py:497` and `backend/app/services/llm_rca.py:395`
+   **summary:** The structured `detail["rejected"]` list is silently truncated (to `MAX_SUGGESTIONS`=8 / `_MAX_HYPOTHESES`=5) while `rejected_count` reports the untruncated total, with no `truncated`/`omitted` flag inside the structured object itself to signal the gap.
+   **failure_scenario:** A provider returns 12 suggestions that all fail validation. `execute_invocation` persists `response = {"rejected": [...8 items...], "rejected_count": 12}`. A caller (LLM/MCP client or any consumer) reading only the structured `response` field — which is exactly what this PR was built to make possible, per `api/v1/llm.py`'s new docstring at lines 211-218 — has no field-level signal that 4 rejection reasons are missing; only the separately-truncated `error` string (which does append "(+N more)" in checksuggest, and "(+N more)" in rca) carries that signal, and a caller consuming `response` in isolation (the whole point of persisting `detail`) can't detect the truncation without comparing `len(response["rejected"])` to `rejected_count` themselves — which the field naming (`rejected_count`, not e.g. `total_rejected`) doesn't hint is necessary. This is exactly the "honesty field" gap class this codebase has repeatedly flagged for LLM-facing surfaces (a value that's literally true and misleading without the missing context).
+
+2. **file:** `backend/app/services/llm_rca.py:388-396`
+   **summary:** The new all-rejected message/detail builder has a per-item cap (`r[:200]`) but, unlike its sibling `llm_checksuggest._format_rejection_reasons` (which has both a per-item cap AND a `_REASONS_CLAUSE_MAX_CHARS=700` total-clause cap specifically to stop `execute_invocation`'s `[:1024]` truncation from silently eating the "(+N more)" suffix — the exact #1727/#1780 bug), there is no overall length cap on the assembled `reasons` string.
+   **failure_scenario:** Not currently triggerable — every reason string `_valid_hypothesis` can return (lines 340/345/347/349/352) is a short, fixed, non-echoed constant (max ~66 chars), so 5 joined reasons stay well under 1024 chars today. But this is a latent regression: if a future reason is ever added that echoes untrusted/variable-length content (mirroring checksuggest's `expectation_type` echo), the same silent-truncation bug this PR set out to close for RCA reappears with no defense, because the total-clause cap that exists in the sibling file was not carried over here.
+
+3. **file:** `backend/app/services/llm_rca.py:412-418` (unchanged lines of the touched `validate_output` function)
+   **summary:** On a *partial*-rejection success (some hypotheses valid, some invalid), the computed rejection reasons (`validated`, built unconditionally at line 379) are never surfaced anywhere in the success return value — unlike `llm_checksuggest.validate_output`, whose success return always includes the full `rejected` list (empty or not).
+   **failure_scenario:** A provider returns 3 hypotheses, 1 valid + 2 invalid (e.g., bad confidence values). `hypotheses` is non-empty so the new all-rejected branch (lines 381-399) never runs, and the final `return {...}` (no `rejected` key) discards the 2 rejection reasons entirely — a caller has no way to learn 2 of 3 hypotheses were dropped and why, even though the code computed exactly that information one line 379 above. This predates this PR's diff (the return statement itself wasn't touched) but sits inside the function this PR modified and directly undercuts its own stated goal of matching "the #1727/#1780 checksuggest precedent" — checksuggest's parity only covers the *all*-rejected case, not partial.
+
+**Not a bug (verified, ruled out):** `if exc.detail:` at `llm_service.py:416` looked like a candidate falsy-zero footgun (dict truthiness), but `DataQError.__init__` (`backend/app/core/errors.py:42`) already normalizes `detail` to `{}` when omitted, and both new call sites only build `detail=` inside an `if rejected:` guard so the dict always has ≥1 key when passed — a dict with keys is truthy in Python regardless of its values, so this line correctly distinguishes "no detail" from "some detail" in every currently-reachable case.</result>
+<usage><subagent_tokens>173419</subagent_tokens><tool_uses>42</tool_uses><duration_ms>455422</duration_ms></usage>
+</task-notification>
