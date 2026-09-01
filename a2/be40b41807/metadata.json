@@ -1,0 +1,39 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "a2be40b41807",
+  "strategy": "manual-commit",
+  "branch": "fix/1781-execute-invocation-detail-persist",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/llm.py",
+    "backend/app/services/llm_checksuggest.py",
+    "backend/app/services/llm_rca.py",
+    "backend/app/services/llm_service.py",
+    "backend/tests/services/test_llm_checksuggest.py",
+    "backend/tests/services/test_llm_rca.py",
+    "backend/tests/services/test_llm_service.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/a2/be40b41807/0/metadata.json",
+      "transcript": "/a2/be40b41807/0/full.jsonl",
+      "compact_transcript": "/a2/be40b41807/0/transcript.jsonl",
+      "content_hash": "/a2/be40b41807/0/content_hash.txt",
+      "prompt": "/a2/be40b41807/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 136,
+    "cache_creation_tokens": 57110,
+    "cache_read_tokens": 42370365,
+    "output_tokens": 25337,
+    "api_call_count": 68,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  }
+}
