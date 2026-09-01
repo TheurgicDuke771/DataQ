@@ -50,6 +50,20 @@ def test_create_celery_app_uses_redis_url_and_json() -> None:
     assert app.conf.task_track_started is True
 
 
+def test_llm_invoke_routes_to_its_own_queue() -> None:
+    """#1777: llm_invoke shares no queue with run_suite — a backlog of long
+    suite runs must not be able to leave an LLM dispatch queued-but-intact
+    past the reaper's pending threshold. Guards against a dropped/renamed
+    task_routes entry silently reintroducing the shared-queue false-kill
+    (#1726 Part A).
+    """
+    from backend.app.worker.celery_app import LLM_QUEUE_NAME
+
+    app = create_celery_app()
+    assert app.conf.task_routes == {"llm_invoke": {"queue": LLM_QUEUE_NAME}}
+    assert LLM_QUEUE_NAME != "celery"  # distinct from run_suite's default queue
+
+
 def test_beat_schedule_file_lives_in_the_temp_dir_not_the_cwd() -> None:
     """The runtime image runs as a non-root user with a read-only /workspace (#1408), so beat's
     schedule shelve must never land in the CWD — celery's default.

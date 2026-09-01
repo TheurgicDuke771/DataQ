@@ -25,6 +25,14 @@ from backend.app.core.tracing import configure_tracing, instrument_celery
 
 # Message-header key carrying the originating request_id across the broker.
 REQUEST_ID_HEADER = "request_id"
+#: Dedicated queue for llm_invoke (#1726/#1777) — without this, it shares the
+#: single default "celery" queue with run_suite, and a backlog of long suite
+#: runs (1M-200M-row UC perf suites in this deployment class) can leave an
+#: LLM dispatch queued-but-intact past any static reap threshold, false-killed
+#: by the reaper as "likely lost". A worker that isn't also told to consume
+#: this queue (`-Q celery,llm`) will silently never process it — see
+#: deploy/README.md's rollout note for this change.
+LLM_QUEUE_NAME = "llm"
 # Where prerun stashes the ContextVar reset handle for postrun. Deliberately
 # avoids the word "token" so Bandit/Ruff (B105/S105) don't flag it as a secret.
 _REQUEST_ID_RESET_ATTR = "_dataq_request_id_reset"
@@ -56,6 +64,11 @@ def create_celery_app() -> Celery:
         enable_utc=True,
         # Surface 'started' so read-back can distinguish queued from running.
         task_track_started=True,
+        # llm_invoke on its own queue (#1777): a worker listening to both
+        # queues (`-Q celery,llm`) round-robins across them rather than
+        # draining "celery" strictly FIFO, so a long run_suite backlog no
+        # longer starves llm_invoke dispatches.
+        task_routes={"llm_invoke": {"queue": LLM_QUEUE_NAME}},
         # Recycle a prefork child past this resident size, BETWEEN tasks — stops
         # memory creep (#755) without interrupting a run in flight. 0 disables.
         worker_max_memory_per_child=settings.worker_max_memory_per_child_kb or None,
