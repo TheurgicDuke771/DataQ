@@ -515,7 +515,15 @@ def test_end_to_end_execute_applies_the_output_gate(
     )
     assert llm_service.execute_invocation(db_session, bad.id, secret_store=store) == "failed"
     db_session.refresh(bad)
-    assert bad.response is None  # nothing survived — never stored as a result
+    # No SUGGESTION survived to be stored as a result — but #1781 persists the
+    # rejection DETAIL into response even on a failed invocation, distinct
+    # from a successful run's {suggestions, rejected, coverage_warnings} shape.
+    response = bad.response
+    assert response is not None
+    assert response["rejected_count"] == 1
+    (rejected,) = response["rejected"]
+    assert rejected["expectation_type"] == "expect_column_values_to_not_be_null"
+    assert "reason" in rejected
     assert bad.error is not None and bad.error.startswith("llm_output_invalid:")
     assert bad.input_tokens == 7  # a refused generation still billed
     assert bad.output_tokens == 3

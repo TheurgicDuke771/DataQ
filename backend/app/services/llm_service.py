@@ -405,6 +405,16 @@ def execute_invocation(
     except DataQError as exc:
         terminal["status"] = "failed"
         terminal["error"] = str(_scrub_nul(f"{exc.code}: {exc.message}"))[:1024]
+        # #1781: `exc.detail` is a real, already-built structured-payload channel
+        # on the whole error taxonomy (`DataQError.__init__`) that nothing
+        # persisted before — a validator raising `DataQError(..., detail={...})`
+        # now gets that structured detail stored in `response` (nullable,
+        # schema-agnostic, no migration needed) even though `status="failed"`.
+        # Lets a caller read WHY a run failed as structured JSON rather than
+        # parsing it back out of the char-capped `error` string (the #1727/
+        # #1780 class this was filed to generalize).
+        if exc.detail:
+            terminal["response"] = _scrub_nul(exc.detail)
     except Exception as exc:  # a driver-boundary surprise must still terminate the row
         terminal["status"] = "failed"
         terminal["error"] = f"internal: {exc.__class__.__name__}"[:1024]

@@ -477,18 +477,24 @@ def validate_output(
     if not accepted:
         # The full `rejected` list (with per-suggestion reasons) is about to go
         # out of scope — this is the ONLY path where that would happen silently.
-        # `execute_invocation`'s DataQError branch stores just the message
-        # (`response` stays NULL), so a total-rejection run must fold the
-        # reasons into the message itself or the API docstring's promise
-        # ("see the invocation's `rejected` field for what didn't make it and
-        # why") is false for exactly the case where it matters most (#1727).
-        # Capped at MAX_SUGGESTIONS reasons: the schema bounds a compliant
-        # provider's output, but not every provider enforces its own schema
-        # server-side, so `rejected` itself is not guaranteed bounded.
+        # Raised below with BOTH the reasons folded into the message (a caller
+        # reading only `error` still gets them, #1727) AND the structured list
+        # as `detail`, which `execute_invocation`'s DataQError branch now
+        # persists into `response` even on a failed invocation (#1781) — the
+        # API docstring's promise ("see the invocation's `rejected` field for
+        # what didn't make it and why") holds for the all-rejected case either
+        # way now. Capped at MAX_SUGGESTIONS reasons: the schema bounds a
+        # compliant provider's output, but not every provider enforces its own
+        # schema server-side, so `rejected` itself is not guaranteed bounded.
         if rejected:
             raise LLMOutputInvalidError(
                 f"no suggested check passed validation — {len(rejected)} rejected: "
-                f"{_format_rejection_reasons(rejected)}"
+                f"{_format_rejection_reasons(rejected)}",
+                # #1781: the structured list too, not just the char-capped string
+                # above — `execute_invocation` now persists this into `response`
+                # even on a failed invocation, so a caller can read every
+                # rejection reason without re-parsing the summary sentence.
+                detail={"rejected": rejected[:MAX_SUGGESTIONS], "rejected_count": len(rejected)},
             )
         raise LLMOutputInvalidError(
             "no suggested check passed validation — the provider returned no suggestions"

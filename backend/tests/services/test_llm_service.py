@@ -401,6 +401,68 @@ def test_execute_invocation_outage_lands_failed_with_error_code(
     assert invocation.error.startswith("llm_provider_unavailable:")
 
 
+def test_execute_invocation_persists_dataq_error_detail_into_response(
+    db_session: Any, admin: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#1781: a `DataQError.detail` is a real, already-built structured-payload
+    channel that `execute_invocation` used to discard unconditionally, even
+    though `response` (nullable, schema-agnostic) already exists. A validator
+    raising `DataQError(..., detail={...})` now gets that detail persisted
+    alongside the flat `error` string, on a FAILED invocation.
+    """
+    from backend.app.core.errors import DataQError
+
+    store = FakeSecretStore()
+    _enable(db_session, admin, store)
+    invocation = llm_service.create_invocation(db_session, kind="ping", requested_by=admin)
+    db_session.commit()
+    monkeypatch.setattr(llm_service, "build_provider", lambda *_a, **_kw: _FakeProvider())
+    monkeypatch.setitem(
+        llm_service.KIND_BUILDERS, "ping", lambda _s, _inv, _st: ("say ok", None, None)
+    )
+
+    def _validator(_session: Any, _invocation: Any, _payload: Any) -> Any:
+        raise DataQError(
+            "nothing survived validation",
+            code="test_rejected",
+            detail={"rejected": ["reason one", "reason two"], "rejected_count": 2},
+        )
+
+    monkeypatch.setitem(llm_service.KIND_VALIDATORS, "ping", _validator)
+    assert llm_service.execute_invocation(db_session, invocation.id, secret_store=store) == "failed"
+    db_session.refresh(invocation)
+    assert invocation.status == "failed"
+    assert invocation.error is not None and "nothing survived validation" in invocation.error
+    assert invocation.response == {"rejected": ["reason one", "reason two"], "rejected_count": 2}
+
+
+def test_execute_invocation_leaves_response_null_when_dataq_error_has_no_detail(
+    db_session: Any, admin: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A `DataQError` raised with no `detail=` (the common case — most raise
+    sites never pass one) must not fabricate a `response` value out of an
+    empty dict.
+    """
+    from backend.app.core.errors import DataQError
+
+    store = FakeSecretStore()
+    _enable(db_session, admin, store)
+    invocation = llm_service.create_invocation(db_session, kind="ping", requested_by=admin)
+    db_session.commit()
+    monkeypatch.setattr(llm_service, "build_provider", lambda *_a, **_kw: _FakeProvider())
+    monkeypatch.setitem(
+        llm_service.KIND_BUILDERS, "ping", lambda _s, _inv, _st: ("say ok", None, None)
+    )
+
+    def _validator(_session: Any, _invocation: Any, _payload: Any) -> Any:
+        raise DataQError("plain failure")
+
+    monkeypatch.setitem(llm_service.KIND_VALIDATORS, "ping", _validator)
+    assert llm_service.execute_invocation(db_session, invocation.id, secret_store=store) == "failed"
+    db_session.refresh(invocation)
+    assert invocation.response is None
+
+
 def test_execute_invocation_unregistered_kind_fails_terminal(db_session: Any, admin: User) -> None:
     """`ping` is reserved DB vocabulary with no production builder — the other
     tests in this file that need one register it temporarily via
