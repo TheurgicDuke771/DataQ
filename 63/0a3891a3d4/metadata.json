@@ -1,0 +1,39 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "630a3891a3d4",
+  "strategy": "manual-commit",
+  "branch": "fix/1777-llm-invoke-dedicated-queue",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "backend/app/worker/celery_app.py",
+    "backend/tests/worker/test_celery_app.py",
+    "deploy/README.md",
+    "deploy/terraform/aws/ecs.tf",
+    "deploy/terraform/azure/containerapps.tf",
+    "docker-compose.ghcr.yml",
+    "docker-compose.yml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/63/0a3891a3d4/0/metadata.json",
+      "transcript": "/63/0a3891a3d4/0/full.jsonl",
+      "compact_transcript": "/63/0a3891a3d4/0/transcript.jsonl",
+      "content_hash": "/63/0a3891a3d4/0/content_hash.txt",
+      "prompt": "/63/0a3891a3d4/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 152,
+    "cache_creation_tokens": 51160,
+    "cache_read_tokens": 59281938,
+    "output_tokens": 16269,
+    "api_call_count": 76,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  }
+}
