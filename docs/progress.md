@@ -133,7 +133,7 @@ refuses an unknown `expectation_type` on every write surface; #1505 decided/land
 configured; generated SQL passes the same validation a human's would; the seam ADR is
 Accepted. — **MET** (2026-08-29: default-off end-to-end — no `llm_settings` row means every LLM surface is absent and everything else works, feature endpoints 409 `llm_not_configured`; generated SQL rides the ADR 0019 validator on the exact stored bytes + the editor's dry-run path unchanged; ADR 0042 Accepted + live-verified against a real local model). **Milestone closed at 19/19 (0 open).**
 
-### v1.2 W4 — LLM check suggestions + compliance G2 (due 2026-09-18)
+### v1.2 W4 — LLM check suggestions + compliance G2 — **CLOSED 2026-09-01, 23/23, ~2.5 weeks early** (was due 2026-09-18)
 
 | Status | Task | Theme |
 |---|---|---|

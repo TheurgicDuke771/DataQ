@@ -276,3 +276,17 @@ name stays registered as a deprecated, behaviorally-identical alias (a plain del
 arguments, same validation, same return shape) so a client with it pinned in a saved prompt or
 static config does not break. The split becomes **47 tools: 24 read-only, 18 that change state, 5
 live-probe** — the extra tool is the alias, not new capability.
+
+## Amendment — `get_doc` added, 47 → 48
+
+A read-only tool exposing DataQ's own published docs pages (`docs/site/`) to an AI client, so a
+question like "how does DataQ handle X" can be answered from the curated docs rather than the
+model guessing or an assistant grepping the repo. A hand-scanned allowlist (five top-level pages
+plus every `compliance/*.md` page) is walked live at call time — the same "declare as data, not
+as code comments" shape `mcp_gates.GATES` itself enforces — and deliberately excludes ADRs and
+`architecture.md` (contributor design-rationale, not this tool's audience). Returns the page
+verbatim, no summarization; an unrecognized `page` restates the current valid list, and the
+parameter's own JSON-schema `enum` carries the live catalog, so a client sees the full valid set
+on every turn with no companion `list_doc_pages()` tool needed. Workspace-agnostic — no per-suite
+or per-workspace gate, since these pages carry no tenant data. The split becomes **48 tools: 25
+read-only, 18 that change state, 5 live-probe**.

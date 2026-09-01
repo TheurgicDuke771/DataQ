@@ -34,7 +34,7 @@ a third-party endpoint.
 | 5 | **OIDC identity provider** — Azure AD, AWS Cognito, any standards-compliant issuer | Standard OIDC flows; DataQ receives (never sends) profile claims | User identity (email, name, subject id) held at the IdP | `oidc` auth mode |
 | 6 | **Secret store** — Azure Key Vault, AWS Secrets Manager, OpenBao/Vault | Warehouse credentials (write on connection create, read at run time) | No customer data — but the credentials unlock the systems that hold it | Always (one of the four backends) |
 | 7 | **Telemetry** — Azure Application Insights, AWS X-Ray/CloudWatch, any OTLP sink | Traces + structured logs, **PII-redacted at the logger** | Operational metadata; request ids, not warehouse values | When an exporter is configured |
-| 8 | **MCP AI clients** — whatever model provider stands behind a client holding a valid PAT | Run results, redacted failing samples, check configuration, via the 46 `/mcp` tools | Potentially, in redacted samples — the model provider and its jurisdiction are **chosen by the token holder** | When PATs are issued and `/mcp` is reachable |
+| 8 | **MCP AI clients** — whatever model provider stands behind a client holding a valid PAT | Run results, redacted failing samples, check configuration, via the 48 `/mcp` tools | Potentially, in redacted samples — the model provider and its jurisdiction are **chosen by the token holder** | When PATs are issued and `/mcp` is reachable |
 | 9 | **Outbound LLM intelligence** — DataQ calling a model on its own behalf | Schema + masked profiler statistics for SQL generation and check suggestions; RCA narratives additionally send the triggering check's own observed value, routed through that same column-policy/warehouse-tag masking floor, and its expected value (a check-authored threshold, not warehouse data, so never masked). Never raw sample rows | Potentially — profiler statistics or an observed value, both subject to the masking floor; model provider and jurisdiction are admin-chosen | **Live, off by default** — an admin must configure a provider + credential before any call leaves |
 | 10 | **Lineage provider** — Marquez / OpenLineage-compatible catalog | Pull of lineage graph metadata | No — table/job names, not row data | When `LINEAGE_PROVIDER` is configured |
 
@@ -55,4 +55,4 @@ maintained as code review discipline, not a calendar:
 3. The **LLM row flips from "not built"** in the PR that ships the intelligence
    feature — that PR is the Ch. V trigger the DPIA sheet also names.
 
-Last reviewed: 2026-08-31 (originally 2026-08-21).
+Last reviewed: 2026-09-01 (originally 2026-08-21).

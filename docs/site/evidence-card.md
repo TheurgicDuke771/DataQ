@@ -42,6 +42,13 @@ later. A narrative generated over this card, or a client reading it directly, ca
 a column failed a null check* but cannot see *which row*. Use the run's own results — which
 apply the product's standard column-aware redaction — to inspect specific failing values.
 
+`failing_result.observed_value` is a second, narrower door to real data: some expectation types
+(min/max/mean-style rules) carry a literal warehouse cell value there, not just GX metadata. That
+value is routed through the same column-policy/warehouse-tag redaction floor every other results
+surface applies — but, unlike the live results endpoints, this card computes it **once**, at the
+point the incident opens or gets a fresh occurrence, and stores the result. A suite's column
+policy edited afterward does not retroactively re-mask an already-stored card.
+
 `same_asset_siblings` is assembled once, for the workspace as a whole, with no caller in scope —
 it has to be, since it draws from every suite that touches the asset, not just the one that
 opened this incident. Reading it back applies a second, per-request narrowing: a caller only

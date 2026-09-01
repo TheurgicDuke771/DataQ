@@ -72,7 +72,7 @@ Prompt context is assembled by one shared builder with a closed vocabulary: **ta
 
 ## Consequences
 
-- The SQL generator and suggestion features (and a future RCA narrative) build feature-shaped prompt builders + output gates on a stable seam; none of them touch provider wire code.
+- The SQL generator, suggestion, and RCA-narrative features each build a feature-shaped prompt builder + output gate on a stable seam; none of them touch provider wire code.
 - Live verification (the driver-boundary rule): mocked transports encode our model of a provider — an opt-in lane against a real local inference server (Ollama) is the evidence for the OpenAI-compat impl.
 - The posture surface flips `llm_intelligence.enabled` by reading `llm_settings` — the disclosure stays honest in both states.
 - New dependency: `anthropic` (MIT) in `backend/requirements.txt`. The OpenAI-compat impl deliberately uses `httpx` directly — no `openai` SDK dependency for a wire format three lines of httpx cover.

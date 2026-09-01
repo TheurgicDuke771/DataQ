@@ -30,13 +30,24 @@ the per-PR history lives in the repo's commit log and pull requests.
   an empty success. Applying a suggestion goes through the ordinary check-create
   path unchanged. The review surface ships next.
 
+- **Explain a failed check — LLM root-cause narrative (API).** With an LLM provider
+  configured, `POST /api/v1/llm/rca_narrative` generates a narrative over an incident's
+  already-captured evidence card plus a longer per-check history: a plain-English summary,
+  ranked hypotheses each citing a real evidence layer (upstream pipeline delay, a sibling
+  check failing in the same run, a cross-suite pattern on the same asset — never an
+  invented cause), and `blind_spots`, a deterministic, non-LLM list of what the snapshot
+  could not see (a deleted check, insufficient anomaly history, no lineage). Read-only —
+  nothing is saved to the suite, so it's gated the same as reading the incident itself. The
+  evidence card's own `observed_value` is routed through DataQ's standard column-policy/
+  warehouse-tag redaction before the prompt is built. The review surface ships next.
+
 - **Bring-your-own LLM provider (admin-configured, off by default).** A workspace admin can
   now point DataQ at an LLM — the Anthropic API, Azure OpenAI, AWS Bedrock, or any
   OpenAI-compatible endpoint including a self-hosted local server (Ollama / vLLM / TGI) —
-  under **Admin → LLM**, with a live *Test* probe before enabling. This is the foundation
-  for the upcoming authoring assists (natural-language → SQL check generation, curated
-  check suggestions, failure root-cause narratives); nothing calls the model until one of
-  those features is used. The credential is write-only into the configured secret store and
+  under **Admin → LLM**, with a live *Test* probe before enabling. This is the seam the
+  authoring assists above build on (natural-language → SQL check generation, curated check
+  suggestions, failure root-cause narratives); nothing calls the model until one of those
+  features is used. The credential is write-only into the configured secret store and
   never returned by any API; every model call is recorded (requester, timing, token counts)
   and surfaced honestly in the deployment-posture disclosure. With no provider configured
   the product is unchanged. Changing the provider or endpoint URL requires re-supplying the

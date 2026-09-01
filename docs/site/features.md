@@ -202,9 +202,22 @@ Delivered when a run breaches its threshold ([Notifications & alerting](notifica
   managed under `/admin` by an existing Admin; `WORKSPACE_ADMIN_EMAILS` still works as a
   bootstrap/break-glass allowlist for a fresh or locked-out workspace.
 
+## AI-assisted authoring and root-cause analysis
+
+An optional, off-by-default LLM integration (bring-your-own Anthropic or OpenAI-compatible
+provider + credential, admin-configured) powers three features: **NL→SQL generation** for
+the custom-SQL check editor, **curated check suggestions** driven by a live column profile
+constrained to a vetted expectation vocabulary, and a **root-cause narrative** for a failed
+check — ranked hypotheses citing real evidence-card layers, plus what the evidence snapshot
+could *not* see. SQL generation and check suggestions send only masked aggregate profiler
+statistics to the provider; the RCA narrative additionally sends the triggering check's own
+observed value, routed through the same column-policy/warehouse-tag redaction floor every
+results surface applies. Raw sample rows never leave the deployment on any path. See
+[Security & data handling](security.md) for the full transfer-vector accounting.
+
 ## AI assistants (MCP)
 
-A curated **47-tool MCP server** at `/mcp` lets Claude / Copilot / Cursor list suites, read
+A curated **48-tool MCP server** at `/mcp` lets Claude / Copilot / Cursor list suites, read
 results, checks, runs, connections, schedules, trigger bindings and notification config,
 trigger and cancel runs, poll status, add/update/delete/snooze checks, dry-run a check preview,
 manage schedules and trigger bindings end-to-end (create / update / delete), import a suite
@@ -212,11 +225,11 @@ and set its run target, read and restore a check's version history, read and set
 column policy, browse **assets** (the tables DataQ monitors, with health and lineage) and
 **incidents** (what is broken right now, with the evidence — acknowledge and resolve them,
 and surface near-miss triggers that silently never fire), list a target's columns, profile
-columns, suggest a PII policy, test a connection, and read the health score and pipeline
-status — in natural language, with the same per-suite authz as the UI. The 47 split three
-ways: **24 read-only, 18 that change state**, and **5 that persist nothing but open a live
-datasource connection with stored credentials** and so are gated like writes ([AI
-assistants](mcp-setup.md), ADR 0008 + its Tier 1–3B amendments).
+columns, suggest a PII policy, test a connection, read a curated docs page, and read the
+health score and pipeline status — in natural language, with the same per-suite authz as the
+UI. The 48 split three ways: **25 read-only, 18 that change state**, and **5 that persist
+nothing but open a live datasource connection with stored credentials** and so are gated like
+writes ([AI assistants](mcp-setup.md), ADR 0008 + its Tier 1–3B amendments).
 
 ## Observability
 
