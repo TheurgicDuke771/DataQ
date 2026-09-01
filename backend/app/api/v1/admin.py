@@ -269,6 +269,7 @@ def put_llm_settings(
 )
 def test_llm_settings(
     payload: LlmSettingsUpdate,
+    current_user: Annotated[User, Depends(require_workspace_admin)],
     db: Annotated[Session, Depends(get_db)],
     secret_store: Annotated[SecretStore, Depends(get_secret_store)],
 ) -> LlmTestResponse:
@@ -284,6 +285,7 @@ def test_llm_settings(
                 enabled=payload.enabled,
             ),
             secret_store=secret_store,
+            actor=current_user,
         )
     )
 
@@ -467,10 +469,10 @@ def _llm_intelligence_transfer(db: Session) -> ExternalTransfer:
                 "and check-suggestion prompts are schema plus masked aggregate "
                 "profiler statistics; root-cause-analysis narratives additionally "
                 "send the triggering check's own observed/expected values, not yet "
-                "routed through that same mask. Never raw sample rows. Every feature "
-                "invocation is recorded in llm_invocations with requester and token "
-                "counts — the admin connection-test probe is a live call and is not. "
-                "Distinct from mcp_ai_clients above, which is inbound."
+                "routed through that same mask. Never raw sample rows. Every call — "
+                "feature invocation or admin test probe alike — is recorded in "
+                "llm_invocations with requester and token counts. Distinct from "
+                "mcp_ai_clients above, which is inbound."
             ),
         )
     if row is not None:

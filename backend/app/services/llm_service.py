@@ -186,11 +186,12 @@ def _provider_from(
 
 
 def test_settings(
-    session: Session, *, draft: LlmSettingsDraft, secret_store: SecretStore
+    session: Session, *, draft: LlmSettingsDraft, secret_store: SecretStore, actor: User
 ) -> dict[str, Any]:
-    """Live reachability probe of a DRAFT config (nothing persisted). A draft
-    without a key falls back to the stored credential only when the destination
-    matches the stored row — the same rule `save_settings` enforces.
+    """Live reachability probe of a DRAFT config (nothing persisted, except the
+    `LlmInvocation` audit row below). A draft without a key falls back to the
+    stored credential only when the destination matches the stored row — the
+    same rule `save_settings` enforces.
     """
     _validate_draft(draft)
     api_key = draft.api_key
@@ -202,7 +203,10 @@ def test_settings(
             and (draft.provider, draft.base_url) == (row.provider, row.base_url)
         ):
             # A probe must report, not 500 — and an outage stays distinct from a
-            # missing secret (the ADR 0039 rule).
+            # missing secret (the ADR 0039 rule). Neither path below reaches the
+            # provider, so — unlike the round-trip further down — nothing is
+            # recorded here: an invocation row would misrepresent a call that
+            # never happened.
             try:
                 api_key = secret_store.get(row.api_key_secret_ref)
             except SecretNotFoundError:
@@ -217,6 +221,19 @@ def test_settings(
                     "error_code": "secret_store_unavailable",
                     "error": "the secret store is unreachable — the stored key could not be read",
                 }
+    # #1773: this IS a genuine outbound round-trip (a fixed, non-data test
+    # prompt, but a real call against the admin's chosen — possibly draft,
+    # possibly not-yet-`enabled` — endpoint), so it gets the same audit row
+    # every feature invocation does; the "every call is recorded" compliance
+    # claim (`admin.py`'s `_llm_intelligence_transfer`) was false without it.
+    # `kind="ping"` — reserved in `LLM_INVOCATION_KINDS` for exactly this,
+    # never dispatched through `execute_invocation`/`KIND_BUILDERS` since this
+    # call is synchronous, not queued.
+    invocation = LlmInvocation(
+        kind="ping", status="running", requested_by_user_id=actor.id, started_at=datetime.now(UTC)
+    )
+    session.add(invocation)
+    session.flush()
     started = time.monotonic()
     try:
         provider = _provider_from(
@@ -230,11 +247,22 @@ def test_settings(
             "Reply with the single word: ok", max_tokens=16, timeout=_TEST_TIMEOUT_SECONDS
         )
     except (LLMUnavailableError, LLMProviderError, LLMConfigInvalidError) as exc:
+        invocation.status = "failed"
+        invocation.error = f"{exc.code}: {exc.message}"[:1024]
+        invocation.finished_at = datetime.now(UTC)
+        invocation.duration_ms = int((time.monotonic() - started) * 1000)
+        session.commit()
         return {"ok": False, "error_code": exc.code, "error": exc.message}
+    invocation.status = "succeeded"
+    invocation.input_tokens = result.input_tokens
+    invocation.output_tokens = result.output_tokens
+    invocation.finished_at = datetime.now(UTC)
+    invocation.duration_ms = int((time.monotonic() - started) * 1000)
+    session.commit()
     return {
         "ok": True,
         "model": draft.model,
-        "latency_ms": int((time.monotonic() - started) * 1000),
+        "latency_ms": invocation.duration_ms,
         "reply_chars": len(result.text),
     }
 

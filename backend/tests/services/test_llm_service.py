@@ -172,22 +172,78 @@ def test_test_settings_uses_stored_key_only_for_same_destination(
         return _FakeProvider()
 
     monkeypatch.setattr(llm_service, "_provider_from", _fake_provider_from)
-    same = llm_service.test_settings(db_session, draft=_draft(), secret_store=store)
+    same = llm_service.test_settings(db_session, draft=_draft(), secret_store=store, actor=admin)
     assert same["ok"] is True
     moved = llm_service.test_settings(
-        db_session, draft=_draft(base_url="http://other.example/v1"), secret_store=store
+        db_session,
+        draft=_draft(base_url="http://other.example/v1"),
+        secret_store=store,
+        actor=admin,
     )
     assert moved["ok"] is True
     assert seen_keys == ["sk-1", None]  # the stored key never follows a moved destination
 
 
 def test_test_settings_reports_outage_as_outage(
-    db_session: Any, monkeypatch: pytest.MonkeyPatch
+    db_session: Any, admin: User, monkeypatch: Any
 ) -> None:
     monkeypatch.setattr(llm_service, "_provider_from", lambda **_kw: _FakeProvider(fail=True))
-    out = llm_service.test_settings(db_session, draft=_draft(), secret_store=FakeSecretStore())
+    out = llm_service.test_settings(
+        db_session, draft=_draft(), secret_store=FakeSecretStore(), actor=admin
+    )
     assert out["ok"] is False
     assert out["error_code"] == "llm_provider_unavailable"
+
+
+def test_test_settings_records_an_invocation_row_on_success(
+    db_session: Any, admin: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#1773: this IS a genuine outbound round-trip — the compliance claim
+    "every call is recorded with requester and token counts" was false without
+    this, since `test_settings` never landed an `LlmInvocation` row at all.
+    """
+    monkeypatch.setattr(llm_service, "_provider_from", lambda **_kw: _FakeProvider())
+    out = llm_service.test_settings(
+        db_session, draft=_draft(), secret_store=FakeSecretStore(), actor=admin
+    )
+    assert out["ok"] is True
+    (invocation,) = db_session.query(LlmInvocation).filter_by(kind="ping").all()
+    assert invocation.status == "succeeded"
+    assert invocation.requested_by_user_id == admin.id
+    assert invocation.input_tokens == 3
+    assert invocation.output_tokens == 1
+    assert invocation.finished_at is not None
+
+
+def test_test_settings_records_an_invocation_row_on_failure(
+    db_session: Any, admin: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(llm_service, "_provider_from", lambda **_kw: _FakeProvider(fail=True))
+    out = llm_service.test_settings(
+        db_session, draft=_draft(), secret_store=FakeSecretStore(), actor=admin
+    )
+    assert out["ok"] is False
+    (invocation,) = db_session.query(LlmInvocation).filter_by(kind="ping").all()
+    assert invocation.status == "failed"
+    assert invocation.requested_by_user_id == admin.id
+    assert invocation.error is not None and "down" in invocation.error
+
+
+def test_test_settings_records_no_invocation_when_the_provider_is_never_reached(
+    db_session: Any, admin: User
+) -> None:
+    """The credential-missing / secret-store-unavailable early returns never
+    call the provider — recording a row for those would misrepresent a call
+    that never happened.
+    """
+    store = FakeSecretStore()
+    llm_service.save_settings(
+        db_session, draft=_draft(api_key="sk-1"), actor=admin, secret_store=store
+    )
+    store.data.clear()  # the ref now dangles
+    out = llm_service.test_settings(db_session, draft=_draft(), secret_store=store, actor=admin)
+    assert out["error_code"] == "llm_credential_missing"
+    assert db_session.query(LlmInvocation).filter_by(kind="ping").count() == 0
 
 
 # ── invocation lifecycle ─────────────────────────────────────────────────────
@@ -447,7 +503,7 @@ def test_test_settings_reports_secret_store_states_distinctly(db_session: Any, a
         db_session, draft=_draft(api_key="sk-1"), actor=admin, secret_store=store
     )
     store.data.clear()  # the ref now dangles
-    missing = llm_service.test_settings(db_session, draft=_draft(), secret_store=store)
+    missing = llm_service.test_settings(db_session, draft=_draft(), secret_store=store, actor=admin)
     assert missing == {
         "ok": False,
         "error_code": "llm_credential_missing",
@@ -457,6 +513,7 @@ def test_test_settings_reports_secret_store_states_distinctly(db_session: Any, a
         db_session,
         draft=_draft(),
         secret_store=FakeSecretStore(raise_on_get=SecretStoreUnavailableError("sealed")),
+        actor=admin,
     )
     assert sealed["error_code"] == "secret_store_unavailable"
 
