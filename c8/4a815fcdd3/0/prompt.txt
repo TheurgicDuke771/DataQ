@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bd6qnqggw</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/73687eb1-c819-42a7-ab35-5fc0e83d0623/tasks/bd6qnqggw.output</output-file>
+<status>completed</status>
+<summary>Background command "gh pr checks 1796 --watch --interval 20 2&gt;&amp;1 | tail -60" completed (exit code 0)</summary>
+</task-notification>
