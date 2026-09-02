@@ -1,0 +1,17 @@
+What will be the benifits of creating the dataq-client wheel? and what are the functionalities we are planning to expose through it?
+
+---
+
+great, can you also reasearch on how our compition does it?
+
+---
+
+okay let's update the #1829 with the details
+
+---
+
+Is our documentation on par with compition?
+
+---
+
+Okay. Let's reimagine and reorganize our documentation. Make it more modern, more user friendly, more beginner friendly. But keep where we at excel today. the architect, the compliance, the ADR. the engineering. Also make it more visual. Let's add screenshots. and short videos where possible. Come up with a plan first, then start execution.

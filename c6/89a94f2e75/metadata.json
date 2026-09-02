@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "c689a94f2e75",
+  "strategy": "manual-commit",
+  "branch": "docs/redesign-p1-ia",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "mkdocs.yml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/c6/89a94f2e75/0/metadata.json",
+      "transcript": "/c6/89a94f2e75/0/full.jsonl",
+      "compact_transcript": "/c6/89a94f2e75/0/transcript.jsonl",
+      "content_hash": "/c6/89a94f2e75/0/content_hash.txt",
+      "prompt": "/c6/89a94f2e75/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 3395,
+    "cache_creation_tokens": 92621,
+    "cache_read_tokens": 7355322,
+    "output_tokens": 47890,
+    "api_call_count": 42
+  }
+}
