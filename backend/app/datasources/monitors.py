@@ -47,12 +47,22 @@ class MonitorConfigError(SafeMonitorError, ValueError):
         self.column = column
 
 
+# A MonitorConfigError message reaches the REST error envelope and the logs, so a
+# caller-supplied value it names is echoed bounded, never verbatim (#1787).
+_ECHO_MAX_CHARS = 200
+
+
+def _echo(value: object) -> str:
+    text = repr(value)
+    return text if len(text) <= _ECHO_MAX_CHARS else text[:_ECHO_MAX_CHARS] + "…"
+
+
 def _ident(name: object, *, what: str) -> str:
     """Validate a user-authored SQL identifier (no bound-param slot exists for
     identifiers) via the shared `datasources.sql` allowlist (#428).
     """
     if not isinstance(name, str) or not is_sql_identifier(name):
-        raise MonitorConfigError(f"invalid {what} identifier: {name!r}")
+        raise MonitorConfigError(f"invalid {what} identifier: {_echo(name)}")
     return name
 
 
@@ -152,9 +162,11 @@ def _volume_bounds(config: dict[str, Any]) -> tuple[int, int]:
         min_rows = int(config["min_rows"])
         max_rows = int(config["max_rows"])
     except (KeyError, TypeError, ValueError) as exc:
-        raise MonitorConfigError(f"volume needs integer min_rows/max_rows: {config!r}") from exc
+        raise MonitorConfigError(
+            f"volume needs integer min_rows/max_rows: {_echo(config)}"
+        ) from exc
     if min_rows < 0 or max_rows < min_rows:
-        raise MonitorConfigError(f"volume range must be 0 <= min_rows <= max_rows: {config!r}")
+        raise MonitorConfigError(f"volume range must be 0 <= min_rows <= max_rows: {_echo(config)}")
     return min_rows, max_rows
 
 
@@ -255,7 +267,7 @@ def _validate_schema_drift(config: dict[str, Any]) -> None:
     if ignore is None:
         return
     if not isinstance(ignore, list):
-        raise MonitorConfigError(f"ignore_columns must be a list of column names: {ignore!r}")
+        raise MonitorConfigError(f"ignore_columns must be a list of column names: {_echo(ignore)}")
     for name in ignore:
         _ident(name, what="ignored column")
 
@@ -335,7 +347,7 @@ def _anomaly_int(config: dict[str, Any], key: str, default: int, *, low: int, hi
     if isinstance(raw, float) and raw.is_integer():
         raw = int(raw)
     if not isinstance(raw, int):
-        raise MonitorConfigError(f"anomaly {key} must be an integer: {raw!r}")
+        raise MonitorConfigError(f"anomaly {key} must be an integer: {_echo(raw)}")
     if not low <= raw <= high:
         raise MonitorConfigError(f"anomaly {key} must be between {low} and {high}: {raw}")
     return raw
@@ -378,7 +390,7 @@ def anomaly_params(config: dict[str, Any]) -> AnomalyParams:
     )
     seasonality = config.get("seasonality", False)
     if not isinstance(seasonality, bool):
-        raise MonitorConfigError(f"anomaly seasonality must be true or false: {seasonality!r}")
+        raise MonitorConfigError(f"anomaly seasonality must be true or false: {_echo(seasonality)}")
     return AnomalyParams(
         target_metric=str(target_metric),
         column=column,
