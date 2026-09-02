@@ -6,6 +6,7 @@ import math
 from collections.abc import Mapping
 from typing import Any
 
+import numpy as np
 import pandas as pd
 import pytest
 from sqlalchemy.engine.default import DefaultDialect
@@ -965,6 +966,39 @@ def test_to_native_handles_none_and_nan() -> None:
     assert _to_native(None) is None
     assert _to_native(float("nan")) is None
     assert _to_native(5) == 5
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        pytest.param(np.datetime64("2026-01-01T00:00:00.000000000"), id="datetime64-ns"),
+        pytest.param(np.datetime64("2026-01-01T00:00:00.123456789"), id="datetime64-ns-sub"),
+        pytest.param(np.datetime64("2026-01-01"), id="datetime64-D"),
+        pytest.param(np.datetime64("NaT", "ns"), id="datetime64-nat"),
+        pytest.param(np.int64(7), id="int64"),
+        pytest.param(np.float64("nan"), id="float64-nan"),
+        pytest.param(np.bool_(True), id="bool"),
+        pytest.param(np.bytes_(b"\x01"), id="bytes"),
+    ],
+)
+def test_to_native_renders_numpy_scalars_identically_to_sanitize_json(raw: object) -> None:
+    # #1803 (review): `_to_native` had its own bare `.item()`, so a `datetime64[ns]` became
+    # the int `1767225600000000000` and short-circuited at the int check — the same bug
+    # `sanitize_json` fixed at its root, in a second root. One root now.
+    from backend.app.core.jsonsafe import sanitize_json
+    from backend.app.services.profile_service import _to_native
+
+    flat_file = _to_native(raw)
+    sql_path = sanitize_json(raw)
+    assert flat_file == sql_path
+    assert type(flat_file) is type(sql_path)
+    json.dumps(flat_file, allow_nan=False)
+
+
+def test_to_native_datetime64_ns_is_an_iso_string() -> None:
+    from backend.app.services.profile_service import _to_native
+
+    assert _to_native(np.datetime64("2026-01-01T00:00:00.000000000")) == "2026-01-01T00:00:00"
 
 
 @pytest.mark.parametrize(
