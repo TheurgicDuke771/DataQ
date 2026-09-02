@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "85fd064d3a5b",
+  "strategy": "manual-commit",
+  "branch": "docs/progress-backlog-burndown-2026-09-02",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/85/fd064d3a5b/0/metadata.json",
+      "transcript": "/85/fd064d3a5b/0/full.jsonl",
+      "compact_transcript": "/85/fd064d3a5b/0/transcript.jsonl",
+      "content_hash": "/85/fd064d3a5b/0/content_hash.txt",
+      "prompt": "/85/fd064d3a5b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 16169,
+    "cache_creation_tokens": 1045443,
+    "cache_read_tokens": 50328732,
+    "output_tokens": 159479,
+    "api_call_count": 170
+  }
+}
