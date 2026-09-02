@@ -125,12 +125,16 @@ To exercise erasure on a demo user before relying on it for a real request:
   differently-formatted cell that is semantically the same value but not the same
   string representation will not match — state that in the response to the
   subject if a match seems to be missing.
-- **`incidents.evidence` is matched by the check's CURRENT tested column.** Both
-  endpoints scan the incident evidence snapshot (see §0) as well as `results`, but an
-  incident keeps no `Result` row, so the point-in-time column resolution the `results`
-  scan uses is not available there; a check whose `column` was edited after the
-  incident opened can hide a snapshot from the match. If a subject's value was
-  captured under an earlier column name, run the request once per name.
+- **`incidents.evidence` is matched by the tested column as of the snapshot's write
+  time, not the check's current one.** Both endpoints scan the incident evidence
+  snapshot (see §0) as well as `results`. An incident keeps no `Result` row, so the
+  column is resolved from the check's version history as of the incident's
+  `last_seen_at` — the moment the evidence was last (re)written — the same rule the
+  `results` scan applies per row. A check whose `column` was edited after the
+  incident last fired therefore no longer hides its snapshot from the match. The one
+  residual: a check with **no** version history (created before `check_versions`
+  existed and never edited since) resolves to its current column, which for such a
+  check is also the only column it has ever had.
 - **This does not touch the controller's warehouse** — see §0.
 
-Last reviewed: 2026-09-01.
+Last reviewed: 2026-09-02.

@@ -239,6 +239,17 @@ the per-PR history lives in the repo's commit log and pull requests.
   /api/v1/admin/auth-email/test`) is unchanged — it still exercises the api's own transport,
   synchronously, so use it to find a broken relay. ADR 0032 carries the amendment.
 
+- **The incident-evidence redaction backfill and the subject-rights incident scan classified
+  a stored snapshot by the check's *current* column and type.** Every live surface resolves
+  `(tested_column, expectation_type)` as of when a value was written, from the check's
+  version history; the required post-deploy backfill
+  (`backend/scripts/redact_stale_incident_evidence.py`) and the data-subject-request
+  incident scan read the check's current row instead, so a check edited after an incident
+  opened could make the backfill rewrite the only stored copy of the evidence differently
+  from every other surface (leaving a value raw, or masking a count), and could hide an
+  incident snapshot from a subject-access or erasure request. Both now resolve the pair as
+  of the incident's `last_seen_at` — the moment its evidence was last written.
+
 - **A scalar `observed_value` with no resolvable column was shown unscreened.** When a
   result's tested column could not be determined — a custom-SQL check (no single column),
   a check deleted after the run, or a caller supplying no context — the scalar branch of the

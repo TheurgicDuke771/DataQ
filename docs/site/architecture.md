@@ -342,7 +342,7 @@ erDiagram
         string kind "ping / sql_generation / check_suggestion / rca_narrative"
         string status "pending / running / succeeded / failed"
         uuid requested_by_user_id FK "SET NULL - record outlives requester"
-        uuid suite_id FK "CASCADE"
+        uuid suite_id FK "SET NULL - the cost record outlives its scope"
         jsonb request "caller ask - never warehouse values"
         string context_fingerprint "sha256 of the assembled prompt"
         jsonb response
@@ -376,7 +376,7 @@ erDiagram
     users |o--o{ check_versions : "changed_by (SET NULL)"
     users |o--o{ audit_events : "actor_user_id (SET NULL)"
     users |o--o{ llm_invocations : "requested_by (SET NULL)"
-    suites |o--o{ llm_invocations : "context scope (CASCADE)"
+    suites |o--o{ llm_invocations : "context scope (SET NULL)"
 
     connections ||--o{ connection_versions : "config history (CASCADE)"
     connections ||--o{ suites : "datasource for"

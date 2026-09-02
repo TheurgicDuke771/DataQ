@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -13,6 +14,7 @@ from sqlalchemy.orm import Session as SASession
 from backend.app.db.models import (
     Asset,
     Check,
+    CheckVersion,
     Connection,
     Incident,
     Result,
@@ -882,3 +884,279 @@ def test_redact_stale_evidence_is_idempotent(db_session: Any, world: dict[str, A
 
     assert first == 1
     assert second == 0
+
+
+# ── once-per-run context resolution (#1792) ───────────────────────────────────
+
+
+def test_sync_issues_one_check_versions_query_regardless_of_failing_count(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    """`_sync_incidents_for_run` resolves `historical_check_context` ONCE over all
+    failing results (#1792) — one `check_versions` query for the run, not one per
+    failing check. Also pins the batched `Check` load and the PII floor still
+    applying on the batched path (a PII column stays masked in the stored card).
+    """
+    from sqlalchemy import event
+
+    from backend.app.db.models import CheckVersion
+
+    suite = world["suite"]
+    suite.column_policy = {"pii_columns": ["EMAIL"]}
+    db_session.add(suite)
+    checks = [_check(db_session, suite, name=f"c{i}") for i in range(4)]
+    checks[0].config = {"column": "EMAIL"}
+    db_session.add(checks[0])
+    run = Run(suite_id=suite.id, status="succeeded", triggered_by="manual", asset_id=suite.asset_id)
+    db_session.add(run)
+    db_session.flush()
+    for i, check in enumerate(checks):
+        # Value-signal classification masks an email-shaped string on ANY column, so only the
+        # policy-covered check carries one; the rest carry a plain scalar that must stay shown.
+        db_session.add(
+            Result(
+                run_id=run.id,
+                check_id=check.id,
+                status="fail",
+                observed_value={"observed_value": "victim@example.com" if i == 0 else 42},
+            )
+        )
+    db_session.commit()
+    db_session.expire_all()  # the per-check `session.get` must actually hit the DB
+
+    statements: list[str] = []
+
+    def _record(_conn: Any, _cursor: Any, statement: str, *_rest: Any) -> None:
+        statements.append(statement)
+
+    event.listen(db_session.bind, "before_cursor_execute", _record)
+    try:
+        incident_service.sync_incidents_for_run(db_session, run_id=run.id)
+    finally:
+        event.remove(db_session.bind, "before_cursor_execute", _record)
+
+    version_queries = [s for s in statements if CheckVersion.__tablename__ in s]
+    assert len(version_queries) == 1, f"expected ONE check_versions query, got {version_queries}"
+    check_loads = [s for s in statements if s.lstrip().startswith("SELECT") and "FROM checks" in s]
+    assert len(check_loads) == 1, f"expected ONE batched checks load, got {check_loads}"
+
+    incidents = {i.check_id: i for i in db_session.scalars(select(Incident))}
+    assert len(incidents) == 4
+    masked = incidents[checks[0].id].evidence["failing_result"]["observed_value"]
+    assert masked == {"observed_value": "<redacted>"}
+    shown = incidents[checks[1].id].evidence["failing_result"]["observed_value"]
+    assert shown == {"observed_value": 42}
+
+
+def test_sync_skips_context_resolution_when_nothing_fails(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    """An all-passing run must not pay the batched `Check` / `check_versions` /
+    `Suite` loads at all (#1817 review) — they feed cards that are never built.
+    """
+    from sqlalchemy import event
+
+    from backend.app.db.models import CheckVersion
+
+    run = _run_with_result(db_session, world["suite"], world["check"], status="pass")
+    db_session.expire_all()
+
+    statements: list[str] = []
+
+    def _record(_conn: Any, _cursor: Any, statement: str, *_rest: Any) -> None:
+        statements.append(statement)
+
+    event.listen(db_session.bind, "before_cursor_execute", _record)
+    try:
+        incident_service.sync_incidents_for_run(db_session, run_id=run.id)
+    finally:
+        event.remove(db_session.bind, "before_cursor_execute", _record)
+
+    assert not [s for s in statements if CheckVersion.__tablename__ in s]
+    assert not [s for s in statements if s.lstrip().startswith("SELECT") and "FROM checks" in s]
+    assert not [s for s in statements if s.lstrip().startswith("SELECT") and "FROM suites" in s]
+
+
+def test_sync_degrades_per_card_when_batched_context_resolution_raises(
+    db_session: Any, world: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If the once-per-run context resolution itself raises, the run's incidents
+    still open (#1817 review): each card falls back to resolving its own context
+    inside the `_layer` guard, so `failing_result` stays populated AND masked.
+    """
+    suite = world["suite"]
+    suite.column_policy = {"pii_columns": ["EMAIL"]}
+    db_session.add(suite)
+    check = world["check"]
+    check.config = {"column": "EMAIL"}
+    db_session.add(check)
+    db_session.commit()
+    run = Run(suite_id=suite.id, status="succeeded", triggered_by="manual", asset_id=suite.asset_id)
+    db_session.add(run)
+    db_session.flush()
+    db_session.add(
+        Result(
+            run_id=run.id,
+            check_id=check.id,
+            status="fail",
+            observed_value={"observed_value": "victim@example.com"},
+        )
+    )
+    db_session.commit()
+
+    def boom(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("context resolution exploded")
+
+    monkeypatch.setattr(incident_service, "resolve_redaction_contexts", boom)
+    incident_service.sync_incidents_for_run(db_session, run_id=run.id)
+
+    incidents = _active(db_session, suite.asset_id, check.id)
+    assert len(incidents) == 1
+    assert incidents[0].evidence is not None
+    observed = incidents[0].evidence["failing_result"]["observed_value"]
+    assert observed == {"observed_value": "<redacted>"}
+
+
+def _version(
+    db: Any, check: Check, *, version_no: int, config: dict[str, Any], at: datetime
+) -> None:
+    db.add(
+        CheckVersion(
+            check_id=check.id,
+            version_no=version_no,
+            name=check.name,
+            kind=check.kind,
+            expectation_type=check.expectation_type,
+            config=config,
+            created_at=at,
+        )
+    )
+
+
+def test_redact_stale_evidence_classifies_by_the_pair_in_effect_when_the_evidence_was_written(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    """#1809: the snapshot was captured while the check tested the PII column
+    `EMAIL`; the check was then edited to test `id`. Every live surface resolves
+    the pair as of the write time via `historical_check_context`, so the backfill
+    must too — classifying by the CURRENT column would leave the raw address in
+    the only stored copy while the same value is masked everywhere else. The value is
+    deliberately NOT PII-shaped, so only the column's policy classification — not the
+    value-shape signal — decides, and the test fails against the unfixed code."""
+    suite = world["suite"]
+    suite.column_policy = {"pii_columns": ["EMAIL"]}
+    db_session.add(suite)
+    check = _check(db_session, suite, name="orders_email_not_null")
+    check.config = {"column": "id"}  # the CURRENT column — not sensitive
+    db_session.add(check)
+    t0 = datetime(2026, 1, 1, tzinfo=UTC)
+    t1 = datetime(2026, 2, 1, tzinfo=UTC)
+    _version(db_session, check, version_no=1, config={"column": "EMAIL"}, at=t0)
+    _version(db_session, check, version_no=2, config={"column": "id"}, at=t1)
+    incident = Incident(
+        asset_id=suite.asset_id,
+        check_id=check.id,
+        suite_id=suite.id,
+        status="open",
+        created_at=t0,
+        last_seen_at=t0,
+        evidence={
+            "failing_result": {
+                "status": "fail",
+                "metric_value": None,
+                "observed_value": {"observed_value": "ORD-0001"},
+                "expected_value": None,
+            }
+        },
+    )
+    db_session.add(incident)
+    db_session.commit()
+
+    updated = incident_service.redact_stale_evidence(db_session)
+
+    assert updated == 1
+    db_session.refresh(incident)
+    assert incident.evidence is not None
+    assert incident.evidence["failing_result"]["observed_value"]["observed_value"] == "<redacted>"
+
+
+def _count_incident_edited_onto_a_pii_column(
+    db_session: Any, world: dict[str, Any], *, policy: dict[str, Any]
+) -> Incident:
+    """A row-count check (no column) whose evidence held a count of 0, later edited into a
+    column-bearing type on the PII column `EMAIL` — the issue's own scenario."""
+    suite = world["suite"]
+    suite.column_policy = policy
+    db_session.add(suite)
+    check = _check(db_session, suite, name="orders_rows")
+    check.config = {"column": "EMAIL"}  # CURRENT: column-bearing, on the PII column
+    db_session.add(check)
+    t0 = datetime(2026, 1, 1, tzinfo=UTC)
+    t1 = datetime(2026, 2, 1, tzinfo=UTC)
+    db_session.add(
+        CheckVersion(
+            check_id=check.id,
+            version_no=1,
+            name=check.name,
+            kind=check.kind,
+            expectation_type="expect_table_row_count_to_be_between",
+            config={"min_value": 1},
+            created_at=t0,
+        )
+    )
+    _version(db_session, check, version_no=2, config={"column": "EMAIL"}, at=t1)
+    incident = Incident(
+        asset_id=suite.asset_id,
+        check_id=check.id,
+        suite_id=suite.id,
+        status="open",
+        created_at=t0,
+        last_seen_at=t0,
+        evidence={
+            "failing_result": {
+                "status": "fail",
+                "metric_value": 0.0,
+                "observed_value": {"observed_value": 0},
+                "expected_value": None,
+            }
+        },
+    )
+    db_session.add(incident)
+    db_session.commit()
+    return incident
+
+
+def test_redact_stale_evidence_keeps_a_count_the_live_surface_would_show(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    """#1809's other direction: the type in effect when the evidence was written makes the
+    scalar a statistic, which the live surfaces show; classifying by the CURRENT pair
+    (a PII column) would irreversibly mask the stored count."""
+    incident = _count_incident_edited_onto_a_pii_column(
+        db_session, world, policy={"pii_columns": ["EMAIL"]}
+    )
+
+    updated = incident_service.redact_stale_evidence(db_session)
+
+    assert updated == 0
+    db_session.refresh(incident)
+    assert incident.evidence is not None
+    assert incident.evidence["failing_result"]["observed_value"] == {"observed_value": 0}
+
+
+def test_redact_stale_evidence_masks_a_count_on_a_fail_closed_suite_like_the_live_surface(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    """Under G3 fail-closed mode a column-less statistic is "not known safe" and masks on
+    every live surface (#1801). The backfill applies the same rule under the historical
+    pair — it must never be looser than the surfaces that read the snapshot."""
+    incident = _count_incident_edited_onto_a_pii_column(
+        db_session, world, policy={"require_classification": True}
+    )
+
+    updated = incident_service.redact_stale_evidence(db_session)
+
+    assert updated == 1
+    db_session.refresh(incident)
+    assert incident.evidence is not None
+    assert incident.evidence["failing_result"]["observed_value"] == {"observed_value": "<redacted>"}

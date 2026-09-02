@@ -93,8 +93,64 @@ def test_the_migrations_build_the_schema_the_model_describes(migrated_url: str) 
     # `alembic_version` is alembic's own bookkeeping and is deliberately absent
     # from the model — it is the one expected difference, not drift.
     drift = [d for d in diffs if "alembic_version" not in repr(d)]
+    # An EXPRESSION index (#1814) is one `compare_metadata` cannot compare: the model's
+    # `text(...)` and the reflected definition are both opaque to it, so it always emits an
+    # add/remove pair for the same name. Pair those up and compare the expressions ourselves.
+    drift, textual = _split_textual_index_pairs(drift)
+    for name, model_index in textual.items():
+        _assert_expression_index_matches(model_index, _live_index_definition(migrated_url, name))
 
     assert not drift, "model and migrations disagree:\n" + "\n".join(repr(d) for d in drift)
+
+
+def _split_textual_index_pairs(diffs: list[Any]) -> tuple[list[Any], dict[str, Any]]:
+    """Pull out add_index/remove_index pairs on one name whose model side is a textual
+    expression; everything else stays as drift."""
+    by_name: dict[str, dict[str, Any]] = {}
+    for d in diffs:
+        if isinstance(d, tuple) and d[0] in ("add_index", "remove_index"):
+            by_name.setdefault(str(d[1].name), {})[d[0]] = d[1]
+    textual = {
+        name: pair["add_index"]
+        for name, pair in by_name.items()
+        if set(pair) == {"add_index", "remove_index"}
+        and any(type(e).__name__ == "_textual_index_element" for e in pair["add_index"].expressions)
+    }
+    rest = [
+        d
+        for d in diffs
+        if not (
+            isinstance(d, tuple) and d[0] in ("add_index", "remove_index") and d[1].name in textual
+        )
+    ]
+    return rest, textual
+
+
+def _live_index_definition(url: str, name: str) -> str:
+    engine = create_engine(url)
+    try:
+        with engine.connect() as conn:
+            definition = conn.execute(
+                text("SELECT indexdef FROM pg_indexes WHERE indexname = :n"), {"n": name}
+            ).scalar_one()
+    finally:
+        engine.dispose()
+    return str(definition)
+
+
+def _assert_expression_index_matches(model_index: Any, live_definition: str) -> None:
+    """Postgres re-parenthesises and adds `::text` casts on read-back; compare the token
+    stream that survives that rewrite."""
+
+    def _tokens(sql: str) -> list[str]:
+        return re.findall(r"[A-Za-z_][A-Za-z_0-9]*|'[^']*'|\|\|", sql.replace("::text", ""))
+
+    model_expr = " ".join(_tokens(str(model_index.expressions[0])))
+    live_expr = " ".join(_tokens(live_definition.partition(" USING btree ")[2] or live_definition))
+    assert model_expr and model_expr in live_expr, (
+        f"{model_index.name}: model expression `{model_expr}` is not what the migration built: "
+        f"`{live_definition}`"
+    )
 
 
 # ── the drift `compare_metadata` cannot see ────────────────────────────────── Alembic's

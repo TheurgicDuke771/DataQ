@@ -700,6 +700,14 @@ class PipelineRun(Base):
         UniqueConstraint("provider", "provider_run_id", name="uq_pipeline_runs_provider_run"),
         Index("ix_pipeline_runs_provider_pipeline", "provider", "pipeline_or_dag_id"),
         Index("ix_pipeline_runs_connection_id", "connection_id"),
+        # #1814: the `runs.triggered_by` marker reconstructed from the stored columns, so
+        # `orchestration.markers` can look a marker up (and detect a collision) without a
+        # sequential scan. The expression must stay TEXTUALLY what `markers._reconstructed_marker`
+        # emits, or the planner will not match it.
+        Index(
+            "ix_pipeline_runs_marker",
+            text("(provider || ':' || pipeline_or_dag_id || ':' || provider_run_id)"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = _uuid_pk()

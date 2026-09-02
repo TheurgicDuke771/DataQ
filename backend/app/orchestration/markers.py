@@ -33,8 +33,13 @@ def pipeline_run_marker(pipeline_run: PipelineRun) -> str:
 
 
 def _reconstructed_marker() -> ColumnElement[str]:
-    return func.concat(
-        PipelineRun.provider, ":", PipelineRun.pipeline_or_dag_id, ":", PipelineRun.provider_run_id
+    # `||`, not concat(): textually the expression `ix_pipeline_runs_marker` is built on (#1814).
+    return (
+        PipelineRun.provider
+        + ":"
+        + PipelineRun.pipeline_or_dag_id
+        + ":"
+        + PipelineRun.provider_run_id
     )
 
 
@@ -66,8 +71,8 @@ def unambiguous_pipeline_run(session: Session, marker: str) -> PipelineRun | Non
 def ambiguous_markers(session: Session, markers: Iterable[str]) -> set[str]:
     """The subset of ``markers`` more than one stored pipeline run reconstructs to.
 
-    The concat expression has no index (#1814); the provider pre-filter narrows the
-    scan to the providers actually on the page.
+    Served by ``ix_pipeline_runs_marker`` (#1814); the provider pre-filter stays as a
+    cheap second candidate for the planner.
     """
     wanted = set(markers)
     if not wanted:

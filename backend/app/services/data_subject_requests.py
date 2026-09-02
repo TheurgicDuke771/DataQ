@@ -31,7 +31,10 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.db.models import Check, Incident, Result, Run, Suite
-from backend.app.services.run_service import historical_check_context
+from backend.app.services.run_service import (
+    historical_check_context,
+    historical_check_context_at,
+)
 
 # Mirrors run_service._FAILING_ROW_LIST_KEYS / _COMPARISON_SAMPLE_KEYS — the complete
 # set of list-bearing keys `sample_failures` can carry dict-shaped rows under.
@@ -215,9 +218,11 @@ def find_matching_incidents(session: Session, *, column: str, value: str) -> lis
     (#1795). The snapshot is written once per occurrence and is NOT on the retention
     clock, so a value already purged from `results` can still be here.
 
-    The tested column is the check's CURRENT `config.column`: no `Result` row is
-    retained on the incident, so the as-of resolution `historical_check_context`
-    gives results is not available (#1809 tracks an as-of variant).
+    The tested column is resolved AS OF the snapshot's write time — the incident's
+    `last_seen_at`, beside which the evidence is rewritten on every occurrence —
+    through `historical_check_context_at` (#1809), the same rule the `results`
+    scan applies per row, so a check edited after the incident opened can't hide
+    a snapshot captured under the earlier column name.
     """
     rows = session.execute(
         select(Incident, Suite, Check)
@@ -225,10 +230,15 @@ def find_matching_incidents(session: Session, *, column: str, value: str) -> lis
         .join(Check, Incident.check_id == Check.id)
         .where(Incident.evidence.is_not(None))
     ).all()
+    context = historical_check_context_at(
+        session,
+        {incident.id: (incident.check_id, incident.last_seen_at) for incident, _s, _c in rows},
+        {check.id: check for _i, _s, check in rows},
+    )
     matched: list[MatchedIncident] = []
     for incident, suite, check in rows:
         observed = _incident_observed(incident)
-        tested_column = check.config.get("column") if check.config else None
+        tested_column, _expectation_type = context.get(incident.id, (None, None))
         if not _observed_matches(observed, column=column, value=value, tested_column=tested_column):
             continue
         matched.append(
