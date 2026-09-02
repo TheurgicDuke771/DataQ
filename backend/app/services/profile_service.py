@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import decimal
 import io
 import math
 from collections.abc import Callable, Generator, Mapping
@@ -603,7 +604,9 @@ def _to_native(value: Any) -> Any:
         return value
     if isinstance(value, BINARY_TYPES):
         return bytes_to_hex(value)  # same rendering as the SQL path's sanitize_json (#1721)
-    # Anything else a column can hold (Decimal, UUID, …) → a display string, so a
+    if isinstance(value, decimal.Decimal):
+        return sanitize_json(value)  # float, non-finite → None — the SQL path's rendering (#1804)
+    # Anything else a column can hold (UUID, …) → a display string, so a
     # min/max/top value is always JSON-encodable, never a 500 at the response boundary.
     return str(value)
 
