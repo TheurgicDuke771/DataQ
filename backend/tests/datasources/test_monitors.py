@@ -224,6 +224,31 @@ def test_bad_identifiers_never_reach_the_emitted_sql(bad: str) -> None:
         build_monitor_statement("volume", table="t", schema="s", catalog=bad, config={})
 
 
+def test_a_bad_identifier_is_echoed_bounded() -> None:
+    # #1787: the message reaches the REST error envelope and the logs — a 100KB junk identifier
+    # must not round-trip through it.
+    with pytest.raises(MonitorConfigError) as exc_info:
+        monitors._ident("x" * 100_000 + ";", what="freshness column")
+    message = str(exc_info.value)
+    assert message.startswith("invalid freshness column identifier: 'xxx")
+    assert message.endswith("…")
+    assert len(message) < 300
+
+
+def test_a_bad_volume_config_is_echoed_bounded() -> None:
+    config: dict[str, Any] = {"min_rows": "x" * 100_000, "max_rows": 5}
+    with pytest.raises(MonitorConfigError) as exc_info:
+        monitors.validate_monitor_config("volume", config)
+    assert len(str(exc_info.value)) < 300
+
+
+def test_a_bad_anomaly_target_metric_is_echoed_bounded() -> None:
+    # The dry-run door reaches anomaly_params with no size cap in front of it.
+    with pytest.raises(MonitorConfigError) as exc_info:
+        monitors.anomaly_params({"target_metric": "x" * 100_000})
+    assert len(str(exc_info.value)) < 300
+
+
 def test_unknown_kind_raises() -> None:
     # A kind that is not in the registry at all.
     with pytest.raises(MonitorConfigError, match="unknown monitor kind"):

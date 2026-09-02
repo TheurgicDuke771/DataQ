@@ -1044,14 +1044,39 @@ def observed_value_exposes_cells(
     return unparsed is not None and unparsed != _REDACTED_VALUE
 
 
+def _columnless_scalar_shows(
+    value: Any,
+    policy: Mapping[str, Any] | None,
+    tags: Mapping[str, str] | None,
+    *,
+    expectation_type: str | None,
+) -> bool:
+    """Whether a scalar `observed_value` with NO tested column may show (#1793).
+
+    With no column nothing a tag or policy can clear it: it shows only when the producing
+    type makes it a statistic (row / unexpected-row count), not a cell
+    (`_CELL_SCALAR_EXPECTATION_TYPES`); an unknown type fails closed like the list branch.
+    The ladder still runs under an empty name so the value-shape signal and fail-closed
+    mode (G3) apply rather than being short-circuited.
+    """
+    if expectation_type is None or expectation_type in _CELL_SCALAR_EXPECTATION_TYPES:
+        return False
+    return not _known_sensitive("", [value], policy, tags)
+
+
 def redact_observed_value(
     observed: dict[str, Any] | None,
     *,
     tested_column: str | None = None,
     policy: dict[str, Any] | None = None,
     tags: Mapping[str, str] | None = None,
+    expectation_type: str | None = None,
 ) -> dict[str, Any] | None:
-    """Redact a result's `observed_value` for the read API (#989, #1229)."""
+    """Redact a result's `observed_value` for the read API (#989, #1229).
+
+    `expectation_type` is what lets a column-less scalar be shown at all (#1793) —
+    pass it whenever the caller knows it.
+    """
     if not observed:
         return observed
     error = observed.get("error")
@@ -1071,9 +1096,12 @@ def redact_observed_value(
         )
         capped = raw_observed_value[:SAMPLE_ROW_CAP]
         return {**observed, "observed_value": capped if show else _redact_sample_value(capped)}
-    show = tested_column is None or not _known_sensitive(
-        tested_column, [raw_observed_value], policy, tags
-    )
+    if tested_column is not None:
+        show = not _known_sensitive(tested_column, [raw_observed_value], policy, tags)
+    else:
+        show = _columnless_scalar_shows(
+            raw_observed_value, policy, tags, expectation_type=expectation_type
+        )
     if show:
         return observed
     return {**observed, "observed_value": _redact_sample_value(raw_observed_value)}

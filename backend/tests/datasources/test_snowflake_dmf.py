@@ -289,3 +289,14 @@ def test_dmf_types_derive_their_dimension() -> None:
         derive_dimension(expectation_type="dmf:duplicate_count", kind="expectation") == "uniqueness"
     )
     assert derive_dimension(expectation_type="dmf:unique_count", kind="expectation") == "uniqueness"
+
+
+def test_a_bad_dmf_identifier_is_echoed_bounded() -> None:
+    # `_quoted` shares `_ident`'s allowlist AND its bounded echo (#1787).
+    from backend.app.datasources.snowflake_dmf import _quoted
+
+    with pytest.raises(MonitorConfigError) as exc_info:
+        _quoted("x" * 100_000 + ";", what="table")
+    message = str(exc_info.value)
+    assert message.startswith("invalid table identifier: 'xxx") and message.endswith("…")
+    assert len(message) < 300

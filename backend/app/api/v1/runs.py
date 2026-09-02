@@ -20,10 +20,12 @@ from backend.app.db.models import (
     PIPELINE_RUN_STATUSES,
     RUN_STATUSES,
     Check,
+    Run,
     User,
 )
 from backend.app.db.session import get_db
-from backend.app.services import audit_service, orchestration_service, run_dispatch
+from backend.app.orchestration import markers
+from backend.app.services import audit_service, orchestration_service, run_dispatch, suite_service
 from backend.app.services import run_service as svc
 from backend.app.services.comparison_report import ComparisonReportInvalidError, build_report
 from backend.app.services.suite_authz import require_permission
@@ -133,6 +135,10 @@ class PipelineRunRead(ApiModel):
     finished_at: datetime | None
     failure_reason: str | None
     created_at: datetime
+    #: DQ runs this pipeline run triggered (newest first), correlated server-side so a
+    #: colliding `triggered_by` marker fails closed to `[]` instead of claiming another
+    #: row's run (#1728). Visibility-scoped like `/runs`.
+    triggered_run_ids: list[uuid.UUID] = Field(default_factory=list)
 
 
 _OUTCOME_FIELDS = ("checks_total", "checks_passed", "worst_severity")
@@ -223,6 +229,7 @@ def _result_read(
     result: Any,
     *,
     tested_column: str | None = None,
+    expectation_type: str | None = None,
     policy: dict[str, Any] | None = None,
     tags: dict[str, str] | None = None,
 ) -> ResultRead:
@@ -237,7 +244,11 @@ def _result_read(
         metric_value=result.metric_value,
         duration_ms=result.duration_ms,
         observed_value=svc.redact_observed_value(
-            result.observed_value, tested_column=tested_column, policy=policy, tags=tags
+            result.observed_value,
+            tested_column=tested_column,
+            expectation_type=expectation_type,
+            policy=policy,
+            tags=tags,
         ),
         expected_value=result.expected_value,
         sample_failures=sample,
@@ -311,16 +322,17 @@ def get_run(
     # the run fields (as RunRead), graft the data-quality outcome (#571 — else checks_total/passed
     # stay at the 0/0 default here), and attach the separately-fetched, redaction-gated results.
     outcome = svc.check_outcome_counts(db, [run.id]).get(run.id)
+    expectation_types = {r.id: context.get(r.id, (None, None))[1] for r in results}
     reads = [
         _result_read(
             r,
             tested_column=context.get(r.id, (None, None))[0],
+            expectation_type=expectation_types[r.id],
             policy=policy,
             tags=tags,
         )
         for r in results
     ]
-    expectation_types = {r.id: context.get(r.id, (None, None))[1] for r in results}
     _audit_result_read(
         db, current_user, run=run, results=reads, expectation_types=expectation_types
     )
@@ -434,7 +446,25 @@ def list_pipeline_runs(
     pipeline_runs = orchestration_service.list_pipeline_runs(
         db, provider=provider, status=run_status, limit=limit, offset=offset
     )
-    return [PipelineRunRead.model_validate(p) for p in pipeline_runs]
+    triggered = markers.triggered_runs(db, pipeline_runs).by_pipeline_run
+    visible = set(
+        db.scalars(
+            select(Run.id).where(
+                Run.id.in_({rid for ids in triggered.values() for rid in ids}),
+                Run.suite_id.in_(
+                    suite_service.accessible_suite_ids(
+                        current_user.id, include_all=is_workspace_admin(current_user)
+                    )
+                ),
+            )
+        )
+    )
+    return [
+        PipelineRunRead.model_validate(p).model_copy(
+            update={"triggered_run_ids": [r for r in triggered.get(p.id, []) if r in visible]}
+        )
+        for p in pipeline_runs
+    ]
 
 
 @router.get(

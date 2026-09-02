@@ -60,6 +60,7 @@ from backend.app.mcp.auth import (
     mcp_enabled,
     resolve_current_user,
 )
+from backend.app.orchestration import markers
 from backend.app.services import (
     asset_view_service,
     audit_service,
@@ -394,6 +395,7 @@ def _run_results_payload(
             "observed_value": run_service.redact_observed_value(
                 r.observed_value,
                 tested_column=_tested_column(r.id),
+                expectation_type=context.get(r.id, (None, None))[1],
                 policy=policy,
                 tags=tags,
             ),
@@ -721,6 +723,11 @@ def get_pipeline_status(
     also mean no orchestration connection is configured for that provider and
     environment, or that its poller is failing — check ``list_connections``
     before reporting an all-clear.
+
+    ``dq_run`` is ``null`` with ``dq_run_ambiguous: true`` when two pipeline runs
+    share one trigger marker (a colon inside a dbt job name or run id) — the DQ
+    run exists but cannot be attributed to either row, so do not report "no
+    suite was triggered" for it.
     """
     # All three orchestration providers (ADR 0029 added dbt), from the shared
     # vocabulary. The old two-name literal rejected `dbt` — the obvious next call
@@ -741,17 +748,16 @@ def get_pipeline_status(
                 suite_service.accessible_suite_ids(user.id, include_all=is_workspace_admin(user))
             )
         )
+        # Shared reconstruct-and-compare correlation (#1728): a colliding marker
+        # yields NO run rather than another row's run.
+        triggered = markers.triggered_runs(session, runs)
         out: list[dict[str, Any]] = []
         for pr in runs:
-            marker = f"{pr.provider}:{pr.pipeline_or_dag_id}:{pr.provider_run_id}"
-            dq = session.scalars(
-                select(Run).where(Run.triggered_by == marker).order_by(Run.created_at.desc())
-            ).first()
-            correlated = (
-                {"run_id": str(dq.id), "status": dq.status}
-                if dq is not None and dq.suite_id in accessible
-                else None
-            )
+            dq_runs = [session.get(Run, rid) for rid in triggered.by_pipeline_run.get(pr.id, [])]
+            # One pipeline run can trigger several suites; report the newest the
+            # caller can SEE, and call it restricted only when none is visible.
+            dq = next((r for r in dq_runs if r is not None and r.suite_id in accessible), None)
+            correlated = {"run_id": str(dq.id), "status": dq.status} if dq is not None else None
             out.append(
                 {
                     "provider": pr.provider,
@@ -763,7 +769,10 @@ def get_pipeline_status(
                     # Distinguishes "no suite was triggered" from "a suite was
                     # triggered and you cannot see it" — the same fact the
                     # docstring stated in prose and the payload conflated.
-                    "dq_run_restricted": dq is not None and dq.suite_id not in accessible,
+                    "dq_run_restricted": dq is None and any(r is not None for r in dq_runs),
+                    # True when another stored pipeline run reconstructs to the same
+                    # trigger marker, so no DQ run can be attributed to either.
+                    "dq_run_ambiguous": triggered.is_ambiguous(pr),
                 }
             )
         return {
@@ -2151,6 +2160,7 @@ def dryrun_check(
             "observed_value": live_probe.redact_probe_observed_value(
                 outcome.observed_value,
                 tested_column=(config or {}).get("column"),
+                expectation_type=expectation_type,
                 policy=suite.column_policy,
                 # The governance floor applies to a PREVIEW too (G3, #433). A
                 # dry-run reads live warehouse data and hands it to a model, so a

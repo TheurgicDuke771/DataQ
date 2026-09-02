@@ -126,6 +126,7 @@ const pipelineRun: PipelineRun = {
   finished_at: '2026-06-11T00:00:30Z',
   failure_reason: null,
   created_at: '2026-06-11T00:00:00Z',
+  triggered_run_ids: [],
 };
 
 /**
@@ -473,7 +474,7 @@ describe('Results page', () => {
   });
 
   it('correlates a pipeline run to the DQ run it triggered', async () => {
-    // A DQ run stamped with the pipeline run's marker (provider:dag:run_id).
+    // The server correlated this DQ run to the pipeline run; the page resolves the id.
     const triggeredRun: Run = {
       ...failedRun,
       id: 'rdq',
@@ -483,7 +484,9 @@ describe('Results page', () => {
     mockListRuns.mockResolvedValue(runsPage([triggeredRun]));
     mockListSuites.mockResolvedValue([]);
     mockListConnections.mockResolvedValue([]);
-    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([pipelineRun]));
+    mockListPipelineRuns.mockResolvedValue(
+      pipelineRunsPage([{ ...pipelineRun, triggered_run_ids: ['rdq'] }]),
+    );
 
     renderResults();
     const user = userEvent.setup();
@@ -500,8 +503,8 @@ describe('Results page', () => {
   });
 
   it('fetches runs once and shares them across both tabs (#349)', async () => {
-    // A run stamped with the pipeline run's marker so the Pipeline runs tab actually exercises the
-    // shared data (the "DQ run" column), not just an empty join.
+    // A run the server correlated to the pipeline run, so the Pipeline runs tab actually exercises
+    // the shared data (the "DQ run" column), not just an empty join.
     const triggeredRun: Run = {
       ...failedRun,
       id: 'rdq',
@@ -511,7 +514,9 @@ describe('Results page', () => {
     mockListRuns.mockResolvedValue(runsPage([succeededRun, triggeredRun]));
     mockListSuites.mockResolvedValue([ordersSuite]);
     mockListConnections.mockResolvedValue([snowflakeConn]);
-    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([pipelineRun]));
+    mockListPipelineRuns.mockResolvedValue(
+      pipelineRunsPage([{ ...pipelineRun, triggered_run_ids: ['rdq'] }]),
+    );
 
     renderResults();
     const user = userEvent.setup();

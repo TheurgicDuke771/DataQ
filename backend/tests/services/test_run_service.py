@@ -22,6 +22,7 @@ from backend.app.datasources.monitors import MONITOR_KINDS
 from backend.app.datasources.sampling import ScanTooLargeError
 from backend.app.db.models import Check, Result, Run
 from backend.app.services import run_service
+from backend.app.services.custom_sql import CUSTOM_SQL_EXPECTATION_TYPE
 from backend.tests.support.run_phases import collect_outcomes
 
 
@@ -1629,10 +1630,66 @@ def test_redact_observed_value_masks_a_numeric_scalar_for_a_pii_tested_column() 
 
 
 def test_redact_observed_value_shows_a_table_level_scalar_with_no_tested_column() -> None:
-    # A table-level aggregate (a row count) has no tested_column at all — no column context means
-    # nothing to classify, so it passes through.
-    out = run_service.redact_observed_value({"observed_value": 34680})
+    # A table-level aggregate (a row count) has no tested_column at all — the expectation type is
+    # what says the scalar is a statistic rather than a cell, so it passes through (#1793).
+    out = run_service.redact_observed_value(
+        {"observed_value": 34680}, expectation_type="expect_table_row_count_to_be_between"
+    )
     assert out == {"observed_value": 34680}
+
+
+# ── #1793: a column-less scalar fails CLOSED unless its type makes it a statistic ──
+
+
+def test_redact_observed_value_masks_a_columnless_scalar_with_no_expectation_type() -> None:
+    # No column AND no type (a deleted check, or a caller passing no context): nothing says the
+    # scalar is a statistic rather than a cell. Fail closed — the list branch's default.
+    out = run_service.redact_observed_value({"observed_value": 34680})
+    assert out == {"observed_value": "<redacted>"}
+
+
+def test_redact_observed_value_masks_a_cell_scalar_whose_column_is_unknown() -> None:
+    # A max/min IS a cell (#1486); with no column to consult, no tag or policy can clear it.
+    out = run_service.redact_observed_value(
+        {"observed_value": 250_000}, expectation_type="expect_column_max_to_be_between"
+    )
+    assert out == {"observed_value": "<redacted>"}
+
+
+def test_redact_observed_value_screens_a_custom_sql_scalar_by_value_shape() -> None:
+    # The #1793 case: custom SQL (ADR 0019) has no `config.column`, so `tested_column` is None.
+    # Before, `tested_column is None or ...` short-circuited `_known_sensitive` entirely and an
+    # email-shaped scalar showed with ZERO screening, even beside a hard-floor tag.
+    out = run_service.redact_observed_value(
+        {"observed_value": "ada@example.com"},
+        expectation_type=CUSTOM_SQL_EXPECTATION_TYPE,
+        tags={"email": "pii"},
+    )
+    assert out == {"observed_value": "<redacted>"}
+
+
+def test_redact_observed_value_masks_a_custom_sql_scalar_under_fail_closed_mode() -> None:
+    # G3 fail-closed: an unnamed column can never be cleared by a tag or named as the identifier,
+    # so "not known safe" masks it — the same rule the sample path applies.
+    out = run_service.redact_observed_value(
+        {"observed_value": 42},
+        expectation_type=CUSTOM_SQL_EXPECTATION_TYPE,
+        policy={"require_classification": True},
+    )
+    assert out == {"observed_value": "<redacted>"}
+
+
+def test_redact_observed_value_shows_a_custom_sql_count_with_no_column() -> None:
+    # The legitimate reliance the flip must keep: custom SQL's observed_value is the unexpected-row
+    # COUNT by construction (never a cell), and a policy/tag naming OTHER columns has nothing to
+    # say about an unnamed scalar.
+    out = run_service.redact_observed_value(
+        {"observed_value": 42},
+        expectation_type=CUSTOM_SQL_EXPECTATION_TYPE,
+        policy={"pii_columns": ["email"]},
+        tags={"email": "pii"},
+    )
+    assert out == {"observed_value": 42}
 
 
 # ── #1486: observed_value_exposes_cells and a scalar from a cell-reporting type ──

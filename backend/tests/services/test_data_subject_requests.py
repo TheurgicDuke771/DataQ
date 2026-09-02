@@ -4,8 +4,18 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from backend.app.db.models import Check, CheckVersion, Connection, Result, Run, Suite, User
+from backend.app.db.models import (
+    Check,
+    CheckVersion,
+    Connection,
+    Incident,
+    Result,
+    Run,
+    Suite,
+    User,
+)
 from backend.app.services import data_subject_requests as dsr
+from backend.app.services import suite_service
 
 
 def _suite_and_check(
@@ -284,3 +294,119 @@ def test_matches_by_the_column_in_effect_when_the_result_was_written(db_session:
     assert summary.erased_count == 1
     db_session.refresh(result)
     assert result.observed_value == {"observed_value": []}
+
+
+# ── incidents.evidence (#1795) ───────────────────────────────────────────────
+
+
+def _incident(
+    db_session: Any, *, column: str, observed: dict[str, Any] | None
+) -> tuple[Incident, Check]:
+    owner = User(aad_object_id=uuid.uuid4().hex, email=f"u-{uuid.uuid4().hex[:6]}@example.com")
+    db_session.add(owner)
+    db_session.flush()
+    conn = Connection(
+        name=f"sf-{uuid.uuid4().hex[:8]}",
+        type="snowflake",
+        env="dev",
+        config={"account": "a", "database": "RETAIL", "schema": "PUBLIC", "warehouse": "WH"},
+        secret_ref="kv-sf",
+        created_by=owner.id,
+    )
+    db_session.add(conn)
+    db_session.flush()
+    suite = suite_service.create_suite(
+        db_session,
+        name=f"suite-{uuid.uuid4().hex[:6]}",
+        description=None,
+        connection_id=conn.id,
+        created_by=owner.id,
+        target={"table": "ORDERS"},
+    )
+    check = Check(
+        suite_id=suite.id, name="c", expectation_type="expect_x", config={"column": column}
+    )
+    db_session.add(check)
+    db_session.flush()
+    incident = Incident(
+        asset_id=suite.asset_id,
+        check_id=check.id,
+        suite_id=suite.id,
+        status="open",
+        evidence={
+            "failing_result": {
+                "status": "fail",
+                "metric_value": None,
+                "observed_value": observed,
+                "expected_value": None,
+            },
+            "same_asset_siblings": [],
+        },
+    )
+    db_session.add(incident)
+    db_session.commit()
+    return incident, check
+
+
+def test_finds_a_subject_in_an_incident_evidence_snapshot(db_session: Any) -> None:
+    incident, check = _incident(
+        db_session, column="email", observed={"observed_value": ["alice@example.com", "x@y.z"]}
+    )
+
+    matched = dsr.find_matching_incidents(db_session, column="email", value="alice@example.com")
+
+    assert [m.incident_id for m in matched] == [incident.id]
+    assert matched[0].check_id == check.id and matched[0].tested_column == "email"
+    assert dsr.find_matching_incidents(db_session, column="email", value="nobody@x.y") == []
+
+
+def test_erase_scrubs_the_incident_snapshot_in_place_and_reports_it_separately(
+    db_session: Any,
+) -> None:
+    incident, _check = _incident(
+        db_session, column="email", observed={"observed_value": ["alice@example.com", "x@y.z"]}
+    )
+
+    summary = dsr.erase_matching_results(db_session, column="email", value="alice@example.com")
+    db_session.commit()
+
+    assert summary.matched_result_ids == [] and summary.erased_count == 0
+    assert summary.matched_incident_ids == [incident.id]
+    assert summary.erased_incident_count == 1
+    db_session.refresh(incident)
+    assert incident.evidence is not None
+    assert incident.evidence["failing_result"]["observed_value"] == {"observed_value": ["x@y.z"]}
+    assert incident.evidence["failing_result"]["status"] == "fail"  # the rest of the card survives
+    assert incident.evidence["same_asset_siblings"] == []
+    # Idempotent: nothing left to match, nothing rewritten.
+    again = dsr.erase_matching_results(db_session, column="email", value="alice@example.com")
+    assert again.matched_incident_ids == [] and again.erased_incident_count == 0
+
+
+def test_incident_unparsed_value_cell_is_matched_and_scrubbed(db_session: Any) -> None:
+    incident, _check = _incident(
+        db_session,
+        column="email",
+        observed={"column": "email", "unparsed_value": "alice@example.com"},
+    )
+
+    summary = dsr.erase_matching_results(db_session, column="email", value="alice@example.com")
+    db_session.commit()
+
+    assert summary.erased_incident_count == 1
+    db_session.refresh(incident)
+    assert incident.evidence is not None
+    assert incident.evidence["failing_result"]["observed_value"] == {
+        "column": "email",
+        "unparsed_value": None,
+    }
+
+
+def test_incident_scalar_or_redacted_snapshot_never_matches(db_session: Any) -> None:
+    # Same rule as results: a scalar is not attributable to a subject; a masked
+    # snapshot has nothing left to erase.
+    _incident(db_session, column="email", observed={"observed_value": 34680})
+    _incident(db_session, column="email", observed={"observed_value": "<redacted>"})
+
+    assert dsr.find_matching_incidents(db_session, column="email", value="34680") == []
+    assert dsr.find_matching_incidents(db_session, column="email", value="<redacted>") == []

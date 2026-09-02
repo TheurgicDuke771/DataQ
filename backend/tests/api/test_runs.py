@@ -1036,6 +1036,49 @@ def test_list_pipeline_runs_filters_by_provider_and_status(
     assert {p["provider"] for p in failed} == {"airflow"}
 
 
+def test_list_pipeline_runs_correlates_triggered_runs_server_side(
+    client: TestClient, db_session: Any
+) -> None:
+    """#1728: the page no longer rebuilds the `provider:pipeline:run` marker itself. The API
+    hands each pipeline run the DQ runs it triggered (visibility-scoped), and a colliding
+    marker — two dbt rows reconstructing to one string — yields `[]` for both rather than
+    letting one row claim the other's run.
+    """
+    owner = _user(db_session, "owner@ex")
+    suite = _suite(db_session, owner, type_="dbt")
+    conn_id = suite.connection_id
+    rows = [
+        PipelineRun(
+            provider="dbt",
+            connection_id=conn_id,
+            provider_run_id=run_id,
+            pipeline_or_dag_id=pipeline,
+            env="dev",
+            status="succeeded",
+            started_at=datetime.now(UTC),
+        )
+        for pipeline, run_id in (
+            ("daily", "run-2"),
+            ("nightly:etl", "run-1"),
+            ("nightly", "etl:run-1"),
+        )
+    ]
+    db_session.add_all(rows)
+    db_session.commit()
+    clean_run = _run(db_session, suite, triggered_by="dbt:daily:run-2")
+    _run(db_session, suite, triggered_by="dbt:nightly:etl:run-1")
+    # Another owner's suite triggered by the same clean pipeline run: not visible to `owner`.
+    other = _user(db_session, "other@ex")
+    hidden = _run(db_session, _suite(db_session, other), triggered_by="dbt:daily:run-2")
+
+    _as(owner)
+    body = {p["id"]: p for p in client.get("/api/v1/pipeline_runs?provider=dbt").json()}
+    assert body[str(rows[0].id)]["triggered_run_ids"] == [str(clean_run.id)]
+    assert str(hidden.id) not in body[str(rows[0].id)]["triggered_run_ids"]
+    assert body[str(rows[1].id)]["triggered_run_ids"] == []
+    assert body[str(rows[2].id)]["triggered_run_ids"] == []
+
+
 def _pipeline_runs_on_one_connection(
     db_session: Any, owner: User, *, count: int, provider: str = "adf"
 ) -> list[PipelineRun]:

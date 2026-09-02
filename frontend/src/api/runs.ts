@@ -123,6 +123,11 @@ export interface PipelineRun {
   finished_at: string | null;
   failure_reason: string | null;
   created_at: string;
+  /**
+   * DQ runs this pipeline run triggered, correlated server-side (a colliding marker yields `[]`).
+   * Optional only for the rolling-deploy window where a draining api revision predates the field.
+   */
+  triggered_run_ids?: string[];
 }
 
 /**

@@ -1,4 +1,4 @@
-import type { PipelineRun, ResultStatus, RunStatus } from '../../api/runs';
+import type { ResultStatus, RunStatus } from '../../api/runs';
 
 /**
  * Pure presentation helpers for the Results surface — kept framework-free so the status→colour
@@ -37,10 +37,6 @@ export const RESULT_STATUS_COLORS: Record<ResultStatus, string> = {
  * The `triggered_by` marker a pipeline run stamps on the DQ runs it triggers:
  * `<provider>:<pipeline_or_dag_id>:<provider_run_id>` (backend
  */
-export function pipelineRunMarker(p: PipelineRun): string {
-  return `${p.provider}:${p.pipeline_or_dag_id}:${p.provider_run_id}`;
-}
-
 /** Orchestrator pipeline-run status → colour (provider-agnostic value set). */
 export function pipelineStatusColor(status: string): string {
   switch (status) {

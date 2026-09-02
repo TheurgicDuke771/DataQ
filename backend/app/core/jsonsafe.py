@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import decimal
+import json
 import math
 from typing import Any
 
@@ -29,16 +30,40 @@ def sanitize_json(value: Any) -> Any:
         value = float(value)
     # Warehouse BINARY/VARBINARY columns (e.g. a profiled column's MIN/MAX) surface as
     # raw bytes (or bytearray, depending on the DBAPI driver — core/artifacts.py and
-    # lineage/dbt_manifest.py already treat the two as a pair) — hex-encode rather than
+    # lineage/dbt_manifest.py already treat the two as a pair; psycopg-style BYTEA
+    # arrives as memoryview, #1729) — hex-encode rather than
     # leaving something JSON can't serialize at all (the flat-file profiler's own
     # `_to_native` has an equivalent str() catch-all; this is the SQL path's analogous
     # case, #1719 review).
-    if isinstance(value, (bytes, bytearray)):
+    if isinstance(value, (bytes, bytearray, memoryview)):
         return value.hex()
     if isinstance(value, float):
         return value if math.isfinite(value) else None
     if isinstance(value, dict):
-        return {key: sanitize_json(item) for key, item in value.items()}
+        return {_json_key(key): sanitize_json(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
         return [sanitize_json(item) for item in value]
     return value
+
+
+def _json_key(key: Any) -> str:
+    """Coerce a dict key to the string JSON requires (#1729).
+
+    Defensive: no producer keys a dict by data values today, but a
+    `{column_value: count}` histogram over a BINARY/NUMERIC column would put the
+    driver types the value branches handle into the KEY position, where a raw
+    bytes/Decimal/numpy key crashes the whole JSONB insert. A key gets the value
+    branch's rendering (bytes → hex, Decimal/numpy → native) and is then written
+    as JSON text — for scalars exactly what ``json.dumps`` renders a key as
+    (``True`` → ``"true"``, ``1.5`` → ``"1.5"``). Types the value branch does not
+    know raise ``TypeError`` here as they would in the encoder.
+    """
+    sanitized = sanitize_json(key)
+    if sanitized is None and key is not None:
+        # The value branch nulls a non-finite float, but as keys NaN and ±Infinity
+        # would then merge into one bucket — keep json's own distinct spellings.
+        try:
+            return json.dumps(float(key))
+        except TypeError:
+            pass  # pd.NA / pd.NaT — genuinely null
+    return sanitized if isinstance(sanitized, str) else json.dumps(sanitized)

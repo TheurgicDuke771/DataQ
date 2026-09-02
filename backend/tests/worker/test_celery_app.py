@@ -63,6 +63,21 @@ def test_llm_invoke_routes_to_its_own_queue() -> None:
     assert app.conf.task_routes == {LLM_INVOKE_TASK_NAME: {"queue": LLM_QUEUE_NAME}}
 
 
+def test_worker_concurrency_is_pinned_from_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """#1790: the prefork default is the HOST's core count, so two identical 1-vCPU deployments
+    ran 4 and 2. The pin lives in conf (ships with the image), not in four launch commands.
+    """
+    from backend.app.core import config
+
+    assert create_celery_app().conf.worker_concurrency == 4
+    monkeypatch.setenv("WORKER_CONCURRENCY", "2")
+    config.get_settings.cache_clear()
+    try:
+        assert create_celery_app().conf.worker_concurrency == 2
+    finally:
+        config.get_settings.cache_clear()
+
+
 def test_beat_schedule_file_lives_in_the_temp_dir_not_the_cwd() -> None:
     """The runtime image runs as a non-root user with a read-only /workspace (#1408), so beat's
     schedule shelve must never land in the CWD — celery's default.

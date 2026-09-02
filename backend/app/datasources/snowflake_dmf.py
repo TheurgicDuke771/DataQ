@@ -10,9 +10,9 @@ from backend.app.datasources.base import CheckOutcome
 from backend.app.datasources.monitors import (
     FRESHNESS,
     MonitorConfigError,
+    _ident,
     monitor_expectation_type,
 )
-from backend.app.datasources.sql import is_sql_identifier
 from backend.app.services.failure_classifier import safe_failure_reason
 
 DMF_ENGINE = "dmf"
@@ -34,11 +34,9 @@ DMF_KINDS = ("expectation", FRESHNESS)
 
 
 def _quoted(name: object, *, what: str) -> str:
-    """Validate (allowlist, #428) then quote (folding rule, #476/#937) a name."""
-    if not is_sql_identifier(name):
-        raise MonitorConfigError(f"invalid {what} identifier: {name!r}")
-    assert isinstance(name, str)
-    return name if name == name.lower() else f'"{name}"'
+    """Validate (allowlist, #428 — via `_ident`, bounded echo) then quote (#476/#937)."""
+    ident = _ident(name, what=what)
+    return ident if ident == ident.lower() else f'"{ident}"'
 
 
 def build_dmf_statement(

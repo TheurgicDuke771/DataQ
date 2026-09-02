@@ -479,6 +479,7 @@ def dry_run_check(
         observed = live_probe.redact_probe_observed_value(
             observed,
             tested_column=tested_column,
+            expectation_type=payload.expectation_type,
             policy=policy,
             tags=run_service.asset_column_tags(db, suite),
         )
