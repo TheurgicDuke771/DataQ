@@ -71,12 +71,10 @@ plugins:
         rest-api.md: reference/rest-api.md
         glossary.md: reference/glossary.md
         changelog.md: reference/changelog.md
-        architecture.md: architecture/overview.md
         mcp-honesty.md: architecture/mcp-honesty.md
         evidence-card.md: architecture/evidence-card.md
         perf-baseline.md: architecture/perf-baseline.md
         contributing.md: architecture/contributing.md
-        security.md: security/overview.md
         compliance/sub-processors.md: security/compliance/sub-processors.md
         compliance/dpia-input-sheet.md: security/compliance/dpia-input-sheet.md
         compliance/data-subject-rights-runbook.md: security/compliance/data-subject-rights-runbook.md
