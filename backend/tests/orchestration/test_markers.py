@@ -68,7 +68,7 @@ def test_unique_marker_resolves_to_its_runs_newest_first(db_session: Any) -> Non
     db_session.add(newer)
     db_session.commit()
 
-    assert markers.triggered_run_ids(db_session, [pr]) == {pr.id: [newer.id, older.id]}
+    assert markers.triggered_runs(db_session, [pr]).by_pipeline_run == {pr.id: [newer.id, older.id]}
     assert markers.unambiguous_pipeline_run(db_session, "dbt:nightly:run-7") is pr
     assert markers.ambiguous_markers(db_session, ["dbt:nightly:run-7"]) == set()
 
@@ -89,15 +89,15 @@ def test_colliding_markers_fail_closed_for_every_reader(db_session: Any) -> None
     assert markers.ambiguous_markers(db_session, ["dbt:nightly:etl:run-1", "dbt:daily:run-2"]) == {
         "dbt:nightly:etl:run-1"
     }
-    assert markers.triggered_run_ids(db_session, [a, b, clean]) == {
-        a.id: [],
-        b.id: [],
-        clean.id: [dq.id],
-    }
+    correlated = markers.triggered_runs(db_session, [a, b, clean])
+    assert correlated.by_pipeline_run == {a.id: [], b.id: [], clean.id: [dq.id]}
+    assert correlated.ambiguous_markers == {"dbt:nightly:etl:run-1"}
+    assert correlated.is_ambiguous(a) and correlated.is_ambiguous(b)
+    assert not correlated.is_ambiguous(clean)
     assert markers.unambiguous_pipeline_run(db_session, "dbt:nightly:etl:run-1") is None
     assert len(markers.pipeline_runs_for_marker(db_session, "dbt:nightly:etl:run-1")) == 2
 
 
 def test_marker_without_provider_separator_matches_nothing(db_session: Any) -> None:
     assert markers.pipeline_runs_for_marker(db_session, "manual") == []
-    assert markers.triggered_run_ids(db_session, []) == {}
+    assert markers.triggered_runs(db_session, []).by_pipeline_run == {}

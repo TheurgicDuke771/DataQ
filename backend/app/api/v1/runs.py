@@ -440,7 +440,7 @@ def list_pipeline_runs(
     pipeline_runs = orchestration_service.list_pipeline_runs(
         db, provider=provider, status=run_status, limit=limit, offset=offset
     )
-    triggered = markers.triggered_run_ids(db, pipeline_runs)
+    triggered = markers.triggered_runs(db, pipeline_runs).by_pipeline_run
     visible = set(
         db.scalars(
             select(Run.id).where(

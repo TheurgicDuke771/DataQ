@@ -749,19 +749,14 @@ def get_pipeline_status(
         )
         # Shared reconstruct-and-compare correlation (#1728): a colliding marker
         # yields NO run rather than another row's run.
-        triggered = markers.triggered_run_ids(session, runs)
-        ambiguous = markers.ambiguous_markers(
-            session, [markers.pipeline_run_marker(p) for p in runs]
-        )
+        triggered = markers.triggered_runs(session, runs)
         out: list[dict[str, Any]] = []
         for pr in runs:
-            run_ids = triggered.get(pr.id, [])
-            dq = session.get(Run, run_ids[0]) if run_ids else None
-            correlated = (
-                {"run_id": str(dq.id), "status": dq.status}
-                if dq is not None and dq.suite_id in accessible
-                else None
-            )
+            dq_runs = [session.get(Run, rid) for rid in triggered.by_pipeline_run.get(pr.id, [])]
+            # One pipeline run can trigger several suites; report the newest the
+            # caller can SEE, and call it restricted only when none is visible.
+            dq = next((r for r in dq_runs if r is not None and r.suite_id in accessible), None)
+            correlated = {"run_id": str(dq.id), "status": dq.status} if dq is not None else None
             out.append(
                 {
                     "provider": pr.provider,
@@ -773,10 +768,10 @@ def get_pipeline_status(
                     # Distinguishes "no suite was triggered" from "a suite was
                     # triggered and you cannot see it" — the same fact the
                     # docstring stated in prose and the payload conflated.
-                    "dq_run_restricted": dq is not None and dq.suite_id not in accessible,
+                    "dq_run_restricted": dq is None and any(r is not None for r in dq_runs),
                     # True when another stored pipeline run reconstructs to the same
                     # trigger marker, so no DQ run can be attributed to either.
-                    "dq_run_ambiguous": markers.pipeline_run_marker(pr) in ambiguous,
+                    "dq_run_ambiguous": triggered.is_ambiguous(pr),
                 }
             )
         return {

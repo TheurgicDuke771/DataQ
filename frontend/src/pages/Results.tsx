@@ -466,7 +466,7 @@ function PipelineRunsTab({
       title: 'DQ run',
       width: 160,
       render: (_: unknown, p: PipelineRun) => {
-        const triggered = p.triggered_run_ids
+        const triggered = (p.triggered_run_ids ?? [])
           .map((id) => runsById.get(id))
           .filter((r): r is Run => r !== undefined);
         if (triggered.length === 0) return <Typography.Text type="secondary">—</Typography.Text>;

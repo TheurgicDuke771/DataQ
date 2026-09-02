@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass, field
 
 from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.orm import Session
@@ -63,29 +64,40 @@ def unambiguous_pipeline_run(session: Session, marker: str) -> PipelineRun | Non
 
 
 def ambiguous_markers(session: Session, markers: Iterable[str]) -> set[str]:
-    """The subset of ``markers`` more than one stored pipeline run reconstructs to."""
+    """The subset of ``markers`` more than one stored pipeline run reconstructs to.
+
+    The concat expression has no index (#1814); the provider pre-filter narrows the
+    scan to the providers actually on the page.
+    """
     wanted = set(markers)
     if not wanted:
         return set()
+    providers = {m.partition(":")[0] for m in wanted}
     reconstructed = _reconstructed_marker()
     rows = session.execute(
         select(reconstructed, func.count())
-        .where(reconstructed.in_(wanted))
+        .where(PipelineRun.provider.in_(providers), reconstructed.in_(wanted))
         .group_by(reconstructed)
         .having(func.count() > 1)
     ).all()
     return {marker for marker, _count in rows}
 
 
-def triggered_run_ids(
-    session: Session, pipeline_runs: Sequence[PipelineRun]
-) -> dict[uuid.UUID, list[uuid.UUID]]:
-    """Per pipeline run, the DQ runs it triggered (newest first) — ``[]`` when its
-    marker is ambiguous, so a collided row never claims another row's run.
-    """
+@dataclass
+class TriggeredRuns:
+    #: Per pipeline run, the DQ runs it triggered, newest first — ``[]`` when its
+    #: marker is ambiguous, so a collided row never claims another row's run.
+    by_pipeline_run: dict[uuid.UUID, list[uuid.UUID]] = field(default_factory=dict)
+    ambiguous_markers: set[str] = field(default_factory=set)
+
+    def is_ambiguous(self, pipeline_run: PipelineRun) -> bool:
+        return pipeline_run_marker(pipeline_run) in self.ambiguous_markers
+
+
+def triggered_runs(session: Session, pipeline_runs: Sequence[PipelineRun]) -> TriggeredRuns:
     by_marker: dict[str, list[uuid.UUID]] = {pipeline_run_marker(p): [] for p in pipeline_runs}
     if not by_marker:
-        return {}
+        return TriggeredRuns()
     ambiguous = ambiguous_markers(session, by_marker)
     for run in session.scalars(
         select(Run)
@@ -96,4 +108,7 @@ def triggered_run_ids(
         by_marker[run.triggered_by].append(run.id)
     if ambiguous:
         log.warning("pipeline_run_marker_ambiguous", markers=sorted(ambiguous))
-    return {p.id: by_marker[pipeline_run_marker(p)] for p in pipeline_runs}
+    return TriggeredRuns(
+        by_pipeline_run={p.id: by_marker[pipeline_run_marker(p)] for p in pipeline_runs},
+        ambiguous_markers=ambiguous,
+    )
