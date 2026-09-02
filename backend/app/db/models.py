@@ -1157,6 +1157,8 @@ LLM_PROVIDERS = ("anthropic", "openai_compatible")
 LLM_STRUCTURED_OUTPUT_MODES = ("native", "prompt_json")
 LLM_INVOCATION_KINDS = ("ping", "sql_generation", "check_suggestion", "rca_narrative")
 LLM_INVOCATION_STATUSES = ("pending", "running", "succeeded", "failed")
+# The in-flight subset the #1644 reaper sweeps; `ix_llm_invocations_status_open` covers it.
+LLM_INVOCATION_OPEN_STATUSES = ("pending", "running")
 
 
 class LlmSetting(Base):
@@ -1199,6 +1201,16 @@ class LlmInvocation(Base):
         _in_check("kind", LLM_INVOCATION_KINDS, "llm_invocation_kind_valid"),
         _in_check("status", LLM_INVOCATION_STATUSES, "llm_invocation_status_valid"),
         Index("ix_llm_invocations_requested_by", "requested_by_user_id"),
+        # #1717: the #1644 reaper's per-status equality sweeps. Partial, so it stays a few rows wide
+        # while the table (retained forever, G4 audit record) grows. `llm_rca`'s succeeded-narrative
+        # lookup is the other non-PK read and is NOT covered here (#1743).
+        Index(
+            "ix_llm_invocations_status_open",
+            "status",
+            postgresql_where=text(
+                "status IN (" + ", ".join(f"'{s}'" for s in LLM_INVOCATION_OPEN_STATUSES) + ")"
+            ),
+        ),
     )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
