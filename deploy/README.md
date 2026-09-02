@@ -486,8 +486,9 @@ Terraform, listed here so the table's Azure values aren't mistaken for the only 
 
 - **A worker `command` (queue list, flags) change needs a coordinated Terraform apply, not just
   an image roll (#1777).** The Deploy workflow only rolls the container image — it never
-  re-applies `containerapps.tf`/`ecs.tf` — so a change to the worker's `-Q` queue list (or any
-  other command-array edit) sits inert in the IaC file until someone runs `tofu apply`
+  re-applies `containerapps.tf`/`ecs.tf` — so a change to the worker's `-Q` queue list, its `--concurrency` (#1790 — pinned to 4 so
+  the prefork pool stops reading the host's core count, which gave Azure 4 and AWS 2 on identical
+  1-vCPU tasks), or any other command-array edit sits inert in the IaC file until someone runs `tofu apply`
   separately. On **AWS** this needs the explicit `tofu apply -replace=aws_ecs_task_definition.worker`
   + `update-service` dance above (`container_definitions` is under `ignore_changes`); on **Azure**
   a plain `tofu apply` picks it up. Shipping the routing-side change (e.g. a new `task_routes`

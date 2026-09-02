@@ -36,7 +36,7 @@ Two sentences of conclusion:
 | | |
 |---|---|
 | App code | `main`, during v1.1 development |
-| Measurement rig | docker-compose stack pinned to **production parity**: worker at 1 CPU / 2 GiB / `celery --concurrency=4` (matched to the deployed worker), driven through the real REST API |
+| Measurement rig | docker-compose stack pinned to **production parity**: worker at 1 CPU / 2 GiB / `celery --concurrency=4` (the value every worker launch command now pins explicitly — Celery's prefork default reads the *host's* core count, not the container's, and had silently differed between the two reference deployments), driven through the real REST API |
 | Iceberg leg | run against the deployed stack (the native catalog wasn't reachable from the local rig) — wall via REST, worker memory via the platform metric |
 | Worker memory sampling | `docker stats` at 1 Hz (local); 1-min max metric (prod) |
 | Checks per rung | 5 expectations (not-null ×2, between ×2, unique ×1) + volume & freshness monitors where the type supports them (SQL/UC/Iceberg — flat files reject monitor kinds by design) |
