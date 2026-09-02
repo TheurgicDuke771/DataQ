@@ -1,0 +1,21 @@
+merge them in sequence
+
+---
+
+<task-notification>
+<task-id>bslnol48q</task-id>
+<tool-use-id>toolu_01WWkWi9XpuyNxtqY7NQ8KSy</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/08ac61b5-2554-41b8-8b37-1622a0336b55/tasks/bslnol48q.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for #1798 CI to finish and report any non-passing checks" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bvzhnn6oh</task-id>
+<tool-use-id>toolu_01JfDBzJHm5oTw7afaSNJPPk</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/08ac61b5-2554-41b8-8b37-1622a0336b55/tasks/bvzhnn6oh.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for CI on the remaining non-stacked PRs, reporting non-passing checks per PR" completed (exit code 0)</summary>
+</task-notification>
