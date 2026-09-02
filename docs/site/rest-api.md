@@ -83,9 +83,6 @@ credential is sent — `account` (Snowflake), `account_url` (ADLS), `endpoint_ur
 request. Otherwise it returns `422` with `code: "credential_redirect"` and
 `detail.required` naming what to send. A stored credential is never forwarded to a
 destination the caller changed.
-An empty-string `secret` / `catalog_secret` is not a re-supply: it returns `422` with
-`code: "connection_credential_empty"` on create, update and reauth (omit the field to leave
-the stored credential unchanged).
 
 ### Notification channels
 

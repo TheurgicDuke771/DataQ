@@ -130,10 +130,7 @@ def _reject_empty_credentials(**supplied: str | None) -> None:
     # Only the empty string — whitespace is a value the API schema (`min_length=1`) accepts.
     for field, value in supplied.items():
         if value == "":
-            raise EmptyCredentialError(
-                f"'{field}' must not be empty; omit it to leave the stored credential unchanged",
-                detail={"field": field},
-            )
+            raise EmptyCredentialError(f"'{field}' must not be empty", detail={"field": field})
 
 
 def _reject_uncredentialed_redirect(
