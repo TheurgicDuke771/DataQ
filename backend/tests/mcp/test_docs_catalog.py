@@ -45,7 +45,9 @@ def test_list_pages_excludes_adrs_and_architecture() -> None:
 def test_read_page_returns_verbatim_content() -> None:
     content = docs_catalog.read_page("best-practices")
     assert content  # non-empty
-    assert content == (docs_catalog._DOCS_SITE / "best-practices.md").read_text(encoding="utf-8")
+    assert content == (docs_catalog._DOCS_SITE / "guides" / "best-practices.md").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_read_page_compliance_subpath() -> None:

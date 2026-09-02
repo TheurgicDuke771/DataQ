@@ -14,7 +14,7 @@
 
 Every row is a **capability of the software**, enumerated whether or not it is
 enabled — the same enumerate-don't-derive rule as the
-[residency posture](../security.md#data-residency), so a reviewer can see a vector
+[residency posture](../overview.md#data-residency), so a reviewer can see a vector
 was considered rather than inferring its absence. For the live state of *your*
 deployment, query `GET /api/v1/admin/deployment` (workspace-admin only), which
 reports the enabled transfer vectors without shell access.

@@ -1,4 +1,4 @@
-"""Drift guard: the ER diagram in docs/site/architecture.md tracks the real schema."""
+"""Drift guard: the ER diagram in docs/site/architecture/overview.md tracks the real schema."""
 
 import re
 from pathlib import Path
@@ -7,7 +7,7 @@ from backend.app.db import models
 from backend.app.db.base import Base
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_ARCHITECTURE_MD = _REPO_ROOT / "docs" / "site" / "architecture.md"
+_ARCHITECTURE_MD = _REPO_ROOT / "docs" / "site" / "architecture" / "overview.md"
 
 # An entity definition inside the erDiagram block: `    users {`
 _ENTITY_RE = re.compile(r"^\s*(\w+)\s*\{", re.MULTILINE)
@@ -23,7 +23,7 @@ _POLICIES = ("SET NULL", "CASCADE", "RESTRICT", "NO ACTION")
 
 def _er_diagram_entities() -> set[str]:
     match = _ER_BLOCK_RE.search(_ARCHITECTURE_MD.read_text(encoding="utf-8"))
-    assert match, "docs/site/architecture.md has no ```mermaid erDiagram``` block"
+    assert match, "docs/site/architecture/overview.md has no ```mermaid erDiagram``` block"
     return set(_ENTITY_RE.findall(match.group(1)))
 
 
@@ -37,15 +37,15 @@ def test_models_module_exports_every_mapped_table() -> None:
 def test_every_table_appears_in_the_er_diagram() -> None:
     missing = set(Base.metadata.tables) - _er_diagram_entities()
     assert not missing, (
-        f"tables missing from the docs/site/architecture.md ER diagram: {sorted(missing)} — "
-        "update the diagram in the same PR as the model/migration change"
+        "tables missing from the docs/site/architecture/overview.md ER diagram: "
+        f"{sorted(missing)} — update the diagram in the same PR as the model/migration change"
     )
 
 
 def test_er_diagram_has_no_stale_tables() -> None:
     stale = _er_diagram_entities() - set(Base.metadata.tables)
     assert not stale, (
-        f"docs/site/architecture.md ER diagram names tables that no longer exist: "
+        f"docs/site/architecture/overview.md ER diagram names tables that no longer exist: "
         f"{sorted(stale)} — remove them from the diagram"
     )
 

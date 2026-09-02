@@ -60,7 +60,7 @@ the per-PR history lives in the repo's commit log and pull requests.
   check?" or "what compliance mechanisms does DataQ support?" answers from the maintained docs
   rather than training data. Deliberately excludes ADRs and `architecture.md` (contributor
   design-rationale, not this question's audience); an unrecognized page returns the current
-  valid list. See [AI assistants (MCP setup)](mcp-setup.md).
+  valid list. See [AI assistants (MCP setup)](../guides/mcp-setup.md).
 
 - **Reusable notification channels (API).** A Teams, Slack, or email destination can now be
   defined once by a workspace admin and referenced from any number of suites, instead of
@@ -374,7 +374,7 @@ stretch week landed the RBAC, MCP-expansion, security-audit and compliance track
   `sampled` / `sample_row_limit` (flat-file and Iceberg profiles read at most
   100k rows), `runnable`, `is_recurrence`, `window_hours`. Six docstrings were
   corrected outright, having claimed things the code does not do — see
-  [AI assistants (MCP setup)](mcp-setup.md) under *Reading the results honestly*.
+  [AI assistants (MCP setup)](../guides/mcp-setup.md) under *Reading the results honestly*.
 - **MCP server expanded to 46 tools** — the Tier 1 read-only batch (checks, runs,
   connections, schedules, trigger bindings, notification config, suite performance,
   suite export) alongside the original 8, plus the Tier 2 batch (update/delete/snooze
@@ -488,4 +488,4 @@ First production release. Deployed to Azure Container Apps.
 - **AI assistants** — an 8-tool MCP server for Claude / Copilot / Cursor.
 - **SSO** (OIDC) and secrets in a managed vault; the frontend is the sole public surface.
 
-See the [Features](features.md) page for the full current capability set.
+See the [Features](../guides/features.md) page for the full current capability set.

@@ -75,7 +75,7 @@ runtime by nginx — ADR 0028) and the backend's own mode (inferred from its `AZ
 Backend OTP on with the frontend on `oidc` shows an SSO flow against an IdP that isn't
 configured; the reverse shows a code form whose endpoints 503.
 
-### `otp` — email one-time codes (ADR [0032](adr/0032-email-otp-signin.md))
+### `otp` — email one-time codes (ADR [0032](../adr/0032-email-otp-signin.md))
 
 The default, and the rung for teams that have email but no IdP.
 
@@ -132,9 +132,9 @@ read the worker log for `otp_send_task_failed`.
 
 One consequence worth knowing up front: with no IdP there is no bearer token for `/mcp` to
 validate, so in this mode **a PAT (`dq_live_…`) is the only credential MCP accepts**. AI
-clients need [an API key](api-keys.md); a session cookie will not do.
+clients need [an API key](../guides/api-keys.md); a session cookie will not do.
 
-Read [Security & data handling](security.md) before enabling it — under OTP **the mailbox
+Read [Security & data handling](../security/overview.md) before enabling it — under OTP **the mailbox
 is the credential**, so mailbox compromise is account compromise. The session is an
 HttpOnly cookie with a fixed 24 h life and no refresh token; signing in again is the
 refresh. Codes expire in 10 minutes, are single-use, and allow 5 attempts.
@@ -172,7 +172,7 @@ to real SSO with **no rebuild** (ADR 0028):
 - **MCP** (`/mcp`) is **fail-closed**: it needs a working sign-in configuration. Under
   `oidc` it validates the bearer token; under the eval stack's `otp` it is served with a
   **PAT (`dq_live_…`) as its only credential** (there is no IdP to issue a token, and a
-  session cookie is deliberately rejected) — see [API keys](api-keys.md).
+  session cookie is deliberately rejected) — see [API keys](../guides/api-keys.md).
 
 ## Develop from source
 
@@ -261,4 +261,4 @@ cd frontend && pnpm test
 
 Before pushing, run the same gate CI does: Ruff, Black `--check`, mypy, Bandit, pytest
 (backend) and ESLint, Prettier `--check`, Vitest (frontend). See the
-**[Contributing guide](contributing.md)**.
+**[Contributing guide](../architecture/contributing.md)**.

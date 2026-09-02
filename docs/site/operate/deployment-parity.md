@@ -2,8 +2,8 @@
 
 How the three reference installations compare, as of 2026-08-16 (both clouds deployed from
 the same commit). The design intent (ADR
-[0010](adr/0010-provider-agnostic-infrastructure-seams.md) /
-[0028](adr/0028-cloud-neutral-image-runtime-config-generic-oidc.md))
+[0010](../adr/0010-provider-agnostic-infrastructure-seams.md) /
+[0028](../adr/0028-cloud-neutral-image-runtime-config-generic-oidc.md))
 is that **every difference lives in deploy-time configuration — there are zero
 cloud-conditional code paths**, and the same container images run everywhere.
 

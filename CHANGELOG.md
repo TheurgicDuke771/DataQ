@@ -9,7 +9,7 @@ not per PR. Patch releases get an entry only when the change is user-visible or
 security-relevant. Raw material comes from the squashed conventional commits
 (`git log v<prev>..HEAD --oneline`); curate it down to what a deployer or user
 would act on. The step lives in the release checklist in
-[docs/site/runbook-faq.md](docs/site/runbook-faq.md).
+[docs/site/operate/runbook-faq.md](docs/site/operate/runbook-faq.md).
 
 ## [Unreleased]
 
@@ -18,7 +18,7 @@ would act on. The step lives in the release checklist in
 The post-v1 cycle (2026-07-04 → 2026-08-21, six weeks + a stretch week). First tagged
 2026-08-15; the tag was moved to the true cycle close after the stretch week landed the
 RBAC, MCP-expansion, security-audit and compliance tracks. The curated user-facing entry
-lives on the docs site — [docs/site/changelog.md](docs/site/changelog.md) — and in the GitHub
+lives on the docs site — [docs/site/reference/changelog.md](docs/site/reference/changelog.md) — and in the GitHub
 Release body; headlines:
 
 ### Added

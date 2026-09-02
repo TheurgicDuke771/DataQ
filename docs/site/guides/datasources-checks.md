@@ -13,7 +13,7 @@
 ## Add a connection
 
 Adding, editing, deleting or re-crendentialing a connection requires the **Admin** workspace
-role (ADR [0033](adr/0033-workspace-roles-rbac.md)) — connections are shared infrastructure
+role (ADR [0033](../adr/0033-workspace-roles-rbac.md)) — connections are shared infrastructure
 holding credentials, and every suite in the workspace runs on them. Members and Viewers can
 see and reference them, and Members can run the saved-connection **Test**.
 
@@ -75,7 +75,7 @@ stripped, default port elided, host lower-cased) joins the bucket, so two stores
 happen to share a bucket name (an AWS bucket and a MinIO bucket both named `landing`,
 say) resolve to *different* assets instead of merging their scorecards, lineage and
 incidents (decided in
-[ADR 0040](adr/0040-warehouse-inventory-sync-table-enumeration-seam.md) §6).
+[ADR 0040](../adr/0040-warehouse-inventory-sync-table-enumeration-seam.md) §6).
 
 The same two fields exist on a **dbt** orchestration connection whose `artifacts_uri` is
 `s3://…`, so the artifacts poll can read from the same store.

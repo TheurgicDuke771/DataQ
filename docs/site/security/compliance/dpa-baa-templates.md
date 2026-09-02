@@ -51,7 +51,7 @@ the review date and cross-referenced to the living docs so they don't rot.
    confidentiality; workspace access is role-gated (ADR 0033) and per-suite
    grants (ADR 0027).
 6. **Security of processing (Art 32).** The Processor maintains the controls in
-   [Security & data handling](../security.md), including: secrets in a dedicated
+   [Security & data handling](../overview.md), including: secrets in a dedicated
    store, PII redaction at the logging layer, column-aware sample redaction with
    a warehouse-tag governance floor and a fail-closed mode, retention-bounded
    sample storage, append-only audit of config changes and data reads, TLS on
@@ -101,7 +101,7 @@ operator). Applies **only** when the Covered Entity points DataQ at PHI.
    unanchored to
    an external log sink by default, disclosed rather than overclaimed),
    integrity and transmission security per
-   [Security & data handling](../security.md).
+   [Security & data handling](../overview.md).
 4. **Reporting.** Security incidents and breaches of unsecured PHI reported per
    the [breach-notification runbook](breach-notification-runbook.md); the Covered
    Entity owns individual/HHS notification and its clocks.

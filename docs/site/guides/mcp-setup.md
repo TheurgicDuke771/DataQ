@@ -15,11 +15,11 @@ https://<your-dataq-host>/mcp/
     `Authorization` header when following redirects — which then surfaces as a
     confusing 401. Always configure clients with the `/mcp/` form.
 
-The endpoint accepts the **same credentials as the REST API** (ADR [0008](adr/0008-mcp-server.md) / [0026](adr/0026-auth-api-keys-and-principal-seam.md)): an OIDC bearer token (Azure AD or Cognito), or a **DataQ API key** (`dq_live_…`). Without auth configured, the endpoint is only mounted in local dev-bypass mode — never unauthenticated in a deployed environment.
+The endpoint accepts the **same credentials as the REST API** (ADR [0008](../adr/0008-mcp-server.md) / [0026](../adr/0026-auth-api-keys-and-principal-seam.md)): an OIDC bearer token (Azure AD or Cognito), or a **DataQ API key** (`dq_live_…`). Without auth configured, the endpoint is only mounted in local dev-bypass mode — never unauthenticated in a deployed environment.
 
 !!! info "Email-OTP deployments: MCP works, with an API key"
     A deployment running **email one-time codes instead of SSO** (ADR
-    [0032](adr/0032-email-otp-signin.md)) has no identity provider to issue bearer
+    [0032](../adr/0032-email-otp-signin.md)) has no identity provider to issue bearer
     tokens, so an **API key is the only `/mcp` credential** there — mint one as
     below and use it exactly the same way. Everything else is identical, including
     all 48 tools and per-suite permissions. Two rejections are deliberate in that
@@ -127,7 +127,7 @@ count, the timestamps, the "running" badge, the filter they chose. An AI client
 has neither, so several tools return **fields whose whole job is to say what the
 answer does not cover**. A well-behaved client should branch on these rather
 than summarising the payload as-is. This is one instance of a discipline applied
-across the whole surface — see [MCP tool design: honesty & disclosure](mcp-honesty.md)
+across the whole surface — see [MCP tool design: honesty & disclosure](../architecture/mcp-honesty.md)
 for the full set of rules and why they exist.
 
 | Field | Appears on | What it prevents |
@@ -218,7 +218,7 @@ authored in. Incidents are the deduplicated, stateful roll-up of repeated failur
 
 | Tool | What it answers |
 |---|---|
-| `list_assets` | "What tables do we monitor?" / "which assets are unhealthy?" — every asset with its health. The numbers are **workspace-true** (ADR [0037](adr/0037-workspace-visible-asset-identity.md)): aggregated over every composing suite, including ones the caller cannot see, so they are not "your" checks |
+| `list_assets` | "What tables do we monitor?" / "which assets are unhealthy?" — every asset with its health. The numbers are **workspace-true** (ADR [0037](../adr/0037-workspace-visible-asset-identity.md)): aggregated over every composing suite, including ones the caller cannot see, so they are not "your" checks |
 | `get_asset` | "Is the orders table healthy, and what feeds it?" — the workspace-true summary + per-dimension scorecard + the composing suites the caller may view (`restricted_suite_count` counts the rest) + the lineage neighbourhood, qualified when a lineage source is failing or stale |
 | `list_incidents` | "What's broken right now?" — open/acknowledged/resolved incidents, scoped to suites the caller can see, so an empty result means "nothing visible to you", not "nothing is wrong". Also takes `since_hours`/`until_hours`, filtered on `last_seen_at` (most recent breach, not when first opened). Incidents auto-resolve on the first passing result, so this answers "what's unresolved now", not "what failed during period X" — a resolved failure earlier in the window won't appear even under a time filter; use `list_runs` for that question |
 | `get_incident` | "Why did this open, and what else broke at the time?" — the evidence card snapshotted at the last occurrence; carries no failing sample rows by design |

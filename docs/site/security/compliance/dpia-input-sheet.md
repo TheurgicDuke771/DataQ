@@ -6,7 +6,7 @@
 > personal data the software can hold, where each item lives, how long it is kept,
 > and which controls apply. Everything here describes the software's mechanisms;
 > your deployment's concrete regions and endpoints are readable from
-> `GET /api/v1/admin/deployment`, per the [residency posture](../security.md#data-residency).
+> `GET /api/v1/admin/deployment`, per the [residency posture](../overview.md#data-residency).
 
 ## The framing that bounds the assessment
 
@@ -68,7 +68,7 @@ opened may need the request repeated under the earlier column name.
 | Cross-border transfers | Enumerated, not derived — see the [sub-processor disclosure](sub-processors.md) and the residency posture. The outbound-LLM vector is **built, off by default** — live only once an admin configures a provider and credential. SQL-generation and check-suggestion prompts use masked aggregate profiler statistics; RCA narratives additionally send the triggering check's own observed value, masked through that same column-policy/warehouse-tag floor, and its expected value (a check-authored threshold, not warehouse data). Never raw sample rows on either path. MCP clients are the token-holder's choice. |
 | Access ("who saw it") | G1 read events: data reads on REST **and** MCP are recorded and admin-queryable. |
 | Erasure ("how is it removed") | Retention purge (30-day default) + entity cascade, **and** on-demand targeted erasure by `(column, value)` — the [data-subject-rights runbook](data-subject-rights-runbook.md). |
-| Security of processing | See [Security & data handling](../security.md): secrets in a dedicated store, TLS, rate limiting, security headers, single public surface, non-root containers, least-privilege DB role. |
+| Security of processing | See [Security & data handling](../overview.md): secrets in a dedicated store, TLS, rate limiting, security headers, single public surface, non-root containers, least-privilege DB role. |
 
 Last reviewed: 2026-09-01 (originally 2026-08-21).
 This sheet shares its inventory with the [data-subject-rights runbook](data-subject-rights-runbook.md) — update both together (one artifact, not two).

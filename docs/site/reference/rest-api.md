@@ -13,7 +13,7 @@ https://<your-frontend-host>/api/v1/...
 ```
 
 Authenticate with a **personal access token** (mint one in the UI → Profile → API keys, see
-[API keys](api-keys.md)) as a Bearer token:
+[API keys](../guides/api-keys.md)) as a Bearer token:
 
 ```bash
 BASE=https://<your-frontend-host>/api/v1
@@ -209,4 +209,4 @@ curl -s -H "Authorization: Bearer $TOKEN" $BASE/runs/$RUN/progress | jq '{status
 ```
 
 Prefer natural language? The same actions are available to AI assistants over
-[MCP](mcp-setup.md).
+[MCP](../guides/mcp-setup.md).

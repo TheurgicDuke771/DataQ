@@ -92,7 +92,7 @@ Per-client configuration (Claude Desktop / Claude.ai, VS Code / Copilot, Cursor)
 | **Documentation site (user guides)** | <https://theurgicduke771.github.io/DataQ/docs/> · source in [docs/](docs/), built by [.github/workflows/docs.yml](.github/workflows/docs.yml) |
 | **Deployment guide + env-var reference** | [deploy/README.md](deploy/README.md) · [.env.app.example](.env.app.example) |
 | **Project guide for AI assistants** | [CLAUDE.md](CLAUDE.md) |
-| **Architecture diagram + invariants** | [docs/site/architecture.md](docs/site/architecture.md) |
+| **Architecture diagram + invariants** | [docs/site/architecture/overview.md](docs/site/architecture/overview.md) |
 | **Architecture Decision Records** | [docs/site/adr/](docs/site/adr/) |
 | **Live task tracker** | [docs/progress.md](docs/progress.md) |
 | **Product roadmap (8 weeks, 100 tasks)** | [context/DataQ_platform_roadmap.md](context/DataQ_platform_roadmap.md) |

@@ -37,4 +37,4 @@ A few terms make the rest of the docs click.
 You author a suite → run it manually, on a **schedule**, or **triggered** by a pipeline →
 a Celery worker executes the checks via Great Expectations against the datasource →
 results are stored, the health score updates, and alerts fire (Teams / Slack / email) for
-failures. See **[Architecture](architecture.md)** for the flow.
+failures. See **[Architecture](../architecture/overview.md)** for the flow.
