@@ -242,7 +242,7 @@ def test_export_and_erase_reach_an_incident_evidence_snapshot(
     access = db_session.scalars(
         select(AuditEvent).where(AuditEvent.action == "data_subject_request.export")
     ).one()
-    assert access.detail["incident_match_count"] == 1 and access.detail["match_count"] == 2
+    assert access.after["incident_match_count"] == 1 and access.after["match_count"] == 2
 
     body = client.post(
         "/api/v1/admin/data-subject-requests/erase", json=payload, headers=headers
