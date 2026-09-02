@@ -1,6 +1,7 @@
 """Column-profiler unit tests — pure, no DB / no warehouse."""
 
 import dataclasses
+import decimal
 import json
 import math
 from collections.abc import Mapping
@@ -1551,3 +1552,26 @@ def test_list_columns_iceberg_read_failure_returns_502(monkeypatch: pytest.Monke
             table="orders",
             secret_store=FakeSecretStore(default="secret", raise_on_write=True),
         )
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        pytest.param(decimal.Decimal("100"), 100.0, id="integral"),
+        pytest.param(decimal.Decimal("1.50"), 1.5, id="fractional"),
+        pytest.param(decimal.Decimal("-0.001"), -0.001, id="negative"),
+        pytest.param(decimal.Decimal("NaN"), None, id="nan"),
+        pytest.param(decimal.Decimal("Infinity"), None, id="inf"),
+    ],
+)
+def test_to_native_renders_decimal_identically_to_sanitize_json(
+    raw: decimal.Decimal, expected: float | None
+) -> None:
+    # #1804: a Parquet DECIMAL arrives as `decimal.Decimal` in an object column; the flat-file
+    # profiler used to render it as the string "100" while the SQL path rendered the number 100.0.
+    from backend.app.core.jsonsafe import sanitize_json
+    from backend.app.services.profile_service import _to_native
+
+    flat_file = _to_native(raw)
+    assert flat_file == sanitize_json(raw) == expected
+    assert not isinstance(flat_file, str)

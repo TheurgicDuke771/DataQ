@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import io
-import math
 from collections.abc import Callable, Generator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -17,7 +16,7 @@ if TYPE_CHECKING:
     from sqlalchemy.engine.interfaces import Dialect
 
 from backend.app.core.errors import DataQError
-from backend.app.core.jsonsafe import BINARY_TYPES, bytes_to_hex, sanitize_json
+from backend.app.core.jsonsafe import sanitize_json
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.flatfile import (
@@ -590,22 +589,14 @@ def infer_file_format(path: str, explicit: str | None) -> str:
 
 
 def _to_native(value: Any) -> Any:
-    """Coerce a numpy/pandas scalar to a JSON-friendly Python value."""
-    if value is None:
-        return None
-    if hasattr(value, "isoformat"):  # Timestamp / datetime / date
-        return value.isoformat()
-    if hasattr(value, "item"):  # numpy scalar → native through the one shared root (#1803)
-        return sanitize_json(value)
-    if isinstance(value, float) and math.isnan(value):
-        return None
-    if isinstance(value, bool | int | float | str):
-        return value
-    if isinstance(value, BINARY_TYPES):
-        return bytes_to_hex(value)  # same rendering as the SQL path's sanitize_json (#1721)
-    # Anything else a column can hold (Decimal, UUID, …) → a display string, so a
-    # min/max/top value is always JSON-encodable, never a 500 at the response boundary.
-    return str(value)
+    """Coerce a cell to the JSON-friendly value the SQL/warehouse path would produce —
+    one root (`sanitize_json`) for every driver type (#1721/#1803/#1804); anything it
+    leaves opaque (UUID, …) becomes a display string, never a 500 at the response boundary.
+    """
+    native = sanitize_json(value)
+    if native is None or isinstance(native, bool | int | float | str):
+        return native
+    return str(native)
 
 
 def _profile_columns(df: Any, *, columns: list[str], top_n: int) -> tuple[int, list[ColumnProfile]]:
