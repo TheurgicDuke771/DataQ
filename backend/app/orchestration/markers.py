@@ -71,8 +71,8 @@ def unambiguous_pipeline_run(session: Session, marker: str) -> PipelineRun | Non
 def ambiguous_markers(session: Session, markers: Iterable[str]) -> set[str]:
     """The subset of ``markers`` more than one stored pipeline run reconstructs to.
 
-    The concat expression has no index (#1814); the provider pre-filter narrows the
-    scan to the providers actually on the page.
+    Served by ``ix_pipeline_runs_marker`` (#1814); the provider pre-filter stays as a
+    cheap second candidate for the planner.
     """
     wanted = set(markers)
     if not wanted:
