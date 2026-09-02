@@ -394,6 +394,7 @@ def _run_results_payload(
             "observed_value": run_service.redact_observed_value(
                 r.observed_value,
                 tested_column=_tested_column(r.id),
+                expectation_type=context.get(r.id, (None, None))[1],
                 policy=policy,
                 tags=tags,
             ),
@@ -2151,6 +2152,7 @@ def dryrun_check(
             "observed_value": live_probe.redact_probe_observed_value(
                 outcome.observed_value,
                 tested_column=(config or {}).get("column"),
+                expectation_type=expectation_type,
                 policy=suite.column_policy,
                 # The governance floor applies to a PREVIEW too (G3, #433). A
                 # dry-run reads live warehouse data and hands it to a model, so a

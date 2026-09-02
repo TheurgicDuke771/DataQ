@@ -71,11 +71,18 @@ def redact_probe_observed_value(
     tested_column: str | None,
     policy: dict[str, Any] | None,
     tags: Mapping[str, str] | None = None,
+    expectation_type: str | None = None,
 ) -> dict[str, Any] | None:
     """Thin call into `run_service.redact_observed_value`."""
     from backend.app.services.run_service import redact_observed_value
 
-    return redact_observed_value(observed, tested_column=tested_column, policy=policy, tags=tags)
+    return redact_observed_value(
+        observed,
+        tested_column=tested_column,
+        expectation_type=expectation_type,
+        policy=policy,
+        tags=tags,
+    )
 
 
 def _profile_sample_values(column: Any) -> list[Any]:

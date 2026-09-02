@@ -143,6 +143,26 @@ def test_scalar_observed_value_is_masked() -> None:
     assert out == {"observed_value": _REDACTED_VALUE}
 
 
+def test_columnless_scalar_is_screened_through_the_expectation_type() -> None:
+    """#1793: the dry-run doors forward `expectation_type`, so a custom-SQL preview (no
+    `config.column`) still runs the value-shape signal instead of skipping the ladder.
+    """
+    out = redact_probe_observed_value(
+        {"observed_value": "ada@example.com"},
+        tested_column=None,
+        policy=None,
+        expectation_type="unexpected_rows_expectation",
+    )
+    assert out == {"observed_value": _REDACTED_VALUE}
+    count = redact_probe_observed_value(
+        {"observed_value": 3},
+        tested_column=None,
+        policy=None,
+        expectation_type="unexpected_rows_expectation",
+    )
+    assert count == {"observed_value": 3}
+
+
 def test_scalar_observed_value_on_an_unflagged_column_is_untouched() -> None:
     out = redact_probe_observed_value(
         {"observed_value": 34680}, tested_column="order_id", policy=None

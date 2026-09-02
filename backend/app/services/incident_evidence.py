@@ -154,7 +154,7 @@ def _failing_result_layer(
     """
     observed = _strip_sample_lists(result.observed_value)
     if check is not None:
-        tested_column, _expectation_type = run_service.historical_check_context(
+        tested_column, expectation_type = run_service.historical_check_context(
             session, [result], {check.id: check}
         ).get(result.id, (None, None))
         suite = session.get(Suite, run.suite_id)
@@ -162,6 +162,7 @@ def _failing_result_layer(
         observed = run_service.redact_observed_value(
             observed,
             tested_column=tested_column,
+            expectation_type=expectation_type,
             policy=suite.column_policy if suite is not None else None,
             tags=tags,
         )
