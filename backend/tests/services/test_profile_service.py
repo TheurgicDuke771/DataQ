@@ -976,7 +976,9 @@ def test_to_native_handles_none_and_nan() -> None:
         pytest.param(b"", id="empty"),
     ],
 )
-def test_to_native_renders_binary_identically_to_sanitize_json(raw: object) -> None:
+def test_to_native_renders_binary_identically_to_sanitize_json(
+    raw: bytes | bytearray | memoryview,
+) -> None:
     # #1721: the flat-file profiler (`_to_native`) and the SQL/warehouse path (`sanitize_json`)
     # must render the same BINARY value the same way — `str(b"\x01")` gave the Python repr
     # `"b'\\x01'"` while the SQL path gave hex `"01"`.
@@ -986,7 +988,7 @@ def test_to_native_renders_binary_identically_to_sanitize_json(raw: object) -> N
     flat_file = _to_native(raw)
     sql_path = sanitize_json(raw)
     assert flat_file == sql_path
-    assert flat_file == bytes(raw).hex()  # type: ignore[call-overload]
+    assert flat_file == bytes(raw).hex()
     assert not flat_file.startswith("b'")
 
 
