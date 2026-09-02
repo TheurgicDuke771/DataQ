@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from collections import defaultdict
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Hashable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, cast
@@ -982,7 +982,22 @@ def historical_check_context(
     """Per-**result** `(tested_column, expectation_type)`, resolved as of WHEN that
     result was written — not the check's CURRENT state (#1489).
     """
-    check_ids = {r.check_id for r in results if r.check_id is not None}
+    return historical_check_context_at(
+        session, {r.id: (r.check_id, r.created_at) for r in results}, checks
+    )
+
+
+def historical_check_context_at[K: Hashable](
+    session: Session,
+    subjects: Mapping[K, tuple[uuid.UUID | None, datetime]],
+    checks: Mapping[uuid.UUID, Check],
+) -> dict[K, tuple[str | None, str | None]]:
+    """`(tested_column, expectation_type)` per subject key, each resolved as of its
+    own `(check_id, at)` — the `CheckVersion` rule `historical_check_context` applies
+    to results, shared here for stored snapshots that keep no `Result` row, e.g. an
+    incident's evidence at its `last_seen_at` (#1809).
+    """
+    check_ids = {check_id for check_id, _at in subjects.values() if check_id is not None}
     versions_by_check: dict[uuid.UUID, list[CheckVersion]] = defaultdict(list)
     if check_ids:
         for version in session.scalars(
@@ -1010,7 +1025,7 @@ def historical_check_context(
                 break
         return effective.config.get("column"), effective.expectation_type
 
-    return {r.id: _resolve(r.check_id, r.created_at) for r in results}
+    return {key: _resolve(check_id, at) for key, (check_id, at) in subjects.items()}
 
 
 # Expectation types whose scalar `observed_value` is a literal cell, not a computed statistic

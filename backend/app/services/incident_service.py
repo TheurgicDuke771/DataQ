@@ -135,12 +135,14 @@ def redact_stale_evidence(session: Session) -> int:
     was never masked, so any incident opened pre-fix serves the raw value through
     `get_incident` (REST/MCP) and the RCA prompt indefinitely unless corrected here.
 
-    Uses the check's CURRENT `config.column` as the best available `tested_column`
-    (the original `Result` row isn't retained on `Incident`, so the point-in-time
-    resolution `historical_check_context` gives on a live run isn't available for a
-    stored snapshot — a check's tested column changing after the fact is rare and
-    this backfill runs once). Idempotent: re-running it after itself is a no-op,
-    since redacting an already-redacted value returns the same value.
+    The `(tested_column, expectation_type)` pair is resolved AS OF the snapshot's
+    write time via `run_service.historical_check_context_at` (#1809) — the same
+    `CheckVersion` rule every live surface applies — never from the check's CURRENT
+    row, which a `PATCH /checks` edit can move after the fact. The write time is
+    `Incident.last_seen_at`: the evidence is rewritten on every attached occurrence
+    beside that timestamp (`open_or_attach_incident`), and equals `created_at` for
+    an incident that never re-fired. Idempotent: re-running it after itself is a
+    no-op, since redacting an already-redacted value returns the same value.
 
     Returns the number of incidents actually rewritten.
     """
@@ -161,6 +163,10 @@ def redact_stale_evidence(session: Session) -> int:
         for a in session.scalars(select(Asset).where(Asset.id.in_({i.asset_id for i in incidents})))
     }
 
+    context = run_service.historical_check_context_at(
+        session, {i.id: (i.check_id, i.last_seen_at) for i in incidents}, checks
+    )
+
     updated = 0
     for incident in incidents:
         evidence = incident.evidence
@@ -170,14 +176,13 @@ def redact_stale_evidence(session: Session) -> int:
         if not isinstance(failing, dict) or "observed_value" not in failing:
             continue
         observed = failing["observed_value"]
-        check = checks.get(incident.check_id)
         suite = suites.get(incident.suite_id)
         asset = assets.get(incident.asset_id)
-        tested_column = check.config.get("column") if check and check.config else None
+        tested_column, expectation_type = context.get(incident.id, (None, None))
         redacted = run_service.redact_observed_value(
             observed,
             tested_column=tested_column,
-            expectation_type=check.expectation_type if check is not None else None,
+            expectation_type=expectation_type,
             policy=suite.column_policy if suite is not None else None,
             tags=asset.column_tags if asset is not None else None,
         )
