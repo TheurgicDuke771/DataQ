@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "ae6dbf8db56a",
+  "strategy": "manual-commit",
+  "branch": "docs/aws-authenticated-verification-2026-09-02",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/ae/6dbf8db56a/0/metadata.json",
+      "transcript": "/ae/6dbf8db56a/0/full.jsonl",
+      "compact_transcript": "/ae/6dbf8db56a/0/transcript.jsonl",
+      "content_hash": "/ae/6dbf8db56a/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 94,
+    "cache_creation_tokens": 1741,
+    "cache_read_tokens": 706002,
+    "output_tokens": 1381,
+    "api_call_count": 1
+  }
+}
