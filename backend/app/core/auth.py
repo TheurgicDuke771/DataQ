@@ -582,10 +582,32 @@ async def init_auth() -> None:
     )
 
 
-_UNAUTHENTICATED_MESSAGE = "Not authenticated: a valid Azure AD token or DataQ API key is required."
-_UNAUTHENTICATED_MESSAGE_OTP = (
-    "Not authenticated: sign in with an email code, or present a DataQ API key."
-)
+def unauthenticated_message(settings: Settings | None = None) -> str:
+    """The 401 body for the configured auth ladder (#1736): names only the credential
+    kinds THIS deployment accepts, derived from the same `Settings` properties the
+    ladder binds `get_current_user` on — so a Cognito or OTP stack never steers a
+    caller toward an Azure AD token it cannot mint.
+    """
+    s = settings or _settings
+    accepted: list[str] = []
+    if s.azure_auth_configured:
+        accepted.append("a valid Azure AD sign-in token")
+    elif s.generic_oidc_configured:
+        accepted.append("a valid sign-in token from your identity provider")
+    if s.otp_auth_configured:
+        accepted.append("a signed-in session (email code)")
+    accepted.append(f"a DataQ API key ({api_key_service.TOKEN_PREFIX}…)")
+    if len(accepted) == 1:
+        listed = accepted[0]
+    elif len(accepted) == 2:
+        listed = f"{accepted[0]} or {accepted[1]}"
+    else:
+        listed = ", ".join(accepted[:-1]) + f", or {accepted[-1]}"
+    return f"Not authenticated: {listed} is required."
+
+
+#: Bound once at import like the rest of the ladder; every 401 below reads it.
+_UNAUTHENTICATED_MESSAGE = unauthenticated_message(_settings)
 
 
 def _get_current_user_real(
@@ -632,7 +654,7 @@ def _get_current_user_real_or_otp(
     if azure_user is None:
         raise DataQError(
             code="unauthenticated",
-            message=_UNAUTHENTICATED_MESSAGE_OTP,
+            message=_UNAUTHENTICATED_MESSAGE,
             status_code=401,
         )
     aad_oid, email, display_name = _extract_claims(azure_user)
@@ -725,7 +747,7 @@ def _get_current_user_generic_oidc_or_otp(
     if oidc_claims is None:
         raise DataQError(
             code="unauthenticated",
-            message=_UNAUTHENTICATED_MESSAGE_OTP,
+            message=_UNAUTHENTICATED_MESSAGE,
             status_code=401,
         )
     return _resolve_generic_oidc_user(db, oidc_claims)
@@ -747,7 +769,7 @@ def _get_current_user_otp(
         return session_service.resolve_token(db, cookie)
     raise DataQError(
         code="unauthenticated",
-        message=_UNAUTHENTICATED_MESSAGE_OTP,
+        message=_UNAUTHENTICATED_MESSAGE,
         status_code=401,
     )
 
