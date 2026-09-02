@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "7d115bfe314a",
+  "strategy": "manual-commit",
+  "branch": "docs/issue-1806-er-ondelete-drift",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/7d/115bfe314a/0/metadata.json",
+      "transcript": "/7d/115bfe314a/0/full.jsonl",
+      "compact_transcript": "/7d/115bfe314a/0/transcript.jsonl",
+      "content_hash": "/7d/115bfe314a/0/content_hash.txt",
+      "prompt": "/7d/115bfe314a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 19211,
+    "cache_creation_tokens": 1073261,
+    "cache_read_tokens": 57595478,
+    "output_tokens": 177519,
+    "api_call_count": 185
+  }
+}
