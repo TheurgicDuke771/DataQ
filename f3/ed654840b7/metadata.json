@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "f3ed654840b7",
+  "strategy": "manual-commit",
+  "branch": "perf/issue-1814-marker-expression-index",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/f3/ed654840b7/0/metadata.json",
+      "transcript": "/f3/ed654840b7/0/full.jsonl",
+      "compact_transcript": "/f3/ed654840b7/0/transcript.jsonl",
+      "content_hash": "/f3/ed654840b7/0/content_hash.txt",
+      "prompt": "/f3/ed654840b7/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 4254,
+    "cache_creation_tokens": 527843,
+    "cache_read_tokens": 8310995,
+    "output_tokens": 20013,
+    "api_call_count": 22
+  }
+}
