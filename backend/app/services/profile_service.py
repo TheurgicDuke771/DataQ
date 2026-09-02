@@ -595,8 +595,8 @@ def _to_native(value: Any) -> Any:
         return None
     if hasattr(value, "isoformat"):  # Timestamp / datetime / date
         return value.isoformat()
-    if hasattr(value, "item"):  # numpy scalar → Python scalar
-        value = value.item()
+    if hasattr(value, "item"):  # numpy scalar → native through the one shared root (#1803)
+        return sanitize_json(value)
     if isinstance(value, float) and math.isnan(value):
         return None
     if isinstance(value, bool | int | float | str):
