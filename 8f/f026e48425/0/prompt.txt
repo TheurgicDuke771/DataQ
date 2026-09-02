@@ -1,0 +1,6 @@
+Does it make sence to create a SDK or wheel from DataQ?
+If yes what is the feasibility?
+
+---
+
+okay park it for v1.3, put it in roadmap also file an issue [with all the details, guardrail, etc.]
