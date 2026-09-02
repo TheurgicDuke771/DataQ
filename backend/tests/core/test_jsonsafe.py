@@ -170,3 +170,76 @@ def test_timestamps_and_dates_become_isoformat() -> None:
         "missing": None,
     }
     json.dumps(cleaned, allow_nan=False)
+
+
+def test_memoryview_becomes_hex() -> None:
+    # psycopg-style BYTEA surfaces as memoryview (#1729) — hex, like bytes/bytearray.
+    cleaned = sanitize_json({"min_value": memoryview(b"\x01\x02")})
+    assert cleaned == {"min_value": "0102"}
+    json.dumps(cleaned, allow_nan=False)
+
+
+# Every value type the sanitizer handles, used in the KEY position of a
+# `{column_value: count}` metric (#1729). Expected keys are what json.dumps renders
+# for a legal scalar key, or the value branch's own rendering for the rest.
+def _driver_keys() -> list[tuple[object, str]]:
+    import datetime
+    import decimal
+
+    import numpy as np
+
+    # (bytearray is unhashable, so it can never reach the key position.)
+    return [
+        (b"\x01\x02\x8f", "01028f"),
+        (memoryview(b"\x0a"), "0a"),
+        (decimal.Decimal("1234.56"), "1234.56"),
+        (decimal.Decimal("100"), "100.0"),
+        (np.int64(7), "7"),
+        (np.float64(2.5), "2.5"),
+        (np.bool_(True), "true"),
+        (True, "true"),
+        (False, "false"),
+        (None, "null"),
+        (3, "3"),
+        (-1.5, "-1.5"),
+        (datetime.date(2019, 1, 1), "2019-01-01"),
+        ("already-a-string", "already-a-string"),
+    ]
+
+
+def test_dict_keys_are_sanitized_to_json_strings() -> None:
+    import pytest
+
+    for raw, expected in _driver_keys():
+        cleaned = sanitize_json({raw: 1})
+        assert cleaned == {expected: 1}, raw
+        assert type(next(iter(cleaned))) is str, raw
+        json.dumps(cleaned, allow_nan=False)  # round-trips cleanly
+        # Sanity: the raw key really was not JSON-legal (or was already the target).
+        if not isinstance(raw, (str, bool, int, float)) and raw is not None:
+            with pytest.raises(TypeError):
+                json.dumps({raw: 1})
+
+
+def test_non_finite_float_key_is_nulled_like_the_value() -> None:
+    # json.dumps(allow_nan=False) refuses a NaN key outright; the value branch nulls a
+    # NaN, so the key renders as the string json would give that null.
+    cleaned = sanitize_json({float("nan"): 1, float("inf"): 2})
+    assert cleaned == {"null": 2}
+    json.dumps(cleaned, allow_nan=False)
+
+
+def test_nested_dict_keys_are_sanitized() -> None:
+    import decimal
+
+    # Mirrors the real shape: a per-value histogram under a metric payload.
+    payload = {"value_counts": {b"\x00": 3, decimal.Decimal("9.5"): 1, "plain": 2}}
+    cleaned = sanitize_json(payload)
+    assert cleaned == {"value_counts": {"00": 3, "9.5": 1, "plain": 2}}
+    json.dumps(cleaned, allow_nan=False)
+
+
+def test_key_sanitization_does_not_mutate_input() -> None:
+    original = {b"\x00": 1}
+    sanitize_json(original)
+    assert list(original) == [b"\x00"]

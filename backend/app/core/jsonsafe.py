@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import decimal
+import json
 import math
 from typing import Any
 
@@ -29,16 +30,37 @@ def sanitize_json(value: Any) -> Any:
         value = float(value)
     # Warehouse BINARY/VARBINARY columns (e.g. a profiled column's MIN/MAX) surface as
     # raw bytes (or bytearray, depending on the DBAPI driver — core/artifacts.py and
-    # lineage/dbt_manifest.py already treat the two as a pair) — hex-encode rather than
+    # lineage/dbt_manifest.py already treat the two as a pair; psycopg-style BYTEA
+    # arrives as memoryview, #1729) — hex-encode rather than
     # leaving something JSON can't serialize at all (the flat-file profiler's own
     # `_to_native` has an equivalent str() catch-all; this is the SQL path's analogous
     # case, #1719 review).
-    if isinstance(value, (bytes, bytearray)):
+    if isinstance(value, (bytes, bytearray, memoryview)):
         return value.hex()
     if isinstance(value, float):
         return value if math.isfinite(value) else None
     if isinstance(value, dict):
-        return {key: sanitize_json(item) for key, item in value.items()}
+        return {_json_key(key): sanitize_json(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
         return [sanitize_json(item) for item in value]
     return value
+
+
+def _json_key(key: Any) -> str:
+    """Coerce a dict key to the string JSON requires (#1729).
+
+    A `{column_value: count}` metric over a BINARY/NUMERIC column puts the same
+    driver types in the KEY position that the value branches above handle — and
+    a raw bytes/Decimal/numpy key crashes the whole JSONB insert. Keys take the
+    same rendering as the equivalent value (bytes → hex, Decimal/numpy → native)
+    and are then stringified the way ``json.dumps`` stringifies scalar keys
+    (``True`` → ``"true"``, ``None`` → ``"null"``, ``1.5`` → ``"1.5"``).
+    """
+    if isinstance(key, str):
+        return key
+    sanitized = sanitize_json(key)
+    if isinstance(sanitized, str):
+        return sanitized
+    if sanitized is None or isinstance(sanitized, (bool, int, float)):
+        return json.dumps(sanitized)
+    return str(sanitized)
