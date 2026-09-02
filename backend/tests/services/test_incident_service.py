@@ -882,3 +882,65 @@ def test_redact_stale_evidence_is_idempotent(db_session: Any, world: dict[str, A
 
     assert first == 1
     assert second == 0
+
+
+# ── once-per-run context resolution (#1792) ───────────────────────────────────
+
+
+def test_sync_issues_one_check_versions_query_regardless_of_failing_count(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    """`_sync_incidents_for_run` resolves `historical_check_context` ONCE over all
+    failing results (#1792) — one `check_versions` query for the run, not one per
+    failing check. Also pins the batched `Check` load and the PII floor still
+    applying on the batched path (a PII column stays masked in the stored card).
+    """
+    from sqlalchemy import event
+
+    from backend.app.db.models import CheckVersion
+
+    suite = world["suite"]
+    suite.column_policy = {"pii_columns": ["EMAIL"]}
+    db_session.add(suite)
+    checks = [_check(db_session, suite, name=f"c{i}") for i in range(4)]
+    checks[0].config = {"column": "EMAIL"}
+    db_session.add(checks[0])
+    run = Run(suite_id=suite.id, status="succeeded", triggered_by="manual", asset_id=suite.asset_id)
+    db_session.add(run)
+    db_session.flush()
+    for i, check in enumerate(checks):
+        # Value-signal classification masks an email-shaped string on ANY column, so only the
+        # policy-covered check carries one; the rest carry a plain scalar that must stay shown.
+        db_session.add(
+            Result(
+                run_id=run.id,
+                check_id=check.id,
+                status="fail",
+                observed_value={"observed_value": "victim@example.com" if i == 0 else 42},
+            )
+        )
+    db_session.commit()
+    db_session.expire_all()  # the per-check `session.get` must actually hit the DB
+
+    statements: list[str] = []
+
+    def _record(_conn: Any, _cursor: Any, statement: str, *_rest: Any) -> None:
+        statements.append(statement)
+
+    event.listen(db_session.bind, "before_cursor_execute", _record)
+    try:
+        incident_service.sync_incidents_for_run(db_session, run_id=run.id)
+    finally:
+        event.remove(db_session.bind, "before_cursor_execute", _record)
+
+    version_queries = [s for s in statements if CheckVersion.__tablename__ in s]
+    assert len(version_queries) == 1, f"expected ONE check_versions query, got {version_queries}"
+    check_loads = [s for s in statements if s.lstrip().startswith("SELECT") and "FROM checks" in s]
+    assert len(check_loads) == 1, f"expected ONE batched checks load, got {check_loads}"
+
+    incidents = {i.check_id: i for i in db_session.scalars(select(Incident))}
+    assert len(incidents) == 4
+    masked = incidents[checks[0].id].evidence["failing_result"]["observed_value"]
+    assert masked == {"observed_value": "<redacted>"}
+    shown = incidents[checks[1].id].evidence["failing_result"]["observed_value"]
+    assert shown == {"observed_value": 42}

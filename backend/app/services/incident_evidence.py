@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -46,6 +47,20 @@ _SAMPLE_LIST_KEYS = frozenset({"partial_unexpected_list", "unexpected_index_list
 MONITOR_KINDS = frozenset({"freshness", "volume", "schema_drift", "anomaly"})
 
 
+@dataclass(frozen=True)
+class RedactionContext:
+    """The redaction inputs for ONE failing result, resolved by the caller once per
+    run (#1792) — `tested_column`/`expectation_type` as of when the result was
+    written (`run_service.historical_check_context`), the suite's column policy and
+    the asset's warehouse tags.
+    """
+
+    tested_column: str | None
+    expectation_type: str | None
+    policy: dict[str, Any] | None
+    tags: Mapping[str, str] | None
+
+
 def _layer(name: str, fn: Callable[[], Any]) -> Any:
     """Run one evidence layer best-effort: any failure logs a structured warning
     and degrades that layer to ``None`` — never poisoning the card (and through
@@ -74,8 +89,14 @@ def build_evidence(
     result: Result,
     check: Check | None,
     asset: Asset | None,
+    context: RedactionContext | None = None,
 ) -> dict[str, Any]:
-    """Assemble the layer-1 evidence card for a breaching ``result`` on ``run``."""
+    """Assemble the layer-1 evidence card for a breaching ``result`` on ``run``.
+
+    ``context`` is the pre-resolved redaction input; when omitted the failing-result
+    layer resolves it itself (one `CheckVersion` query per call — batch it via
+    `resolve_redaction_contexts` when building cards for a whole run, #1792).
+    """
     now = datetime.now(UTC)
     return {
         "generated_at": now.isoformat(),
@@ -84,7 +105,7 @@ def build_evidence(
         "failing_result": _layer(
             "failing_result",
             lambda: _failing_result_layer(
-                session, run=run, result=result, check=check, asset=asset
+                session, run=run, result=result, check=check, asset=asset, context=context
             ),
         ),
         "kind_detail": _layer("kind_detail", lambda: _kind_detail_layer(check, result)),
@@ -135,8 +156,41 @@ def _asset_layer(asset: Asset | None) -> dict[str, Any] | None:
     }
 
 
+def resolve_redaction_contexts(
+    session: Session,
+    *,
+    run: Run,
+    results: list[Result],
+    checks: Mapping[uuid.UUID, Check],
+    asset: Asset | None,
+) -> dict[uuid.UUID, RedactionContext]:
+    """Per-result `RedactionContext` for ``results``, resolved ONCE for the run — one
+    `CheckVersion` query, one `Suite` load — the same shape as
+    `api/v1/runs.py::get_run` / `mcp/server.py::_run_results_payload` (#1792).
+    """
+    suite = session.get(Suite, run.suite_id)
+    policy = suite.column_policy if suite is not None else None
+    tags = asset.column_tags if asset is not None else None
+    historical = run_service.historical_check_context(session, results, checks)
+    return {
+        r.id: RedactionContext(
+            tested_column=historical.get(r.id, (None, None))[0],
+            expectation_type=historical.get(r.id, (None, None))[1],
+            policy=policy,
+            tags=tags,
+        )
+        for r in results
+    }
+
+
 def _failing_result_layer(
-    session: Session, *, run: Run, result: Result, check: Check | None, asset: Asset | None
+    session: Session,
+    *,
+    run: Run,
+    result: Result,
+    check: Check | None,
+    asset: Asset | None,
+    context: RedactionContext | None = None,
 ) -> dict[str, Any]:
     """The breaching result — status + metric + GX aggregates. **No sample rows.**
     ``sample_failures`` is never read.
@@ -155,17 +209,16 @@ def _failing_result_layer(
     """
     observed = _strip_sample_lists(result.observed_value)
     if check is not None:
-        tested_column, expectation_type = run_service.historical_check_context(
-            session, [result], {check.id: check}
-        ).get(result.id, (None, None))
-        suite = session.get(Suite, run.suite_id)
-        tags = asset.column_tags if asset is not None else None
+        if context is None:
+            context = resolve_redaction_contexts(
+                session, run=run, results=[result], checks={check.id: check}, asset=asset
+            )[result.id]
         observed = run_service.redact_observed_value(
             observed,
-            tested_column=tested_column,
-            expectation_type=expectation_type,
-            policy=suite.column_policy if suite is not None else None,
-            tags=tags,
+            tested_column=context.tested_column,
+            expectation_type=context.expectation_type,
+            policy=context.policy,
+            tags=context.tags,
         )
     return {
         "status": result.status,

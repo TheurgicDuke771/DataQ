@@ -24,7 +24,11 @@ from backend.app.db.models import (
     SuiteNotification,
 )
 from backend.app.services import audit_service, run_service, suite_service
-from backend.app.services.incident_evidence import build_evidence
+from backend.app.services.incident_evidence import (
+    RedactionContext,
+    build_evidence,
+    resolve_redaction_contexts,
+)
 from backend.app.services.run_service import list_results
 from backend.app.services.suite_authz import (
     SuiteForbiddenError,
@@ -97,12 +101,27 @@ def _sync_incidents_for_run(session: Session, *, run_id: uuid.UUID) -> None:
     asset = session.get(Asset, run.asset_id)
     auto_resolve = auto_resolve_enabled(session, run.suite_id)
 
+    # Resolved ONCE per run, not per failing result (#1792): the checks, and each
+    # result's as-of-write (tested_column, expectation_type) + policy + tags.
+    failing = [r for r in results if r.status in FAILING_TIERS]
+    checks = {
+        c.id: c
+        for c in session.scalars(select(Check).where(Check.id.in_({r.check_id for r in failing})))
+    }
+    contexts = resolve_redaction_contexts(
+        session, run=run, results=failing, checks=checks, asset=asset
+    )
+
     opened = attached = resolved = 0
     for result in results:
         if result.status in FAILING_TIERS:
-            check = session.get(Check, result.check_id)
             _, action = open_or_attach_incident(
-                session, run=run, result=result, check=check, asset=asset
+                session,
+                run=run,
+                result=result,
+                check=checks.get(result.check_id),
+                asset=asset,
+                context=contexts[result.id],
             )
             opened += action == "opened"
             attached += action == "attached"
@@ -205,12 +224,15 @@ def open_or_attach_incident(
     result: Result,
     check: Check | None,
     asset: Asset | None,
+    context: RedactionContext | None = None,
 ) -> tuple[Incident, str]:
     """Open a new incident for ``(run.asset_id, result.check_id)`` or attach an
     occurrence to the active one. Returns ``(incident, "opened"|"attached")``.
     """
     assert run.asset_id is not None  # guarded by the caller (_sync / anchor rule)
-    evidence = build_evidence(session, run=run, result=result, check=check, asset=asset)
+    evidence = build_evidence(
+        session, run=run, result=result, check=check, asset=asset, context=context
+    )
 
     for _ in range(_OPEN_ATTACH_ATTEMPTS):
         # Recomputed per attempt: an incident that resolved in the gap is now the
