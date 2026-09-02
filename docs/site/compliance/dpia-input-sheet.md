@@ -40,10 +40,12 @@ Admin-only capability that identifies a subject by a `(column, value)` pair (the
 same key the controller's own warehouse row uses; DataQ has no people-table) and
 surgically removes only the matching row/cell from `sample_failures` /
 `observed_value`, leaving the rest of a result's captured sample — other rows,
-other subjects — intact. **This on-demand erasure does not reach `incidents.evidence`**
-(the row above) — an incident's stored snapshot survives an on-demand erasure of
-the same value from `results`, and only entity cascade (deleting the covering
-suite/check/asset) removes it.
+other subjects — intact. **The same on-demand erasure also scrubs `incidents.evidence`**
+(the row above): the matching cell is removed from an incident's stored snapshot in
+place, and the response reports result and incident hits separately. The snapshot
+is matched by the check's *current* tested column (an incident keeps no result row
+to resolve the column as of capture time), so a check edited after the incident
+opened may need the request repeated under the earlier column name.
 
 ## Class 2 — workspace account data
 

@@ -610,7 +610,9 @@ controller's own warehouse identifies them: an Admin-only `(column, value)` work
 `POST /api/v1/admin/data-subject-requests/export` returns every matching failing-row-sample
 cell **unredacted** (the access/portability right) across every suite in the workspace, and
 records an access-audit event. The erasure counterpart removes only the matching row/cell —
-the rest of a result's captured sample survives. Both run synchronously and are recorded in
+the rest of a result's captured sample survives. Both also reach the stored incident evidence
+snapshot, a third persisted copy of the same value that sits outside the retention clock, and
+report result and incident hits separately. Both run synchronously and are recorded in
 the audit trail. Full mechanism and a verification walkthrough are in the
 [data-subject-rights runbook](compliance/data-subject-rights-runbook.md). The controller's
 own warehouse remains their own responsibility — this covers only what DataQ itself has
