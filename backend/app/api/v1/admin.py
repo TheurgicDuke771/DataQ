@@ -639,11 +639,29 @@ class DataSubjectMatch(ApiModel):
     observed_value: dict[str, Any] | None
 
 
+class DataSubjectIncidentMatch(ApiModel):
+    """An incident whose stored evidence snapshot carries the subject's value — a third
+    persisted copy, outside the retention clock, that `results` matching cannot see.
+    """
+
+    incident_id: UUID
+    suite_id: UUID
+    suite_name: str
+    check_id: UUID
+    check_name: str
+    status: str
+    created_at: datetime
+    observed_value: dict[str, Any] | None
+
+
 class DataSubjectExportResponse(ApiModel):
     column: str
     value: str
+    #: Results + incident snapshots together; the two lists below say where.
     match_count: int
     matches: list[DataSubjectMatch]
+    incident_match_count: int
+    incident_matches: list[DataSubjectIncidentMatch]
 
 
 @router.post(
@@ -664,19 +682,40 @@ def export_data_subject(
     matches = data_subject_requests.find_matching_results(
         db, column=payload.column, value=payload.value
     )
+    incident_matches = data_subject_requests.find_matching_incidents(
+        db, column=payload.column, value=payload.value
+    )
     audit_service.record_access(
         db,
         action="data_subject_request.export",
         entity_type="data_subject_request",
         entity_id=None,
         actor=current_user,
-        exposed=bool(matches),
-        detail={"column": payload.column, "match_count": len(matches)},
+        exposed=bool(matches or incident_matches),
+        detail={
+            "column": payload.column,
+            "match_count": len(matches) + len(incident_matches),
+            "incident_match_count": len(incident_matches),
+        },
     )
     return DataSubjectExportResponse(
         column=payload.column,
         value=payload.value,
-        match_count=len(matches),
+        match_count=len(matches) + len(incident_matches),
+        incident_match_count=len(incident_matches),
+        incident_matches=[
+            DataSubjectIncidentMatch(
+                incident_id=mi.incident_id,
+                suite_id=mi.suite_id,
+                suite_name=mi.suite_name,
+                check_id=mi.check_id,
+                check_name=mi.check_name,
+                status=mi.status,
+                created_at=mi.created_at,
+                observed_value=mi.observed_value,
+            )
+            for mi in incident_matches
+        ],
         matches=[
             DataSubjectMatch(
                 result_id=m.result_id,
@@ -698,8 +737,14 @@ def export_data_subject(
 class DataSubjectErasureResponse(ApiModel):
     column: str
     value: str
+    #: Results + incident evidence snapshots together (#1795); the per-store
+    #: breakdown follows so "erased" never silently means "erased from results only".
     matched_count: int
     erased_count: int
+    matched_result_count: int
+    erased_result_count: int
+    matched_incident_count: int
+    erased_incident_count: int
 
 
 @router.post(
@@ -730,14 +775,20 @@ def erase_data_subject(
         actor=current_user,
         after={
             "column": payload.column,
-            "matched_count": len(summary.matched_result_ids),
-            "erased_count": summary.erased_count,
+            "matched_count": len(summary.matched_result_ids) + len(summary.matched_incident_ids),
+            "erased_count": summary.erased_count + summary.erased_incident_count,
+            "matched_incident_count": len(summary.matched_incident_ids),
+            "erased_incident_count": summary.erased_incident_count,
         },
     )
     db.commit()
     return DataSubjectErasureResponse(
         column=payload.column,
         value=payload.value,
-        matched_count=len(summary.matched_result_ids),
-        erased_count=summary.erased_count,
+        matched_count=len(summary.matched_result_ids) + len(summary.matched_incident_ids),
+        erased_count=summary.erased_count + summary.erased_incident_count,
+        matched_result_count=len(summary.matched_result_ids),
+        erased_result_count=summary.erased_count,
+        matched_incident_count=len(summary.matched_incident_ids),
+        erased_incident_count=summary.erased_incident_count,
     )

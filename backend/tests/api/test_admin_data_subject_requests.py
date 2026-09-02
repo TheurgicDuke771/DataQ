@@ -162,4 +162,8 @@ def test_erase_with_no_match_is_a_no_op(client: TestClient, db_session: Any, as_
         "value": "alice@example.com",
         "matched_count": 0,
         "erased_count": 0,
+        "matched_result_count": 0,
+        "erased_result_count": 0,
+        "matched_incident_count": 0,
+        "erased_incident_count": 0,
     }

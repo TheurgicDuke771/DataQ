@@ -15,8 +15,8 @@ evidence samples of failing rows, copied out of the controller's own warehouse
 tables — and `incidents.evidence`, a stored snapshot of an incident's evidence
 card whose `failing_result.observed_value` can carry the same kind of literal
 warehouse cell value (see the [DPIA input sheet](dpia-input-sheet.md) for the
-full inventory). **This runbook's access/erasure endpoints below cover only the
-first two** — see the limit called out in §5. A "data subject" in DataQ's own
+full inventory). **This runbook's access/erasure endpoints below cover all three**
+(the incident snapshot is matched by the check's current tested column — see §5). A "data subject" in DataQ's own
 data is identified the same way the warehouse identifies them: a **`(column,
 value)` pair** — e.g. `column=email, value=alice@example.com` — not a DataQ user
 id (that is Class 2, workspace-account data, and is handled by ordinary account
@@ -83,8 +83,11 @@ failed* still needs whatever of the sample isn't the erased subject's. If a
 result's entire sample genuinely was one subject's data, the natural retention
 clock (or deleting the covering suite/check) is the tool for erasing the rest.
 
-Runs **synchronously** and returns `{matched_count, erased_count}` — `matched_count`
-is how many results contained the subject's data, `erased_count` is how many were
+Runs **synchronously** and returns `{matched_count, erased_count}` as totals over
+results **and** incident evidence snapshots, with a per-store breakdown
+(`matched_result_count` / `erased_result_count` / `matched_incident_count` /
+`erased_incident_count`) so an erasure confirmation can say where the data was.
+`matched_*` is how many rows contained the subject's data, `erased_*` how many were
 actually modified (normally equal; they can diverge only if a match's shape has no
 scrub path, which does not exist today but is reported honestly rather than
 assumed). Records one `audit_events` **config** event
@@ -101,6 +104,9 @@ To exercise erasure on a demo user before relying on it for a real request:
 2. `POST .../erase` with the same pair; confirm `erased_count >= 1`.
 3. Re-run the export — the subject's value should no longer appear, while
    `GET /api/v1/runs/{run_id}` still shows the result and its other data.
+   If the failing check had opened an incident, `incident_matches` in step 1 lists
+   it and `erased_incident_count` in step 2 counts it; `GET /api/v1/incidents/{id}`
+   should show the evidence card with that one value gone and everything else intact.
 4. Check `GET /api/v1/admin/audit-events?action=data_subject_request.erase` for
    the recorded event.
 
@@ -119,13 +125,12 @@ To exercise erasure on a demo user before relying on it for a real request:
   differently-formatted cell that is semantically the same value but not the same
   string representation will not match — state that in the response to the
   subject if a match seems to be missing.
-- **Neither endpoint reaches `incidents.evidence`.** An incident's stored evidence
-  snapshot (see §0) is a separate persisted copy of `observed_value`, not scanned
-  or matched by either `export` or `erase` today — an erasure request can leave a
-  subject's value sitting in an incident's evidence card even after it is
-  confirmed scrubbed from `results`. State this limit to the subject/controller
-  if erasure completeness is asked about directly, rather than let the
-  `erased_count` response imply full coverage.
+- **`incidents.evidence` is matched by the check's CURRENT tested column.** Both
+  endpoints scan the incident evidence snapshot (see §0) as well as `results`, but an
+  incident keeps no `Result` row, so the point-in-time column resolution the `results`
+  scan uses is not available there; a check whose `column` was edited after the
+  incident opened can hide a snapshot from the match. If a subject's value was
+  captured under an earlier column name, run the request once per name.
 - **This does not touch the controller's warehouse** — see §0.
 
 Last reviewed: 2026-09-01.
