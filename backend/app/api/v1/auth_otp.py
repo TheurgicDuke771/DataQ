@@ -14,10 +14,8 @@ from backend.app.api.v1.me import MeResponse
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.logging import get_logger
 from backend.app.core.roles import is_workspace_admin, resolve_role
-from backend.app.core.secrets import SecretStore, get_secret_store
 from backend.app.db.session import get_db
 from backend.app.services import otp_service, session_service
-from backend.app.services.otp_mailer import OtpMailer
 
 router = APIRouter(tags=["auth"])
 
@@ -79,27 +77,29 @@ def _cookie_secure(request: Request, settings: Settings) -> bool:
 def request_otp(
     payload: OtpRequest,
     db: Annotated[Session, Depends(get_db)],
-    secret_store: Annotated[SecretStore, Depends(get_secret_store)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> OtpRequestAck:
     """Email a one-time sign-in code, if the address is eligible.
 
     The response is IDENTICAL whether or not it is — ineligible, not allow-listed,
     or over quota all answer `{"status": "ok"}` after the same minimum elapsed time
-    (anti-enumeration, ADR 0032 decision 4). Only a real mail-transport failure
-    differs.
+    (anti-enumeration, ADR 0032 decision 4). The mail itself is sent by the worker
+    (#1731): nothing on this path waits on SMTP or the secret store, so a slow relay
+    cannot push an eligible address past the floor — and a delivery failure is an
+    operator log line, never a different response.
     """
     # Started FIRST, before any branch-dependent work, so the floor covers the
     # whole handler rather than whatever is left after the expensive part.
     started = time.monotonic()
     _require_otp_enabled(settings)
-    mailer = OtpMailer(secret_store, settings)
-    outcome = otp_service.request_code(db, payload.email, mailer=mailer, settings=settings)
+    outcome = otp_service.request_code(
+        db, payload.email, mailer=otp_service.QueuedCodeMailer(), settings=settings
+    )
     # Logged, never returned. The endpoint's whole job is to be uninformative;
     # the operator still needs to know which branch ran.
     log.info("otp_request_handled", outcome=outcome.reason)
-    # Every branch that reaches here — sent, ineligible, throttled — is padded to the same floor
-    # (#1137).
+    # Every branch that reaches here — queued, ineligible, throttled, dispatch_failed — is padded
+    # to the same floor (#1137). Defence in depth now that the transport is off this path.
     _hold_until_floor(started, settings.auth_otp_request_min_seconds)
     return OtpRequestAck(**_UNIFORM_REQUEST_RESPONSE)
 

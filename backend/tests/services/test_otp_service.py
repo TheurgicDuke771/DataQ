@@ -118,7 +118,7 @@ def test_an_eligible_address_gets_a_code_and_a_row(db_session: Any) -> None:
     email = _address()
     outcome, code = _request(db_session, email)
 
-    assert outcome.sent is True and outcome.reason == "sent"
+    assert outcome.sent is True and outcome.reason == "queued"
     assert len(code) == svc.CODE_DIGITS and code.isdigit()
     rows = db_session.query(OtpCode).filter(OtpCode.email == email).all()
     assert len(rows) == 1
@@ -146,16 +146,35 @@ def test_the_address_is_normalized_before_anything_touches_it(db_session: Any) -
     assert db_session.query(OtpCode).filter(OtpCode.email == email).count() == 1
 
 
-def test_a_send_failure_propagates_rather_than_being_swallowed(db_session: Any) -> None:
-    """#734 AC: no quiet no-op. The row is still committed (so a retry is cheap and
-    a code already in flight would still verify), but the caller learns.
+def test_a_mailer_failure_is_absorbed_into_the_outcome_not_raised(db_session: Any) -> None:
+    """#1731 (supersedes the #734 "no quiet no-op" AC): delivery state must never
+    reach the caller, because the caller is the uniform sign-in response. The row
+    is still committed (a code already in flight would still verify, and the retry
+    supersedes it) and the outcome names the branch for the operator's log line.
     """
-    from backend.app.services.otp_mailer import OtpMailSendError
-
     email = _address()
-    with pytest.raises(OtpMailSendError):
-        svc.request_code(db_session, email, mailer=_FailingMailer(), settings=_settings())
+    outcome = svc.request_code(db_session, email, mailer=_FailingMailer(), settings=_settings())
+    assert outcome.sent is False
+    assert outcome.reason == "dispatch_failed"
     assert db_session.query(OtpCode).filter(OtpCode.email == email).count() == 1
+
+
+def test_the_queued_mailer_publishes_the_send_task(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The production `CodeMailer` (#1731) is a Celery publish, by task NAME — the
+    api process must not import `worker.tasks` (and GX with it) to send mail.
+    """
+    from backend.app.worker.celery_app import OTP_SEND_TASK_NAME, celery_app
+
+    published: list[tuple[str, dict[str, Any]]] = []
+    monkeypatch.setattr(
+        celery_app, "send_task", lambda name, **options: published.append((name, options))
+    )
+
+    svc.QueuedCodeMailer().send_code(to="ada@acme.io", code="123456", expires_in_minutes=10)
+
+    name, options = published[0]
+    assert name == OTP_SEND_TASK_NAME
+    assert options["kwargs"] == {"to": "ada@acme.io", "code": "123456", "expires_in_minutes": 10}
 
 
 # ── verify: the caps ─────────────────────────────────────────────────────────

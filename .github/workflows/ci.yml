@@ -427,7 +427,7 @@ jobs:
 
       # ── Email-OTP lane (ADR 0032, #736) ────────────────────────────────── A SECOND api, because
       # the auth seam picks its mode at import time and OTP wins over dev-bypass.
-      - name: Start the OTP stack (SMTP sink + otp-mode api)
+      - name: Start the OTP stack (SMTP sink + otp-mode api + worker)
         env:
           # Its own database, so the dev-bypass lane's seeded demo rows and this
           # lane's self-provisioned OTP users can never interfere.
@@ -449,7 +449,7 @@ jobs:
       - name: OTP stack logs on failure
         if: ${{ failure() }}
         run: |
-          for f in /tmp/dataq-otp-lane*/api.log /tmp/dataq-otp-lane*/sink.log; do
+          for f in /tmp/dataq-otp-lane*/api.log /tmp/dataq-otp-lane*/sink.log /tmp/dataq-otp-lane*/worker.log; do
             [ -f "$f" ] && { echo "── $f ──"; cat "$f"; }
           done || true
 

@@ -32,6 +32,9 @@ LLM_INVOKE_TASK_NAME = "llm_invoke"
 #: too (`-Q celery,llm`) silently never processes it; deploy/README.md has the
 #: rollout note.
 LLM_QUEUE_NAME = "llm"
+#: OTP sign-in mail delivery (#1731) — deliberately on the DEFAULT queue, not its own: a new
+#: queue needs the coordinated worker `-Q` change (#1777) and the send is a sub-second SMTP call.
+OTP_SEND_TASK_NAME = "send_otp_code"
 # Where prerun stashes the ContextVar reset handle for postrun. Deliberately
 # avoids the word "token" so Bandit/Ruff (B105/S105) don't flag it as a secret.
 _REQUEST_ID_RESET_ATTR = "_dataq_request_id_reset"

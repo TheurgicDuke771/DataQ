@@ -25,6 +25,25 @@
 > **without** `Secure` over HTTPS. Force `AUTH_SESSION_COOKIE_SECURE=true`/`false`
 > when your own proxy doesn't forward that header faithfully.
 
+> **Amendment (2026-09-02):**
+> Decision 7's "synchronous on the request path, with send errors surfaced to the
+> caller" is **reversed**. The request-side latency floor (`AUTH_OTP_REQUEST_MIN_SECONDS`) is a *minimum*: it pads an ineligible address up to the floor but cannot pad an
+> eligible one down, so a relay slower than the floor made allow-listed addresses
+> measurably slower than strangers — membership enumeration by timing. The mail send
+> (and the SMTP password lookup it needs) now runs **out-of-band on the worker**
+> (`send_otp_code`, default `celery` queue — deliberately not a new queue, which would
+> need a coordinated `-Q` rollout): the api mints and commits the code, publishes
+> the task, and returns at the floor. A send or publish failure is an **operator log line
+> only** (`otp_send_task_failed` / `otp_request_dispatch_failed`) and the response stays
+> the uniform `ok` — the old 502/503 answered differently for members than for strangers
+> for as long as the relay was down, i.e. an outage was itself an oracle. "A mail outage
+> must not be a silent no-op" is now served by the admin **SMTP pre-flight**, which stays
+> synchronous by design (its purpose is the live check; it is admin-only), and by the
+> worker's staged error log. Two consequences: the **worker needs the same `AUTH_EMAIL_*`
+> block as the api** (the reference compose/IaC already share it), and the plaintext code
+> crosses the broker for the seconds it is queued — the message carries a redacted
+> `kwargsrepr`, expires with the code's own TTL, and stores no result.
+
 ## Context
 
 Human sign-in today has exactly one real path: Azure AD (`fastapi-azure-auth` on the backend, generic OIDC against Azure on the frontend). PATs (ADR 0026) are headless-only and need an existing user to mint them; dev-bypass is single-user local eval. So a BYOL customer on a non-Azure cloud, and the post-wind-down local-first posture, have **no way to log a human in**. ADR 0026 rejected HTTP Basic because it would make DataQ a password system (storage/hashing policy, lockout, reset flows). Email OTP is passwordless — proof of mailbox ownership is the credential — so it closes the gap without reopening that rejection. It **complements, not replaces**, the generic OIDC/JWKS backend validator (ADR 0013 Phase 2): generic OIDC serves customers with an IdP; OTP serves small teams without one.

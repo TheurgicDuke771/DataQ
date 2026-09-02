@@ -227,6 +227,18 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Fixed
 
+- **Email sign-in codes are now sent by the worker, not on the request path.** The
+  code-request endpoint's latency floor is a *minimum* — it could pad a non-member's response
+  up to the floor but never an allow-listed address's down — so a mail relay slower than the
+  floor made members measurably slower than strangers, and a relay outage answered `502` for
+  members and `ok` for strangers. The api now mints the code, hands delivery to the worker
+  and answers at the floor regardless of what the relay does; a send failure is a worker log
+  line (`otp_send_task_failed`) and the response stays `ok`. Two things to check on upgrade:
+  the **worker needs the same `AUTH_EMAIL_*` block as the api** (the reference compose and
+  cloud stacks already share it), and the admin SMTP pre-flight (`POST
+  /api/v1/admin/auth-email/test`) is unchanged — it still exercises the api's own transport,
+  synchronously, so use it to find a broken relay. ADR 0032 carries the amendment.
+
 - **A scalar `observed_value` with no resolvable column was shown unscreened.** When a
   result's tested column could not be determined — a custom-SQL check (no single column),
   a check deleted after the run, or a caller supplying no context — the scalar branch of the

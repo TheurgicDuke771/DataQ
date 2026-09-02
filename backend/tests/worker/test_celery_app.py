@@ -14,6 +14,7 @@ from backend.app.worker import celery_app
 from backend.app.worker.celery_app import (
     LLM_INVOKE_TASK_NAME,
     LLM_QUEUE_NAME,
+    OTP_SEND_TASK_NAME,
     REQUEST_ID_HEADER,
     _clear_request_id,
     _inject_request_id,
@@ -61,6 +62,19 @@ def test_llm_invoke_routes_to_its_own_queue() -> None:
     """
     app = create_celery_app()
     assert app.conf.task_routes == {LLM_INVOKE_TASK_NAME: {"queue": LLM_QUEUE_NAME}}
+
+
+def test_send_otp_code_stays_on_the_default_queue() -> None:
+    """#1731: a dedicated queue would need the coordinated worker `-Q` change
+    (#1777) — routing it by default means an upgrade cannot leave sign-in codes
+    queued on a queue no worker consumes. Pinned so a future `task_routes` entry
+    is a deliberate decision, not drift.
+    """
+    import backend.app.worker.tasks  # noqa: F401  — registers the tasks
+
+    app = create_celery_app()
+    assert OTP_SEND_TASK_NAME not in app.conf.task_routes
+    assert OTP_SEND_TASK_NAME in celery_app.celery_app.tasks
 
 
 def test_worker_concurrency_is_pinned_from_settings(monkeypatch: pytest.MonkeyPatch) -> None:

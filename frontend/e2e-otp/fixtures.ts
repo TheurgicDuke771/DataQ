@@ -61,8 +61,8 @@ function makeSignIn(page: Page): SignIn {
 
   const readCode = async (email: string) => {
     let code = '';
-    // Poll rather than sleep: the send is synchronous on the request path, but
-    // the sink writes on its own thread, so there is a small real race.
+    // Poll rather than sleep: the send happens on the worker (#1731), so the
+    // request returning says only that the code was queued, not delivered.
     await expect
       .poll(
         async () => {
