@@ -1448,6 +1448,149 @@ def test_moving_the_warehouse_asks_for_the_storage_key_not_the_catalog_password(
     assert conn.config["warehouse"] == "s3://bucket/warehouse"
 
 
+# ────────── empty-string credential floor at the service boundary (#1732) ───────
+
+
+def _iceberg_with_catalog_secret(db_session: Any, store: FakeSecretStore) -> Connection:
+    return svc.create_connection(
+        db_session,
+        name="harness-iceberg",
+        conn_type="iceberg",
+        env="dev",
+        config=dict(_ICEBERG_SQL_CONFIG),
+        secret=None,
+        catalog_secret="the-catalog-password",
+        created_by=_user(db_session).id,
+        secret_store=store,
+    )
+
+
+def test_update_empty_secret_cannot_satisfy_the_redirect_guard(db_session: Any) -> None:
+    """`secret=""` used to read as "credential re-supplied" to the #1401 guard AND overwrite the
+    stored credential with nothing — the API schema's `min_length=1` was the only thing in the
+    way. The service now refuses it before the guard runs, so a move plus an empty string is
+    neither a redirect nor a blanking.
+    """
+    store = FakeSecretStore()
+    conn = _create(db_session, store)
+    ref = conn.secret_ref
+    assert ref is not None
+
+    with pytest.raises(svc.EmptyCredentialError) as exc:
+        svc.update_connection(
+            db_session,
+            conn.id,
+            config={**_SF_CONFIG, "account": "attacker.us-east-1"},
+            secret="",
+            secret_store=store,
+        )
+
+    assert exc.value.detail == {"field": "secret"}
+    db_session.refresh(conn)
+    assert conn.config["account"] == _SF_CONFIG["account"]
+    assert store.data[ref] == "p@ss"
+
+
+def test_update_empty_catalog_secret_cannot_satisfy_the_redirect_guard(db_session: Any) -> None:
+    store = FakeSecretStore()
+    conn = _iceberg_with_catalog_secret(db_session, store)
+    ref = conn.config["catalog_secret_name"]
+
+    with pytest.raises(svc.EmptyCredentialError) as exc:
+        svc.update_connection(
+            db_session,
+            conn.id,
+            config={**_ICEBERG_SQL_CONFIG, "catalog_uri": "sqlite:///moved.db"},
+            catalog_secret="",
+            secret_store=store,
+        )
+
+    assert exc.value.detail == {"field": "catalog_secret"}
+    db_session.refresh(conn)
+    assert conn.config["catalog_uri"] == _ICEBERG_SQL_CONFIG["catalog_uri"]
+    assert store.data[ref] == "the-catalog-password"
+
+
+def test_update_empty_secret_does_not_blank_the_stored_credential(db_session: Any) -> None:
+    """No move at all — the plain blanking half, which the guard never covered."""
+    store = FakeSecretStore()
+    conn = _create(db_session, store)
+    ref = conn.secret_ref
+    assert ref is not None
+
+    with pytest.raises(svc.EmptyCredentialError):
+        svc.update_connection(db_session, conn.id, secret="", secret_store=store)
+    with pytest.raises(svc.EmptyCredentialError):
+        svc.update_connection(db_session, conn.id, name="renamed", secret="", secret_store=store)
+
+    db_session.refresh(conn)
+    assert store.data[ref] == "p@ss"
+    assert conn.name == "finance-dev"
+
+
+def test_update_omitted_secret_is_still_not_a_rotation(db_session: Any) -> None:
+    """`None` keeps meaning "not supplied" — the floor must not widen into "always required"."""
+    store = FakeSecretStore()
+    conn = _create(db_session, store)
+    ref = conn.secret_ref
+    assert ref is not None
+    svc.update_connection(db_session, conn.id, name="renamed", secret=None, secret_store=store)
+    assert store.data[ref] == "p@ss"
+
+
+def test_create_empty_secret_is_refused_and_persists_nothing(db_session: Any) -> None:
+    store = FakeSecretStore()
+    with pytest.raises(svc.EmptyCredentialError) as exc:
+        _create(db_session, store, secret="")
+    assert exc.value.detail == {"field": "secret"}
+    assert store.data == {}
+    assert db_session.scalar(select(func.count()).select_from(Connection)) == 0
+
+
+def test_create_empty_catalog_secret_is_refused(db_session: Any) -> None:
+    store = FakeSecretStore()
+    with pytest.raises(svc.EmptyCredentialError) as exc:
+        svc.create_connection(
+            db_session,
+            name="harness-iceberg",
+            conn_type="iceberg",
+            env="dev",
+            config=dict(_ICEBERG_SQL_CONFIG),
+            secret=None,
+            catalog_secret="",
+            created_by=_user(db_session).id,
+            secret_store=store,
+        )
+    assert exc.value.detail == {"field": "catalog_secret"}
+    assert store.data == {}
+
+
+def test_reauth_empty_secret_is_refused_and_keeps_the_stored_credential(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = FakeSecretStore()
+    conn = _create(db_session, store)
+    ref = conn.secret_ref
+    assert ref is not None
+    adapter = _PassAdapter()
+    monkeypatch.setattr(svc, "get_connection_adapter", lambda t: adapter)
+
+    with pytest.raises(svc.EmptyCredentialError):
+        svc.reauth_connection(db_session, conn.id, secret="", secret_store=store)
+
+    assert store.data[ref] == "p@ss"
+
+
+def test_whitespace_secret_is_a_value_not_an_omission(db_session: Any) -> None:
+    """The floor matches the API schema (`min_length=1`) exactly: only `""` is rejected."""
+    store = FakeSecretStore()
+    conn = _create(db_session, store)
+    ref = conn.secret_ref
+    assert ref is not None
+    svc.update_connection(db_session, conn.id, secret=" ", secret_store=store)
+    assert store.data[ref] == " "
+
+
 # ────────── delete removes the catalog secret too (#372/#1059 convention) ───────
 
 

@@ -117,6 +117,22 @@ class CredentialRedirectError(DataQError):
     code = "credential_redirect"
 
 
+class EmptyCredentialError(DataQError):
+    """`secret=""` at the service boundary (#1732): it would blank the stored credential AND
+    count as "re-supplied" to the #1401 redirect guard. `None` is the only "not supplied".
+    """
+
+    status_code = 422
+    code = "connection_credential_empty"
+
+
+def _reject_empty_credentials(**supplied: str | None) -> None:
+    # Only the empty string — whitespace is a value the API schema (`min_length=1`) accepts.
+    for field, value in supplied.items():
+        if value == "":
+            raise EmptyCredentialError(f"'{field}' must not be empty", detail={"field": field})
+
+
 def _reject_uncredentialed_redirect(
     conn_type: str,
     *,
@@ -339,6 +355,7 @@ def create_connection(
     catalog_secret: str | None = None,
 ) -> Connection:
     """Validate, persist, and (if given) write the credential(s)."""
+    _reject_empty_credentials(secret=secret, catalog_secret=catalog_secret)
     _validated_config(conn_type, config)
     _validate_env(env)
     # #1118: there is no stored row yet, so ANY `*_secret_name` in the payload names someone else's
@@ -521,6 +538,7 @@ def update_connection(
     catalog_secret: str | None = None,
 ) -> Connection:
     """Partial update of name / config / secret(s). Type and env are immutable."""
+    _reject_empty_credentials(secret=secret, catalog_secret=catalog_secret)
     conn = get_connection(session, connection_id)
     # Capture before commit: a unique violation rolls back and expires the
     # instance, so read the (immutable) type/env now for the conflict message.
@@ -644,6 +662,7 @@ def reauth_connection(
     actor_id: uuid.UUID | None = None,
 ) -> None:
     """Rotate an existing connection's credential and verify it, in one step."""
+    _reject_empty_credentials(secret=secret)
     conn = get_connection(session, connection_id)
     before = audit_service.snapshot("connection", conn)
     secret_ref = conn.secret_ref or connection_secret_ref(
