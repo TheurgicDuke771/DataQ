@@ -80,6 +80,15 @@ monitored" — the #1 gap in both our own G-a and the external review.
   compatibility policy · [#1707](https://github.com/TheurgicDuke771/DataQ/issues/1707)
   opt-in telemetry seam (built *before* the partner arrives, default off).
 - G-c is only dischargeable this way. No amount of internal testing moves it.
+- [#1829](https://github.com/TheurgicDuke771/DataQ/issues/1829) thin Python
+  client SDK (`dataq-client`) generated from the OpenAPI spec + a small
+  `trigger_run`/`wait_for_run` layer — the consumer side of a CI/CD gate
+  without #1651's ADR. Parked here 2026-09-02; gated on #1705 (compatibility
+  policy), since a published client is a compatibility promise. Guardrails on
+  the issue (spec-drift contract test, status-not-counts polling, OIDC trusted
+  publishing). **Rejected, recorded there:** a `dataq-core` library wheel of
+  the backend (it is an application, not a library) and a wheel for the
+  stdlib-only Airflow/dbt callback snippets.
 
 ### Track 3 — Operate-a-workspace (admin phases 2–3)
 
