@@ -171,6 +171,34 @@ def test_timestamps_and_dates_become_isoformat() -> None:
     json.dumps(cleaned, allow_nan=False)
 
 
+_MIDNIGHT = "2026-01-01T00:00:00"
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        pytest.param(np.datetime64(f"{_MIDNIGHT}.000000000"), _MIDNIGHT, id="ns"),
+        pytest.param(np.datetime64(f"{_MIDNIGHT}.123456789"), f"{_MIDNIGHT}.123456", id="ns-sub"),
+        pytest.param(np.datetime64(f"{_MIDNIGHT}.000000"), _MIDNIGHT, id="us"),
+        pytest.param(np.datetime64(_MIDNIGHT), _MIDNIGHT, id="s"),
+        pytest.param(np.datetime64("2026-01-01"), "2026-01-01", id="D"),  # a date, as before
+    ],
+)
+def test_numpy_datetime64_becomes_isoformat(raw: object, expected: str) -> None:
+    # `.item()` on a datetime64 is a datetime at µs and coarser but an int (ns since
+    # the epoch) at ns precision (#1803) — pandas' native unit, so a raw
+    # `series.to_numpy()[i]` would have persisted as `1767225600000000000`.
+    cleaned = sanitize_json({"max_timestamp": raw})
+    assert cleaned == {"max_timestamp": expected}
+    assert type(cleaned["max_timestamp"]) is str
+    json.dumps(cleaned, allow_nan=False)
+
+
+def test_numpy_datetime64_nat_becomes_none() -> None:
+    assert sanitize_json(np.datetime64("NaT")) is None
+    assert sanitize_json(np.datetime64("NaT", "ns")) is None
+
+
 def test_memoryview_becomes_hex() -> None:
     # psycopg-style BYTEA surfaces as memoryview (#1729) — hex, like bytes/bytearray.
     cleaned = sanitize_json({"min_value": memoryview(b"\x01\x02")})
@@ -198,6 +226,14 @@ _DRIVER_KEYS = [
     pytest.param(datetime.date(2019, 1, 1), "2019-01-01", False, id="date"),
     pytest.param(pd.Timestamp("2026-01-01"), "2026-01-01T00:00:00", False, id="pd-timestamp"),
     pytest.param(pd.NA, "null", False, id="pd-na"),
+    pytest.param(
+        np.datetime64("2026-01-01T00:00:00.000000000"),
+        "2026-01-01T00:00:00",
+        False,
+        id="np-datetime64-ns",
+    ),
+    pytest.param(np.datetime64("2026-01-01"), "2026-01-01", False, id="np-datetime64-D"),
+    pytest.param(np.datetime64("NaT", "ns"), "null", False, id="np-datetime64-nat"),
     pytest.param((1, 2), "[1, 2]", False, id="tuple"),
     pytest.param("plain", "plain", True, id="str"),
 ]
