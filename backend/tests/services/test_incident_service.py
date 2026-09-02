@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -13,6 +14,7 @@ from sqlalchemy.orm import Session as SASession
 from backend.app.db.models import (
     Asset,
     Check,
+    CheckVersion,
     Connection,
     Incident,
     Result,
@@ -882,3 +884,148 @@ def test_redact_stale_evidence_is_idempotent(db_session: Any, world: dict[str, A
 
     assert first == 1
     assert second == 0
+
+
+def _version(
+    db: Any, check: Check, *, version_no: int, config: dict[str, Any], at: datetime
+) -> None:
+    db.add(
+        CheckVersion(
+            check_id=check.id,
+            version_no=version_no,
+            name=check.name,
+            kind=check.kind,
+            expectation_type=check.expectation_type,
+            config=config,
+            created_at=at,
+        )
+    )
+
+
+def test_redact_stale_evidence_classifies_by_the_pair_in_effect_when_the_evidence_was_written(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    """#1809: the snapshot was captured while the check tested the PII column
+    `EMAIL`; the check was then edited to test `id`. Every live surface resolves
+    the pair as of the write time via `historical_check_context`, so the backfill
+    must too — classifying by the CURRENT column would leave the raw address in
+    the only stored copy while the same value is masked everywhere else. The value is
+    deliberately NOT PII-shaped, so only the column's policy classification — not the
+    value-shape signal — decides, and the test fails against the unfixed code."""
+    suite = world["suite"]
+    suite.column_policy = {"pii_columns": ["EMAIL"]}
+    db_session.add(suite)
+    check = _check(db_session, suite, name="orders_email_not_null")
+    check.config = {"column": "id"}  # the CURRENT column — not sensitive
+    db_session.add(check)
+    t0 = datetime(2026, 1, 1, tzinfo=UTC)
+    t1 = datetime(2026, 2, 1, tzinfo=UTC)
+    _version(db_session, check, version_no=1, config={"column": "EMAIL"}, at=t0)
+    _version(db_session, check, version_no=2, config={"column": "id"}, at=t1)
+    incident = Incident(
+        asset_id=suite.asset_id,
+        check_id=check.id,
+        suite_id=suite.id,
+        status="open",
+        created_at=t0,
+        last_seen_at=t0,
+        evidence={
+            "failing_result": {
+                "status": "fail",
+                "metric_value": None,
+                "observed_value": {"observed_value": "ORD-0001"},
+                "expected_value": None,
+            }
+        },
+    )
+    db_session.add(incident)
+    db_session.commit()
+
+    updated = incident_service.redact_stale_evidence(db_session)
+
+    assert updated == 1
+    db_session.refresh(incident)
+    assert incident.evidence is not None
+    assert incident.evidence["failing_result"]["observed_value"]["observed_value"] == "<redacted>"
+
+
+def _count_incident_edited_onto_a_pii_column(
+    db_session: Any, world: dict[str, Any], *, policy: dict[str, Any]
+) -> Incident:
+    """A row-count check (no column) whose evidence held a count of 0, later edited into a
+    column-bearing type on the PII column `EMAIL` — the issue's own scenario."""
+    suite = world["suite"]
+    suite.column_policy = policy
+    db_session.add(suite)
+    check = _check(db_session, suite, name="orders_rows")
+    check.config = {"column": "EMAIL"}  # CURRENT: column-bearing, on the PII column
+    db_session.add(check)
+    t0 = datetime(2026, 1, 1, tzinfo=UTC)
+    t1 = datetime(2026, 2, 1, tzinfo=UTC)
+    db_session.add(
+        CheckVersion(
+            check_id=check.id,
+            version_no=1,
+            name=check.name,
+            kind=check.kind,
+            expectation_type="expect_table_row_count_to_be_between",
+            config={"min_value": 1},
+            created_at=t0,
+        )
+    )
+    _version(db_session, check, version_no=2, config={"column": "EMAIL"}, at=t1)
+    incident = Incident(
+        asset_id=suite.asset_id,
+        check_id=check.id,
+        suite_id=suite.id,
+        status="open",
+        created_at=t0,
+        last_seen_at=t0,
+        evidence={
+            "failing_result": {
+                "status": "fail",
+                "metric_value": 0.0,
+                "observed_value": {"observed_value": 0},
+                "expected_value": None,
+            }
+        },
+    )
+    db_session.add(incident)
+    db_session.commit()
+    return incident
+
+
+def test_redact_stale_evidence_keeps_a_count_the_live_surface_would_show(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    """#1809's other direction: the type in effect when the evidence was written makes the
+    scalar a statistic, which the live surfaces show; classifying by the CURRENT pair
+    (a PII column) would irreversibly mask the stored count."""
+    incident = _count_incident_edited_onto_a_pii_column(
+        db_session, world, policy={"pii_columns": ["EMAIL"]}
+    )
+
+    updated = incident_service.redact_stale_evidence(db_session)
+
+    assert updated == 0
+    db_session.refresh(incident)
+    assert incident.evidence is not None
+    assert incident.evidence["failing_result"]["observed_value"] == {"observed_value": 0}
+
+
+def test_redact_stale_evidence_masks_a_count_on_a_fail_closed_suite_like_the_live_surface(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    """Under G3 fail-closed mode a column-less statistic is "not known safe" and masks on
+    every live surface (#1801). The backfill applies the same rule under the historical
+    pair — it must never be looser than the surfaces that read the snapshot."""
+    incident = _count_incident_edited_onto_a_pii_column(
+        db_session, world, policy={"require_classification": True}
+    )
+
+    updated = incident_service.redact_stale_evidence(db_session)
+
+    assert updated == 1
+    db_session.refresh(incident)
+    assert incident.evidence is not None
+    assert incident.evidence["failing_result"]["observed_value"] == {"observed_value": "<redacted>"}

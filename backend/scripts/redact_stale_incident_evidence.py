@@ -18,7 +18,11 @@ is the other half of closing #1772.
 
 Delegates to `incident_service.redact_stale_evidence`, which is idempotent — safe
 to re-run (a no-op the second time) and safe to run before OR after this fix's
-code is live (an already-masked snapshot is left untouched either way).
+code is live (an already-masked snapshot is left untouched either way). It
+classifies each snapshot by the check's `(column, expectation_type)` AS OF the
+incident's `last_seen_at` — the evidence write time — not the check's current row
+(#1809), so a check edited after the incident opened is masked the way every live
+surface would mask it, and a re-run after such an edit is still a no-op.
 """
 
 from __future__ import annotations
