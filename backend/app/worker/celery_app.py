@@ -32,8 +32,9 @@ LLM_INVOKE_TASK_NAME = "llm_invoke"
 #: too (`-Q celery,llm`) silently never processes it; deploy/README.md has the
 #: rollout note.
 LLM_QUEUE_NAME = "llm"
-#: OTP sign-in mail delivery (#1731) — deliberately on the DEFAULT queue, not its own: a new
-#: queue needs the coordinated worker `-Q` change (#1777) and the send is a sub-second SMTP call.
+#: OTP sign-in mail delivery (#1731). Routed onto the already-consumed `llm` queue, not the
+#: default one: behind a top-of-the-hour run_suite fan-out a sign-in code would wait its whole
+#: TTL and be discarded, and a NEW queue would need the coordinated worker `-Q` change (#1777).
 OTP_SEND_TASK_NAME = "send_otp_code"
 # Where prerun stashes the ContextVar reset handle for postrun. Deliberately
 # avoids the word "token" so Bandit/Ruff (B105/S105) don't flag it as a secret.
@@ -72,7 +73,10 @@ def create_celery_app() -> Celery:
         # backlog no longer blocks llm_invoke from being pulled at all. It
         # does NOT add an execution slot — a RUNNING long suite holds one of
         # the `worker_concurrency` slots for its full duration (#1789 review).
-        task_routes={LLM_INVOKE_TASK_NAME: {"queue": LLM_QUEUE_NAME}},
+        task_routes={
+            LLM_INVOKE_TASK_NAME: {"queue": LLM_QUEUE_NAME},
+            OTP_SEND_TASK_NAME: {"queue": LLM_QUEUE_NAME},
+        },
         # Pinned here so it ships with the image (#1790): the prefork default is the HOST's
         # core count, which gave the two reference deployments 4 and 2 on identical 1-vCPU
         # tasks. A `--concurrency` CLI flag still overrides this.

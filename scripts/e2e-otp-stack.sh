@@ -71,6 +71,11 @@ export AUTH_SESSION_COOKIE_SECURE=false
 # Trust ONLY the sink's throwaway certificate, and ONLY for the OTP mailer's own connection (#1146).
 export AUTH_EMAIL_CA_BUNDLE="$OTP_STATE_DIR/sink-cert.pem"
 
+# The api PUBLISHES send_otp_code and the worker below consumes it, so both must share this
+# lane's own Redis db index — set BEFORE either process starts (#1731 review).
+export REDIS_URL="${OTP_REDIS_URL:-redis://localhost:6379/2}"
+export BEAT_WATCHDOG_STALE_AFTER_S=0
+
 uvicorn backend.app.main:app --host 127.0.0.1 --port "$OTP_API_PORT" \
   >"$OTP_STATE_DIR/api.log" 2>&1 &
 echo $! >"$OTP_STATE_DIR/api.pid"
@@ -99,9 +104,7 @@ fi
 # db index: the compose worker on /0 must never take this lane's sends (they would go to Mailpit),
 # and this worker must never take the dev-bypass lane's queued run_suite messages. No -B — nothing
 # here needs beat — and the beat watchdog is off so a beat-less worker doesn't log it as an outage.
-export REDIS_URL="${OTP_REDIS_URL:-redis://localhost:6379/2}"
-export BEAT_WATCHDOG_STALE_AFTER_S=0
-celery -A backend.app.worker.celery_app worker -Q celery --concurrency 1 --loglevel=INFO \
+celery -A backend.app.worker.celery_app worker -Q celery,llm --concurrency 1 --loglevel=INFO \
   >"$OTP_STATE_DIR/worker.log" 2>&1 &
 echo $! >"$OTP_STATE_DIR/worker.pid"
 

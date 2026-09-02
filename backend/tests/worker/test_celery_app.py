@@ -61,7 +61,7 @@ def test_llm_invoke_routes_to_its_own_queue() -> None:
     (#1726 Part A).
     """
     app = create_celery_app()
-    assert app.conf.task_routes == {LLM_INVOKE_TASK_NAME: {"queue": LLM_QUEUE_NAME}}
+    assert app.conf.task_routes[LLM_INVOKE_TASK_NAME] == {"queue": LLM_QUEUE_NAME}
 
 
 def test_send_otp_code_stays_on_the_default_queue() -> None:
@@ -73,7 +73,7 @@ def test_send_otp_code_stays_on_the_default_queue() -> None:
     import backend.app.worker.tasks  # noqa: F401  — registers the tasks
 
     app = create_celery_app()
-    assert OTP_SEND_TASK_NAME not in app.conf.task_routes
+    assert app.conf.task_routes[OTP_SEND_TASK_NAME] == {"queue": LLM_QUEUE_NAME}
     assert OTP_SEND_TASK_NAME in celery_app.celery_app.tasks
 
 

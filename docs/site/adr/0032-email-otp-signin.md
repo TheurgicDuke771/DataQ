@@ -31,7 +31,8 @@
 > eligible one down, so a relay slower than the floor made allow-listed addresses
 > measurably slower than strangers — membership enumeration by timing. The mail send
 > (and the SMTP password lookup it needs) now runs **out-of-band on the worker**
-> (`send_otp_code`, default `celery` queue — deliberately not a new queue, which would
+> (`send_otp_code`, on the round-robined `llm` queue the worker already consumes — a sign-in
+> code must not wait behind a suite-run backlog, and not a new queue, which would
 > need a coordinated `-Q` rollout): the api mints and commits the code, publishes
 > the task, and returns at the floor. A send or publish failure is an **operator log line
 > only** (`otp_send_task_failed` / `otp_request_dispatch_failed`) and the response stays

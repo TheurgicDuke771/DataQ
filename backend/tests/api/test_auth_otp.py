@@ -120,7 +120,7 @@ def _address() -> str:
 _ENQUEUED: list[tuple[str, dict[str, Any]]] = []
 
 
-def _enqueued(otp_env: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+def _enqueued() -> list[tuple[str, dict[str, Any]]]:
     return _ENQUEUED
 
 
@@ -155,11 +155,11 @@ def test_an_eligible_request_returns_ok_and_QUEUES_a_code_without_sending_inline
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
     assert _CapturingSMTP.sent == [], "the request path spoke SMTP itself"
-    name, options = _enqueued(otp_env)[-1]
+    name, options = _enqueued()[-1]
     assert name == OTP_SEND_TASK_NAME
     assert options["kwargs"]["to"] == email
     assert options["kwargs"]["expires_in_minutes"] == otp_service.CODE_TTL_MINUTES
-    assert len(_enqueued(otp_env)) == 1
+    assert len(_enqueued()) == 1
 
 
 def test_eligible_ineligible_and_throttled_are_BYTE_IDENTICAL(
@@ -186,7 +186,7 @@ def test_eligible_ineligible_and_throttled_are_BYTE_IDENTICAL(
 
 def test_an_ineligible_address_is_never_mailed(client: TestClient, otp_env: dict[str, Any]) -> None:
     client.post(REQUEST_URL, json={"email": f"stranger-{uuid.uuid4().hex[:8]}@elsewhere.example"})
-    assert _enqueued(otp_env) == []
+    assert _enqueued() == []
     assert _CapturingSMTP.sent == []
 
 
@@ -200,7 +200,7 @@ def test_a_throttled_address_is_not_mailed_again(
     email = _address()
     client.post(REQUEST_URL, json={"email": email})
     client.post(REQUEST_URL, json={"email": email})
-    assert len(_enqueued(otp_env)) == 1
+    assert len(_enqueued()) == 1
 
 
 # ── request: input hostility ─────────────────────────────────────────────────
@@ -293,7 +293,7 @@ def test_the_request_path_never_touches_the_secret_store(
     response = client.post(REQUEST_URL, json={"email": _address()})
     assert response.status_code == 200, response.text
     assert response.json() == {"status": "ok"}
-    assert len(_enqueued(otp_env)) == 1
+    assert len(_enqueued()) == 1
 
 
 def test_the_endpoints_503_when_otp_is_not_configured(

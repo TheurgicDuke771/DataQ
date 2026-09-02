@@ -60,6 +60,9 @@ def dispatch_otp_code(*, to: str, code: str, expires_in_minutes: int) -> None:
         kwargs={"to": to, "code": code, "expires_in_minutes": expires_in_minutes},
         kwargsrepr=_OTP_SEND_KWARGS_REPR,
         expires=expires_in_minutes * 60,
+        # One attempt: publish retries would hold an ELIGIBLE request past the floor while a
+        # stranger's answers at it — the timing channel this exists to close, moved to the broker.
+        retry=False,
     )
 
 
