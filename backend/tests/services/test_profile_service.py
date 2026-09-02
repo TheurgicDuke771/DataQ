@@ -1,5 +1,6 @@
 """Column-profiler unit tests — pure, no DB / no warehouse."""
 
+import dataclasses
 import json
 import math
 from collections.abc import Mapping
@@ -964,6 +965,43 @@ def test_to_native_handles_none_and_nan() -> None:
     assert _to_native(None) is None
     assert _to_native(float("nan")) is None
     assert _to_native(5) == 5
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        pytest.param(b"\x01\x02\x8f", id="bytes"),
+        pytest.param(bytearray(b"\xff\x00"), id="bytearray"),
+        pytest.param(memoryview(b"\x0a\x0b"), id="memoryview"),
+        pytest.param(b"", id="empty"),
+    ],
+)
+def test_to_native_renders_binary_identically_to_sanitize_json(raw: object) -> None:
+    # #1721: the flat-file profiler (`_to_native`) and the SQL/warehouse path (`sanitize_json`)
+    # must render the same BINARY value the same way — `str(b"\x01")` gave the Python repr
+    # `"b'\\x01'"` while the SQL path gave hex `"01"`.
+    from backend.app.core.jsonsafe import sanitize_json
+    from backend.app.services.profile_service import _to_native
+
+    flat_file = _to_native(raw)
+    sql_path = sanitize_json(raw)
+    assert flat_file == sql_path
+    assert flat_file == bytes(raw).hex()  # type: ignore[call-overload]
+    assert not flat_file.startswith("b'")
+
+
+def test_profile_series_binary_column_renders_hex() -> None:
+    # End-to-end through the flat-file profiler: min/max/top of a bytes column are hex,
+    # and identical to what the SQL path would persist for the same values.
+    from backend.app.core.jsonsafe import sanitize_json
+    from backend.app.services.profile_service import _profile_series
+
+    series = pd.Series([b"\x00\x01", b"\xff", b"\x00\x01"], dtype=object)
+    profile = _profile_series("blob", series, row_count=3, top_n=2)
+    assert profile.min_value == sanitize_json(b"\x00\x01") == "0001"
+    assert profile.max_value == sanitize_json(b"\xff") == "ff"
+    assert profile.top_values[0] == {"value": "0001", "count": 2}
+    json.dumps(dataclasses.asdict(profile), allow_nan=False)
 
 
 # ── profile_dataframe robustness (messy columns must not raise) ──
