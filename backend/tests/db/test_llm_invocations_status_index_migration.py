@@ -10,6 +10,8 @@ from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from sqlalchemy import text
 
+from backend.app.db.models import LLM_INVOCATION_OPEN_STATUSES, LLM_INVOCATION_STATUSES
+
 _MIGRATION_PATH = (
     Path(__file__).resolve().parents[2]
     / "alembic"
@@ -45,8 +47,9 @@ def _assert_partial_on_open_statuses(indexdef: str | None) -> None:
     head, sep, predicate = indexdef.partition(" WHERE ")
     assert sep, f"{_INDEX} is not a partial index: {indexdef}"
     assert "(status)" in head, indexdef
-    assert "'pending'" in predicate and "'running'" in predicate, predicate
-    assert "'succeeded'" not in predicate and "'failed'" not in predicate, predicate
+    for status in LLM_INVOCATION_STATUSES:
+        covered = f"'{status}'" in predicate
+        assert covered == (status in LLM_INVOCATION_OPEN_STATUSES), (status, predicate)
 
 
 def test_revision_chain() -> None:
@@ -77,21 +80,22 @@ def test_up_down_up(db_session: Any) -> None:
 
 
 def test_reaper_equality_predicates_can_use_the_index(db_session: Any) -> None:
-    """The reaper filters `status = 'pending'` and `status = 'running'` separately, never with the
-    IN-list the index is declared on. A partial index is only usable when the planner can PROVE the
-    query predicate implies the index predicate — so assert that proof, not just the index's
-    existence. `enable_seqscan = off` removes the empty-table cost preference; it cannot make an
-    unprovable partial index eligible, so a seq scan here would mean the predicate is misaligned.
+    """The reaper filters `status = 'pending' AND created_at < …` and
+    `status = 'running' AND started_at < …` separately (`llm_service.reap_stuck_invocations`),
+    never with the IN-list the index is declared on. A partial index is only usable when the
+    planner can PROVE the query predicate implies the index predicate — so assert that proof, on
+    the reaper's real query shapes, not just the index's existence. `enable_seqscan = off` removes
+    the empty-table cost preference; it cannot make an unprovable partial index eligible.
     """
     connection = db_session.connection()
     connection.execute(text("SET LOCAL enable_seqscan = off"))
-    for status in ("pending", "running"):
+    for status, age_column in (("pending", "created_at"), ("running", "started_at")):
         plan = "\n".join(
             row[0]
             for row in connection.execute(
                 text(
                     "EXPLAIN SELECT id FROM llm_invocations "
-                    "WHERE status = :s AND created_at < now()"
+                    f"WHERE status = :s AND {age_column} < now()"
                 ),
                 {"s": status},
             )
