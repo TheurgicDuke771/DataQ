@@ -1199,6 +1199,14 @@ class LlmInvocation(Base):
         _in_check("kind", LLM_INVOCATION_KINDS, "llm_invocation_kind_valid"),
         _in_check("status", LLM_INVOCATION_STATUSES, "llm_invocation_status_valid"),
         Index("ix_llm_invocations_requested_by", "requested_by_user_id"),
+        # #1717: the #1644 reaper's `status = 'pending'` / `status = 'running'` sweeps — the only
+        # non-PK reads of this table. Partial, so it stays a few rows wide while the table (retained
+        # forever, G4 audit record) grows; the planner proves each equality implies the IN-list.
+        Index(
+            "ix_llm_invocations_status_open",
+            "status",
+            postgresql_where=text("status IN ('pending', 'running')"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
