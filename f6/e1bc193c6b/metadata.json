@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "f6e1bc193c6b",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1790-explicit-celery-concurrency",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/f6/e1bc193c6b/0/metadata.json",
+      "transcript": "/f6/e1bc193c6b/0/full.jsonl",
+      "compact_transcript": "/f6/e1bc193c6b/0/transcript.jsonl",
+      "content_hash": "/f6/e1bc193c6b/0/content_hash.txt",
+      "prompt": "/f6/e1bc193c6b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 3578,
+    "cache_creation_tokens": 296013,
+    "cache_read_tokens": 10471020,
+    "output_tokens": 45593,
+    "api_call_count": 47
+  }
+}
