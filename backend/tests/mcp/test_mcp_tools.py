@@ -237,6 +237,37 @@ def test_get_pipeline_status_correlates_dq_run(db_session: Any, monkeypatch: Any
     assert out[0]["dq_run"]["status"] == "succeeded"
 
 
+def test_get_pipeline_status_fails_closed_on_a_colliding_marker(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """#1728: two dbt rows reconstruct to one marker; `.first()` used to hand the
+    DQ run to whichever came back first. Now neither claims it, and the payload
+    says why instead of reading as "no suite was triggered".
+    """
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    for pipeline, run_id in (("nightly:etl", "run-1"), ("nightly", "etl:run-1")):
+        db_session.add(
+            PipelineRun(
+                provider="dbt",
+                connection_id=suite.connection_id,
+                provider_run_id=run_id,
+                pipeline_or_dag_id=pipeline,
+                env="dev",
+                status="succeeded",
+            )
+        )
+    db_session.add(Run(suite_id=suite.id, status="failed", triggered_by="dbt:nightly:etl:run-1"))
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    out = server.get_pipeline_status(provider="dbt")["pipeline_runs"]
+    assert len(out) == 2
+    assert all(row["dq_run"] is None for row in out)
+    assert all(row["dq_run_ambiguous"] is True for row in out)
+    assert all(row["dq_run_restricted"] is False for row in out)
+
+
 def _adf_run_on_unowned_suite(db_session: Any) -> User:
     """Seed a pipeline run correlated to a DQ run on a suite owned by someone
     else, and return a fresh outsider to view it. Shared by the admin +

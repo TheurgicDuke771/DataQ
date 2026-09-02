@@ -50,7 +50,6 @@ import {
   formatDuration,
   formatTimestamp,
   isWithinWindowDays,
-  pipelineRunMarker,
   pipelineStatusColor,
   RESULT_STATUS_COLORS,
   RUN_STATUS_COLORS,
@@ -399,17 +398,13 @@ function PipelineRunsTab({
     return () => clearInterval(id);
   }, [reload, reloadRuns, pollMs]);
 
-  // triggered_by marker → the DQ runs it spawned (one pipeline run can trigger
-  // several, one per binding).
-  const runsByMarker = useMemo(() => {
-    const map = new Map<string, Run[]>();
+  // The server correlates pipeline runs to the DQ runs they spawned (one per
+  // binding) and fails closed on a colliding trigger marker; this page only
+  // resolves those ids against the runs it has loaded.
+  const runsById = useMemo(() => {
+    const map = new Map<string, Run>();
     if (runsState.status !== 'ok') return map;
-    for (const r of runsState.data.items) {
-      if (!r.triggered_by) continue;
-      const list = map.get(r.triggered_by);
-      if (list) list.push(r);
-      else map.set(r.triggered_by, [r]);
-    }
+    for (const r of runsState.data.items) map.set(r.id, r);
     return map;
   }, [runsState]);
 
@@ -471,7 +466,9 @@ function PipelineRunsTab({
       title: 'DQ run',
       width: 160,
       render: (_: unknown, p: PipelineRun) => {
-        const triggered = runsByMarker.get(pipelineRunMarker(p)) ?? [];
+        const triggered = p.triggered_run_ids
+          .map((id) => runsById.get(id))
+          .filter((r): r is Run => r !== undefined);
         if (triggered.length === 0) return <Typography.Text type="secondary">—</Typography.Text>;
         return (
           <Flex gap={6} wrap="wrap">

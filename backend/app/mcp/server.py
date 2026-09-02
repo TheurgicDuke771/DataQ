@@ -60,6 +60,7 @@ from backend.app.mcp.auth import (
     mcp_enabled,
     resolve_current_user,
 )
+from backend.app.orchestration import markers
 from backend.app.services import (
     asset_view_service,
     audit_service,
@@ -721,6 +722,11 @@ def get_pipeline_status(
     also mean no orchestration connection is configured for that provider and
     environment, or that its poller is failing — check ``list_connections``
     before reporting an all-clear.
+
+    ``dq_run`` is ``null`` with ``dq_run_ambiguous: true`` when two pipeline runs
+    share one trigger marker (a colon inside a dbt job name or run id) — the DQ
+    run exists but cannot be attributed to either row, so do not report "no
+    suite was triggered" for it.
     """
     # All three orchestration providers (ADR 0029 added dbt), from the shared
     # vocabulary. The old two-name literal rejected `dbt` — the obvious next call
@@ -741,12 +747,16 @@ def get_pipeline_status(
                 suite_service.accessible_suite_ids(user.id, include_all=is_workspace_admin(user))
             )
         )
+        # Shared reconstruct-and-compare correlation (#1728): a colliding marker
+        # yields NO run rather than another row's run.
+        triggered = markers.triggered_run_ids(session, runs)
+        ambiguous = markers.ambiguous_markers(
+            session, [markers.pipeline_run_marker(p) for p in runs]
+        )
         out: list[dict[str, Any]] = []
         for pr in runs:
-            marker = f"{pr.provider}:{pr.pipeline_or_dag_id}:{pr.provider_run_id}"
-            dq = session.scalars(
-                select(Run).where(Run.triggered_by == marker).order_by(Run.created_at.desc())
-            ).first()
+            run_ids = triggered.get(pr.id, [])
+            dq = session.get(Run, run_ids[0]) if run_ids else None
             correlated = (
                 {"run_id": str(dq.id), "status": dq.status}
                 if dq is not None and dq.suite_id in accessible
@@ -764,6 +774,9 @@ def get_pipeline_status(
                     # triggered and you cannot see it" — the same fact the
                     # docstring stated in prose and the payload conflated.
                     "dq_run_restricted": dq is not None and dq.suite_id not in accessible,
+                    # True when another stored pipeline run reconstructs to the same
+                    # trigger marker, so no DQ run can be attributed to either.
+                    "dq_run_ambiguous": markers.pipeline_run_marker(pr) in ambiguous,
                 }
             )
         return {

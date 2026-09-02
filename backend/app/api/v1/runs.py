@@ -20,10 +20,12 @@ from backend.app.db.models import (
     PIPELINE_RUN_STATUSES,
     RUN_STATUSES,
     Check,
+    Run,
     User,
 )
 from backend.app.db.session import get_db
-from backend.app.services import audit_service, orchestration_service, run_dispatch
+from backend.app.orchestration import markers
+from backend.app.services import audit_service, orchestration_service, run_dispatch, suite_service
 from backend.app.services import run_service as svc
 from backend.app.services.comparison_report import ComparisonReportInvalidError, build_report
 from backend.app.services.suite_authz import require_permission
@@ -133,6 +135,10 @@ class PipelineRunRead(ApiModel):
     finished_at: datetime | None
     failure_reason: str | None
     created_at: datetime
+    #: DQ runs this pipeline run triggered (newest first), correlated server-side so a
+    #: colliding `triggered_by` marker fails closed to `[]` instead of claiming another
+    #: row's run (#1728). Visibility-scoped like `/runs`.
+    triggered_run_ids: list[uuid.UUID] = Field(default_factory=list)
 
 
 _OUTCOME_FIELDS = ("checks_total", "checks_passed", "worst_severity")
@@ -434,7 +440,25 @@ def list_pipeline_runs(
     pipeline_runs = orchestration_service.list_pipeline_runs(
         db, provider=provider, status=run_status, limit=limit, offset=offset
     )
-    return [PipelineRunRead.model_validate(p) for p in pipeline_runs]
+    triggered = markers.triggered_run_ids(db, pipeline_runs)
+    visible = set(
+        db.scalars(
+            select(Run.id).where(
+                Run.id.in_({rid for ids in triggered.values() for rid in ids}),
+                Run.suite_id.in_(
+                    suite_service.accessible_suite_ids(
+                        current_user.id, include_all=is_workspace_admin(current_user)
+                    )
+                ),
+            )
+        )
+    )
+    return [
+        PipelineRunRead.model_validate(p).model_copy(
+            update={"triggered_run_ids": [r for r in triggered.get(p.id, []) if r in visible]}
+        )
+        for p in pipeline_runs
+    ]
 
 
 @router.get(
