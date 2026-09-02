@@ -858,3 +858,75 @@ def test_same_asset_siblings_empty_for_unresolved_asset(
     db_session.commit()
     card = build_evidence(db_session, run=run, result=result, check=world["check"], asset=None)
     assert card["same_asset_siblings"] == []
+
+
+# ── redaction branch + pre-resolved context (#1792) ───────────────────────────
+
+
+def test_raising_redaction_degrades_failing_result_layer_only(
+    db_session: Any, world: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An exception INSIDE `_failing_result_layer`'s redaction branch (the #1772
+    path) degrades that ONE layer to None — never the card, never the sync.
+    `test_raising_layer_degrades_to_none_other_layers_intact` breaks a different
+    layer; this is the redaction branch's own regression test (#1792).
+    """
+    from backend.app.services import run_service
+
+    def boom(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("redaction exploded")
+
+    monkeypatch.setattr(run_service, "redact_observed_value", boom)
+    run = _run(db_session, world["suite"])
+    result = Result(
+        run_id=run.id,
+        check_id=world["check"].id,
+        status="fail",
+        observed_value={"observed_value": 42},
+    )
+    db_session.add(result)
+    db_session.commit()
+
+    card = build_evidence(
+        db_session, run=run, result=result, check=world["check"], asset=world["asset"]
+    )
+    assert card["failing_result"] is None  # the broken layer, degraded
+    assert card["check"]["name"] == "orders_not_null"  # neighbours intact
+    assert isinstance(card["metric_trend"], list)
+    assert isinstance(card["sibling_checks"], list)
+    assert card["downstream_blast_radius"] == []
+
+
+def test_pre_resolved_context_is_used_verbatim(db_session: Any, world: dict[str, Any]) -> None:
+    """A caller-supplied `RedactionContext` (the once-per-run path, #1792) drives the
+    redaction — proven by a PII policy passed ONLY through the context, never stored
+    on the suite.
+    """
+    from backend.app.services.incident_evidence import RedactionContext
+
+    run = _run(db_session, world["suite"])
+    secret = "victim@example.com"
+    result = Result(
+        run_id=run.id,
+        check_id=world["check"].id,
+        status="fail",
+        observed_value={"observed_value": secret},
+    )
+    db_session.add(result)
+    db_session.commit()
+
+    context = RedactionContext(
+        tested_column="EMAIL",
+        expectation_type="expect_column_min_to_be_between",
+        policy={"pii_columns": ["EMAIL"]},
+        tags=None,
+    )
+    card = build_evidence(
+        db_session,
+        run=run,
+        result=result,
+        check=world["check"],
+        asset=world["asset"],
+        context=context,
+    )
+    assert card["failing_result"]["observed_value"]["observed_value"] == "<redacted>"
