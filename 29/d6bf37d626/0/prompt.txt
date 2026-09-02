@@ -1,0 +1,124 @@
+Let's burn down some backlogs [bugs, security, P1 - should be first pick]
+Check the current state of repo, check the filled issue. 
+Pick up some low hanging fruits first then the ones with some degree of dependencies. 
+Plan out the session. create TODO list based on priority and dependencies. 
+start execution.
+
+---
+
+<task-notification>
+<task-id>a4b6a6db39735558e</task-id>
+<tool-use-id>toolu_01YD3pqEoUdd6xpCGpbdKHDK</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/08ac61b5-2554-41b8-8b37-1622a0336b55/tasks/a4b6a6db39735558e.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle Simplification finder" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now I have enough to write findings.
+
+## Findings (angle: simplification)
+
+**1. `backend/app/core/jsonsafe.py:59-60` — redundant `isinstance(key, str)` fast-path duplicates the `isinstance(sanitized, str)` check two lines later**
+`_json_key` special-cases `str` keys before calling `sanitize_json`, but `sanitize_json(key)` is a no-op for strings anyway (falls through every branch and returns `value` unchanged), so the later `isinstance(sanitized, str)` branch already covers it correctly.
+failure_scenario: two branches now do the same job for the common case (plain string keys, the overwhelming majority in practice), so a future editor "fixing" one string-handling path can easily forget the other exists and diverge them (e.g. adding stripping/normalization to one but not the other). Simpler form: drop the fast-path entirely — `sanitized = sanitize_json(key); return sanitized if isinstance(sanitized, str) else (json.dumps(sanitized) if sanitized is None or isinstance(sanitized, (bool, int, float)) else str(sanitized))`. (The fast-path is a micro-optimization avoiding one function call for str keys — not worth the duplicate logic path.)
+
+**2. `backend/app/core/jsonsafe.py:64-65` — three-way branch is really `json.dumps` doing the exact same thing `sanitize_json`+the docstring already promise**
+The function reimplements `json.dumps`'s scalar-key stringification rule by hand (`None`/`bool`/`int`/`float` → `json.dumps(sanitized)`) instead of just relying on `json.dumps({key: 0})` behavior once, or dumping the single value.
+failure_scenario: if `json.dumps`'s key-stringification rules ever need to change (e.g. Python changes `True`→`"true"` casing, unlikely but illustrative), there are now two independent code paths (this branch and any place value-serialization is tested) that must be kept in sync manually. Simpler form: `return json.dumps(sanitized)` for the non-str, non-dict/list-ish case is sufficient on its own since `json.dumps` already produces `'"true"'`... actually since we need the *unquoted* string, better: `return next(iter(json.dumps({sanitized: 0})))[1:-2]` is overkill — the existing code is in fact about as simple as it can be for this one branch; the real simplification is just merging with finding 1 above into a single expression rather than three sequential ifs.
+
+**3. `backend/app/core/jsonsafe.py:66` — `str(sanitized)` fallback is dead code that only produces garbage output for the types that can actually reach it**
+After `sanitize_json` runs, the only key types that survive to reach this line are `dict`/`list`/`tuple` (everything else — bytes, Decimal, numpy scalars, dates, NaN — is already converted to `str`, `None`, `bool`, `int`, or `float` earlier in `sanitize_json`). But dict/list/tuple values are unhashable (dict, list) or, for tuple, produce useless output like `"('a', 'b')"` as a JSON key — silently corrupting data rather than failing loudly.
+failure_scenario: a tuple key (the one hashable container type) silently becomes a mangled string like `"(1, 2)"` in the persisted JSONB instead of raising, hiding a real caller bug (nobody should be keying a JSON dict by a tuple) behind seemingly-successful serialization; a maintainer relying on this fallback to "handle" some type doesn't realize it can't actually be reached for any sane case. Simpler/safer form: replace the catch-all with an explicit `raise TypeError(f"unsupported JSON key type: {type(key)!r}")`, matching the loud-failure behavior `json.dumps` itself would have given.
+
+**4. `backend/tests/core/test_jsonsafe.py` (new `_driver_keys` function, ~line 185) — literal list + manual loop instead of `pytest.mark.parametrize`**
+`_driver_keys()` returns a hardcoded list of `(raw, expected)` pairs that `test_dict_keys_are_sanitized_to_json_strings` then iterates over in a `for` loop with an `assert ..., raw` message tacked on to fake per-case attribution.
+failure_scenario: when one of the 14 cases fails, pytest reports a single generic test failure with only the `raw` value in the assertion message, rather than 14 independently-named/collected test cases — harder to spot in CI output and can't be run/skipped individually (`pytest -k`). Simpler form: `@pytest.mark.parametrize("raw,expected", _driver_keys())` directly on the test function, which is the idiomatic and simpler way to get the same coverage with per-case reporting.
+
+**5. `backend/tests/core/test_jsonsafe.py:219-221` — `pytest.raises` sanity-check nested inside the coverage loop conflates two different tests**
+Inside `test_dict_keys_are_sanitized_to_json_strings`, after asserting the sanitizer's output, the test also re-verifies (for non-str/bool/int/float/None raw values) that raw `json.dumps({raw: 1})` itself would have failed — a meta-test of the test's own fixture data, run 14 times per test invocation.
+failure_scenario: this makes one test do two jobs (verify the sanitizer AND self-validate the parametrization table), so a failure in the "sanity" assertion is easy to misdiagnose as a sanitizer bug when it's actually a bad fixture entry; it also silently short-circuits for a subset of cases via the `if` guard, making coverage of the sanity check inconsistent across the table. Simpler form: drop it (the fixture values are self-evidently non-JSON-legal by construction/comment) or, if desired, hoist it into its own small dedicated test/parametrize rather than interleaving it in the primary assertion loop.
+
+**6. `backend/tests/core/test_jsonsafe.py:242-245` — `test_key_sanitization_does_not_mutate_input` is dead-weight, no-op coverage**
+This test only exercises `sanitize_json({b"\x00": 1})` and then checks the original dict is untouched — but `sanitize_json`'s dict branch already builds a new dict via a comprehension (`{_json_key(key): ...}`), so there is no code path that could mutate the input; the test can't meaningfully fail short of someone rewriting the function to mutate in place.
+failure_scenario: adds a test that exists purely as documentation/insurance rather than verifying current behavior meaningfully, inflating the suite without catching realistic regressions (any future in-place-mutation bug would already be caught by every other test asserting on `cleaned` vs. expected output). Simpler form: remove it, or fold the "no mutation" assertion into one of the existing key-sanitization tests (e.g. add `assert list(original) == [...]` to `test_nested_dict_keys_are_sanitized`) rather than a standalone test.</result>
+<usage><subagent_tokens>28711</subagent_tokens><tool_uses>5</tool_uses><duration_ms>43764</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a58718b032610cae1</task-id>
+<tool-use-id>toolu_01BDD4E1EAKbjdkeXxyNpBDR</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/08ac61b5-2554-41b8-8b37-1622a0336b55/tasks/a58718b032610cae1.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle A line-by-line scan" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All findings confirmed against the actual post-change code. Here is the report.
+
+## Findings — PR #1798, `backend/app/core/jsonsafe.py`
+
+**1. `sanitize_json`/`_json_key` (lines 42-43, 64-65) — NaN and Infinity keys collide into a single `"null"` key, silently dropping data**
+`_json_key` routes both `float('nan')` and `float('inf')` through the same non-finite→`None` path (line 41: `return value if math.isfinite(value) else None`), so both distinct original keys stringify to `"null"`. In a `{column_value: count}` histogram, a row keyed by NaN and a row keyed by +Infinity are different, real values, but the dict comprehension at line 43 silently overwrites one with the other.
+Failure scenario: `sanitize_json({float("nan"): 1, float("inf"): 2})` → `{"null": 2}` — the count for the NaN bucket (1) is silently discarded and only the Infinity bucket's count survives (verified by running the actual code; this is also exactly what the PR's own `test_non_finite_float_key_is_nulled_like_the_value` asserts as "expected," without recognizing it as data loss). Any warehouse column with both NaN and ±Infinity values in its distinct-value counts will produce an undercounted/wrong histogram in the JSONB payload with no error raised.
+
+**2. `_json_key` (line 59-60) — numpy string scalars (`np.str_`) are returned unconverted, unlike every other numpy scalar type**
+`if isinstance(key, str): return key` short-circuits before any normalization. Since `numpy.str_` is a subclass of `str`, it satisfies `isinstance(key, str)` and is returned as-is — never passed through `.item()` the way `np.int64`/`np.float64`/`np.bool_` are (those go through the `hasattr(value, "item")` branch in `sanitize_json`).
+Failure scenario: `sanitize_json({np.str_("hello"): 1})` → the resulting key is still `type(k) is numpy.str_`, not `str` (verified). While `json.dumps` happens to serialize it correctly, this breaks the documented invariant "keys take the same rendering... and are then stringified" and could break any downstream code relying on `type(key) is str` (ironically the PR's own test `test_dict_keys_are_sanitized_to_json_strings` asserts `type(next(iter(cleaned))) is str, raw` for every case in `_driver_keys` — but `np.str_` isn't included in that list, so this exact assertion never runs against the one case that would fail it).
+
+**3. `_json_key` (line 66) — tuple keys silently become a stringified Python list, losing structure and risking accidental collisions**
+A tuple is hashable and can legitimately appear as a dict key (e.g., a composite `(col_a, col_b)` grouping key from a multi-column value_counts). `sanitize_json` handles tuples via the `isinstance(value, (list, tuple))` branch (line 44-45 in post-change file), which converts a tuple to a `list`. Back in `_json_key`, that `list` result falls to the generic `str(sanitized)` fallback.
+Failure scenario: `sanitize_json({(1, 2): "x"})` → `{"[1, 2]": "x"}` (verified). This is lossy/ambiguous — a string key `"[1, 2]"` from an actual string-typed column value would collide with this rendering, and nested/composite grouping keys become opaque debug-repr strings rather than a well-defined JSON representation.
+
+**4. `_json_key` (line 66) — unrecognized hashable types (e.g. `frozenset`, plain `Enum`) fall through to `str()`, producing Python-repr garbage instead of a meaningful JSON key**
+Any key type not covered by `sanitize_json`'s branches (numpy scalar, NAType/NaTType, isoformat-having, Decimal, bytes/bytearray/memoryview, float, dict, list/tuple) is returned unchanged, then stringified via the catch-all `str(sanitized)`.
+Failure scenario A: `sanitize_json({frozenset({1, 2}): "x"})` → `{"frozenset({1, 2})": "x"}` (verified).
+Failure scenario B: a plain (non-int) `Enum` key, e.g. `Color.RED`, stringifies via `str()` to `"Color.RED"` rather than the enum's underlying value (`"red"`), unlike the deliberate special-casing every other driver type receives.
+
+**5. `sanitize_json` (lines 17-18, exercised by `_json_key` for key position too) — nanosecond-precision `np.datetime64` silently becomes a raw integer instead of an ISO date string**
+The numpy-scalar duck-typing branch does `value = value.item()` unconditionally whenever `hasattr(value, "item") and hasattr(value, "dtype")`. For `datetime64[ns]` values, numpy's `.item()` cannot always represent nanosecond precision as `datetime.datetime` and instead returns a plain Python `int` (nanoseconds since epoch) — confirmed: `np.datetime64('2021-01-01T00:00:00.123456789','ns').item()` → `1609459200123456789` (an `int`, not a `datetime`). Since the fallthrough to `hasattr(value, "isoformat")` only fires for actual date/datetime objects, this value/key is returned as a bare huge integer instead of an ISO-8601 string.
+Failure scenario: a `{column_value: count}` histogram or a MIN/MAX profiling value over an Arrow-backed nanosecond timestamp column silently serializes as `1609459200123456789` (or as key `"1609459200123456789"`) instead of `"2021-01-01T00:00:00.123456789"` — no crash, just semantically wrong data reaching JSONB (verified both as a bare value and as a dict key through `_json_key`). This predates the diff (line 17-18 unchanged by PR #1798) but is directly exercised by the new key-sanitization path and not covered by any of the new `_driver_keys` test rows.
+
+**6. Test coverage gap — `_driver_keys()` in `test_jsonsafe_new.py` omits `np.str_`, tuple, frozenset, and `np.datetime64[ns]` cases**
+The new parametrized test only exercises bytes, memoryview, two Decimal shapes, `np.int64`, `np.float64`, `np.bool_`, `True`/`False`/`None`, `int`, `float`, `date`, and an already-string key. None of the collision/garbage-output cases above (#1-#5) are covered, so the regressions described are currently invisible to CI. This is not itself a runtime bug but means the failure scenarios above will not be caught if triggered by real warehouse data.
+
+All 6 candidates were confirmed by directly executing the post-change `sanitize_json`/`_json_key` from `jsonsafe_new.py`; none are speculative pattern-matches.</result>
+<usage><subagent_tokens>35307</subagent_tokens><tool_uses>9</tool_uses><duration_ms>147808</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>afdd89b9032221670</task-id>
+<tool-use-id>toolu_013M6zftprF9D66JvfM2Fvcn</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/08ac61b5-2554-41b8-8b37-1622a0336b55/tasks/afdd89b9032221670.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle B removed-behavior audit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>No dict-keyed histogram feature currently exists. I have completed my investigation. Here are the findings.
+
+## Findings
+
+**1. `backend/app/core/jsonsafe.py:43` + `_json_key` (lines 48-67) — non-finite float keys (`NaN`, `Infinity`) that were previously distinct now silently collide.**
+
+Before this diff, dict keys were passed through unsanitized (`{key: sanitize_json(item) ...}`). A `float('nan')` and `float('inf')` key are hashable and distinct in Python, so a dict like `{nan: 1, inf: 2}` had two separate entries. When that dict later reached `json.dumps` (SQLAlchemy's default JSONB serialization path, `backend/app/db/session.py` has no custom `json_serializer`, so it's plain `json.dumps` with `allow_nan=True`), Python's encoder renders float keys via `_floatstr`, producing **distinct** string keys `"NaN"` and `"Infinity"` — verified: `json.dumps({float('nan'):1, float('inf'):2})` → `'{"NaN": 1, "Infinity": 2}'`.
+
+After this diff, `_json_key` runs every key through `sanitize_json` first, and the float branch (`return value if math.isfinite(value) else None`) maps *both* `NaN` and `Infinity` to `None`, which `_json_key` then renders as `json.dumps(None)` → `"null"` for both. The dict comprehension at line 43 then collapses the two entries into one key, `"null"`, with the later value silently overwriting the earlier one (Python dict-comprehension last-write-wins, no error, no log).
+
+- failure_scenario: A `{column_value: count}` style payload over a NUMERIC/warehouse column containing both a NaN-valued bucket and an Infinity-valued bucket (e.g. a histogram or value-count map built from raw driver Decimals/floats) previously round-tripped to Postgres with two distinguishable (if oddly-named) keys `"NaN"`/`"Infinity"`; after the change, it silently collapses to one `"null"` key, and the count for whichever bucket came first is dropped without any error or warning — a silent data-loss/undercount, whereas the pre-change path at least kept the two entries separate. This exact behavior is now enshrined by the new test `test_non_finite_float_key_is_nulled_like_the_value` (expects `{"null": 2}` from `{nan:1, inf:2}`), so it will not be caught by CI if it's undesired.
+
+**2. `backend/app/core/jsonsafe.py:43` — collisions between differently-typed-but-JSON-key-equivalent keys still resolve silently (pre-existing, but now happens one step earlier, in-process).**
+
+Pre-change, a dict like `{1: 5, "1": 3}` already produced garbled/duplicate-key JSON text at final `json.dumps` time (`{"1": 5, "1": 3}`, invalid per strict JSON but accepted by the encoder and normalized by Postgres' JSONB parser, keeping the last key). Post-change, `_json_key` performs the same string coercion but the collision/overwrite now happens immediately inside `sanitize_json`, in Python, before the value ever reaches the DB or an API response.
+
+- failure_scenario: Not a new bug per se (the eventual outcome — losing one of the two entries — was already possible before), but the *point* where data loss occurs has moved earlier and become silent+immediate rather than deferred to serialization; any code that inspected the sanitized dict in-process (e.g. `run_service.py:80`'s `{**(observed or {}), **sanitize_json(outcome.observed_value)}` merge, or `dryrun_service.py`'s direct API-response return of `sanitize_json(...)`) will now see the collision resolved before it ever gets a chance to catch/log it as an anomaly, whereas before, the malformed duplicate-key JSON text might have been visible in logs/debugging as a red flag.
+
+**3. `isinstance(value, (bytes, bytearray))` → `(bytes, bytearray, memoryview)` widening — verified safe, no failure scenario found.**
+
+I checked `memoryview.hex()` against non-contiguous memoryviews (`memoryview(bytearray(...))[::2]`) and multi-byte-itemsize buffers (e.g. `memoryview(array.array('i', [...]))`, `memoryview(np.array(..., dtype='uint8'))`) — all render without error, since `.hex()` operates on the underlying byte buffer regardless of format/contiguity. Since psycopg's BYTEA memoryviews are always format `'B'`/contiguous, this widening does not introduce a new crash path. Not including this as a failure candidate.
+
+**No regression found for:**
+- str keys staying identical (`if isinstance(key, str): return key` preserves this exactly).
+- int/bool/None/float key stringification matching what `json.dumps` already did implicitly before (verified `json.dumps(True)`, `json.dumps(3)`, `json.dumps(1.5)` as keys match the new explicit `json.dumps(sanitized)` calls).
+- Downstream readers (`backend/app/services/run_service.py`, `dryrun_service.py`, `comparison.py`, `profile_service.py`) — grepped for non-string indexing into `observed_value`/`expected_value`/`sample_failures`/`sampling`/`sample_keys`; none index by non-str keys, and all these payloads are JSON-round-tripped (via JSONB or HTTP API) at some point anyway, which already forces string keys regardless of this PR.
+- No `json_serializer` is configured for the JSONB columns in `backend/app/db/session.py`/`models.py`, confirming the app relies on default `json.dumps` semantics, which is what the new `_json_key` deliberately mirrors for the legal scalar-key cases (int/bool/float/None) — that part is a faithful re-establishment of prior behavior, not a regression.</result>
+<usage><subagent_tokens>49857</subagent_tokens><tool_uses>23</tool_uses><duration_ms>212503</duration_ms></usage>
+</task-notification>

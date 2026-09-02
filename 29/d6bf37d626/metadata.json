@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "29d6bf37d626",
+  "strategy": "manual-commit",
+  "branch": "chore/pnpm-override-browserslist-ghsa",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "frontend/package.json",
+    "frontend/pnpm-lock.yaml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/29/d6bf37d626/0/metadata.json",
+      "transcript": "/29/d6bf37d626/0/full.jsonl",
+      "compact_transcript": "/29/d6bf37d626/0/transcript.jsonl",
+      "content_hash": "/29/d6bf37d626/0/content_hash.txt",
+      "prompt": "/29/d6bf37d626/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 3104,
+    "cache_creation_tokens": 159415,
+    "cache_read_tokens": 4994768,
+    "output_tokens": 23570,
+    "api_call_count": 34
+  }
+}

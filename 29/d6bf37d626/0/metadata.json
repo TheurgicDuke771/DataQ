@@ -1,0 +1,51 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "29d6bf37d626",
+  "session_id": "08ac61b5-2554-41b8-8b37-1622a0336b55",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-02T02:46:06.309238Z",
+  "branch": "chore/pnpm-override-browserslist-ghsa",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "frontend/package.json",
+    "frontend/pnpm-lock.yaml"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-fable-5-1",
+  "turn_id": "5897382f2b8b",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 3104,
+    "cache_creation_tokens": 159415,
+    "cache_read_tokens": 4994768,
+    "output_tokens": 23570,
+    "api_call_count": 34
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-02T02:46:06.277557Z",
+    "agent_lines": 28,
+    "agent_removed": 26,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 28,
+    "total_lines_changed": 54,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 7,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 7
+      }
+    }
+  ]
+}
