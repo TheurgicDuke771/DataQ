@@ -177,6 +177,7 @@ def redact_stale_evidence(session: Session) -> int:
         redacted = run_service.redact_observed_value(
             observed,
             tested_column=tested_column,
+            expectation_type=check.expectation_type if check is not None else None,
             policy=suite.column_policy if suite is not None else None,
             tags=asset.column_tags if asset is not None else None,
         )

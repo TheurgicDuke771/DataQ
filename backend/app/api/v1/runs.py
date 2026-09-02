@@ -223,6 +223,7 @@ def _result_read(
     result: Any,
     *,
     tested_column: str | None = None,
+    expectation_type: str | None = None,
     policy: dict[str, Any] | None = None,
     tags: dict[str, str] | None = None,
 ) -> ResultRead:
@@ -237,7 +238,11 @@ def _result_read(
         metric_value=result.metric_value,
         duration_ms=result.duration_ms,
         observed_value=svc.redact_observed_value(
-            result.observed_value, tested_column=tested_column, policy=policy, tags=tags
+            result.observed_value,
+            tested_column=tested_column,
+            expectation_type=expectation_type,
+            policy=policy,
+            tags=tags,
         ),
         expected_value=result.expected_value,
         sample_failures=sample,
@@ -311,16 +316,17 @@ def get_run(
     # the run fields (as RunRead), graft the data-quality outcome (#571 — else checks_total/passed
     # stay at the 0/0 default here), and attach the separately-fetched, redaction-gated results.
     outcome = svc.check_outcome_counts(db, [run.id]).get(run.id)
+    expectation_types = {r.id: context.get(r.id, (None, None))[1] for r in results}
     reads = [
         _result_read(
             r,
             tested_column=context.get(r.id, (None, None))[0],
+            expectation_type=expectation_types[r.id],
             policy=policy,
             tags=tags,
         )
         for r in results
     ]
-    expectation_types = {r.id: context.get(r.id, (None, None))[1] for r in results}
     _audit_result_read(
         db, current_user, run=run, results=reads, expectation_types=expectation_types
     )

@@ -225,6 +225,20 @@ the per-PR history lives in the repo's commit log and pull requests.
   Python-only constructs may report differently. Flip the flag if a check's
   behavior looks changed and file what you find.
 
+### Fixed
+
+- **A scalar `observed_value` with no resolvable column was shown unscreened.** When a
+  result's tested column could not be determined — a custom-SQL check (no single column),
+  a check deleted after the run, or a caller supplying no context — the scalar branch of the
+  results redactor skipped the whole ladder (warehouse tags, suite policy, fail-closed mode,
+  the value-shape signal) and showed the value, on every results surface: the REST results
+  API, MCP `get_run_results`, alert delivery, incident evidence and the dry-run preview.
+  List-shaped values already failed closed on the same condition. A column-less scalar now
+  shows only when the check's expectation type makes it a statistic (a row count, a
+  custom-SQL unexpected-row count) *and* it passes the same screening as a named column;
+  a cell-reporting type (column max/min) or an unknown type masks. Row-count and
+  custom-SQL count checks render as before.
+
 ## v1.1.0 — 2026-08-21
 
 Portability, auto-monitors, compliance-grade controls, and polish on top of v1. (First
