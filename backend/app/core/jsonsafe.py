@@ -26,7 +26,12 @@ def sanitize_json(value: Any) -> Any:
     # A numpy scalar (int64/float64/bool_/…) — duck-typed by `item`+`dtype` so `core` takes no numpy
     # import (matching profile_service._to_native, and keeping the slim typecheck env clean).
     if hasattr(value, "item") and hasattr(value, "dtype"):
+        raw = value
         value = value.item()
+        if getattr(raw.dtype, "kind", None) == "M" and not hasattr(value, "isoformat"):
+            # np.datetime64 finer than µs `.item()`s to an int (ns since the epoch, #1803),
+            # not a datetime — narrow to µs first. NaT `.item()`s to None at every unit.
+            value = raw.astype("datetime64[us]").item()
     # pandas' missing-value sentinels: Arrow-backed frames (the iceberg native read, #716) surface
     # null cells to GX payloads as `pd.NA` / `pd.NaT`, neither of which is JSON-serializable (#751).
     if type(value).__name__ in ("NAType", "NaTType"):

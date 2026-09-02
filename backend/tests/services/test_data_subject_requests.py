@@ -410,3 +410,46 @@ def test_incident_scalar_or_redacted_snapshot_never_matches(db_session: Any) -> 
 
     assert dsr.find_matching_incidents(db_session, column="email", value="34680") == []
     assert dsr.find_matching_incidents(db_session, column="email", value="<redacted>") == []
+
+
+def test_incident_matches_by_the_column_in_effect_when_the_evidence_was_written(
+    db_session: Any,
+) -> None:
+    """#1809's DSR half (#1812): the incident snapshot was captured while the check
+    tested `email`; the check was then edited to `user_email`. Matching must resolve
+    the tested column as of the incident's `last_seen_at` — the evidence write time —
+    via `historical_check_context_at`, not the check's CURRENT config, or the edit
+    silently makes the subject's already-captured data unreachable by export and
+    erase alike."""
+    incident, check = _incident(
+        db_session, column="user_email", observed={"observed_value": ["alice@example.com"]}
+    )
+    t0 = datetime(2026, 1, 1, tzinfo=UTC)
+    t1 = datetime(2026, 2, 1, tzinfo=UTC)
+    incident.created_at = t0
+    incident.last_seen_at = t0
+    for version_no, column, at in ((1, "email", t0), (2, "user_email", t1)):
+        db_session.add(
+            CheckVersion(
+                check_id=check.id,
+                version_no=version_no,
+                name=check.name,
+                kind=check.kind,
+                expectation_type=check.expectation_type,
+                config={"column": column},
+                created_at=at,
+            )
+        )
+    db_session.commit()
+
+    matched = dsr.find_matching_incidents(db_session, column="email", value="alice@example.com")
+
+    assert [m.incident_id for m in matched] == [incident.id]
+    assert matched[0].tested_column == "email"
+
+    summary = dsr.erase_matching_results(db_session, column="email", value="alice@example.com")
+    db_session.commit()
+    assert summary.matched_incident_ids == [incident.id] and summary.erased_incident_count == 1
+    db_session.refresh(incident)
+    assert incident.evidence is not None
+    assert incident.evidence["failing_result"]["observed_value"] == {"observed_value": []}
