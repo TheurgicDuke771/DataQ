@@ -242,6 +242,13 @@ def test_a_bad_volume_config_is_echoed_bounded() -> None:
     assert len(str(exc_info.value)) < 300
 
 
+def test_a_bad_anomaly_target_metric_is_echoed_bounded() -> None:
+    # The dry-run door reaches anomaly_params with no size cap in front of it.
+    with pytest.raises(MonitorConfigError) as exc_info:
+        monitors.anomaly_params({"target_metric": "x" * 100_000})
+    assert len(str(exc_info.value)) < 300
+
+
 def test_unknown_kind_raises() -> None:
     # A kind that is not in the registry at all.
     with pytest.raises(MonitorConfigError, match="unknown monitor kind"):

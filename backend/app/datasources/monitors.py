@@ -361,7 +361,7 @@ def anomaly_params(config: dict[str, Any]) -> AnomalyParams:
     if target_metric not in ANOMALY_TARGET_METRICS:
         raise MonitorConfigError(
             f"anomaly target_metric must be one of {', '.join(ANOMALY_TARGET_METRICS)}: "
-            f"{target_metric!r}"
+            f"{_echo(target_metric)}"
         )
     column = config.get("column")
     if target_metric == FRESHNESS_AGE_METRIC:
