@@ -9,13 +9,16 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_logger
 from backend.app.db.models import Run, Suite
-from backend.app.worker.celery_app import LLM_INVOKE_TASK_NAME, celery_app
+from backend.app.worker.celery_app import LLM_INVOKE_TASK_NAME, OTP_SEND_TASK_NAME, celery_app
 
 log = get_logger(__name__)
 
 _RUN_SUITE_TASK = "run_suite"
 _AUTO_CLASSIFY_TASK = "auto_classify_columns"
 _LLM_INVOKE_TASK = LLM_INVOKE_TASK_NAME
+_OTP_SEND_TASK = OTP_SEND_TASK_NAME
+#: What the broker's task-received / task-failed log lines show instead of the real kwargs.
+_OTP_SEND_KWARGS_REPR = "{to: <redacted>, code: <redacted>}"
 
 
 def new_queued_run(suite: Suite, *, triggered_by: str) -> Run:
@@ -41,6 +44,26 @@ def dispatch_llm_invocation(invocation_id: uuid.UUID) -> None:
     caller owns marking the invocation row failed (nothing here can commit it).
     """
     celery_app.send_task(_LLM_INVOKE_TASK, args=[str(invocation_id)])
+
+
+def dispatch_otp_code(*, to: str, code: str, expires_in_minutes: int) -> None:
+    """Publish the ``send_otp_code`` task (#1731). Raises on broker failure — the
+    caller owns keeping the sign-in response uniform.
+
+    The plaintext code has to cross the broker (the DB holds only its hash), so the
+    message is given a redacted ``kwargsrepr`` (Celery's received/failed log lines
+    render that, not the kwargs) and ``expires`` at the code's own TTL — a message
+    that outlives the code would deliver digits nothing accepts any more.
+    """
+    celery_app.send_task(
+        _OTP_SEND_TASK,
+        kwargs={"to": to, "code": code, "expires_in_minutes": expires_in_minutes},
+        kwargsrepr=_OTP_SEND_KWARGS_REPR,
+        expires=expires_in_minutes * 60,
+        # One attempt: publish retries would hold an ELIGIBLE request past the floor while a
+        # stranger's answers at it — the timing channel this exists to close, moved to the broker.
+        retry=False,
+    )
 
 
 def dispatch_run(run_id: uuid.UUID) -> str:

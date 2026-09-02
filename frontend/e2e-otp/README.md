@@ -9,7 +9,15 @@ It runs **fully local — no Azure, no IdP, no cloud mailbox.**
 
 ## Why it needs its own stack
 
-Two constraints, both structural:
+Three constraints, all structural:
+
+0. **A worker.** Since [#1731](https://github.com/TheurgicDuke771/DataQ/issues/1731)
+   the api only _mints_ the code; the SMTP send is a Celery task, so without a
+   worker no mail ever reaches the sink. The lane starts one on its own Redis
+   database index (`redis://localhost:6379/2`) — the compose stack's worker on `/0`
+   must never pick up this lane's sends (it would mail them to Mailpit instead of
+   the sink), and the dev-bypass lane's queued `run_suite` messages must never be
+   picked up by this worker. No `-B`: nothing here needs beat.
 
 1. **A second api.** `backend/app/core/auth.py` picks its authenticator at _import_
    time, and OTP wins over dev-bypass. One process cannot serve both this lane and
@@ -45,10 +53,10 @@ clobbers it. No build-time flag, no test-only code path in `src/`.
 ## Running it
 
 ```bash
-# 1. Postgres reachable (docker compose up postgres), and a database to use.
+# 1. Postgres + Redis reachable (docker compose up postgres redis), and a database to use.
 createdb dataq_otp_e2e            # or reuse the e2e database
 
-# 2. Backend half: SMTP sink + OTP-mode api. Blocks until both are healthy.
+# 2. Backend half: SMTP sink + OTP-mode api + a worker. Blocks until all three are healthy.
 DATABASE_URL=postgresql+psycopg2://dataq:dataq@localhost:5432/dataq_otp_e2e \
   scripts/e2e-otp-stack.sh
 

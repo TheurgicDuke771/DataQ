@@ -5,8 +5,9 @@
 # or stop mailpit first; CI has no compose stack), 2. a second api (uvicorn, OTP
 # mode) on :8100 — auth mode is picked at IMPORT time, so one process cannot serve
 # both lanes. The api must trust the sink's self-signed cert BEFORE boot (#1146),
-# hence one script. Optional env (DATABASE_URL, OTP_SMTP_PORT, ...) documented in
-# frontend/e2e-otp/README.md.
+# hence one script. 3. a worker on its own Redis db index — it does the SMTP send
+# (#1731). Optional env (DATABASE_URL, OTP_SMTP_PORT, OTP_REDIS_URL, ...) documented
+# in frontend/e2e-otp/README.md.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -70,21 +71,51 @@ export AUTH_SESSION_COOKIE_SECURE=false
 # Trust ONLY the sink's throwaway certificate, and ONLY for the OTP mailer's own connection (#1146).
 export AUTH_EMAIL_CA_BUNDLE="$OTP_STATE_DIR/sink-cert.pem"
 
+# The api PUBLISHES send_otp_code and the worker below consumes it, so both must share this
+# lane's own Redis db index — set BEFORE either process starts (#1731 review).
+export REDIS_URL="${OTP_REDIS_URL:-redis://localhost:6379/2}"
+export BEAT_WATCHDOG_STALE_AFTER_S=0
+
 uvicorn backend.app.main:app --host 127.0.0.1 --port "$OTP_API_PORT" \
   >"$OTP_STATE_DIR/api.log" 2>&1 &
 echo $! >"$OTP_STATE_DIR/api.pid"
 
+api_up=""
 for _ in $(seq 1 40); do
   # 401 is the healthy answer here — the endpoint is auth-gated and no cookie is
   # presented. `curl -f` would treat that as failure, so match on the status.
   status="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${OTP_API_PORT}/api/v1/me" || true)"
   if [ "$status" = "401" ]; then
     echo "otp api up on :${OTP_API_PORT} (401 = auth enforced)"
-    exit 0
+    api_up=1
+    break
   fi
   sleep 1
 done
+if [ -z "$api_up" ]; then
+  echo "otp api did not come up"
+  cat "$OTP_STATE_DIR/api.log"
+  exit 1
+fi
 
-echo "otp api did not come up"
-cat "$OTP_STATE_DIR/api.log"
+# ── 3. worker ──────────────────────────────────────────────────────────────── The api only MINTS
+# the code since #1731; the SMTP send is a Celery task, so a lane without a worker never mails the
+# sink. Same env as the api (the worker resolves the same secret + transport block). Its OWN Redis
+# db index: the compose worker on /0 must never take this lane's sends (they would go to Mailpit),
+# and this worker must never take the dev-bypass lane's queued run_suite messages. No -B — nothing
+# here needs beat — and the beat watchdog is off so a beat-less worker doesn't log it as an outage.
+celery -A backend.app.worker.celery_app worker -Q celery,llm --concurrency 1 --loglevel=INFO \
+  >"$OTP_STATE_DIR/worker.log" 2>&1 &
+echo $! >"$OTP_STATE_DIR/worker.pid"
+
+for _ in $(seq 1 60); do
+  if celery -A backend.app.worker.celery_app inspect ping --timeout 2 >/dev/null 2>&1; then
+    echo "otp worker up (broker ${REDIS_URL})"
+    exit 0
+  fi
+  sleep 2
+done
+
+echo "otp worker did not come up"
+cat "$OTP_STATE_DIR/worker.log"
 exit 1

@@ -108,6 +108,11 @@ AUTH_OTP_ALLOWED_DOMAINS=example.com           # and/or AUTH_OTP_ALLOWED_EMAILS=
 WORKSPACE_ADMIN_EMAILS=you@example.com         # bootstrap: your own address
 ```
 
+Give this block to **both** the api and the worker: the api validates the request and mints the
+code, but the worker is what actually sends the email (the send runs off the request path so a
+slow relay cannot leak who is allow-listed).
+A worker without it logs `otp_send_task_failed` and no code ever arrives.
+
 First sign-in: put your own address in **both** the allowlist and `WORKSPACE_ADMIN_EMAILS`,
 then sign in to your own mailbox. There is no seeded password to rotate.
 
@@ -121,7 +126,9 @@ Before letting anyone else in, **prove the mailer works**: as a workspace admin,
 /api/v1/admin/auth-email/test` sends a real message to your own address and, on failure,
 names the stage that broke (`connect` / `tls` / `auth` / `send`). Far better to find a bad
 relay here than at a teammate's first sign-in, when the only symptom is a code that never
-arrives.
+arrives. It exercises the **api's** transport block synchronously; the worker sends the real
+codes with its own copy of that block, so if the pre-flight passes and codes still never arrive,
+read the worker log for `otp_send_task_failed`.
 
 One consequence worth knowing up front: with no IdP there is no bearer token for `/mcp` to
 validate, so in this mode **a PAT (`dq_live_…`) is the only credential MCP accepts**. AI

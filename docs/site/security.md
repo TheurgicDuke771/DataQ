@@ -96,13 +96,19 @@ are the reason this mode is opt-in rather than the default:
   status* whether or not an address is known, so the response content cannot be used to enumerate
   who has an account. The
   code-request endpoint also holds **every** such response to a common minimum latency
-  (`AUTH_OTP_REQUEST_MIN_SECONDS`, default 1s), so the code-mint and mail-send round trip an
-  eligible address incurs no longer stands out against an ineligible one's in-memory lookup.
-  **What the floor does not cover, stated plainly:** a mail send *slower* than the floor still
-  overruns it, so a degraded relay (bounded by `AUTH_EMAIL_TIMEOUT_SECONDS`, default 5s) re-opens a
-  narrower version of the channel; a genuine SMTP failure still answers 502/503 where a working
-  send answers `ok`, which is deliberate (a mail outage must not be a silent no-op — ADR 0032 §7);
-  and setting the floor to `0` removes it. **Code *verification* carries the same floor on its own
+  (`AUTH_OTP_REQUEST_MIN_SECONDS`, default 1s), so the code-mint an eligible address incurs no
+  longer stands out against an ineligible one's in-memory lookup. **The mail itself is not sent
+  on the request path at all** (ADR 0032 §7 as amended): the api mints the code and hands
+  delivery to the worker, which does the SMTP password lookup and the send. A floor can pad an
+  ineligible address *up* to a slow relay but never an eligible one *down*, so a synchronous send
+  slower than the floor used to re-open the channel — a relay's latency now cannot reach the
+  response at all. A mail or broker failure is an operator log line (`otp_send_task_failed` on
+  the worker, `otp_request_dispatch_failed` on the api) and the response stays `ok`, because
+  the earlier 502/503 answered differently for members than for strangers while the relay was
+  down. Use the admin SMTP pre-flight to find a broken relay; it is still synchronous by design.
+  **What the floor does not cover, stated plainly:** a database round trip or a broker publish
+  slower than the floor still overruns it, and setting the floor to `0` removes it. **Code
+  *verification* carries the same floor on its own
   setting** (`AUTH_OTP_VERIFY_MIN_SECONDS`, default 0.5s):
   every rejected code answers an
   identical 401, but an address that has a live code outstanding does more database work than one

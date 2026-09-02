@@ -219,12 +219,24 @@ def _generate_code() -> str:
     return f"{secrets.randbelow(10**CODE_DIGITS):0{CODE_DIGITS}d}"
 
 
+class QueuedCodeMailer:
+    """The production `CodeMailer`: hands delivery to the worker (#1731) so the
+    request path never waits on SMTP — the floor in `api/v1/auth_otp.py` can pad
+    an ineligible address UP to a slow relay, but never an eligible one DOWN.
+    """
+
+    def send_code(self, *, to: str, code: str, expires_in_minutes: int) -> None:
+        from backend.app.services import run_dispatch
+
+        run_dispatch.dispatch_otp_code(to=to, code=code, expires_in_minutes=expires_in_minutes)
+
+
 @dataclass(frozen=True)
 class RequestOutcome:
     """What actually happened inside `request_code`."""
 
     sent: bool
-    reason: str  # "sent" | "ineligible" | "throttled"
+    reason: str  # "queued" | "ineligible" | "throttled" | "dispatch_failed"
 
 
 def request_code(
@@ -234,7 +246,12 @@ def request_code(
     mailer: CodeMailer,
     settings: Settings | None = None,
 ) -> RequestOutcome:
-    """Mint and mail a code for `email`, if it is eligible and under quota."""
+    """Mint a code for `email` and hand it to `mailer`, if eligible and under quota.
+
+    Delivery outcome never reaches the caller: a mailer failure is logged and
+    reported in the outcome only. The endpoint's response must not depend on
+    anything past eligibility (#1731).
+    """
     s = settings or get_settings()
     normalized = normalize_email(email)
 
@@ -265,11 +282,16 @@ def request_code(
     )
     db.commit()
 
-    # Committed BEFORE the send: if the SMTP call fails the user gets a real error and retries, and
-    # the stored code simply expires unused.
-    mailer.send_code(to=normalized, code=code, expires_in_minutes=CODE_TTL_MINUTES)
-    log.info("otp_request_sent", expires_in_minutes=CODE_TTL_MINUTES)
-    return RequestOutcome(sent=True, reason="sent")
+    # Committed BEFORE the hand-off: a code that never gets delivered simply expires unused, and
+    # the user's retry supersedes it.
+    try:
+        mailer.send_code(to=normalized, code=code, expires_in_minutes=CODE_TTL_MINUTES)
+    except Exception as exc:
+        # No exc_info: a traceback would carry the address and the code in its frames.
+        log.error("otp_request_dispatch_failed", error_type=type(exc).__name__)
+        return RequestOutcome(sent=False, reason="dispatch_failed")
+    log.info("otp_request_queued", expires_in_minutes=CODE_TTL_MINUTES)
+    return RequestOutcome(sent=True, reason="queued")
 
 
 def verify_code(db: Session, email: str, code: str, *, settings: Settings | None = None) -> User:
@@ -400,6 +422,7 @@ __all__ = [
     "OtpCounterStore",
     "OtpNotConfiguredError",
     "OtpVerifyError",
+    "QueuedCodeMailer",
     "RedisOtpCounterStore",
     "RequestOutcome",
     "is_signup_eligible",

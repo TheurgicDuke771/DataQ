@@ -54,8 +54,9 @@ from backend.app.services import (
     suite_service,
 )
 from backend.app.services.failure_classifier import classify_failure_reason
+from backend.app.services.otp_mailer import OtpMailer
 from backend.app.worker import beat_watchdog
-from backend.app.worker.celery_app import LLM_INVOKE_TASK_NAME, celery_app
+from backend.app.worker.celery_app import LLM_INVOKE_TASK_NAME, OTP_SEND_TASK_NAME, celery_app
 
 # Poll lookback exceeds the 10-min beat interval so runs can't slip the gap (#171).
 _POLL_LOOKBACK = timedelta(minutes=15)
@@ -767,6 +768,32 @@ def purge_otp_codes() -> int:
         return otp_service.purge_expired_codes(session, older_than_hours=retention_hours)
     finally:
         session.close()
+
+
+# ─────────────────────── OTP sign-in mail delivery (#1731) ──────────────────
+
+
+@celery_app.task(name=OTP_SEND_TASK_NAME, ignore_result=True)  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
+def send_otp_code(*, to: str, code: str, expires_in_minutes: int) -> bool:
+    """Deliver one sign-in code over SMTP, off the request path (#1731). Returns
+    whether it was sent. NEVER raises: a failure here is an operator signal
+    (`otp_send_task_failed` + the mailer's own staged log line), and there is no
+    retry — the code has a 10-minute life and the user's re-request supersedes
+    it. `ignore_result=True`: nothing about this message belongs in the backend.
+    """
+    try:
+        OtpMailer(get_secret_store(), get_settings()).send_code(
+            to=to, code=code, expires_in_minutes=expires_in_minutes
+        )
+    except Exception as exc:
+        # No exc_info: the frames hold the address and the code.
+        log.error(
+            "otp_send_task_failed",
+            error_type=type(exc).__name__,
+            error_code=getattr(exc, "code", None),
+        )
+        return False
+    return True
 
 
 # ──────────────────────── stuck-run reaper (#309) ──────────────────────────

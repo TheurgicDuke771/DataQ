@@ -12,11 +12,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.core.config import Settings, get_settings
-from backend.app.core.secrets import SecretNotFoundError, SecretStoreUnavailableError
+from backend.app.core.secrets import SecretStoreUnavailableError
 from backend.app.db.models import OtpCode, User, UserSession
 from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.app.services import otp_service, session_service
+from backend.app.worker.celery_app import OTP_SEND_TASK_NAME, celery_app
 from backend.tests.support.fake_secret_store import FakeSecretStore, override_secret_store
 
 REQUEST_URL = "/api/v1/auth/otp/request"
@@ -26,7 +27,8 @@ LOGOUT_URL = "/api/v1/auth/logout"
 
 class _CapturingSMTP:
     """Captures the outbound message instead of speaking SMTP. Class-level so a
-    test can read what (if anything) the endpoint sent.
+    test can read what (if anything) the endpoint sent — since #1731 the answer
+    on the request path must always be NOTHING (the worker sends).
     """
 
     sent: ClassVar[list[str]] = []
@@ -71,22 +73,30 @@ def _otp_settings(**overrides: Any) -> Settings:
 @pytest.fixture
 def otp_env(db_session: Any, monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, Any]]:
     """The app wired for OTP mode: our DB session, a stub secret store, a captured
-    SMTP transport, and an in-memory per-email counter.
+    SMTP transport (which must stay untouched — #1731), a recorded Celery publish
+    in `otp_env["enqueued"]`, and an in-memory per-email counter.
     """
     import smtplib
 
+    _ENQUEUED.clear()
     state: dict[str, Any] = {
         "settings": _otp_settings(),
         "store": FakeSecretStore(default="app-password"),
+        "enqueued": _ENQUEUED,
     }
     _CapturingSMTP.sent = []
     monkeypatch.setattr(smtplib, "SMTP", _CapturingSMTP)
+
+    def _record_publish(name: str, **options: Any) -> None:
+        _ENQUEUED.append((name, options))
+
+    monkeypatch.setattr(celery_app, "send_task", _record_publish)
     otp_service.set_counter_store_for_testing(otp_service.InMemoryOtpCounterStore())
 
     app.dependency_overrides[get_db] = lambda: db_session
     app.dependency_overrides[get_settings] = lambda: state["settings"]
     # A test may swap `otp_env["store"]` mid-test (see
-    # test_a_missing_password_secret_and_a_sealed_vault_are_DIFFERENT_errors below).
+    # test_the_request_path_never_touches_the_secret_store below).
     override_secret_store(app, state["store"])
     try:
         yield state
@@ -105,8 +115,17 @@ def _address() -> str:
     return f"user-{uuid.uuid4().hex[:10]}@acme.io"
 
 
+#: Every `celery_app.send_task` the endpoint made — (task name, options). Reset per test by
+#: `otp_env`, which also exposes it as `otp_env["enqueued"]`.
+_ENQUEUED: list[tuple[str, dict[str, Any]]] = []
+
+
+def _enqueued() -> list[tuple[str, dict[str, Any]]]:
+    return _ENQUEUED
+
+
 def _last_code(db: Any, email: str) -> str:
-    """The plaintext code, recovered by brute-forcing the stored hash."""
+    """The plaintext code the worker was handed for `email`, checked against the stored hash."""
     row = (
         db.query(OtpCode)
         .filter(OtpCode.email == email, OtpCode.consumed_at.is_(None))
@@ -114,22 +133,33 @@ def _last_code(db: Any, email: str) -> str:
         .first()
     )
     assert row is not None, "no live code row was stored"
-    body = _CapturingSMTP.sent[-1]
-    for token in body.split():
-        if token.isdigit() and len(token) == otp_service.CODE_DIGITS:
-            assert otp_service._hash_code(token) == row.code_hash
-            return token
-    raise AssertionError("no code found in the sent message")
+    for _name, options in reversed(_ENQUEUED):
+        if options["kwargs"]["to"] == email:
+            code = str(options["kwargs"]["code"])
+            assert otp_service._hash_code(code) == row.code_hash
+            return code
+    raise AssertionError(f"no send was enqueued for {email}")
 
 
 # ── anti-enumeration ─────────────────────────────────────────────────────────
 
 
-def test_an_eligible_request_returns_ok_and_mails_a_code(client: TestClient) -> None:
-    response = client.post(REQUEST_URL, json={"email": _address()})
+def test_an_eligible_request_returns_ok_and_QUEUES_a_code_without_sending_inline(
+    client: TestClient, otp_env: dict[str, Any]
+) -> None:
+    """#1731: the request path hands delivery to the worker. The SMTP transport is
+    patched and must stay untouched — an inline send is the timing channel.
+    """
+    email = _address()
+    response = client.post(REQUEST_URL, json={"email": email})
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
-    assert len(_CapturingSMTP.sent) == 1
+    assert _CapturingSMTP.sent == [], "the request path spoke SMTP itself"
+    name, options = _enqueued()[-1]
+    assert name == OTP_SEND_TASK_NAME
+    assert options["kwargs"]["to"] == email
+    assert options["kwargs"]["expires_in_minutes"] == otp_service.CODE_TTL_MINUTES
+    assert len(_enqueued()) == 1
 
 
 def test_eligible_ineligible_and_throttled_are_BYTE_IDENTICAL(
@@ -154,8 +184,9 @@ def test_eligible_ineligible_and_throttled_are_BYTE_IDENTICAL(
     assert throttled.headers.get("content-type") == eligible.headers.get("content-type")
 
 
-def test_an_ineligible_address_is_never_mailed(client: TestClient) -> None:
+def test_an_ineligible_address_is_never_mailed(client: TestClient, otp_env: dict[str, Any]) -> None:
     client.post(REQUEST_URL, json={"email": f"stranger-{uuid.uuid4().hex[:8]}@elsewhere.example"})
+    assert _enqueued() == []
     assert _CapturingSMTP.sent == []
 
 
@@ -169,7 +200,7 @@ def test_a_throttled_address_is_not_mailed_again(
     email = _address()
     client.post(REQUEST_URL, json={"email": email})
     client.post(REQUEST_URL, json={"email": email})
-    assert len(_CapturingSMTP.sent) == 1
+    assert len(_enqueued()) == 1
 
 
 # ── request: input hostility ─────────────────────────────────────────────────
@@ -222,45 +253,47 @@ def test_a_unicode_code_is_a_401_not_a_500(client: TestClient) -> None:
     assert response.json()["error"]["code"] == "invalid_otp_code"
 
 
-# ── request: transport failures surface ──────────────────────────────────────
+# ── request: transport state never surfaces (#1731) ─────────────────────────
 
 
-def test_an_smtp_failure_surfaces_as_502_with_no_quiet_no_op(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
+def _broker_down(otp_env: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
+    def _refuse(name: str, **options: Any) -> None:
+        raise ConnectionRefusedError("broker unreachable")
+
+    monkeypatch.setattr(celery_app, "send_task", _refuse)
+
+
+def test_an_enqueue_failure_still_answers_the_uniform_ok(
+    client: TestClient, otp_env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """#734 AC. This is also the ONE place the uniform response is not uniform —
-    documented in the module docstring of `api/v1/auth_otp.py`, and accepted
-    because it only diverges while the mail server is down.
+    """A broker outage is an operator log line, not a different response: the
+    pre-#1731 502 answered `ok` for a stranger and an error for a member, which
+    made a mail/broker outage a free enumeration oracle. The code row is still
+    minted (the user's retry supersedes it), and SMTP is still never spoken here.
     """
-    import smtplib
+    _broker_down(otp_env, monkeypatch)
+    email = _address()
+    failed = client.post(REQUEST_URL, json={"email": email})
+    stranger = client.post(
+        REQUEST_URL, json={"email": f"stranger-{uuid.uuid4().hex[:8]}@elsewhere.example"}
+    )
+    assert failed.status_code == stranger.status_code == 200
+    assert failed.content == stranger.content
+    assert _CapturingSMTP.sent == []
 
-    class _BrokenSMTP(_CapturingSMTP):
-        def send_message(self, message: Any) -> None:
-            raise smtplib.SMTPServerDisconnected("relay went away")
 
-    monkeypatch.setattr(smtplib, "SMTP", _BrokenSMTP)
-    response = client.post(REQUEST_URL, json={"email": _address()})
-    assert response.status_code == 502, response.text
-    assert response.json()["error"]["code"] == "otp_email_send_failed"
-
-
-def test_a_missing_password_secret_and_a_sealed_vault_are_DIFFERENT_errors(
+def test_the_request_path_never_touches_the_secret_store(
     client: TestClient, otp_env: dict[str, Any]
 ) -> None:
-    """ADR 0039 decision 6 through the HTTP layer: an outage is never reported as
-    "not configured", because the fixes are different.
+    """The SMTP password lookup moved to the worker with the send (#1731): a sealed
+    vault used to answer 503 on the request path — for eligible addresses only.
     """
-    otp_env["store"] = FakeSecretStore(raise_on_get=SecretNotFoundError("not set"))
-    override_secret_store(app, otp_env["store"])
-    not_set = client.post(REQUEST_URL, json={"email": _address()})
-
     otp_env["store"] = FakeSecretStore(raise_on_get=SecretStoreUnavailableError("sealed"))
     override_secret_store(app, otp_env["store"])
-    outage = client.post(REQUEST_URL, json={"email": _address()})
-
-    assert not_set.json()["error"]["code"] == "otp_email_not_configured"
-    assert outage.json()["error"]["code"] == "secret_store_unavailable"
-    assert not_set.content != outage.content
+    response = client.post(REQUEST_URL, json={"email": _address()})
+    assert response.status_code == 200, response.text
+    assert response.json() == {"status": "ok"}
+    assert len(_enqueued()) == 1
 
 
 def test_the_endpoints_503_when_otp_is_not_configured(
@@ -346,30 +379,46 @@ def test_the_floor_is_applied_once_not_twice(client: TestClient, otp_env: dict[s
     assert _FLOOR <= elapsed < 2 * _FLOOR, f"{elapsed:.3f}s is not one floor's worth"
 
 
-def test_an_error_response_is_NOT_padded(
+def test_a_dispatch_failure_is_held_to_the_floor_too(
     client: TestClient, otp_env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Error responses are already non-uniform by design (a mail outage is a
-    deployment-wide, operator-visible condition — ADR 0032 §7), so padding them
-    would buy nothing and would hold a worker thread for the whole outage. Pinned
-    rather than left implicit, because "we pad everything" is the tempting mistake.
+    """The fourth uniform branch (#1731). A broker outage answers `ok` like the
+    others, so it must take as long as the others — an instant `ok` on the failing
+    path would tell an attacker which addresses the api tried to mail.
     """
-    import smtplib
     import time
 
-    class _BrokenSMTP(_CapturingSMTP):
-        def send_message(self, message: Any) -> None:
-            raise smtplib.SMTPServerDisconnected("relay went away")
-
-    monkeypatch.setattr(smtplib, "SMTP", _BrokenSMTP)
-    otp_env["settings"] = _otp_settings(auth_otp_request_min_seconds=2.0)
+    _broker_down(otp_env, monkeypatch)
+    otp_env["settings"] = _otp_settings(auth_otp_request_min_seconds=_FLOOR)
 
     started = time.monotonic()
     response = client.post(REQUEST_URL, json={"email": _address()})
     elapsed = time.monotonic() - started
 
-    assert response.status_code == 502
-    assert elapsed < 1.0, f"the 502 waited out the floor ({elapsed:.3f}s)"
+    assert response.status_code == 200
+    assert elapsed >= _FLOOR, f"dispatch-failed answered in {elapsed:.3f}s"
+
+
+def test_the_unconfigured_503_is_NOT_padded_on_request(
+    client: TestClient, otp_env: dict[str, Any]
+) -> None:
+    """The one non-uniform answer left on this endpoint since #1731. A deployment
+    with OTP switched off answers 503 for EVERY address, so it carries no
+    per-address signal — and holding a worker thread for it would make an
+    unconfigured deployment slow as well as unusable. Pinned rather than left
+    implicit, because "we pad everything" is the tempting mistake.
+    """
+    import time
+
+    otp_env["settings"] = Settings(auth_otp_request_min_seconds=2.0)  # no AUTH_EMAIL_* block
+
+    started = time.monotonic()
+    response = client.post(REQUEST_URL, json={"email": _address()})
+    elapsed = time.monotonic() - started
+
+    assert response.status_code == 503, response.text
+    assert response.json()["error"]["code"] == "otp_not_configured"
+    assert elapsed < 1.0, f"the 503 waited out the floor ({elapsed:.3f}s)"
 
 
 def test_the_floor_can_be_switched_off(client: TestClient, otp_env: dict[str, Any]) -> None:

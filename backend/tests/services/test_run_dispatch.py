@@ -44,6 +44,45 @@ def test_dispatch_run_sends_task_by_name_and_returns_task_id(
     assert task_id == "celery-task-123"
 
 
+def test_dispatch_otp_code_redacts_the_broker_repr_and_expires_with_the_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#1731: the plaintext code crosses the broker, so the message's `kwargsrepr`
+    (what Celery's received/failed log lines render) must not be the kwargs, and
+    the message must expire with the code's own TTL.
+    """
+    calls: list[tuple[str, dict[str, Any]]] = []
+
+    def _send(name: str, **options: Any) -> SimpleNamespace:
+        calls.append((name, options))
+        return SimpleNamespace(id="celery-task-456")
+
+    monkeypatch.setattr(celery_app, "send_task", _send)
+
+    run_dispatch.dispatch_otp_code(to="ada@acme.io", code="123456", expires_in_minutes=10)
+
+    name, options = calls[0]
+    assert name == "send_otp_code"
+    assert options["kwargs"] == {"to": "ada@acme.io", "code": "123456", "expires_in_minutes": 10}
+    assert "123456" not in options["kwargsrepr"]
+    assert "ada@acme.io" not in options["kwargsrepr"]
+    assert options["expires"] == 600
+
+
+def test_dispatch_otp_code_raises_on_broker_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unlike `dispatch_auto_classify`, this one does NOT swallow: the caller
+    (`otp_service.request_code`) owns the uniform-response contract and needs to
+    know which branch ran.
+    """
+
+    def _refuse(name: str, **options: Any) -> None:
+        raise ConnectionRefusedError("broker unreachable")
+
+    monkeypatch.setattr(celery_app, "send_task", _refuse)
+    with pytest.raises(ConnectionRefusedError):
+        run_dispatch.dispatch_otp_code(to="ada@acme.io", code="123456", expires_in_minutes=10)
+
+
 def test_mark_dispatch_failed_sets_canonical_shape() -> None:
     """#227: one definition of the dispatch-failure shape — failed + finished_at
     set, started_at left NULL (it never started).
