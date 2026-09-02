@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "d8f1dc55b5e4",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1728-shared-marker-correlation",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/d8/f1dc55b5e4/0/metadata.json",
+      "transcript": "/d8/f1dc55b5e4/0/full.jsonl",
+      "compact_transcript": "/d8/f1dc55b5e4/0/transcript.jsonl",
+      "content_hash": "/d8/f1dc55b5e4/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12444,
+    "cache_creation_tokens": 576586,
+    "cache_read_tokens": 34820471,
+    "output_tokens": 132692,
+    "api_call_count": 135
+  }
+}
