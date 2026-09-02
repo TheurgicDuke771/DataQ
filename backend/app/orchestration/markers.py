@@ -33,8 +33,13 @@ def pipeline_run_marker(pipeline_run: PipelineRun) -> str:
 
 
 def _reconstructed_marker() -> ColumnElement[str]:
-    return func.concat(
-        PipelineRun.provider, ":", PipelineRun.pipeline_or_dag_id, ":", PipelineRun.provider_run_id
+    # `||`, not concat(): textually the expression `ix_pipeline_runs_marker` is built on (#1814).
+    return (
+        PipelineRun.provider
+        + ":"
+        + PipelineRun.pipeline_or_dag_id
+        + ":"
+        + PipelineRun.provider_run_id
     )
 
 
