@@ -172,15 +172,16 @@ def resolve_redaction_contexts(
     policy = suite.column_policy if suite is not None else None
     tags = asset.column_tags if asset is not None else None
     historical = run_service.historical_check_context(session, results, checks)
-    return {
-        r.id: RedactionContext(
-            tested_column=historical.get(r.id, (None, None))[0],
-            expectation_type=historical.get(r.id, (None, None))[1],
+    contexts: dict[uuid.UUID, RedactionContext] = {}
+    for r in results:
+        tested_column, expectation_type = historical.get(r.id, (None, None))
+        contexts[r.id] = RedactionContext(
+            tested_column=tested_column,
+            expectation_type=expectation_type,
             policy=policy,
             tags=tags,
         )
-        for r in results
-    }
+    return contexts
 
 
 def _failing_result_layer(

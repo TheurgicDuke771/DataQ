@@ -944,3 +944,72 @@ def test_sync_issues_one_check_versions_query_regardless_of_failing_count(
     assert masked == {"observed_value": "<redacted>"}
     shown = incidents[checks[1].id].evidence["failing_result"]["observed_value"]
     assert shown == {"observed_value": 42}
+
+
+def test_sync_skips_context_resolution_when_nothing_fails(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    """An all-passing run must not pay the batched `Check` / `check_versions` /
+    `Suite` loads at all (#1817 review) — they feed cards that are never built.
+    """
+    from sqlalchemy import event
+
+    from backend.app.db.models import CheckVersion
+
+    run = _run_with_result(db_session, world["suite"], world["check"], status="pass")
+    db_session.expire_all()
+
+    statements: list[str] = []
+
+    def _record(_conn: Any, _cursor: Any, statement: str, *_rest: Any) -> None:
+        statements.append(statement)
+
+    event.listen(db_session.bind, "before_cursor_execute", _record)
+    try:
+        incident_service.sync_incidents_for_run(db_session, run_id=run.id)
+    finally:
+        event.remove(db_session.bind, "before_cursor_execute", _record)
+
+    assert not [s for s in statements if CheckVersion.__tablename__ in s]
+    assert not [s for s in statements if s.lstrip().startswith("SELECT") and "FROM checks" in s]
+    assert not [s for s in statements if s.lstrip().startswith("SELECT") and "FROM suites" in s]
+
+
+def test_sync_degrades_per_card_when_batched_context_resolution_raises(
+    db_session: Any, world: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If the once-per-run context resolution itself raises, the run's incidents
+    still open (#1817 review): each card falls back to resolving its own context
+    inside the `_layer` guard, so `failing_result` stays populated AND masked.
+    """
+    suite = world["suite"]
+    suite.column_policy = {"pii_columns": ["EMAIL"]}
+    db_session.add(suite)
+    check = world["check"]
+    check.config = {"column": "EMAIL"}
+    db_session.add(check)
+    db_session.commit()
+    run = Run(suite_id=suite.id, status="succeeded", triggered_by="manual", asset_id=suite.asset_id)
+    db_session.add(run)
+    db_session.flush()
+    db_session.add(
+        Result(
+            run_id=run.id,
+            check_id=check.id,
+            status="fail",
+            observed_value={"observed_value": "victim@example.com"},
+        )
+    )
+    db_session.commit()
+
+    def boom(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("context resolution exploded")
+
+    monkeypatch.setattr(incident_service, "resolve_redaction_contexts", boom)
+    incident_service.sync_incidents_for_run(db_session, run_id=run.id)
+
+    incidents = _active(db_session, suite.asset_id, check.id)
+    assert len(incidents) == 1
+    assert incidents[0].evidence is not None
+    observed = incidents[0].evidence["failing_result"]["observed_value"]
+    assert observed == {"observed_value": "<redacted>"}

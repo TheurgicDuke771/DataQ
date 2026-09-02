@@ -104,13 +104,23 @@ def _sync_incidents_for_run(session: Session, *, run_id: uuid.UUID) -> None:
     # Resolved ONCE per run, not per failing result (#1792): the checks, and each
     # result's as-of-write (tested_column, expectation_type) + policy + tags.
     failing = [r for r in results if r.status in FAILING_TIERS]
-    checks = {
-        c.id: c
-        for c in session.scalars(select(Check).where(Check.id.in_({r.check_id for r in failing})))
-    }
-    contexts = resolve_redaction_contexts(
-        session, run=run, results=failing, checks=checks, asset=asset
-    )
+    checks: dict[uuid.UUID, Check] = {}
+    contexts: dict[uuid.UUID, RedactionContext] = {}
+    if failing:
+        checks = {
+            c.id: c
+            for c in session.scalars(
+                select(Check).where(Check.id.in_({r.check_id for r in failing}))
+            )
+        }
+        try:
+            contexts = resolve_redaction_contexts(
+                session, run=run, results=failing, checks=checks, asset=asset
+            )
+        except Exception:
+            # Degrade per CARD, not per run: with no pre-resolved context each card's
+            # failing-result layer resolves its own inside the `_layer` guard.
+            log.warning("incident_context_resolution_failed", run_id=str(run_id))
 
     opened = attached = resolved = 0
     for result in results:
@@ -121,7 +131,7 @@ def _sync_incidents_for_run(session: Session, *, run_id: uuid.UUID) -> None:
                 result=result,
                 check=checks.get(result.check_id),
                 asset=asset,
-                context=contexts[result.id],
+                context=contexts.get(result.id),
             )
             opened += action == "opened"
             attached += action == "attached"
