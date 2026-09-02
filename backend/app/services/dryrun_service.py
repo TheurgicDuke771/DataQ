@@ -231,7 +231,7 @@ def _dry_run_schema_drift(
     try:
         validate_monitor_config(SCHEMA_DRIFT, config)
     except MonitorConfigError as exc:
-        raise DryRunUnsupportedError(str(exc), detail={"kind": SCHEMA_DRIFT}) from exc
+        raise DryRunUnsupportedError(str(exc)[:500], detail={"kind": SCHEMA_DRIFT}) from exc
     resolved = run_target.resolve_target(connection.type, target)
     try:
         table = run_target.materialize_path(
@@ -303,7 +303,7 @@ def _dry_run_anomaly(
     try:
         params = anomaly_params(config)
     except MonitorConfigError as exc:
-        raise DryRunUnsupportedError(str(exc), detail={"kind": ANOMALY}) from exc
+        raise DryRunUnsupportedError(str(exc)[:500], detail={"kind": ANOMALY}) from exc
     resolved = run_target.resolve_target(connection.type, target)
     now = datetime.now(UTC)
     try:

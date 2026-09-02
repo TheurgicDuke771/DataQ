@@ -717,6 +717,46 @@ def test_create_freshness_missing_column_rejected(client: TestClient, db_session
     assert resp.json()["error"]["code"] == "check_config_invalid"
 
 
+def test_create_monitor_rejects_oversized_config_string(
+    client: TestClient, db_session: Any
+) -> None:
+    # #1787: monitor kinds share the #651 cap with expectation/comparison checks — a 100KB
+    # "column" / min_rows must 422 with a bounded envelope, not persist or echo back.
+    sid = _suite_id(client, db_session, conn_type="snowflake")
+    huge = "x" * 100_000
+    fresh = client.post(
+        f"/api/v1/suites/{sid}/checks", json=_freshness_payload(config={"column": huge})
+    )
+    assert fresh.status_code == 422
+    assert fresh.json()["error"]["code"] == "check_config_invalid"
+    assert len(fresh.text) < 5_000
+    volume = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_volume_payload(config={"min_rows": huge, "max_rows": 5}),
+    )
+    assert volume.status_code == 422
+    assert len(volume.text) < 5_000
+
+
+def test_monitor_config_error_envelope_does_not_echo_the_config(
+    client: TestClient, db_session: Any
+) -> None:
+    # #1787: an invalid identifier used to come back with detail.config = the ENTIRE submitted dict.
+    # Every string here is under the per-string cap, so only the detail shape bounds the envelope.
+    sid = _suite_id(client, db_session, conn_type="snowflake")
+    wide = {f"extra_{i}": "v" * 9_000 for i in range(60)}
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_freshness_payload(config={"column": "not an identifier", **wide}),
+    )
+    assert resp.status_code == 422
+    error = resp.json()["error"]
+    assert error["code"] == "check_config_invalid"
+    assert "identifier" in error["message"]
+    assert "config" not in (error.get("detail") or {})
+    assert len(resp.text) < 5_000
+
+
 def test_create_volume_with_inverted_range_rejected(client: TestClient, db_session: Any) -> None:
     sid = _suite_id(client, db_session, conn_type="snowflake")
     resp = client.post(

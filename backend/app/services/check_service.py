@@ -303,6 +303,8 @@ def validate_monitor_check(
     critical_threshold: Decimal | None,
 ) -> None:
     """Validate a monitor check of any kind at author time (create/update)."""
+    # Same #651 string-size cap as expectation/comparison checks (#1787).
+    _reject_oversized_config(config)
     capable = _CAPABLE_TYPES_BY_KIND.get(kind, MONITOR_CAPABLE_TYPES)
     if connection_type not in capable:
         raise CheckConfigInvalidError(
@@ -322,7 +324,9 @@ def validate_monitor_check(
     try:
         validate_monitor_config(kind, config)
     except MonitorConfigError as exc:
-        raise CheckConfigInvalidError(str(exc), detail={"kind": kind, "config": config}) from exc
+        # The envelope is echoed to the client and logged: never round-trip the caller's config
+        # through it — the message already names the offending field (#1787).
+        raise CheckConfigInvalidError(str(exc)[:500], detail={"kind": kind}) from exc
     # A column-less freshness monitor measures ARRIVAL time, which only a datasource with a native
     # per-object timestamp can answer (#520).
     if kind == FRESHNESS and config.get("column") is None and connection_type not in FILE_TYPES:
