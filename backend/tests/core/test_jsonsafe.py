@@ -1,7 +1,13 @@
 """Tests for the JSONB sanitizer."""
 
+import datetime
+import decimal
 import json
 import math
+
+import numpy as np
+import pandas as pd
+import pytest
 
 from backend.app.core.jsonsafe import sanitize_json
 
@@ -65,7 +71,6 @@ def test_does_not_mutate_input() -> None:
 
 
 def test_numpy_scalars_are_coerced_to_native() -> None:
-    import numpy as np
 
     # GX's pandas engine returns numpy scalars in unexpected_index_list (#415); they
     # aren't JSON-serializable and would break the JSONB persist.
@@ -78,13 +83,11 @@ def test_numpy_scalars_are_coerced_to_native() -> None:
 
 
 def test_numpy_nan_becomes_none() -> None:
-    import numpy as np
 
     assert sanitize_json(np.float64("nan")) is None
 
 
 def test_pandas_na_and_nat_become_none() -> None:
-    import pandas as pd
 
     # Arrow-backed frames (the iceberg native read, #716) surface null cells to GX payloads as pd.NA
     # / pd.NaT.
@@ -94,7 +97,6 @@ def test_pandas_na_and_nat_become_none() -> None:
 
 
 def test_decimal_becomes_float() -> None:
-    import decimal
 
     # Warehouse (SQLAlchemy/Snowflake) NUMERIC columns surface as decimal.Decimal in a failing
     # check's observed-value/failing-sample payload (#1273, reproduced live on a Snowflake range
@@ -107,7 +109,6 @@ def test_decimal_becomes_float() -> None:
 
 
 def test_decimal_nan_and_infinity_become_none() -> None:
-    import decimal
 
     assert sanitize_json(decimal.Decimal("NaN")) is None
     assert sanitize_json(decimal.Decimal("Infinity")) is None
@@ -115,7 +116,6 @@ def test_decimal_nan_and_infinity_become_none() -> None:
 
 
 def test_nested_decimal_list_is_sanitized() -> None:
-    import decimal
 
     # Mirrors the real crash: a failing_sample list of raw NUMERIC column values.
     payload = {"partial_unexpected_list": [decimal.Decimal("100.00"), decimal.Decimal("250.5")]}
@@ -148,7 +148,6 @@ def test_bytearray_becomes_hex() -> None:
 
 
 def test_timestamps_and_dates_become_isoformat() -> None:
-    import datetime
 
     import pandas as pd
 
@@ -179,67 +178,84 @@ def test_memoryview_becomes_hex() -> None:
     json.dumps(cleaned, allow_nan=False)
 
 
-# Every value type the sanitizer handles, used in the KEY position of a
-# `{column_value: count}` metric (#1729). Expected keys are what json.dumps renders
-# for a legal scalar key, or the value branch's own rendering for the rest.
-def _driver_keys() -> list[tuple[object, str]]:
-    import datetime
-    import decimal
-
-    import numpy as np
-
-    # (bytearray is unhashable, so it can never reach the key position.)
-    return [
-        (b"\x01\x02\x8f", "01028f"),
-        (memoryview(b"\x0a"), "0a"),
-        (decimal.Decimal("1234.56"), "1234.56"),
-        (decimal.Decimal("100"), "100.0"),
-        (np.int64(7), "7"),
-        (np.float64(2.5), "2.5"),
-        (np.bool_(True), "true"),
-        (True, "true"),
-        (False, "false"),
-        (None, "null"),
-        (3, "3"),
-        (-1.5, "-1.5"),
-        (datetime.date(2019, 1, 1), "2019-01-01"),
-        ("already-a-string", "already-a-string"),
-    ]
+# Every type the value branch handles, used in the KEY position of a
+# `{column_value: count}` histogram (#1729): (raw key, expected str key, is json-legal raw).
+# bytearray is unhashable so can never reach the key position.
+_DRIVER_KEYS = [
+    pytest.param(b"\x01\x02\x8f", "01028f", False, id="bytes"),
+    pytest.param(memoryview(b"\x0a"), "0a", False, id="memoryview"),
+    pytest.param(decimal.Decimal("1234.56"), "1234.56", False, id="decimal"),
+    pytest.param(decimal.Decimal("100"), "100.0", False, id="decimal-integral"),
+    pytest.param(np.int64(7), "7", False, id="np-int64"),
+    pytest.param(np.float64(2.5), "2.5", True, id="np-float64"),  # a float subclass
+    pytest.param(np.bool_(True), "true", False, id="np-bool"),
+    pytest.param(np.str_("col"), "col", True, id="np-str"),
+    pytest.param(True, "true", True, id="bool-true"),
+    pytest.param(False, "false", True, id="bool-false"),
+    pytest.param(None, "null", True, id="none"),
+    pytest.param(3, "3", True, id="int"),
+    pytest.param(-1.5, "-1.5", True, id="float"),
+    pytest.param(datetime.date(2019, 1, 1), "2019-01-01", False, id="date"),
+    pytest.param(pd.Timestamp("2026-01-01"), "2026-01-01T00:00:00", False, id="pd-timestamp"),
+    pytest.param(pd.NA, "null", False, id="pd-na"),
+    pytest.param((1, 2), "[1, 2]", False, id="tuple"),
+    pytest.param("plain", "plain", True, id="str"),
+]
 
 
-def test_dict_keys_are_sanitized_to_json_strings() -> None:
-    import pytest
-
-    for raw, expected in _driver_keys():
-        cleaned = sanitize_json({raw: 1})
-        assert cleaned == {expected: 1}, raw
-        assert type(next(iter(cleaned))) is str, raw
-        json.dumps(cleaned, allow_nan=False)  # round-trips cleanly
-        # Sanity: the raw key really was not JSON-legal (or was already the target).
-        if not isinstance(raw, (str, bool, int, float)) and raw is not None:
-            with pytest.raises(TypeError):
-                json.dumps({raw: 1})
-
-
-def test_non_finite_float_key_is_nulled_like_the_value() -> None:
-    # json.dumps(allow_nan=False) refuses a NaN key outright; the value branch nulls a
-    # NaN, so the key renders as the string json would give that null.
-    cleaned = sanitize_json({float("nan"): 1, float("inf"): 2})
-    assert cleaned == {"null": 2}
+@pytest.mark.parametrize(("raw", "expected", "_json_legal"), _DRIVER_KEYS)
+def test_dict_key_is_sanitized_to_json_string(
+    raw: object, expected: str, _json_legal: bool
+) -> None:
+    cleaned = sanitize_json({raw: 1})
+    assert cleaned == {expected: 1}
+    assert type(next(iter(cleaned))) is str  # np.str_ normalised too
     json.dumps(cleaned, allow_nan=False)
 
 
-def test_nested_dict_keys_are_sanitized() -> None:
-    import decimal
+@pytest.mark.parametrize(("raw", "_expected", "json_legal"), _DRIVER_KEYS)
+def test_raw_driver_key_json_legality_is_as_declared(
+    raw: object, _expected: str, json_legal: bool
+) -> None:
+    # Guards the table itself: a case marked illegal really would have crashed the encoder.
+    if json_legal:
+        json.dumps({raw: 1})
+    else:
+        with pytest.raises(TypeError):
+            json.dumps({raw: 1})
 
-    # Mirrors the real shape: a per-value histogram under a metric payload.
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        pytest.param(float("nan"), "NaN", id="nan"),
+        pytest.param(float("inf"), "Infinity", id="inf"),
+        pytest.param(float("-inf"), "-Infinity", id="-inf"),
+        pytest.param(np.float64("nan"), "NaN", id="np-nan"),
+        pytest.param(decimal.Decimal("Infinity"), "Infinity", id="decimal-inf"),
+    ],
+)
+def test_non_finite_float_keys_keep_json_spellings(raw: object, expected: str) -> None:
+    # The value branch nulls these, but json.dumps rendered NaN/±Infinity KEYS distinctly
+    # before #1729 — routing keys through the null would merge the buckets (review finding).
+    assert sanitize_json({raw: 1}) == {expected: 1}
+
+
+def test_non_finite_float_keys_do_not_collide() -> None:
+    cleaned = sanitize_json({float("nan"): 1, float("inf"): 2, float("-inf"): 3})
+    assert cleaned == {"NaN": 1, "Infinity": 2, "-Infinity": 3}
+    json.dumps(cleaned, allow_nan=False)
+
+
+def test_unknown_key_type_raises_like_the_encoder() -> None:
+    # Types the value branch passes through untouched still fail loudly as keys — the
+    # sanitizer handles known driver types, it does not paper over arbitrary objects.
+    with pytest.raises(TypeError):
+        sanitize_json({frozenset({1}): 1})
+
+
+def test_nested_dict_keys_are_sanitized() -> None:
     payload = {"value_counts": {b"\x00": 3, decimal.Decimal("9.5"): 1, "plain": 2}}
     cleaned = sanitize_json(payload)
     assert cleaned == {"value_counts": {"00": 3, "9.5": 1, "plain": 2}}
     json.dumps(cleaned, allow_nan=False)
-
-
-def test_key_sanitization_does_not_mutate_input() -> None:
-    original = {b"\x00": 1}
-    sanitize_json(original)
-    assert list(original) == [b"\x00"]

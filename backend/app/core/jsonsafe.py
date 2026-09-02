@@ -49,18 +49,21 @@ def sanitize_json(value: Any) -> Any:
 def _json_key(key: Any) -> str:
     """Coerce a dict key to the string JSON requires (#1729).
 
-    A `{column_value: count}` metric over a BINARY/NUMERIC column puts the same
-    driver types in the KEY position that the value branches above handle — and
-    a raw bytes/Decimal/numpy key crashes the whole JSONB insert. Keys take the
-    same rendering as the equivalent value (bytes → hex, Decimal/numpy → native)
-    and are then stringified the way ``json.dumps`` stringifies scalar keys
-    (``True`` → ``"true"``, ``None`` → ``"null"``, ``1.5`` → ``"1.5"``).
+    Defensive: no producer keys a dict by data values today, but a
+    `{column_value: count}` histogram over a BINARY/NUMERIC column would put the
+    driver types the value branches handle into the KEY position, where a raw
+    bytes/Decimal/numpy key crashes the whole JSONB insert. A key gets the value
+    branch's rendering (bytes → hex, Decimal/numpy → native) and is then written
+    as JSON text — for scalars exactly what ``json.dumps`` renders a key as
+    (``True`` → ``"true"``, ``1.5`` → ``"1.5"``). Types the value branch does not
+    know raise ``TypeError`` here as they would in the encoder.
     """
-    if isinstance(key, str):
-        return key
     sanitized = sanitize_json(key)
-    if isinstance(sanitized, str):
-        return sanitized
-    if sanitized is None or isinstance(sanitized, (bool, int, float)):
-        return json.dumps(sanitized)
-    return str(sanitized)
+    if sanitized is None and key is not None:
+        # The value branch nulls a non-finite float, but as keys NaN and ±Infinity
+        # would then merge into one bucket — keep json's own distinct spellings.
+        try:
+            return json.dumps(float(key))
+        except TypeError:
+            pass  # pd.NA / pd.NaT — genuinely null
+    return sanitized if isinstance(sanitized, str) else json.dumps(sanitized)
