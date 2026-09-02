@@ -7,6 +7,17 @@ import json
 import math
 from typing import Any
 
+#: What a BINARY/VARBINARY/BYTEA column surfaces as, by DBAPI driver: bytes (databricks-sql),
+#: bytearray (snowflake-connector), memoryview (psycopg).
+BINARY_TYPES = (bytes, bytearray, memoryview)
+
+
+def bytes_to_hex(value: bytes | bytearray | memoryview) -> str:
+    """The one rendering of a binary column value, shared by every persistence and
+    display path (#1721) so the same bytes never read differently by datasource family.
+    """
+    return value.hex()
+
 
 def sanitize_json(value: Any) -> Any:
     """Recursively coerce numpy scalars to native Python and replace non-finite
@@ -28,15 +39,8 @@ def sanitize_json(value: Any) -> Any:
     # finite check below, so a Decimal NaN/Infinity is nulled the same as a float one.
     if isinstance(value, decimal.Decimal):
         value = float(value)
-    # Warehouse BINARY/VARBINARY columns (e.g. a profiled column's MIN/MAX) surface as
-    # raw bytes (or bytearray, depending on the DBAPI driver — core/artifacts.py and
-    # lineage/dbt_manifest.py already treat the two as a pair; psycopg-style BYTEA
-    # arrives as memoryview, #1729) — hex-encode rather than
-    # leaving something JSON can't serialize at all (the flat-file profiler's own
-    # `_to_native` has an equivalent str() catch-all; this is the SQL path's analogous
-    # case, #1719 review).
-    if isinstance(value, (bytes, bytearray, memoryview)):
-        return value.hex()
+    if isinstance(value, BINARY_TYPES):
+        return bytes_to_hex(value)
     if isinstance(value, float):
         return value if math.isfinite(value) else None
     if isinstance(value, dict):

@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from sqlalchemy.engine.interfaces import Dialect
 
 from backend.app.core.errors import DataQError
-from backend.app.core.jsonsafe import sanitize_json
+from backend.app.core.jsonsafe import BINARY_TYPES, bytes_to_hex, sanitize_json
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.flatfile import (
@@ -601,7 +601,9 @@ def _to_native(value: Any) -> Any:
         return None
     if isinstance(value, bool | int | float | str):
         return value
-    # Anything else a column can hold (bytes/binary, Decimal, UUID, …) → a display string, so a
+    if isinstance(value, BINARY_TYPES):
+        return bytes_to_hex(value)  # same rendering as the SQL path's sanitize_json (#1721)
+    # Anything else a column can hold (Decimal, UUID, …) → a display string, so a
     # min/max/top value is always JSON-encodable, never a 500 at the response boundary.
     return str(value)
 
