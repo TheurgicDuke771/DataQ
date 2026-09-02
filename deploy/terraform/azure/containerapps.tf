@@ -160,7 +160,7 @@ resource "azurerm_container_app" "worker" {
       memory = "2Gi"
       # -Q celery,llm (#1777): llm_invoke has its own queue now — must be listed
       # or this worker never consumes it.
-      command = ["celery", "-A", "backend.app.worker.celery_app", "worker", "-B", "-Q", "celery,llm", "--concurrency=4", "--loglevel=INFO"]
+      command = ["celery", "-A", "backend.app.worker.celery_app", "worker", "-B", "-Q", "celery,llm", "--loglevel=INFO"]
       dynamic "env" {
         for_each = local.worker_env
         content {

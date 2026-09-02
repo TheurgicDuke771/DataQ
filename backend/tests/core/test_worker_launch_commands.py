@@ -1,4 +1,4 @@
-"""The worker launch command is declared in four places; they must agree (#1777, #1790)."""
+"""The worker launch command is declared in four places; they must agree (#1777)."""
 
 from __future__ import annotations
 
@@ -24,13 +24,13 @@ def _worker_commands(path: str) -> list[str]:
 
 
 @pytest.mark.parametrize("path", _LAUNCH_FILES)
-def test_every_worker_launch_pins_queues_and_concurrency(path: str) -> None:
-    """Celery's prefork default is the HOST's core count, not the container's — the two
-    reference deployments ran 4 and 2 on identical 1-vCPU tasks until it was pinned. A
-    worker that omits the `llm` queue silently never consumes it.
+def test_every_worker_launch_consumes_both_queues(path: str) -> None:
+    """A worker that omits the `llm` queue silently never consumes it (#1777). Pool size is
+    deliberately NOT asserted here: it lives in `celery_app.conf` (#1790) so it ships with the
+    image rather than needing a coordinated IaC apply.
     """
     commands = _worker_commands(path)
     assert commands, f"{path}: no worker launch command found"
     for command in commands:
         assert "celery,llm" in command, f"{path}: {command.strip()}"
-        assert "--concurrency=4" in command, f"{path}: {command.strip()}"
+        assert "--concurrency" not in command, f"{path}: pool size belongs in celery_app.conf"

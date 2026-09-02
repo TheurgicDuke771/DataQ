@@ -67,11 +67,13 @@ def create_celery_app() -> Celery:
         # consuming both queues fetches from "llm" and "celery" in round-robin
         # rather than draining "celery" strictly FIFO, so a QUEUED run_suite
         # backlog no longer blocks llm_invoke from being pulled at all. It
-        # does NOT add an execution slot — one already-RUNNING long suite can
-        # still occupy the worker's only active slot for its full duration
-        # under the deployed (unset, so prefork-default) concurrency; #1790
-        # tracks verifying/fixing that separately (#1789 review).
+        # does NOT add an execution slot — a RUNNING long suite holds one of
+        # the `worker_concurrency` slots for its full duration (#1789 review).
         task_routes={LLM_INVOKE_TASK_NAME: {"queue": LLM_QUEUE_NAME}},
+        # Pinned here so it ships with the image (#1790): the prefork default is the HOST's
+        # core count, which gave the two reference deployments 4 and 2 on identical 1-vCPU
+        # tasks. A `--concurrency` CLI flag still overrides this.
+        worker_concurrency=settings.worker_concurrency,
         # Recycle a prefork child past this resident size, BETWEEN tasks — stops
         # memory creep (#755) without interrupting a run in flight. 0 disables.
         worker_max_memory_per_child=settings.worker_max_memory_per_child_kb or None,

@@ -138,6 +138,8 @@ class Settings(BaseSettings):
     # Recycle a prefork child past this RSS (KiB) so a large materialisation can't ratchet the
     # worker baseline (#755). 0 disables.
     worker_max_memory_per_child_kb: int = 1_500_000
+    # Prefork pool size. Celery's default is the HOST's core count, not the container's (#1790).
+    worker_concurrency: int = 4
 
     # Orphan-asset sweep (#770).
     asset_orphan_retention_days: int = 30
