@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "4162f902ef2d",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1795-dsr-reaches-incident-evidence",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/41/62f902ef2d/0/metadata.json",
+      "transcript": "/41/62f902ef2d/0/full.jsonl",
+      "compact_transcript": "/41/62f902ef2d/0/transcript.jsonl",
+      "content_hash": "/41/62f902ef2d/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 282,
+    "cache_creation_tokens": 4295,
+    "cache_read_tokens": 1133127,
+    "output_tokens": 1412,
+    "api_call_count": 3
+  }
+}
