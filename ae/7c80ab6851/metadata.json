@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "ae7c80ab6851",
+  "strategy": "manual-commit",
+  "branch": "docs/redesign-p1b-versioning",
+  "checkpoints_count": 5,
+  "files_touched": [
+    ".github/workflows/docs.yml",
+    "deploy/README.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ae/7c80ab6851/0/metadata.json",
+      "transcript": "/ae/7c80ab6851/0/full.jsonl",
+      "compact_transcript": "/ae/7c80ab6851/0/transcript.jsonl",
+      "content_hash": "/ae/7c80ab6851/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 188,
+    "cache_creation_tokens": 9127,
+    "cache_read_tokens": 798922,
+    "output_tokens": 8258,
+    "api_call_count": 2
+  }
+}
