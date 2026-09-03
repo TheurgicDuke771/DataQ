@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -43,8 +44,9 @@ GATES_DOC: dict[str, tuple[str, bool]] = {
 
 
 def _first_paragraph(text: str) -> str:
-    para = text.strip().split("\n\n", 1)[0]
-    return " ".join(line.strip() for line in para.splitlines())
+    """The opening paragraph, one line, safe inside a Markdown table cell."""
+    para = re.split(r"\n\s*\n", text.strip(), maxsplit=1)[0]
+    return " ".join(line.strip() for line in para.splitlines()).replace("|", "\\|")
 
 
 def build_openapi() -> str:
@@ -61,6 +63,8 @@ def build_mcp_tools() -> str:
     missing = set(tools) ^ set(GATES)
     if missing:
         raise SystemExit(f"GATES and the registered tools disagree: {sorted(missing)}")
+    if unknown_probe := LIVE_PROBE_TOOLS - set(tools):
+        raise SystemExit(f"LIVE_PROBE_TOOLS names tools that do not exist: {sorted(unknown_probe)}")
     unknown_gates = {g for g in GATES.values() if g not in GATES_DOC}
     if unknown_gates:
         raise SystemExit(f"classify gate(s) {sorted(unknown_gates)} in GATES_DOC")
