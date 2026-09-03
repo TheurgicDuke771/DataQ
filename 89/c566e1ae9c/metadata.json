@@ -1,0 +1,37 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "89c566e1ae9c",
+  "strategy": "manual-commit",
+  "branch": "docs/redesign-p8-marketing",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "README.md",
+    "docs/progress.md",
+    "docs/site/reference/feature-matrix.md",
+    "marketing/assets/shots/assets-list.png",
+    "marketing/assets/shots/check-editor-expectation.png",
+    "marketing/assets/shots/dashboard.png",
+    "marketing/assets/shots/run-detail.png",
+    "marketing/assets/shots/suite-detail.png",
+    "marketing/assets/shots/tour.jpg",
+    "marketing/assets/shots/tour.mp4",
+    "marketing/index.html",
+    "marketing/styles.css"
+  ],
+  "sessions": [
+    {
+      "metadata": "/89/c566e1ae9c/0/metadata.json",
+      "transcript": "/89/c566e1ae9c/0/full.jsonl",
+      "compact_transcript": "/89/c566e1ae9c/0/transcript.jsonl",
+      "content_hash": "/89/c566e1ae9c/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2300,
+    "cache_creation_tokens": 34090,
+    "cache_read_tokens": 3905519,
+    "output_tokens": 12703,
+    "api_call_count": 7
+  }
+}
