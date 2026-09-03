@@ -87,3 +87,21 @@ test('wire-alert', async ({ page }) => {
   await page.mouse.wheel(0, 500);
   await beat(2000);
 });
+
+test('configure-llm', async ({ page }) => {
+  await page.goto('/admin');
+  await expect(page.getByRole('heading', { name: /Admin/ })).toBeVisible();
+  await beat(1000);
+  await page.getByText('LLM provider', { exact: true }).scrollIntoViewIfNeeded();
+  await expect(page.getByLabel('Model')).toBeVisible();
+  await beat(1500);
+  await page.getByLabel('Model').fill('');
+  await page.getByLabel('Model').pressSequentially('qwen2.5:14b', { delay: 60 });
+  await beat(600);
+  await page.getByLabel('Base URL').fill('');
+  await page.getByLabel('Base URL').pressSequentially('http://127.0.0.1:11434/v1', { delay: 40 });
+  await beat(800);
+  await page.getByRole('button', { name: 'Test' }).click();
+  await expect(page.getByText(/ok|failed|ms/i).last()).toBeVisible({ timeout: 30_000 });
+  await beat(2500);
+});

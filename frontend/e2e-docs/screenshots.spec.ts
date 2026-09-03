@@ -146,3 +146,22 @@ test('suite — schedules panel', async ({ page }) => {
   await panel.scrollIntoViewIfNeeded();
   await shot(page, 'suite-schedules');
 });
+
+test('admin — LLM provider settings', async ({ page }) => {
+  await page.goto('/admin');
+  await heading(page, /Admin/);
+  await page
+    .getByText('LLM provider', { exact: true })
+    .evaluate((el) => el.closest('.ant-card')?.scrollIntoView({ block: 'start' }));
+  await expect(page.getByRole('button', { name: 'Test' })).toBeVisible();
+  await shot(page, 'admin-llm-settings');
+});
+
+test('asset — incident evidence card', async ({ page }) => {
+  await page.goto('/assets');
+  await page.getByRole('treeitem', { name: /^ORDERS dev/ }).click();
+  await expect(page).toHaveURL(/\/assets\//);
+  await page.getByRole('button', { name: 'View' }).first().click();
+  await expect(page.getByText('Incident evidence')).toBeVisible();
+  await shot(page, 'incident-evidence');
+});

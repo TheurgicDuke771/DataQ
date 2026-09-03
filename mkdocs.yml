@@ -149,6 +149,7 @@ nav:
       - Orchestration: guides/orchestration.md
       - Notifications & alerting: guides/notifications.md
       - AI assistants (MCP): guides/mcp-setup.md
+      - AI features (LLM): guides/ai-features.md
       - API keys (PATs): guides/api-keys.md
       - Recommended usage: guides/recommended-usage.md
       - Best practices: guides/best-practices.md

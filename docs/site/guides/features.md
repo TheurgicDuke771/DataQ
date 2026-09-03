@@ -213,6 +213,7 @@ could *not* see. SQL generation and check suggestions send only masked aggregate
 statistics to the provider; the RCA narrative additionally sends the triggering check's own
 observed value, routed through the same column-policy/warehouse-tag redaction floor every
 results surface applies. Raw sample rows never leave the deployment on any path. See
+[AI features](ai-features.md) for a walkthrough with real output, and
 [Security & data handling](../security/overview.md) for the full transfer-vector accounting.
 
 ## AI assistants (MCP)
