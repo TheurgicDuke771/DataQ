@@ -1,9 +1,15 @@
 name: Docs
 
-# Build the MkDocs Material site and publish it to GitHub Pages (#288).
+# Versioned docs site (mike): `latest` tracks main, one frozen copy per release tag
+# (v1.x.y), all living under docs/ on the gh-pages branch that mike maintains. The
+# marketing page occupies the Pages ROOT beside it. Pages still deploys from a
+# workflow artifact — the gh-pages branch is mike's ledger, not the Pages source —
+# so publishing = mike commit → check the branch out → add marketing/ → upload.
 on:
   push:
     branches: [main]
+    # Path filters are not evaluated for tag pushes, so a release tag always publishes.
+    tags: ["v*"]
     paths:
       - docs/site/**
       - marketing/**
@@ -20,38 +26,70 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write # mike commits to gh-pages
   pages: write
   id-token: write
 
-# One in-flight Pages deployment at a time; don't cancel a publish mid-flight.
 concurrency:
   group: pages
   cancel-in-progress: false
+
+env:
+  DISABLE_MKDOCS_2_WARNING: "true"
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+
       - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
+
       - run: pip install -r requirements-docs.txt
+
+      # Every build (PRs included) must be strict-clean before anything is published.
       - run: mkdocs build --strict
-      # Marketing landing page (+ its assets, e.g. the demo video) occupies
-      # the Pages root; docs build into site/docs/ (mkdocs.yml site_dir) so
-      # the two don't collide. Plain hand-authored HTML/CSS/JS (#1561) — no
-      # build step.
-      - run: cp -r marketing/. site/
-      # Nothing to upload on a PR — the build IS the gate there.
+
+      - name: Resolve the version to publish
+        if: github.event_name != 'pull_request'
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "name=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+            echo "title=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=latest" >> "$GITHUB_OUTPUT"
+            echo "title=latest (main)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish this version to gh-pages (mike)
+        if: github.event_name != 'pull_request'
+        # The tag name reaches the shell through env, never interpolated into the script.
+        env:
+          MIKE_VERSION: ${{ steps.version.outputs.name }}
+          MIKE_TITLE: ${{ steps.version.outputs.title }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin gh-pages --depth=1 || true
+          mike deploy --push --deploy-prefix docs --title "$MIKE_TITLE" "$MIKE_VERSION"
+          mike set-default --push --deploy-prefix docs latest
+
+      - name: Assemble the Pages artifact (gh-pages + marketing root)
+        if: github.event_name != 'pull_request'
+        run: |
+          rm -rf site && mkdir site
+          git --work-tree=site checkout origin/gh-pages -- docs
+          git reset -q # the checkout above stages the paths; leave the index clean
+          cp -r marketing/. site/
+
       - uses: actions/upload-pages-artifact@v5
         if: github.event_name != 'pull_request'
         with:
           path: site
 
-  # Publish only from `main` — a pull_request run is a build-only gate (#834) and
-  # must never push a branch's docs to the live site.
   deploy:
     needs: build
     if: github.event_name != 'pull_request'
