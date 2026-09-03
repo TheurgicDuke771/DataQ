@@ -81,6 +81,12 @@ repos:
         language: system
         pass_filenames: false
         files: ^(docs/site/.*\.md|scripts/check-docs-references\.py)$
+      - id: check-check-catalog-docs
+        name: Check-type reference is generated from the catalog + allowlist
+        entry: python scripts/docs/gen-check-catalog.py --check
+        language: system
+        pass_filenames: false
+        files: ^(frontend/src/components/checks/expectationCatalog\.ts|frontend/scripts/dump-catalog\.mts|backend/app/datasources/(expectation_allowlist|unity_catalog)\.py|docs/site/reference/check-types\.md|scripts/docs/gen-check-catalog\.py)$
       - id: check-frontend-no-ticket-refs
         name: Frontend UI text doesn't cite ADR/issue/PR numbers
         entry: python scripts/check-frontend-no-ticket-refs.py

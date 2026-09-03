@@ -255,6 +255,9 @@ Snowflake**, where the editor hides them and the API rejects them — use a cust
 
 ### Which expectation types are available
 
+The complete, generated list — every type with its parameters, thresholds and the datasources
+it runs on — is the [Check types reference](../reference/check-types.md).
+
 DataQ serves a **vetted subset** of Great Expectations' built-ins, not all of them
 (`backend/app/datasources/expectation_allowlist.py`). Every type in it is executed on both
 a dataframe and a SQL batch in CI, so it is known to run rather than merely to exist. The
