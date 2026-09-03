@@ -17,9 +17,10 @@ OpenAI-compatible endpoint.*
 ## Turn it on
 
 **Admin → LLM provider.** Pick a provider, enter the model name and (for OpenAI-compatible
-endpoints) the base URL, paste the API key, and press **Test** — it makes one tiny call and
-reports the model and latency without saving anything. Then **Save** and switch on *Enable
-outbound LLM calls*.
+endpoints) the base URL, paste the API key, and press **Test** — it makes one tiny call
+with the values in the form and reports the model and latency. Nothing is saved by Test,
+but the probe itself is recorded like any other call, and it runs whether or not the
+enable switch is on. Then **Save** and switch on *Enable outbound LLM calls*.
 
 ![The LLM provider panel on the Admin page: provider, model, base URL, API key, structured-output mode and the enable switch](../assets/screenshots/admin-llm-settings.png){ .screenshot }
 
@@ -133,11 +134,14 @@ statuses in the ORDERS table do not match the expected set 'new', 'paid', 'shipp
 'cancelled'. Recent check failures show this percentage r…
 ```
 
-(The clause is capped so a Slack section never overflows; the full narrative stays on the
-invocation.)
+(The clause is capped so a Slack section never overflows. The generic **webhook** channel
+is the exception: its JSON payload carries the whole narrative object, so treat a webhook
+receiver as a full reader of it.)
 
-The narrative is generated **on demand** and read with the same permission as the incident
-(`view` on its suite). It never re-runs the check and never changes the suite.
+Generating the narrative needs `view` on the incident's suite. Reading the invocation back
+is narrower: only the person who requested it, or a workspace Admin, can poll it — a
+colleague with the same suite grant gets a 404 for your invocation id and has to request
+their own. It never re-runs the check and never changes the suite.
 
 ## Write SQL from a sentence
 
@@ -186,8 +190,12 @@ curl -X POST https://<your-dataq-host>/api/v1/llm/check_suggestions \
 ```
 
 DataQ profiles the table's columns live (masked statistics only), sends the profile with a
-**closed vocabulary of check types** — the same catalog the check editor offers — and gets
-back candidate checks, each with a name, a rationale and a full config. Every candidate then
+**closed vocabulary of check types** — a subset of the check editor's catalog: column-level
+value, null, set, range, regex and uniqueness checks, but no row-count or cross-column
+types — and gets back candidate checks, each with a name, a rationale and a full config. A
+**freshness** suggestion is offered only when the suite has an enabled pipeline trigger
+binding, because its threshold is grounded in that pipeline's observed cadence, not in the
+column profile. Every candidate then
 goes through the validator `create_check` uses; one that fails is dropped and reported under
 `rejected`, and if *all* fail the invocation fails rather than returning "nothing". The
 success shape (illustrative):
@@ -205,7 +213,7 @@ success shape (illustrative):
     {
       "expectation_type": "monitor:freshness",
       "name": "order_ts arrives daily",
-      "rationale": "order_ts is the only timestamp column; the profile shows a daily cadence.",
+      "rationale": "order_ts is the only timestamp column; the bound pipeline lands daily.",
       "config": {"timestamp_column": "order_ts"},
       "dimension": "timeliness",
       "fail_threshold_hours": 26
