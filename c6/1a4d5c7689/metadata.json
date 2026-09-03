@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "c61a4d5c7689",
+  "strategy": "manual-commit",
+  "branch": "docs/redesign-p4-catalog",
+  "checkpoints_count": 5,
+  "files_touched": [
+    ".github/workflows/ci.yml",
+    ".pre-commit-config.yaml",
+    "docs/site/guides/datasources-checks.md",
+    "docs/site/reference/check-types.md",
+    "docs/site/reference/index.md",
+    "frontend/scripts/dump-catalog.mts",
+    "mkdocs.yml",
+    "scripts/docs/gen-check-catalog.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/c6/1a4d5c7689/0/metadata.json",
+      "transcript": "/c6/1a4d5c7689/0/full.jsonl",
+      "compact_transcript": "/c6/1a4d5c7689/0/transcript.jsonl",
+      "content_hash": "/c6/1a4d5c7689/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2197,
+    "cache_creation_tokens": 46562,
+    "cache_read_tokens": 6974355,
+    "output_tokens": 26561,
+    "api_call_count": 21
+  }
+}

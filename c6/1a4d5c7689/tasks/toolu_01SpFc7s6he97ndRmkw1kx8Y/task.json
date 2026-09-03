@@ -1,0 +1,7 @@
+{
+  "tool_use_id": "toolu_01SpFc7s6he97ndRmkw1kx8Y",
+  "agent_id": "ab7bb03d9e4b5d2ab",
+  "subagent_type": "general-purpose",
+  "task_description": "Trace stale docs links PR 1832",
+  "started_at": "2026-09-02T13:39:51.574313-07:00"
+}
