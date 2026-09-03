@@ -9,7 +9,7 @@
   {% if page.file and page.file.src_uri != "404.md" %}
     {% set md_url = page.canonical_url ~ "index.md" %}
     {% set prompt = "Read " ~ md_url ~ " (the DataQ documentation page \"" ~ page.title ~ "\") and help me with questions about it." %}
-    <div class="dq-actions" data-md-url="{{ md_url }}">
+    <div class="dq-actions">
       <a class="dq-action" href="index.md" target="_blank" rel="noopener" title="Open this page as raw Markdown">
         {% include ".icons/material/language-markdown-outline.svg" %} Markdown
       </a>
@@ -35,32 +35,42 @@
 {% block scripts %}
   {{ super() }}
   <script>
-    document.querySelectorAll("[data-dq-ask]").forEach(function (btn) {
-      var menu = btn.nextElementSibling;
-      btn.addEventListener("click", function (e) {
-        e.stopPropagation();
-        var open = menu.hidden;
-        menu.hidden = !open;
-        btn.setAttribute("aria-expanded", String(open));
-      });
-      document.addEventListener("click", function () {
-        menu.hidden = true;
-        btn.setAttribute("aria-expanded", "false");
-      });
-    });
-    document.querySelectorAll("[data-dq-copy]").forEach(function (btn) {
-      btn.addEventListener("click", async function () {
-        var url = btn.closest(".dq-actions").dataset.mdUrl;
-        var label = btn.innerHTML;
-        try {
-          var md = await (await fetch(url)).text();
-          await navigator.clipboard.writeText(md);
-          btn.textContent = "Copied";
-        } catch (e) {
-          btn.textContent = "Copy failed";
+    // Delegated on document: instant navigation swaps the content region without
+    // re-running this block, so per-element listeners would die after the first click.
+    (function () {
+      if (window.__dqActionsBound) return;
+      window.__dqActionsBound = true;
+      function closeMenus() {
+        document.querySelectorAll(".dq-ask__menu:not([hidden])").forEach(function (m) {
+          m.hidden = true;
+          m.previousElementSibling.setAttribute("aria-expanded", "false");
+        });
+      }
+      document.addEventListener("click", async function (e) {
+        var ask = e.target.closest("[data-dq-ask]");
+        if (ask) {
+          e.stopPropagation();
+          var menu = ask.nextElementSibling;
+          var open = menu.hidden;
+          closeMenus();
+          menu.hidden = !open;
+          ask.setAttribute("aria-expanded", String(open));
+          return;
         }
-        setTimeout(function () { btn.innerHTML = label; }, 1500);
+        closeMenus();
+        var copy = e.target.closest("[data-dq-copy]");
+        if (!copy) return;
+        var label = copy.innerHTML;
+        try {
+          // Relative to the page being viewed — works under mkdocs serve, forks and mirrors.
+          var md = await (await fetch("index.md")).text();
+          await navigator.clipboard.writeText(md);
+          copy.textContent = "Copied";
+        } catch (err) {
+          copy.textContent = "Copy failed";
+        }
+        setTimeout(function () { copy.innerHTML = label; }, 1500);
       });
-    });
+    })();
   </script>
 {% endblock %}
