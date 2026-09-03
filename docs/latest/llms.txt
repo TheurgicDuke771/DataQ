@@ -1,0 +1,117 @@
+# DataQ
+
+> DataQ — a single-tenant data-quality monitoring platform built on Great Expectations. User-friendly guides + developer references.
+
+Every page below is available as raw Markdown at the linked `.md` URL. A curated subset
+of them is also served to AI assistants by DataQ's MCP `get_doc` tool (its `page` enum
+lists which).
+
+## Home
+
+- [Home](https://theurgicduke771.github.io/DataQ/docs/latest/latest/index.md): data — in Snowflake, ADLS Gen2, AWS S3 (or any S3-compatible store), Databricks Unity Catalog, and Apache Iceberg — tells you when
+
+## Get started
+
+- [Get started](https://theurgicduke771.github.io/DataQ/docs/latest/latest/get-started/index.md): Three short tutorials take you from nothing to a running suite with an alert. Each one
+- [Concepts](https://theurgicduke771.github.io/DataQ/docs/latest/latest/get-started/concepts/index.md): A few terms make the rest of the docs click.
+- [Your first suite](https://theurgicduke771.github.io/DataQ/docs/latest/latest/get-started/first-suite/index.md): A hands-on walkthrough: from an empty workspace to a check that runs and alerts, in a few
+- [Install](https://theurgicduke771.github.io/DataQ/docs/latest/latest/get-started/install/index.md): Two tracks, matched to why you're here:
+
+## Guides
+
+- [Guides](https://theurgicduke771.github.io/DataQ/docs/latest/latest/guides/index.md): Task-shaped pages: each answers one "how do I…" question. If you are new, start with
+- [API keys (PATs)](https://theurgicduke771.github.io/DataQ/docs/latest/latest/guides/api-keys/index.md): DataQ can mint you a **personal access token (PAT)** — a long-lived, revocable
+- [Best practices](https://theurgicduke771.github.io/DataQ/docs/latest/latest/guides/best-practices/index.md): Field-tested guidance for getting signal (not noise) out of DataQ. Everything here is
+- [Datasources & checks](https://theurgicduke771.github.io/DataQ/docs/latest/latest/guides/datasources-checks/index.md): Adding, editing, deleting or re-crendentialing a connection requires the **Admin** workspace
+- [Features overview](https://theurgicduke771.github.io/DataQ/docs/latest/latest/guides/features/index.md): Everything DataQ offers, by area. This is the readable tour — for the terse
+- [AI assistants (MCP)](https://theurgicduke771.github.io/DataQ/docs/latest/latest/guides/mcp-setup/index.md): DataQ ships a built-in [MCP](https://modelcontextprotocol.io) server so AI assistants — Claude Desktop, Claude.ai, VS Code / GitHub Copilot, Cursor — can answer
+- [Notifications & alerting](https://theurgicduke771.github.io/DataQ/docs/latest/latest/guides/notifications/index.md): DataQ alerts on run outcomes over **Microsoft Teams**, **Slack**, and **email** — all
+- [Orchestration](https://theurgicduke771.github.io/DataQ/docs/latest/latest/guides/orchestration/index.md): DataQ **observes** your pipelines and can **run check suites when they finish** — it does
+- [Recommended usage](https://theurgicduke771.github.io/DataQ/docs/latest/latest/guides/recommended-usage/index.md): How to **activate** each DataQ feature and the **recommended** way to configure it. This is
+- [Scheduling](https://theurgicduke771.github.io/DataQ/docs/latest/latest/guides/scheduling/index.md): Three ways to run a suite: **manually** (Run now), on a **cron schedule** (this page),
+
+## Reference
+
+- [Reference](https://theurgicduke771.github.io/DataQ/docs/latest/latest/reference/index.md): Look-up pages. Complete rather than narrative.
+- [Changelog](https://theurgicduke771.github.io/DataQ/docs/latest/latest/reference/changelog/index.md): Notable, user-facing changes. Dates are the release/merge date. This is a curated summary —
+- [Feature matrix](https://theurgicduke771.github.io/DataQ/docs/latest/latest/reference/feature-matrix/index.md): One-page reference: what runs where. For the readable tour of everything DataQ offers see
+- [Glossary](https://theurgicduke771.github.io/DataQ/docs/latest/latest/reference/glossary/index.md): Maintainer & docs owner: **@TheurgicDuke771**. File issues / PRs on
+- [REST API](https://theurgicduke771.github.io/DataQ/docs/latest/latest/reference/rest-api/index.md): DataQ's REST API is the same surface the web UI uses — versioned under `/api/v1`, with the
+
+## Architecture
+
+- [Architecture](https://theurgicduke771.github.io/DataQ/docs/latest/latest/architecture/index.md): How DataQ is built, and the record of why. These pages are written for engineers
+- [Contributing](https://theurgicduke771.github.io/DataQ/docs/latest/latest/architecture/contributing/index.md): The full working agreements, commit/PR conventions, and module boundaries live in the
+- [Incident evidence card](https://theurgicduke771.github.io/DataQ/docs/latest/latest/architecture/evidence-card/index.md): When a check breaches into a warning or failure severe enough to open or update an incident,
+- [MCP tool design (honesty)](https://theurgicduke771.github.io/DataQ/docs/latest/latest/architecture/mcp-honesty/index.md): A REST caller wrote their own query and reads it back through a UI with a row count, a
+- [System architecture](https://theurgicduke771.github.io/DataQ/docs/latest/latest/architecture/overview/index.md): %%{init: {'flowchart': {'curve': 'linear'}}}%%
+- [Performance baseline](https://theurgicduke771.github.io/DataQ/docs/latest/latest/architecture/perf-baseline/index.md): Two sentences of conclusion:
+
+## Security & compliance
+
+- [Security & compliance](https://theurgicduke771.github.io/DataQ/docs/latest/latest/security/index.md): What DataQ does with the data it sees, how it authenticates and authorises people, and
+- [Security & data handling](https://theurgicduke771.github.io/DataQ/docs/latest/latest/security/overview/index.md): How DataQ authenticates users, stores secrets, handles the data it sees, and what it keeps.
+- [Breach-notification runbook](https://theurgicduke771.github.io/DataQ/docs/latest/latest/security/compliance/breach-notification-runbook/index.md): DataQ's own crown jewels, in blast-radius order:
+- [Data-subject-rights runbook](https://theurgicduke771.github.io/DataQ/docs/latest/latest/security/compliance/data-subject-rights-runbook/index.md): DataQ has **no people-table**. The personal data it can hold incidentally lives in
+- [DPA / BAA templates (counsel-gated)](https://theurgicduke771.github.io/DataQ/docs/latest/latest/security/compliance/dpa-baa-templates/index.md): deploying organization runs the software on its own infrastructure, and DataQ (the
+- [DPIA input sheet](https://theurgicduke771.github.io/DataQ/docs/latest/latest/security/compliance/dpia-input-sheet/index.md): DataQ is a data-quality tool, not a people database. Personal data appears in two
+- [Sub-processor disclosure](https://theurgicduke771.github.io/DataQ/docs/latest/latest/security/compliance/sub-processors/index.md): Every row is a **capability of the software**, enumerated whether or not it is
+
+## Operate
+
+- [Operate](https://theurgicduke771.github.io/DataQ/docs/latest/latest/operate/index.md): Running DataQ for real: deploying it, watching it, and fixing it.
+- [Deployment parity (Azure · AWS · Local)](https://theurgicduke771.github.io/DataQ/docs/latest/latest/operate/deployment-parity/index.md): How the three reference installations compare, as of 2026-08-16 (both clouds deployed from
+- [Deployment](https://theurgicduke771.github.io/DataQ/docs/latest/latest/operate/deployment/index.md): How to stand DataQ up in production. This is the operator's overview; the exhaustive
+- [Observability](https://theurgicduke771.github.io/DataQ/docs/latest/latest/operate/observability/index.md): FastAPI → Celery → Great Expectations. **PII is redacted at the logger level**, so
+- [Runbook & FAQ](https://theurgicduke771.github.io/DataQ/docs/latest/latest/operate/runbook-faq/index.md): security-relevant — see the policy in
+- [Troubleshooting](https://theurgicduke771.github.io/DataQ/docs/latest/latest/operate/troubleshooting/index.md): Common problems and where to look. For deeper telemetry (logs, traces, where they land) see
+
+## Decision records (ADRs)
+
+- [Decision records (ADRs)](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/index.md): Each ADR captures a single significant architecture decision: the context, the decision, the consequences, and the alternatives considered. New ADRs are append-
+- [ADR 0001 — Trunk-based branching with squash-merge into `main`](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0001-trunk-based-branching/index.md): DataQ v1 has an 8-week timeline and a small team (starting solo, expected to grow). We need a branching model that supports frequent integration, keeps `main` h
+- [ADR 0002 — Conventional commits for PR titles and commit messages](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0002-conventional-commits/index.md): With squash-merge as the only allowed merge method (ADR 0001), each PR becomes exactly one commit on `main` whose message is the PR title. The PR title format t
+- [ADR 0003 — GX-only for v1; DQX deferred to v1.1 for DLT/streaming](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0003-gx-only-for-v1/index.md): DataQ v1 must run data quality checks across four datasource types: Snowflake, ADLS Gen2, AWS S3, and Unity Catalog (Databricks). Two viable DQ frameworks were 
+- [ADR 0004 — Unified `OrchestrationProvider` abstraction for ADF and Apache Airflow](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0004-orchestration-abstraction/index.md): DataQ integrates with Azure Data Factory (ADF) and Apache Airflow. The original product framing listed ADF as a "5th datasource type," which conflates orchestra
+- [ADR 0005 — Severity tier weights (warn / fail / critical → health score)](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0005-severity-tier-weights/index.md): v1 checks are not binary pass/fail. A check can carry up to three optional
+- [ADR 0006 — ADF webhook authentication (shared secret + hard-cutover rotation)](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0006-adf-webhook-authentication/index.md): Per [ADR 0004](0004-orchestration-abstraction.md), Azure Data Factory (ADF) pipeline run events reach DataQ via an Azure Monitor alert rule that POSTs to `POST 
+- [ADR 0007 — Airflow callback model (HMAC-signed webhook + polling fallback)](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0007-airflow-callback-model/index.md): Per [ADR 0004](0004-orchestration-abstraction.md), Apache Airflow DAG run events reach DataQ via DAG-level `on_success_callback` / `on_failure_callback` hooks t
+- [ADR 0008 — FastMCP server mounted at `/mcp`, Azure AD token-validated, all-tools](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0008-mcp-server/index.md): Week 7 calls for a FastMCP server exposing 8 curated tools at `/mcp`, reachable from Claude Desktop / Claude.ai / Copilot / Cursor. Three design questions had t
+- [ADR 0009 — Flat monorepo repo layout (`backend/` + `frontend/`)](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0009-flat-monorepo-layout/index.md): DataQ v1 ships one backend (FastAPI + Celery + GX, Python) and one frontend (React + Vite + Ant Design, Node) on an 8-week timeline. The two stacks have indepen
+- [ADR 0010 — Provider-agnostic infrastructure seams (Azure is the default, not the architecture)](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0010-provider-agnostic-infrastructure-seams/index.md): DataQ v1 is explicitly **single-tenant and Azure-hosted** (CLAUDE.md §1). The architecture leans on Azure in several places: Key Vault (secrets), Application In
+- [ADR 0011 — Extensibility seams for deferred connectors and integrations](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0011-extensibility-seams-for-deferred-integrations/index.md): Three forward-looking expansion questions were raised against the v1 architecture:
+- [ADR 0012 — Monitor-kind seam (`check.kind` discriminator + numeric metric storage)](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0012-monitor-kind-seam/index.md): Every v1 check is a Great Expectations expectation (ADR 0003): a value-level
+- [ADR 0013 — Marketplace distribution (customer-deployed BYOL) and anti-vendor-lock-in guardrails](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0013-marketplace-distribution-and-anti-lock-in/index.md): We are evaluating listing DataQ on the **Azure, AWS, and GCP marketplaces**. Two questions follow: is it viable given the current architecture, and what must ch
+- [ADR 0014 — Cross-dataset reconciliation as a `comparison` check kind (reuse FastAPI_DataComparison engine)](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0014-reconciliation-comparison-check-kind/index.md): We evaluated folding the **FastAPI_DataComparison** tool (`github.com/TheurgicDuke771/FastAPI_DataComparison`, MIT, same author) into DataQ. FDC is a pandas-bas
+- [ADR 0015 — Two-connection comparison check model (suite = target under test; source ref on the check)](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0015-two-connection-comparison-check-model/index.md): [ADR 0014](0014-reconciliation-comparison-check-kind.md) reserved `check.kind = 'comparison'` (cross-dataset reconciliation, reusing the FastAPI_DataComparison 
+- [ADR 0016 — Severity derivation semantics (band the unexpected-%, thresholds override GX success)](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0016-severity-derivation-semantics/index.md): [ADR 0005](0005-severity-tier-weights.md) settled the severity *tiers* (`pass / warn / fail / critical`), their weights, and the health-score formula, and [ADR 
+- [ADR 0017 — Upgrade Python runtime 3.11 → 3.13](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0017-python-313-runtime-upgrade/index.md): The Week-1 tooling lock pinned the runtime to **Python 3.11** ("do not drift"). Two forces made revisiting it worthwhile, together, now:
+- [ADR 0018 — Results surface is an in-app page; Grafana deferred to optional ops add-on](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0018-results-surface-and-grafana-deferral/index.md): DataQ now persists DQ run outcomes — `runs` + `results` (severity tier, `metric_value`, `observed/expected`, `sample_failures`) and orchestration `pipeline_runs
+- [ADR 0019 — Custom-SQL checks ride `kind='expectation'` via GX `UnexpectedRowsExpectation`](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0019-custom-sql-check-kind/index.md): The Week-4 plan calls for a Monaco custom-SQL check editor, and the progress ledger flagged it **backend-blocked: "need a custom-SQL check kind."** That assumpt
+- [ADR 0020 — History/audit strategy: per-entity Type-4 snapshot tables, no SCD-2](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0020-history-and-audit-strategy/index.md): The internal Postgres data has no general history/versioning framework. **Alembic versions the *schema* (DDL), not the *data*** — it cannot answer "what was thi
+- [ADR 0021 — Live test/demo-data environment (retail model) lives outside the repo](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0021-demo-test-data-environment-strategy/index.md): Every DataQ run path — Snowflake (`SnowflakeCheckRunner`), flat-file (`FlatFileCheckRunner` + batch resolution), Unity Catalog (`UnityCatalogCheckRunner`) — is 
+- [ADR 0022 — Week-6 prototype adoption (dedicated-page flows + full screen set) and chart library (recharts)](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0022-week6-prototype-adoption-and-chart-library/index.md): Week 6 ("Results dashboard + alerting") is also the week we adopt the **DataQ Design System** prototype (claude.ai/design project *"DataQ Design System"*, `proj
+- [ADR 0023 — Container image registry: GitHub Container Registry (GHCR) over ACR / Docker Hub](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0023-container-image-registry-ghcr/index.md): each seam — the registry is infra, not business logic), [0013](0013-marketplace-distribution-and-anti-lock-in.md)
+- [ADR 0024 — App deployment infrastructure: Terraform (ACA + SWA + KV + self-hosted Redis), sharing the Container Apps environment with the harness](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0024-app-deployment-infrastructure/index.md): seam), [0013](0013-marketplace-distribution-and-anti-lock-in.md) (BYOL distribution), [0018](0018-results-surface-and-grafana-deferral.md)
+- [ADR 0025 — Production image: pip on `python:3.13-slim` (multi-stage); conda retained for local dev](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0025-production-image-pip-slim/index.md): interpreter, different packager), [0023](0023-container-image-registry-ghcr.md) (GHCR pulls cross the
+- [ADR 0026 — DataQ-issued API keys / service tokens behind the auth seam (REST + MCP)](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0026-auth-api-keys-and-principal-seam/index.md): Authentication today is **exclusively Azure AD bearer tokens** (delegated/SSO) for both the REST API and `/mcp`. There is no DataQ-native credential. Two proble
+- [ADR 0027 — Suite permission model: workspace-admin as implicit suite-admin; drop grantable suite-admin](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0027-suite-permission-model-workspace-admin/index.md): Suite authorization (`backend/app/services/suite_authz.py`) ranks four tiers —
+- [ADR 0028 — Cloud-neutral image: runtime config injection + generic OIDC auth, bypass fail-closed](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0028-cloud-neutral-image-runtime-config-generic-oidc/index.md): The prebuilt-image distribution shipped, but exposed three coupling/complexity
+- [ADR 0029 — dbt as a third OrchestrationProvider (artifact-poll + HMAC webhook)](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0029-dbt-orchestration-provider/index.md): ADR 0004 established one `OrchestrationProvider` seam with ADF as the reference impl and Airflow as the second. dbt is a **third** orchestration layer — a genui
+- [ADR 0030 — Apache Iceberg support: native `pyiceberg` read (v2) behind a self-contained `iceberg` datasource](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0030-iceberg-native-read-path/index.md): Apache Iceberg is increasingly the default open table format on Databricks (Unity Catalog managed tables), Snowflake, and object storage (S3 Tables / ADLS + Pol
+- [ADR 0031 — Distribution licensing: free open-source (MIT) + customer-deployed BYOL](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0031-oss-byol-distribution-licensing/index.md): [ADR 0013](0013-marketplace-distribution-and-anti-lock-in.md) chose **customer-deployed BYOL** as the marketplace distribution model and deferred the commercial
+- [ADR 0032 — Email OTP sign-in: a passwordless third authenticator behind the `get_current_user` seam](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0032-email-otp-signin/index.md): Human sign-in today has exactly one real path: Azure AD (`fastapi-azure-auth` on the backend, generic OIDC against Azure on the frontend). PATs (ADR 0026) are h
+- [ADR 0033 — Workspace roles: Admin / Member / Viewer RBAC on the two-axis model](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0033-workspace-roles-rbac/index.md): Authorization today is two axes with one axis degenerate. The fine axis works: every suite-scoped endpoint (REST and MCP identically) gates through `require_per
+- [ADR 0034 — Asset entity with OpenLineage identity; lineage is emitted/pulled, never built](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0034-asset-entity-openlineage-identity-lineage-pull/index.md): Gap G-d: DataQ has runs and alerts but no answer to "what broke downstream, who owns it, when was it resolved." Closing it needs lineage, incidents, an asset pa
+- [ADR 0035 — Request rate limiting on every public surface](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0035-request-rate-limiting/index.md): Every public surface DataQ exposes — the REST API, the orchestration webhook
+- [ADR 0036 — Connection-anchored check engines: GX universal; platform-native engines (DMF / DQX / Dataplex) unlocked per connection](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0036-connection-anchored-check-engines/index.md): v1 is deliberately GX-only (ADR 0003): one result schema, one catalog, one editor. But the platforms DataQ monitors now ship their own DQ primitives — **Snowfla
+- [ADR 0037 — Workspace-visible asset identity; workspace-true aggregates; grants guard suite-derived detail](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0037-workspace-visible-asset-identity/index.md): Until now, asset visibility **derived from suite grants** (ADR 0034 decision 5): an
+- [ADR 0038 — DQ-dimension classification on checks: seven canonical dimensions, derived default, stored and overridable](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0038-dq-dimension-classification/index.md): A check today carries two classification axes, and neither is a data-quality *dimension*:
+- [ADR 0039 — OpenBao as the self-hosted secret backend (KV v2 API, not a vendor)](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0039-openbao-self-hosted-secret-backend/index.md): Extends the `SecretStore` seam of ADR [0010](0010-provider-agnostic-infrastructure-seams.md) with a fourth backend; amends nothing — the production Azure Key Va
+- [ADR 0040 — Warehouse inventory sync + the table-enumeration seam](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0040-warehouse-inventory-sync-table-enumeration-seam/index.md): Assets materialize from exactly three signals — a suite targets the table, a run
+- [ADR 0041 — History & audit posture for v1.x+: one append-only audit log; no soft-delete; cascade stands](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0041-history-audit-strategy/index.md): ADR 0020 (2026-06-20) settled the v1 posture: per-entity **Type-4 snapshot tables** where config history has a concrete need (`check_versions`, then `connection
+- [ADR 0042 — `LLMProvider` seam: outbound LLM, BYO credential, default-off](https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0042-llm-provider-seam/index.md): Adds a new infrastructure seam in the ADR [0010](0010-provider-agnostic-infrastructure-seams.md) family (`ConnectionAdapter`, `SecretStore`, `OrchestrationProvi
+
+## Optional
+
+- [Everything in one file](https://theurgicduke771.github.io/DataQ/docs/latest/latest/llms-full.txt)

@@ -2022,8 +2022,49 @@
       <script id="__config" type="application/json">{"annotate": null, "base": "/DataQ/docs/latest/latest", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.indexes", "navigation.sections", "navigation.top", "navigation.tracking", "navigation.instant", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.tabs.link", "search.share"], "search": "/DataQ/docs/latest/latest/assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
     
     
+  
       <script src="/DataQ/docs/latest/latest/assets/javascripts/bundle.d7400e89.min.js"></script>
       
     
+  <script>
+    // Delegated on document: instant navigation swaps the content region without
+    // re-running this block, so per-element listeners would die after the first click.
+    (function () {
+      if (window.__dqActionsBound) return;
+      window.__dqActionsBound = true;
+      function closeMenus() {
+        document.querySelectorAll(".dq-ask__menu:not([hidden])").forEach(function (m) {
+          m.hidden = true;
+          m.previousElementSibling.setAttribute("aria-expanded", "false");
+        });
+      }
+      document.addEventListener("click", async function (e) {
+        var ask = e.target.closest("[data-dq-ask]");
+        if (ask) {
+          e.stopPropagation();
+          var menu = ask.nextElementSibling;
+          var open = menu.hidden;
+          closeMenus();
+          menu.hidden = !open;
+          ask.setAttribute("aria-expanded", String(open));
+          return;
+        }
+        closeMenus();
+        var copy = e.target.closest("[data-dq-copy]");
+        if (!copy) return;
+        var label = copy.innerHTML;
+        try {
+          // Relative to the page being viewed — works under mkdocs serve, forks and mirrors.
+          var md = await (await fetch("index.md")).text();
+          await navigator.clipboard.writeText(md);
+          copy.textContent = "Copied";
+        } catch (err) {
+          copy.textContent = "Copy failed";
+        }
+        setTimeout(function () { copy.innerHTML = label; }, 1500);
+      });
+    })();
+  </script>
+
   </body>
 </html>

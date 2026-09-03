@@ -1,0 +1,71 @@
+# DataQ
+
+**DataQ is a data-quality monitoring platform.** It runs automated checks against your
+data — in Snowflake, ADLS Gen2, AWS S3 (or any S3-compatible store), Databricks Unity Catalog, and Apache Iceberg — tells you when
+something is wrong (failed checks, stale tables, unexpected row counts), and alerts your
+team. It watches your Azure Data Factory, Airflow, and dbt pipelines and can run checks
+automatically when a pipeline finishes.
+
+
+<video class="clip" autoplay loop muted playsinline poster="assets/videos/tour.jpg">
+  <source src="assets/videos/tour.mp4" type="video/mp4">
+</video>
+
+*A ten-second tour: dashboard, assets, connections, suites, results.*
+
+## Who it's for
+
+- **Data engineers / SREs** — author checks, wire up pipelines, triage failures.
+- **QA / analysts** — see what passed or failed and why.
+- **Product & stakeholders** — a health score and trend at a glance.
+
+## Quickstart (5 minutes)
+
+### Run DataQ — prebuilt images (recommended)
+
+Evaluate or self-host with **no source checkout and no cloud account or IdP** — just Docker:
+
+```bash
+curl -O https://raw.githubusercontent.com/TheurgicDuke771/DataQ/main/docker-compose.ghcr.yml
+export OPENBAO_TOKEN=$(openssl rand -hex 16)     # root token for the bundled vault
+export DATAQ_SIGNIN_EMAIL=you@example.com        # the address allowed to sign in
+docker compose -f docker-compose.ghcr.yml up
+```
+
+Open **`http://localhost:3000`**, type the address you exported, and read the 6-digit
+sign-in code in the bundled inbox at **`http://localhost:8025`** ([Mailpit](https://mailpit.axllent.org)
+— no real SMTP relay needed, nothing leaves the host). The stack comes up migrated and
+seeded with demo data. API + Swagger at `http://localhost:8000/docs`. The GHCR images
+are **multi-arch** (amd64 + arm64, native on Apple Silicon) and all ports bind to
+`127.0.0.1` only. To skip sign-in entirely (dev-bypass, a deliberate downgrade — not
+the default): `DATAQ_SIGNIN_EMAIL= DATAQ_AUTH_MODE=bypass docker compose -f docker-compose.ghcr.yml up`.
+See [Getting started](get-started/install.md) for the full flow.
+
+### Develop DataQ — from source
+
+```bash
+git clone https://github.com/TheurgicDuke771/DataQ.git
+cd DataQ
+./scripts/setup.sh        # conda env + pre-commit + docker-compose + migrations
+conda activate dataq
+docker-compose up         # Postgres + Redis + FastAPI + React + Celery worker
+```
+
+- Backend API: `http://localhost:8000` (interactive docs at `/docs` in dev).
+- Frontend: `http://localhost:3000`.
+
+Then open the UI, add a connection, create a suite of checks, and run it. See
+**[Getting started](get-started/install.md)** for both paths in depth (incl. self-hosting
+with your own IdP — Azure AD, Cognito, Okta, …) and **[Datasources & checks](guides/datasources-checks.md)**
+to author your first check.
+
+## Where to go next
+
+- Just want to use it? Follow the **[Tutorial — your first suite](get-started/first-suite.md)** end to end.
+- New to DataQ? Read **[Concepts](get-started/concepts.md)** (datasource vs orchestration is the one
+  distinction to internalise), then browse **[Features](guides/features.md)**.
+- Setting it up the right way? **[Recommended usage](guides/recommended-usage.md)**.
+- Want the big picture? **[Architecture](architecture/overview.md)** · **[Security & data handling](security/overview.md)**.
+- Running it for real? **[Deployment](operate/deployment.md)** · **[Troubleshooting](operate/troubleshooting.md)** · **[Observability](operate/observability.md)**.
+- Scripting it? The **[REST API](reference/rest-api.md)**. AI assistants (Claude / Copilot / Cursor) can
+  drive DataQ over **[MCP](guides/mcp-setup.md)**.

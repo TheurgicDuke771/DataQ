@@ -1,0 +1,78 @@
+# ADR 0032 — Email OTP sign-in: a passwordless third authenticator behind the `get_current_user` seam
+
+- **Status:** Accepted
+- **Date:** 2026-07-09
+- **Deciders:** @TheurgicDuke771
+- **Amends:** ADR [0026](0026-auth-api-keys-and-principal-seam.md) — Decision 6 answers its deferred phase-2 question "migration path for `users.aad_object_id` → generic principal" for the email slice; ADR [0028](0028-cloud-neutral-image-runtime-config-generic-oidc.md) — the frontend `DATAQ_AUTH_MODE` enum gains `otp` and the SPA gains a cookie credential beside the OIDC bearer flow.
+- **Related:** ADR 0026 (PATs — the verifier-secret and seam pattern this copies; Basic auth rejected there stays rejected), [0010](0010-provider-agnostic-infrastructure-seams.md)/[0013](0013-marketplace-distribution-and-anti-lock-in.md) (portability guardrails)
+- **Note:** built across four slices (backend, identity, frontend, SMTP pre-flight), with rate limiting as a hard prerequisite. Ratified 2026-07-09 — slices unblocked.
+
+> **Amendment (2026-07-09, [ADR 0033](0033-workspace-roles-rbac.md)):** the OTP
+> signup contract gains **`AUTH_OTP_DEFAULT_ROLE`** (default `member`) — the
+> workspace role assigned at self-signup; the `WORKSPACE_ADMIN_EMAILS`
+> write-through **wins over the default** for bootstrap admins. Decision 6's trust
+> statement also widens: with in-app-promotable stored admins, mailbox compromise
+> of **any admin-role holder** is admin compromise — not only allowlisted
+> addresses.
+
+> **Amendment (2026-08-02):** Decision 3's cookie is not *unconditionally*
+> `Secure` — when `AUTH_SESSION_COOKIE_SECURE` is unset (the default), `Secure` is
+> **inferred** from `X-Forwarded-Proto` (or a directly-HTTPS request) rather than
+> hard-coded, so the cookie keeps working on a plain-HTTP local/dev stack instead of
+> silently never being sent back by the browser. The reference frontend nginx
+> forwards the edge's real header (fixed after the same defect surfaced) — before that fix
+> it substituted its own plaintext upstream scheme, so the cookie shipped
+> **without** `Secure` over HTTPS. Force `AUTH_SESSION_COOKIE_SECURE=true`/`false`
+> when your own proxy doesn't forward that header faithfully.
+
+> **Amendment (2026-09-02):**
+> Decision 7's "synchronous on the request path, with send errors surfaced to the
+> caller" is **reversed**. The request-side latency floor (`AUTH_OTP_REQUEST_MIN_SECONDS`) is a *minimum*: it pads an ineligible address up to the floor but cannot pad an
+> eligible one down, so a relay slower than the floor made allow-listed addresses
+> measurably slower than strangers — membership enumeration by timing. The mail send
+> (and the SMTP password lookup it needs) now runs **out-of-band on the worker**
+> (`send_otp_code`, on the round-robined `llm` queue the worker already consumes — a sign-in
+> code must not wait behind a suite-run backlog, and not a new queue, which would
+> need a coordinated `-Q` rollout): the api mints and commits the code, publishes
+> the task, and returns at the floor. A send or publish failure is an **operator log line
+> only** (`otp_send_task_failed` / `otp_request_dispatch_failed`) and the response stays
+> the uniform `ok` — the old 502/503 answered differently for members than for strangers
+> for as long as the relay was down, i.e. an outage was itself an oracle. "A mail outage
+> must not be a silent no-op" is now served by the admin **SMTP pre-flight**, which stays
+> synchronous by design (its purpose is the live check; it is admin-only), and by the
+> worker's staged error log. Two consequences: the **worker needs the same `AUTH_EMAIL_*`
+> block as the api** (the reference compose/IaC already share it), and the plaintext code
+> crosses the broker for the seconds it is queued — the message carries a redacted
+> `kwargsrepr`, expires with the code's own TTL, and stores no result.
+
+## Context
+
+Human sign-in today has exactly one real path: Azure AD (`fastapi-azure-auth` on the backend, generic OIDC against Azure on the frontend). PATs (ADR 0026) are headless-only and need an existing user to mint them; dev-bypass is single-user local eval. So a BYOL customer on a non-Azure cloud, and the post-wind-down local-first posture, have **no way to log a human in**. ADR 0026 rejected HTTP Basic because it would make DataQ a password system (storage/hashing policy, lockout, reset flows). Email OTP is passwordless — proof of mailbox ownership is the credential — so it closes the gap without reopening that rejection. It **complements, not replaces**, the generic OIDC/JWKS backend validator (ADR 0013 Phase 2): generic OIDC serves customers with an IdP; OTP serves small teams without one.
+
+The trade this makes explicit: OTP swaps "bring an IdP" for **"bring a mailbox"** — an org SMTP relay is an install prerequisite of this mode. A deployment with neither uses `bypass` (solo/eval, unchanged). And unlike Basic auth, OTP still makes DataQ an identity *issuer* for its users: enumeration, mail-flooding, and code-guessing become our attack surface to own — hence the hard caps and the rate-limiting dependency below.
+
+## Decision
+
+1. **Third authenticator behind the existing seam.** `get_current_user` resolves, in order: `dq_live_` bearer (PAT) → **`dq_sess_` session cookie** → Azure JWT. Same uniform-401 discipline. `/mcp` is a **non-goal**: sessions are a browser credential; PATs remain the headless/MCP credential.
+2. **Auth-mode ladder, fail-closed — realized by two coordinated contracts.** The ladder is `bypass` (solo/eval, nothing required) · `otp` (small team — bring SMTP) · `oidc` (org IdP). Mode selection is split across components today and stays split: the **frontend** `DATAQ_AUTH_MODE` runtime enum (ADR 0028 — nginx-injected, never read by the backend) gains `otp`; the **backend**, which currently infers its mode from `AZURE_*`/`AUTH_DEV_BYPASS` in `init_auth`, gains OTP selection via the presence of the `AUTH_EMAIL_*` + allowlist block — the backend slice owns keeping the two selectors coordinated and documented together. Extending the `init_auth` fail-closed contract: OTP configured incompletely (partial `AUTH_EMAIL_*` **or an empty signup allowlist**) refuses to boot, naming the missing vars — never a deployment that looks up but can't log anyone in.
+3. **Sessions copy the PAT mechanism, not the PAT table.** Opaque `dq_sess_` token, SHA-256 at rest in a new `sessions` table (verifier secret — never in the SecretStore), fixed expiry (default 24 h), **no refresh pair** — re-running OTP is the "refresh". Expiry and revocation are **enforced at the seam** (an expired or logged-out session is a uniform 401 on the next request — verified by tests, not just stored columns). Delivered as an **HttpOnly, Secure, SameSite=Lax cookie** riding the same-origin nginx proxy (ADR 0028 §5), so the SPA never holds the token (no JS-readable storage). CSRF stance: Lax blocks cross-site POSTs, which only holds if **every cookie-authenticated mutation is POST-only** — that invariant plus login-CSRF on verify/logout are explicit test obligations for the backend and frontend slices. DataQ does not self-issue JWTs — no signing-key lifecycle to own.
+4. **OTP mechanics sized to its entropy.** A 6-digit code is ~20 bits, so the protection is caps, not KDF: 10-min TTL, single-use, max 5 verify attempts, re-request invalidates prior codes, constant-time compare, SHA-256 at rest. The request endpoint returns a **uniform response whether or not the email is eligible** (anti-enumeration) and sends nothing for ineligible addresses.
+5. **Signup gating is mandatory — no open registration.** `otp` mode requires `AUTH_OTP_ALLOWED_EMAILS` and/or `AUTH_OTP_ALLOWED_DOMAINS`. First-admin bootstrap: the operator puts their own address in the signup allowlist and `WORKSPACE_ADMIN_EMAILS`, then signs in to their own mailbox — no seeded password to rotate.
+6. **One user row per normalized email (identity linking).** `users.aad_object_id` becomes nullable with a unique index on `lower(email)` (two-step migration + duplicate-email audit first). An OTP sign-in whose email matches an existing AAD-provisioned row resolves to **that row**: mailbox proof is the credential, and in a single-tenant AAD the email claim is tenant-controlled, so the join is trustworthy. Grants, shares, and PATs never fragment across authenticators. Consequence to state plainly: **email is the root of trust** — mailbox compromise is account compromise (and admin compromise if that address is on `WORKSPACE_ADMIN_EMAILS`).
+7. **The OTP mailer is its own config block, on the request path.** `AUTH_EMAIL_*` (host/port/username/from/password-secret-name — password via `SecretStore`, same pattern as alerting) is separate from alerting's `EMAIL_*`, reusing the SMTP+STARTTLS code shape but **not** the publisher: the alert path treats mail as best-effort (the mailer no-ops when unconfigured and the composite publisher isolates its send errors so a flaky mailer can't fail a run); OTP send is the opposite contract — synchronous (~5 s timeout) on the request path, with send errors surfaced to the caller, never isolated away. A misconfigured alert channel can never block sign-in, and vice versa. An admin-gated **SMTP pre-flight** ("send me a test mail") surfaces misconfiguration at install time.
+8. **Hard prerequisite: the rate limiter's auth-endpoint slice.** `otp/request` is the app's first unauthenticated mail-sending endpoint; per-email and per-IP rate limits land with or before it.
+
+## Consequences
+
+**Positive** — a real human sign-in for non-Azure and fully-local deployments (the local-first posture's missing auth mode); no password store, ever; bootstrap without seeded credentials; all four moving parts copy proven in-repo patterns (PAT verifier storage, `init_auth` fail-closed, SecretStore-by-name, runtime frontend config), so the implementation risk concentrates in the one genuinely new thing — the identity migration.
+
+**Negative / accepted** — a mailbox becomes an install prerequisite of `otp` mode (mitigated: `bypass` remains for the mailbox-less solo case, and the BYOL audience has SMTP by definition); DataQ takes on identity-issuer abuse surface (mitigated by caps + gating + rate limiting, but it is new surface); email-as-root-of-trust is a real trust-model shift that the security docs must state; the `users` migration touches every authz path and needs the two-step discipline; sessions add a second browser credential model (cookie) beside the OIDC bearer flow.
+
+## Alternatives considered
+
+- **HTTP Basic / passwords** — rejected in ADR 0026; unchanged.
+- **Magic links instead of codes** — rejected: corporate mail scanners prefetch URLs (consuming single-use links), links leak into logs/referrers, and codes copy across devices. Same transport, worse failure modes.
+- **TOTP authenticator apps** — rejected for this gap: enrollment needs a retrievable shared secret (password-adjacent storage) plus a recovery story — heavier than the problem. Fine as a *future* second factor on top.
+- **Self-issued JWT sessions** — rejected: buys statelessness we don't need at this scale, costs a signing-key rotation story; opaque hashed tokens match the PAT precedent and are trivially revocable.
+- **Bundle the generic OIDC validator instead** — rejected as *instead* (different audience: IdP-owning orgs vs IdP-less teams); it remains a marketplace prerequisite and arrives on its own track.
+- **Open signup (no allowlist)** — rejected: DataQ holds failing-row samples (PII); self-provisioning by anyone who can receive email is unacceptable as a default.
