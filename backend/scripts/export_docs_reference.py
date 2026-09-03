@@ -29,14 +29,16 @@ MCP_OUT = ROOT / "docs/site/reference/mcp-tools.md"
 LIVE_PROBE_TOOLS = frozenset(
     {"dryrun_check", "list_columns", "profile_column", "suggest_column_policy", "test_connection"}
 )
-GATE_LABEL = {
-    "read": "any signed-in user",
-    "read:suite-optional": "any signed-in user; suite-scoped when a suite is named",
-    "suite:view": "`view` on the suite",
-    "suite:edit": "`edit` on the suite",
-    "incident:view": "`view` on the incident's suite",
-    "incident:edit": "`edit` on the incident's suite",
-    "role:member": "workspace Member or Admin",
+#: gate -> (who can call it, read-only?). A gate missing here fails the build, so a new gate
+#: value gets classified deliberately rather than by string shape.
+GATES_DOC: dict[str, tuple[str, bool]] = {
+    "read": ("any signed-in user", True),
+    "read:suite-optional": ("any signed-in user; suite-scoped when a suite is named", True),
+    "suite:view": ("`view` on the suite", True),
+    "suite:edit": ("`edit` on the suite", False),
+    "incident:view": ("`view` on the incident's suite", True),
+    "incident:edit": ("`edit` on the incident's suite", False),
+    "role:member": ("workspace Member or Admin", False),
 }
 
 
@@ -59,20 +61,31 @@ def build_mcp_tools() -> str:
     missing = set(tools) ^ set(GATES)
     if missing:
         raise SystemExit(f"GATES and the registered tools disagree: {sorted(missing)}")
-    unknown_gates = {g for g in GATES.values() if g not in GATE_LABEL}
+    unknown_gates = {g for g in GATES.values() if g not in GATES_DOC}
     if unknown_gates:
-        raise SystemExit(f"add a label for gate(s) {sorted(unknown_gates)} in GATE_LABEL")
+        raise SystemExit(f"classify gate(s) {sorted(unknown_gates)} in GATES_DOC")
 
     def is_read(name: str) -> bool:
-        return GATES[name].startswith("read") or GATES[name].endswith(":view")
+        return GATES_DOC[GATES[name]][1]
 
-    groups = {
-        "Read-only": sorted(n for n in tools if is_read(n) and n not in LIVE_PROBE_TOOLS),
-        "Changes state": sorted(n for n in tools if not is_read(n) and n not in LIVE_PROBE_TOOLS),
-        "Live probe (persists nothing, opens a datasource — gated like a write)": sorted(
-            LIVE_PROBE_TOOLS
+    # (count-table label, section heading, tools)
+    groups = [
+        (
+            "Read-only",
+            "Read-only",
+            sorted(n for n in tools if is_read(n) and n not in LIVE_PROBE_TOOLS),
         ),
-    }
+        (
+            "Changes state",
+            "Changes state",
+            sorted(n for n in tools if not is_read(n) and n not in LIVE_PROBE_TOOLS),
+        ),
+        (
+            "Live probe",
+            "Live probe (persists nothing, opens a datasource — gated like a write)",
+            sorted(LIVE_PROBE_TOOLS),
+        ),
+    ]
     lines = [
         "# MCP tools",
         "",
@@ -83,17 +96,17 @@ def build_mcp_tools() -> str:
         "| | Count |",
         "|---|---|",
         f"| Tools | {len(tools)} |",
-        *(f"| {g.split(' (')[0]} | {len(names)} |" for g, names in groups.items()),
+        *(f"| {label} | {len(names)} |" for label, _, names in groups),
         "",
         "No tool creates, edits or re-credentials a connection: every Admin-only capability is a",
         "connection mutation, and a credential must never transit an LLM.",
         "",
     ]
-    for group, names in groups.items():
-        lines += [f"## {group}", "", "| Tool | Who can call it | What it does |", "|---|---|---|"]
+    for _, heading, names in groups:
+        lines += [f"## {heading}", "", "| Tool | Who can call it | What it does |", "|---|---|---|"]
         for n in names:
             lines.append(
-                f"| `{n}` | {GATE_LABEL[GATES[n]]} | "
+                f"| `{n}` | {GATES_DOC[GATES[n]][0]} | "
                 f"{_first_paragraph(tools[n].description or '')} |"
             )
         lines.append("")
@@ -110,8 +123,8 @@ def build_mcp_tools() -> str:
 def main() -> int:
     check = "--check" in sys.argv
     outputs = {OPENAPI_OUT: build_openapi(), MCP_OUT: build_mcp_tools()}
-    stale = [p for p, text in outputs.items() if not p.exists() or p.read_text() != text]
     if check:
+        stale = [p for p, text in outputs.items() if not p.exists() or p.read_text() != text]
         for p in stale:
             print(
                 f"{p.relative_to(ROOT)} is stale — "
