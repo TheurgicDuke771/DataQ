@@ -249,3 +249,14 @@ cd frontend && pnpm test
 ```
 
 > Commands above assume Week 1 scaffolding (`environment.yml`, `docker-compose.yml`, `scripts/setup.sh`) is committed.
+
+### Mermaid diagrams in published docs
+
+Syntactically *valid* ≠ *renders correctly*. In **sequence-diagram** text, `#` starts
+Mermaid's HTML-entity escape (`#35;` → `#`) and a stray `;` terminates a statement — a bare
+`#NNN` issue ref or an inline semicolon silently truncates the rendered line while the syntax
+check still passes. Write issue refs in sequence diagrams as `#35;NNN` (renders as `#NNN`;
+flowcharts / state / ER diagrams don't need this) and eyeball the rendered diagram before
+merging, not just the linter. Keep diagrams in `docs/site/architecture/overview.md` in sync
+with the code: a new component, datasource, integration or table updates the diagram in the
+same PR (the ER diagram has a CI drift guard).

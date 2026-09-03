@@ -2,13 +2,14 @@ site_name: DataQ
 site_description: >-
   DataQ — a single-tenant data-quality monitoring platform built on Great
   Expectations. User-friendly guides + developer references.
-site_url: https://theurgicduke771.github.io/DataQ/docs/latest/
+site_url: https://theurgicduke771.github.io/DataQ/docs/ # mike appends <version>/ at deploy time
 repo_url: https://github.com/TheurgicDuke771/DataQ
 repo_name: TheurgicDuke771/DataQ
 edit_uri: edit/main/docs/site/
 
 # Versioned docs (mike): `latest` tracks main, one frozen copy per release tag.
-# The selector reads versions.json from site_url's parent directory (docs/).
+# mike rewrites site_url to <site_url>/<version>/ at deploy time; the selector reads
+# versions.json from the docs root.
 extra:
   version:
     provider: mike
@@ -107,6 +108,9 @@ markdown_extensions:
   - attr_list
   - md_in_html
   - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
   - pymdownx.tabbed:
       alternate_style: true
   - tables
@@ -130,6 +134,9 @@ nav:
       - get-started/index.md
       - Install: get-started/install.md
       - Your first suite: get-started/first-suite.md
+      - Your first alert: get-started/first-alert.md
+      - Run it automatically: get-started/connect-pipeline.md
+      - Ask an AI assistant: get-started/ask-assistant.md
       - Concepts: get-started/concepts.md
   - Guides:
       - guides/index.md

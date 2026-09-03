@@ -1,7 +1,7 @@
 # Get started
 
-Three short tutorials take you from nothing to a running suite with an alert. Each one
-ends with something you can see on screen.
+Short tutorials take you from nothing to a suite that runs itself and tells you when
+something breaks. Each one ends with something you can see on screen.
 
 <div class="grid cards" markdown>
 
@@ -22,6 +22,31 @@ ends with something you can see on screen.
 
     [:octicons-arrow-right-24: First suite](first-suite.md)
 
+-   :material-bell-ring:{ .lg .middle } **Your first alert**
+
+    ---
+
+    Route a suite's breaches to Teams, Slack or email, prove it fires, and see why it stays
+    quiet afterwards.
+
+    [:octicons-arrow-right-24: First alert](first-alert.md)
+
+-   :material-play-speed:{ .lg .middle } **Run it automatically**
+
+    ---
+
+    Trigger the suite when your ADF, Airflow or dbt pipeline succeeds, or put it on a cron.
+
+    [:octicons-arrow-right-24: Automate](connect-pipeline.md)
+
+-   :material-robot:{ .lg .middle } **Ask an AI assistant**
+
+    ---
+
+    Mint a token, point Claude, Copilot or Cursor at `/mcp`, ask the four questions.
+
+    [:octicons-arrow-right-24: Ask an assistant](ask-assistant.md)
+
 -   :material-lightbulb-on:{ .lg .middle } **Concepts**
 
     ---
@@ -35,8 +60,5 @@ ends with something you can see on screen.
 
 ## Where next
 
-- **Automate it** — [Scheduling](../guides/scheduling.md) runs suites on a cron;
-  [Orchestration](../guides/orchestration.md) runs them when a pipeline finishes.
-- **Get told** — [Notifications & alerting](../guides/notifications.md).
-- **Ask an assistant** — [AI assistants (MCP)](../guides/mcp-setup.md) connects Claude,
-  Copilot or Cursor to your workspace.
+The [Guides](../guides/index.md) go deeper on each of these; the
+[Reference](../reference/index.md) lists every check type, endpoint and tool.
