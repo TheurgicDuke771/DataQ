@@ -1,0 +1,11 @@
+<task-notification>
+<task-id>bl1nj0hao</task-id>
+<tool-use-id>toolu_017BMR6iWiS7j95RUtLRNjdE</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/35b1af29-9edc-49a2-9b7d-86cf05a9416e/tasks/bl1nj0hao.output</output-file>
+<status>failed</status>
+<summary>Background command "Wait for #1841 to merge and the Docs deploy to finish, then verify the three fixes on the live site" failed with exit code 1</summary>
+</task-notification>
+
+---
+
+switch to main, sync with remote, delete dead wortrees, temp files, and prune un-necessary remote/local branches
