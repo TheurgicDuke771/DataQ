@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "d0bab441fc26",
+  "strategy": "manual-commit",
+  "branch": "docs/redesign-p5b-api-reference",
+  "checkpoints_count": 5,
+  "files_touched": [
+    ".github/workflows/ci.yml",
+    "backend/scripts/export_docs_reference.py",
+    "docs/site/reference/index.md",
+    "docs/site/reference/mcp-tools.md",
+    "docs/site/reference/openapi.json",
+    "docs/site/reference/rest-api.md",
+    "mkdocs.yml",
+    "requirements-docs.txt"
+  ],
+  "sessions": [
+    {
+      "metadata": "/d0/bab441fc26/0/metadata.json",
+      "transcript": "/d0/bab441fc26/0/full.jsonl",
+      "compact_transcript": "/d0/bab441fc26/0/transcript.jsonl",
+      "content_hash": "/d0/bab441fc26/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 945,
+    "cache_creation_tokens": 19830,
+    "cache_read_tokens": 3560721,
+    "output_tokens": 15363,
+    "api_call_count": 8
+  }
+}
