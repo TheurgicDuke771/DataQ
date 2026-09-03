@@ -1,0 +1,2956 @@
+<!DOCTYPE html><html lang="en" class="no-js"><head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="DataQ — a single-tenant data-quality monitoring platform built on Great Expectations. User-friendly guides + developer references.">
+      
+      
+      
+        <link rel="canonical" href="https://theurgicduke771.github.io/DataQ/docs/latest/latest/guides/mcp-setup/">
+      
+      
+        <link rel="prev" href="../notifications/">
+      
+      
+        <link rel="next" href="../api-keys/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>AI assistants (MCP) - DataQ</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  <link href="../../assets/stylesheets/glightbox.min.css" rel="stylesheet"><script src="../../assets/javascripts/glightbox.min.js"></script><style id="glightbox-style">
+            html.glightbox-open { overflow: initial; height: 100%; }
+            .gslide-title { margin-top: 0px; user-select: text; }
+            .gslide-desc { color: #666; user-select: text; }
+            .gslide-image img { background: white; }
+            .gscrollbar-fixer { padding-right: 15px; }
+            .gdesc-inner { font-size: 0.75rem; }
+            body[data-md-color-scheme="slate"] .gdesc-inner { background: var(--md-default-bg-color); }
+            body[data-md-color-scheme="slate"] .gslide-title { color: var(--md-default-fg-color); }
+            body[data-md-color-scheme="slate"] .gslide-desc { color: var(--md-default-fg-color); }
+        </style></head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#ai-assistants-mcp-setup" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden="">
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="DataQ" class="md-header__button md-logo" aria-label="DataQ" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"></path></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"></path></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            DataQ
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              AI assistants (MCP)
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo" aria-label="Switch to dark mode" type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden="">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"></path></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo" aria-label="Switch to light mode" type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden="">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"></path></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required="">
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"></path></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard="" data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"></path></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix="">
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/TheurgicDuke771/DataQ" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"></path></svg>
+  </div>
+  <div class="md-source__repository">
+    TheurgicDuke771/DataQ
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../get-started/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Get started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../architecture/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../security/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Security &amp; compliance
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../operate/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Operate
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="DataQ" class="md-nav__button md-logo" aria-label="DataQ" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"></path></svg>
+
+    </a>
+    DataQ
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/TheurgicDuke771/DataQ" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"></path></svg>
+  </div>
+  <div class="md-source__repository">
+    TheurgicDuke771/DataQ
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix="">
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../get-started/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Get started
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Get started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../get-started/install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../get-started/first-suite/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Your first suite
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../get-started/concepts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked="">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Features overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datasources-checks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Datasources &amp; checks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../scheduling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scheduling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../orchestration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Orchestration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../notifications/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Notifications &amp; alerting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI assistants (MCP)
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI assistants (MCP)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+      
+        <li class="md-nav__item">
+  <a href="#endpoint-authentication" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Endpoint &amp; authentication
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Endpoint &amp; authentication">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#getting-a-token" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Getting a token
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#client-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Client configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-48-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The 48 tools
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The 48 tools">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#reading-the-results-honestly" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reading the results honestly
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#suites-results" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Suites &amp; results
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Checks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#runs-profiling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Runs &amp; profiling
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#connections-orchestration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Connections &amp; orchestration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scheduling-alerting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scheduling &amp; alerting
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#assets-incidents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Assets &amp; incidents
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#suite-portability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Suite portability
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api-keys/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API keys (PATs)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../recommended-usage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recommended usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../best-practices/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Best practices
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/feature-matrix/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Feature matrix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/rest-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    REST API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/glossary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Glossary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../architecture/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Decision records (ADRs)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/mcp-honesty/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP tool design (honesty)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/evidence-card/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Incident evidence card
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/perf-baseline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Performance baseline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../security/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security &amp; compliance
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6" id="__nav_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Security &amp; compliance
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security &amp; data handling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_3">
+        
+          
+          <label class="md-nav__link" for="__nav_6_3" id="__nav_6_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compliance
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Compliance
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/compliance/sub-processors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sub-processor disclosure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/compliance/dpia-input-sheet/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DPIA input sheet
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/compliance/data-subject-rights-runbook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data-subject-rights runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/compliance/breach-notification-runbook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Breach-notification runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/compliance/dpa-baa-templates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DPA / BAA templates (counsel-gated)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../operate/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operate
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_7" id="__nav_7_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Operate
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/deployment-parity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment parity (Azure · AWS · Local)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/observability/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Observability
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/runbook-faq/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runbook &amp; FAQ
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+      
+        <li class="md-nav__item">
+  <a href="#endpoint-authentication" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Endpoint &amp; authentication
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Endpoint &amp; authentication">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#getting-a-token" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Getting a token
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#client-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Client configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-48-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The 48 tools
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The 48 tools">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#reading-the-results-honestly" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reading the results honestly
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#suites-results" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Suites &amp; results
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Checks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#runs-profiling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Runs &amp; profiling
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#connections-orchestration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Connections &amp; orchestration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scheduling-alerting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scheduling &amp; alerting
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#assets-incidents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Assets &amp; incidents
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#suite-portability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Suite portability
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="ai-assistants-mcp-setup">AI assistants (MCP setup)<a class="headerlink" href="#ai-assistants-mcp-setup" title="Permanent link">¶</a></h1>
+<p>DataQ ships a built-in <a href="https://modelcontextprotocol.io">MCP</a> server so AI assistants — Claude Desktop, Claude.ai, VS Code / GitHub Copilot, Cursor — can answer questions like <em>"what failed today?"</em> or <em>"run the orders suite"</em> against your live DataQ instance, with the same per-suite permissions as the signed-in user.</p>
+<h2 id="endpoint-authentication">Endpoint &amp; authentication<a class="headerlink" href="#endpoint-authentication" title="Permanent link">¶</a></h2>
+<p>The server is mounted on the deployed app at:</p>
+<div class="highlight"><pre><span></span><code>https://&lt;your-dataq-host&gt;/mcp/
+</code></pre></div>
+<div class="admonition warning">
+<p class="admonition-title">Keep the trailing slash</p>
+<p><code>/mcp</code> answers with a <strong>307 redirect</strong> to <code>/mcp/</code>, and some HTTP clients drop the
+<code>Authorization</code> header when following redirects — which then surfaces as a
+confusing 401. Always configure clients with the <code>/mcp/</code> form.</p>
+</div>
+<p>The endpoint accepts the <strong>same credentials as the REST API</strong> (ADR <a href="../../adr/0008-mcp-server/">0008</a> / <a href="../../adr/0026-auth-api-keys-and-principal-seam/">0026</a>): an OIDC bearer token (Azure AD or Cognito), or a <strong>DataQ API key</strong> (<code>dq_live_…</code>). Without auth configured, the endpoint is only mounted in local dev-bypass mode — never unauthenticated in a deployed environment.</p>
+<div class="admonition info">
+<p class="admonition-title">Email-OTP deployments: MCP works, with an API key</p>
+<p>A deployment running <strong>email one-time codes instead of SSO</strong> (ADR
+<a href="../../adr/0032-email-otp-signin/">0032</a>) has no identity provider to issue bearer
+tokens, so an <strong>API key is the only <code>/mcp</code> credential</strong> there — mint one as
+below and use it exactly the same way. Everything else is identical, including
+all 48 tools and per-suite permissions. Two rejections are deliberate in that
+mode: a raw JWT is refused (there is nothing to validate it against), and your
+<strong>sign-in session is never accepted</strong> — it is a browser credential and does not
+authenticate <code>/mcp</code>, whether presented as a bearer or carried as a cookie.</p>
+</div>
+<h3 id="getting-a-token">Getting a token<a class="headerlink" href="#getting-a-token" title="Permanent link">¶</a></h3>
+<p><strong>Recommended — a DataQ API key (PAT):</strong> mint one via <code>POST /api/v1/me/api-keys</code>
+(see <a href="../api-keys/">API keys</a>) and use it as the bearer. It lives up to a year,
+is revocable per-integration, and runs with exactly your per-suite access —
+built for always-on MCP configs.</p>
+<p><strong>Quick one-off — your web session's OIDC token:</strong> sign in to the DataQ web
+app, open your browser's developer tools → <strong>Application → Session Storage</strong> →
+the <code>oidc.user:…</code> entry → copy the <code>access_token</code> value.</p>
+<div class="admonition note">
+<p class="admonition-title">OIDC tokens expire after ~1 hour</p>
+<p>The pasted browser token is short-lived; when the client starts getting
+401s, paste a fresh one and restart the MCP server/connection — or switch
+to an <a href="../api-keys/">API key</a> and stop re-pasting.</p>
+</div>
+<div class="admonition danger">
+<p class="admonition-title">Never commit a config that carries a token</p>
+<p>Keep token-bearing MCP config files out of version control (in the DataQ repo
+itself, <code>.gitignore</code> already covers <code>.vscode/*</code>).</p>
+</div>
+<h2 id="client-configuration">Client configuration<a class="headerlink" href="#client-configuration" title="Permanent link">¶</a></h2>
+<p><strong>Claude Desktop / Claude.ai</strong> (<code>claude_desktop_config.json</code>) — and <strong>GitHub Copilot</strong> (<code>mcp.json</code>):</p>
+<div class="highlight"><pre><span></span><code>{
+  "mcpServers": {
+    "dataq": {
+      "url": "https://&lt;your-dataq-host&gt;/mcp/",
+      "headers": { "Authorization": "Bearer &lt;AZURE_AD_ACCESS_TOKEN&gt;" }
+    }
+  }
+}
+</code></pre></div>
+<p><strong>VS Code</strong> (workspace <code>.vscode/mcp.json</code>, used by Copilot agent mode) uses a <code>servers</code> key — not <code>mcpServers</code> — plus an explicit <code>type</code>:</p>
+<div class="highlight"><pre><span></span><code>{
+  "servers": {
+    "dataq": {
+      "type": "http",
+      "url": "https://&lt;your-dataq-host&gt;/mcp/",
+      "headers": { "Authorization": "Bearer &lt;AZURE_AD_ACCESS_TOKEN&gt;" }
+    }
+  }
+}
+</code></pre></div>
+<p>Start it via the command palette (<code>Cmd/Ctrl+Shift+P</code>) → <strong>MCP: List Servers</strong> → <em>dataq</em> → Start (or open Copilot Chat in agent mode — configured servers start on demand).</p>
+<p><strong>Cursor</strong> (<code>~/.cursor/mcp.json</code>) uses the same <code>mcpServers</code> shape as Claude Desktop.</p>
+<h2 id="the-48-tools">The 48 tools<a class="headerlink" href="#the-48-tools" title="Permanent link">¶</a></h2>
+<p>Each tool is a thin wrapper over the same service layer as the REST API — per-suite
+authorization (<code>view</code> for a read, <code>edit</code> for a mutation) and failing-sample redaction apply
+identically. The 48 split three ways, not two (one of the 25 reads, <code>get_adf_pipeline_status</code>,
+is a deprecated alias kept only for backward compatibility — see below); the counts here are
+derived from <code>tests/support/mcp_gates.GATES</code>, not hand-typed, so they can't drift the way an
+earlier pass of this page did.</p>
+<ul>
+<li><strong>25 read-only</strong> — <code>export_suite</code>, <code>get_adf_pipeline_status</code> (deprecated, use
+  <code>get_pipeline_status</code>), <code>get_asset</code>, <code>get_check</code>, <code>get_check_history</code>, <code>get_column_policy</code>,
+  <code>get_doc</code>, <code>get_health_score</code>, <code>get_incident</code>, <code>get_near_misses</code>, <code>get_notification_config</code>,
+  <code>get_pipeline_status</code>, <code>get_run_results</code>, <code>get_run_status</code>, <code>get_suite_performance</code>,
+  <code>get_suite_results</code>, <code>list_assets</code>, <code>list_check_versions</code>, <code>list_checks</code>, <code>list_connections</code>,
+  <code>list_incidents</code>, <code>list_runs</code>, <code>list_schedules</code>, <code>list_suites</code>, <code>list_trigger_bindings</code>.</li>
+<li><strong>18 that change state</strong> — <code>create_check</code>, <code>update_check</code>, <code>delete_check</code>, <code>snooze_check</code>,
+  <code>restore_check_version</code>, <code>trigger_suite_run</code>, <code>cancel_run</code>, <code>update_suite</code>, <code>set_column_policy</code>,
+  <code>create_schedule</code>, <code>update_schedule</code>, <code>delete_schedule</code>, <code>create_trigger_binding</code>,
+  <code>update_trigger_binding</code>, <code>delete_trigger_binding</code>, <code>ack_incident</code>, <code>resolve_incident</code>,
+  <code>import_suite</code>. All gate on <code>edit</code> access to the affected suite (the schedule, binding and
+  incident tools via the suite they target); <code>import_suite</code> additionally requires the <strong>member</strong>
+  workspace role, since it has no existing suite to gate on.</li>
+<li><strong>5 that persist nothing but open a live datasource connection using stored credentials</strong> —
+  <code>profile_column</code>, <code>list_columns</code>, <code>dryrun_check</code>, <code>suggest_column_policy</code>, <code>test_connection</code>.
+  These are gated like writes, not like reads, because they spend a real credential against a
+  remote system even though nothing is saved: the first four require <code>edit</code> on the suite whose
+  connection they probe, and <code>test_connection</code> (which has no suite at all) requires the <strong>member</strong>
+  workspace role.</li>
+</ul>
+<p><code>get_adf_pipeline_status</code> predates dbt (ADR 0029) and Airflow support and was never ADF-only
+despite the name; <code>get_pipeline_status</code> is the current name and states its actual scope. The old
+name stays registered — a client with it pinned in a saved prompt or static config keeps
+working — and delegates to <code>get_pipeline_status</code> with identical behavior. New integrations
+should use <code>get_pipeline_status</code>.</p>
+<p>No MCP tool is Admin-only. Every Admin-only capability in ADR 0033's authorization matrix is a
+connection <em>mutation</em> (create/edit/delete/re-auth), and none of those are exposed here at all —
+a credential must never transit an LLM. <code>test_connection</code> reports only whether a live probe
+succeeded; it never returns a credential or a secret reference.</p>
+<h3 id="reading-the-results-honestly">Reading the results honestly<a class="headerlink" href="#reading-the-results-honestly" title="Permanent link">¶</a></h3>
+<p>A REST caller wrote their own query and a UI user reads the screen — the row
+count, the timestamps, the "running" badge, the filter they chose. An AI client
+has neither, so several tools return <strong>fields whose whole job is to say what the
+answer does not cover</strong>. A well-behaved client should branch on these rather
+than summarising the payload as-is. This is one instance of a discipline applied
+across the whole surface — see <a href="../../architecture/mcp-honesty/">MCP tool design: honesty &amp; disclosure</a>
+for the full set of rules and why they exist.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Appears on</th>
+<th>What it prevents</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>total</code> · <code>returned</code> · <code>truncated</code></td>
+<td><code>list_runs</code>, <code>list_checks</code>, <code>list_check_versions</code>, <code>list_incidents</code>, <code>list_assets</code>, <code>get_check_history</code>, <code>get_pipeline_status</code></td>
+<td>reporting one page as the whole set. <code>truncated</code> is computed against a real total, never inferred from page length. The unpaged tools — <code>list_suites</code>, <code>list_connections</code>, <code>list_schedules</code>, <code>list_trigger_bindings</code>, <code>get_near_misses</code> — return every row and carry no page fields at all</td>
+</tr>
+<tr>
+<td><code>oldest_in_page</code> · <code>newest_in_page</code></td>
+<td><code>list_runs</code>, <code>list_incidents</code>, <code>get_check_history</code>, <code>get_pipeline_status</code></td>
+<td>answering a time-bounded question ("what failed today?") from a <strong>count</strong>-capped page. <code>list_runs</code>/<code>list_incidents</code> now take <code>since_hours</code>/<code>until_hours</code>; <code>get_check_history</code>/<code>get_pipeline_status</code> still have no time filter — these fields say what window you actually saw regardless</td>
+</tr>
+<tr>
+<td><code>results_final</code></td>
+<td><code>list_runs</code>, <code>get_run_results</code>, <code>get_run_status</code>, <code>get_suite_results</code></td>
+<td>reading a mid-run partial as a verdict. A 30-check suite three checks in genuinely has "3/3 passed" — and no result yet</td>
+</tr>
+<tr>
+<td><code>redaction</code> · <code>redacted_columns</code></td>
+<td>per-check results</td>
+<td>describing masked rows as "no failing rows", or mask tokens as data</td>
+</tr>
+<tr>
+<td><code>sampling</code> · <code>sampled</code> · <code>sample_row_limit</code></td>
+<td>results, <code>profile_column</code></td>
+<td>stating a sample statistic as a fact about the full dataset</td>
+</tr>
+<tr>
+<td><code>runnable</code></td>
+<td><code>update_suite</code>, <code>import_suite</code></td>
+<td>reporting a suite as ready when it has no run target and cannot run</td>
+</tr>
+<tr>
+<td><code>is_recurrence</code> · <code>prior_incident_id</code></td>
+<td>incidents</td>
+<td>describing a recurring problem as brand new</td>
+</tr>
+<tr>
+<td><code>window_hours</code></td>
+<td><code>get_near_misses</code></td>
+<td>quoting a default window on a deployment that changed it</td>
+</tr>
+<tr>
+<td><code>restricted_suite_count</code></td>
+<td><code>get_asset</code></td>
+<td>presenting the suites you can see as the whole explanation for a workspace-wide health number</td>
+</tr>
+<tr>
+<td><code>column_policy_pending</code> · <code>column_policy_may_be_stale</code></td>
+<td><code>update_suite</code></td>
+<td>leaving a redaction policy stranded after re-pointing a suite</td>
+</tr>
+</tbody>
+</table>
+<p>The same principle runs through the tool descriptions themselves: each states its
+population (so an empty result is never read as "nothing exists"), whether it is a
+snapshot or a live read, and what it structurally cannot see.</p>
+<h3 id="suites-results">Suites &amp; results<a class="headerlink" href="#suites-results" title="Permanent link">¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>What it answers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>list_suites</code></td>
+<td>"What suites can I see?" — id, datasource, env, check count, last run</td>
+</tr>
+<tr>
+<td><code>get_suite_results</code></td>
+<td>"What failed in suite X?" — latest run's per-check outcomes</td>
+</tr>
+<tr>
+<td><code>get_suite_performance</code></td>
+<td>"Which suites are in the worst shape?" — a worst-first health ranking</td>
+</tr>
+<tr>
+<td><code>get_health_score</code></td>
+<td>"How healthy is data quality overall?" — score and pass rate over a window. Its <code>trend</code> is a per-day count of <strong>runs</strong> by lifecycle status, <strong>not</strong> a per-day score; a null score means nothing was evaluated, not zero</td>
+</tr>
+<tr>
+<td><code>update_suite</code></td>
+<td>"Point the orders suite at ANALYTICS.ORDERS_V2" — renames a suite or sets <strong>what it runs against</strong>; an imported suite has no target and cannot run until this sets one. Returns <code>runnable</code></td>
+</tr>
+<tr>
+<td><code>export_suite</code></td>
+<td>"Show me the whole orders suite" — every check's definition as one portable document</td>
+</tr>
+</tbody>
+</table>
+<h3 id="checks">Checks<a class="headerlink" href="#checks" title="Permanent link">¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>What it answers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>list_checks</code></td>
+<td>"What does the orders suite actually check?" — every check's config, kind, dimension</td>
+</tr>
+<tr>
+<td><code>get_check</code></td>
+<td>"What is this check actually asserting?" — one check's full definition</td>
+</tr>
+<tr>
+<td><code>get_check_history</code></td>
+<td>"Has the row-count check been flaky?" — recent <em>result</em> history for one check; for how its definition changed, use <code>list_check_versions</code></td>
+</tr>
+<tr>
+<td><code>list_check_versions</code></td>
+<td>"Who changed this threshold?" — one check's <em>edit</em> history: every snapshot's config and thresholds as they were at that version</td>
+</tr>
+<tr>
+<td><code>create_check</code></td>
+<td>"Add a null check on email" — authors a check on a suite you can edit</td>
+</tr>
+<tr>
+<td><code>update_check</code></td>
+<td>"Loosen the null check on email to warn at 2%" — a partial update; <code>config</code> replaces the whole configuration rather than merging into it</td>
+</tr>
+<tr>
+<td><code>delete_check</code></td>
+<td>"Remove the row-count check from orders" — permanently deletes a check <strong>and every result it ever recorded, plus every incident it raised, including open ones</strong>; prefer <code>snooze_check</code> to just stop alerting</td>
+</tr>
+<tr>
+<td><code>snooze_check</code></td>
+<td>"Stop alerting on the freshness check until tomorrow" (or, with no duration, "turn alerts back on") — mutes alerts only; the check still runs, still fails, and still opens an incident. <strong>Suppression is per <em>run</em></strong>: the alert is withheld only when every failing check in that run is snoozed</td>
+</tr>
+<tr>
+<td><code>restore_check_version</code></td>
+<td>"Undo that threshold change" — puts a check back to a snapshot from <code>list_check_versions</code>; additive (nothing is renumbered or deleted), and the only path that <em>clears</em> a field back to empty</td>
+</tr>
+<tr>
+<td><code>dryrun_check</code></td>
+<td>"Would a not-null check on email pass right now?" — previews a check against live data without saving anything. Reads what a real run would read, so on flat-file / Iceberg targets it inherits the run target's sampling</td>
+</tr>
+</tbody>
+</table>
+<h3 id="runs-profiling">Runs &amp; profiling<a class="headerlink" href="#runs-profiling" title="Permanent link">¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>What it answers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>list_runs</code></td>
+<td>"Show me the recent runs" / "find the run that failed". Takes <code>since_hours</code>/<code>until_hours</code> (relative "N hours ago" offsets) for time-bounded questions ("what ran today" = <code>since_hours=24</code>); without them the page is capped by <strong>count</strong>, and <code>oldest_in_page</code> / <code>newest_in_page</code> say what window you actually saw</td>
+</tr>
+<tr>
+<td><code>get_run_results</code></td>
+<td>"Why did last night's orders run fail?" — a specific historical run's per-check results</td>
+</tr>
+<tr>
+<td><code>get_run_status</code></td>
+<td>"Is it done?" — live status + per-check progress</td>
+</tr>
+<tr>
+<td><code>trigger_suite_run</code></td>
+<td>"Run the orders suite" — dispatches a run, returns the run id. <strong>The environment and dataset cannot be chosen</strong>: a run always uses the suite's own connection and target</td>
+</tr>
+<tr>
+<td><code>cancel_run</code></td>
+<td>"Stop the orders run, I triggered the wrong suite" — cancels a queued or still-running run; cooperative, so a fast run may finish first</td>
+</tr>
+<tr>
+<td><code>list_columns</code></td>
+<td>"What columns are on this table?" — names only, defaulting to the suite's own target. The cheap first step before authoring; guessing a column name produces a check that runs and errors</td>
+</tr>
+<tr>
+<td><code>profile_column</code></td>
+<td>"Profile the qty column" — live null/distinct/min/max/top-values stats. Snowflake and Unity Catalog are profiled in full; <strong>ADLS, S3 and Iceberg are sampled to 100k rows</strong>, and <code>sampled: true</code> means <code>row_count</code> is the sample size, not the table's. Values are returned <strong>unredacted</strong></td>
+</tr>
+<tr>
+<td><code>get_column_policy</code></td>
+<td>"Is the email column masked in failure samples?" — the suite's redaction policy; an empty one means no suite-level override, <strong>not</strong> that nothing is masked</td>
+</tr>
+<tr>
+<td><code>set_column_policy</code></td>
+<td>"Mask the email column in failure samples" — applies what <code>suggest_column_policy</code> proposed; replaces the whole policy</td>
+</tr>
+<tr>
+<td><code>suggest_column_policy</code></td>
+<td>"Which columns here are sensitive?" — suggests (never saves) a PII redaction policy by profiling the suite's target live</td>
+</tr>
+</tbody>
+</table>
+<h3 id="connections-orchestration">Connections &amp; orchestration<a class="headerlink" href="#connections-orchestration" title="Permanent link">¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>What it answers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>list_connections</code></td>
+<td>"What are we connected to?" / "which connections are broken?" — names, types and health <strong>only</strong>, never config or secrets. <code>consecutive_run_failures</code> is non-zero only when <em>every</em> suite on the connection is failing, so a per-suite problem is invisible here</td>
+</tr>
+<tr>
+<td><code>test_connection</code></td>
+<td>"Is the Snowflake connection working?" — opens a live connection with the stored credential. A pass proves only that the credential authenticates and the datasource answers, <strong>not</strong> that a suite will run; a failure is deliberately unclassified (driver text can carry credential fragments)</td>
+</tr>
+<tr>
+<td><code>get_pipeline_status</code></td>
+<td>"Why did pipeline Y fail?" — recent orchestrator (ADF/Airflow/dbt) runs + correlated DQ run</td>
+</tr>
+<tr>
+<td><code>list_trigger_bindings</code></td>
+<td>"What runs after the nightly load?" — which pipeline/DAG successes trigger which suite</td>
+</tr>
+<tr>
+<td><code>create_trigger_binding</code></td>
+<td>"Run the orders checks after the nightly load finishes" — binds a pipeline/DAG success in a given <code>env</code> to a suite; only success triggers a run</td>
+</tr>
+<tr>
+<td><code>update_trigger_binding</code></td>
+<td>"Stop that trigger firing, but keep the wiring" — enables or disables a binding; what it points at is immutable, so re-targeting means delete + create</td>
+</tr>
+<tr>
+<td><code>delete_trigger_binding</code></td>
+<td>"Unhook the orders checks from the nightly load" — removes the binding; prefer <code>update_trigger_binding</code> if a pause is meant</td>
+</tr>
+<tr>
+<td><code>get_near_misses</code></td>
+<td>"The suite was supposed to run after the pipeline and it didn't" — pipelines that succeeded in one <code>env</code> while the only enabled binding is scoped to another, so the trigger is inert</td>
+</tr>
+</tbody>
+</table>
+<h3 id="scheduling-alerting">Scheduling &amp; alerting<a class="headerlink" href="#scheduling-alerting" title="Permanent link">¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>What it answers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>list_schedules</code></td>
+<td>"When does the orders suite run?" — cron schedules + next fire time</td>
+</tr>
+<tr>
+<td><code>create_schedule</code></td>
+<td>"Run the orders suite every night at 2am" — returns the resolved <code>next_run_at</code> so you can confirm the interpretation, or <code>null</code> when created disabled (a disabled schedule does not fire at all)</td>
+</tr>
+<tr>
+<td><code>update_schedule</code></td>
+<td>"Move the orders run to 3am" / "pause the nightly schedule" — partial update of cron, timezone or enabled. Resuming <strong>re-bases</strong>; it does not backfill runs missed while paused</td>
+</tr>
+<tr>
+<td><code>delete_schedule</code></td>
+<td>"Stop the nightly orders run" — removes the schedule; the suite and its checks are untouched. Prefer <code>update_schedule(enabled=false)</code> if a pause is meant</td>
+</tr>
+<tr>
+<td><code>get_notification_config</code></td>
+<td>"Who gets told when orders fails?" — channel presence (Teams/Slack/email), never webhook URLs</td>
+</tr>
+</tbody>
+</table>
+<h3 id="assets-incidents">Assets &amp; incidents<a class="headerlink" href="#assets-incidents" title="Permanent link">¶</a></h3>
+<p>Assets are the grain people reason in ("is <code>orders</code> healthy?"); suites are the grain checks are
+authored in. Incidents are the deduplicated, stateful roll-up of repeated failures.</p>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>What it answers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>list_assets</code></td>
+<td>"What tables do we monitor?" / "which assets are unhealthy?" — every asset with its health. The numbers are <strong>workspace-true</strong> (ADR <a href="../../adr/0037-workspace-visible-asset-identity/">0037</a>): aggregated over every composing suite, including ones the caller cannot see, so they are not "your" checks</td>
+</tr>
+<tr>
+<td><code>get_asset</code></td>
+<td>"Is the orders table healthy, and what feeds it?" — the workspace-true summary + per-dimension scorecard + the composing suites the caller may view (<code>restricted_suite_count</code> counts the rest) + the lineage neighbourhood, qualified when a lineage source is failing or stale</td>
+</tr>
+<tr>
+<td><code>list_incidents</code></td>
+<td>"What's broken right now?" — open/acknowledged/resolved incidents, scoped to suites the caller can see, so an empty result means "nothing visible to you", not "nothing is wrong". Also takes <code>since_hours</code>/<code>until_hours</code>, filtered on <code>last_seen_at</code> (most recent breach, not when first opened). Incidents auto-resolve on the first passing result, so this answers "what's unresolved now", not "what failed during period X" — a resolved failure earlier in the window won't appear even under a time filter; use <code>list_runs</code> for that question</td>
+</tr>
+<tr>
+<td><code>get_incident</code></td>
+<td>"Why did this open, and what else broke at the time?" — the evidence card snapshotted at the last occurrence; carries no failing sample rows by design</td>
+</tr>
+<tr>
+<td><code>ack_incident</code></td>
+<td>"I'm on it" — records that someone owns the incident. Changes nothing about the data and does <strong>not</strong> stop alerts; use <code>snooze_check</code> for that</td>
+</tr>
+<tr>
+<td><code>resolve_incident</code></td>
+<td>"The backfill fixed it" — declares the problem over. Does not re-run anything, and the next failing run opens a <strong>new</strong> incident</td>
+</tr>
+</tbody>
+</table>
+<h3 id="suite-portability">Suite portability<a class="headerlink" href="#suite-portability" title="Permanent link">¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>What it answers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>import_suite</code></td>
+<td>"Recreate the orders suite against the QA warehouse" — creates a whole new suite from an <code>export_suite</code> document. <strong>Only the checks are copied</strong>: the new suite has no run target (<code>runnable: false</code> — fix with <code>update_suite</code>), no schedules, no trigger bindings, no notification config, no column policy and no shares. Requires the <strong>member</strong> workspace role; never merges into an existing suite</td>
+</tr>
+</tbody>
+</table>
+<p>Try these natural-language queries once connected:</p>
+<ol>
+<li><em>"What data quality checks failed today?"</em></li>
+<li><em>"Run the Retail Orders suite."</em> … <em>"Is it done?"</em></li>
+<li><em>"Why did the ADF pipeline fail?"</em></li>
+<li><em>"Add a not-null check on order_number in the Retail Orders suite."</em></li>
+</ol>
+<h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">¶</a></h2>
+<table>
+<thead>
+<tr>
+<th>Symptom</th>
+<th>Cause / fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>401 on every request</td>
+<td>Token expired (~1 h) → paste a fresh one. Or the client followed the <code>/mcp</code> → <code>/mcp/</code> redirect and dropped the header → use <code>/mcp/</code> directly.</td>
+</tr>
+<tr>
+<td>307 responses</td>
+<td>Missing trailing slash — configure <code>/mcp/</code>.</td>
+</tr>
+<tr>
+<td>Server absent / connection refused locally</td>
+<td>The MCP server is unmounted unless the deployment has a working sign-in configuration — SSO (<code>AZURE_*</code>), email OTP (<code>AUTH_EMAIL_*</code> + an allowlist), or local dev-bypass (fail-closed by design).</td>
+</tr>
+<tr>
+<td>401 with an API key on an email-OTP deployment</td>
+<td>Check you sent the <strong>API key</strong>, not your session cookie/token: in OTP mode a <code>dq_live_…</code> key is the only credential <code>/mcp</code> accepts.</td>
+</tr>
+<tr>
+<td>Tool call returns "not found" for a suite you can see in the UI as someone else</td>
+<td>MCP calls run as the token's user — suite access is per-user, same as the web app.</td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden="">
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"></path></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer">
+        
+          
+          <a href="../notifications/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Notifications &amp; alerting">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"></path></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Notifications &amp; alerting
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../api-keys/" class="md-footer__link md-footer__link--next" aria-label="Next: API keys (PATs)">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                API keys (PATs)
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"></path></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.indexes", "navigation.sections", "navigation.top", "navigation.tracking", "navigation.instant", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.tabs.link", "search.share"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  
+<script id="init-glightbox">const lightbox = GLightbox({"touchNavigation": true, "loop": false, "zoomable": true, "draggable": true, "openEffect": "zoom", "closeEffect": "zoom", "slideEffect": "slide"});
+document$.subscribe(()=>{ lightbox.reload(); });
+</script></body></html>

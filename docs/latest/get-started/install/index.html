@@ -1,0 +1,2583 @@
+<!DOCTYPE html><html lang="en" class="no-js"><head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="DataQ — a single-tenant data-quality monitoring platform built on Great Expectations. User-friendly guides + developer references.">
+      
+      
+      
+        <link rel="canonical" href="https://theurgicduke771.github.io/DataQ/docs/latest/latest/get-started/install/">
+      
+      
+        <link rel="prev" href="../">
+      
+      
+        <link rel="next" href="../first-suite/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Install - DataQ</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  <link href="../../assets/stylesheets/glightbox.min.css" rel="stylesheet"><script src="../../assets/javascripts/glightbox.min.js"></script><style id="glightbox-style">
+            html.glightbox-open { overflow: initial; height: 100%; }
+            .gslide-title { margin-top: 0px; user-select: text; }
+            .gslide-desc { color: #666; user-select: text; }
+            .gslide-image img { background: white; }
+            .gscrollbar-fixer { padding-right: 15px; }
+            .gdesc-inner { font-size: 0.75rem; }
+            body[data-md-color-scheme="slate"] .gdesc-inner { background: var(--md-default-bg-color); }
+            body[data-md-color-scheme="slate"] .gslide-title { color: var(--md-default-fg-color); }
+            body[data-md-color-scheme="slate"] .gslide-desc { color: var(--md-default-fg-color); }
+        </style></head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#getting-started" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden="">
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="DataQ" class="md-header__button md-logo" aria-label="DataQ" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"></path></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"></path></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            DataQ
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Install
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo" aria-label="Switch to dark mode" type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden="">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"></path></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo" aria-label="Switch to light mode" type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden="">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"></path></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required="">
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"></path></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard="" data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"></path></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix="">
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/TheurgicDuke771/DataQ" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"></path></svg>
+  </div>
+  <div class="md-source__repository">
+    TheurgicDuke771/DataQ
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Get started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guides/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../architecture/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../security/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Security &amp; compliance
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../operate/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Operate
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="DataQ" class="md-nav__button md-logo" aria-label="DataQ" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"></path></svg>
+
+    </a>
+    DataQ
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/TheurgicDuke771/DataQ" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"></path></svg>
+  </div>
+  <div class="md-source__repository">
+    TheurgicDuke771/DataQ
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix="">
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked="">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Get started
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Get started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+      
+        <li class="md-nav__item">
+  <a href="#run-from-prebuilt-images-recommended" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Run from prebuilt images (recommended)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#choosing-an-auth-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Choosing an auth mode
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Choosing an auth mode">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#otp-email-one-time-codes-adr-0032" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        otp — email one-time codes (ADR 0032)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#oidc-self-hosting-with-your-own-identity-provider" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        oidc — self-hosting with your own identity provider
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#develop-from-source" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Develop from source
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#running-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running tests
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../first-suite/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Your first suite
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../concepts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../guides/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Features overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/datasources-checks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Datasources &amp; checks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/scheduling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scheduling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/orchestration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Orchestration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/notifications/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Notifications &amp; alerting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/mcp-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI assistants (MCP)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/api-keys/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API keys (PATs)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/recommended-usage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recommended usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/best-practices/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Best practices
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/feature-matrix/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Feature matrix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/rest-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    REST API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/glossary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Glossary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../architecture/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Decision records (ADRs)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/mcp-honesty/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP tool design (honesty)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/evidence-card/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Incident evidence card
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/perf-baseline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Performance baseline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../security/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security &amp; compliance
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6" id="__nav_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Security &amp; compliance
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security &amp; data handling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_3">
+        
+          
+          <label class="md-nav__link" for="__nav_6_3" id="__nav_6_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compliance
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Compliance
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/compliance/sub-processors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sub-processor disclosure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/compliance/dpia-input-sheet/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DPIA input sheet
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/compliance/data-subject-rights-runbook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data-subject-rights runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/compliance/breach-notification-runbook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Breach-notification runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/compliance/dpa-baa-templates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DPA / BAA templates (counsel-gated)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../operate/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operate
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_7" id="__nav_7_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Operate
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/deployment-parity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment parity (Azure · AWS · Local)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/observability/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Observability
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/runbook-faq/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runbook &amp; FAQ
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+      
+        <li class="md-nav__item">
+  <a href="#run-from-prebuilt-images-recommended" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Run from prebuilt images (recommended)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#choosing-an-auth-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Choosing an auth mode
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Choosing an auth mode">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#otp-email-one-time-codes-adr-0032" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        otp — email one-time codes (ADR 0032)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#oidc-self-hosting-with-your-own-identity-provider" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        oidc — self-hosting with your own identity provider
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#develop-from-source" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Develop from source
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#running-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running tests
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="getting-started">Getting started<a class="headerlink" href="#getting-started" title="Permanent link">¶</a></h1>
+<p>Two tracks, matched to why you're here:</p>
+<ul>
+<li><strong>Run / evaluate / self-host</strong> → pull the prebuilt images (below). Recommended.</li>
+<li><strong>Develop / contribute</strong> → build from source with <code>scripts/setup.sh</code> (<a href="#develop-from-source">further down</a>).</li>
+</ul>
+<h2 id="run-from-prebuilt-images-recommended">Run from prebuilt images (recommended)<a class="headerlink" href="#run-from-prebuilt-images-recommended" title="Permanent link">¶</a></h2>
+<p><a class="glightbox" data-type="image" data-width="auto" data-height="auto" href="../../assets/screenshots/connections-list.png" data-desc-position="bottom"><img alt="After sign-in: the Connections page, where the first thing you add is a datasource" class="screenshot" src="../../assets/screenshots/connections-list.png"></a></p>
+<p><strong>Prerequisite:</strong> Docker (Compose v2). No source checkout, no conda, no Node, no Azure
+tenant.</p>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-O<span class="w"> </span>https://raw.githubusercontent.com/TheurgicDuke771/DataQ/main/docker-compose.ghcr.yml
+<span class="nb">export</span><span class="w"> </span><span class="nv">OPENBAO_TOKEN</span><span class="o">=</span><span class="k">$(</span>openssl<span class="w"> </span>rand<span class="w"> </span>-hex<span class="w"> </span><span class="m">16</span><span class="k">)</span><span class="w">     </span><span class="c1"># root token for the bundled vault</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">DATAQ_SIGNIN_EMAIL</span><span class="o">=</span>you@example.com<span class="w">        </span><span class="c1"># the address allowed to sign in</span>
+docker<span class="w"> </span>compose<span class="w"> </span>-f<span class="w"> </span>docker-compose.ghcr.yml<span class="w"> </span>up
+</code></pre></div>
+<p>This pulls the published images from GHCR and brings up Postgres + Redis + the API +
+Celery worker + the UI + a local mail catcher, runs migrations, and seeds demo data.
+Open <strong><code>http://localhost:3000</code></strong>, type the address you exported, and read the 6-digit
+code in the bundled inbox at <strong><code>http://localhost:8025</code></strong>. API + Swagger at
+<code>http://localhost:8000/docs</code>.</p>
+<ul>
+<li><strong>Sign-in works with no SMTP relay.</strong> The stack bundles its own mailbox
+  (<a href="https://mailpit.axllent.org">Mailpit</a>, MIT), so DataQ's real mailer runs its real
+  SMTP path and the message lands in a web inbox on your machine instead of the
+  internet. No mailbox has to exist; nothing leaves the host.</li>
+<li><strong>Multi-arch:</strong> the images are <code>linux/amd64</code> + <code>linux/arm64</code>, so Apple Silicon runs
+  native (not emulated).</li>
+<li><strong>Loopback-only:</strong> every port binds to <code>127.0.0.1</code> — the stack is reachable from your
+  own machine but never the LAN. That matters more than usual for <code>:8025</code>, which serves
+  live sign-in codes to anyone who can reach it. <strong>Not for production</strong> — a real deploy
+  uses the OpenTofu stack (<code>deploy/terraform/azure</code>, ADR 0024).</li>
+<li><strong>Pin a release</strong> instead of the moving stable tags:
+  <code>DATAQ_BACKEND_TAG=vX.Y.Z DATAQ_FRONTEND_TAG=vX.Y.Z docker compose -f docker-compose.ghcr.yml up</code>.</li>
+<li><strong>Reset:</strong> <code>docker compose -f docker-compose.ghcr.yml down -v</code> (drops the seeded DB).</li>
+<li><strong>Downgrade to no sign-in at all</strong> — deliberate, not a default:
+  <code>DATAQ_SIGNIN_EMAIL= DATAQ_AUTH_MODE=bypass docker compose -f docker-compose.ghcr.yml up</code>.
+  Every request then resolves to one fixed user and anyone who can reach the port is a
+  workspace admin. Omitting <code>DATAQ_SIGNIN_EMAIL</code> entirely does <strong>not</strong> get you this —
+  compose stops and names both options, because a permissive auth posture should be a
+  decision somebody made rather than the one they got by not reading.</li>
+</ul>
+<h2 id="choosing-an-auth-mode">Choosing an auth mode<a class="headerlink" href="#choosing-an-auth-mode" title="Permanent link">¶</a></h2>
+<p>DataQ ships <strong>three</strong> ways to log a human in. They are a ladder — pick the rung that
+fits, but note where the default sits:</p>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>For</th>
+<th>You must bring</th>
+<th>Sign-in looks like</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code>otp</code></strong> ← <em>the default</em></td>
+<td>A small team, or anyone evaluating locally</td>
+<td>an <strong>SMTP relay</strong> in production — <strong>nothing locally</strong>, the compose stacks bundle a mailbox</td>
+<td>you type your address, DataQ emails a 6-digit code, you type it back</td>
+</tr>
+<tr>
+<td><strong><code>oidc</code></strong></td>
+<td>An organisation that already has an IdP</td>
+<td>an <strong>OIDC app registration</strong> (Azure AD, Okta, Keycloak, Cognito, …)</td>
+<td>your normal SSO redirect</td>
+</tr>
+<tr>
+<td><strong><code>bypass</code></strong> ← <em>an explicit downgrade</em></td>
+<td>Throwaway solo work on a machine only you can reach</td>
+<td>nothing</td>
+<td>no sign-in at all — every request resolves to one fixed demo user, who is a workspace admin</td>
+</tr>
+</tbody>
+</table>
+<p><strong><code>otp</code> is what you boot into; <code>bypass</code> is the explicit downgrade.</strong> Both compose stacks
+used to start in <code>bypass</code>, which meant anyone who could reach the port administered a
+tool that stores warehouse credentials — and an eval stack's defaults are the security
+posture people actually run (the same reasoning that moved the default secret store off
+the plaintext one). What made
+<code>otp</code> unusable as a default was the SMTP relay it used to require; the bundled catcher
+removes that, so the only thing left to supply is <em>who</em> is allowed in — one variable,
+<code>DATAQ_SIGNIN_EMAIL</code>, which <code>scripts/setup.sh</code> asks for. Setting it empty is the
+downgrade; leaving it unset stops the stack rather than picking for you.</p>
+<p>The mode is <strong>never inferred</strong>. Anything unrecognised or half-configured renders an
+"authentication not configured" banner rather than quietly falling back to something
+permissive — and the backend refuses to boot on a half-configured OTP block rather than
+coming up unable to log anybody in.</p>
+<p><strong>Two selectors, set them together.</strong> The frontend's <code>DATAQ_AUTH_MODE</code> (injected at
+runtime by nginx — ADR 0028) and the backend's own mode (inferred from its <code>AZURE_*</code> or
+<code>AUTH_EMAIL_*</code> settings) are separate contracts, and <strong>neither can derive the other</strong>.
+Backend OTP on with the frontend on <code>oidc</code> shows an SSO flow against an IdP that isn't
+configured; the reverse shows a code form whose endpoints 503.</p>
+<h3 id="otp-email-one-time-codes-adr-0032"><code>otp</code> — email one-time codes (ADR <a href="../../adr/0032-email-otp-signin/">0032</a>)<a class="headerlink" href="#otp-email-one-time-codes-adr-0032" title="Permanent link">¶</a></h3>
+<p>The default, and the rung for teams that have email but no IdP.</p>
+<p><strong>Locally there is nothing to configure but your address.</strong> Both compose stacks run a
+<a href="https://mailpit.axllent.org">Mailpit</a> container (MIT) as the mailbox: DataQ performs a
+real SMTP submission against it — the same <code>connect → AUTH → send</code> path a production
+relay gets — and the message appears in a web inbox at <code>http://localhost:8025</code>. The
+mailer runs with <code>AUTH_EMAIL_TLS_MODE=none</code> there, which is the plaintext downgrade
+<code>none</code> exists for and is logged loudly on every send: it is correct against a container
+you started on your own machine and wrong against anything else.</p>
+<p><strong>In production you still bring your own relay</strong> — bundling an outbound mailer is a
+deliberate non-goal (direct-to-MX from an arbitrary self-hosted IP gets sign-in codes
+spam-foldered, and a vendor relay would leak sign-in metadata to a third party). Frontend:</p>
+<div class="highlight"><pre><span></span><code>DATAQ_AUTH_MODE=otp
+</code></pre></div>
+<p>Backend — all four mailer values plus <strong>at least one allowlist entry</strong> (there is no open
+registration; DataQ holds failing-row samples, which are PII):</p>
+<div class="highlight"><pre><span></span><code>AUTH_EMAIL_SMTP_HOST=smtp.example.com
+AUTH_EMAIL_SMTP_PORT=587
+AUTH_EMAIL_USERNAME=dataq@example.com
+AUTH_EMAIL_FROM=dataq@example.com
+AUTH_EMAIL_PASSWORD_SECRET_NAME=dataq-smtp     # the VALUE lives in your secret store
+AUTH_OTP_ALLOWED_DOMAINS=example.com           # and/or AUTH_OTP_ALLOWED_EMAILS=...
+WORKSPACE_ADMIN_EMAILS=you@example.com         # bootstrap: your own address
+</code></pre></div>
+<p>Give this block to <strong>both</strong> the api and the worker: the api validates the request and mints the
+code, but the worker is what actually sends the email (the send runs off the request path so a
+slow relay cannot leak who is allow-listed).
+A worker without it logs <code>otp_send_task_failed</code> and no code ever arrives.</p>
+<p>First sign-in: put your own address in <strong>both</strong> the allowlist and <code>WORKSPACE_ADMIN_EMAILS</code>,
+then sign in to your own mailbox. There is no seeded password to rotate.</p>
+<p>The sign-in form is deliberately credential-only — no sign-up step, no name field, per ADR
+0032 — so a first-time OTP user's row has no name yet. The app offers a one-time, skippable
+prompt for one right after that first sign-in. Skipping it is fine — the name is
+cosmetic, never an authz input — and it (or any later change) is always available from
+<strong>Profile</strong>, for every auth mode, not just <code>otp</code>.</p>
+<p>Before letting anyone else in, <strong>prove the mailer works</strong>: as a workspace admin, <code>POST
+/api/v1/admin/auth-email/test</code> sends a real message to your own address and, on failure,
+names the stage that broke (<code>connect</code> / <code>tls</code> / <code>auth</code> / <code>send</code>). Far better to find a bad
+relay here than at a teammate's first sign-in, when the only symptom is a code that never
+arrives. It exercises the <strong>api's</strong> transport block synchronously; the worker sends the real
+codes with its own copy of that block, so if the pre-flight passes and codes still never arrive,
+read the worker log for <code>otp_send_task_failed</code>.</p>
+<p>One consequence worth knowing up front: with no IdP there is no bearer token for <code>/mcp</code> to
+validate, so in this mode <strong>a PAT (<code>dq_live_…</code>) is the only credential MCP accepts</strong>. AI
+clients need <a href="../../guides/api-keys/">an API key</a>; a session cookie will not do.</p>
+<p>Read <a href="../../security/overview/">Security &amp; data handling</a> before enabling it — under OTP <strong>the mailbox
+is the credential</strong>, so mailbox compromise is account compromise. The session is an
+HttpOnly cookie with a fixed 24 h life and no refresh token; signing in again is the
+refresh. Codes expire in 10 minutes, are single-use, and allow 5 attempts.</p>
+<p>The mailer defaults to <strong>SMTP + STARTTLS on 587</strong>, verified against the system trust
+store. Two more transports are available via <code>AUTH_EMAIL_TLS_MODE</code>: <code>implicit</code> for a
+submission relay on <strong>:465</strong> (SMTPS), and <code>none</code> — a deliberate plaintext downgrade,
+logged loudly on every send, for a loopback relay or a throwaway test rig only. An
+internal relay signed by a <strong>private CA</strong> doesn't need the container's whole-process
+trust store touched: point <code>AUTH_EMAIL_CA_BUNDLE</code> at its PEM and only the mailer's own
+connection trusts it. There is no option to skip certificate verification — the bundle
+is the answer to "my relay's cert isn't publicly trusted", not a way around checking it.</p>
+<h3 id="oidc-self-hosting-with-your-own-identity-provider"><code>oidc</code> — self-hosting with your own identity provider<a class="headerlink" href="#oidc-self-hosting-with-your-own-identity-provider" title="Permanent link">¶</a></h3>
+<p>The compose eval runs the frontend with <code>DATAQ_AUTH_MODE=otp</code> against the bundled
+mailbox, which is fine for evaluation and for a team on a trusted network, but is not an
+IdP. The frontend is <strong>one generic image</strong> whose auth config is injected at <strong>runtime</strong>
+(nginx serves <code>/config.js</code> from the <code>DATAQ_AUTH_*</code> env), so the same image goes from eval
+to real SSO with <strong>no rebuild</strong> (ADR 0028):</p>
+<ul>
+<li>As-pulled with no auth env it shows an "authentication not configured" banner. For real
+  SSO, run the same image with <code>DATAQ_AUTH_MODE=oidc</code> + <code>DATAQ_AUTH_AUTHORITY</code>
+  (e.g. <code>https://login.microsoftonline.com/&lt;tenant&gt;/v2.0</code>) + <code>DATAQ_AUTH_CLIENT_ID</code> (your
+  SPA app registration) + <code>DATAQ_AUTH_API_SCOPE</code> (<code>api://&lt;api-client-id&gt;/&lt;scope&gt;</code>), and run
+  the <strong>backend</strong> with <code>AUTH_DEV_BYPASS</code> off + the matching <code>AZURE_*</code> settings. For a
+  non-Azure IdP whose scope vocabulary differs, the optional <code>DATAQ_AUTH_SCOPE</code>
+  replaces the requested scope string entirely — AWS Cognito rejects the default list's
+  <code>offline_access</code>, so a Cognito deployment sets <code>DATAQ_AUTH_SCOPE="openid email profile"</code>
+  (with the backend's <code>OIDC_ISSUER</code> + <code>OIDC_AUDIENCE</code> instead of <code>AZURE_*</code>).</li>
+<li>The frontend reverse-proxies <code>/api</code> + <code>/mcp</code> to the backend at <code>DATAQ_API_UPSTREAM</code>,
+  resolving it via the DNS server it <strong>detects from the container's <code>/etc/resolv.conf</code></strong> at
+  startup — so the one image works on Docker's embedded DNS (Compose) <strong>and</strong> cluster DNS
+  (Kubernetes / Container Apps) without a rebuild.</li>
+<li><strong>MCP</strong> (<code>/mcp</code>) is <strong>fail-closed</strong>: it needs a working sign-in configuration. Under
+  <code>oidc</code> it validates the bearer token; under the eval stack's <code>otp</code> it is served with a
+  <strong>PAT (<code>dq_live_…</code>) as its only credential</strong> (there is no IdP to issue a token, and a
+  session cookie is deliberately rejected) — see <a href="../../guides/api-keys/">API keys</a>.</li>
+</ul>
+<h2 id="develop-from-source">Develop from source<a class="headerlink" href="#develop-from-source" title="Permanent link">¶</a></h2>
+<p><strong>Prerequisites:</strong> <strong>conda</strong> (the backend uses a conda env — not venv/poetry),
+<strong>Docker</strong> + Docker Compose, and <strong>Node 24+ / pnpm 9+</strong> for the frontend.</p>
+<div class="highlight"><pre><span></span><code>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/TheurgicDuke771/DataQ.git
+<span class="nb">cd</span><span class="w"> </span>DataQ
+./scripts/setup.sh<span class="w">     </span><span class="c1"># creates the `dataq` conda env, installs pre-commit, pulls</span>
+<span class="w">                       </span><span class="c1"># images, runs DB migrations, seeds dev data, writes a local .env</span>
+conda<span class="w"> </span>activate<span class="w"> </span>dataq
+docker-compose<span class="w"> </span>up<span class="w">      </span><span class="c1"># Postgres + Redis + FastAPI (:8000) + React (:3000) + Celery</span>
+<span class="w">                       </span><span class="c1">#   + Mailpit (:8025), the local inbox for sign-in codes</span>
+</code></pre></div>
+<p><code>setup.sh</code> asks <strong>which address may sign in</strong> and writes the answer to your gitignored
+<code>.env</code> as <code>DATAQ_SIGNIN_EMAIL</code>. That address is allow-listed <em>and</em> made a workspace
+admin, and you sign in by reading the code at <code>http://localhost:8025</code> — no cloud account
+or IdP, no SMTP relay. Answering blank is the explicit downgrade to <strong>dev-bypass</strong> (no sign-in;
+every request is one fixed dev user), which you can flip either way afterwards by editing
+that one variable and re-running <code>docker compose up</code>.</p>
+<p><strong>Which file wins.</strong> The compose stack sets the whole <code>AUTH_EMAIL_*</code> block in its own
+<code>environment:</code>, which beats <code>env_file:</code> unconditionally — so for the api/worker
+containers <code>.env.app</code> is <strong>ignored for these keys in every state</strong>, including when the
+switch is empty. Putting a real relay in <code>.env.app</code> and clearing the switch does not
+select it; it lands you in dev-bypass. To point the <strong>compose</strong> stack at a real relay,
+keep <code>DATAQ_SIGNIN_EMAIL</code> set and override the same key names in the <strong>root <code>.env</code></strong>:</p>
+<div class="highlight"><pre><span></span><code>DATAQ_SIGNIN_EMAIL=you@example.com
+AUTH_EMAIL_SMTP_HOST=smtp.example.com
+AUTH_EMAIL_TLS_MODE=starttls          # the bundled catcher's default is `none` — plaintext
+</code></pre></div>
+<p><code>.env.app</code> is still the file for <strong>host-side dev</strong> (uvicorn on your own machine, which
+reads it directly), where <code>AUTH_DEV_BYPASS=true</code> applies — point <code>AUTH_EMAIL_SMTP_HOST</code>
+at <code>localhost</code> if you want the catcher there too (Mailpit publishes <code>127.0.0.1:1025</code>).</p>
+<h2 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">¶</a></h2>
+<p>All runtime config is environment variables read by the backend's <code>Settings</code>. The
+<strong>complete, commented reference</strong> is
+<a href="https://github.com/TheurgicDuke771/DataQ/blob/main/.env.app.example"><code>.env.app.example</code></a> —
+copy it to <code>.env.app</code> (gitignored) and adjust. Never commit secrets; <code>scripts/setup.sh</code>
+generates local-dev credentials on first run.</p>
+<h2 id="running-tests">Running tests<a class="headerlink" href="#running-tests" title="Permanent link">¶</a></h2>
+<p>The DB-backed tests need a real Postgres (<code>gen_random_uuid()</code>/jsonb, which SQLite
+can't host); notification tests also need Redis. The suite is ~4,800 tests and growing —
+exact counts below drift with every PR, so treat them as shapes, not contracts. There are
+three ways to run:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># 1. One command — brings up the compose Postgres + Redis, provisions a dedicated</span>
+<span class="c1">#    `dataq_test` DB, runs the whole suite incl. the real-broker E2E (this is what</span>
+<span class="c1">#    CI runs; the script sets DATAQ_E2E=1 for you — see the note below):</span>
+scripts/test-backend.sh<span class="w">                    </span><span class="c1"># → everything passes</span>
+scripts/test-backend.sh<span class="w"> </span>-k<span class="w"> </span>notifications<span class="w">   </span><span class="c1"># extra pytest args pass through</span>
+
+<span class="c1"># 2. Plain pytest — incl. the VS Code / PyCharm test runner. With the compose</span>
+<span class="c1">#    services up, conftest AUTO-DETECTS the local Postgres (from .env, on dataq_test)</span>
+<span class="c1">#    so the DB tests run — no env vars, no wrapper. The one real-broker E2E test</span>
+<span class="c1">#    still skips here (see the note below):</span>
+docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> </span>-d<span class="w"> </span>postgres<span class="w"> </span>redis
+conda<span class="w"> </span>run<span class="w"> </span>-n<span class="w"> </span>dataq<span class="w"> </span>python<span class="w"> </span>-m<span class="w"> </span>pytest<span class="w"> </span>backend/tests<span class="w">           </span><span class="c1"># → all pass, 1 skipped</span>
+
+<span class="c1"># 3. No services at all — the DB-backed tests skip, the pure-unit suite still runs green:</span>
+conda<span class="w"> </span>run<span class="w"> </span>-n<span class="w"> </span>dataq<span class="w"> </span>python<span class="w"> </span>-m<span class="w"> </span>pytest<span class="w"> </span>backend/tests<span class="w">           </span><span class="c1"># → passes with the DB tests skipped</span>
+
+<span class="c1"># Frontend:</span>
+<span class="nb">cd</span><span class="w"> </span>frontend<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>pnpm<span class="w"> </span><span class="nb">test</span>
+</code></pre></div>
+<blockquote>
+<p>The auto-detect is safe: it only kicks in when <code>TEST_DATABASE_URL</code> is unset, targets a
+<strong>separate <code>dataq_test</code> database</strong> (your dev DB + seed data are untouched), and is a
+no-op in CI (which sets <code>TEST_DATABASE_URL</code> explicitly). The <strong>one</strong> test that needs an
+extra, EXPLICIT opt-in is the real-infra E2E (<code>test_probe_e2e</code>) — it spins up a live
+Celery worker + broker and does real commits/TRUNCATEs, so it requires <code>DATAQ_E2E=1</code>
+alongside <code>DATABASE_URL</code> + <code>REDIS_URL</code> (not merely the latter two): conftest's
+auto-detect above means <code>DATABASE_URL</code> alone is no longer a reliably deliberate signal,
+so a fourth, conftest-never-sets-it-for-you flag keeps this one test a conscious choice.
+<code>scripts/test-backend.sh</code> and CI both set it; a bare <code>pytest</code> does not.</p>
+</blockquote>
+<p>Before pushing, run the same gate CI does: Ruff, Black <code>--check</code>, mypy, Bandit, pytest
+(backend) and ESLint, Prettier <code>--check</code>, Vitest (frontend). See the
+<strong><a href="../../architecture/contributing/">Contributing guide</a></strong>.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden="">
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"></path></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer">
+        
+          
+          <a href="../" class="md-footer__link md-footer__link--prev" aria-label="Previous: Get started">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"></path></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Get started
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../first-suite/" class="md-footer__link md-footer__link--next" aria-label="Next: Your first suite">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Your first suite
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"></path></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.indexes", "navigation.sections", "navigation.top", "navigation.tracking", "navigation.instant", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.tabs.link", "search.share"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  
+<script id="init-glightbox">const lightbox = GLightbox({"touchNavigation": true, "loop": false, "zoomable": true, "draggable": true, "openEffect": "zoom", "closeEffect": "zoom", "slideEffect": "slide"});
+document$.subscribe(()=>{ lightbox.reload(); });
+</script></body></html>

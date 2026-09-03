@@ -1,0 +1,2457 @@
+<!DOCTYPE html><html lang="en" class="no-js"><head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="DataQ — a single-tenant data-quality monitoring platform built on Great Expectations. User-friendly guides + developer references.">
+      
+      
+      
+        <link rel="canonical" href="https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0008-mcp-server/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>ADR 0008 — FastMCP server mounted at /mcp, Azure AD token-validated, all-tools - DataQ</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  <link href="../../assets/stylesheets/glightbox.min.css" rel="stylesheet"><script src="../../assets/javascripts/glightbox.min.js"></script><style id="glightbox-style">
+            html.glightbox-open { overflow: initial; height: 100%; }
+            .gslide-title { margin-top: 0px; user-select: text; }
+            .gslide-desc { color: #666; user-select: text; }
+            .gslide-image img { background: white; }
+            .gscrollbar-fixer { padding-right: 15px; }
+            .gdesc-inner { font-size: 0.75rem; }
+            body[data-md-color-scheme="slate"] .gdesc-inner { background: var(--md-default-bg-color); }
+            body[data-md-color-scheme="slate"] .gslide-title { color: var(--md-default-fg-color); }
+            body[data-md-color-scheme="slate"] .gslide-desc { color: var(--md-default-fg-color); }
+        </style></head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#adr-0008-fastmcp-server-mounted-at-mcp-azure-ad-token-validated-all-tools" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden="">
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="DataQ" class="md-header__button md-logo" aria-label="DataQ" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"></path></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"></path></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            DataQ
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              ADR 0008 — FastMCP server mounted at /mcp, Azure AD token-validated, all-tools
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo" aria-label="Switch to dark mode" type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden="">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"></path></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo" aria-label="Switch to light mode" type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden="">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"></path></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required="">
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"></path></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard="" data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"></path></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix="">
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/TheurgicDuke771/DataQ" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"></path></svg>
+  </div>
+  <div class="md-source__repository">
+    TheurgicDuke771/DataQ
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../get-started/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Get started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guides/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../architecture/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../security/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Security &amp; compliance
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../operate/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Operate
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="DataQ" class="md-nav__button md-logo" aria-label="DataQ" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"></path></svg>
+
+    </a>
+    DataQ
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/TheurgicDuke771/DataQ" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"></path></svg>
+  </div>
+  <div class="md-source__repository">
+    TheurgicDuke771/DataQ
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix="">
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../get-started/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Get started
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Get started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../get-started/install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../get-started/first-suite/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Your first suite
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../get-started/concepts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../guides/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Features overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/datasources-checks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Datasources &amp; checks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/scheduling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scheduling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/orchestration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Orchestration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/notifications/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Notifications &amp; alerting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/mcp-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI assistants (MCP)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/api-keys/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API keys (PATs)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/recommended-usage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recommended usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/best-practices/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Best practices
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/feature-matrix/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Feature matrix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/rest-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    REST API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/glossary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Glossary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../architecture/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Decision records (ADRs)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/mcp-honesty/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP tool design (honesty)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/evidence-card/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Incident evidence card
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/perf-baseline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Performance baseline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../security/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security &amp; compliance
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6" id="__nav_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Security &amp; compliance
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security &amp; data handling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_3">
+        
+          
+          <label class="md-nav__link" for="__nav_6_3" id="__nav_6_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compliance
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Compliance
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/compliance/sub-processors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sub-processor disclosure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/compliance/dpia-input-sheet/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DPIA input sheet
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/compliance/data-subject-rights-runbook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data-subject-rights runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/compliance/breach-notification-runbook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Breach-notification runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/compliance/dpa-baa-templates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DPA / BAA templates (counsel-gated)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../operate/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operate
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_7" id="__nav_7_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Operate
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/deployment-parity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment parity (Azure · AWS · Local)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/observability/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Observability
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/runbook-faq/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runbook &amp; FAQ
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+      
+        <li class="md-nav__item">
+  <a href="#context" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Context
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#decision" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#consequences" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Consequences
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#alternatives-considered" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Alternatives considered
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#amendment-tier-1-expansion-to-19-tools-2026-08-17" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Amendment — Tier 1 expansion to 19 tools (2026-08-17)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#amendment-tier-2-expansion-to-30-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Amendment — Tier 2 expansion to 30 tools
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#amendment-tier-3a-coherence-tools-30-33-2026-08-17" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Amendment — Tier 3A coherence tools, 30 → 33 (2026-08-17)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#amendment-tier-3a-batch-2-33-38-2026-08-17" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Amendment — Tier 3A batch 2, 33 → 38 (2026-08-17)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#amendment-tier-3b-batch-1-38-42-2026-08-17" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Amendment — Tier 3B batch 1, 38 → 42 (2026-08-17)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#amendment-tier-3b-batch-2-42-46-2026-08-17" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Amendment — Tier 3B batch 2, 42 → 46 (2026-08-17)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#amendment-get_adf_pipeline_status-renamed-to-get_pipeline_status-46-47" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Amendment — get_adf_pipeline_status renamed to get_pipeline_status, 46 → 47
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#amendment-get_doc-added-47-48" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Amendment — get_doc added, 47 → 48
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="adr-0008-fastmcp-server-mounted-at-mcp-azure-ad-token-validated-all-tools">ADR 0008 — FastMCP server mounted at <code>/mcp</code>, Azure AD token-validated, all-tools<a class="headerlink" href="#adr-0008-fastmcp-server-mounted-at-mcp-azure-ad-token-validated-all-tools" title="Permanent link">¶</a></h1>
+<ul>
+<li><strong>Status:</strong> Accepted</li>
+<li><strong>Date:</strong> 2026-06-29</li>
+<li><strong>Deciders:</strong> @TheurgicDuke771</li>
+<li><strong>Related:</strong> ADR <a href="../0003-gx-only-for-v1/">0003</a> (unified suite/check/result model the tools read), <a href="../0010-provider-agnostic-infrastructure-seams/">0010</a> / <a href="../0013-marketplace-distribution-and-anti-lock-in/">0013</a> (generic <code>get_current_user</code>; no Azure claim-reading in business logic), CLAUDE.md §10 (MCP tool descriptions are LLM-facing)</li>
+</ul>
+<h2 id="context">Context<a class="headerlink" href="#context" title="Permanent link">¶</a></h2>
+<p>Week 7 calls for a FastMCP server exposing 8 curated tools at <code>/mcp</code>, reachable from Claude Desktop / Claude.ai / Copilot / Cursor. Three design questions had to be settled against the <em>installed</em> library (<code>fastmcp</code> v3, not the v2 API the roadmap snippet assumed):</p>
+<ol>
+<li><strong>How to mount</strong> into the existing FastAPI app.</li>
+<li><strong>How to authenticate</strong> — reusing the same Azure AD bearer token the web UI already carries, not a second login.</li>
+<li><strong>Tools vs resources</strong> for the 4 read operations the roadmap labelled "resource".</li>
+</ol>
+<h2 id="decision">Decision<a class="headerlink" href="#decision" title="Permanent link">¶</a></h2>
+<p><strong>Mount</strong> — <code>mcp.http_app(path="/")</code> returns an ASGI app mounted at <code>/mcp</code>. Its streamable-http session manager needs its lifespan run, so the app's own startup is combined with it via <code>combine_lifespans(lifespan, mcp_app.lifespan)</code> (fastmcp's documented FastAPI pattern). The roadmap's <code>get_asgi_app()</code> is a stale v2 name.</p>
+<p><strong>Auth</strong> — a fastmcp <code>JWTVerifier</code> configured from the <em>same</em> tenant / audience / scope as <code>core.auth</code>: Azure JWKS (<code>https://login.microsoftonline.com/{tenant}/discovery/v2.0/keys</code>), issuer (<code>…/v2.0</code>), audience = the API app's client id, required scope = <code>azure_api_scope</code>. This validates the identical token the REST API accepts, without depending on <code>fastapi-azure-auth</code> internals (a Starlette-request-bound dependency that can't verify a raw token string). The full OAuth <code>AzureProvider</code> was rejected — it drives an authorization-code flow and needs a client secret; clients already hold a token. Inside a tool the validated claims (<code>oid</code>, <code>preferred_username</code>, <code>name</code>) resolve + upsert the <code>User</code> via the shared <code>core.auth._upsert_user</code>, so the row is identical to a web-UI login and queries scope by the generic user id (no Azure claim read in service code — ADR 0010/0013).</p>
+<p><strong>Two modes + fail-closed</strong> — real Azure mode uses the <code>JWTVerifier</code>; local <strong>dev-bypass</strong> (<code>ENVIRONMENT=dev</code> + <code>AUTH_DEV_BYPASS=true</code>, no Azure vars) mounts unauthenticated and resolves the fixed dev user, exactly like the REST API. If <strong>neither</strong> is configured the server is <strong>not mounted at all</strong> — <code>/mcp</code> never goes live without auth (CLAUDE.md §10 security note).</p>
+<p><strong>All 8 are MCP <code>tools</code>, not <code>resources</code></strong> — despite the roadmap labelling 4 as "resource". An LLM client invokes <em>tools</em> from natural language; fastmcp resource-templates with required arguments aren't reliably auto-called. The acceptance bar is "Claude answers the canonical NL queries" (<code>what failed today?</code> / <code>run the orders suite on DEV</code> / <code>why did the customer pipeline fail?</code> / <code>add a null check on email</code>), which is best served by tools. Read tools (<code>list_suites</code>, <code>get_suite_results</code>, <code>get_health_score</code>, <code>get_adf_pipeline_status</code>) + action tools (<code>trigger_suite_run</code>, <code>get_run_status</code>, <code>create_check</code>, <code>profile_column</code>).</p>
+<p><strong>No logic duplication</strong> — each tool is a thin wrapper: open a session → resolve the caller → call the same service function with the same <code>require_permission</code> / <code>accessible_suite_ids</code> authz the REST routers use → return an LLM-shaped dict. <code>get_suite_results</code> reuses <code>run_service.redact_sample_failures</code> so failing-row PII is masked exactly as in the REST results path.</p>
+<h2 id="consequences">Consequences<a class="headerlink" href="#consequences" title="Permanent link">¶</a></h2>
+<ul>
+<li>The MCP surface inherits per-suite sharing, existence-hiding, and sample redaction for free — there is one authz + redaction implementation, not two.</li>
+<li>The <code>JWTVerifier</code> audience assumes a v2 token whose <code>aud</code> is the API client id (the single-tenant config <code>core.auth</code> uses); the deferred "test end-to-end with Claude Desktop" task validates this against a live token, since it needs the deployed tenant.</li>
+<li>Tool bodies remain plain, directly-callable functions (the <code>@mcp.tool</code> decorator returns the function unchanged), so they're unit-tested by calling them with a test session + a stub user — no MCP transport needed.</li>
+<li>The roadmap's resource/tool split is superseded here; the progress ledger's "Resource: X" items are delivered as tools.</li>
+</ul>
+<h2 id="alternatives-considered">Alternatives considered<a class="headerlink" href="#alternatives-considered" title="Permanent link">¶</a></h2>
+<ul>
+<li><strong><code>AzureProvider</code> (full OAuth)</strong> — rejected: needs a client secret and an auth-code/redirect flow; clients already present a token.</li>
+<li><strong>Bridge to <code>fastapi-azure-auth</code></strong> by faking a Starlette <code>Request</code> — rejected as brittle coupling to that library's request-bound internals; <code>JWTVerifier</code> is the clean, documented path and validates the same token.</li>
+<li><strong>Resources for the reads</strong> — rejected for LLM invocability (above); revisit if a client surfaces resources usefully.</li>
+</ul>
+<h2 id="amendment-tier-1-expansion-to-19-tools-2026-08-17">Amendment — Tier 1 expansion to 19 tools (2026-08-17)<a class="headerlink" href="#amendment-tier-1-expansion-to-19-tools-2026-08-17" title="Permanent link">¶</a></h2>
+<p>The original 8 tools were deliberately the smallest set that answered the roadmap's canonical
+NL queries. <a href="https://github.com/TheurgicDuke771/DataQ/blob/main/context/post-v1-roadmap.md"><code>context/post-v1-roadmap.md</code></a> Theme 13 catalogued
+the rest of the REST surface as MCP candidates, tiered by risk. This amendment ships <strong>Tier 1 —
+high-value safe reads</strong> in full: <code>list_checks</code>, <code>get_check</code>, <code>get_check_history</code>, <code>list_runs</code>,
+<code>get_run_results</code>, <code>list_connections</code>, <code>list_schedules</code>, <code>list_trigger_bindings</code>,
+<code>get_notification_config</code>, <code>get_suite_performance</code>, <code>export_suite</code> — bringing the server to
+<strong>19 tools: 17 read-only, 2 mutating</strong> (the original <code>trigger_suite_run</code> and <code>create_check</code>).</p>
+<p><strong>The decision above is unchanged, not revisited.</strong> Every new tool is the same thin wrapper this
+ADR already describes — open a session, resolve the caller, call the same service function,
+return an LLM-shaped dict. No new authz path was introduced; each tool reuses whichever gate its
+REST counterpart already applies, which is deliberately <strong>not</strong> uniform:</p>
+<ul>
+<li><strong>Suite-scoped reads</strong> (<code>list_checks</code>, <code>get_check</code>, <code>get_check_history</code>, <code>get_run_results</code>,
+  <code>get_notification_config</code>, <code>export_suite</code>) gate on <code>suite_authz.require_permission(minimum="view")</code>,
+  so ADR 0027 per-suite sharing and the ADR 0033 Viewer clamp apply exactly as on the original 8.</li>
+<li><strong>Suite-scoped lists</strong> (<code>list_runs</code>, <code>list_schedules</code>, <code>list_trigger_bindings</code>) scope through
+  <code>suite_service.accessible_suite_ids</code> — with the workspace-admin view where their REST route has
+  it — and additionally call <code>require_permission</code> up front when the optional <code>suite_id</code> is given,
+  so naming a suite you cannot see is an error rather than an empty list.</li>
+<li><strong><code>get_suite_performance</code></strong> is scoped by the dashboard's own accessible-suite subquery.</li>
+<li><strong><code>list_connections</code> calls neither</strong>, because connections are workspace-scoped rather than
+  suite-scoped — the same rule its REST route follows. That is why what it <em>returns</em> is
+  constrained instead (below); the ADR 0033 role axis gates connection <strong>mutations</strong>, and MCP
+  deliberately has none.</li>
+</ul>
+<p>Three standing exclusions carried forward, made explicit because Tier 1 sits right next to them:</p>
+<ul>
+<li><strong><code>list_connections</code> is workspace-scoped and returns metadata + health only</strong> — id, name,
+  type, env, whether a credential is stored, and health signals. It never returns a
+  connection's configuration (account identifiers, hosts, paths) or a secret reference.</li>
+<li><strong><code>get_notification_config</code> reports channel presence, never webhook URLs.</strong> A webhook URL is
+  itself a bearer credential; the tool answers "is Teams/Slack/email wired up, and from where"
+  without ever resolving the secret.</li>
+<li><strong>Connection create/update/reauth remain excluded</strong> — a credential must never transit an LLM.
+  This was true before Tier 1 and stays true after it; no mutating connection tool exists.</li>
+</ul>
+<p><strong>Tier 2</strong> (mutating, edit-permission-gated: <code>dryrun_check</code>, <code>update_check</code>/<code>delete_check</code>,
+<code>snooze_check</code>, <code>cancel_run</code>, schedule/trigger-binding CRUD, <code>import_suite</code>, <code>test_connection</code>,
+etc. — see the roadmap's Theme 13 table) stays deferred; nothing in this amendment ships it.</p>
+<h2 id="amendment-tier-2-expansion-to-30-tools">Amendment — Tier 2 expansion to 30 tools<a class="headerlink" href="#amendment-tier-2-expansion-to-30-tools" title="Permanent link">¶</a></h2>
+<p>This amendment ships the <strong>Tier 2</strong> set deferred above, in full: <code>update_check</code>, <code>delete_check</code>,
+<code>snooze_check</code>, <code>dryrun_check</code>, <code>cancel_run</code>, <code>create_schedule</code>, <code>delete_schedule</code>,
+<code>create_trigger_binding</code>, <code>suggest_column_policy</code>, <code>test_connection</code>, <code>import_suite</code> — 11 new
+tools, bringing the server to <strong>30 tools total</strong>. Theme 13 is now fully delivered.</p>
+<p><strong>The decision above is still unchanged.</strong> Every Tier 2 tool is the same thin wrapper — open a
+session, resolve the caller, call the same service function, return an LLM-shaped dict — reusing
+whichever gate its REST counterpart already applies.</p>
+<p><strong>The 30 tools split three ways, and the split is deliberately not "read vs mutate":</strong></p>
+<ul>
+<li><strong>16 read-only</strong> — <strong>one fewer than the 17 the Tier 1 amendment above states.</strong>
+  <code>profile_column</code> was reclassified out of read-only when the gate table was built: it
+  persists nothing, but it opens a live datasource with stored credentials and had always gated
+  on <code>edit</code>. The behaviour did not change; the label was wrong, and a comment could not catch it.</li>
+<li><strong>10 that change state</strong> — <code>create_check</code>, <code>update_check</code>, <code>delete_check</code>, <code>snooze_check</code>,
+  <code>trigger_suite_run</code>, <code>cancel_run</code>, <code>create_schedule</code>, <code>delete_schedule</code>,
+  <code>create_trigger_binding</code>, <code>import_suite</code>. All except <code>import_suite</code> gate on
+  <code>suite_authz.require_permission</code> (<code>minimum="edit"</code>) against the suite they act on, so per-suite
+  sharing (ADR 0027) and the ADR 0033 Viewer read-only clamp apply exactly as on every existing
+  mutating tool. <strong><code>import_suite</code> is the exception</strong>: it <em>creates</em> a suite, so there is no
+  existing resource whose ladder could gate it — it takes the coarse <code>role:member</code> gate below.</li>
+<li><strong>4 that persist nothing but open a live datasource connection using stored credentials</strong> —
+  <code>profile_column</code>, <code>dryrun_check</code>, <code>suggest_column_policy</code>, <code>test_connection</code>. None of these
+  write a row, but all four spend a real credential against a remote system, which is not a
+  read-only action even though nothing is saved. <code>profile_column</code>, <code>dryrun_check</code> and
+  <code>suggest_column_policy</code> are suite-scoped and gate on <code>require_permission(minimum="edit")</code> like
+  a write. <code>test_connection</code> has no suite to gate on at all — a connection is workspace-scoped,
+  not suite-scoped — so it gates on the <strong>coarse</strong> axis instead: <code>server._require_role(user,
+  "member")</code>, the MCP-side twin of <code>core.auth.require_role</code> (ADR 0033), asserting the caller
+  holds at least the <code>member</code> workspace role. <code>import_suite</code> gates the same way, for the
+  symmetric reason: creating a suite has no <em>existing</em> suite to check permission against either.</li>
+</ul>
+<p><strong>MCP exposes no admin-only tool at all.</strong> Every Admin-only capability in ADR 0033's
+authorization matrix is a connection <em>mutation</em> — create, edit, delete, re-auth — and none of
+those are exposed here, before or after this amendment: a credential must never transit an LLM.
+<code>test_connection</code> is the closest any tool comes to touching a connection, and it deliberately
+stops at reporting whether the live probe succeeded; it never returns a credential or a secret
+reference, matching the standing exclusions the Tier 1 amendment already recorded for
+<code>list_connections</code> and <code>get_notification_config</code>.</p>
+<p>The three standing exclusions from the Tier 1 amendment are unaffected and still hold in full.</p>
+<h2 id="amendment-tier-3a-coherence-tools-30-33-2026-08-17">Amendment — Tier 3A coherence tools, 30 → 33 (2026-08-17)<a class="headerlink" href="#amendment-tier-3a-coherence-tools-30-33-2026-08-17" title="Permanent link">¶</a></h2>
+<p>Three tools that close <strong>dead-ends in the existing surface</strong> rather than adding reach:
+<code>update_suite</code>, <code>get_column_policy</code>, <code>set_column_policy</code>. The split becomes
+<strong>33 tools: 17 read-only, 12 that change state, 4 live-probe</strong>.</p>
+<p>They exist because two shipped tools could not finish their own job:</p>
+<ul>
+<li><code>import_suite</code> creates a suite with <strong>no run target</strong>, and <code>trigger_suite_run</code> fails fast
+  without one — so an assistant could create a suite it had no way to make runnable.
+  <code>update_suite</code> sets the target (validated through the same <code>SuiteTarget</code> model the REST route
+  uses) and reports <code>runnable</code> explicitly. It also fires the same <code>dispatch_auto_classify</code> the
+  REST route does, so a suite made runnable here still derives a redaction policy.</li>
+<li><code>suggest_column_policy</code> could propose a policy that nothing could read back or apply.</li>
+</ul>
+<p>All three gate on <code>suite_authz.require_permission</code> against an existing suite, so no new authz
+path is introduced and <code>tests/support/mcp_gates.GATES</code> picks them up in the four sweeps.</p>
+<p>The exclusions are unchanged. <code>DELETE /suites/{id}</code> is now <strong>explicitly</strong> excluded as well: it
+cascades every run and result the suite ever produced, and unlike <code>delete_check</code> there is no
+lesser action to steer an assistant toward.</p>
+<h2 id="amendment-tier-3a-batch-2-33-38-2026-08-17">Amendment — Tier 3A batch 2, 33 → 38 (2026-08-17)<a class="headerlink" href="#amendment-tier-3a-batch-2-33-38-2026-08-17" title="Permanent link">¶</a></h2>
+<p>Five more coherence tools, closing the last three <strong>asymmetric-verb pairs</strong> in the surface:
+<code>update_schedule</code>, <code>update_trigger_binding</code>, <code>delete_trigger_binding</code>, <code>list_check_versions</code>,
+<code>restore_check_version</code>. The split becomes <strong>38 tools: 18 read-only, 16 that change state,
+4 live-probe</strong>.</p>
+<p>Each pair was create-without-update, or create-without-delete, or a mutation with no way to
+inspect or undo it:</p>
+<ul>
+<li><code>create_schedule</code> + <code>delete_schedule</code> with no update meant "pause the nightly run" had only
+  one available answer — <em>delete it</em> — which discards the cron expression the user would need to
+  restore it. <code>update_schedule</code> makes pause a first-class, reversible action, and both tools now
+  point at each other so the destructive one is not chosen by default.</li>
+<li><code>create_trigger_binding</code> had neither a delete nor a disable, so an assistant could wire a
+  trigger and then had no way to unwire it.</li>
+<li><code>update_check</code> / <code>delete_check</code> snapshot every edit into <code>check_versions</code>, and none of that was
+  readable over MCP. <code>list_check_versions</code> exposes the edit history — deliberately distinct from
+  <code>get_check_history</code>'s <em>result</em> history, with both docstrings cross-referencing the other, since
+  "did this start failing because the data moved or because someone changed the check?" needs
+  both and the names are otherwise easy to confuse.</li>
+<li><code>restore_check_version</code> is also the <strong>only</strong> path that can clear a field back to empty:
+  <code>update_check</code>'s PATCH convention reads an omitted argument as "leave alone", so it structurally
+  cannot. That correction was applied to <code>update_check</code>'s own docstring, which had said
+  recreating the check was the only option.</li>
+</ul>
+<p>All five gate through <code>require_permission</code> on the owning suite (the schedule and binding tools
+resolve it from the row), so again no new authz path. The gate rows in
+<code>tests/support/mcp_gates.GATES</code> drive the four sweeps as before — with one trap worth recording:
+<code>restore_check_version</code> takes a <code>version_no</code>, and a probe check inserted directly rather than
+through <code>check_service</code> has <strong>no version rows</strong>, so the tool raised "check version not found"
+<em>before</em> reaching authz and the sweep passed with the gate deleted. That is the same vacuous-pass
+shape <code>_REAL_RUN</code> and <code>_REAL_CHECK</code> were each added to close, one level deeper; the fix inserts a
+real <code>CheckVersion</code> alongside the check. Every gate here was mutation-verified by removing it and
+confirming the sweep goes red.</p>
+<p>The exclusions are unchanged.</p>
+<h2 id="amendment-tier-3b-batch-1-38-42-2026-08-17">Amendment — Tier 3B batch 1, 38 → 42 (2026-08-17)<a class="headerlink" href="#amendment-tier-3b-batch-1-38-42-2026-08-17" title="Permanent link">¶</a></h2>
+<p>Four read-only tools over the <strong>asset and incident</strong> surfaces — <code>list_assets</code>, <code>get_asset</code>,
+<code>list_incidents</code>, <code>get_incident</code>. The split becomes <strong>42 tools: 22 read-only, 16 that change
+state, 4 live-probe</strong>.</p>
+<p>Unlike Tier 3A, this is not coherence — it is a capability gap the earlier tiering pass never
+evaluated, because that pass was written on 2026-07-04 and assets, lineage and incidents shipped
+on 2026-07-10/11. It is also the grain users actually reason in: "is <code>orders</code> healthy?" is an
+<em>asset</em> question, and answering it from suites alone requires knowing which suites target the
+table, which is exactly what the asset view exists to remove.</p>
+<p><strong>Two scoping rules had to be carried into the docstrings, not just the code.</strong></p>
+<ul>
+<li>The asset rollup is <strong>workspace-true</strong> (ADR <a href="../0037-workspace-visible-asset-identity/">0037</a>):
+  <code>list_visible_assets</code> takes no user and aggregates over ALL composing suites. That is the
+  established REST decision and is mirrored unchanged — but a model handed a health number with
+  no caveat will describe it as covering what the caller can see. <code>get_asset</code> therefore reports
+  <code>restricted_suite_count</code> beside the grant-filtered <code>suites</code> list, and both docstrings state the
+  split explicitly.</li>
+<li>Incidents stay <strong>behind suite grants</strong> (also ADR 0037, deliberately unchanged there): they are
+  itemized failure evidence, not identity. <code>get_incident</code> is 404-no-leak.</li>
+</ul>
+<p>That second rule is why <code>incident:view</code> is a <strong>new gate value</strong> in <code>mcp_gates.GATES</code> rather than
+<code>suite:view</code>: the tool takes an <em>incident</em> id and resolves the ladder through the incident's
+suite, so the RBAC sweep needs a real incident materialised on the probe suite. A fabricated id
+raises "incident not found" — an accepted denial word — and the sweep would have passed with the
+gate deleted, the same vacuous-pass shape as <code>_REAL_RUN</code> / <code>_REAL_CHECK</code> / the Tier-3A
+<code>CheckVersion</code> trap. Both new gates were mutation-verified by removing them and confirming the
+sweep goes red.</p>
+<p>The 404-no-leak rule itself moved <strong>out of the HTTP layer</strong> into
+<code>incident_service.load_visible_incident</code>, so REST and MCP share one implementation. A second
+hand-written copy of the only thing standing between an incident's evidence and an ungranted
+caller is the "guard applied at one door and not its sibling" shape this track has hit
+repeatedly, and the divergence would be invisible until it leaked.</p>
+<p>Three honesty fields exist because the underlying value is true and misleading on its own:
+<code>monitored</code> (an asset with no suite has <code>worst_severity: null</code>, which reads as a clean bill of
+health for something nothing checks), <code>truncated</code> (computed against the real total, since
+<code>len(page) == limit</code> is wrong on the exact-boundary page), and <code>lineage.qualified_by</code> (an empty
+graph behind a failing poller must never read as "nothing feeds this table" — a known confident-wrong-answer failure mode).</p>
+<p>The exclusions are unchanged. <code>PATCH /assets/{id}</code> is <strong>not</strong> exposed: it is workspace-Admin-only
+(ADR 0034 §4), and MCP exposing no admin-only tool at all remains an asserted invariant.</p>
+<h2 id="amendment-tier-3b-batch-2-42-46-2026-08-17">Amendment — Tier 3B batch 2, 42 → 46 (2026-08-17)<a class="headerlink" href="#amendment-tier-3b-batch-2-42-46-2026-08-17" title="Permanent link">¶</a></h2>
+<p><code>ack_incident</code>, <code>resolve_incident</code>, <code>list_columns</code>, <code>get_near_misses</code>. The split becomes
+<strong>46 tools: 23 read-only, 18 that change state, 5 live-probe</strong>. Tier 3B is complete.</p>
+<p><code>list_columns</code> is classified as a <strong>live probe</strong>, not a read, for the <code>profile_column</code> reason
+exactly: it persists nothing but opens a live datasource connection with the stored credential,
+so it gates on <code>edit</code>. It is also the cheap authoring step the surface was missing —
+<code>profile_column</code> reads data to compute statistics when the question was only "what are the column
+names?", and a guessed column produces a check that runs and errors.</p>
+<p><code>get_near_misses</code> closes a loop <code>create_trigger_binding</code> opened: that tool <em>warns</em> about an
+environment mismatch it has no way to investigate, and before this route existed the only way to
+see one was a direct database query. Its docstring states the asymmetry explicitly — an empty result does
+<strong>not</strong> prove a binding is firing, only that no mismatch was observed.</p>
+<p><strong>The two lifecycle verbs required the most docstring care in the batch, because both are
+statements about the incident and neither touches the data.</strong> Acknowledging does not stop
+alerting (the check still runs, still fails, still notifies) and points at <code>snooze_check</code> for
+what a user asking to "silence it" usually means. Resolving re-runs nothing and fixes nothing: if
+the underlying problem persists, the next failing run opens a <strong>new</strong> incident, since a resolved
+incident is never reopened — so the tool steers toward <code>trigger_suite_run</code> to confirm a fix
+rather than resolving on an assumption. Both refuse the closed-state transition (the service's
+<code>IncidentNotActiveError</code>) instead of silently no-opping, which would let an assistant report an
+action that never happened.</p>
+<p>One harness finding is worth recording: <code>SuiteForbiddenError</code> from <code>load_visible_incident</code> names
+the required level ("requires 'edit' on its suite") and matched <strong>none</strong> of the RBAC sweep's
+accepted-denial vocabulary, so a correctly-denied tool failed the sweep for looking like the
+wrong kind of failure. That exact phrase was added — deliberately not a loose word like
+"requires", because anything that also matches an argument-validation message would let a
+gateless tool pass by failing for the wrong reason. Every gate in this batch was mutation-
+verified.</p>
+<p>The exclusions are unchanged.</p>
+<h2 id="amendment-get_adf_pipeline_status-renamed-to-get_pipeline_status-46-47">Amendment — <code>get_adf_pipeline_status</code> renamed to <code>get_pipeline_status</code>, 46 → 47<a class="headerlink" href="#amendment-get_adf_pipeline_status-renamed-to-get_pipeline_status-46-47" title="Permanent link">¶</a></h2>
+<p>The name predated dbt (ADR 0029) and Airflow support and was never ADF-only — it always covered
+ADF, Airflow and dbt. Renamed to <code>get_pipeline_status</code>, which states its actual scope. The old
+name stays registered as a deprecated, behaviorally-identical alias (a plain delegate — same
+arguments, same validation, same return shape) so a client with it pinned in a saved prompt or
+static config does not break. The split becomes <strong>47 tools: 24 read-only, 18 that change state, 5
+live-probe</strong> — the extra tool is the alias, not new capability.</p>
+<h2 id="amendment-get_doc-added-47-48">Amendment — <code>get_doc</code> added, 47 → 48<a class="headerlink" href="#amendment-get_doc-added-47-48" title="Permanent link">¶</a></h2>
+<p>A read-only tool exposing DataQ's own published docs pages (<code>docs/site/</code>) to an AI client, so a
+question like "how does DataQ handle X" can be answered from the curated docs rather than the
+model guessing or an assistant grepping the repo. A hand-scanned allowlist (five top-level pages
+plus every <code>compliance/*.md</code> page) is walked live at call time — the same "declare as data, not
+as code comments" shape <code>mcp_gates.GATES</code> itself enforces — and deliberately excludes ADRs and
+<code>architecture.md</code> (contributor design-rationale, not this tool's audience). Returns the page
+verbatim, no summarization; an unrecognized <code>page</code> restates the current valid list, and the
+parameter's own JSON-schema <code>enum</code> carries the live catalog, so a client sees the full valid set
+on every turn with no companion <code>list_doc_pages()</code> tool needed. Workspace-agnostic — no per-suite
+or per-workspace gate, since these pages carry no tenant data. The split becomes <strong>48 tools: 25
+read-only, 18 that change state, 5 live-probe</strong>.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden="">
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"></path></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.indexes", "navigation.sections", "navigation.top", "navigation.tracking", "navigation.instant", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.tabs.link", "search.share"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  
+<script id="init-glightbox">const lightbox = GLightbox({"touchNavigation": true, "loop": false, "zoomable": true, "draggable": true, "openEffect": "zoom", "closeEffect": "zoom", "slideEffect": "slide"});
+document$.subscribe(()=>{ lightbox.reload(); });
+</script></body></html>
