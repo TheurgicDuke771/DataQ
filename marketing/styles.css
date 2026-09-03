@@ -704,3 +704,16 @@ img { max-width: 100%; }
   .eyebrow { background: rgba(129,140,248,0.16); color: var(--indigo-300); border-color: rgba(129,140,248,0.28); }
   .icon-badge { background: rgba(129,140,248,0.18); color: var(--indigo-300); }
 }
+
+/* Real product screens (docs redesign, 2026-09). */
+.shot { display: block; margin: 0; border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; background: var(--bg-card); box-shadow: 0 12px 40px rgba(15, 23, 42, 0.12); }
+.shot img, .shot video { display: block; width: 100%; height: auto; }
+.shot figcaption { padding: 10px 14px; font-size: 13px; color: var(--text-secondary); border-top: 1px solid var(--border); }
+.shot-hero { position: relative; z-index: 1; }
+.see-it { background: var(--bg-subtle); }
+.shots-grid { display: grid; grid-template-columns: var(--feat-4up-cols); gap: 16px; }
+.shots-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 720px) { .shots-grid { grid-template-columns: minmax(0, 1fr); } }
+.small-grid-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 960px) { .small-grid-6 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .small-grid-6 { grid-template-columns: minmax(0, 1fr); } }

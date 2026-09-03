@@ -31,6 +31,7 @@
     </a>
     <nav class="nav-links">
       <a href="#features">Features</a>
+      <a href="#see-it">Screens</a>
       <a href="https://theurgicduke771.github.io/DataQ/docs/latest/">Docs</a>
       <a href="https://github.com/TheurgicDuke771/DataQ">GitHub</a>
     </nav>
@@ -43,57 +44,25 @@
     <div>
       <span class="eyebrow">
         <svg width="13" height="13" viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true"><path d="M848 359.3H627.7L825.8 109c4.1-5.3.4-13-6.3-13H436c-2.8 0-5.5 1.5-6.9 4L170 547.5c-3.1 5.3.7 12 6.9 12h174.4l-89.4 357.6c-1.9 7.8 7.5 13.3 13.3 7.7L853.5 373c5.2-4.9 1.7-13.7-5.5-13.7zM378.2 732.5l60.3-241H281.1l189.6-327.4h224.6L487 427.4h211L378.2 732.5z"/></svg>
-        Next-gen monitoring
+        Open source · MIT · self-hosted
       </span>
       <h1>Trust your data,<br>powered by DataQ</h1>
-      <p class="hero-sub">Comprehensive data quality monitoring, orchestration tracking, and automated alerting for modern data teams. Eliminate the &ldquo;Silent Expert&rdquo; bottleneck.</p>
+      <p class="hero-sub">Freshness, volume, schema-drift and value checks across your warehouses, lakehouses and object stores &mdash; run the moment a pipeline finishes, routed to the team that owns the data, and open to your AI assistant over MCP.</p>
       <div class="hero-actions">
-        <a href="https://github.com/TheurgicDuke771/DataQ" class="btn btn-primary btn-lg">Get Started</a>
+        <a href="https://theurgicduke771.github.io/DataQ/docs/latest/get-started/install/" class="btn btn-primary btn-lg">Try it in 5 minutes</a>
         <button type="button" id="watch-demo" class="btn btn-secondary btn-lg">
           <svg width="15" height="15" viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true"><path d="M715.8 493.5L335 165.1c-14.2-12.2-35-1.2-35 18.5v656.8c0 19.7 20.8 30.7 35 18.5l380.8-328.4c10.9-9.4 10.9-27.6 0-37z"/></svg>
           Watch Demo
         </button>
       </div>
-      <div class="hero-meta">Snowflake · Databricks Unity Catalog · Apache Iceberg · ADLS Gen2 · AWS S3 — monitored through Great Expectations.</div>
+      <div class="hero-meta">Snowflake · Databricks Unity Catalog · Apache Iceberg · ADLS Gen2 · AWS S3 (and any S3-compatible store) &mdash; watching Azure Data Factory, Airflow and dbt.</div>
     </div>
 
     <div class="hero-preview">
       <div class="hero-glow"></div>
-      <div class="card preview-card">
-        <div class="preview-head">
-          <span>Results Overview</span>
-          <span class="status-badge status-succeeded"><span class="dot"></span>succeeded</span>
-        </div>
-        <div class="metric-grid">
-          <div class="card metric-card">
-            <div class="metric-top"><span class="metric-label">Pass Rate</span></div>
-            <div class="metric-row"><span class="metric-value">94.2%</span><span class="metric-delta up">+1.2%</span></div>
-            <div class="progress-track"><div class="progress-fill tone-pass" style="width: 94.2%"></div></div>
-          </div>
-          <div class="card metric-card">
-            <div class="metric-top"><span class="metric-label">Anomalies</span></div>
-            <div class="metric-row"><span class="metric-value">128</span><span class="metric-delta down">-14%</span></div>
-            <div class="metric-footnote">last 7 days</div>
-          </div>
-        </div>
-        <div class="card card-subtle results-list">
-          <div class="results-row">
-            <span class="name">Daily Revenue Audit</span>
-            <div class="progress-track"><div class="progress-fill tone-pass" style="width: 100%"></div></div>
-            <span class="status-badge status-pass"><span class="dot"></span>pass</span>
-          </div>
-          <div class="results-row">
-            <span class="name">Customer Ingestion</span>
-            <div class="progress-track"><div class="progress-fill tone-fail" style="width: 62%"></div></div>
-            <span class="status-badge status-fail"><span class="dot"></span>fail</span>
-          </div>
-          <div class="results-row">
-            <span class="name">ML Feature Store</span>
-            <div class="progress-track"><div class="progress-fill tone-warning" style="width: 88%"></div></div>
-            <span class="status-badge status-warn"><span class="dot"></span>warn</span>
-          </div>
-        </div>
-      </div>
+      <a class="shot shot-hero" href="https://theurgicduke771.github.io/DataQ/docs/latest/" aria-label="Open the documentation">
+        <img src="assets/shots/dashboard.png" width="1440" height="900" alt="The DataQ monitoring dashboard: asset health, data-integrity score, pass rate, quality trend and per-suite performance" loading="eager">
+      </a>
     </div>
   </div>
 </section>
@@ -101,15 +70,15 @@
 <section id="features" class="features">
   <div class="features-inner">
     <div class="section-head">
-      <h2>Unmatched data precision</h2>
-      <p>DataQ provides the framework for complex data monitoring, so you can focus on building high-stakes decision-making models.</p>
+      <h2>Everything between a bad load and a bad decision</h2>
+      <p>Seven kinds of check, three orchestrators, every alert de-duplicated, and one assistant-ready interface &mdash; on infrastructure you run.</p>
     </div>
 
     <div class="bento">
       <div class="big-card">
         <div class="icon-badge"><svg width="24" height="24" viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true"><path d="M888 792H200V168c0-4.4-3.6-8-8-8h-56c-4.4 0-8 3.6-8 8v688c0 4.4 3.6 8 8 8h752c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm-600-80h56c4.4 0 8-3.6 8-8V560c0-4.4-3.6-8-8-8h-56c-4.4 0-8 3.6-8 8v144c0 4.4 3.6 8 8 8zm152 0h56c4.4 0 8-3.6 8-8V384c0-4.4-3.6-8-8-8h-56c-4.4 0-8 3.6-8 8v320c0 4.4 3.6 8 8 8zm152 0h56c4.4 0 8-3.6 8-8V462c0-4.4-3.6-8-8-8h-56c-4.4 0-8 3.6-8 8v242c0 4.4 3.6 8 8 8zm152 0h56c4.4 0 8-3.6 8-8V304c0-4.4-3.6-8-8-8h-56c-4.4 0-8 3.6-8 8v400c0 4.4 3.6 8 8 8z"/></svg></div>
-        <h3>Data Quality Monitoring</h3>
-        <p>Continuously validate data health with real-time GX assertions. Identify anomalies before they propagate downstream to your business-intelligence layers.</p>
+        <h3>Checks that catch real incidents</h3>
+        <p>Freshness, volume and schema-drift monitors notice a load that never arrived, arrived half-empty or changed shape. Twenty-five vetted Great Expectations types, custom SQL with a live dry-run, anomaly detection on a learned baseline, and cross-dataset comparison cover the rest.</p>
         <div class="feature-mock">
           <div class="mock-bars">
             <div class="bar-col"><div class="bar" style="height:60%"></div></div>
@@ -121,17 +90,17 @@
             <div class="bar-col"><div class="bar" style="height:70%"></div></div>
           </div>
           <div class="mock-row">
-            <span class="name">fct_revenue · not null</span>
+            <span class="name">orders · freshness</span>
             <div class="progress-track"><div class="progress-fill tone-pass" style="width: 100%"></div></div>
             <span class="status-badge status-pass"><span class="dot"></span>pass</span>
           </div>
           <div class="mock-row">
-            <span class="name">customers · unique id</span>
+            <span class="name">orders · status in set</span>
             <div class="progress-track"><div class="progress-fill tone-fail" style="width: 38%"></div></div>
             <span class="status-badge status-critical"><span class="dot"></span>critical</span>
           </div>
           <div class="mock-row">
-            <span class="name">orders · row count</span>
+            <span class="name">orders · amount in range</span>
             <div class="progress-track"><div class="progress-fill tone-warning" style="width: 82%"></div></div>
             <span class="status-badge status-warn"><span class="dot"></span>warn</span>
           </div>
@@ -140,38 +109,77 @@
 
       <div class="dark-card">
         <div class="icon-badge on-dark"><svg width="24" height="24" viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true"><path d="M888.3 693.2c-42.5-24.6-94.3-18-129.2 12.8l-53-30.7V523.6c0-15.7-8.4-30.3-22-38.1l-136-78.3v-67.1c44.2-15 76-56.8 76-106.1 0-61.9-50.1-112-112-112s-112 50.1-112 112c0 49.3 31.8 91.1 76 106.1v67.1l-136 78.3c-13.6 7.8-22 22.4-22 38.1v151.6l-53 30.7c-34.9-30.8-86.8-37.4-129.2-12.8-53.5 31-71.7 99.4-41 152.9 30.8 53.5 98.9 71.9 152.2 41 42.5-24.6 62.7-73 53.6-118.8l48.7-28.3 140.6 81c6.8 3.9 14.4 5.9 22 5.9s15.2-2 22-5.9L674.5 740l48.7 28.3c-9.1 45.7 11.2 94.2 53.6 118.8 53.3 30.9 121.5 12.6 152.2-41 30.8-53.6 12.6-122-40.7-152.9zm-673 138.4a47.6 47.6 0 0 1-65.2-17.6c-13.2-22.9-5.4-52.3 17.5-65.5a47.6 47.6 0 0 1 65.2 17.6c13.2 22.9 5.4 52.3-17.5 65.5zM522 463.8zM464 234a48.01 48.01 0 0 1 96 0 48.01 48.01 0 0 1-96 0zm170 446.2l-122 70.3-122-70.3V539.8l122-70.3 122 70.3v140.4zm239.9 133.9c-13.2 22.9-42.4 30.8-65.2 17.6-22.8-13.2-30.7-42.6-17.5-65.5s42.4-30.8 65.2-17.6c22.9 13.2 30.7 42.5 17.5 65.5z"/></svg></div>
-        <h3>Orchestration Tracking</h3>
-        <p>Full visibility into every node of your data flows — monitor ADF, Airflow, and dbt runs and trigger suites on successful completion.</p>
+        <h3>Runs when the pipeline does</h3>
+        <p>Azure Data Factory, Airflow and dbt tell DataQ when a load finishes; the suite runs right after a success and the result is correlated to that pipeline run. Failures alert without running checks on nothing. Cron schedules cover everything else.</p>
       </div>
 
       <div class="mid-card">
         <div class="icon-badge"><svg width="24" height="24" viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true"><path d="M816 768h-24V428c0-141.1-104.3-257.7-240-277.1V112c0-22.1-17.9-40-40-40s-40 17.9-40 40v38.9c-135.7 19.4-240 136-240 277.1v340h-24c-17.7 0-32 14.3-32 32v32c0 4.4 3.6 8 8 8h216c0 61.8 50.2 112 112 112s112-50.2 112-112h216c4.4 0 8-3.6 8-8v-32c0-17.7-14.3-32-32-32zM512 888c-26.5 0-48-21.5-48-48h96c0 26.5-21.5 48-48 48zM304 768V428c0-55.6 21.6-107.8 60.9-147.1S456.4 220 512 220c55.6 0 107.8 21.6 147.1 60.9S720 372.4 720 428v340H304z"/></svg></div>
-        <h3>Automated Alerting</h3>
-        <p>Instant notifications via Microsoft Teams, Slack, or email. Structured logging provides precise error context for rapid debugging.</p>
+        <h3>Alerts the right team, once</h3>
+        <p>Microsoft Teams, Slack, email and webhooks, routed by severity and configured per suite. A broken check reports when it breaks and when it gets worse &mdash; not on every run.</p>
       </div>
     </div>
 
-    <div class="small-grid">
+    <div class="small-grid small-grid-6">
       <div class="small-card">
-        <span class="icon-inline"><svg width="22" height="22" viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true"><path d="M917.7 148.8l-42.4-42.4c-1.6-1.6-3.6-2.3-5.7-2.3s-4.1.8-5.7 2.3l-76.1 76.1a199.27 199.27 0 0 0-112.1-34.3c-51.2 0-102.4 19.5-141.5 58.6L432.3 308.7a8.03 8.03 0 0 0 0 11.3L704 591.7c1.6 1.6 3.6 2.3 5.7 2.3 2 0 4.1-.8 5.7-2.3l101.9-101.9c68.9-69 77-175.7 24.3-253.5l76.1-76.1c3.1-3.2 3.1-8.3 0-11.4zM769.1 441.7l-59.4 59.4-186.8-186.8 59.4-59.4c24.9-24.9 58.1-38.7 93.4-38.7 35.3 0 68.4 13.7 93.4 38.7 24.9 24.9 38.7 58.1 38.7 93.4 0 35.3-13.8 68.4-38.7 93.4zm-190.2 105a8.03 8.03 0 0 0-11.3 0L501 613.3 410.7 523l66.7-66.7c3.1-3.1 3.1-8.2 0-11.3L441 408.6a8.03 8.03 0 0 0-11.3 0L363 475.3l-43-43a7.85 7.85 0 0 0-5.7-2.3c-2 0-4.1.8-5.7 2.3L206.8 534.2c-68.9 69-77 175.7-24.3 253.5l-76.1 76.1a8.03 8.03 0 0 0 0 11.3l42.4 42.4c1.6 1.6 3.6 2.3 5.7 2.3s4.1-.8 5.7-2.3l76.1-76.1c33.7 22.9 72.9 34.3 112.1 34.3 51.2 0 102.4-19.5 141.5-58.6l101.9-101.9c3.1-3.1 3.1-8.2 0-11.3l-43-43 66.7-66.7c3.1-3.1 3.1-8.2 0-11.3l-36.6-36.2zM441.7 769.1a131.32 131.32 0 0 1-93.4 38.7c-35.3 0-68.4-13.7-93.4-38.7a131.32 131.32 0 0 1-38.7-93.4c0-35.3 13.7-68.4 38.7-93.4l59.4-59.4 186.8 186.8-59.4 59.4z"/></svg></span>
-        <div class="title">Connections</div>
-        <div class="body">Centralized data source management across your warehouses and lakes.</div>
+        <span class="icon-inline"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 3h18v4H3zm0 6h18v4H3zm0 6h18v4H3z"/></svg></span>
+        <div class="title">Assets &amp; lineage</div>
+        <div class="body">Every table and file DataQ knows about, health rolled up per asset, lineage pulled from dbt, your catalog or the warehouse, incidents anchored where they hit.</div>
       </div>
       <div class="small-card">
-        <span class="icon-inline"><svg width="22" height="22" viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true"><path d="M832 64H192c-17.7 0-32 14.3-32 32v832c0 17.7 14.3 32 32 32h640c17.7 0 32-14.3 32-32V96c0-17.7-14.3-32-32-32zm-40 824H232V687h97.9c11.6 32.8 32 62.3 59.1 84.7 34.5 28.5 78.2 44.3 123 44.3s88.5-15.7 123-44.3c27.1-22.4 47.5-51.9 59.1-84.7H792v-63H643.6l-5.2 24.7C626.4 708.5 573.2 752 512 752s-114.4-43.5-126.5-103.3l-5.2-24.7H232V136h560v752zM320 341h384c4.4 0 8-3.6 8-8v-48c0-4.4-3.6-8-8-8H320c-4.4 0-8 3.6-8 8v48c0 4.4 3.6 8 8 8zm0 160h384c4.4 0 8-3.6 8-8v-48c0-4.4-3.6-8-8-8H320c-4.4 0-8 3.6-8 8v48c0 4.4 3.6 8 8 8z"/></svg></span>
-        <div class="title">Suites</div>
-        <div class="body">Reusable validation test groups, versioned and shareable.</div>
+        <span class="icon-inline"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 2.6 1.4 4.9 3.5 6.1V17h7v-1.9A7 7 0 0 0 12 2zm-2 17h4v1a2 2 0 0 1-4 0z"/></svg></span>
+        <div class="title">Built-in assistant</div>
+        <div class="body">Bring your own LLM: suggest checks from a column profile, turn a question into validated SQL, and get a root-cause narrative on a failing run.</div>
       </div>
       <div class="small-card">
-        <span class="icon-inline"><svg width="22" height="22" viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true"><path d="M888 792H200V168c0-4.4-3.6-8-8-8h-56c-4.4 0-8 3.6-8 8v688c0 4.4 3.6 8 8 8h752c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm-600-80h56c4.4 0 8-3.6 8-8V560c0-4.4-3.6-8-8-8h-56c-4.4 0-8 3.6-8 8v144c0 4.4 3.6 8 8 8zm152 0h56c4.4 0 8-3.6 8-8V384c0-4.4-3.6-8-8-8h-56c-4.4 0-8 3.6-8 8v320c0 4.4 3.6 8 8 8zm152 0h56c4.4 0 8-3.6 8-8V462c0-4.4-3.6-8-8-8h-56c-4.4 0-8 3.6-8 8v242c0 4.4 3.6 8 8 8zm152 0h56c4.4 0 8-3.6 8-8V304c0-4.4-3.6-8-8-8h-56c-4.4 0-8 3.6-8 8v400c0 4.4 3.6 8 8 8z"/></svg></span>
-        <div class="title">Results</div>
-        <div class="body">Rich visual reports and historical pass-rate trends.</div>
+        <span class="icon-inline"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 4h16v12H5.2L4 17.2zm2 3v2h12V7zm0 4v2h8v-2z"/></svg></span>
+        <div class="title">Open to your AI tools</div>
+        <div class="body">48 MCP tools expose the same actions to Claude, Copilot and Cursor &mdash; every one honest about what it cannot see, none of them touching a credential.</div>
       </div>
       <div class="small-card">
-        <span class="icon-inline"><svg width="22" height="22" viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true"><path d="M858.5 763.6a374 374 0 0 0-80.6-119.5 375.63 375.63 0 0 0-119.5-80.6c-.4-.2-.8-.3-1.2-.5C719.5 518 760 444.7 760 362c0-137-111-248-248-248S264 225 264 362c0 82.7 40.5 156 102.8 201.1-.4.2-.8.3-1.2.5-44.8 18.9-85 46-119.5 80.6a375.63 375.63 0 0 0-80.6 119.5A371.7 371.7 0 0 0 136 901.8a8 8 0 0 0 8 8.2h60c4.4 0 7.9-3.5 8-7.8 2-77.2 33-149.5 87.8-204.3 56.7-56.7 132-87.9 212.2-87.9s155.5 31.2 212.2 87.9C779 752.7 810 825 812 902.2c.1 4.4 3.6 7.8 8 7.8h60a8 8 0 0 0 8-8.2c-1-47.8-10.9-94.3-29.5-138.2zM512 534c-45.9 0-89.1-17.9-121.6-50.4S340 407.9 340 362c0-45.9 17.9-89.1 50.4-121.6S466.1 190 512 190s89.1 17.9 121.6 50.4S684 316.1 684 362c0 45.9-17.9 89.1-50.4 121.6S557.9 534 512 534z"/></svg></span>
-        <div class="title">Profile</div>
-        <div class="body">Granular RBAC and workspace settings, with SSO or email sign-in.</div>
+        <span class="icon-inline"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2 4 5v6c0 5 3.4 9.7 8 11 4.6-1.3 8-6 8-11V5zm0 4a3 3 0 1 1 0 6 3 3 0 0 1 0-6z"/></svg></span>
+        <div class="title">Secure by design</div>
+        <div class="body">Workspace roles times per-suite grants, three sign-in modes, credentials in Key Vault, Secrets Manager or OpenBao, failing rows redacted, and a compliance pack for GDPR, CCPA and HIPAA reviews.</div>
       </div>
+      <div class="small-card">
+        <span class="icon-inline"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5h18v4H3zm0 5h18v4H3zm0 5h18v4H3z"/></svg></span>
+        <div class="title">Runs where your data lives</div>
+        <div class="body">Reference deployments on Azure Container Apps and AWS ECS, a one-command Docker stack for evaluation, no vendor lock-in behind any seam.</div>
+      </div>
+      <div class="small-card">
+        <span class="icon-inline"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h10v2H4z"/></svg></span>
+        <div class="title">Documented like a product</div>
+        <div class="body">Tutorials with screenshots and clips, a generated reference for every check type, endpoint and tool, forty-plus decision records, and pages your assistant can read as Markdown.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="see-it" class="see-it">
+  <div class="features-inner">
+    <div class="section-head">
+      <h2>See it in action</h2>
+      <p>Real screens from the seeded demo workspace &mdash; the same ones in the tutorials.</p>
+    </div>
+    <div class="shots-grid">
+      <figure class="shot">
+        <video autoplay loop muted playsinline poster="assets/shots/tour.jpg" width="1440" height="900" aria-label="Ten-second tour of the app">
+          <source src="assets/shots/tour.mp4" type="video/mp4">
+        </video>
+        <figcaption>A ten-second tour: dashboard, assets, connections, suites, results.</figcaption>
+      </figure>
+      <figure class="shot">
+        <img src="assets/shots/suite-detail.png" width="1440" height="900" alt="A suite with four checks, their data-quality dimensions, and the pipeline triggers panel" loading="lazy">
+        <figcaption>A suite: connection, target, checks with their dimension, triggers.</figcaption>
+      </figure>
+      <figure class="shot">
+        <img src="assets/shots/run-detail.png" width="1440" height="900" alt="A run: per-check status, measured metric and observed value; a critical check has opened an incident" loading="lazy">
+        <figcaption>A run: per-check status, the measured metric, an opened incident.</figcaption>
+      </figure>
+      <figure class="shot">
+        <img src="assets/shots/assets-list.png" width="1440" height="900" alt="The assets tree grouped by source with per-table health" loading="lazy">
+        <figcaption>Assets: every table and file, health rolled up per source.</figcaption>
+      </figure>
     </div>
   </div>
 </section>
@@ -180,7 +188,7 @@
   <img src="assets/mark.svg" alt="" class="closer-mark">
   <div class="closer-inner">
     <h2>Ready to elevate your data quality?</h2>
-    <p>Open source and self-hosted — clone the repo and point it at your own warehouses.</p>
+    <p>Open source, MIT licensed, self-hosted &mdash; one <code>docker compose up</code> to evaluate, Terraform for Azure or AWS to run it for real.</p>
     <div class="closer-actions">
       <a href="https://github.com/TheurgicDuke771/DataQ" class="btn btn-primary btn-lg">Get Started</a>
       <a href="https://theurgicduke771.github.io/DataQ/docs/latest/" class="btn-outline">Read the Docs</a>
@@ -203,6 +211,7 @@
         <div class="footer-col-links">
           <a href="#features">Features</a>
           <a href="https://theurgicduke771.github.io/DataQ/docs/latest/">Documentation</a>
+          <a href="https://theurgicduke771.github.io/DataQ/docs/latest/reference/check-types/">Check types</a>
           <a href="https://theurgicduke771.github.io/DataQ/docs/latest/reference/changelog/">Changelog</a>
         </div>
       </div>
@@ -212,13 +221,15 @@
           <a href="https://theurgicduke771.github.io/DataQ/docs/latest/get-started/install/">Getting started</a>
           <a href="https://theurgicduke771.github.io/DataQ/docs/latest/reference/rest-api/">REST API</a>
           <a href="https://theurgicduke771.github.io/DataQ/docs/latest/guides/mcp-setup/">AI assistants (MCP)</a>
+          <a href="https://theurgicduke771.github.io/DataQ/docs/latest/reference/mcp-tools/">MCP tools</a>
         </div>
       </div>
       <div class="footer-col">
         <h4>Project</h4>
         <div class="footer-col-links">
           <a href="https://github.com/TheurgicDuke771/DataQ">GitHub</a>
-          <a href="https://theurgicduke771.github.io/DataQ/docs/latest/security/overview/">Security</a>
+          <a href="https://theurgicduke771.github.io/DataQ/docs/latest/security/overview/">Security &amp; compliance</a>
+          <a href="https://theurgicduke771.github.io/DataQ/docs/latest/adr/README/">Decision records</a>
           <a href="https://theurgicduke771.github.io/DataQ/docs/latest/architecture/contributing/">Contributing</a>
         </div>
       </div>
