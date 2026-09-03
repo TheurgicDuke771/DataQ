@@ -1,0 +1,48 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "f347b57883e1",
+  "strategy": "manual-commit",
+  "branch": "docs/redesign-p2-capture",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "backend/scripts/seed_dev.py",
+    "docs/docs-redesign-plan.md",
+    "docs/site/assets/extra.css",
+    "docs/site/assets/screenshots/check-editor-freshness.png",
+    "docs/site/assets/videos/add-connection.jpg",
+    "docs/site/assets/videos/add-connection.mp4",
+    "docs/site/assets/videos/author-check.jpg",
+    "docs/site/assets/videos/author-check.mp4",
+    "docs/site/assets/videos/read-results.jpg",
+    "docs/site/assets/videos/read-results.mp4",
+    "docs/site/assets/videos/tour.jpg",
+    "docs/site/assets/videos/tour.mp4",
+    "docs/site/assets/videos/wire-alert.jpg",
+    "docs/site/assets/videos/wire-alert.mp4",
+    "docs/site/get-started/first-suite.md",
+    "docs/site/index.md",
+    "frontend/e2e-docs/README.md",
+    "frontend/e2e-docs/screenshots.spec.ts",
+    "frontend/e2e-docs/shot.ts",
+    "frontend/e2e-docs/videos.spec.ts",
+    "frontend/playwright.config.ts",
+    "scripts/docs/capture-stack.sh",
+    "scripts/docs/transcode-videos.sh"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f3/47b57883e1/0/metadata.json",
+      "transcript": "/f3/47b57883e1/0/full.jsonl",
+      "compact_transcript": "/f3/47b57883e1/0/transcript.jsonl",
+      "content_hash": "/f3/47b57883e1/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1376,
+    "cache_creation_tokens": 27190,
+    "cache_read_tokens": 4176194,
+    "output_tokens": 18474,
+    "api_call_count": 14
+  }
+}
