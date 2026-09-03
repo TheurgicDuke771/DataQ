@@ -6,6 +6,13 @@ something is wrong (failed checks, stale tables, unexpected row counts), and ale
 team. It watches your Azure Data Factory, Airflow, and dbt pipelines and can run checks
 automatically when a pipeline finishes.
 
+
+<video class="clip" autoplay loop muted playsinline poster="assets/videos/tour.jpg">
+  <source src="assets/videos/tour.mp4" type="video/mp4">
+</video>
+
+*A ten-second tour: dashboard, assets, connections, suites, results.*
+
 ## Who it's for
 
 - **Data engineers / SREs** — author checks, wire up pipelines, triage failures.

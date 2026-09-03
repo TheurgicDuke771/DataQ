@@ -19,6 +19,8 @@ A few terms make the rest of the docs click.
 
 ## Core objects
 
+![One suite, on one connection, targeting one table, holding four checks](../assets/screenshots/suite-detail.png){ .screenshot }
+
 - **Connection** — credentials + config for one datasource or orchestration provider.
 - **Suite** — a named collection of checks that runs against one connection's target
   (a table, a file/path, a Unity Catalog table, or an Iceberg `namespace.table`).

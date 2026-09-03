@@ -121,7 +121,12 @@ def _share_with_otp_operators(session: Session, *, owner: User, settings: Settin
 #: scoped to a throwaway dev/CI database — the same discipline `setup.sh` uses
 #: for `.env`: a credential may be *generated* into an untracked file, never
 #: committed to one.
-ROLE_TOKENS_PATH = Path(__file__).resolve().parents[2] / "frontend" / "e2e" / ".role-tokens.json"
+#: `DATAQ_ROLE_TOKENS_PATH` redirects it — a seed against a scratch database
+#: (the docs capture stack) must not overwrite the compose stack's tokens.
+ROLE_TOKENS_PATH = Path(
+    os.environ.get("DATAQ_ROLE_TOKENS_PATH")
+    or Path(__file__).resolve().parents[2] / "frontend" / "e2e" / ".role-tokens.json"
+)
 
 #: One seeded user per non-admin tier. The dev-bypass identity is always an
 #: admin (#741) and cannot be demoted, so a browser cannot experience the other

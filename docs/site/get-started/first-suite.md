@@ -13,7 +13,9 @@ Open the app URL and sign in — the local/eval stack defaults to an **email one
 (check the bundled Mailpit inbox at `http://localhost:8025`); a production deployment
 typically uses your **identity provider (SSO)**. See
 [Getting started](install.md#choosing-an-auth-mode) for the three sign-in modes. You land on
-the **Dashboard** — empty for now.
+the **Dashboard** — empty for now. Once suites have run it looks like this:
+
+![The monitoring dashboard: asset health, integrity score, pass rate and per-suite performance](../assets/screenshots/dashboard.png){ .screenshot }
 
 ## 1. Connect a datasource
 
@@ -24,8 +26,19 @@ the **Dashboard** — empty for now.
 > [step 2](#2-create-a-suite-and-point-it-at-a-target).
 
 1. Go to **Connections → Add connection**.
+
+<video class="clip" autoplay loop muted playsinline poster="../assets/videos/add-connection.jpg">
+  <source src="../assets/videos/add-connection.mp4" type="video/mp4">
+</video>
+
+*Adding a Snowflake connection, start to finish (12 s)*
+
 2. Pick your datasource type (Snowflake, Unity Catalog, ADLS Gen2, S3, or Apache
    Iceberg). The form is spec-driven — it asks only for what that type needs.
+
+![Choosing a datasource type: warehouses, lakehouses, cloud storage, and the optional orchestration providers](../assets/screenshots/connection-type-picker.png){ .screenshot }
+
+![The Snowflake connection form asks only for what Snowflake needs](../assets/screenshots/connection-form-snowflake.png){ .screenshot }
 3. Fill it in with a **read-only** credential (for Snowflake, key-pair auth is recommended),
    then click **Test**. A green result means DataQ can reach it.
 
@@ -41,7 +54,9 @@ changed without it.
 1. Go to **Suites → New suite**, give it a name (e.g. `orders — snowflake prod`), and pick
    the connection you just made.
 2. Set the **run target**: a table (SQL datasources) or a file / batch pattern (flat files).
-3. Save. The suite is empty — let's add checks.
+3. Save. The suite is empty — let's add checks. A finished suite looks like this:
+
+![A suite: its connection and target, the checks with their dimension tags, and the pipeline triggers panel](../assets/screenshots/suite-detail.png){ .screenshot }
 
 ## 3. Add your first checks
 
@@ -51,11 +66,24 @@ run?"* and *"did it land whole?"* — before any value-level rule.
 1. **A freshness monitor.** Add a check → **Freshness**, on the table's load/updated
    timestamp column. Set a **fail** threshold (e.g. *fail if > 26 hours old* for a daily
    load). Freshness/volume monitors require a fail or critical threshold.
+
+![Add check: pick a kind first — column values, freshness, volume, schema drift, anomaly, comparison or custom SQL](../assets/screenshots/check-editor-picker.png){ .screenshot }
+
+![A freshness monitor: timestamp column plus warn / fail / critical age thresholds](../assets/screenshots/check-editor-freshness.png){ .screenshot }
 2. **A value check.** Add a check → a GX expectation like
    `expect_column_values_to_not_be_null` on a key column (e.g. `order_id`).
+
+<video class="clip" autoplay loop muted playsinline poster="../assets/videos/author-check.jpg">
+  <source src="../assets/videos/author-check.mp4" type="video/mp4">
+</video>
+
+*Authoring a value check and reaching the dry-run preview (10 s)*
+
 3. Before saving the value check, click **Dry-run** to preview it against live data — you'll
    see the observed unexpected-% so you can set a **warn** threshold just above today's
    baseline (so it's green now, loud only when reality changes).
+
+![A value check: the expectation, its column, severity thresholds and the dry-run preview button](../assets/screenshots/check-editor-expectation.png){ .screenshot }
 
 *Tip:* use the **column profiler** on a column to see nulls / distinct / min-max / top values
 while you decide what to check.
@@ -70,6 +98,12 @@ You can **cancel** a run mid-flight.
 
 Go to **Results** and open the run:
 
+<video class="clip" autoplay loop muted playsinline poster="../assets/videos/read-results.jpg">
+  <source src="../assets/videos/read-results.mp4" type="video/mp4">
+</video>
+
+*Opening a run and expanding a failing check (6 s)*
+
 - Per-check outcomes with **observed vs expected** values.
 - For a failing check, expand it to see the **failing-row sample** — **redacted**
   column-aware (PII masked; the counts and shape kept).
@@ -77,6 +111,10 @@ Go to **Results** and open the run:
 
 If a run *failed to execute* (bad credential, unreachable store), it shows a plain-language
 **failure reason**, not just "failed".
+
+![The Results page: every run with its outcome, trigger and duration](../assets/screenshots/results-list.png){ .screenshot }
+
+![A run: per-check status, the measured metric and the observed value; a critical check has opened an incident](../assets/screenshots/run-detail.png){ .screenshot }
 
 ## 6. Get alerted
 
