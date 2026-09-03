@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>DataQ</title>
+<meta name="robots" content="noindex">
+<script>
+  // Versioned docs live under /docs/<version>/. A pre-versioning deep link
+  // (/docs/guides/…) or a bare /docs/ lands here; send it to `latest`, where
+  // mkdocs-redirects still resolves the pre-reorganisation paths too.
+  (function () {
+    var m = location.pathname.match(/^(\/DataQ)?\/docs\/(?!latest\/|v\d)(.*)$/);
+    if (m) {
+      location.replace((m[1] || '') + '/docs/latest/' + m[2] + location.search + location.hash);
+    }
+  })();
+</script>
+<style>body{font-family:system-ui,sans-serif;margin:4rem auto;max-width:36rem;color:#333}</style>
+</head>
+<body>
+<h1>Page not found</h1>
+<p>Try the <a href="/DataQ/docs/latest/">documentation home</a> or the <a href="/DataQ/">DataQ site</a>.</p>
+</body>
+</html>

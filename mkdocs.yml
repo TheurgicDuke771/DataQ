@@ -2,10 +2,17 @@ site_name: DataQ
 site_description: >-
   DataQ — a single-tenant data-quality monitoring platform built on Great
   Expectations. User-friendly guides + developer references.
-site_url: https://theurgicduke771.github.io/DataQ/docs/
+site_url: https://theurgicduke771.github.io/DataQ/docs/latest/
 repo_url: https://github.com/TheurgicDuke771/DataQ
 repo_name: TheurgicDuke771/DataQ
 edit_uri: edit/main/docs/site/
+
+# Versioned docs (mike): `latest` tracks main, one frozen copy per release tag.
+# The selector reads versions.json from site_url's parent directory (docs/).
+extra:
+  version:
+    provider: mike
+    default: latest
 
 # The site is rooted at docs/site/ — LOCATION IS THE PUBLICATION DECISION.
 # Everything under docs/site/ is published (ADRs included); internal planning
