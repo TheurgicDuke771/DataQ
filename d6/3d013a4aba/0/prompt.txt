@@ -1,0 +1,37 @@
+<task-notification>
+<task-id>ab6b03044d09264b2</task-id>
+<tool-use-id>toolu_01Qgoy4yy86HsCChFZrBXCkL</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/35b1af29-9edc-49a2-9b7d-86cf05a9416e/tasks/ab6b03044d09264b2.output</output-file>
+<status>completed</status>
+<summary>Agent "Finder A+B: diff scan + removed behavior" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+[
+  {
+    "file": "backend/scripts/export_docs_reference.py",
+    "line": 29,
+    "summary": "LIVE_PROBE_TOOLS is a hand-duplicated frozenset with no cross-check against GATES/mcp_gates.py or the registered tool set",
+    "failure_scenario": "A future PR renames or removes one of the five live-probe tools (e.g. `profile_column` → `profile_columns`) and updates `server.py` + `mcp_gates.py`'s `GATES` together (the existing `missing = set(tools) ^ set(GATES)` check would catch that pair drifting from each other), but nobody remembers this third, independently-maintained literal in the docs generator. `groups[...]` still puts the old name in the Live-probe list, then `tools[n].description` in the row-building loop raises a bare `KeyError` for that name, since it's absent from `tools`. The CI step fails with an unrelated-looking traceback instead of the intended 'stale docs' message, and if the rename direction is instead an *addition* to the live-probe class (a new persist-nothing tool), the tool silently gets classified as an ordinary read/write in the generated docs with no error at all — the exact 'guard applied at one door and not its sibling' class this codebase has hit repeatedly (MEMORY.md: feedback_adding_a_tool_ages_its_neighbours, project_mcp_tier1_expansion)."
+  },
+  {
+    "file": "backend/scripts/export_docs_reference.py",
+    "line": 43,
+    "summary": "_first_paragraph does not escape or reject markdown-table-breaking characters (`|`, embedded blank-ish separators) before interpolating a tool's docstring into a `| ... | ... | ... |` row",
+    "failure_scenario": "A tool docstring's opening paragraph documents an enum or option list the way this codebase habitually does elsewhere (e.g. CLAUDE.md's own `admin | member | viewer` style) — e.g. `\"List checks of kind expectation | freshness | volume.\"`. `_first_paragraph` passes the raw text straight into the row string with no escaping, so the `|` characters split the row into extra columns, breaking the rendered mkdocs table for that tool (and potentially all rows below it, since GFM/mkdocs table parsing is sensitive to cell count per row). `--check` still passes (the generator is internally deterministic — it reproduces the same broken output on every run), so nothing in CI catches the corruption; it only surfaces as a visibly broken table on the published docs site."
+  },
+  {
+    "file": "backend/scripts/export_docs_reference.py",
+    "line": 44,
+    "summary": "Paragraph-boundary detection only recognizes an exact `\\n\\n` separator, not a blank line with trailing whitespace",
+    "failure_scenario": "If a tool's docstring is auto-wrapped or hand-edited so the blank line between the opening sentence and the caveat paragraph has trailing spaces (`\"...\\n   \\ncaveat text\"` instead of `\"...\\n\\ncaveat text\"`), `text.split(\"\\n\\n\", 1)` fails to find the boundary and the entire docstring (including caveat/limitation prose meant to be excluded from the one-line summary table) gets folded into the 'first paragraph' shown in the table cell — silently defeating the intended 'opening only' contract described in the module docstring, and increasing the odds of hitting the pipe-character table-break above since caveat paragraphs are more likely to contain punctuation-heavy or example text."
+  }
+]
+```
+
+Note: all three are latent/robustness findings (no current docstring trips them, per a scan of `backend/app/mcp/server.py`'s first paragraphs) — flagged because the generator has no guard against them and `--check`'s determinism doesn't imply correctness.</result>
+<usage><subagent_tokens>136315</subagent_tokens><tool_uses>10</tool_uses><duration_ms>212649</duration_ms></usage>
+</task-notification>
+
+---
+
+continue...
