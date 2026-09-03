@@ -68,8 +68,9 @@ CATEGORY_INTRO = {
 }
 
 
-def dump_catalog() -> list[dict]:
+def dump_catalog() -> dict:
     DUMP_DIR.mkdir(parents=True, exist_ok=True)
+    # Fixed argv, repo-owned inputs: not user input (S603/S607 are about neither).
     subprocess.run(  # noqa: S603
         [  # noqa: S607
             "pnpm",
@@ -96,26 +97,21 @@ def dump_catalog() -> list[dict]:
     return json.loads(raw)
 
 
-def parse_allowlist() -> tuple[dict[str, str], set[str]]:
+def parse_allowlist() -> dict[str, str]:
+    """type -> capability sentinel, from the ALLOWED_EXPECTATIONS dict literal itself."""
     text = ALLOWLIST.read_text()
-    body = text[text.index("ALLOWED_EXPECTATIONS") : text.index("ALLOWED_EXPECTATION_TYPES")]
-    caps = dict(re.findall(r'"(expect_[a-z_]+)":\s*(_[A-Z_]+)', body))
-    only = set(
-        re.findall(
-            r'"(expect_[a-z_]+)"',
-            text[
-                text.index("ALLOWLIST_ONLY_TYPES") : text.index("DATAFRAME_ONLY_EXPECTATION_TYPES")
-            ],
-        )
-    )
-    return caps, only
+    m = re.search(r"^ALLOWED_EXPECTATIONS:.*?= \{(.*?)^\}", text, re.M | re.S)
+    if not m:
+        raise SystemExit("ALLOWED_EXPECTATIONS literal not found")
+    return dict(re.findall(r'"(expect_[a-z_]+)":\s*(_[A-Z_]+)', m.group(1)))
 
 
 def parse_pushdown() -> set[str]:
     text = UC.read_text()
-    start = text.index("SQL_PUSHDOWN_EXPECTATION_TYPES")
-    end = text.index(")", text.index("frozenset(", start))
-    return set(re.findall(r'"(expect_[a-z_]+)"', text[start:end]))
+    m = re.search(r"^SQL_PUSHDOWN_EXPECTATION_TYPES:.*?frozenset\((.*?)\)", text, re.M | re.S)
+    if not m:
+        raise SystemExit("SQL_PUSHDOWN_EXPECTATION_TYPES literal not found")
+    return set(re.findall(r'"(expect_[a-z_]+)"', m.group(1)))
 
 
 def params(entry: dict) -> str:
@@ -134,38 +130,52 @@ def thresholds(entry: dict, cap: str | None) -> str:
     return "warn / fail / critical"
 
 
-def runs_on(entry: dict, cap: str | None, pushdown: set[str]) -> str:
-    t = entry["type"]
+def runs_on(entry: dict, cap: str | None, pushdown: set[str], ds: dict) -> str:
+    """Mirror of the editor's expectationsByCategoryFor(): which connection types see this type."""
+    labels = ds["labels"]
     if entry["engine"] == "dmf":
-        return "Snowflake only (native DMF)"
-    if entry["kind"] == "anomaly":
-        return "Snowflake, Unity Catalog"
-    if entry["kind"] in {"freshness", "volume", "schema_drift"}:
-        return "All datasources"
-    if entry["kind"] == "comparison":
-        return "All datasources"
-    if t == "custom_sql" or entry["category"] == "Custom SQL":
-        return "Snowflake, Unity Catalog"
-    if cap == "_DATAFRAME_ONLY" or entry["dataframeOnly"]:
-        return (
-            "Flat files (ADLS Gen2 / S3), Iceberg, Unity Catalog — not Snowflake "
-            "(no SQL implementation; refused at author time)"
-        )
-    note = " · SQL pushdown on Unity Catalog" if t in pushdown else ""
-    return "All datasources" + note
+        types = ["snowflake"]
+    elif entry["category"] in ("Custom SQL", "Anomaly"):
+        types = list(ds["sqlQueryable"])
+    elif entry["category"] in ds["monitorCategories"]:
+        types = list(ds["monitorCapable"])
+    else:
+        types = list(ds["all"])
+    note = ""
+    if entry["dataframeOnly"] or cap == "_DATAFRAME_ONLY":
+        excluded = [t for t in types if t in ds["sqlBatch"]]
+        types = [t for t in types if t not in ds["sqlBatch"]]
+        if excluded:
+            note = (
+                " — not "
+                + ", ".join(labels[t] for t in excluded)
+                + " (no SQL implementation; refused at author time)"
+            )
+    if entry["type"] in pushdown and "unity_catalog" in types:
+        note += " · SQL pushdown on Unity Catalog"
+    names = (
+        "All datasources" if set(types) == set(ds["all"]) else ", ".join(labels[t] for t in types)
+    )
+    return names + note
 
 
-def render(catalog: list[dict], caps: dict[str, str], only: set[str], pushdown: set[str]) -> str:
+def render(
+    catalog: list[dict], caps: dict[str, str], only: set[str], pushdown: set[str], ds: dict
+) -> str:
     by_cat: dict[str, list[dict]] = {c: [] for c in CATEGORY_ORDER}
     for e in catalog:
-        by_cat.setdefault(e["category"], []).append(e)
+        if e["category"] not in by_cat:
+            raise SystemExit(
+                f"unknown catalog category {e['category']!r}: add it to CATEGORY_ORDER"
+            )
+        by_cat[e["category"]].append(e)
     lines = [
         "# Check types",
         "",
         "Every kind of check DataQ can author, generated from the check editor's catalog and the",
         "backend's vetted allowlist — so this page cannot drift from what the product actually",
-        "offers. Each GX type on this page has been executed on both a "
-        "dataframe and a SQL batch in CI.",
+        "offers. Every GX type on this page is executed in CI on a dataframe batch, and on a "
+        "SQL batch too unless its row says it is dataframe-only.",
         "",
         "| | Count |",
         "|---|---|",
@@ -196,7 +206,7 @@ def render(catalog: list[dict], caps: dict[str, str], only: set[str], pushdown: 
             lines.append(
                 f"| **{e['label']}** | `{e['type']}` | {e['description']} | "
                 f"{DIMENSION_LABEL.get(e['dimension'])} | {params(e)} | {thresholds(e, cap)} | "
-                f"{runs_on(e, cap, pushdown)} |"
+                f"{runs_on(e, cap, pushdown, ds)} |"
             )
         lines.append("")
     if only:
@@ -231,9 +241,11 @@ def render(catalog: list[dict], caps: dict[str, str], only: set[str], pushdown: 
 
 def main() -> int:
     check = "--check" in sys.argv
-    catalog = dump_catalog()
-    caps, only = parse_allowlist()
-    text = render(catalog, caps, only, parse_pushdown())
+    dump = dump_catalog()
+    catalog, ds = dump["catalog"], dump["datasources"]
+    caps = parse_allowlist()
+    only = set(caps) - {e["type"] for e in catalog}
+    text = render(catalog, caps, only, parse_pushdown(), ds)
     if check:
         if OUT.exists() and OUT.read_text() == text:
             return 0

@@ -2,7 +2,7 @@
 
 Every kind of check DataQ can author, generated from the check editor's catalog and the
 backend's vetted allowlist — so this page cannot drift from what the product actually
-offers. Each GX type on this page has been executed on both a dataframe and a SQL batch in CI.
+offers. Every GX type on this page is executed in CI on a dataframe batch, and on a SQL batch too unless its row says it is dataframe-only.
 
 | | Count |
 |---|---|
@@ -32,7 +32,7 @@ Great Expectations built-ins that look at the values in one or more columns. Eac
 | **Column values do not match regex** | `expect_column_values_to_not_match_regex` | No value matches the given regular expression — for catching a pattern that should never appear (a stray delimiter, an unredacted identifier). | Validity | `column`, `regex`, `mostly` *(optional)* | warn / fail / critical | All datasources · SQL pushdown on Unity Catalog |
 | **Column values match a list of regexes** | `expect_column_values_to_match_regex_list` | Every value matches the regexes in the list — by default ANY one of them is enough, for a column carrying several legitimate formats (e.g. two phone-number conventions). | Validity | `column`, `regex_list`, `match_on` *(optional)*, `mostly` *(optional)* | warn / fail / critical | All datasources · SQL pushdown on Unity Catalog |
 | **Column values match none of a list of regexes** | `expect_column_values_to_not_match_regex_list` | No value matches ANY regex in the list — a deny-list of forbidden formats. | Validity | `column`, `regex_list`, `mostly` *(optional)* | warn / fail / critical | All datasources · SQL pushdown on Unity Catalog |
-| **Column values are valid JSON** | `expect_column_values_to_be_json_parseable` | Every value parses as JSON — for a payload/metadata column stored as text. Not offered on Snowflake: Great Expectations implements this one only for dataframe batches, so a SQL warehouse would error on every run. Use a custom-SQL check (or a VARIANT column) there. | Validity | `column`, `mostly` *(optional)* | warn / fail / critical | Flat files (ADLS Gen2 / S3), Iceberg, Unity Catalog — not Snowflake (no SQL implementation; refused at author time) |
+| **Column values are valid JSON** | `expect_column_values_to_be_json_parseable` | Every value parses as JSON — for a payload/metadata column stored as text. Not offered on Snowflake: Great Expectations implements this one only for dataframe batches, so a SQL warehouse would error on every run. Use a custom-SQL check (or a VARIANT column) there. | Validity | `column`, `mostly` *(optional)* | warn / fail / critical | ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg — not Snowflake (no SQL implementation; refused at author time) |
 | **Column values are of type** | `expect_column_values_to_be_of_type` | Every value in the column matches the given data type. | Validity | `column`, `type_`, `mostly` *(optional)* | warn / fail / critical | All datasources |
 | **Column values are of one of several types** | `expect_column_values_to_be_in_type_list` | Every value in the column matches at least one of the given data types — the tolerant sibling of “Column values are of type”, for a column whose type legitimately varies by datasource or load. | Validity | `column`, `type_list`, `mostly` *(optional)* | warn / fail / critical | All datasources |
 | **Compound columns unique** | `expect_compound_columns_to_be_unique` | The COMBINATION of values across the listed columns is distinct on every row — a multi-column primary or business key. Each column on its own may repeat freely. | Uniqueness | `column_list`, `mostly` *(optional)* | warn / fail / critical | All datasources · SQL pushdown on Unity Catalog |
@@ -42,7 +42,7 @@ Great Expectations built-ins that look at the values in one or more columns. Eac
 | **Columns sum to a total** | `expect_multicolumn_sum_to_equal` | Row by row, the listed columns add up to the given total — e.g. subtotal + tax + shipping = total. | Validity | `column_list`, `sum_total`, `mostly` *(optional)* | warn / fail / critical | All datasources · SQL pushdown on Unity Catalog |
 | **Column distinct values in set** | `expect_column_distinct_values_to_be_in_set` | Every DISTINCT value present in the column is one of an allowed set — reports WHICH unexpected values exist rather than how many rows carry them. Use “Column values in set” when you care about the row count. | Validity | `column`, `value_set` | None — pass/fail only | All datasources · SQL pushdown on Unity Catalog |
 | **Column distinct values contain set** | `expect_column_distinct_values_to_contain_set` | Every value in the given set appears at least once in the column — catches a category that stopped arriving. The column may also contain other values. | Completeness | `column`, `value_set` | None — pass/fail only | All datasources · SQL pushdown on Unity Catalog |
-| **Column values match a date format** | `expect_column_values_to_match_strftime_format` | Every value parses under the given strftime format — for a date or timestamp stored as text. Not offered on Snowflake: Great Expectations implements this one only for dataframe batches, so a SQL warehouse would error on every run. Use a custom-SQL check there. | Validity | `column`, `strftime_format`, `mostly` *(optional)* | warn / fail / critical | Flat files (ADLS Gen2 / S3), Iceberg, Unity Catalog — not Snowflake (no SQL implementation; refused at author time) |
+| **Column values match a date format** | `expect_column_values_to_match_strftime_format` | Every value parses under the given strftime format — for a date or timestamp stored as text. Not offered on Snowflake: Great Expectations implements this one only for dataframe batches, so a SQL warehouse would error on every run. Use a custom-SQL check there. | Validity | `column`, `strftime_format`, `mostly` *(optional)* | warn / fail / critical | ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg — not Snowflake (no SQL implementation; refused at author time) |
 
 ## Table shape
 
@@ -107,10 +107,10 @@ Snowflake's native Data Metric Functions, evaluated inside Snowflake.
 
 | Check | Type | What it checks | Dimension | Parameters | Thresholds | Runs on |
 |---|---|---|---|---|---|---|
-| **Null count (DMF)** | `dmf:null_count` | Snowflake’s system NULL_COUNT metric function, computed natively in the warehouse. | Completeness | `column` | warn / fail / critical (fail or critical required) | Snowflake only (native DMF) |
-| **Null percent (DMF)** | `dmf:null_percent` | Snowflake’s system NULL_PERCENT metric function (0–100), computed natively in the warehouse. | Completeness | `column` | warn / fail / critical (fail or critical required) | Snowflake only (native DMF) |
-| **Duplicate count (DMF)** | `dmf:duplicate_count` | Snowflake’s system DUPLICATE_COUNT metric function, computed natively in the warehouse. | Uniqueness | `column` | warn / fail / critical (fail or critical required) | Snowflake only (native DMF) |
-| **Unique count (DMF)** | `dmf:unique_count` | Snowflake’s system UNIQUE_COUNT metric function, computed natively in the warehouse. Degrades downward, so this type carries no thresholds — read the observed value directly. | Uniqueness | `column` | None — pass/fail only | Snowflake only (native DMF) |
+| **Null count (DMF)** | `dmf:null_count` | Snowflake’s system NULL_COUNT metric function, computed natively in the warehouse. | Completeness | `column` | warn / fail / critical (fail or critical required) | Snowflake |
+| **Null percent (DMF)** | `dmf:null_percent` | Snowflake’s system NULL_PERCENT metric function (0–100), computed natively in the warehouse. | Completeness | `column` | warn / fail / critical (fail or critical required) | Snowflake |
+| **Duplicate count (DMF)** | `dmf:duplicate_count` | Snowflake’s system DUPLICATE_COUNT metric function, computed natively in the warehouse. | Uniqueness | `column` | warn / fail / critical (fail or critical required) | Snowflake |
+| **Unique count (DMF)** | `dmf:unique_count` | Snowflake’s system UNIQUE_COUNT metric function, computed natively in the warehouse. Degrades downward, so this type carries no thresholds — read the observed value directly. | Uniqueness | `column` | None — pass/fail only | Snowflake |
 
 ## Authorable outside the editor
 
@@ -118,8 +118,6 @@ Vetted by the backend but with no editor widget: usable over the REST API, MCP a
 suite import, which hand the backend raw JSON.
 
 - `expect_column_pair_values_to_be_in_set`
-- `expect_multicolumn_sum_to_equal`
-- `expect_table_row_count_to_be_between`
 
 ## Not offered, and why
 
