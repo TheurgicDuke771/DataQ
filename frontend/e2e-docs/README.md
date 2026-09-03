@@ -19,3 +19,10 @@ muted playsinline>`.
 Conventions: 1440×900 viewport at 2× (`deviceScaleFactor`), light theme, one test per
 image, image names are stable (docs pages reference them by name). Only demo identities
 appear — the pre-commit identifier hook cannot read PNGs, so this lane is the guard.
+
+The LLM captures (`admin-llm-settings`, `configure-llm`) read the provider config that
+`capture-stack.sh start` saves through the API after the seed (`DOCS_LLM_MODEL` /
+`DOCS_LLM_BASE_URL` override the Ollama defaults). The clip's **Test** shows _OK_ only when an
+OpenAI-compatible server answers at that base URL; otherwise it records the named failure
+badge. `incident-evidence` needs the seeded incidents, which the seed rolls up through the
+real lifecycle engine.
