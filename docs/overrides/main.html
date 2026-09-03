@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{#
+  Header action row on every page: View as Markdown · Copy as Markdown · Ask AI ▾.
+  The Markdown lives at <page url>index.md (docs/hooks/llm_export.py). "Ask AI" opens the
+  page in the reader's OWN assistant with a prefilled prompt — nothing is proxied by us.
+#}
+{% block content %}
+  {% if page.file and page.file.src_uri != "404.md" %}
+    {% set md_url = page.canonical_url ~ "index.md" %}
+    {% set prompt = "Read " ~ md_url ~ " (the DataQ documentation page \"" ~ page.title ~ "\") and help me with questions about it." %}
+    <div class="dq-actions" data-md-url="{{ md_url }}">
+      <a class="dq-action" href="index.md" target="_blank" rel="noopener" title="Open this page as raw Markdown">
+        {% include ".icons/material/language-markdown-outline.svg" %} Markdown
+      </a>
+      <button class="dq-action" type="button" data-dq-copy title="Copy this page as Markdown">
+        {% include ".icons/material/content-copy.svg" %} Copy
+      </button>
+      <div class="dq-ask">
+        <button class="dq-action" type="button" data-dq-ask aria-haspopup="menu" aria-expanded="false" title="Open this page in your own AI assistant">
+          {% include ".icons/material/robot-outline.svg" %} Ask AI {% include ".icons/material/chevron-down.svg" %}
+        </button>
+        <div class="dq-ask__menu" role="menu" hidden>
+          <a href="https://claude.ai/new?q={{ prompt | urlencode }}" target="_blank" rel="noopener">Claude</a>
+          <a href="https://chatgpt.com/?q={{ prompt | urlencode }}" target="_blank" rel="noopener">ChatGPT</a>
+          <a href="https://github.com/copilot?prompt={{ prompt | urlencode }}" target="_blank" rel="noopener">GitHub Copilot</a>
+          <a href="{{ base_url }}/guides/mcp-setup/" title="Cursor, Claude Desktop and others read these pages over MCP">Connect your assistant (MCP)</a>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+  {{ super() }}
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script>
+    document.querySelectorAll("[data-dq-ask]").forEach(function (btn) {
+      var menu = btn.nextElementSibling;
+      btn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        var open = menu.hidden;
+        menu.hidden = !open;
+        btn.setAttribute("aria-expanded", String(open));
+      });
+      document.addEventListener("click", function () {
+        menu.hidden = true;
+        btn.setAttribute("aria-expanded", "false");
+      });
+    });
+    document.querySelectorAll("[data-dq-copy]").forEach(function (btn) {
+      btn.addEventListener("click", async function () {
+        var url = btn.closest(".dq-actions").dataset.mdUrl;
+        var label = btn.innerHTML;
+        try {
+          var md = await (await fetch(url)).text();
+          await navigator.clipboard.writeText(md);
+          btn.textContent = "Copied";
+        } catch (e) {
+          btn.textContent = "Copy failed";
+        }
+        setTimeout(function () { btn.innerHTML = label; }, 1500);
+      });
+    });
+  </script>
+{% endblock %}

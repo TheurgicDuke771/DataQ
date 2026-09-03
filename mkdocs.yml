@@ -19,6 +19,7 @@ site_dir: site/docs
 
 theme:
   name: material
+  custom_dir: docs/overrides # header action row: Markdown · Copy · Ask AI
   palette:
     - scheme: default
       primary: indigo # matches the app's indigo brand
@@ -85,6 +86,10 @@ plugins:
         observability.md: operate/observability.md
         troubleshooting.md: operate/troubleshooting.md
         runbook-faq.md: operate/runbook-faq.md
+
+# Every page also published as raw Markdown + llms.txt / llms-full.txt.
+hooks:
+  - docs/hooks/llm_export.py
 
 extra_css:
   - assets/extra.css
