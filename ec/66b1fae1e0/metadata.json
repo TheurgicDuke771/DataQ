@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "ec66b1fae1e0",
+  "strategy": "manual-commit",
+  "branch": "docs/ai-features-guide",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ec/66b1fae1e0/0/metadata.json",
+      "transcript": "/ec/66b1fae1e0/0/full.jsonl",
+      "compact_transcript": "/ec/66b1fae1e0/0/transcript.jsonl",
+      "content_hash": "/ec/66b1fae1e0/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 312,
+    "cache_creation_tokens": 3953,
+    "cache_read_tokens": 835516,
+    "output_tokens": 2958,
+    "api_call_count": 3
+  }
+}
