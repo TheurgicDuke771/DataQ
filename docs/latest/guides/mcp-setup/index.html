@@ -972,100 +972,6 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="The 48 tools">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#reading-the-results-honestly" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Reading the results honestly
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#suites-results" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Suites &amp; results
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#checks" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Checks
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#runs-profiling" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Runs &amp; profiling
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#connections-orchestration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Connections &amp; orchestration
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#scheduling-alerting" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Scheduling &amp; alerting
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#assets-incidents" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Assets &amp; incidents
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#suite-portability" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Suite portability
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
 </li>
       
         <li class="md-nav__item">
@@ -1190,6 +1096,8 @@
       
         
           
+        
+      
         
       
         
@@ -1327,6 +1235,34 @@
     
   
     REST API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/mcp-tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP tools
   
 
     
@@ -2273,100 +2209,6 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="The 48 tools">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#reading-the-results-honestly" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Reading the results honestly
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#suites-results" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Suites &amp; results
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#checks" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Checks
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#runs-profiling" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Runs &amp; profiling
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#connections-orchestration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Connections &amp; orchestration
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#scheduling-alerting" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Scheduling &amp; alerting
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#assets-incidents" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Assets &amp; incidents
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#suite-portability" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Suite portability
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
 </li>
       
         <li class="md-nav__item">
@@ -2494,382 +2336,23 @@ itself, <code>.gitignore</code> already covers <code>.vscode/*</code>).</p>
 <h2 id="the-48-tools">The 48 tools<a class="headerlink" href="#the-48-tools" title="Permanent link">¶</a></h2>
 <p>Each tool is a thin wrapper over the same service layer as the REST API — per-suite
 authorization (<code>view</code> for a read, <code>edit</code> for a mutation) and failing-sample redaction apply
-identically. The 48 split three ways, not two (one of the 25 reads, <code>get_adf_pipeline_status</code>,
-is a deprecated alias kept only for backward compatibility — see below); the counts here are
-derived from <code>tests/support/mcp_gates.GATES</code>, not hand-typed, so they can't drift the way an
-earlier pass of this page did.</p>
+identically. <strong>The complete list — every tool, who can call it, and what it does — is the
+<a href="../../reference/mcp-tools/">MCP tools reference</a></strong>, generated from the server itself and
+drift-checked in CI, so it cannot go stale the way an earlier hand-typed pass of this page did.</p>
+<p>The tools split three ways, not two:</p>
 <ul>
-<li><strong>25 read-only</strong> — <code>export_suite</code>, <code>get_adf_pipeline_status</code> (deprecated, use
-  <code>get_pipeline_status</code>), <code>get_asset</code>, <code>get_check</code>, <code>get_check_history</code>, <code>get_column_policy</code>,
-  <code>get_doc</code>, <code>get_health_score</code>, <code>get_incident</code>, <code>get_near_misses</code>, <code>get_notification_config</code>,
-  <code>get_pipeline_status</code>, <code>get_run_results</code>, <code>get_run_status</code>, <code>get_suite_performance</code>,
-  <code>get_suite_results</code>, <code>list_assets</code>, <code>list_check_versions</code>, <code>list_checks</code>, <code>list_connections</code>,
-  <code>list_incidents</code>, <code>list_runs</code>, <code>list_schedules</code>, <code>list_suites</code>, <code>list_trigger_bindings</code>.</li>
-<li><strong>18 that change state</strong> — <code>create_check</code>, <code>update_check</code>, <code>delete_check</code>, <code>snooze_check</code>,
-  <code>restore_check_version</code>, <code>trigger_suite_run</code>, <code>cancel_run</code>, <code>update_suite</code>, <code>set_column_policy</code>,
-  <code>create_schedule</code>, <code>update_schedule</code>, <code>delete_schedule</code>, <code>create_trigger_binding</code>,
-  <code>update_trigger_binding</code>, <code>delete_trigger_binding</code>, <code>ack_incident</code>, <code>resolve_incident</code>,
-  <code>import_suite</code>. All gate on <code>edit</code> access to the affected suite (the schedule, binding and
-  incident tools via the suite they target); <code>import_suite</code> additionally requires the <strong>member</strong>
-  workspace role, since it has no existing suite to gate on.</li>
-<li><strong>5 that persist nothing but open a live datasource connection using stored credentials</strong> —
-  <code>profile_column</code>, <code>list_columns</code>, <code>dryrun_check</code>, <code>suggest_column_policy</code>, <code>test_connection</code>.
-  These are gated like writes, not like reads, because they spend a real credential against a
-  remote system even though nothing is saved: the first four require <code>edit</code> on the suite whose
-  connection they probe, and <code>test_connection</code> (which has no suite at all) requires the <strong>member</strong>
-  workspace role.</li>
+<li><strong>Read-only</strong> (25) — reads gated on <code>view</code> where a suite is named; workspace-wide reads such as
+  <code>list_suites</code> and <code>get_health_score</code> need only a signed-in user.</li>
+<li><strong>Changes state</strong> (18) — every one gates on <code>edit</code> access to the affected suite (schedule,
+  binding and incident tools via the suite they target); <code>import_suite</code> additionally requires
+  the <strong>member</strong> workspace role, since it has no existing suite to gate on.</li>
+<li><strong>Live probes</strong> (5) — <code>profile_column</code>, <code>list_columns</code>, <code>dryrun_check</code>,
+  <code>suggest_column_policy</code>, <code>test_connection</code> persist nothing but open a live datasource
+  connection with stored credentials. They are gated like writes, not reads, because they
+  spend a real credential against a remote system: the first four require <code>edit</code> on the suite
+  whose connection they probe, and <code>test_connection</code> (which has no suite) requires the
+  <strong>member</strong> workspace role.</li>
 </ul>
-<p><code>get_adf_pipeline_status</code> predates dbt (ADR 0029) and Airflow support and was never ADF-only
-despite the name; <code>get_pipeline_status</code> is the current name and states its actual scope. The old
-name stays registered — a client with it pinned in a saved prompt or static config keeps
-working — and delegates to <code>get_pipeline_status</code> with identical behavior. New integrations
-should use <code>get_pipeline_status</code>.</p>
-<p>No MCP tool is Admin-only. Every Admin-only capability in ADR 0033's authorization matrix is a
-connection <em>mutation</em> (create/edit/delete/re-auth), and none of those are exposed here at all —
-a credential must never transit an LLM. <code>test_connection</code> reports only whether a live probe
-succeeded; it never returns a credential or a secret reference.</p>
-<h3 id="reading-the-results-honestly">Reading the results honestly<a class="headerlink" href="#reading-the-results-honestly" title="Permanent link">¶</a></h3>
-<p>A REST caller wrote their own query and a UI user reads the screen — the row
-count, the timestamps, the "running" badge, the filter they chose. An AI client
-has neither, so several tools return <strong>fields whose whole job is to say what the
-answer does not cover</strong>. A well-behaved client should branch on these rather
-than summarising the payload as-is. This is one instance of a discipline applied
-across the whole surface — see <a href="../../architecture/mcp-honesty/">MCP tool design: honesty &amp; disclosure</a>
-for the full set of rules and why they exist.</p>
-<table>
-<thead>
-<tr>
-<th>Field</th>
-<th>Appears on</th>
-<th>What it prevents</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>total</code> · <code>returned</code> · <code>truncated</code></td>
-<td><code>list_runs</code>, <code>list_checks</code>, <code>list_check_versions</code>, <code>list_incidents</code>, <code>list_assets</code>, <code>get_check_history</code>, <code>get_pipeline_status</code></td>
-<td>reporting one page as the whole set. <code>truncated</code> is computed against a real total, never inferred from page length. The unpaged tools — <code>list_suites</code>, <code>list_connections</code>, <code>list_schedules</code>, <code>list_trigger_bindings</code>, <code>get_near_misses</code> — return every row and carry no page fields at all</td>
-</tr>
-<tr>
-<td><code>oldest_in_page</code> · <code>newest_in_page</code></td>
-<td><code>list_runs</code>, <code>list_incidents</code>, <code>get_check_history</code>, <code>get_pipeline_status</code></td>
-<td>answering a time-bounded question ("what failed today?") from a <strong>count</strong>-capped page. <code>list_runs</code>/<code>list_incidents</code> now take <code>since_hours</code>/<code>until_hours</code>; <code>get_check_history</code>/<code>get_pipeline_status</code> still have no time filter — these fields say what window you actually saw regardless</td>
-</tr>
-<tr>
-<td><code>results_final</code></td>
-<td><code>list_runs</code>, <code>get_run_results</code>, <code>get_run_status</code>, <code>get_suite_results</code></td>
-<td>reading a mid-run partial as a verdict. A 30-check suite three checks in genuinely has "3/3 passed" — and no result yet</td>
-</tr>
-<tr>
-<td><code>redaction</code> · <code>redacted_columns</code></td>
-<td>per-check results</td>
-<td>describing masked rows as "no failing rows", or mask tokens as data</td>
-</tr>
-<tr>
-<td><code>sampling</code> · <code>sampled</code> · <code>sample_row_limit</code></td>
-<td>results, <code>profile_column</code></td>
-<td>stating a sample statistic as a fact about the full dataset</td>
-</tr>
-<tr>
-<td><code>runnable</code></td>
-<td><code>update_suite</code>, <code>import_suite</code></td>
-<td>reporting a suite as ready when it has no run target and cannot run</td>
-</tr>
-<tr>
-<td><code>is_recurrence</code> · <code>prior_incident_id</code></td>
-<td>incidents</td>
-<td>describing a recurring problem as brand new</td>
-</tr>
-<tr>
-<td><code>window_hours</code></td>
-<td><code>get_near_misses</code></td>
-<td>quoting a default window on a deployment that changed it</td>
-</tr>
-<tr>
-<td><code>restricted_suite_count</code></td>
-<td><code>get_asset</code></td>
-<td>presenting the suites you can see as the whole explanation for a workspace-wide health number</td>
-</tr>
-<tr>
-<td><code>column_policy_pending</code> · <code>column_policy_may_be_stale</code></td>
-<td><code>update_suite</code></td>
-<td>leaving a redaction policy stranded after re-pointing a suite</td>
-</tr>
-</tbody>
-</table>
-<p>The same principle runs through the tool descriptions themselves: each states its
-population (so an empty result is never read as "nothing exists"), whether it is a
-snapshot or a live read, and what it structurally cannot see.</p>
-<h3 id="suites-results">Suites &amp; results<a class="headerlink" href="#suites-results" title="Permanent link">¶</a></h3>
-<table>
-<thead>
-<tr>
-<th>Tool</th>
-<th>What it answers</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>list_suites</code></td>
-<td>"What suites can I see?" — id, datasource, env, check count, last run</td>
-</tr>
-<tr>
-<td><code>get_suite_results</code></td>
-<td>"What failed in suite X?" — latest run's per-check outcomes</td>
-</tr>
-<tr>
-<td><code>get_suite_performance</code></td>
-<td>"Which suites are in the worst shape?" — a worst-first health ranking</td>
-</tr>
-<tr>
-<td><code>get_health_score</code></td>
-<td>"How healthy is data quality overall?" — score and pass rate over a window. Its <code>trend</code> is a per-day count of <strong>runs</strong> by lifecycle status, <strong>not</strong> a per-day score; a null score means nothing was evaluated, not zero</td>
-</tr>
-<tr>
-<td><code>update_suite</code></td>
-<td>"Point the orders suite at ANALYTICS.ORDERS_V2" — renames a suite or sets <strong>what it runs against</strong>; an imported suite has no target and cannot run until this sets one. Returns <code>runnable</code></td>
-</tr>
-<tr>
-<td><code>export_suite</code></td>
-<td>"Show me the whole orders suite" — every check's definition as one portable document</td>
-</tr>
-</tbody>
-</table>
-<h3 id="checks">Checks<a class="headerlink" href="#checks" title="Permanent link">¶</a></h3>
-<table>
-<thead>
-<tr>
-<th>Tool</th>
-<th>What it answers</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>list_checks</code></td>
-<td>"What does the orders suite actually check?" — every check's config, kind, dimension</td>
-</tr>
-<tr>
-<td><code>get_check</code></td>
-<td>"What is this check actually asserting?" — one check's full definition</td>
-</tr>
-<tr>
-<td><code>get_check_history</code></td>
-<td>"Has the row-count check been flaky?" — recent <em>result</em> history for one check; for how its definition changed, use <code>list_check_versions</code></td>
-</tr>
-<tr>
-<td><code>list_check_versions</code></td>
-<td>"Who changed this threshold?" — one check's <em>edit</em> history: every snapshot's config and thresholds as they were at that version</td>
-</tr>
-<tr>
-<td><code>create_check</code></td>
-<td>"Add a null check on email" — authors a check on a suite you can edit</td>
-</tr>
-<tr>
-<td><code>update_check</code></td>
-<td>"Loosen the null check on email to warn at 2%" — a partial update; <code>config</code> replaces the whole configuration rather than merging into it</td>
-</tr>
-<tr>
-<td><code>delete_check</code></td>
-<td>"Remove the row-count check from orders" — permanently deletes a check <strong>and every result it ever recorded, plus every incident it raised, including open ones</strong>; prefer <code>snooze_check</code> to just stop alerting</td>
-</tr>
-<tr>
-<td><code>snooze_check</code></td>
-<td>"Stop alerting on the freshness check until tomorrow" (or, with no duration, "turn alerts back on") — mutes alerts only; the check still runs, still fails, and still opens an incident. <strong>Suppression is per <em>run</em></strong>: the alert is withheld only when every failing check in that run is snoozed</td>
-</tr>
-<tr>
-<td><code>restore_check_version</code></td>
-<td>"Undo that threshold change" — puts a check back to a snapshot from <code>list_check_versions</code>; additive (nothing is renumbered or deleted), and the only path that <em>clears</em> a field back to empty</td>
-</tr>
-<tr>
-<td><code>dryrun_check</code></td>
-<td>"Would a not-null check on email pass right now?" — previews a check against live data without saving anything. Reads what a real run would read, so on flat-file / Iceberg targets it inherits the run target's sampling</td>
-</tr>
-</tbody>
-</table>
-<h3 id="runs-profiling">Runs &amp; profiling<a class="headerlink" href="#runs-profiling" title="Permanent link">¶</a></h3>
-<table>
-<thead>
-<tr>
-<th>Tool</th>
-<th>What it answers</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>list_runs</code></td>
-<td>"Show me the recent runs" / "find the run that failed". Takes <code>since_hours</code>/<code>until_hours</code> (relative "N hours ago" offsets) for time-bounded questions ("what ran today" = <code>since_hours=24</code>); without them the page is capped by <strong>count</strong>, and <code>oldest_in_page</code> / <code>newest_in_page</code> say what window you actually saw</td>
-</tr>
-<tr>
-<td><code>get_run_results</code></td>
-<td>"Why did last night's orders run fail?" — a specific historical run's per-check results</td>
-</tr>
-<tr>
-<td><code>get_run_status</code></td>
-<td>"Is it done?" — live status + per-check progress</td>
-</tr>
-<tr>
-<td><code>trigger_suite_run</code></td>
-<td>"Run the orders suite" — dispatches a run, returns the run id. <strong>The environment and dataset cannot be chosen</strong>: a run always uses the suite's own connection and target</td>
-</tr>
-<tr>
-<td><code>cancel_run</code></td>
-<td>"Stop the orders run, I triggered the wrong suite" — cancels a queued or still-running run; cooperative, so a fast run may finish first</td>
-</tr>
-<tr>
-<td><code>list_columns</code></td>
-<td>"What columns are on this table?" — names only, defaulting to the suite's own target. The cheap first step before authoring; guessing a column name produces a check that runs and errors</td>
-</tr>
-<tr>
-<td><code>profile_column</code></td>
-<td>"Profile the qty column" — live null/distinct/min/max/top-values stats. Snowflake and Unity Catalog are profiled in full; <strong>ADLS, S3 and Iceberg are sampled to 100k rows</strong>, and <code>sampled: true</code> means <code>row_count</code> is the sample size, not the table's. Values are returned <strong>unredacted</strong></td>
-</tr>
-<tr>
-<td><code>get_column_policy</code></td>
-<td>"Is the email column masked in failure samples?" — the suite's redaction policy; an empty one means no suite-level override, <strong>not</strong> that nothing is masked</td>
-</tr>
-<tr>
-<td><code>set_column_policy</code></td>
-<td>"Mask the email column in failure samples" — applies what <code>suggest_column_policy</code> proposed; replaces the whole policy</td>
-</tr>
-<tr>
-<td><code>suggest_column_policy</code></td>
-<td>"Which columns here are sensitive?" — suggests (never saves) a PII redaction policy by profiling the suite's target live</td>
-</tr>
-</tbody>
-</table>
-<h3 id="connections-orchestration">Connections &amp; orchestration<a class="headerlink" href="#connections-orchestration" title="Permanent link">¶</a></h3>
-<table>
-<thead>
-<tr>
-<th>Tool</th>
-<th>What it answers</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>list_connections</code></td>
-<td>"What are we connected to?" / "which connections are broken?" — names, types and health <strong>only</strong>, never config or secrets. <code>consecutive_run_failures</code> is non-zero only when <em>every</em> suite on the connection is failing, so a per-suite problem is invisible here</td>
-</tr>
-<tr>
-<td><code>test_connection</code></td>
-<td>"Is the Snowflake connection working?" — opens a live connection with the stored credential. A pass proves only that the credential authenticates and the datasource answers, <strong>not</strong> that a suite will run; a failure is deliberately unclassified (driver text can carry credential fragments)</td>
-</tr>
-<tr>
-<td><code>get_pipeline_status</code></td>
-<td>"Why did pipeline Y fail?" — recent orchestrator (ADF/Airflow/dbt) runs + correlated DQ run</td>
-</tr>
-<tr>
-<td><code>list_trigger_bindings</code></td>
-<td>"What runs after the nightly load?" — which pipeline/DAG successes trigger which suite</td>
-</tr>
-<tr>
-<td><code>create_trigger_binding</code></td>
-<td>"Run the orders checks after the nightly load finishes" — binds a pipeline/DAG success in a given <code>env</code> to a suite; only success triggers a run</td>
-</tr>
-<tr>
-<td><code>update_trigger_binding</code></td>
-<td>"Stop that trigger firing, but keep the wiring" — enables or disables a binding; what it points at is immutable, so re-targeting means delete + create</td>
-</tr>
-<tr>
-<td><code>delete_trigger_binding</code></td>
-<td>"Unhook the orders checks from the nightly load" — removes the binding; prefer <code>update_trigger_binding</code> if a pause is meant</td>
-</tr>
-<tr>
-<td><code>get_near_misses</code></td>
-<td>"The suite was supposed to run after the pipeline and it didn't" — pipelines that succeeded in one <code>env</code> while the only enabled binding is scoped to another, so the trigger is inert</td>
-</tr>
-</tbody>
-</table>
-<h3 id="scheduling-alerting">Scheduling &amp; alerting<a class="headerlink" href="#scheduling-alerting" title="Permanent link">¶</a></h3>
-<table>
-<thead>
-<tr>
-<th>Tool</th>
-<th>What it answers</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>list_schedules</code></td>
-<td>"When does the orders suite run?" — cron schedules + next fire time</td>
-</tr>
-<tr>
-<td><code>create_schedule</code></td>
-<td>"Run the orders suite every night at 2am" — returns the resolved <code>next_run_at</code> so you can confirm the interpretation, or <code>null</code> when created disabled (a disabled schedule does not fire at all)</td>
-</tr>
-<tr>
-<td><code>update_schedule</code></td>
-<td>"Move the orders run to 3am" / "pause the nightly schedule" — partial update of cron, timezone or enabled. Resuming <strong>re-bases</strong>; it does not backfill runs missed while paused</td>
-</tr>
-<tr>
-<td><code>delete_schedule</code></td>
-<td>"Stop the nightly orders run" — removes the schedule; the suite and its checks are untouched. Prefer <code>update_schedule(enabled=false)</code> if a pause is meant</td>
-</tr>
-<tr>
-<td><code>get_notification_config</code></td>
-<td>"Who gets told when orders fails?" — channel presence (Teams/Slack/email), never webhook URLs</td>
-</tr>
-</tbody>
-</table>
-<h3 id="assets-incidents">Assets &amp; incidents<a class="headerlink" href="#assets-incidents" title="Permanent link">¶</a></h3>
-<p>Assets are the grain people reason in ("is <code>orders</code> healthy?"); suites are the grain checks are
-authored in. Incidents are the deduplicated, stateful roll-up of repeated failures.</p>
-<table>
-<thead>
-<tr>
-<th>Tool</th>
-<th>What it answers</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>list_assets</code></td>
-<td>"What tables do we monitor?" / "which assets are unhealthy?" — every asset with its health. The numbers are <strong>workspace-true</strong> (ADR <a href="../../adr/0037-workspace-visible-asset-identity/">0037</a>): aggregated over every composing suite, including ones the caller cannot see, so they are not "your" checks</td>
-</tr>
-<tr>
-<td><code>get_asset</code></td>
-<td>"Is the orders table healthy, and what feeds it?" — the workspace-true summary + per-dimension scorecard + the composing suites the caller may view (<code>restricted_suite_count</code> counts the rest) + the lineage neighbourhood, qualified when a lineage source is failing or stale</td>
-</tr>
-<tr>
-<td><code>list_incidents</code></td>
-<td>"What's broken right now?" — open/acknowledged/resolved incidents, scoped to suites the caller can see, so an empty result means "nothing visible to you", not "nothing is wrong". Also takes <code>since_hours</code>/<code>until_hours</code>, filtered on <code>last_seen_at</code> (most recent breach, not when first opened). Incidents auto-resolve on the first passing result, so this answers "what's unresolved now", not "what failed during period X" — a resolved failure earlier in the window won't appear even under a time filter; use <code>list_runs</code> for that question</td>
-</tr>
-<tr>
-<td><code>get_incident</code></td>
-<td>"Why did this open, and what else broke at the time?" — the evidence card snapshotted at the last occurrence; carries no failing sample rows by design</td>
-</tr>
-<tr>
-<td><code>ack_incident</code></td>
-<td>"I'm on it" — records that someone owns the incident. Changes nothing about the data and does <strong>not</strong> stop alerts; use <code>snooze_check</code> for that</td>
-</tr>
-<tr>
-<td><code>resolve_incident</code></td>
-<td>"The backfill fixed it" — declares the problem over. Does not re-run anything, and the next failing run opens a <strong>new</strong> incident</td>
-</tr>
-</tbody>
-</table>
-<h3 id="suite-portability">Suite portability<a class="headerlink" href="#suite-portability" title="Permanent link">¶</a></h3>
-<table>
-<thead>
-<tr>
-<th>Tool</th>
-<th>What it answers</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>import_suite</code></td>
-<td>"Recreate the orders suite against the QA warehouse" — creates a whole new suite from an <code>export_suite</code> document. <strong>Only the checks are copied</strong>: the new suite has no run target (<code>runnable: false</code> — fix with <code>update_suite</code>), no schedules, no trigger bindings, no notification config, no column policy and no shares. Requires the <strong>member</strong> workspace role; never merges into an existing suite</td>
-</tr>
-</tbody>
-</table>
-<p>Try these natural-language queries once connected:</p>
-<ol>
-<li><em>"What data quality checks failed today?"</em></li>
-<li><em>"Run the Retail Orders suite."</em> … <em>"Is it done?"</em></li>
-<li><em>"Why did the ADF pipeline fail?"</em></li>
-<li><em>"Add a not-null check on order_number in the Retail Orders suite."</em></li>
-</ol>
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">¶</a></h2>
 <table>
 <thead>
