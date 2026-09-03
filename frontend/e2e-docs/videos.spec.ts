@@ -33,7 +33,9 @@ test('add-connection', async ({ page }) => {
   await expect(page.getByLabel('Name')).toBeVisible();
   await beat(600);
   await page.getByLabel('Name').pressSequentially('snowflake-prod', { delay: 60 });
-  await page.getByLabel('Account', { exact: true }).pressSequentially('acme-xy12345', { delay: 60 });
+  await page
+    .getByLabel('Account', { exact: true })
+    .pressSequentially('acme-xy12345', { delay: 60 });
   await page.getByLabel('User', { exact: true }).pressSequentially('DATAQ_READER', { delay: 60 });
   await page.getByLabel('Database', { exact: true }).pressSequentially('ANALYTICS', { delay: 60 });
   await beat(1500);
