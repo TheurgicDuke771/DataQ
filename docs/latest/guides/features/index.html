@@ -751,6 +751,8 @@
       
         
       
+        
+      
     
     
     
@@ -1153,6 +1155,34 @@
     
   
     AI assistants (MCP)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ai-features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI features (LLM)
   
 
     
@@ -2723,10 +2753,11 @@ provider + credential, admin-configured) powers three features: <strong>NL→SQL
 the custom-SQL check editor, <strong>curated check suggestions</strong> driven by a live column profile
 constrained to a vetted expectation vocabulary, and a <strong>root-cause narrative</strong> for a failed
 check — ranked hypotheses citing real evidence-card layers, plus what the evidence snapshot
-could <em>not</em> see. SQL generation and check suggestions send only masked aggregate profiler
-statistics to the provider; the RCA narrative additionally sends the triggering check's own
+could <em>not</em> see. SQL generation sends column names and counts; check suggestions add masked profile
+statistics, including each non-sensitive column's most frequent values; the RCA narrative additionally sends the triggering check's own
 observed value, routed through the same column-policy/warehouse-tag redaction floor every
 results surface applies. Raw sample rows never leave the deployment on any path. See
+<a href="../ai-features/">AI features</a> for a walkthrough with real output, and
 <a href="../../security/overview/">Security &amp; data handling</a> for the full transfer-vector accounting.</p>
 <h2 id="ai-assistants-mcp">AI assistants (MCP)<a class="headerlink" href="#ai-assistants-mcp" title="Permanent link">¶</a></h2>
 <p>A curated <strong>48-tool MCP server</strong> at <code>/mcp</code> lets Claude / Copilot / Cursor list suites, read

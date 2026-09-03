@@ -37,6 +37,15 @@ Task-shaped pages: each answers one "how do I…" question. If you are new, star
 
     [:octicons-arrow-right-24: AI assistants (MCP)](mcp-setup.md)
 
+-   :material-creation:{ .lg .middle } **Let a model do the tedious part**
+
+    ---
+
+    Write custom SQL from a sentence, get a starter set of checks for a table, and read
+    a root-cause narrative for a failure — with a provider you choose.
+
+    [:octicons-arrow-right-24: AI features (LLM)](ai-features.md)
+
 -   :material-key:{ .lg .middle } **Script it**
 
     ---
