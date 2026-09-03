@@ -57,6 +57,7 @@ theme:
 
 plugins:
   - search
+  - swagger-ui-tag # interactive REST explorer on the API page (MIT, assets bundled)
   - glightbox: # click-to-zoom on every screenshot (MIT)
       touchNavigation: true
       skip_classes: [no-zoom]
@@ -140,6 +141,7 @@ nav:
       - reference/index.md
       - Feature matrix: reference/feature-matrix.md
       - REST API: reference/rest-api.md
+      - MCP tools: reference/mcp-tools.md
       - Glossary: reference/glossary.md
       - Changelog: reference/changelog.md
   - Architecture:

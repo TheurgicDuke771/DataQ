@@ -181,6 +181,14 @@ jobs:
           DATAQ_E2E: "1"
         run: pytest backend/tests/
 
+      # The docs site's OpenAPI spec + MCP tool table are generated from the app; a change to
+      # a route or a tool docstring must regenerate them (backend/scripts/export_docs_reference.py).
+      - name: Docs reference artifacts match the app (openapi.json, mcp-tools.md)
+        env:
+          DATABASE_URL: postgresql+psycopg2://dataq:dataq@localhost:5432/dataq_test
+          REDIS_URL: redis://localhost:6379/0
+        run: python -m backend.scripts.export_docs_reference --check
+
   # ── Leak prevention: secrets (betterleaks) + identifiers (#1472) ───────────── The job keeps its
   # original NAME because that string is the required-status-check context in the `main` ruleset.
   secrets:
