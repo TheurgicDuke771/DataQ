@@ -1,0 +1,43 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "4a8c40a38d27",
+  "strategy": "manual-commit",
+  "branch": "docs/redesign-p6-beginner",
+  "checkpoints_count": 5,
+  "files_touched": [
+    ".github/workflows/ci.yml",
+    ".pre-commit-config.yaml",
+    "CONTRIBUTING.md",
+    "docs/site/architecture/overview.md",
+    "docs/site/assets/screenshots/settings-notifications.png",
+    "docs/site/assets/screenshots/suite-notifications.png",
+    "docs/site/assets/screenshots/suite-schedules.png",
+    "docs/site/get-started/ask-assistant.md",
+    "docs/site/get-started/concepts.md",
+    "docs/site/get-started/connect-pipeline.md",
+    "docs/site/get-started/first-alert.md",
+    "docs/site/get-started/first-suite.md",
+    "docs/site/get-started/index.md",
+    "docs/site/index.md",
+    "frontend/e2e-docs/screenshots.spec.ts",
+    "mkdocs.yml",
+    "scripts/check-docs-assets.py",
+    "scripts/check-docs-references.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/4a/8c40a38d27/0/metadata.json",
+      "transcript": "/4a/8c40a38d27/0/full.jsonl",
+      "compact_transcript": "/4a/8c40a38d27/0/transcript.jsonl",
+      "content_hash": "/4a/8c40a38d27/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1740,
+    "cache_creation_tokens": 62207,
+    "cache_read_tokens": 8266359,
+    "output_tokens": 28346,
+    "api_call_count": 16
+  }
+}
