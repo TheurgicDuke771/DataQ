@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "ea1647bc647e",
+  "strategy": "manual-commit",
+  "branch": "docs/ai-features-guide",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/site/assets/screenshots/admin-llm-settings.png",
+    "docs/site/assets/videos/configure-llm.jpg",
+    "docs/site/assets/videos/configure-llm.mp4",
+    "frontend/e2e-docs/README.md",
+    "frontend/e2e-docs/screenshots.spec.ts",
+    "frontend/e2e-docs/shot.ts",
+    "frontend/e2e-docs/videos.spec.ts",
+    "scripts/docs/capture-stack.sh"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ea/1647bc647e/0/metadata.json",
+      "transcript": "/ea/1647bc647e/0/full.jsonl",
+      "compact_transcript": "/ea/1647bc647e/0/transcript.jsonl",
+      "content_hash": "/ea/1647bc647e/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 758,
+    "cache_creation_tokens": 19295,
+    "cache_read_tokens": 3385558,
+    "output_tokens": 7745,
+    "api_call_count": 11
+  }
+}
