@@ -120,3 +120,29 @@ test('settings', async ({ page }) => {
   await heading(page, /Settings/);
   await shot(page, 'settings');
 });
+
+test('settings — notification channels', async ({ page }) => {
+  await page.goto('/settings');
+  await heading(page, /Settings/);
+  await page.getByRole('tab', { name: 'Notifications' }).click();
+  await page.waitForLoadState('networkidle');
+  await shot(page, 'settings-notifications');
+});
+
+test('suite — notifications panel', async ({ page }) => {
+  await page.goto('/suites');
+  await page.getByText('Orders quality').click();
+  await heading(page, 'Orders quality', 4);
+  const panel = page.getByText('Notifications', { exact: true }).first();
+  await panel.scrollIntoViewIfNeeded();
+  await shot(page, 'suite-notifications');
+});
+
+test('suite — schedules panel', async ({ page }) => {
+  await page.goto('/suites');
+  await page.getByText('Orders quality').click();
+  await heading(page, 'Orders quality', 4);
+  const panel = page.getByText('Schedules', { exact: true }).first();
+  await panel.scrollIntoViewIfNeeded();
+  await shot(page, 'suite-schedules');
+});

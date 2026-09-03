@@ -244,6 +244,9 @@ jobs:
       - name: Published docs don't cite tickets or link internal docs
         run: python scripts/check-docs-references.py
 
+      - name: Docs assets stay small and every image has alt text
+        run: python scripts/check-docs-assets.py
+
       - name: Frontend UI text doesn't cite ADR/issue/PR numbers
         run: python scripts/check-frontend-no-ticket-refs.py
 

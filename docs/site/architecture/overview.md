@@ -2,8 +2,6 @@
 
 > Keep these diagrams in sync with the code. When a new component, datasource, integration, or DB table is added, update the relevant diagram in the same PR.
 >
-> ⚠️ **Mermaid gotcha — syntactically *valid* ≠ *renders correctly*.** In **sequence-diagram** text, `#` starts Mermaid's HTML-entity escape (`#35;` → `#`) and a stray `;` terminates a statement — a bare `#NNN` issue ref or an inline semicolon silently truncates the rendered line while the syntax check still passes. Write issue refs in sequence diagrams as `#35;NNN` (renders as `#NNN`; flowcharts/state/ER diagrams don't need this) and eyeball the rendered diagram before merging, not just the linter.
->
 > ☁️ **These diagrams are drawn using Azure's component names** (Container Apps, Key Vault, App Insights, Azure AD) because that's the concrete deployment they trace through. DataQ runs as an equally-live peer deployment on **AWS** (ECS Fargate, Secrets Manager, CloudWatch+X-Ray, Cognito) behind the exact same seams — see [deployment parity](../operate/deployment-parity.md) for the side-by-side. Neither cloud is primary; read "Key Vault" / "App Insights" / "Azure AD" below as "the secret store" / "the observability backend" / "the OIDC authority" and substitute the AWS equivalent where relevant.
 
 ```mermaid

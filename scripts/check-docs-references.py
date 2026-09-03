@@ -28,9 +28,9 @@ from pathlib import Path
 SITE = Path("docs/site")
 
 # `#35;` alone (no lookahead: not `#(?!35;)`) is Mermaid's HTML-entity escape for
-# a literal `#` in sequence diagrams (35 = ASCII code for '#'), used bare in
-# architecture.md's own gotcha note about the convention — not an issue/PR
-# reference by itself. `#35;NNN` (the escape immediately followed by digits) IS
+# a literal `#` in sequence diagrams (35 = ASCII code for '#'); the convention is
+# documented in CONTRIBUTING.md, and a bare `#35;` is not an issue/PR reference. `#35;NNN` (the
+# escape immediately followed by digits) IS
 # this repo's documented convention for citing an issue *inside* that escape, so
 # it's matched separately below rather than excluded outright.
 ISSUE_OR_PR_SHORTHAND = re.compile(r"#(?!35;)[0-9]{2,5}\b")

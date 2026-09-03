@@ -81,6 +81,12 @@ repos:
         language: system
         pass_filenames: false
         files: ^(docs/site/.*\.md|scripts/check-docs-references\.py)$
+      - id: check-docs-assets
+        name: Docs assets stay small and every image has alt text
+        entry: python scripts/check-docs-assets.py
+        language: system
+        pass_filenames: false
+        files: ^(docs/site/.*|scripts/check-docs-assets\.py)$
       - id: check-check-catalog-docs
         name: Check-type reference is generated from the catalog + allowlist
         entry: python scripts/docs/gen-check-catalog.py --check
