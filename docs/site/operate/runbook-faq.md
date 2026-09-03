@@ -19,7 +19,7 @@ Full deploy steps + verification: the repository's **`deploy/README.md`**.
 
 ## Live smoke (deployed stack + harness data)
 
-> Scale numbers are in [perf-baseline.md](perf-baseline.md).
+> Scale numbers are in [perf-baseline.md](../architecture/perf-baseline.md).
 
 Automated, opt-in (never CI):
 
@@ -39,7 +39,7 @@ Manual checklist (the mutating tail):
 - Force a failing run → the Teams/Slack/email alert arrives with the right severity;
   a repeat failure is deduped.
 - MCP: point Claude Desktop at `https://<frontend-host>/mcp/` (trailing slash — see
-  [AI assistants (MCP setup)](mcp-setup.md)) and run the 4 canonical queries
+  [AI assistants (MCP setup)](../guides/mcp-setup.md)) and run the 4 canonical queries
   (what failed today / run suite X / why did pipeline Y fail / add a null check).
 
 ## Known limitations
@@ -58,7 +58,7 @@ Manual checklist (the mutating tail):
 ## FAQ
 
 **Is ADF/Airflow a datasource?** No — they're orchestration providers DataQ monitors and
-can trigger from. You never write checks against them. See **[Concepts](concepts.md)**.
+can trigger from. You never write checks against them. See **[Concepts](../get-started/concepts.md)**.
 
 **Do I need Azure to run it locally?** No. The compose stacks sign you in with an emailed
 one-time code and bundle the mailbox too (a local Mailpit inbox at `localhost:8025`), so
@@ -70,7 +70,7 @@ Azure and AWS are both live deployment targets behind the app's seams (ADR 0010/
 after a retention window — never written to logs.
 
 **Can an AI assistant use DataQ?** Yes — 47 MCP tools at `/mcp` (Claude Desktop / Claude.ai
-/ Copilot / Cursor), OIDC-authenticated (Azure AD or Cognito) or via a PAT. See [AI assistants (MCP setup)](mcp-setup.md).
+/ Copilot / Cursor), OIDC-authenticated (Azure AD or Cognito) or via a PAT. See [AI assistants (MCP setup)](../guides/mcp-setup.md).
 
 **An asset shows no lineage — is that right?** Maybe not. "No lineage recorded" can mean an
 asset genuinely has no upstreams, or that DataQ has been unable to read your dbt artifacts —
@@ -80,4 +80,4 @@ expires the poll fails while your dbt builds keep succeeding. Note that fixing t
 alone will **not** backfill — the poll's 15-minute lookback means every build produced during
 the outage is already stranded, so you must re-run the dbt build to get a fresh artifact into
 the window.
-Full detail in [Orchestration → When lineage is empty](orchestration.md#when-lineage-is-empty-check-the-poll-before-you-check-the-graph).
+Full detail in [Orchestration → When lineage is empty](../guides/orchestration.md#when-lineage-is-empty-check-the-poll-before-you-check-the-graph).

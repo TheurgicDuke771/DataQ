@@ -32,7 +32,7 @@ seeded with demo data. API + Swagger at `http://localhost:8000/docs`. The GHCR i
 are **multi-arch** (amd64 + arm64, native on Apple Silicon) and all ports bind to
 `127.0.0.1` only. To skip sign-in entirely (dev-bypass, a deliberate downgrade — not
 the default): `DATAQ_SIGNIN_EMAIL= DATAQ_AUTH_MODE=bypass docker compose -f docker-compose.ghcr.yml up`.
-See [Getting started](getting-started.md) for the full flow.
+See [Getting started](get-started/install.md) for the full flow.
 
 ### Develop DataQ — from source
 
@@ -48,17 +48,17 @@ docker-compose up         # Postgres + Redis + FastAPI + React + Celery worker
 - Frontend: `http://localhost:3000`.
 
 Then open the UI, add a connection, create a suite of checks, and run it. See
-**[Getting started](getting-started.md)** for both paths in depth (incl. self-hosting
-with your own IdP — Azure AD, Cognito, Okta, …) and **[Datasources & checks](datasources-checks.md)**
+**[Getting started](get-started/install.md)** for both paths in depth (incl. self-hosting
+with your own IdP — Azure AD, Cognito, Okta, …) and **[Datasources & checks](guides/datasources-checks.md)**
 to author your first check.
 
 ## Where to go next
 
-- Just want to use it? Follow the **[Tutorial — your first suite](tutorial.md)** end to end.
-- New to DataQ? Read **[Concepts](concepts.md)** (datasource vs orchestration is the one
-  distinction to internalise), then browse **[Features](features.md)**.
-- Setting it up the right way? **[Recommended usage](recommended-usage.md)**.
-- Want the big picture? **[Architecture](architecture.md)** · **[Security & data handling](security.md)**.
-- Running it for real? **[Deployment](deployment.md)** · **[Troubleshooting](troubleshooting.md)** · **[Observability](observability.md)**.
-- Scripting it? The **[REST API](rest-api.md)**. AI assistants (Claude / Copilot / Cursor) can
-  drive DataQ over **[MCP](mcp-setup.md)**.
+- Just want to use it? Follow the **[Tutorial — your first suite](get-started/first-suite.md)** end to end.
+- New to DataQ? Read **[Concepts](get-started/concepts.md)** (datasource vs orchestration is the one
+  distinction to internalise), then browse **[Features](guides/features.md)**.
+- Setting it up the right way? **[Recommended usage](guides/recommended-usage.md)**.
+- Want the big picture? **[Architecture](architecture/overview.md)** · **[Security & data handling](security/overview.md)**.
+- Running it for real? **[Deployment](operate/deployment.md)** · **[Troubleshooting](operate/troubleshooting.md)** · **[Observability](operate/observability.md)**.
+- Scripting it? The **[REST API](reference/rest-api.md)**. AI assistants (Claude / Copilot / Cursor) can
+  drive DataQ over **[MCP](guides/mcp-setup.md)**.

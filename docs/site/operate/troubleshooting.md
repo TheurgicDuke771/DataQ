@@ -23,11 +23,11 @@ You changed a field that decides where the credential is sent — a host, URL, o
 Airflow `base_url`, dbt
 `artifacts_uri`). Re-enter the credential in the same save and it will go through;
 `detail.required` on the API error names exactly what to send. See
-[Datasources & checks](datasources-checks.md#moving-a-connection-to-a-new-host).
+[Datasources & checks](../guides/datasources-checks.md#moving-a-connection-to-a-new-host).
 
 **Creating or editing a connection returns `403`.**
 
-Connection management is **Admin-only** (ADR [0033](adr/0033-workspace-roles-rbac.md)). Ask a
+Connection management is **Admin-only** (ADR [0033](../adr/0033-workspace-roles-rbac.md)). Ask a
 workspace Admin, or have them promote you under **Admin → Members**. A role change applies on
 your next request, including on API keys you already hold — no need to re-mint one.
 
@@ -82,14 +82,14 @@ respected as-is.
 
 **A scheduled run didn't fire.** Confirm the schedule is **enabled**, the cron + timezone are
 right, and remember DataQ does **no backfill** — a missed window isn't retried, the next one
-runs. See [Scheduling](scheduling.md).
+runs. See [Scheduling](../guides/scheduling.md).
 
 ## Triggers / orchestration
 
 **A pipeline succeeded but no suite ran.** Check there's an **enabled trigger binding** matching
 `(provider, pipeline/DAG/job, env)` exactly, and that the webhook is configured (or the
 10-minute poll fallback can reach the artifacts/REST API). Failure events **alert but never
-trigger** a run — by design. See [Orchestration](orchestration.md).
+trigger** a run — by design. See [Orchestration](../guides/orchestration.md).
 
 ## Alerts
 
@@ -105,14 +105,14 @@ trigger** a run — by design. See [Orchestration](orchestration.md).
 
 ## Sign-in & API
 
-- **401 on the API or MCP** = no/invalid token. For scripts, mint a fresh [PAT](api-keys.md);
+- **401 on the API or MCP** = no/invalid token. For scripts, mint a fresh [PAT](../guides/api-keys.md);
   it expires and can be revoked.
 - **SSO won't complete** — confirm the IdP app registration + redirect URIs match the deployed
   frontend URL.
 
 ## AI assistants (MCP)
 
-- **401 on `/mcp/`** = auth (expected without a token) — see [MCP setup](mcp-setup.md).
+- **401 on `/mcp/`** = auth (expected without a token) — see [MCP setup](../guides/mcp-setup.md).
 - **307** = missing trailing slash; use `/mcp/`.
 - **421 Misdirected Request** = the transport's DNS-rebind Host guard rejecting the proxied
   Host — a deployment-side config issue (the server allow-lists the proxied hosts); it is not

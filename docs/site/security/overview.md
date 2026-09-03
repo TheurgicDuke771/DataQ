@@ -26,7 +26,7 @@ lawful basis) and is the deploying organization's responsibility.
   `auth_oidc_no_signup_allowlist` at **WARNING** on every boot in that state. If you see that
   line, confirm your IdP is invite-only.
 - **Personal access tokens (PATs).** For headless / AI-client use, users mint `dq_live_`
-  tokens ([API keys](api-keys.md)). Tokens are **hashed (SHA-256) at rest** — the plaintext is
+  tokens ([API keys](../guides/api-keys.md)). Tokens are **hashed (SHA-256) at rest** — the plaintext is
   shown once and never stored — and carry the **same authz as the user**, on REST and MCP.
   They can be scoped with an expiry and revoked.
 - **Email one-time codes (OTP).** For deployments with **no identity provider**, a human can
@@ -36,7 +36,7 @@ lawful basis) and is the deploying organization's responsibility.
   expiry and revocation are checked on every request. Sessions are hashed (SHA-256) at rest,
   like PATs. Sign-up is **allowlist-only** — there is no open registration. MCP does **not**
   accept a session: it is a browser credential, and PATs remain the headless credential
-  (ADR [0032](adr/0032-email-otp-signin.md)).
+  (ADR [0032](../adr/0032-email-otp-signin.md)).
   **`Secure` is inferred, not unconditional:** by default the backend reads the
   `X-Forwarded-Proto` the proxy forwards, and marks the cookie `Secure` only when that says
   `https`. That is only as trustworthy as the proxy. The reference frontend nginx forwards the

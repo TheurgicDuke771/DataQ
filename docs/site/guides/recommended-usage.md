@@ -112,7 +112,7 @@ ADR 0032). The first admin is seeded by the `WORKSPACE_ADMIN_EMAILS`
 bootstrap allowlist; from then on manage roles under **Admin → Members**. Share individual
 suites (**view / edit**) from the suite.
 
-Access is **two independent axes** (ADR [0033](adr/0033-workspace-roles-rbac.md)):
+Access is **two independent axes** (ADR [0033](../adr/0033-workspace-roles-rbac.md)):
 
 | | What it gates |
 |---|---|

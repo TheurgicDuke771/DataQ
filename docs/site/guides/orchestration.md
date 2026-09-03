@@ -41,7 +41,7 @@ with no host API dependency (ADR 0029). dbt Core has no callback hook like Airfl
 you run a tiny **post-build wrapper**:
 
 Registering any connection — orchestration providers included — is **Admin-only** (ADR
-[0033](adr/0033-workspace-roles-rbac.md)).
+[0033](../adr/0033-workspace-roles-rbac.md)).
 
 - Register a **dbt connection** (Connections → dbt) with its `project_name`, the `jobs` it
   publishes, and the `artifacts_uri` where builds land (`adls://…`, `s3://…`, or `file://…`)

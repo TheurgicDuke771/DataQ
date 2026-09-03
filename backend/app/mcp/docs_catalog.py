@@ -18,18 +18,20 @@ from typing import Final
 _REPO_ROOT: Final = Path(__file__).resolve().parents[3]
 _DOCS_SITE: Final = _REPO_ROOT / "docs" / "site"
 
-#: The curated allowlist (issue #1626): top-level pages plus every compliance
-#: runbook/template. Relative to `docs/site/`, slash-separated.
-_TOP_LEVEL_PAGES: Final = (
-    "best-practices.md",
-    "feature-matrix.md",
-    "security.md",
-    "getting-started.md",
-    "mcp-setup.md",
-    "mcp-honesty.md",
-    "evidence-card.md",
-)
-_COMPLIANCE_DIR: Final = "compliance"
+#: The curated allowlist (issue #1626): slug -> path relative to `docs/site/`.
+#: Slugs are the LLM-facing contract (advertised as `get_doc`'s enum) and stay
+#: stable across docs-site reorganisations; only the paths move.
+_TOP_LEVEL_PAGES: Final = {
+    "best-practices": "guides/best-practices.md",
+    "feature-matrix": "reference/feature-matrix.md",
+    "security": "security/overview.md",
+    "getting-started": "get-started/install.md",
+    "mcp-setup": "guides/mcp-setup.md",
+    "mcp-honesty": "architecture/mcp-honesty.md",
+    "evidence-card": "architecture/evidence-card.md",
+}
+_COMPLIANCE_SLUG: Final = "compliance"
+_COMPLIANCE_DIR: Final = "security/compliance"
 
 
 class DocNotFoundError(Exception):
@@ -53,14 +55,14 @@ def _scan() -> dict[str, Path]:
     in review/CI, not a 500 for whoever calls the tool next.
     """
     pages: dict[str, Path] = {}
-    for name in _TOP_LEVEL_PAGES:
-        path = _DOCS_SITE / name
+    for slug, rel in _TOP_LEVEL_PAGES.items():
+        path = _DOCS_SITE / rel
         if path.is_file():
-            pages[name.removesuffix(".md")] = path
+            pages[slug] = path
     compliance_dir = _DOCS_SITE / _COMPLIANCE_DIR
     if compliance_dir.is_dir():
         for path in sorted(compliance_dir.glob("*.md")):
-            pages[f"{_COMPLIANCE_DIR}/{path.stem}"] = path
+            pages[f"{_COMPLIANCE_SLUG}/{path.stem}"] = path
     return pages
 
 

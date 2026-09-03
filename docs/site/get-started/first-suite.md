@@ -2,7 +2,7 @@
 
 A hands-on walkthrough: from an empty workspace to a check that runs and alerts, in a few
 minutes. It assumes DataQ is already running and you can sign in (if you're standing up the
-app itself, see [Getting started](getting-started.md) and [Deployment](deployment.md) first).
+app itself, see [Getting started](install.md) and [Deployment](../operate/deployment.md) first).
 
 By the end you'll have connected a datasource, authored a suite with a freshness + a
 value check, run it, read the result, and wired an alert.
@@ -12,14 +12,14 @@ value check, run it, read the result, and wired an alert.
 Open the app URL and sign in — the local/eval stack defaults to an **email one-time code**
 (check the bundled Mailpit inbox at `http://localhost:8025`); a production deployment
 typically uses your **identity provider (SSO)**. See
-[Getting started](getting-started.md#choosing-an-auth-mode) for the three sign-in modes. You land on
+[Getting started](install.md#choosing-an-auth-mode) for the three sign-in modes. You land on
 the **Dashboard** — empty for now.
 
 ## 1. Connect a datasource
 
 > **This step needs the Admin role.** Connections are shared infrastructure holding
 > credentials, so only workspace **Admins** can create, edit, delete, or re-credential one
-> (ADR [0033](adr/0033-workspace-roles-rbac.md)). If you're a Member or Viewer, ask an Admin
+> (ADR [0033](../adr/0033-workspace-roles-rbac.md)). If you're a Member or Viewer, ask an Admin
 > to set the connection up — then pick this tutorial back up at
 > [step 2](#2-create-a-suite-and-point-it-at-a-target).
 
@@ -90,12 +90,12 @@ If a run *failed to execute* (bad credential, unreachable store), it shows a pla
 
 - **If an orchestrator loads this table** (ADF / Airflow / dbt): open the suite's **Triggers**
   and bind it to the pipeline — the suite runs right after the pipeline succeeds, and results
-  correlate to the pipeline run. See [Orchestration](orchestration.md).
+  correlate to the pipeline run. See [Orchestration](../guides/orchestration.md).
 - **Otherwise:** open **Schedules** and set a cron cadence matched to when the data arrives.
-  See [Scheduling](scheduling.md).
+  See [Scheduling](../guides/scheduling.md).
 
 ## Where to next
 
-- [Recommended usage](recommended-usage.md) — activate the rest of the features the right way.
-- [Best practices](best-practices.md) — the ongoing "signal, not noise" discipline.
-- [AI assistants (MCP setup)](mcp-setup.md) — drive all of this from Claude / Copilot / Cursor.
+- [Recommended usage](../guides/recommended-usage.md) — activate the rest of the features the right way.
+- [Best practices](../guides/best-practices.md) — the ongoing "signal, not noise" discipline.
+- [AI assistants (MCP setup)](../guides/mcp-setup.md) — drive all of this from Claude / Copilot / Cursor.

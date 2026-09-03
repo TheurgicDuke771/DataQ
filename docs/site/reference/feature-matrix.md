@@ -1,8 +1,8 @@
 # Feature matrix
 
 One-page reference: what runs where. For the readable tour of everything DataQ offers see
-[Features](features.md); for the concepts behind the columns see [Concepts](concepts.md) and
-[Datasources & checks](datasources-checks.md).
+[Features](../guides/features.md); for the concepts behind the columns see [Concepts](../get-started/concepts.md) and
+[Datasources & checks](../guides/datasources-checks.md).
 
 ## Check kinds × datasources
 
@@ -54,12 +54,12 @@ omission.
 ˢ **S3 means AWS S3 *and* any S3-compatible store** — MinIO, Ceph/RadosGW, Cloudflare R2,
 Wasabi, Backblaze B2, SeaweedFS or an on-prem gateway. Set the connection's optional
 endpoint URL; every row in this column applies identically either way. See
-[Datasources & checks](datasources-checks.md#s3-compatible-object-stores).
+[Datasources & checks](../guides/datasources-checks.md#s3-compatible-object-stores).
 
 Custom SQL runs a SQL query, so it's **SQL-datasource only** (Snowflake, Unity Catalog;
 there is no flat-file support, and no issue currently tracks adding it — flat files get freshness/volume monitors instead (see the rows above);
 Iceberg is not SQL-queryable — reads go through `pyiceberg` scans, not a query engine).
-**Comparison checks** (ADR [0015](adr/0015-two-connection-comparison-check-model.md))
+**Comparison checks** (ADR [0015](../adr/0015-two-connection-comparison-check-model.md))
 diff the suite's dataset (the **target under test**) against a baseline on any other
 datasource connection — cross-type and cross-env both supported — joined on key columns,
 producing matched / mismatched / additional-per-side buckets with a mismatch-% metric,
@@ -86,13 +86,13 @@ five mechanisms:
    and stamps `last_seen`. Works on all datasources; unreferenced stale rows are retired by
    the daily orphan sweep.
 2. **dbt `manifest.json`** — table-level model lineage cached into `lineage_edges` on every
-   successful dbt build ([details](orchestration.md#lineage-from-manifestjson-adr-0034)).
+   successful dbt build ([details](../guides/orchestration.md#lineage-from-manifestjson-adr-0034)).
    dbt models warehouse tables, so raw flat files don't appear here.
 3. **OpenLineage emission** (outbound) — DataQ broadcasts RunEvents + DQ facets per run to
    any OL-compatible receiver (`OPENLINEAGE_URL`, dark by default).
 4. **Catalog pull** — the `LineageProvider` seam pulls a governance catalog's graph back in
    as `source='marquez'` edges (daily beat, dark by default;
-   [details](orchestration.md#lineage-from-a-catalog-the-lineageprovider-seam-adr-0034)).
+   [details](../guides/orchestration.md#lineage-from-a-catalog-the-lineageprovider-seam-adr-0034)).
 5. **Warehouse-native pull** — the `WarehouseLineageProvider` seam reads the
    warehouse's OWN lineage views straight into `lineage_edges` with `source='snowflake'` /
    `'unity_catalog'`: Snowflake `OBJECT_DEPENDENCIES` (all editions) → `ACCESS_HISTORY` /
@@ -100,7 +100,7 @@ five mechanisms:
    dbt hop. Daily beat, **dark by default** (`WAREHOUSE_LINEAGE_ENABLED` — the views need a
    grant); the tier that answered and any degraded/failing state surface on the asset's
    lineage graph so a view-level-only or stale graph never reads as a confident complete
-   one ([details](orchestration.md#lineage-from-the-warehouse-the-warehouselineageprovider-seam)).
+   one ([details](../guides/orchestration.md#lineage-from-the-warehouse-the-warehouselineageprovider-seam)).
    **Column grain:** where the warehouse offers it (UC
    `system.access.column_lineage` — live-verified), the pull refines each table edge with
    `upstream column → downstream column` pairs, shown on the asset page to every
@@ -139,8 +139,8 @@ catalog knowing about them (mechanism ④).
 | Mode | Where | Notes |
 |---|---|---|
 | Run now | Suite detail → Run panel | Live per-check progress + cancel |
-| Cron schedule | Suite detail → Schedules | 5-field cron, IANA timezone, DST-aware, [no backfill](scheduling.md) |
-| Pipeline trigger | Suite detail → Triggers | Runs on a pipeline/DAG/dbt-job **success** — ADF + Airflow + dbt, see [Orchestration](orchestration.md) |
+| Cron schedule | Suite detail → Schedules | 5-field cron, IANA timezone, DST-aware, [no backfill](../guides/scheduling.md) |
+| Pipeline trigger | Suite detail → Triggers | Runs on a pipeline/DAG/dbt-job **success** — ADF + Airflow + dbt, see [Orchestration](../guides/orchestration.md) |
 | API / MCP | `POST /suites/{id}/run` · `trigger_suite_run` MCP tool | Same authz as the UI |
 
 ## Severity & results
@@ -157,7 +157,7 @@ catalog knowing about them (mechanism ④).
 
 | Capability | Notes |
 |---|---|
-| Channels | Teams (workspace + per-suite webhook), Slack, email — [details](notifications.md) |
+| Channels | Teams (workspace + per-suite webhook), Slack, email — [details](../guides/notifications.md) |
 | Threshold | Per suite: fail-only / warn+ (default) / always |
 | Routing | Severity-aware urgency; critical escalates |
 | Dedup | First failure / escalation only; clean run resets |
@@ -193,7 +193,7 @@ above is "should work", and only a real deployment can upgrade that to "does".
 
 ## Access — workspace roles × capabilities
 
-Two orthogonal axes (ADR [0033](adr/0033-workspace-roles-rbac.md)). Your **workspace
+Two orthogonal axes (ADR [0033](../adr/0033-workspace-roles-rbac.md)). Your **workspace
 role** says what kind of user you are; **per-suite grants** (`view` / `edit`) say what you
 may touch. Neither replaces the other — a Member with no share on a suite still cannot see
 it. Both are enforced server-side on REST **and** MCP, and both resolve **per request**, so
@@ -215,7 +215,7 @@ they already hold.
 
 Roles are managed in **Admin → Members**. `WORKSPACE_ADMIN_EMAILS` remains a **bootstrap
 seed and lockout break-glass**: it grants Admin but never removes it, and a role change must
-always leave at least one *stored-role* admin. See [security](security.md) for the residual
+always leave at least one *stored-role* admin. See [security](../security/overview.md) for the residual
 risk that carries.
 
 ## Interfaces
@@ -224,4 +224,4 @@ risk that carries.
 |---|---|
 | Web UI | Dashboard · Assets · Connections · Suites · Results · Profile · Admin · Settings (Assets lead as the primary lens — ADR 0034 nav inversion; the Dashboard opens with an asset-health strip, and suites/runs link back to their asset) |
 | REST API | Versioned `/api/v1` (Swagger in non-prod) |
-| MCP | 47 curated tools at `/mcp` for AI assistants (ADR 0008). Served in every auth mode — SSO, email OTP, dev-bypass; under OTP the credential is a **PAT only** ([MCP setup](mcp-setup.md)) |
+| MCP | 47 curated tools at `/mcp` for AI assistants (ADR 0008). Served in every auth mode — SSO, email OTP, dev-bypass; under OTP the credential is a **PAT only** ([MCP setup](../guides/mcp-setup.md)) |

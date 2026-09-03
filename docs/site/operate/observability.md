@@ -31,8 +31,8 @@
 | Checks all `skip` on a flat-file suite | The batch hasn't landed yet (no matching file) — expected; the run succeeds with skips. |
 | Orchestration events not arriving | Webhook secret/HMAC mismatch — the 10-min poll is the fallback; verify the connection's secret, and copy the URL from **Settings → Webhooks** instead of assembling it. |
 | A check reports `error`, not `fail` | Its evaluation threw (cast failure, missing column, SQL error) — an operational problem with the check/target, not a data breach. Fix the check config or the schema drift. |
-| Scheduled run didn't happen at 9:00 | Check the schedule's **timezone** (9:00 in which zone?), whether it's **paused**, and whether the platform was down over the tick — missed ticks are [not backfilled](scheduling.md). |
-| No alert for a red run | See the [notifications troubleshooting table](notifications.md#troubleshooting) — threshold, dedup, and snooze all gate delivery. |
+| Scheduled run didn't happen at 9:00 | Check the schedule's **timezone** (9:00 in which zone?), whether it's **paused**, and whether the platform was down over the tick — missed ticks are [not backfilled](../guides/scheduling.md). |
+| No alert for a red run | See the [notifications troubleshooting table](../guides/notifications.md#troubleshooting) — threshold, dedup, and snooze all gate delivery. |
 | Freshness/volume check missing in the editor | Freshness and volume now run on **every** datasource including ADLS Gen2 / S3 flat files — on a flat file, omitting the timestamp column measures the file's **arrival time** instead. Only **custom SQL** is Snowflake/UC-only. |
 
 ## Operating notes

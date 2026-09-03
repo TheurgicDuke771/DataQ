@@ -1,7 +1,7 @@
 # Features
 
 Everything DataQ offers, by area. This is the readable tour — for the terse
-what-runs-where lookup see the [feature matrix](feature-matrix.md), and for how to turn
+what-runs-where lookup see the [feature matrix](../reference/feature-matrix.md), and for how to turn
 each feature on the recommended way see [Recommended usage](recommended-usage.md).
 
 DataQ is a single-tenant **data-quality monitoring platform**: it runs checks against your
@@ -77,7 +77,7 @@ A **suite** is a named set of checks bound to one connection + target
 
 ## Running checks
 
-Four ways a suite runs (all the same authz — [feature matrix](feature-matrix.md#ways-a-suite-runs)):
+Four ways a suite runs (all the same authz — [feature matrix](../reference/feature-matrix.md#ways-a-suite-runs)):
 
 - **Run now** — with **live per-check progress** and **cancel**.
 - **Cron schedule** — 5-field cron + IANA timezone, DST-aware, no backfill
@@ -90,7 +90,7 @@ Four ways a suite runs (all the same authz — [feature matrix](feature-matrix.m
 
 - **Monitoring dashboard** — **leads with asset-level health** (how many assets are
   monitored, need attention, or have a run in flight — click through to an asset or the
-  full [Assets](feature-matrix.md#assets-lineage-datasources) view), then a
+  full [Assets](../reference/feature-matrix.md#assets-lineage-datasources) view), then a
   severity-weighted **health score**, pass rate, run counts, average duration, per-day
   trends, and per-suite performance. Assets are the primary lens (ADR 0034 nav inversion):
   the sidebar leads with **Assets** above Suites, and every suite/run links back to its asset.
@@ -213,7 +213,7 @@ could *not* see. SQL generation and check suggestions send only masked aggregate
 statistics to the provider; the RCA narrative additionally sends the triggering check's own
 observed value, routed through the same column-policy/warehouse-tag redaction floor every
 results surface applies. Raw sample rows never leave the deployment on any path. See
-[Security & data handling](security.md) for the full transfer-vector accounting.
+[Security & data handling](../security/overview.md) for the full transfer-vector accounting.
 
 ## AI assistants (MCP)
 
@@ -235,7 +235,7 @@ writes ([AI assistants](mcp-setup.md), ADR 0008 + its Tier 1–3B amendments).
 
 Structured JSON logs with `request_id` correlation (FastAPI → Celery → GX), PII redaction at
 the logger, and **OpenTelemetry** traces + logs — exported to Azure Application Insights
-and/or a generic OTLP endpoint ([Observability](observability.md)).
+and/or a generic OTLP endpoint ([Observability](../operate/observability.md)).
 
 ## Deployment & portability
 
@@ -244,5 +244,5 @@ equally-real deployments (API + worker + frontend; the frontend is the sole publ
 surface on each). Every cloud dependency sits behind a seam — OIDC auth, the secret
 store, observability export, and the orchestration providers are each swappable behind a
 provider-agnostic interface, which is what let AWS ship as a second target with zero app
-code differing between clouds ([Architecture](architecture.md), [deployment
-parity](deployment-parity.md)).
+code differing between clouds ([Architecture](../architecture/overview.md), [deployment
+parity](../operate/deployment-parity.md)).

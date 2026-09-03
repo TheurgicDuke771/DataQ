@@ -3,3 +3,11 @@
 # backend (kept off the backend pip-audit + runtime surface, like the mutation tooling).
 # mkdocs-material pulls mkdocs + pymdown-extensions transitively.
 mkdocs-material==9.7.7
+# Click-to-zoom on screenshots (MIT).
+mkdocs-glightbox==0.5.2
+# Old-URL redirects after the 2026-09 site reorganisation (MIT). Pinned BELOW
+# 1.2.3 deliberately: 1.2.3 (2026-03) added a hard dependency on `properdocs`,
+# a MkDocs fork that installs beside mkdocs and prints upgrade adverts during
+# every build — an unreviewed second site generator on the docs supply chain
+# (CONTRIBUTING rule 39). 1.2.2 depends on mkdocs alone. Re-evaluate before bumping.
+mkdocs-redirects==1.2.2

@@ -75,7 +75,7 @@ def test_deployment_guide_documents_the_azure_free_path() -> None:
     """AC5: the guide must tell a reader how to run without Azure — the doc IS
     the deliverable for anyone picking this up after the subscription ends.
     """
-    guide = (_ROOT / "docs" / "site" / "deployment.md").read_text()
+    guide = (_ROOT / "docs" / "site" / "operate" / "deployment.md").read_text()
     assert "## Running DataQ without Azure" in guide
     assert "SECRET_STORE=openbao" in guide
     assert "AUTH_DEV_BYPASS" in guide

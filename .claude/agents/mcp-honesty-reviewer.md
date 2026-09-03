@@ -86,7 +86,7 @@ Does the return payload's ORM/service source include any `Decimal`, `datetime` w
 
 ### Tool-count / doc drift
 
-If the diff changes the number of registered tools, confirm any hardcoded tool-count claims (`docs/site/mcp-setup.md`, `docs/site/changelog.md`, this file's own catalog references) are **derived from `tests/support/mcp_gates.GATES`**, not hand-edited. A heading updated with the body left enumerating the old split is a real, previously-shipped defect class here.
+If the diff changes the number of registered tools, confirm any hardcoded tool-count claims (`docs/site/guides/mcp-setup.md`, `docs/site/reference/changelog.md`, this file's own catalog references) are **derived from `tests/support/mcp_gates.GATES`**, not hand-edited. A heading updated with the body left enumerating the old split is a real, previously-shipped defect class here.
 
 ## False positives to avoid
 
@@ -115,7 +115,7 @@ Be concrete about the wrong answer, not abstract about the principle. "`get_noti
 
 ## Source documents (your authority)
 
-- `docs/site/mcp-setup.md`, `docs/site/changelog.md` — the published tool catalog and count (must match `GATES`)
+- `docs/site/guides/mcp-setup.md`, `docs/site/reference/changelog.md` — the published tool catalog and count (must match `GATES`)
 - `backend/tests/support/mcp_gates.py` — the declared gate per tool; also the model for "declare as data, not prose"
 - CLAUDE.md's MCP honesty-pass section (2026-08-17) — the full worked list of found defects and the summary → returns → caveats ordering rule
 - `.claude/skills/live-verify/SKILL.md` — for any finding that needs a live protocol call (in-memory FastMCP client) to confirm, not just the decorated function

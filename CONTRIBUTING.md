@@ -154,7 +154,7 @@ These are locked on Day 1 of Week 1. Do not drift.
 ## G. Documentation & decision history
 
 33. **ADRs in `docs/site/adr/`** for every significant architecture decision. Use the `/adr-create` skill or follow the template in `docs/site/adr/README.md`. One short markdown per decision; keep it to 1–2 pages.
-34. **Architecture diagram in `docs/site/architecture.md`** (Mermaid). When a new component, datasource, or integration is added, update the diagram in the same PR as the code.
+34. **Architecture diagram in `docs/site/architecture/overview.md`** (Mermaid). When a new component, datasource, or integration is added, update the diagram in the same PR as the code.
 35. **Local setup script** `scripts/setup.sh` — one command from a fresh clone to a working dev environment (conda env + pre-commit install + docker-compose up + `alembic upgrade head` + seed data).
 
 ---

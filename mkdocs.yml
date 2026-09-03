@@ -33,18 +33,66 @@ theme:
         icon: material/weather-sunny
         name: Switch to light mode
   features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.indexes
     - navigation.sections
     - navigation.top
+    - navigation.tracking
     - navigation.instant
     - navigation.footer
     - toc.follow
     - search.suggest
     - search.highlight
     - content.code.copy
+    - content.tabs.link
+    - search.share
+
+plugins:
+  - search
+  - glightbox: # click-to-zoom on every screenshot (MIT)
+      touchNavigation: true
+      skip_classes: [no-zoom]
+  - redirects: # old URLs keep working after the 2026-09 reorganisation (MIT)
+      redirect_maps:
+        getting-started.md: get-started/install.md
+        tutorial.md: get-started/first-suite.md
+        concepts.md: get-started/concepts.md
+        features.md: guides/features.md
+        datasources-checks.md: guides/datasources-checks.md
+        scheduling.md: guides/scheduling.md
+        orchestration.md: guides/orchestration.md
+        notifications.md: guides/notifications.md
+        mcp-setup.md: guides/mcp-setup.md
+        api-keys.md: guides/api-keys.md
+        recommended-usage.md: guides/recommended-usage.md
+        best-practices.md: guides/best-practices.md
+        feature-matrix.md: reference/feature-matrix.md
+        rest-api.md: reference/rest-api.md
+        glossary.md: reference/glossary.md
+        changelog.md: reference/changelog.md
+        mcp-honesty.md: architecture/mcp-honesty.md
+        evidence-card.md: architecture/evidence-card.md
+        perf-baseline.md: architecture/perf-baseline.md
+        contributing.md: architecture/contributing.md
+        compliance/sub-processors.md: security/compliance/sub-processors.md
+        compliance/dpia-input-sheet.md: security/compliance/dpia-input-sheet.md
+        compliance/data-subject-rights-runbook.md: security/compliance/data-subject-rights-runbook.md
+        compliance/breach-notification-runbook.md: security/compliance/breach-notification-runbook.md
+        compliance/dpa-baa-templates.md: security/compliance/dpa-baa-templates.md
+        deployment.md: operate/deployment.md
+        deployment-parity.md: operate/deployment-parity.md
+        observability.md: operate/observability.md
+        troubleshooting.md: operate/troubleshooting.md
+        runbook-faq.md: operate/runbook-faq.md
 
 markdown_extensions:
   - admonition
   - attr_list
+  - md_in_html
+  - pymdownx.details
+  - pymdownx.tabbed:
+      alternate_style: true
   - tables
   - toc:
       permalink: true
@@ -62,41 +110,52 @@ markdown_extensions:
 # and links out to the in-repo source of truth rather than duplicating it.
 nav:
   - Home: index.md
+  - Get started:
+      - get-started/index.md
+      - Install: get-started/install.md
+      - Your first suite: get-started/first-suite.md
+      - Concepts: get-started/concepts.md
   - Guides:
-      - Getting started: getting-started.md
-      - Tutorial — your first suite: tutorial.md
-      - Concepts: concepts.md
-      - Features: features.md
-      - Datasources & checks: datasources-checks.md
-      - Scheduling: scheduling.md
-      - Orchestration: orchestration.md
-      - Notifications & alerting: notifications.md
-      - AI assistants (MCP setup): mcp-setup.md
-      - API keys (PATs): api-keys.md
-      - Recommended usage: recommended-usage.md
-      - Best practices: best-practices.md
+      - guides/index.md
+      - Features overview: guides/features.md
+      - Datasources & checks: guides/datasources-checks.md
+      - Scheduling: guides/scheduling.md
+      - Orchestration: guides/orchestration.md
+      - Notifications & alerting: guides/notifications.md
+      - AI assistants (MCP): guides/mcp-setup.md
+      - API keys (PATs): guides/api-keys.md
+      - Recommended usage: guides/recommended-usage.md
+      - Best practices: guides/best-practices.md
   - Reference:
-      - Feature matrix: feature-matrix.md
-      - REST API: rest-api.md
-      - MCP tool design (honesty & disclosure): mcp-honesty.md
-      - Incident evidence card: evidence-card.md
-      - Architecture: architecture.md
-      - Security & data handling: security.md
+      - reference/index.md
+      - Feature matrix: reference/feature-matrix.md
+      - REST API: reference/rest-api.md
+      - Glossary: reference/glossary.md
+      - Changelog: reference/changelog.md
+  - Architecture:
+      - architecture/index.md
+      - System architecture: architecture/overview.md
+      - Decision records (ADRs): adr/README.md
+      - MCP tool design (honesty): architecture/mcp-honesty.md
+      - Incident evidence card: architecture/evidence-card.md
+      - Performance baseline: architecture/perf-baseline.md
+      - Contributing: architecture/contributing.md
+  - Security & compliance:
+      - security/index.md
+      - Security & data handling: security/overview.md
       - Compliance:
-          - Sub-processor disclosure: compliance/sub-processors.md
-          - DPIA input sheet: compliance/dpia-input-sheet.md
-          - Data-subject-rights runbook: compliance/data-subject-rights-runbook.md
-          - Breach-notification runbook: compliance/breach-notification-runbook.md
-          - DPA / BAA templates (counsel-gated): compliance/dpa-baa-templates.md
-      - Deployment: deployment.md
-      - Deployment parity (Azure · AWS · Local): deployment-parity.md
-      - Observability: observability.md
-      - Performance baseline: perf-baseline.md
-      - Troubleshooting: troubleshooting.md
-      - Runbook & FAQ: runbook-faq.md
-      - Changelog: changelog.md
-      - Glossary: glossary.md
-      - Contributing: contributing.md
+          - Sub-processor disclosure: security/compliance/sub-processors.md
+          - DPIA input sheet: security/compliance/dpia-input-sheet.md
+          - Data-subject-rights runbook: security/compliance/data-subject-rights-runbook.md
+          - Breach-notification runbook: security/compliance/breach-notification-runbook.md
+          - DPA / BAA templates (counsel-gated): security/compliance/dpa-baa-templates.md
+  - Operate:
+      - operate/index.md
+      - Deployment: operate/deployment.md
+      - Deployment parity (Azure · AWS · Local): operate/deployment-parity.md
+      - Observability: operate/observability.md
+      - Troubleshooting: operate/troubleshooting.md
+      - Runbook & FAQ: operate/runbook-faq.md
 
 # Internal planning docs live at docs/ (outside docs_dir), so no exclude_docs
 # is needed: a file must be MOVED into docs/site/ to publish at all.

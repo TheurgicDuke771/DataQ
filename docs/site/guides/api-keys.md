@@ -3,7 +3,7 @@
 DataQ can mint you a **personal access token (PAT)** — a long-lived, revocable
 credential for scripts, CI, and always-on MCP clients, where an SSO browser
 flow or a ~60-minute OIDC access token doesn't fit (ADR
-[0026](adr/0026-auth-api-keys-and-principal-seam.md)).
+[0026](../adr/0026-auth-api-keys-and-principal-seam.md)).
 
 A PAT authenticates **as you**: it inherits **both axes** of your access on the
 REST API and `/mcp` alike — your **workspace role** (`admin | member | viewer`,

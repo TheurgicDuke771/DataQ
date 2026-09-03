@@ -105,11 +105,11 @@ Check `backend/app/services/suite_io_service.py` — the `if "dimension" in c` b
 
 ### 8. Docs
 
-- `docs/site/feature-matrix.md` — a row per datasource. **Do not tick a cell you have not run live.** #953 was a ✅ that had never once worked.
+- `docs/site/reference/feature-matrix.md` — a row per datasource. **Do not tick a cell you have not run live.** #953 was a ✅ that had never once worked.
 - `CLAUDE.md` §5 — move the kind from "reserved" to shipped, with the PR number.
 - `docs/progress.md` — the cycle-plan row.
 - ADR 0012 — amend its status list.
-- `docs/site/datasources-checks.md` / `docs/site/concepts.md` — user-facing description.
+- `docs/site/guides/datasources-checks.md` / `docs/site/get-started/concepts.md` — user-facing description.
 
 ### 9. Tests
 
