@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "7cba3cc222cf",
+  "strategy": "manual-commit",
+  "branch": "docs/redesign-p5-llm-actions",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "docs/hooks/llm_export.py",
+    "docs/overrides/main.html",
+    "docs/site/assets/extra.css",
+    "mkdocs.yml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/7c/ba3cc222cf/0/metadata.json",
+      "transcript": "/7c/ba3cc222cf/0/full.jsonl",
+      "compact_transcript": "/7c/ba3cc222cf/0/transcript.jsonl",
+      "content_hash": "/7c/ba3cc222cf/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1167,
+    "cache_creation_tokens": 17862,
+    "cache_read_tokens": 4588051,
+    "output_tokens": 10970,
+    "api_call_count": 11
+  }
+}
