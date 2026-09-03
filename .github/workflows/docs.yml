@@ -8,19 +8,17 @@ name: Docs
 on:
   push:
     branches: [main]
+    # Path filters are not evaluated for tag pushes, so a release tag always publishes.
     tags: ["v*"]
-    paths-ignore:
-      - "**"
-      - "!docs/site/**"
-      - "!docs/hooks/**"
-      - "!marketing/**"
-      - "!mkdocs.yml"
-      - "!requirements-docs.txt"
-      - "!.github/workflows/docs.yml"
+    paths:
+      - docs/site/**
+      - marketing/**
+      - mkdocs.yml
+      - requirements-docs.txt
+      - .github/workflows/docs.yml
   pull_request:
     paths:
       - docs/site/**
-      - docs/hooks/**
       - marketing/**
       - mkdocs.yml
       - requirements-docs.txt
@@ -44,8 +42,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0 # mike needs the gh-pages branch reachable
 
       - uses: actions/setup-python@v7
         with:
@@ -70,12 +66,15 @@ jobs:
 
       - name: Publish this version to gh-pages (mike)
         if: github.event_name != 'pull_request'
+        # The tag name reaches the shell through env, never interpolated into the script.
+        env:
+          MIKE_VERSION: ${{ steps.version.outputs.name }}
+          MIKE_TITLE: ${{ steps.version.outputs.title }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch origin gh-pages --depth=1 || true
-          mike deploy --push --deploy-prefix docs \
-            --title "${{ steps.version.outputs.title }}" "${{ steps.version.outputs.name }}"
+          mike deploy --push --deploy-prefix docs --title "$MIKE_TITLE" "$MIKE_VERSION"
           mike set-default --push --deploy-prefix docs latest
 
       - name: Assemble the Pages artifact (gh-pages + marketing root)
