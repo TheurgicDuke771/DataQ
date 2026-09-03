@@ -1,0 +1,48 @@
+<task-notification>
+<task-id>a3060d5600b5645d3</task-id>
+<tool-use-id>toolu_01GNWpsJ5UgUVdnSppSkUpVP</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/e6d12f61-62ed-4c73-afa6-5a85fc724f47/tasks/a3060d5600b5645d3.output</output-file>
+<status>completed</status>
+<summary>Agent "Docs claims vs code (A2)" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Verified as accurate (skipped):** #2 build-time redaction of `failing_result.observed_value` (`incident_evidence.py::_failing_result_layer` → `run_service.redact_observed_value`, sample lists stripped, `sample_failures` never read); #4 `llm_sqlgen.validate_output` runs `custom_sql.validate_query` (`;` check, SELECT/WITH leading keyword, forbidden-keyword set) before `execute_invocation` writes `terminal["response"]`, and a failed SQL never lands in `response` (only `exc.detail = {"forbidden": [...]}`); #5 `_validate_one` runs `validate_expectation_check` + `reject_dataframe_only_expectation`, the same pair `create_check`'s `else:` branch calls; #6 `_blind_spots` is deterministic and `_SYSTEM` says "never assert something the 'Blind spots' section says this snapshot could not see"; #7 the switch is re-checked worker-side via `build_provider(require_enabled=True)` so a mid-flight disable fails the row before any call; #8 `SQL_QUERYABLE_TYPES = {"snowflake","unity_catalog"}` — Iceberg/flat-file get a 422 "custom SQL requires a SQL datasource"; #9 video path `../../assets/videos/` is identical to `docs/site/get-started/first-suite.md` (same depth, `use_directory_urls` default), screenshot path `../assets/screenshots/` matches the get-started pages, and all four assets exist on the branch; the "key never forwarded on provider/base_url change" claim matches `llm_service.save` (`LLMConfigInvalidError`).
+
+## Findings (doc wrong or overclaiming vs code)
+
+**1. `docs/site/guides/ai-features.md:41-42` — "column names and masked aggregate statistics — counts, null rates, min/max, distinct counts — never sample rows" omits that check suggestions send the top-5 most frequent *literal cell values*.**
+`backend/app/services/llm_checksuggest.py:207` calls `masked_profile_for_prompt(..., top_n=_TOP_N)` with `_TOP_N = 5`, and lines 217-221 render them:
+```python
+if col.min_value is not None or col.max_value is not None:
+    stats.append(f"range=[{col.min_value}, {col.max_value}]")
+if col.top_values:
+    top = ", ".join(f"{t.get('value')!r} x{t.get('count')}" for t in col.top_values)
+    stats.append(f"top_values=[{top}]")
+```
+`live_probe.mask_profile_columns` blanks `top_values`/min/max only for columns the EGRESS rung (`run_service._may_show_incidental`, default-mask unless cleared or classifier-non-PII) marks sensitive; every other column's five most frequent raw values (e.g. a free-text `notes`/`comment` column the name/value classifier does not flag) leave the deployment. Failure scenario: an admin reads "never sample rows", enables suggestions on a table with an unclassified free-text column, and its most common cell contents reach a third-party provider. Conversely, SQL generation sends *no* min/max at all (`llm_sqlgen.py` uses `top_n=0` and `_format_profile_lines` emits only `nulls=`/`distinct=`), so the enumeration is inaccurate in both directions. Fix: name "top-N frequent values (masked on sensitive columns)" explicitly and scope min/max/top-values to check suggestions.
+
+**2. `ai-features.md:58-59` — "This card is exactly what the model is handed" is false: the narrative prompt adds a request-time `check_history` layer and a per-requester trim.**
+`backend/app/services/llm_rca.py::_evidence_context` does `history = _check_history(session, incident)` → `check_service.list_check_result_history(..., limit=_MAX_HISTORY_POINTS)` with `_MAX_HISTORY_POINTS = 180`, rendered as `check_history (longer trend, oldest→newest, N points)`; it also passes the card through `incident_service.evidence_for_caller` (grant-scoped `same_asset_siblings`). The route docstring (`api/v1/llm.py:257`) itself says "evidence card **+ a longer per-check history**", and the doc's own sample output cites `check_history`. "Nothing is fetched fresh from the *warehouse*" is true, but "exactly what the model is handed" / "describes the failure as it was" is not — the history layer reflects results that landed *after* the incident opened. Fix: "the card plus up to 180 points of the check's result history from DataQ's own database".
+
+**3. `ai-features.md:112-113` — "Once one exists for an incident, the Teams / Slack / email / webhook line for that incident carries its one-line takeaway" overclaims: the narrative is withheld from alerts whenever the asset has any cross-suite sibling check.**
+`llm_rca.py::latest_narrative_for_alert`:
+```python
+evidence = incident.evidence if isinstance(incident.evidence, dict) else {}
+if evidence.get("same_asset_siblings"):
+    return None
+```
+Failure scenario: a table monitored by two suites (the common shape in a shared workspace) generates a narrative, the next alert fires, and the user — told by the doc it "reaches the next alert" — concludes generation silently failed. Fix: add the condition (fail-closed to avoid leaking a cross-suite check name into a suite-scoped audience).
+
+**4. `ai-features.md:41` — "Every feature below sends column names and masked aggregate statistics" is wrong for the RCA narrative, which sends no column names or profile at all.**
+`llm_rca._render_evidence` emits check name/kind/expectation_type, asset namespace/name, status/metric_value/observed/expected, trend + history points, `sibling_checks` names+statuses, `same_asset_siblings`, the `upstream_pipeline_run` (provider, pipeline id, provider run id), and `downstream_blast_radius` asset names; `blind_spots` always states "no before/after column profile — profile comparison isn't implemented yet" (`incident_evidence.build_evidence` hard-codes `"profile_diff": None`). The admonition's data-egress accounting should describe RCA as "the stored evidence card (check/asset/pipeline/downstream identifiers, statuses and metric values) — no column profile". Low severity, but it is the security-facing paragraph.
+
+**5. `ai-features.md:222-223` — "With the switch disabled, all three endpoints return a clear error" — the error text is misleading when a provider IS configured but disabled.**
+`llm_service.create_invocation`:
+```python
+if row is None or not row.enabled:
+    raise LLMNotConfiguredError("no LLM provider is configured — a workspace admin can add one")
+```
+A Member who hits this with a fully configured-but-disabled provider is told nothing is configured. Either soften the doc ("returns an LLM-not-configured error") or, better, file a small fix to distinguish the two states. Low.
+
+**Verified-benign note (no doc change needed, recording the determination):** `_kind_detail_layer` reads the *raw* `result.observed_value` (not the redacted copy) to lift `max_timestamp`/`row_count`/`z_score`; this is consistent with the doc's "same redaction every results surface applies" because `redact_observed_value` never masks monitor-kind dict shapes anywhere either (it only acts on `observed_value`/`unparsed_value` keys). A freshness `max_timestamp` is a warehouse MAX() of the tested timestamp column, so if that ever needs masking it is a code gap across all surfaces, not a doc overclaim.</result>
+<usage><subagent_tokens>153768</subagent_tokens><tool_uses>13</tool_uses><duration_ms>210768</duration_ms></usage>
+</task-notification>
