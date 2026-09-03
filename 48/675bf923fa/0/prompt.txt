@@ -1,0 +1,5 @@
+Hey
+
+---
+
+Hey, the videos are not playing if I navigate between doc pages [for example - If I open home page the tour video is playing, but then if go to some other page and came back to home page the video is not playing, and there are no button to play it manuallu either], can you check it?
