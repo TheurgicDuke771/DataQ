@@ -3,7 +3,7 @@
 DataQ can call a language model **you choose** for three jobs: turn a sentence into a
 custom-SQL check, propose a starter set of checks for a table, and explain why a check
 failed. All three are **off until an Admin configures a provider**, every call is recorded,
-and no raw row ever leaves your deployment. This page shows each one with what goes in, what
+and no failing-sample row ever leaves your deployment. This page shows each one with what goes in, what
 comes back, and what the model is never shown.
 
 <video class="clip" autoplay loop muted playsinline poster="../../assets/videos/configure-llm.jpg">
@@ -38,13 +38,23 @@ every response** against the same rules a human's input would face, so the mode 
 reliability, never safety.
 
 !!! info "What the model can and cannot see"
-    Every feature below sends **column names and masked aggregate statistics** — counts,
-    null rates, min/max, distinct counts — never sample rows. The root-cause narrative
-    additionally sends the failing check's observed value, and that value passes through
-    the same column-policy and warehouse-tag redaction every results surface applies. A
-    column classified as PII reaches the model as a mask. The full transfer-vector
-    accounting is in [Security & data handling](../security/overview.md#what-can-move-data-out),
-    and the live list for *your* deployment is on the Admin page above the panel.
+    Nothing sends failing-sample rows. Beyond that, each feature sends something different:
+
+    - **SQL generation** — the target's column names, plus null and distinct counts per
+      column if you ask for the profile. No values.
+    - **Check suggestions** — column names with null/distinct counts, min/max, and the
+      **five most frequent values** of each column. Columns your column policy or warehouse
+      tags mark sensitive are blanked to a mask; an unclassified free-text column is not,
+      so classify before you enable this on a table with one.
+    - **Root-cause narrative** — the stored evidence card (check, asset, pipeline and
+      downstream *identifiers*, statuses, metric values, the observed and expected values
+      after the same column-policy / warehouse-tag redaction every results surface applies)
+      plus up to 180 points of that check's result history from DataQ's own database. No
+      column profile at all.
+
+    The full transfer-vector accounting is in
+    [Security & data handling](../security/overview.md#what-can-move-data-out), and the live
+    list for *your* deployment is on the Admin page above the panel.
 
 ## Explain a failed check
 
@@ -55,8 +65,9 @@ asset. You can read the card yourself from the asset page.
 
 ![The incident evidence drawer on an asset: the failing result, expected vs observed values, the metric trend and the sibling checks from the same run](../assets/screenshots/incident-evidence.png){ .screenshot }
 
-*This card is exactly what the model is handed — nothing is fetched fresh from the
-warehouse, so the narrative describes the failure as it was, not as it is now.*
+*The model is handed this card plus a longer result history for the check, both from
+DataQ's own database — nothing is fetched fresh from the warehouse, so the narrative
+describes the failure as it was captured, not as the table is now.*
 
 Ask for the narrative with the incident id:
 
@@ -110,7 +121,9 @@ Three things make this usable rather than merely plausible:
   could not see — no linked pipeline run, no lineage — and the prompt forbids the model
   from asserting confidence over those gaps.
 - **The narrative reaches the next alert.** Once one exists for an incident, the
-  Teams / Slack / email / webhook line for that incident carries its one-line takeaway:
+  Teams / Slack / email / webhook line for that incident carries its one-line takeaway —
+  unless other suites also check the same asset, in which case the alert withholds it, since
+  the narrative may name a check the alert's audience is not granted to see:
 
 ```text
 Incident 669964c0 (status in set) — critical, occurrence 2 · not pipeline-triggered (manual
@@ -219,7 +232,8 @@ the asset page's per-dimension coverage to see what they left out.
   and no Admin-only feature — an assistant holding your token can do exactly what you can.
 - **Rate-limited under its own class**, separate from the REST ceiling, so a burst of
   generations cannot crowd out normal API traffic — and vice-versa.
-- **Off is really off.** With the switch disabled, all three endpoints return a clear error
-  and nothing is sent anywhere.
+- **Off is really off.** With the switch disabled, all three endpoints return an
+  *LLM not configured* error and nothing is sent anywhere — the worker re-checks the switch
+  before every call, so disabling it mid-flight fails the queued generation too.
 
 Design record: ADR [0042](../adr/0042-llm-provider-seam.md).

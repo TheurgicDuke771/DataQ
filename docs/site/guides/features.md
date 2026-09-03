@@ -209,8 +209,8 @@ provider + credential, admin-configured) powers three features: **NL→SQL gener
 the custom-SQL check editor, **curated check suggestions** driven by a live column profile
 constrained to a vetted expectation vocabulary, and a **root-cause narrative** for a failed
 check — ranked hypotheses citing real evidence-card layers, plus what the evidence snapshot
-could *not* see. SQL generation and check suggestions send only masked aggregate profiler
-statistics to the provider; the RCA narrative additionally sends the triggering check's own
+could *not* see. SQL generation sends column names and counts; check suggestions add masked profile
+statistics, including each non-sensitive column's most frequent values; the RCA narrative additionally sends the triggering check's own
 observed value, routed through the same column-policy/warehouse-tag redaction floor every
 results surface applies. Raw sample rows never leave the deployment on any path. See
 [AI features](ai-features.md) for a walkthrough with real output, and
