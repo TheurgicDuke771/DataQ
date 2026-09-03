@@ -7,7 +7,11 @@ team. It watches your Azure Data Factory, Airflow, and dbt pipelines and can run
 automatically when a pipeline finishes.
 
 
-![DataQ's monitoring dashboard](assets/screenshots/dashboard.png){ .screenshot }
+<video class="clip" autoplay loop muted playsinline poster="assets/videos/tour.jpg">
+  <source src="assets/videos/tour.mp4" type="video/mp4">
+</video>
+
+*A ten-second tour: dashboard, assets, connections, suites, results.*
 
 ## Who it's for
 

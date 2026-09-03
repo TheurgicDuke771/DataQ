@@ -26,6 +26,13 @@ the **Dashboard** — empty for now. Once suites have run it looks like this:
 > [step 2](#2-create-a-suite-and-point-it-at-a-target).
 
 1. Go to **Connections → Add connection**.
+
+<video class="clip" autoplay loop muted playsinline poster="../assets/videos/add-connection.jpg">
+  <source src="../assets/videos/add-connection.mp4" type="video/mp4">
+</video>
+
+*Adding a Snowflake connection, start to finish (12 s)*
+
 2. Pick your datasource type (Snowflake, Unity Catalog, ADLS Gen2, S3, or Apache
    Iceberg). The form is spec-driven — it asks only for what that type needs.
 
@@ -65,6 +72,13 @@ run?"* and *"did it land whole?"* — before any value-level rule.
 ![A freshness monitor: timestamp column plus warn / fail / critical age thresholds](../assets/screenshots/check-editor-freshness.png){ .screenshot }
 2. **A value check.** Add a check → a GX expectation like
    `expect_column_values_to_not_be_null` on a key column (e.g. `order_id`).
+
+<video class="clip" autoplay loop muted playsinline poster="../assets/videos/author-check.jpg">
+  <source src="../assets/videos/author-check.mp4" type="video/mp4">
+</video>
+
+*Authoring a value check and reaching the dry-run preview (10 s)*
+
 3. Before saving the value check, click **Dry-run** to preview it against live data — you'll
    see the observed unexpected-% so you can set a **warn** threshold just above today's
    baseline (so it's green now, loud only when reality changes).
@@ -83,6 +97,12 @@ You can **cancel** a run mid-flight.
 ## 5. Read the result
 
 Go to **Results** and open the run:
+
+<video class="clip" autoplay loop muted playsinline poster="../assets/videos/read-results.jpg">
+  <source src="../assets/videos/read-results.mp4" type="video/mp4">
+</video>
+
+*Opening a run and expanding a failing check (6 s)*
 
 - Per-check outcomes with **observed vs expected** values.
 - For a failing check, expand it to see the **failing-row sample** — **redacted**

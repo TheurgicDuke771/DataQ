@@ -67,7 +67,7 @@ test('check editor — freshness monitor', async ({ page }) => {
   await page.getByText(/How stale is the target/).click();
   await page.getByLabel('Name').fill('orders arrive hourly');
   await page.getByLabel('Timestamp column').fill('order_ts');
-  await page.getByLabel('Fail ≥').fill('24');
+  await page.getByLabel('Fail ≥').fill('26');
   await shot(page, 'check-editor-freshness');
 });
 

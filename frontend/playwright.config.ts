@@ -104,39 +104,41 @@ export default defineConfig({
         ]
       : []),
   ],
-  webServer: liveBaseURL
-    ? undefined
-    : [
-        {
-          command: 'pnpm dev --host --port 3000',
-          url: baseURL,
-          // Locally: reuse the compose/`pnpm dev` server already on :3000. In CI:
-          // start a fresh one (the api is already up on :8000 from a prior step).
-          reuseExistingServer: !process.env.CI,
-          timeout: 120_000,
-          env: {
-            VITE_AUTH_DEV_BYPASS: 'true',
-            VITE_API_PROXY_TARGET: process.env.VITE_API_PROXY_TARGET || 'http://localhost:8000',
+  webServer:
+    liveBaseURL || docsEnabled
+      ? undefined
+      : [
+          {
+            command: 'pnpm dev --host --port 3000',
+            url: baseURL,
+            // Locally: reuse the compose/`pnpm dev` server already on :3000. In CI:
+            // start a fresh one (the api is already up on :8000 from a prior step).
+            reuseExistingServer: !process.env.CI,
+            timeout: 120_000,
+            env: {
+              VITE_AUTH_DEV_BYPASS: 'true',
+              VITE_API_PROXY_TARGET: process.env.VITE_API_PROXY_TARGET || 'http://localhost:8000',
+            },
           },
-        },
-        ...(otpEnabled
-          ? [
-              {
-                command: 'pnpm dev --host --port 3100',
-                url: otpBaseURL,
-                reuseExistingServer: !process.env.CI,
-                timeout: 120_000,
-                // Deliberately NO auth env: the mode is injected per page as
-                // window.__DATAQ_CONFIG__, which is what production does.
-                env: {
-                  // 127.0.0.1, not `localhost`: the stack script binds uvicorn to
-                  // the v4 loopback, and `localhost` resolves to ::1 first on
-                  // hosts with IPv6 in /etc/hosts. Node's happy-eyeballs would
-                  // usually recover, but "usually" is not what a CI lane wants.
-                  VITE_API_PROXY_TARGET: process.env.E2E_OTP_API_TARGET || 'http://127.0.0.1:8100',
+          ...(otpEnabled
+            ? [
+                {
+                  command: 'pnpm dev --host --port 3100',
+                  url: otpBaseURL,
+                  reuseExistingServer: !process.env.CI,
+                  timeout: 120_000,
+                  // Deliberately NO auth env: the mode is injected per page as
+                  // window.__DATAQ_CONFIG__, which is what production does.
+                  env: {
+                    // 127.0.0.1, not `localhost`: the stack script binds uvicorn to
+                    // the v4 loopback, and `localhost` resolves to ::1 first on
+                    // hosts with IPv6 in /etc/hosts. Node's happy-eyeballs would
+                    // usually recover, but "usually" is not what a CI lane wants.
+                    VITE_API_PROXY_TARGET:
+                      process.env.E2E_OTP_API_TARGET || 'http://127.0.0.1:8100',
+                  },
                 },
-              },
-            ]
-          : []),
-      ],
+              ]
+            : []),
+        ],
 });
