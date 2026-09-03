@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "ed79779b25c3",
+  "strategy": "manual-commit",
+  "branch": "docs/ai-features-guide",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/e2e-docs/README.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ed/79779b25c3/0/metadata.json",
+      "transcript": "/ed/79779b25c3/0/full.jsonl",
+      "compact_transcript": "/ed/79779b25c3/0/transcript.jsonl",
+      "content_hash": "/ed/79779b25c3/0/content_hash.txt",
+      "prompt": "/ed/79779b25c3/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 286,
+    "cache_creation_tokens": 1968,
+    "cache_read_tokens": 1138137,
+    "output_tokens": 1072,
+    "api_call_count": 4
+  }
+}

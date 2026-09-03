@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bc579mapb</task-id>
+<tool-use-id>toolu_01SW78wGkvbskSfZZ1Y6Sii6</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/e6d12f61-62ed-4c73-afa6-5a85fc724f47/tasks/bc579mapb.output</output-file>
+<status>completed</status>
+<summary>Background command "Poll CI on PR #1847" completed (exit code 0)</summary>
+</task-notification>
