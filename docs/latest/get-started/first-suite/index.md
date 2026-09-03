@@ -27,18 +27,19 @@ the **Dashboard** — empty for now. Once suites have run it looks like this:
 
 1. Go to **Connections → Add connection**.
 
-<video class="clip" autoplay loop muted playsinline poster="../assets/videos/add-connection.jpg">
-  <source src="../assets/videos/add-connection.mp4" type="video/mp4">
-</video>
+    <video class="clip" autoplay loop muted playsinline poster="../../assets/videos/add-connection.jpg">
+      <source src="../../assets/videos/add-connection.mp4" type="video/mp4">
+    </video>
 
-*Adding a Snowflake connection, start to finish (12 s)*
+    *Adding a Snowflake connection, start to finish (12 s)*
 
 2. Pick your datasource type (Snowflake, Unity Catalog, ADLS Gen2, S3, or Apache
    Iceberg). The form is spec-driven — it asks only for what that type needs.
 
-![Choosing a datasource type: warehouses, lakehouses, cloud storage, and the optional orchestration providers](../assets/screenshots/connection-type-picker.png){ .screenshot }
+    ![Choosing a datasource type: warehouses, lakehouses, cloud storage, and the optional orchestration providers](../assets/screenshots/connection-type-picker.png){ .screenshot }
 
-![The Snowflake connection form asks only for what Snowflake needs](../assets/screenshots/connection-form-snowflake.png){ .screenshot }
+    ![The Snowflake connection form asks only for what Snowflake needs](../assets/screenshots/connection-form-snowflake.png){ .screenshot }
+
 3. Fill it in with a **read-only** credential (for Snowflake, key-pair auth is recommended),
    then click **Test**. A green result means DataQ can reach it.
 
@@ -53,10 +54,12 @@ changed without it.
 
 1. Go to **Suites → New suite**, give it a name (e.g. `orders — snowflake prod`), and pick
    the connection you just made.
+
 2. Set the **run target**: a table (SQL datasources) or a file / batch pattern (flat files).
+
 3. Save. The suite is empty — let's add checks. A finished suite looks like this:
 
-![A suite: its connection and target, the checks with their dimension tags, and the pipeline triggers panel](../assets/screenshots/suite-detail.png){ .screenshot }
+    ![A suite: its connection and target, the checks with their dimension tags, and the pipeline triggers panel](../assets/screenshots/suite-detail.png){ .screenshot }
 
 ## 3. Add your first checks
 
@@ -67,23 +70,24 @@ run?"* and *"did it land whole?"* — before any value-level rule.
    timestamp column. Set a **fail** threshold (e.g. *fail if > 26 hours old* for a daily
    load). Freshness/volume monitors require a fail or critical threshold.
 
-![Add check: pick a kind first — column values, freshness, volume, schema drift, anomaly, comparison or custom SQL](../assets/screenshots/check-editor-picker.png){ .screenshot }
+    ![Add check: pick a kind first — column values, freshness, volume, schema drift, anomaly, comparison or custom SQL](../assets/screenshots/check-editor-picker.png){ .screenshot }
 
-![A freshness monitor: timestamp column plus warn / fail / critical age thresholds](../assets/screenshots/check-editor-freshness.png){ .screenshot }
+    ![A freshness monitor: timestamp column plus warn / fail / critical age thresholds](../assets/screenshots/check-editor-freshness.png){ .screenshot }
+
 2. **A value check.** Add a check → a GX expectation like
    `expect_column_values_to_not_be_null` on a key column (e.g. `order_id`).
 
-<video class="clip" autoplay loop muted playsinline poster="../assets/videos/author-check.jpg">
-  <source src="../assets/videos/author-check.mp4" type="video/mp4">
-</video>
+    <video class="clip" autoplay loop muted playsinline poster="../../assets/videos/author-check.jpg">
+      <source src="../../assets/videos/author-check.mp4" type="video/mp4">
+    </video>
 
-*Authoring a value check and reaching the dry-run preview (10 s)*
+    *Authoring a value check and reaching the dry-run preview (10 s)*
 
 3. Before saving the value check, click **Dry-run** to preview it against live data — you'll
    see the observed unexpected-% so you can set a **warn** threshold just above today's
    baseline (so it's green now, loud only when reality changes).
 
-![A value check: the expectation, its column, severity thresholds and the dry-run preview button](../assets/screenshots/check-editor-expectation.png){ .screenshot }
+    ![A value check: the expectation, its column, severity thresholds and the dry-run preview button](../assets/screenshots/check-editor-expectation.png){ .screenshot }
 
 *Tip:* use the **column profiler** on a column to see nulls / distinct / min-max / top values
 while you decide what to check.
@@ -98,8 +102,8 @@ You can **cancel** a run mid-flight.
 
 Go to **Results** and open the run:
 
-<video class="clip" autoplay loop muted playsinline poster="../assets/videos/read-results.jpg">
-  <source src="../assets/videos/read-results.mp4" type="video/mp4">
+<video class="clip" autoplay loop muted playsinline poster="../../assets/videos/read-results.jpg">
+  <source src="../../assets/videos/read-results.mp4" type="video/mp4">
 </video>
 
 *Opening a run and expanding a failing check (6 s)*
@@ -118,13 +122,19 @@ If a run *failed to execute* (bad credential, unreachable store), it shows a pla
 
 ## 6. Get alerted
 
+The short version is below; the full walk-through with screenshots is
+[Your first alert](first-alert.md).
+
 1. On the suite, open **Notifications** and add a channel — Teams, Slack, or email — and pick
    a threshold (the default **warn-and-worse** is a good start).
+
 2. Now a breaching run notifies you, with a deep link back to the run and the
    expected-vs-observed context. **Dedup** means you hear about a breakage once (and again if
    it escalates), not on every run.
 
 ## 7. Automate it
+
+The short version is below; the full walk-through is [Run it automatically](connect-pipeline.md).
 
 - **If an orchestrator loads this table** (ADF / Airflow / dbt): open the suite's **Triggers**
   and bind it to the pipeline — the suite runs right after the pipeline succeeds, and results

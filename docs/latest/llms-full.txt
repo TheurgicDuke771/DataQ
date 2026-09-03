@@ -3,16 +3,15 @@
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/ -->
 
 # DataQ
 
-**DataQ is a data-quality monitoring platform.** It runs automated checks against your
-data — in Snowflake, ADLS Gen2, AWS S3 (or any S3-compatible store), Databricks Unity Catalog, and Apache Iceberg — tells you when
-something is wrong (failed checks, stale tables, unexpected row counts), and alerts your
-team. It watches your Azure Data Factory, Airflow, and dbt pipelines and can run checks
-automatically when a pipeline finishes.
-
+**Know your data is right before anyone else finds out it isn't.** DataQ runs automated checks
+against your tables and files — in Snowflake, Databricks Unity Catalog, Apache Iceberg, ADLS
+Gen2, AWS S3 or any S3-compatible store — tells you when something is wrong, and alerts the
+team that owns it. It watches your Azure Data Factory, Airflow and dbt pipelines and runs the
+checks the moment a load finishes.
 
 <video class="clip" autoplay loop muted playsinline poster="assets/videos/tour.jpg">
   <source src="assets/videos/tour.mp4" type="video/mp4">
@@ -20,17 +19,55 @@ automatically when a pipeline finishes.
 
 *A ten-second tour: dashboard, assets, connections, suites, results.*
 
-## Who it's for
+<div class="grid cards" markdown>
 
-- **Data engineers / SREs** — author checks, wire up pipelines, triage failures.
-- **QA / analysts** — see what passed or failed and why.
-- **Product & stakeholders** — a health score and trend at a glance.
+-   :material-rocket-launch:{ .lg .middle } **Try it in five minutes**
 
-## Quickstart (5 minutes)
+    ---
 
-### Run DataQ — prebuilt images (recommended)
+    One `docker compose up`, no cloud account, no identity provider. Sign in with an emailed
+    code and explore seeded demo data.
 
-Evaluate or self-host with **no source checkout and no cloud account or IdP** — just Docker:
+    [:octicons-arrow-right-24: Install](get-started/install.md)
+
+-   :material-school:{ .lg .middle } **Learn it in an hour**
+
+    ---
+
+    Four short tutorials: your first suite, your first alert, running it automatically, and
+    asking an AI assistant.
+
+    [:octicons-arrow-right-24: Get started](get-started/index.md)
+
+-   :material-book-open-variant:{ .lg .middle } **Look something up**
+
+    ---
+
+    Every check type, every REST endpoint, every MCP tool — generated from the code, so it
+    cannot drift.
+
+    [:octicons-arrow-right-24: Reference](reference/index.md)
+
+</div>
+
+## What you can do with it
+
+| | |
+|---|---|
+| **Catch the incidents that page people** | Freshness, volume and schema-drift monitors notice a load that did not arrive, arrived half-empty, or changed shape — before a value-level rule ever runs. |
+| **Author precise checks without code** | Twenty-five vetted Great Expectations types, custom SQL with a live dry-run, comparisons against a second dataset, anomaly detection on a learned baseline. Let the built-in assistant suggest checks from a column profile. |
+| **See the whole estate** | An asset view rolls health up per table, with lineage pulled from dbt, your catalog or the warehouse itself, and incidents anchored to the asset they hit. |
+| **Alert the right people, once** | Teams, Slack, email and webhooks, routed by severity, de-duplicated so a broken check reports when it breaks, not on every run. |
+| **Run it where the data lives** | Reference deployments on Azure Container Apps and AWS ECS; a single-host Docker stack for evaluation; bring your own identity provider or none at all. |
+| **Let assistants do the work** | Forty-eight MCP tools expose the same actions to Claude, Copilot and Cursor, every one honest about what it cannot see. |
+
+## Who it is for
+
+- **Data engineers and SREs** author checks, wire pipelines, triage failures.
+- **Analysts and QA** see what passed or failed and why, with redacted failing rows.
+- **Stakeholders** get a health score and a trend, not a Slack thread.
+
+## Quickstart
 
 ```bash
 curl -O https://raw.githubusercontent.com/TheurgicDuke771/DataQ/main/docker-compose.ghcr.yml
@@ -39,53 +76,29 @@ export DATAQ_SIGNIN_EMAIL=you@example.com        # the address allowed to sign i
 docker compose -f docker-compose.ghcr.yml up
 ```
 
-Open **`http://localhost:3000`**, type the address you exported, and read the 6-digit
-sign-in code in the bundled inbox at **`http://localhost:8025`** ([Mailpit](https://mailpit.axllent.org)
-— no real SMTP relay needed, nothing leaves the host). The stack comes up migrated and
-seeded with demo data. API + Swagger at `http://localhost:8000/docs`. The GHCR images
-are **multi-arch** (amd64 + arm64, native on Apple Silicon) and all ports bind to
-`127.0.0.1` only. To skip sign-in entirely (dev-bypass, a deliberate downgrade — not
-the default): `DATAQ_SIGNIN_EMAIL= DATAQ_AUTH_MODE=bypass docker compose -f docker-compose.ghcr.yml up`.
-See [Getting started](get-started/install.md) for the full flow.
+Open `http://localhost:3000`, type the address you exported, and read the six-digit code in the
+bundled inbox at `http://localhost:8025`. The stack comes up migrated and seeded with demo
+data; nothing leaves your machine. Full flow, other sign-in modes and the from-source path:
+[Install](get-started/install.md).
 
-### Develop DataQ — from source
+## Where next
 
-```bash
-git clone https://github.com/TheurgicDuke771/DataQ.git
-cd DataQ
-./scripts/setup.sh        # conda env + pre-commit + docker-compose + migrations
-conda activate dataq
-docker-compose up         # Postgres + Redis + FastAPI + React + Celery worker
-```
-
-- Backend API: `http://localhost:8000` (interactive docs at `/docs` in dev).
-- Frontend: `http://localhost:3000`.
-
-Then open the UI, add a connection, create a suite of checks, and run it. See
-**[Getting started](get-started/install.md)** for both paths in depth (incl. self-hosting
-with your own IdP — Azure AD, Cognito, Okta, …) and **[Datasources & checks](guides/datasources-checks.md)**
-to author your first check.
-
-## Where to go next
-
-- Just want to use it? Follow the **[Tutorial — your first suite](get-started/first-suite.md)** end to end.
-- New to DataQ? Read **[Concepts](get-started/concepts.md)** (datasource vs orchestration is the one
-  distinction to internalise), then browse **[Features](guides/features.md)**.
-- Setting it up the right way? **[Recommended usage](guides/recommended-usage.md)**.
-- Want the big picture? **[Architecture](architecture/overview.md)** · **[Security & data handling](security/overview.md)**.
-- Running it for real? **[Deployment](operate/deployment.md)** · **[Troubleshooting](operate/troubleshooting.md)** · **[Observability](operate/observability.md)**.
-- Scripting it? The **[REST API](reference/rest-api.md)**. AI assistants (Claude / Copilot / Cursor) can
-  drive DataQ over **[MCP](guides/mcp-setup.md)**.
+- Running it for real? [Deployment](operate/deployment.md), then
+  [Security & data handling](security/overview.md) for the review that follows.
+- Curious how it is built? [Architecture](architecture/overview.md) and the
+  [decision records](adr/README.md) behind it.
+- Scripting it? The [REST API](reference/rest-api.md), or an assistant over
+  [MCP](guides/mcp-setup.md).
 
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/get-started/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/get-started/ -->
 
 # Get started
 
-Three short tutorials take you from nothing to a running suite with an alert. Each one
-ends with something you can see on screen.
+Short tutorials take you from nothing to a suite that runs itself and tells you when
+something breaks. Each one ends with something you can see on screen.
 
 <div class="grid cards" markdown>
 
@@ -106,6 +119,31 @@ ends with something you can see on screen.
 
     [:octicons-arrow-right-24: First suite](first-suite.md)
 
+-   :material-bell-ring:{ .lg .middle } **Your first alert**
+
+    ---
+
+    Route a suite's breaches to Teams, Slack or email, prove it fires, and see why it stays
+    quiet afterwards.
+
+    [:octicons-arrow-right-24: First alert](first-alert.md)
+
+-   :material-play-speed:{ .lg .middle } **Run it automatically**
+
+    ---
+
+    Trigger the suite when your ADF, Airflow or dbt pipeline succeeds, or put it on a cron.
+
+    [:octicons-arrow-right-24: Automate](connect-pipeline.md)
+
+-   :material-robot:{ .lg .middle } **Ask an AI assistant**
+
+    ---
+
+    Mint a token, point Claude, Copilot or Cursor at `/mcp`, ask the four questions.
+
+    [:octicons-arrow-right-24: Ask an assistant](ask-assistant.md)
+
 -   :material-lightbulb-on:{ .lg .middle } **Concepts**
 
     ---
@@ -119,20 +157,84 @@ ends with something you can see on screen.
 
 ## Where next
 
-- **Automate it** — [Scheduling](../guides/scheduling.md) runs suites on a cron;
-  [Orchestration](../guides/orchestration.md) runs them when a pipeline finishes.
-- **Get told** — [Notifications & alerting](../guides/notifications.md).
-- **Ask an assistant** — [AI assistants (MCP)](../guides/mcp-setup.md) connects Claude,
-  Copilot or Cursor to your workspace.
+The [Guides](../guides/index.md) go deeper on each of these; the
+[Reference](../reference/index.md) lists every check type, endpoint and tool.
 
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/get-started/concepts/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/get-started/ask-assistant/ -->
+
+# Ask an AI assistant
+
+Everything in the UI is also available to Claude, ChatGPT, GitHub Copilot, Cursor and any
+other client that speaks the Model Context Protocol (MCP). Five minutes to the first answer.
+
+## 1. Mint a personal access token
+
+**Profile → API keys → New key.** Copy the `dq_live_…` token now; it is shown once. The token
+acts as you — the same workspace role and the same per-suite `view` / `edit` grants — so an
+assistant can never see or change more than you can.
+
+![The Profile page, where personal access tokens are minted and revoked](../assets/screenshots/profile.png){ .screenshot }
+
+*Tokens are listed by prefix only; revoke one here and it stops working on its next call.*
+
+## 2. Point your client at `/mcp`
+
+The server lives at `https://<your-dataq-host>/mcp/` (trailing slash) and authenticates with
+the token as a bearer. Copy-paste configuration for Claude Desktop, Claude.ai, VS Code /
+Copilot and Cursor is in [AI assistants (MCP)](../guides/mcp-setup.md).
+
+## 3. Ask
+
+Try the four questions the tools were designed around:
+
+- *"Which suites failed in the last 24 hours, and why?"*
+- *"Is the `orders` table healthy? What feeds it?"*
+- *"Add a not-null check on `customer_id` to the orders suite and dry-run it."*
+- *"Why did I not get an alert for last night's failure?"*
+
+Every tool states what it **cannot** see — a mid-run suite is reported as *not final*, an
+expired snooze as *expired*, a truncated list as *truncated* — because an assistant has no
+"running" badge to glance at. That design is documented in
+[MCP tool design](../architecture/mcp-honesty.md), and the full list of the 48 tools with who
+can call them is the [MCP tools reference](../reference/mcp-tools.md).
+
+!!! tip "Ask about the docs, too"
+    Every page on this site has **Ask AI** at the top: it opens the page in your own assistant
+    with the raw Markdown, and the same pages are available to assistants through the `get_doc`
+    tool.
+
+
+---
+
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/get-started/concepts/ -->
 
 # Concepts
 
-A few terms make the rest of the docs click.
+Six words carry the whole product. Here they are, in the order you meet them.
+
+```mermaid
+flowchart LR
+    C[Connection] --> S[Suite]
+    S --> K[Checks]
+    K --> R[Run]
+    R --> T[Results]
+    T --> A[Alerts & incidents]
+    P[Pipeline] -. triggers .-> R
+    style P stroke-dasharray: 4 4
+```
+
+| Word | Plain English | Where you see it |
+|---|---|---|
+| **Connection** | How DataQ reaches one datasource (or one orchestrator), with its credential kept in the secret store | Connections |
+| **Suite** | A named set of checks against one target table or file | Suites |
+| **Check** | One rule: a value expectation, a monitor (freshness, volume, schema drift, anomaly), a comparison, or custom SQL | Suite → Checks |
+| **Run** | One execution of a suite: manual, scheduled, or triggered by a pipeline | Results |
+| **Result** | What each check found: pass · warn · fail · critical, plus the number it measured | Run detail |
+| **Incident** | A critical breach anchored to the asset it hit, with evidence, until someone resolves it | Dashboard, Assets |
+
 
 ## The one distinction: datasource vs orchestration
 
@@ -176,7 +278,125 @@ failures. See **[Architecture](../architecture/overview.md)** for the flow.
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/get-started/first-suite/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/get-started/connect-pipeline/ -->
+
+# Run it automatically
+
+A suite you have to remember to run is a suite that stops running. Pick one of the two ways
+to automate it — and prefer the first when an orchestrator loads the table.
+
+![A suite's Triggers and Schedules panels, side by side](../assets/screenshots/suite-schedules.png){ .screenshot }
+
+*Triggers run the suite when a pipeline succeeds; Schedules run it on a cron.*
+
+## Option A — trigger from your pipeline (recommended)
+
+When Azure Data Factory, Airflow or dbt loads the table, DataQ can run the suite **right after
+the load succeeds**, and the result is correlated to that pipeline run.
+
+1. Ask an Admin to add the orchestrator as a connection (**Connections → Add connection →
+   Orchestration**). This is a *watcher*, not a datasource — you never write checks against a
+   pipeline.
+2. Make the orchestrator tell DataQ when runs finish. ADF posts through an Azure Monitor alert;
+   Airflow and dbt call a small callback snippet you paste into the DAG or the post-build hook.
+   Each is a few lines, documented in [Orchestration](../guides/orchestration.md). Without the
+   callback, DataQ still polls every ten minutes, so you lose only the immediacy.
+3. On the suite, open **Triggers**, choose the provider, type the pipeline or DAG id, pick the
+   environment, **Add**.
+
+The next successful pipeline run starts the suite. On **Results → Pipelines** you see the
+pipeline run and the suite run it triggered on one line. A *failed* pipeline alerts you but does
+**not** run checks — there is nothing new to check.
+
+## Option B — schedule it
+
+For data that arrives without an orchestrator DataQ can see (a nightly file drop on S3, a
+vendor feed), open **Schedules**, enter a cron expression and a timezone, **Add**.
+
+| Cron | Meaning |
+|---|---|
+| `0 9 * * 1-5` | 09:00 on weekdays |
+| `*/30 * * * *` | every 30 minutes |
+| `0 6 1 * *` | 06:00 on the first of the month |
+
+The timezone is a full IANA zone, so `0 9 * * *` in `Europe/London` follows London's clock
+changes. A suite can hold several schedules; **pause** one with its switch without losing the
+cadence.
+
+Two semantics worth knowing before you rely on it: schedules tick at **minute** granularity,
+and missed ticks while the platform was down are **not** replayed — the schedule resumes at its
+next occurrence. Details: [Scheduling](../guides/scheduling.md).
+
+## Either way
+
+Runs land on **Results** and the **Dashboard** like a manual run, `triggered_by` says which
+schedule or pipeline started them, and the suite's [alert settings](first-alert.md) apply.
+
+
+---
+
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/get-started/first-alert/ -->
+
+# Your first alert
+
+Ten minutes. You end with a message in Teams, Slack or your inbox the next time a check
+breaches — and silence when nothing changed.
+
+## 1. Decide where alerts go
+
+Alerts are configured **per suite**, so the team that owns the data gets told about its data.
+Workspace-wide defaults (a Slack webhook, an SMTP sender, a Teams webhook) are set by whoever
+deployed DataQ through environment configuration; a suite can override the Teams webhook and
+the email recipients.
+
+![The workspace Settings → Notifications tab explains that alert routing lives on each suite](../assets/screenshots/settings-notifications.png){ .screenshot }
+
+*Workspace settings point you back to the suite: that is where the routing lives.*
+
+## 2. Turn alerts on for the suite
+
+Open the suite and scroll to **Notifications**:
+
+![A suite's Notifications panel: the on/off switch, the alert threshold, optional Teams and Slack webhooks, and email recipients](../assets/screenshots/suite-notifications.png){ .screenshot }
+
+*Everything an alert needs, on the suite itself.*
+
+1. Switch **Send alerts for this suite** on.
+2. Pick the **alert threshold**. The default, *On warn and worse*, is the right first choice:
+   quiet for a passing run, loud the moment a check crosses a threshold you set.
+3. Optionally paste a **Teams** or **Slack** webhook for this suite, or list **email
+   recipients**. Leave a field blank to fall back to the workspace default. Webhook URLs are
+   write-only: after saving, the tag reads *set* and the URL is never shown again.
+4. **Save**.
+
+## 3. Prove it fires
+
+Edit a check so it must breach — set a `warn` threshold below today's unexpected-% you saw in
+the dry-run — and click **Run**. Within seconds of the run finishing, the alert lands with the
+suite name, the worst severity, the checks that breached and a link back to the run.
+
+Put the threshold back afterwards. Now the same run is green and **nothing fires**: DataQ
+alerts only when a run got *worse* than the previous one (a newly failing check, or an
+escalation from warn to fail to critical), so a broken check on a 15-minute schedule reports
+once, not 96 times a day.
+
+## What else you get for free
+
+- **Severity-aware delivery** — `critical` escalates (a channel mention on Teams), `warn` stays
+  quiet.
+- **Operational failures always alert** — a run that could not execute (dead credential,
+  unreachable store) notifies regardless of the threshold, with a plain-language reason.
+- **Snooze** — from the suite's check list, silence one check for N hours during a known
+  upstream incident; it un-snoozes itself.
+- **Incidents** — a critical breach opens an incident on the asset, with an evidence card you
+  can acknowledge and resolve from the run page or over MCP.
+
+Everything above, in depth: [Notifications & alerting](../guides/notifications.md).
+
+
+---
+
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/get-started/first-suite/ -->
 
 # Tutorial — your first suite
 
@@ -207,18 +427,19 @@ the **Dashboard** — empty for now. Once suites have run it looks like this:
 
 1. Go to **Connections → Add connection**.
 
-<video class="clip" autoplay loop muted playsinline poster="../assets/videos/add-connection.jpg">
-  <source src="../assets/videos/add-connection.mp4" type="video/mp4">
-</video>
+    <video class="clip" autoplay loop muted playsinline poster="../../assets/videos/add-connection.jpg">
+      <source src="../../assets/videos/add-connection.mp4" type="video/mp4">
+    </video>
 
-*Adding a Snowflake connection, start to finish (12 s)*
+    *Adding a Snowflake connection, start to finish (12 s)*
 
 2. Pick your datasource type (Snowflake, Unity Catalog, ADLS Gen2, S3, or Apache
    Iceberg). The form is spec-driven — it asks only for what that type needs.
 
-![Choosing a datasource type: warehouses, lakehouses, cloud storage, and the optional orchestration providers](../assets/screenshots/connection-type-picker.png){ .screenshot }
+    ![Choosing a datasource type: warehouses, lakehouses, cloud storage, and the optional orchestration providers](../assets/screenshots/connection-type-picker.png){ .screenshot }
 
-![The Snowflake connection form asks only for what Snowflake needs](../assets/screenshots/connection-form-snowflake.png){ .screenshot }
+    ![The Snowflake connection form asks only for what Snowflake needs](../assets/screenshots/connection-form-snowflake.png){ .screenshot }
+
 3. Fill it in with a **read-only** credential (for Snowflake, key-pair auth is recommended),
    then click **Test**. A green result means DataQ can reach it.
 
@@ -233,10 +454,12 @@ changed without it.
 
 1. Go to **Suites → New suite**, give it a name (e.g. `orders — snowflake prod`), and pick
    the connection you just made.
+
 2. Set the **run target**: a table (SQL datasources) or a file / batch pattern (flat files).
+
 3. Save. The suite is empty — let's add checks. A finished suite looks like this:
 
-![A suite: its connection and target, the checks with their dimension tags, and the pipeline triggers panel](../assets/screenshots/suite-detail.png){ .screenshot }
+    ![A suite: its connection and target, the checks with their dimension tags, and the pipeline triggers panel](../assets/screenshots/suite-detail.png){ .screenshot }
 
 ## 3. Add your first checks
 
@@ -247,23 +470,24 @@ run?"* and *"did it land whole?"* — before any value-level rule.
    timestamp column. Set a **fail** threshold (e.g. *fail if > 26 hours old* for a daily
    load). Freshness/volume monitors require a fail or critical threshold.
 
-![Add check: pick a kind first — column values, freshness, volume, schema drift, anomaly, comparison or custom SQL](../assets/screenshots/check-editor-picker.png){ .screenshot }
+    ![Add check: pick a kind first — column values, freshness, volume, schema drift, anomaly, comparison or custom SQL](../assets/screenshots/check-editor-picker.png){ .screenshot }
 
-![A freshness monitor: timestamp column plus warn / fail / critical age thresholds](../assets/screenshots/check-editor-freshness.png){ .screenshot }
+    ![A freshness monitor: timestamp column plus warn / fail / critical age thresholds](../assets/screenshots/check-editor-freshness.png){ .screenshot }
+
 2. **A value check.** Add a check → a GX expectation like
    `expect_column_values_to_not_be_null` on a key column (e.g. `order_id`).
 
-<video class="clip" autoplay loop muted playsinline poster="../assets/videos/author-check.jpg">
-  <source src="../assets/videos/author-check.mp4" type="video/mp4">
-</video>
+    <video class="clip" autoplay loop muted playsinline poster="../../assets/videos/author-check.jpg">
+      <source src="../../assets/videos/author-check.mp4" type="video/mp4">
+    </video>
 
-*Authoring a value check and reaching the dry-run preview (10 s)*
+    *Authoring a value check and reaching the dry-run preview (10 s)*
 
 3. Before saving the value check, click **Dry-run** to preview it against live data — you'll
    see the observed unexpected-% so you can set a **warn** threshold just above today's
    baseline (so it's green now, loud only when reality changes).
 
-![A value check: the expectation, its column, severity thresholds and the dry-run preview button](../assets/screenshots/check-editor-expectation.png){ .screenshot }
+    ![A value check: the expectation, its column, severity thresholds and the dry-run preview button](../assets/screenshots/check-editor-expectation.png){ .screenshot }
 
 *Tip:* use the **column profiler** on a column to see nulls / distinct / min-max / top values
 while you decide what to check.
@@ -278,8 +502,8 @@ You can **cancel** a run mid-flight.
 
 Go to **Results** and open the run:
 
-<video class="clip" autoplay loop muted playsinline poster="../assets/videos/read-results.jpg">
-  <source src="../assets/videos/read-results.mp4" type="video/mp4">
+<video class="clip" autoplay loop muted playsinline poster="../../assets/videos/read-results.jpg">
+  <source src="../../assets/videos/read-results.mp4" type="video/mp4">
 </video>
 
 *Opening a run and expanding a failing check (6 s)*
@@ -298,13 +522,19 @@ If a run *failed to execute* (bad credential, unreachable store), it shows a pla
 
 ## 6. Get alerted
 
+The short version is below; the full walk-through with screenshots is
+[Your first alert](first-alert.md).
+
 1. On the suite, open **Notifications** and add a channel — Teams, Slack, or email — and pick
    a threshold (the default **warn-and-worse** is a good start).
+
 2. Now a breaching run notifies you, with a deep link back to the run and the
    expected-vs-observed context. **Dedup** means you hear about a breakage once (and again if
    it escalates), not on every run.
 
 ## 7. Automate it
+
+The short version is below; the full walk-through is [Run it automatically](connect-pipeline.md).
 
 - **If an orchestrator loads this table** (ADF / Airflow / dbt): open the suite's **Triggers**
   and bind it to the pipeline — the suite runs right after the pipeline succeeds, and results
@@ -321,7 +551,7 @@ If a run *failed to execute* (bad credential, unreachable store), it shows a pla
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/get-started/install/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/get-started/install/ -->
 
 # Getting started
 
@@ -593,7 +823,7 @@ Before pushing, run the same gate CI does: Ruff, Black `--check`, mypy, Bandit, 
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/guides/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/guides/ -->
 
 # Guides
 
@@ -656,7 +886,7 @@ Looking for the full capability list? See the [features overview](features.md).
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/guides/api-keys/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/guides/api-keys/ -->
 
 # API keys (personal access tokens)
 
@@ -749,7 +979,7 @@ revoking one doesn't break the others.
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/guides/best-practices/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/guides/best-practices/ -->
 
 # Best practices
 
@@ -843,7 +1073,7 @@ If you **repoint a suite to a different target** after a policy exists, DataQ do
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/guides/datasources-checks/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/guides/datasources-checks/ -->
 
 # Datasources & checks
 
@@ -1306,7 +1536,7 @@ Severity comes from thresholds banding the observed unexpected-percentage
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/guides/features/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/guides/features/ -->
 
 # Features
 
@@ -1560,7 +1790,7 @@ parity](../operate/deployment-parity.md)).
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/guides/mcp-setup/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/guides/mcp-setup/ -->
 
 # AI assistants (MCP setup)
 
@@ -1679,7 +1909,7 @@ The tools split three ways, not two:
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/guides/notifications/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/guides/notifications/ -->
 
 # Notifications & alerting
 
@@ -1779,7 +2009,7 @@ showing a confident empty graph.
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/guides/orchestration/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/guides/orchestration/ -->
 
 # Orchestration integration (ADF, Airflow & dbt)
 
@@ -2076,7 +2306,7 @@ correlated to the pipeline run on the **Results → Pipelines** view.
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/guides/recommended-usage/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/guides/recommended-usage/ -->
 
 # Recommended usage
 
@@ -2222,7 +2452,7 @@ operating discipline that keeps the alerts meaningful.
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/guides/scheduling/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/guides/scheduling/ -->
 
 # Scheduling suite runs
 
@@ -2267,7 +2497,7 @@ Scheduled runs appear on **Results** and the **Dashboard** like any other run, w
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/reference/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/reference/ -->
 
 # Reference
 
@@ -2287,7 +2517,7 @@ For how the system is built and why, see [Architecture](../architecture/index.md
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/reference/changelog/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/reference/changelog/ -->
 
 # Changelog
 
@@ -2784,7 +3014,7 @@ See the [Features](../guides/features.md) page for the full current capability s
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/reference/check-types/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/reference/check-types/ -->
 
 # Check types
 
@@ -2922,7 +3152,7 @@ anything else, write a custom-SQL check.
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/reference/feature-matrix/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/reference/feature-matrix/ -->
 
 # Feature matrix
 
@@ -3155,7 +3385,7 @@ risk that carries.
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/reference/glossary/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/reference/glossary/ -->
 
 # Glossary
 
@@ -3190,7 +3420,7 @@ Maintainer & docs owner: **@TheurgicDuke771**. File issues / PRs on
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/reference/mcp-tools/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/reference/mcp-tools/ -->
 
 # MCP tools
 
@@ -3278,7 +3508,7 @@ connection mutation, and a credential must never transit an LLM.
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/reference/rest-api/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/reference/rest-api/ -->
 
 # REST API
 
@@ -3504,7 +3734,7 @@ The complete contract, generated from the running application on every change
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/architecture/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/architecture/ -->
 
 # Architecture
 
@@ -3570,7 +3800,7 @@ evaluating, extending or operating the system.
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/architecture/contributing/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/architecture/contributing/ -->
 
 # Contributing
 
@@ -3613,7 +3843,7 @@ Docs owner / reviewer: **@TheurgicDuke771** (see
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/architecture/evidence-card/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/architecture/evidence-card/ -->
 
 # The incident evidence card
 
@@ -3718,7 +3948,7 @@ be trusted to notice or disclose a gap it was never shown existed in the first p
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/architecture/mcp-honesty/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/architecture/mcp-honesty/ -->
 
 # MCP tool design: honesty & disclosure
 
@@ -3836,13 +4066,11 @@ rather than leaving that to be discovered from a wrong answer.
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/architecture/overview/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/architecture/overview/ -->
 
 # DataQ — System Architecture
 
 > Keep these diagrams in sync with the code. When a new component, datasource, integration, or DB table is added, update the relevant diagram in the same PR.
->
-> ⚠️ **Mermaid gotcha — syntactically *valid* ≠ *renders correctly*.** In **sequence-diagram** text, `#` starts Mermaid's HTML-entity escape (`#35;` → `#`) and a stray `;` terminates a statement — a bare `#NNN` issue ref or an inline semicolon silently truncates the rendered line while the syntax check still passes. Write issue refs in sequence diagrams as `#35;NNN` (renders as `#NNN`; flowcharts/state/ER diagrams don't need this) and eyeball the rendered diagram before merging, not just the linter.
 >
 > ☁️ **These diagrams are drawn using Azure's component names** (Container Apps, Key Vault, App Insights, Azure AD) because that's the concrete deployment they trace through. DataQ runs as an equally-live peer deployment on **AWS** (ECS Fargate, Secrets Manager, CloudWatch+X-Ray, Cognito) behind the exact same seams — see [deployment parity](../operate/deployment-parity.md) for the side-by-side. Neither cloud is primary; read "Key Vault" / "App Insights" / "Azure AD" below as "the secret store" / "the observability backend" / "the OIDC authority" and substitute the AWS equivalent where relevant.
 
@@ -4487,7 +4715,7 @@ Boundary notes:
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/architecture/perf-baseline/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/architecture/perf-baseline/ -->
 
 # Performance baseline — all datasources
 
@@ -4874,7 +5102,7 @@ Snowflake ramp above.
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/security/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/security/ -->
 
 # Security & compliance
 
@@ -4915,7 +5143,7 @@ the documents a privacy or security review will ask for.
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/security/overview/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/security/overview/ -->
 
 # Security & data handling
 
@@ -5584,7 +5812,7 @@ public issue.
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/security/compliance/breach-notification-runbook/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/security/compliance/breach-notification-runbook/ -->
 
 # Breach-notification runbook
 
@@ -5696,7 +5924,7 @@ Last reviewed: 2026-08-21.
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/security/compliance/data-subject-rights-runbook/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/security/compliance/data-subject-rights-runbook/ -->
 
 # Data-subject-rights runbook — access, export, erasure
 
@@ -5842,7 +6070,7 @@ Last reviewed: 2026-09-02.
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/security/compliance/dpa-baa-templates/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/security/compliance/dpa-baa-templates/ -->
 
 # DPA & BAA templates
 
@@ -5973,7 +6201,7 @@ docstrings.*
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/security/compliance/dpia-input-sheet/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/security/compliance/dpia-input-sheet/ -->
 
 # DPIA input sheet — what personal data DataQ can hold
 
@@ -6053,7 +6281,7 @@ This sheet shares its inventory with the [data-subject-rights runbook](data-subj
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/security/compliance/sub-processors/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/security/compliance/sub-processors/ -->
 
 # Third-party services & sub-processor disclosure
 
@@ -6117,7 +6345,7 @@ Last reviewed: 2026-09-01 (originally 2026-08-21).
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/operate/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/operate/ -->
 
 # Operate
 
@@ -6134,7 +6362,7 @@ Running DataQ for real: deploying it, watching it, and fixing it.
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/operate/deployment-parity/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/operate/deployment-parity/ -->
 
 # Deployment parity — Azure · AWS · Local
 
@@ -6245,7 +6473,7 @@ pointed at compose services.
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/operate/deployment/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/operate/deployment/ -->
 
 # Production deployment
 
@@ -6422,7 +6650,7 @@ the checklists — see the repository's `deploy/README.md`.
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/operate/observability/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/operate/observability/ -->
 
 # Observability & troubleshooting
 
@@ -6470,7 +6698,7 @@ is a start-time secret snapshot). Full deploy + ops runbook: the repository's
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/operate/runbook-faq/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/operate/runbook-faq/ -->
 
 # Runbook & FAQ
 
@@ -6559,7 +6787,7 @@ Full detail in [Orchestration → When lineage is empty](../guides/orchestration
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/operate/troubleshooting/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/operate/troubleshooting/ -->
 
 # Troubleshooting
 
@@ -6689,7 +6917,7 @@ Check [Observability](observability.md) for where logs/traces land, and the
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/ -->
 
 # Architecture Decision Records (ADRs)
 
@@ -6780,7 +7008,7 @@ Each ADR captures a single significant architecture decision: the context, the d
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0001-trunk-based-branching/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0001-trunk-based-branching/ -->
 
 # ADR 0001 — Trunk-based branching with squash-merge into `main`
 
@@ -6824,7 +7052,7 @@ Adopt **trunk-based development** with short-lived feature branches off `main`, 
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0002-conventional-commits/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0002-conventional-commits/ -->
 
 # ADR 0002 — Conventional commits for PR titles and commit messages
 
@@ -6879,7 +7107,7 @@ Examples:
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0003-gx-only-for-v1/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0003-gx-only-for-v1/ -->
 
 # ADR 0003 — GX-only for v1; DQX deferred to v1.1 for DLT/streaming
 
@@ -6936,7 +7164,7 @@ To enable the v1.1 swap cleanly:
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0004-orchestration-abstraction/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0004-orchestration-abstraction/ -->
 
 # ADR 0004 — Unified `OrchestrationProvider` abstraction for ADF and Apache Airflow
 
@@ -7031,7 +7259,7 @@ They do NOT appear in the connection editor's "pick a datasource" list or the ch
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0005-severity-tier-weights/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0005-severity-tier-weights/ -->
 
 # ADR 0005 — Severity tier weights (warn / fail / critical → health score)
 
@@ -7157,7 +7385,7 @@ with two of four tiers unused.
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0006-adf-webhook-authentication/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0006-adf-webhook-authentication/ -->
 
 # ADR 0006 — ADF webhook authentication (shared secret + hard-cutover rotation)
 
@@ -7229,7 +7457,7 @@ The transport is constrained by Azure Monitor itself:
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0007-airflow-callback-model/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0007-airflow-callback-model/ -->
 
 # ADR 0007 — Airflow callback model (HMAC-signed webhook + polling fallback)
 
@@ -7309,7 +7537,7 @@ Two constraints shape the design:
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0008-mcp-server/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0008-mcp-server/ -->
 
 # ADR 0008 — FastMCP server mounted at `/mcp`, Azure AD token-validated, all-tools
 
@@ -7607,7 +7835,7 @@ read-only, 18 that change state, 5 live-probe**.
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0009-flat-monorepo-layout/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0009-flat-monorepo-layout/ -->
 
 # ADR 0009 — Flat monorepo repo layout (`backend/` + `frontend/`)
 
@@ -7678,7 +7906,7 @@ DataQ/
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0010-provider-agnostic-infrastructure-seams/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0010-provider-agnostic-infrastructure-seams/ -->
 
 # ADR 0010 — Provider-agnostic infrastructure seams (Azure is the default, not the architecture)
 
@@ -7742,7 +7970,7 @@ The three infrastructure couplings differ sharply on that axis:
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0011-extensibility-seams-for-deferred-integrations/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0011-extensibility-seams-for-deferred-integrations/ -->
 
 # ADR 0011 — Extensibility seams for deferred connectors and integrations
 
@@ -7809,7 +8037,7 @@ None of these is in v1 scope (v1 is the four named datasources + two orchestrati
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0012-monitor-kind-seam/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0012-monitor-kind-seam/ -->
 
 # ADR 0012 — Monitor-kind seam (`check.kind` discriminator + numeric metric storage)
 
@@ -7993,7 +8221,7 @@ monitor on Unity Catalog are the same `kind`, different `CheckRunner`.
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0013-marketplace-distribution-and-anti-lock-in/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0013-marketplace-distribution-and-anti-lock-in/ -->
 
 # ADR 0013 — Marketplace distribution (customer-deployed BYOL) and anti-vendor-lock-in guardrails
 
@@ -8084,7 +8312,7 @@ The architecture is already partly portable by intent — [ADR 0010](0010-provid
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0014-reconciliation-comparison-check-kind/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0014-reconciliation-comparison-check-kind/ -->
 
 # ADR 0014 — Cross-dataset reconciliation as a `comparison` check kind (reuse FastAPI_DataComparison engine)
 
@@ -8152,7 +8380,7 @@ Three facts shape how it can integrate:
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0015-two-connection-comparison-check-model/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0015-two-connection-comparison-check-model/ -->
 
 # ADR 0015 — Two-connection comparison check model (suite = target under test; source ref on the check)
 
@@ -8250,7 +8478,7 @@ The check-level source ref settles 0014's question only. ADR 0030's Option B (a 
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0016-severity-derivation-semantics/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0016-severity-derivation-semantics/ -->
 
 # ADR 0016 — Severity derivation semantics (band the unexpected-%, thresholds override GX success)
 
@@ -8322,7 +8550,7 @@ So A is the low-risk default that keeps B cheaply reachable — the same "keep t
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0017-python-313-runtime-upgrade/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0017-python-313-runtime-upgrade/ -->
 
 # ADR 0017 — Upgrade Python runtime 3.11 → 3.13
 
@@ -8368,7 +8596,7 @@ A fresh Python 3.13.13 conda env built from the updated `requirements-dev.txt`: 
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0018-results-surface-and-grafana-deferral/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0018-results-surface-and-grafana-deferral/ -->
 
 # ADR 0018 — Results surface is an in-app page; Grafana deferred to optional ops add-on
 
@@ -8417,7 +8645,7 @@ PR-C0b's `runs.py` enforces the gate (suite-scoped list + `require_permission(vi
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0019-custom-sql-check-kind/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0019-custom-sql-check-kind/ -->
 
 # ADR 0019 — Custom-SQL checks ride `kind='expectation'` via GX `UnexpectedRowsExpectation`
 
@@ -8498,7 +8726,7 @@ De-risk script confirmed the GX round-trip (pass/fail + `observed_value` + `{bat
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0020-history-and-audit-strategy/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0020-history-and-audit-strategy/ -->
 
 # ADR 0020 — History/audit strategy: per-entity Type-4 snapshot tables, no SCD-2
 
@@ -8571,7 +8799,7 @@ The question: what history/audit posture should v1.x take, and specifically — 
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0021-demo-test-data-environment-strategy/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0021-demo-test-data-environment-strategy/ -->
 
 # ADR 0021 — Live test/demo-data environment (retail model) lives outside the repo
 
@@ -8647,7 +8875,7 @@ Data is split across **ADLS · Snowflake · Unity Catalog**; orchestration acros
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0022-week6-prototype-adoption-and-chart-library/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0022-week6-prototype-adoption-and-chart-library/ -->
 
 # ADR 0022 — Week-6 prototype adoption (dedicated-page flows + full screen set) and chart library (recharts)
 
@@ -8730,7 +8958,7 @@ Adopt **recharts** for the Dashboard KPI/trend charts and the per-check historic
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0023-container-image-registry-ghcr/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0023-container-image-registry-ghcr/ -->
 
 # ADR 0023 — Container image registry: GitHub Container Registry (GHCR) over ACR / Docker Hub
 
@@ -8806,7 +9034,7 @@ Options weighed: **ACR**, **Docker Hub**, **GHCR**.
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0024-app-deployment-infrastructure/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0024-app-deployment-infrastructure/ -->
 
 # ADR 0024 — App deployment infrastructure: Terraform (ACA + SWA + KV + self-hosted Redis), sharing the Container Apps environment with the harness
 
@@ -9056,7 +9284,7 @@ rendered diff would not have settled it.
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0025-production-image-pip-slim/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0025-production-image-pip-slim/ -->
 
 # ADR 0025 — Production image: pip on `python:3.13-slim` (multi-stage); conda retained for local dev
 
@@ -9128,7 +9356,7 @@ tool unchanged.**
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0026-auth-api-keys-and-principal-seam/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0026-auth-api-keys-and-principal-seam/ -->
 
 # ADR 0026 — DataQ-issued API keys / service tokens behind the auth seam (REST + MCP)
 
@@ -9297,7 +9525,7 @@ is answered by the indexed-SHA-256 design above (no caching layer needed).
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0027-suite-permission-model-workspace-admin/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0027-suite-permission-model-workspace-admin/ -->
 
 # ADR 0027 — Suite permission model: workspace-admin as implicit suite-admin; drop grantable suite-admin
 
@@ -9454,7 +9682,7 @@ Net per suite: **one owner + workspace-admin-as-admin + edit/view collaborators.
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0028-cloud-neutral-image-runtime-config-generic-oidc/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0028-cloud-neutral-image-runtime-config-generic-oidc/ -->
 
 # ADR 0028 — Cloud-neutral image: runtime config injection + generic OIDC auth, bypass fail-closed
 
@@ -9599,7 +9827,7 @@ side.
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0029-dbt-orchestration-provider/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0029-dbt-orchestration-provider/ -->
 
 # ADR 0029 — dbt as a third OrchestrationProvider (artifact-poll + HMAC webhook)
 
@@ -9675,7 +9903,7 @@ Not enforced in v1, per ADR 0007 — the `(provider, invocation_id)` idempotency
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0030-iceberg-native-read-path/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0030-iceberg-native-read-path/ -->
 
 # ADR 0030 — Apache Iceberg support: native `pyiceberg` read (v2) behind a self-contained `iceberg` datasource
 
@@ -9767,7 +9995,7 @@ Deliberately skipped. The SQL runners are **format-transparent by construction**
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0031-oss-byol-distribution-licensing/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0031-oss-byol-distribution-licensing/ -->
 
 # ADR 0031 — Distribution licensing: free open-source (MIT) + customer-deployed BYOL
 
@@ -9825,7 +10053,7 @@ So the only distribution-compliance obligation is notice preservation (MIT/BSD c
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0032-email-otp-signin/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0032-email-otp-signin/ -->
 
 # ADR 0032 — Email OTP sign-in: a passwordless third authenticator behind the `get_current_user` seam
 
@@ -9909,7 +10137,7 @@ The trade this makes explicit: OTP swaps "bring an IdP" for **"bring a mailbox"*
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0033-workspace-roles-rbac/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0033-workspace-roles-rbac/ -->
 
 # ADR 0033 — Workspace roles: Admin / Member / Viewer RBAC on the two-axis model
 
@@ -9968,7 +10196,7 @@ What this ADR is *not*: it does not touch the per-suite ladder, build groups/tea
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0034-asset-entity-openlineage-identity-lineage-pull/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0034-asset-entity-openlineage-identity-lineage-pull/ -->
 
 # ADR 0034 — Asset entity with OpenLineage identity; lineage is emitted/pulled, never built
 
@@ -10137,7 +10365,7 @@ says explicitly what an *ungranted* asset is: not a secret, and not a dead link.
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0035-request-rate-limiting/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0035-request-rate-limiting/ -->
 
 # ADR 0035 — Request rate limiting on every public surface
 
@@ -10343,7 +10571,7 @@ can't throttle another — **done**, folded into the class table above.
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0036-connection-anchored-check-engines/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0036-connection-anchored-check-engines/ -->
 
 # ADR 0036 — Connection-anchored check engines: GX universal; platform-native engines (DMF / DQX / Dataplex) unlocked per connection
 
@@ -10427,7 +10655,7 @@ DMF outcomes are metric-shaped and ride the existing result semantics unchanged:
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0037-workspace-visible-asset-identity/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0037-workspace-visible-asset-identity/ -->
 
 # ADR 0037 — Workspace-visible asset identity; workspace-true aggregates; grants guard suite-derived detail
 
@@ -10578,7 +10806,7 @@ tests untouched.
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0038-dq-dimension-classification/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0038-dq-dimension-classification/ -->
 
 # ADR 0038 — DQ-dimension classification on checks: seven canonical dimensions, derived default, stored and overridable
 
@@ -10703,7 +10931,7 @@ The reason is sequencing, not disagreement. The backend catalog's purpose is eng
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0039-openbao-self-hosted-secret-backend/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0039-openbao-self-hosted-secret-backend/ -->
 
 # ADR 0039 — OpenBao as the self-hosted secret backend (KV v2 API, not a vendor)
 
@@ -10838,7 +11066,7 @@ dev mode mounts kv-v2 at secret/, listens on :8200
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0040-warehouse-inventory-sync-table-enumeration-seam/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0040-warehouse-inventory-sync-table-enumeration-seam/ -->
 
 # ADR 0040 — Warehouse inventory sync + the table-enumeration seam
 
@@ -11004,7 +11232,7 @@ fixed now even though the inventory slice does not enumerate object stores.
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0041-history-audit-strategy/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0041-history-audit-strategy/ -->
 
 # ADR 0041 — History & audit posture for v1.x+: one append-only audit log; no soft-delete; cascade stands
 
@@ -11257,7 +11485,7 @@ redesign).
 
 ---
 
-<!-- https://theurgicduke771.github.io/DataQ/docs/latest/latest/adr/0042-llm-provider-seam/ -->
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/adr/0042-llm-provider-seam/ -->
 
 # ADR 0042 — `LLMProvider` seam: outbound LLM, BYO credential, default-off
 

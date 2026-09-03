@@ -1,11 +1,10 @@
 # DataQ
 
-**DataQ is a data-quality monitoring platform.** It runs automated checks against your
-data — in Snowflake, ADLS Gen2, AWS S3 (or any S3-compatible store), Databricks Unity Catalog, and Apache Iceberg — tells you when
-something is wrong (failed checks, stale tables, unexpected row counts), and alerts your
-team. It watches your Azure Data Factory, Airflow, and dbt pipelines and can run checks
-automatically when a pipeline finishes.
-
+**Know your data is right before anyone else finds out it isn't.** DataQ runs automated checks
+against your tables and files — in Snowflake, Databricks Unity Catalog, Apache Iceberg, ADLS
+Gen2, AWS S3 or any S3-compatible store — tells you when something is wrong, and alerts the
+team that owns it. It watches your Azure Data Factory, Airflow and dbt pipelines and runs the
+checks the moment a load finishes.
 
 <video class="clip" autoplay loop muted playsinline poster="assets/videos/tour.jpg">
   <source src="assets/videos/tour.mp4" type="video/mp4">
@@ -13,17 +12,55 @@ automatically when a pipeline finishes.
 
 *A ten-second tour: dashboard, assets, connections, suites, results.*
 
-## Who it's for
+<div class="grid cards" markdown>
 
-- **Data engineers / SREs** — author checks, wire up pipelines, triage failures.
-- **QA / analysts** — see what passed or failed and why.
-- **Product & stakeholders** — a health score and trend at a glance.
+-   :material-rocket-launch:{ .lg .middle } **Try it in five minutes**
 
-## Quickstart (5 minutes)
+    ---
 
-### Run DataQ — prebuilt images (recommended)
+    One `docker compose up`, no cloud account, no identity provider. Sign in with an emailed
+    code and explore seeded demo data.
 
-Evaluate or self-host with **no source checkout and no cloud account or IdP** — just Docker:
+    [:octicons-arrow-right-24: Install](get-started/install.md)
+
+-   :material-school:{ .lg .middle } **Learn it in an hour**
+
+    ---
+
+    Four short tutorials: your first suite, your first alert, running it automatically, and
+    asking an AI assistant.
+
+    [:octicons-arrow-right-24: Get started](get-started/index.md)
+
+-   :material-book-open-variant:{ .lg .middle } **Look something up**
+
+    ---
+
+    Every check type, every REST endpoint, every MCP tool — generated from the code, so it
+    cannot drift.
+
+    [:octicons-arrow-right-24: Reference](reference/index.md)
+
+</div>
+
+## What you can do with it
+
+| | |
+|---|---|
+| **Catch the incidents that page people** | Freshness, volume and schema-drift monitors notice a load that did not arrive, arrived half-empty, or changed shape — before a value-level rule ever runs. |
+| **Author precise checks without code** | Twenty-five vetted Great Expectations types, custom SQL with a live dry-run, comparisons against a second dataset, anomaly detection on a learned baseline. Let the built-in assistant suggest checks from a column profile. |
+| **See the whole estate** | An asset view rolls health up per table, with lineage pulled from dbt, your catalog or the warehouse itself, and incidents anchored to the asset they hit. |
+| **Alert the right people, once** | Teams, Slack, email and webhooks, routed by severity, de-duplicated so a broken check reports when it breaks, not on every run. |
+| **Run it where the data lives** | Reference deployments on Azure Container Apps and AWS ECS; a single-host Docker stack for evaluation; bring your own identity provider or none at all. |
+| **Let assistants do the work** | Forty-eight MCP tools expose the same actions to Claude, Copilot and Cursor, every one honest about what it cannot see. |
+
+## Who it is for
+
+- **Data engineers and SREs** author checks, wire pipelines, triage failures.
+- **Analysts and QA** see what passed or failed and why, with redacted failing rows.
+- **Stakeholders** get a health score and a trend, not a Slack thread.
+
+## Quickstart
 
 ```bash
 curl -O https://raw.githubusercontent.com/TheurgicDuke771/DataQ/main/docker-compose.ghcr.yml
@@ -32,40 +69,16 @@ export DATAQ_SIGNIN_EMAIL=you@example.com        # the address allowed to sign i
 docker compose -f docker-compose.ghcr.yml up
 ```
 
-Open **`http://localhost:3000`**, type the address you exported, and read the 6-digit
-sign-in code in the bundled inbox at **`http://localhost:8025`** ([Mailpit](https://mailpit.axllent.org)
-— no real SMTP relay needed, nothing leaves the host). The stack comes up migrated and
-seeded with demo data. API + Swagger at `http://localhost:8000/docs`. The GHCR images
-are **multi-arch** (amd64 + arm64, native on Apple Silicon) and all ports bind to
-`127.0.0.1` only. To skip sign-in entirely (dev-bypass, a deliberate downgrade — not
-the default): `DATAQ_SIGNIN_EMAIL= DATAQ_AUTH_MODE=bypass docker compose -f docker-compose.ghcr.yml up`.
-See [Getting started](get-started/install.md) for the full flow.
+Open `http://localhost:3000`, type the address you exported, and read the six-digit code in the
+bundled inbox at `http://localhost:8025`. The stack comes up migrated and seeded with demo
+data; nothing leaves your machine. Full flow, other sign-in modes and the from-source path:
+[Install](get-started/install.md).
 
-### Develop DataQ — from source
+## Where next
 
-```bash
-git clone https://github.com/TheurgicDuke771/DataQ.git
-cd DataQ
-./scripts/setup.sh        # conda env + pre-commit + docker-compose + migrations
-conda activate dataq
-docker-compose up         # Postgres + Redis + FastAPI + React + Celery worker
-```
-
-- Backend API: `http://localhost:8000` (interactive docs at `/docs` in dev).
-- Frontend: `http://localhost:3000`.
-
-Then open the UI, add a connection, create a suite of checks, and run it. See
-**[Getting started](get-started/install.md)** for both paths in depth (incl. self-hosting
-with your own IdP — Azure AD, Cognito, Okta, …) and **[Datasources & checks](guides/datasources-checks.md)**
-to author your first check.
-
-## Where to go next
-
-- Just want to use it? Follow the **[Tutorial — your first suite](get-started/first-suite.md)** end to end.
-- New to DataQ? Read **[Concepts](get-started/concepts.md)** (datasource vs orchestration is the one
-  distinction to internalise), then browse **[Features](guides/features.md)**.
-- Setting it up the right way? **[Recommended usage](guides/recommended-usage.md)**.
-- Want the big picture? **[Architecture](architecture/overview.md)** · **[Security & data handling](security/overview.md)**.
-- Running it for real? **[Deployment](operate/deployment.md)** · **[Troubleshooting](operate/troubleshooting.md)** · **[Observability](operate/observability.md)**.
-- Scripting it? The **[REST API](reference/rest-api.md)**. AI assistants (Claude / Copilot / Cursor) can
-  drive DataQ over **[MCP](guides/mcp-setup.md)**.
+- Running it for real? [Deployment](operate/deployment.md), then
+  [Security & data handling](security/overview.md) for the review that follows.
+- Curious how it is built? [Architecture](architecture/overview.md) and the
+  [decision records](adr/README.md) behind it.
+- Scripting it? The [REST API](reference/rest-api.md), or an assistant over
+  [MCP](guides/mcp-setup.md).

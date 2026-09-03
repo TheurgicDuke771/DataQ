@@ -7,10 +7,10 @@
       
       
       
-        <link rel="canonical" href="https://theurgicduke771.github.io/DataQ/docs/latest/latest/get-started/concepts/">
+        <link rel="canonical" href="https://theurgicduke771.github.io/DataQ/docs/latest/get-started/concepts/">
       
       
-        <link rel="prev" href="../first-suite/">
+        <link rel="prev" href="../ask-assistant/">
       
       
         <link rel="next" href="../../guides/">
@@ -485,6 +485,12 @@
       
         
       
+        
+      
+        
+      
+        
+      
     
     
     
@@ -585,6 +591,90 @@
     
   
     Your first suite
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../first-alert/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Your first alert
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../connect-pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Run it automatically
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ask-assistant/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Ask an AI assistant
   
 
     
@@ -2194,9 +2284,9 @@
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17.5 15.5c0 1.11-.89 2-2 2s-2-.89-2-2 .9-2 2-2 2 .9 2 2m-9-2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.89 2-2-.89-2-2-2M23 15v3c0 .55-.45 1-1 1h-1v1c0 1.11-.89 2-2 2H5a2 2 0 0 1-2-2v-1H2c-.55 0-1-.45-1-1v-3c0-.55.45-1 1-1h1c0-3.87 3.13-7 7-7h1V5.73c-.6-.34-1-.99-1-1.73 0-1.1.9-2 2-2s2 .9 2 2c0 .74-.4 1.39-1 1.73V7h1c3.87 0 7 3.13 7 7h1c.55 0 1 .45 1 1m-2 1h-2v-2c0-2.76-2.24-5-5-5h-4c-2.76 0-5 2.24-5 5v2H3v1h2v3h14v-3h2z"></path></svg> Ask AI <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7.41 8.58 12 13.17l4.59-4.59L18 10l-6 6-6-6z"></path></svg>
         </button>
         <div class="dq-ask__menu" role="menu" hidden="">
-          <a href="https://claude.ai/new?q=Read%20https%3A//theurgicduke771.github.io/DataQ/docs/latest/latest/get-started/concepts/index.md%20%28the%20DataQ%20documentation%20page%20%22Concepts%22%29%20and%20help%20me%20with%20questions%20about%20it." target="_blank" rel="noopener">Claude</a>
-          <a href="https://chatgpt.com/?q=Read%20https%3A//theurgicduke771.github.io/DataQ/docs/latest/latest/get-started/concepts/index.md%20%28the%20DataQ%20documentation%20page%20%22Concepts%22%29%20and%20help%20me%20with%20questions%20about%20it." target="_blank" rel="noopener">ChatGPT</a>
-          <a href="https://github.com/copilot?prompt=Read%20https%3A//theurgicduke771.github.io/DataQ/docs/latest/latest/get-started/concepts/index.md%20%28the%20DataQ%20documentation%20page%20%22Concepts%22%29%20and%20help%20me%20with%20questions%20about%20it." target="_blank" rel="noopener">GitHub Copilot</a>
+          <a href="https://claude.ai/new?q=Read%20https%3A//theurgicduke771.github.io/DataQ/docs/latest/get-started/concepts/index.md%20%28the%20DataQ%20documentation%20page%20%22Concepts%22%29%20and%20help%20me%20with%20questions%20about%20it." target="_blank" rel="noopener">Claude</a>
+          <a href="https://chatgpt.com/?q=Read%20https%3A//theurgicduke771.github.io/DataQ/docs/latest/get-started/concepts/index.md%20%28the%20DataQ%20documentation%20page%20%22Concepts%22%29%20and%20help%20me%20with%20questions%20about%20it." target="_blank" rel="noopener">ChatGPT</a>
+          <a href="https://github.com/copilot?prompt=Read%20https%3A//theurgicduke771.github.io/DataQ/docs/latest/get-started/concepts/index.md%20%28the%20DataQ%20documentation%20page%20%22Concepts%22%29%20and%20help%20me%20with%20questions%20about%20it." target="_blank" rel="noopener">GitHub Copilot</a>
           <a href="../../guides/mcp-setup/" title="Cursor, Claude Desktop and others read these pages over MCP">Connect your assistant (MCP)</a>
         </div>
       </div>
@@ -2211,7 +2301,56 @@
 
 
 <h1 id="concepts">Concepts<a class="headerlink" href="#concepts" title="Permanent link">¶</a></h1>
-<p>A few terms make the rest of the docs click.</p>
+<p>Six words carry the whole product. Here they are, in the order you meet them.</p>
+<pre class="mermaid"><code>flowchart LR
+    C[Connection] --&gt; S[Suite]
+    S --&gt; K[Checks]
+    K --&gt; R[Run]
+    R --&gt; T[Results]
+    T --&gt; A[Alerts &amp; incidents]
+    P[Pipeline] -. triggers .-&gt; R
+    style P stroke-dasharray: 4 4</code></pre>
+<table>
+<thead>
+<tr>
+<th>Word</th>
+<th>Plain English</th>
+<th>Where you see it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Connection</strong></td>
+<td>How DataQ reaches one datasource (or one orchestrator), with its credential kept in the secret store</td>
+<td>Connections</td>
+</tr>
+<tr>
+<td><strong>Suite</strong></td>
+<td>A named set of checks against one target table or file</td>
+<td>Suites</td>
+</tr>
+<tr>
+<td><strong>Check</strong></td>
+<td>One rule: a value expectation, a monitor (freshness, volume, schema drift, anomaly), a comparison, or custom SQL</td>
+<td>Suite → Checks</td>
+</tr>
+<tr>
+<td><strong>Run</strong></td>
+<td>One execution of a suite: manual, scheduled, or triggered by a pipeline</td>
+<td>Results</td>
+</tr>
+<tr>
+<td><strong>Result</strong></td>
+<td>What each check found: pass · warn · fail · critical, plus the number it measured</td>
+<td>Run detail</td>
+</tr>
+<tr>
+<td><strong>Incident</strong></td>
+<td>A critical breach anchored to the asset it hit, with evidence, until someone resolves it</td>
+<td>Dashboard, Assets</td>
+</tr>
+</tbody>
+</table>
 <h2 id="the-one-distinction-datasource-vs-orchestration">The one distinction: datasource vs orchestration<a class="headerlink" href="#the-one-distinction-datasource-vs-orchestration" title="Permanent link">¶</a></h2>
 <ul>
 <li><strong>Datasources</strong> are stores you write data-quality checks <em>against</em>: <strong>Snowflake</strong>,
@@ -2287,7 +2426,7 @@ failures. See <strong><a href="../../architecture/overview/">Architecture</a></s
       <nav class="md-footer__inner md-grid" aria-label="Footer">
         
           
-          <a href="../first-suite/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Your first suite">
+          <a href="../ask-assistant/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Ask an AI assistant">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"></path></svg>
@@ -2297,7 +2436,7 @@ failures. See <strong><a href="../../architecture/overview/">Architecture</a></s
                 Previous
               </span>
               <div class="md-ellipsis">
-                Your first suite
+                Ask an AI assistant
               </div>
             </div>
           </a>
