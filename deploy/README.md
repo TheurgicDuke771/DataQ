@@ -290,7 +290,16 @@ Use an **immutable** `image_tag` per release — ACA caches a tag at the node, s
 same-tag rebuild won't be re-pulled on a new revision. Push-on-merge is
 intentionally **off**; deploys are manual `workflow_dispatch`.
 
-### Pre-deploy checklist
+#### Docs site: release tags must be allowed to deploy Pages
+
+The `github-pages` environment's deployment-branch policy admits `main` **and the tag
+pattern `v*`** (added 2026-09-03 via
+`gh api -X POST repos/<owner>/<repo>/environments/github-pages/deployment-branch-policies -f name='v*' -f type=tag`).
+Without the tag policy a release tag still lets mike commit `docs/vX.Y.Z/` to `gh-pages`,
+but the Pages deploy job is rejected and the live site never picks the version up. Re-add it
+after any environment reset.
+
+## Pre-deploy checklist
 
 Confirm the change is *ready and green* before you push it to prod:
 

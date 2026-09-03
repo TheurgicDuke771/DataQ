@@ -11,3 +11,5 @@ mkdocs-glightbox==0.5.2
 # every build — an unreviewed second site generator on the docs supply chain
 # (CONTRIBUTING rule 39). 1.2.2 depends on mkdocs alone. Re-evaluate before bumping.
 mkdocs-redirects==1.2.2
+# Versioned docs — deploys each version to the gh-pages branch (BSD-3-Clause).
+mike==2.2.0
