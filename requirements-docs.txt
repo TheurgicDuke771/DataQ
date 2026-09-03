@@ -13,3 +13,5 @@ mkdocs-glightbox==0.5.2
 mkdocs-redirects==1.2.2
 # Versioned docs — deploys each version to the gh-pages branch (BSD-3-Clause).
 mike==2.2.0
+# Interactive API explorer (Swagger UI over the published OpenAPI spec).
+mkdocs-swagger-ui-tag==0.8.1

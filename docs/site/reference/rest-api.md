@@ -210,3 +210,11 @@ curl -s -H "Authorization: Bearer $TOKEN" $BASE/runs/$RUN/progress | jq '{status
 
 Prefer natural language? The same actions are available to AI assistants over
 [MCP](../guides/mcp-setup.md).
+
+## Interactive explorer
+
+The complete contract, generated from the running application on every change
+(`backend/scripts/export_docs_reference.py`, drift-checked in CI). Download the raw spec at
+[`openapi.json`](openapi.json) — it is also the input for the planned Python client.
+
+<swagger-ui src="openapi.json" docExpansion="none" defaultModelsExpandDepth="0"/>
