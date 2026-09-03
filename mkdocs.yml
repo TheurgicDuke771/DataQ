@@ -86,6 +86,9 @@ plugins:
         troubleshooting.md: operate/troubleshooting.md
         runbook-faq.md: operate/runbook-faq.md
 
+extra_css:
+  - assets/extra.css
+
 markdown_extensions:
   - admonition
   - attr_list

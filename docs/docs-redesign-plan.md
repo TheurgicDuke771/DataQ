@@ -36,13 +36,14 @@ Old URLs keep working via `mkdocs-redirects` (MIT).
 
 0. Plan + epic + this file.
 1. **IA**: tabs, section index pages, page moves, redirects, nav — no content rewrite. `mkdocs build --strict` green.
-1b. **Versioned docs** (user direction 2026-09-02): `latest` tracks `main`, one frozen copy per release tag (`v1.x.y`), version selector in the header, marketing root untouched. Tooling decision (mike vs self-built `versions.json`) recorded in the PR.
-2. **Capture lane**: `frontend/e2e-docs/` + `scripts/docs/capture.sh`; first screenshot set into Get started.
+1b. **Versioned docs** (user direction 2026-09-02): `latest` tracks `main`, one frozen copy per release tag (`v1.x.y`), version selector in the header, marketing root untouched. **Decision:** `mike` (MIT, by the mkdocs-material author) with `--deploy-prefix docs` on a `gh-pages` branch; Pages source switches from artifact to branch; the Docs workflow commits `marketing/` to the branch root beside mike's `docs/`. Rejected: self-building every tag into one artifact (each tag needs its own plugin set; rebuilding old tags with today's config is fragile). **No backfill of `v1.0.0`/`v1.1.0`** — both predate the `docs/site/` publication split, so building them would re-run the `exclude_docs` default that once published the ops log. Versioning starts at the next release; until then the selector shows `latest` only.
+2. **Capture lane**: `frontend/e2e-docs/` + `scripts/docs/capture-stack.sh`; first screenshot set into Get started.
 3. **Videos**: five clips + posters, embedded.
 4. **Check-type catalog**: generator from `expectation_allowlist.py` + one guide page per check kind.
-5. **Reference generation**: OpenAPI JSON published at build, `llms.txt` + `llms-full.txt`, MCP tool table from GATES.
+5. **Reference generation + LLM-readable docs**: OpenAPI JSON published at build, `llms.txt` + `llms-full.txt`, MCP tool table from GATES. **Every page also published as raw Markdown** at `<page>/index.md` (build hook copies the source), with a header action row (user direction 2026-09-02): **View as Markdown** · **Copy as Markdown** (clipboard) · **Ask AI ▾** — deep links that open the page's Markdown URL in the reader's *own* assistant (Claude, ChatGPT, GitHub Copilot, Cursor) with a prefilled question, plus a "connect your assistant to DataQ over MCP" item pointing at the MCP guide, since the same pages are served by the `get_doc` tool. No hosted chat widget: BYO tool only, nothing leaves the reader's browser except to the tool they chose.
 6. **Beginner rewrite**: landing, concepts, tutorials rewritten around the screenshots; glossary linked from first use.
 7. **Polish**: dark-mode screenshot variants (optional), social cards, docs-lint hook for image size + alt text.
+8. **Marketing refresh** (user direction 2026-09-02): `marketing/index.html` re-anchored on the current feature set — five datasources + three providers, three auth modes, RBAC, assets/lineage/incidents, the seven check kinds, LLM check suggestions + NL→SQL + RCA narrative, 48 MCP tools, two-cloud deploy, compliance pack — with the new screenshots/video from phases 2–3 and links into the new IA. Claims verified against `feature-matrix.md`, never written from memory.
 
 ## Guards that stay
 
