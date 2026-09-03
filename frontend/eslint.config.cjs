@@ -50,7 +50,13 @@ module.exports = tseslint.config(
   {
     // Playwright config + E2E specs run under Node (process.env, etc.), not the
     // browser, so give them Node globals.
-    files: ['playwright.config.ts', 'e2e/**/*.ts', 'e2e-otp/**/*.ts', 'e2e-live/**/*.ts'],
+    files: [
+      'playwright.config.ts',
+      'e2e/**/*.ts',
+      'e2e-otp/**/*.ts',
+      'e2e-live/**/*.ts',
+      'e2e-docs/**/*.ts',
+    ],
     languageOptions: {
       globals: globals.node,
     },
@@ -68,7 +74,7 @@ module.exports = tseslint.config(
     // resolve them into a TS project. Fall back to syntax-only parsing and
     // drop the type-aware rule for just these two dirs, rather than erroring
     // on every file in both.
-    files: ['e2e-otp/**/*.ts', 'e2e-live/**/*.ts'],
+    files: ['e2e-otp/**/*.ts', 'e2e-live/**/*.ts', 'e2e-docs/**/*.ts'],
     languageOptions: {
       parserOptions: {
         projectService: false,

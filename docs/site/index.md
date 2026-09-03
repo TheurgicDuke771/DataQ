@@ -6,6 +6,9 @@ something is wrong (failed checks, stale tables, unexpected row counts), and ale
 team. It watches your Azure Data Factory, Airflow, and dbt pipelines and can run checks
 automatically when a pipeline finishes.
 
+
+![DataQ's monitoring dashboard](assets/screenshots/dashboard.png){ .screenshot }
+
 ## Who it's for
 
 - **Data engineers / SREs** — author checks, wire up pipelines, triage failures.

@@ -33,6 +33,11 @@ const liveBaseURL = process.env.E2E_LIVE_BASE_URL;
 const otpEnabled = !liveBaseURL && process.env.E2E_OTP === '1';
 const otpBaseURL = process.env.E2E_OTP_BASE_URL || 'http://localhost:3100';
 const baseURL = liveBaseURL || process.env.E2E_BASE_URL || 'http://localhost:3000';
+// Docs capture lane (docs redesign) — screenshots + short videos for docs/site,
+// against the scratch dev-bypass stack from scripts/docs/capture-stack.sh.
+// Opt-in via E2E_DOCS=1; never in CI.
+const docsEnabled = !liveBaseURL && process.env.E2E_DOCS === '1';
+const docsBaseURL = process.env.E2E_DOCS_BASE_URL || 'http://127.0.0.1:3001';
 
 export default defineConfig({
   testDir: liveBaseURL ? './e2e-live' : './e2e',
@@ -56,6 +61,23 @@ export default defineConfig({
       ? { name: 'live-smoke', use: { ...devices['Desktop Chrome'] } }
       : { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
     // Own testDir + baseURL, so the dev-bypass specs above are untouched by it.
+    ...(docsEnabled
+      ? [
+          {
+            name: 'docs-capture',
+            testDir: './e2e-docs',
+            use: {
+              ...devices['Desktop Chrome'],
+              baseURL: docsBaseURL,
+              viewport: { width: 1440, height: 900 },
+              deviceScaleFactor: 2,
+              colorScheme: 'light' as const,
+            },
+            timeout: 90_000,
+            expect: { timeout: 20_000 },
+          },
+        ]
+      : []),
     ...(otpEnabled
       ? [
           {

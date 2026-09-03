@@ -7,6 +7,8 @@ Two tracks, matched to why you're here:
 
 ## Run from prebuilt images (recommended)
 
+![After sign-in: the Connections page, where the first thing you add is a datasource](../assets/screenshots/connections-list.png){ .screenshot }
+
 **Prerequisite:** Docker (Compose v2). No source checkout, no conda, no Node, no Azure
 tenant.
 
