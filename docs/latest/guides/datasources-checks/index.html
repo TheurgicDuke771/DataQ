@@ -1277,6 +1277,8 @@
       
         
       
+        
+      
     
     
     
@@ -1329,6 +1331,34 @@
           </label>
           <ul class="md-nav__list" data-md-scrollfix="">
             
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/check-types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Check types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
               
             
               
@@ -2812,6 +2842,8 @@ batches only, so they are offered on flat files, Iceberg and Unity Catalog but <
 Snowflake</strong>, where the editor hides them and the API rejects them — use a custom-SQL check
 (or a VARIANT column) there rather than saving a check that would error on every run.</p>
 <h3 id="which-expectation-types-are-available">Which expectation types are available<a class="headerlink" href="#which-expectation-types-are-available" title="Permanent link">¶</a></h3>
+<p>The complete, generated list — every type with its parameters, thresholds and the datasources
+it runs on — is the <a href="../../reference/check-types/">Check types reference</a>.</p>
 <p>DataQ serves a <strong>vetted subset</strong> of Great Expectations' built-ins, not all of them
 (<code>backend/app/datasources/expectation_allowlist.py</code>). Every type in it is executed on both
 a dataframe and a SQL batch in CI, so it is known to run rather than merely to exist. The

@@ -34,6 +34,7 @@ lists which).
 
 - [Reference](https://theurgicduke771.github.io/DataQ/docs/latest/latest/reference/index.md): Look-up pages. Complete rather than narrative.
 - [Changelog](https://theurgicduke771.github.io/DataQ/docs/latest/latest/reference/changelog/index.md): Notable, user-facing changes. Dates are the release/merge date. This is a curated summary —
+- [Check types](https://theurgicduke771.github.io/DataQ/docs/latest/latest/reference/check-types/index.md): Every kind of check DataQ can author, generated from the check editor's catalog and the
 - [Feature matrix](https://theurgicduke771.github.io/DataQ/docs/latest/latest/reference/feature-matrix/index.md): One-page reference: what runs where. For the readable tour of everything DataQ offers see
 - [Glossary](https://theurgicduke771.github.io/DataQ/docs/latest/latest/reference/glossary/index.md): Maintainer & docs owner: **@TheurgicDuke771**. File issues / PRs on
 - [REST API](https://theurgicduke771.github.io/DataQ/docs/latest/latest/reference/rest-api/index.md): DataQ's REST API is the same surface the web UI uses — versioned under `/api/v1`, with the
