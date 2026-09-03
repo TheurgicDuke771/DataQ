@@ -270,6 +270,12 @@ jobs:
       - name: TypeScript
         run: pnpm typecheck
 
+      # Backstop for the pre-commit hook of the same name: the published check-type
+      # reference must match the editor catalog + backend allowlist it is generated from.
+      - name: Check-type reference is generated from the catalog + allowlist
+        working-directory: .
+        run: python3 scripts/docs/gen-check-catalog.py --check
+
   frontend-test:
     name: Frontend — tests
     runs-on: ubuntu-latest

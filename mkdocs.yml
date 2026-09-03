@@ -143,6 +143,7 @@ nav:
       - Best practices: guides/best-practices.md
   - Reference:
       - reference/index.md
+      - Check types: reference/check-types.md
       - Feature matrix: reference/feature-matrix.md
       - REST API: reference/rest-api.md
       - Glossary: reference/glossary.md
