@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "3d3009fc4f4a",
+  "strategy": "manual-commit",
+  "branch": "docs/redesign-p5b-api-reference",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "docs/site/guides/mcp-setup.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/3d/3009fc4f4a/0/metadata.json",
+      "transcript": "/3d/3009fc4f4a/0/full.jsonl",
+      "compact_transcript": "/3d/3009fc4f4a/0/transcript.jsonl",
+      "content_hash": "/3d/3009fc4f4a/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2,
+    "cache_creation_tokens": 5552,
+    "cache_read_tokens": 466194,
+    "output_tokens": 635,
+    "api_call_count": 1
+  }
+}
