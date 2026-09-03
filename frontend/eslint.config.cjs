@@ -74,7 +74,7 @@ module.exports = tseslint.config(
     // resolve them into a TS project. Fall back to syntax-only parsing and
     // drop the type-aware rule for just these two dirs, rather than erroring
     // on every file in both.
-    files: ['e2e-otp/**/*.ts', 'e2e-live/**/*.ts', 'e2e-docs/**/*.ts'],
+    files: ['e2e-otp/**/*.ts', 'e2e-live/**/*.ts', 'e2e-docs/**/*.ts', 'scripts/**/*.mts'],
     languageOptions: {
       parserOptions: {
         projectService: false,
