@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "8f7bcf346142",
+  "strategy": "manual-commit",
+  "branch": "docs/redesign-p5b-api-reference",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "backend/scripts/export_docs_reference.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/8f/7bcf346142/0/metadata.json",
+      "transcript": "/8f/7bcf346142/0/full.jsonl",
+      "compact_transcript": "/8f/7bcf346142/0/transcript.jsonl",
+      "content_hash": "/8f/7bcf346142/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 96,
+    "cache_creation_tokens": 7303,
+    "cache_read_tokens": 919018,
+    "output_tokens": 3794,
+    "api_call_count": 2
+  }
+}
