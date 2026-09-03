@@ -65,6 +65,14 @@ start() {
     curl -sf "http://127.0.0.1:${API_PORT}/api/v1/me" >/dev/null && break; sleep 1
   done
   curl -sf "http://127.0.0.1:${API_PORT}/api/v1/me" >/dev/null || { echo "api did not come up"; tail -20 "$RUN/api.log"; exit 1; }
+  # The seed carries no llm_settings row; the LLM captures need a saved, enabled
+  # OpenAI-compatible config so a fresh stack regenerates the same images. The
+  # key is a placeholder (Ollama ignores it); Test only shows OK when a server
+  # answers at DOCS_LLM_BASE_URL.
+  curl -sf -o /dev/null -X PUT -H 'Content-Type: application/json' \
+    "http://127.0.0.1:${API_PORT}/api/v1/admin/llm" \
+    -d "{\"provider\":\"openai_compatible\",\"model\":\"${DOCS_LLM_MODEL:-qwen2.5:14b}\",\"base_url\":\"${DOCS_LLM_BASE_URL:-http://127.0.0.1:11434/v1}\",\"api_key\":\"docs-capture-placeholder\",\"structured_output\":\"prompt_json\",\"enabled\":true}" \
+    || { echo "could not seed the LLM provider config"; exit 1; }
   (cd "$ROOT/frontend" && VITE_API_PROXY_TARGET="http://127.0.0.1:${API_PORT}" VITE_AUTH_DEV_BYPASS=true \
       nohup pnpm dev --host 127.0.0.1 --port "$WEB_PORT" --strictPort >"$RUN/web.log" 2>&1 </dev/null & echo $! >"$RUN/web.pid")
   for _ in $(seq 1 40); do

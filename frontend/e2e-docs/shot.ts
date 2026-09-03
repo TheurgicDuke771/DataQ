@@ -14,3 +14,10 @@ export async function shot(page: Page, name: string): Promise<void> {
 export async function heading(page: Page, name: string | RegExp, level = 3): Promise<void> {
   await expect(page.getByRole('heading', { name, level })).toBeVisible();
 }
+
+/** Scroll the antd Card whose title contains `title` to the top of the viewport. */
+export async function scrollCard(page: Page, title: string): Promise<void> {
+  await page
+    .getByText(title, { exact: true })
+    .evaluate((el) => el.closest('.ant-card')?.scrollIntoView({ block: 'start' }));
+}

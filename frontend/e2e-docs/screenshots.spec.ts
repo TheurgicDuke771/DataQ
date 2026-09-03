@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { heading, shot } from './shot';
+import { heading, scrollCard, shot } from './shot';
 
 // One test per screenshot so a moved selector loses one image, not the set.
 // Names are stable: docs pages reference them by name.
@@ -150,9 +150,7 @@ test('suite — schedules panel', async ({ page }) => {
 test('admin — LLM provider settings', async ({ page }) => {
   await page.goto('/admin');
   await heading(page, /Admin/);
-  await page
-    .getByText('LLM provider', { exact: true })
-    .evaluate((el) => el.closest('.ant-card')?.scrollIntoView({ block: 'start' }));
+  await scrollCard(page, 'LLM provider');
   await expect(page.getByRole('button', { name: 'Test' })).toBeVisible();
   await shot(page, 'admin-llm-settings');
 });
@@ -161,7 +159,12 @@ test('asset — incident evidence card', async ({ page }) => {
   await page.goto('/assets');
   await page.getByRole('treeitem', { name: /^ORDERS dev/ }).click();
   await expect(page).toHaveURL(/\/assets\//);
-  await page.getByRole('button', { name: 'View' }).first().click();
+  await page
+    .getByRole('table')
+    .filter({ hasText: 'Evidence' })
+    .getByRole('button', { name: 'View', exact: true })
+    .first()
+    .click();
   await expect(page.getByText('Incident evidence')).toBeVisible();
   await shot(page, 'incident-evidence');
 });
