@@ -79,7 +79,7 @@ export default defineConfig({
     // so keep Vitest out of them. (Miss one and it fails with Playwright's
     // "did not expect test() to be called here", which reads like a version
     // conflict and is really just the wrong runner.)
-    exclude: [...configDefaults.exclude, 'e2e/**', 'e2e-otp/**', 'e2e-live/**'],
+    exclude: [...configDefaults.exclude, 'e2e/**', 'e2e-otp/**', 'e2e-docs/**', 'e2e-live/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],
