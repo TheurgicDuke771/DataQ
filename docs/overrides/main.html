@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{#
+  Header action row on every page: View as Markdown · Copy as Markdown · Ask AI ▾.
+  The Markdown lives at <page url>index.md (docs/hooks/llm_export.py). "Ask AI" opens the
+  page in the reader's OWN assistant with a prefilled prompt — nothing is proxied by us.
+#}
+{% block content %}
+  {% if page.file and page.file.src_uri != "404.md" %}
+    {% set md_url = page.canonical_url ~ "index.md" %}
+    {% set prompt = "Read " ~ md_url ~ " (the DataQ documentation page \"" ~ page.title ~ "\") and help me with questions about it." %}
+    <div class="dq-actions">
+      <a class="dq-action" href="index.md" target="_blank" rel="noopener" title="Open this page as raw Markdown">
+        {% include ".icons/material/language-markdown-outline.svg" %} Markdown
+      </a>
+      <button class="dq-action" type="button" data-dq-copy title="Copy this page as Markdown">
+        {% include ".icons/material/content-copy.svg" %} Copy
+      </button>
+      <div class="dq-ask">
+        <button class="dq-action" type="button" data-dq-ask aria-haspopup="menu" aria-expanded="false" title="Open this page in your own AI assistant">
+          {% include ".icons/material/robot-outline.svg" %} Ask AI {% include ".icons/material/chevron-down.svg" %}
+        </button>
+        <div class="dq-ask__menu" role="menu" hidden>
+          <a href="https://claude.ai/new?q={{ prompt | urlencode }}" target="_blank" rel="noopener">Claude</a>
+          <a href="https://chatgpt.com/?q={{ prompt | urlencode }}" target="_blank" rel="noopener">ChatGPT</a>
+          <a href="https://github.com/copilot?prompt={{ prompt | urlencode }}" target="_blank" rel="noopener">GitHub Copilot</a>
+          <a href="{{ base_url }}/guides/mcp-setup/" title="Cursor, Claude Desktop and others read these pages over MCP">Connect your assistant (MCP)</a>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+  {{ super() }}
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script>
+    // Delegated on document: instant navigation swaps the content region without
+    // re-running this block, so per-element listeners would die after the first click.
+    (function () {
+      if (window.__dqActionsBound) return;
+      window.__dqActionsBound = true;
+      function closeMenus() {
+        document.querySelectorAll(".dq-ask__menu:not([hidden])").forEach(function (m) {
+          m.hidden = true;
+          m.previousElementSibling.setAttribute("aria-expanded", "false");
+        });
+      }
+      document.addEventListener("click", async function (e) {
+        var ask = e.target.closest("[data-dq-ask]");
+        if (ask) {
+          e.stopPropagation();
+          var menu = ask.nextElementSibling;
+          var open = menu.hidden;
+          closeMenus();
+          menu.hidden = !open;
+          ask.setAttribute("aria-expanded", String(open));
+          return;
+        }
+        closeMenus();
+        var copy = e.target.closest("[data-dq-copy]");
+        if (!copy) return;
+        var label = copy.innerHTML;
+        try {
+          // Relative to the page being viewed — works under mkdocs serve, forks and mirrors.
+          var md = await (await fetch("index.md")).text();
+          await navigator.clipboard.writeText(md);
+          copy.textContent = "Copied";
+        } catch (err) {
+          copy.textContent = "Copy failed";
+        }
+        setTimeout(function () { copy.innerHTML = label; }, 1500);
+      });
+    })();
+  </script>
+{% endblock %}

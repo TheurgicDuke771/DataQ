@@ -12,6 +12,8 @@ on:
     tags: ["v*"]
     paths:
       - docs/site/**
+      - docs/hooks/**
+      - docs/overrides/**
       - marketing/**
       - mkdocs.yml
       - requirements-docs.txt
@@ -19,6 +21,8 @@ on:
   pull_request:
     paths:
       - docs/site/**
+      - docs/hooks/**
+      - docs/overrides/**
       - marketing/**
       - mkdocs.yml
       - requirements-docs.txt
