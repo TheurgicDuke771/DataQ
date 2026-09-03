@@ -1,0 +1,149 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "017d511c05e1",
+  "session_id": "35b1af29-9edc-49a2-9b7d-86cf05a9416e",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-03T01:29:03.746812Z",
+  "branch": "docs/redesign-p2-capture",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "docs/docs-redesign-plan.md",
+    "docs/site/assets/extra.css",
+    "docs/site/assets/screenshots/admin.png",
+    "docs/site/assets/screenshots/asset-detail.png",
+    "docs/site/assets/screenshots/assets-list.png",
+    "docs/site/assets/screenshots/check-editor-expectation.png",
+    "docs/site/assets/screenshots/check-editor-freshness.png",
+    "docs/site/assets/screenshots/check-editor-picker.png",
+    "docs/site/assets/screenshots/connection-form-snowflake.png",
+    "docs/site/assets/screenshots/connection-type-picker.png",
+    "docs/site/assets/screenshots/connections-list.png",
+    "docs/site/assets/screenshots/dashboard.png",
+    "docs/site/assets/screenshots/profile.png",
+    "docs/site/assets/screenshots/results-list.png",
+    "docs/site/assets/screenshots/run-detail.png",
+    "docs/site/assets/screenshots/settings.png",
+    "docs/site/assets/screenshots/suite-detail.png",
+    "docs/site/assets/screenshots/suites-list.png",
+    "docs/site/get-started/concepts.md",
+    "docs/site/get-started/first-suite.md",
+    "docs/site/get-started/install.md",
+    "docs/site/index.md",
+    "frontend/e2e-docs/README.md",
+    "frontend/e2e-docs/screenshots.spec.ts",
+    "frontend/e2e-docs/shot.ts",
+    "frontend/eslint.config.cjs",
+    "frontend/playwright.config.ts",
+    "mkdocs.yml",
+    "scripts/docs/capture-stack.sh"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-fable-5-1",
+  "turn_id": "101599a8d649",
+  "checkpoint_transcript_start": 506,
+  "transcript_lines_at_start": 506,
+  "compact_transcript_start": 66,
+  "token_usage": {
+    "input_tokens": 1456,
+    "cache_creation_tokens": 259046,
+    "cache_read_tokens": 4016186,
+    "output_tokens": 26057,
+    "api_call_count": 21
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01Uzow17ctqZ4SgjJJ4rY3qb",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "ad5248a3132b",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 82,
+        "end": 83,
+        "entry_ids": [
+          "cd497d38-ade5-4391-b6cf-743b9eb710cb"
+        ],
+        "tool_use_id": "toolu_01Uzow17ctqZ4SgjJJ4rY3qb"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01Uzow17ctqZ4SgjJJ4rY3qb"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_0134p7bcfpPohazGXmV1U1ib",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "6423bbe1658b",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 501,
+        "end": 502,
+        "entry_ids": [
+          "1e0482fc-5e93-4834-846a-03b4c2e6563f"
+        ],
+        "tool_use_id": "toolu_0134p7bcfpPohazGXmV1U1ib"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0134p7bcfpPohazGXmV1U1ib"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 6
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-03T01:29:03.534495Z",
+    "agent_lines": 306,
+    "agent_removed": 5,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 1,
+    "total_committed": 306,
+    "total_lines_changed": 312,
+    "agent_percentage": 99.67948717948718,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 9,
+      "user_lines_removed": 1,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 7,
+        "docs/docs-redesign-plan.md": 2
+      },
+      "user_removed_per_file": {
+        "docs/docs-redesign-plan.md": 1
+      }
+    }
+  ]
+}

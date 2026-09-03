@@ -1,0 +1,54 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "017d511c05e1",
+  "strategy": "manual-commit",
+  "branch": "docs/redesign-p2-capture",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "docs/docs-redesign-plan.md",
+    "docs/site/assets/extra.css",
+    "docs/site/assets/screenshots/admin.png",
+    "docs/site/assets/screenshots/asset-detail.png",
+    "docs/site/assets/screenshots/assets-list.png",
+    "docs/site/assets/screenshots/check-editor-expectation.png",
+    "docs/site/assets/screenshots/check-editor-freshness.png",
+    "docs/site/assets/screenshots/check-editor-picker.png",
+    "docs/site/assets/screenshots/connection-form-snowflake.png",
+    "docs/site/assets/screenshots/connection-type-picker.png",
+    "docs/site/assets/screenshots/connections-list.png",
+    "docs/site/assets/screenshots/dashboard.png",
+    "docs/site/assets/screenshots/profile.png",
+    "docs/site/assets/screenshots/results-list.png",
+    "docs/site/assets/screenshots/run-detail.png",
+    "docs/site/assets/screenshots/settings.png",
+    "docs/site/assets/screenshots/suite-detail.png",
+    "docs/site/assets/screenshots/suites-list.png",
+    "docs/site/get-started/concepts.md",
+    "docs/site/get-started/first-suite.md",
+    "docs/site/get-started/install.md",
+    "docs/site/index.md",
+    "frontend/e2e-docs/README.md",
+    "frontend/e2e-docs/screenshots.spec.ts",
+    "frontend/e2e-docs/shot.ts",
+    "frontend/eslint.config.cjs",
+    "frontend/playwright.config.ts",
+    "mkdocs.yml",
+    "scripts/docs/capture-stack.sh"
+  ],
+  "sessions": [
+    {
+      "metadata": "/01/7d511c05e1/0/metadata.json",
+      "transcript": "/01/7d511c05e1/0/full.jsonl",
+      "compact_transcript": "/01/7d511c05e1/0/transcript.jsonl",
+      "content_hash": "/01/7d511c05e1/0/content_hash.txt",
+      "prompt": "/01/7d511c05e1/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1456,
+    "cache_creation_tokens": 259046,
+    "cache_read_tokens": 4016186,
+    "output_tokens": 26057,
+    "api_call_count": 21
+  }
+}
