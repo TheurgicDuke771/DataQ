@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "3f6dc0d54788",
+  "strategy": "manual-commit",
+  "branch": "docs/redesign-p2-capture",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "frontend/e2e-docs/videos.spec.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/3f/6dc0d54788/0/metadata.json",
+      "transcript": "/3f/6dc0d54788/0/full.jsonl",
+      "compact_transcript": "/3f/6dc0d54788/0/transcript.jsonl",
+      "content_hash": "/3f/6dc0d54788/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 0,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "output_tokens": 0,
+    "api_call_count": 0
+  }
+}
