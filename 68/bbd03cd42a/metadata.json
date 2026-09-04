@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "68bbd03cd42a",
+  "strategy": "manual-commit",
+  "branch": "docs/progress-ledger-1846-1850-batch",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/68/bbd03cd42a/0/metadata.json",
+      "transcript": "/68/bbd03cd42a/0/full.jsonl",
+      "compact_transcript": "/68/bbd03cd42a/0/transcript.jsonl",
+      "content_hash": "/68/bbd03cd42a/0/content_hash.txt",
+      "prompt": "/68/bbd03cd42a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 20,
+    "cache_creation_tokens": 7125,
+    "cache_read_tokens": 7620889,
+    "output_tokens": 4042,
+    "api_call_count": 10
+  }
+}
