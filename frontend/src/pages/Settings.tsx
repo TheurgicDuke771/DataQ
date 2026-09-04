@@ -19,6 +19,7 @@ import { type AdminWebhook, listAdminWebhooks, testAuthEmail } from '../api/admi
 import { PROVIDER_CALLBACK_NOUNS, PROVIDER_LABELS } from '../api/triggerBindings';
 import { authMethodLabel } from '../auth/config';
 import { useMe } from '../auth/useMe';
+import { NotificationChannelsPanel } from '../components/admin/NotificationChannelsPanel';
 import { Forbidden } from '../components/Forbidden';
 import { PageError } from '../components/feedback/PageError';
 import { Page } from '../components/layout/Page';
@@ -115,19 +116,23 @@ function SecretsTab() {
 
 function NotificationsTab() {
   return (
-    <Alert
-      type="info"
-      showIcon
-      title="Alerts are configured per suite"
-      description={
-        <span>
-          Teams, Slack and email alerts (webhook/recipient + fail / warn / always threshold) are set
-          on each suite so the owning team is notified for their data, falling back to the
-          workspace-wide default configured for the deployment when a suite sets none. Open a suite
-          from <Link to="/suites">Suites</Link> to configure its notifications.
-        </span>
-      }
-    />
+    <Flex vertical gap={16}>
+      <Alert
+        type="info"
+        showIcon
+        title="Alerts are configured per suite"
+        description={
+          <span>
+            Teams, Slack and email alerts (webhook/recipient + fail / warn / always threshold) are
+            set on each suite so the owning team is notified for their data, falling back to the
+            workspace-wide default configured for the deployment when a suite sets none. Open a
+            suite from <Link to="/suites">Suites</Link> to configure its notifications — including
+            linking the reusable channels managed below.
+          </span>
+        }
+      />
+      <NotificationChannelsPanel />
+    </Flex>
   );
 }
 
