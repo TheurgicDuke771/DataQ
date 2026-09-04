@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "a69695028d63",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1845-llm-ui",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/services/llm_checksuggest.py",
+    "backend/tests/services/test_llm_checksuggest.py",
+    "backend/tests/services/test_llm_checksuggest_cadence.py",
+    "docs/site/guides/ai-features.md",
+    "frontend/tests/components/SuggestChecksDrawer.test.tsx",
+    "frontend/tests/components/suggestions.test.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/a6/9695028d63/0/metadata.json",
+      "transcript": "/a6/9695028d63/0/full.jsonl",
+      "compact_transcript": "/a6/9695028d63/0/transcript.jsonl",
+      "content_hash": "/a6/9695028d63/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 5509,
+    "cache_creation_tokens": 60688,
+    "cache_read_tokens": 25165362,
+    "output_tokens": 33108,
+    "api_call_count": 57
+  }
+}
