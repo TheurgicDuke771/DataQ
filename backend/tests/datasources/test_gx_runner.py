@@ -245,6 +245,105 @@ def test_to_suite_outcome_caps_a_set_oriented_expectations_observed_value() -> N
 # ── sample-failure capture is bounded (#1196) ──
 
 
+# ── expect_column_values_to_be_of_type on a nonexistent column (#1850) ──
+
+
+def _of_type_result(*, column: str, raised: bool) -> SimpleNamespace:
+    """A GX result stand-in for `expect_column_values_to_be_of_type`, shaped exactly like the
+    live crash: GX's own `_validate` raises a bare `IndexError("list index out of range")`
+    when `column` is absent from its already-resolved `table.column_types` metric — no column
+    name, no context, just the two words a plain Python list-index crash always carries.
+    """
+    exception_info = (
+        {"raised_exception": True, "exception_message": "list index out of range"}
+        if raised
+        else {"raised_exception": False, "exception_message": None}
+    )
+    return SimpleNamespace(
+        success=not raised,
+        expectation_config=SimpleNamespace(
+            type="expect_column_values_to_be_of_type",
+            kwargs={"column": column, "type_": "string"},
+            meta={"dataq_index": 0},
+        ),
+        result={},
+        exception_info=exception_info,
+    )
+
+
+def test_of_type_missing_column_gets_an_actionable_message() -> None:
+    gx_result = SimpleNamespace(
+        success=False, results=[_of_type_result(column="nope_col", raised=True)]
+    )
+    outcome = to_suite_outcome(gx_result)
+    check = outcome.checks[0]
+    assert check.errored is True
+    assert check.error_message == 'the column "nope_col" does not exist on this table'
+    # The raw, uninformative library message must never leak through.
+    assert "list index" not in check.error_message
+
+
+def test_of_type_real_column_is_untouched_by_the_rewrite() -> None:
+    gx_result = SimpleNamespace(
+        success=True, results=[_of_type_result(column="channel", raised=False)]
+    )
+    outcome = to_suite_outcome(gx_result)
+    check = outcome.checks[0]
+    assert check.errored is False
+    assert check.error_message is None
+
+
+def test_of_type_rewrite_is_scoped_to_the_exact_known_message() -> None:
+    """A DIFFERENT `IndexError` (or any other error) on the same expectation type must pass
+    through unmodified — the rewrite is keyed on the exact, narrow signature of the known
+    missing-column crash, not on the expectation type alone."""
+    gx_result = SimpleNamespace(
+        success=False,
+        results=[
+            SimpleNamespace(
+                success=False,
+                expectation_config=SimpleNamespace(
+                    type="expect_column_values_to_be_of_type",
+                    kwargs={"column": "channel", "type_": "string"},
+                    meta={"dataq_index": 0},
+                ),
+                result={},
+                exception_info={
+                    "raised_exception": True,
+                    "exception_message": "connection to warehouse timed out",
+                },
+            )
+        ],
+    )
+    outcome = to_suite_outcome(gx_result)
+    assert outcome.checks[0].error_message == "connection to warehouse timed out"
+
+
+def test_of_type_rewrite_never_fires_for_other_expectation_types() -> None:
+    """The identical library message from an unrelated expectation type (however
+    unlikely) must not be reinterpreted as a missing-column error."""
+    gx_result = SimpleNamespace(
+        success=False,
+        results=[
+            SimpleNamespace(
+                success=False,
+                expectation_config=SimpleNamespace(
+                    type="expect_column_values_to_match_regex",
+                    kwargs={"column": "channel", "regex": "^a"},
+                    meta={"dataq_index": 0},
+                ),
+                result={},
+                exception_info={
+                    "raised_exception": True,
+                    "exception_message": "list index out of range",
+                },
+            )
+        ],
+    )
+    outcome = to_suite_outcome(gx_result)
+    assert outcome.checks[0].error_message == "list index out of range"
+
+
 def test_extract_sample_failures_caps_row_lists() -> None:
     # Under `result_format="COMPLETE"` the pandas engine hands back an untruncated
     # `unexpected_index_list`.
