@@ -8,8 +8,15 @@ from typing import Any
 import pytest
 from sqlalchemy import update
 
+from backend.app.core.secrets import SecretStoreUnavailableError
 from backend.app.db.models import LlmInvocation, User
-from backend.app.llm.base import LLMNotConfiguredError, LLMResult, LLMUnavailableError
+from backend.app.llm.base import (
+    LLMCredentialMissingError,
+    LLMNotConfiguredError,
+    LLMResult,
+    LLMSecretStoreUnavailableError,
+    LLMUnavailableError,
+)
 from backend.app.services import llm_service
 from backend.tests.support.fake_secret_store import FakeSecretStore
 
@@ -182,6 +189,68 @@ def test_unconfigured_and_disabled_read_as_two_different_states(
     # Same code both times — a caller (the REST route, the frontend) must be able to keep
     # branching on the code alone; only the message differs.
     assert never_configured.value.code == disabled.value.code == "llm_not_configured"
+
+
+# ── build_provider: a dangling credential is a typed, actionable error, never the
+# raw store exception class name (#1849) ──
+
+
+def test_build_provider_maps_a_missing_secret_to_credential_missing(
+    db_session: Any, admin: User
+) -> None:
+    """The reference is stored (save succeeded against a store that had the key), but a LATER
+    read finds it gone — the store was purged/recreated out from under the saved config, exactly
+    the live #1849 repro. `build_provider` must not let the raw `SecretNotFoundError` escape.
+    """
+    llm_service.save_settings(
+        db_session, draft=_draft(api_key="sk-1"), actor=admin, secret_store=FakeSecretStore()
+    )
+    gone_store = FakeSecretStore()  # the ref the row holds resolves to nothing here
+    with pytest.raises(LLMCredentialMissingError) as exc_info:
+        llm_service.build_provider(db_session, gone_store)
+    message = str(exc_info.value)
+    assert "re-enter the API key" in message
+    # The message must never name the secret ref — it would otherwise leak an
+    # internal store key name into a user-facing error.
+    assert "llm-provider" not in message
+
+
+def test_build_provider_maps_a_store_outage_to_unavailable_not_missing(
+    db_session: Any, admin: User
+) -> None:
+    """An outage must stay distinct from "the secret is gone" (the ADR 0039 rule,
+    already enforced for `test_settings` — `build_provider` must match it)."""
+    llm_service.save_settings(
+        db_session, draft=_draft(api_key="sk-1"), actor=admin, secret_store=FakeSecretStore()
+    )
+    down_store = FakeSecretStore(raise_on_get=SecretStoreUnavailableError())
+    with pytest.raises(LLMSecretStoreUnavailableError) as exc_info:
+        llm_service.build_provider(db_session, down_store)
+    assert "unreachable" in str(exc_info.value)
+
+
+def test_execute_invocation_reports_a_missing_credential_actionably(
+    db_session: Any, admin: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End to end through the worker path: a poller reading `invocation.error` gets the
+    actionable sentence, never `internal: SecretNotFoundError` (the live #1849 symptom)."""
+    llm_service.save_settings(
+        db_session, draft=_draft(api_key="sk-1"), actor=admin, secret_store=FakeSecretStore()
+    )
+    invocation = llm_service.create_invocation(db_session, kind="ping", requested_by=admin)
+    db_session.commit()
+    monkeypatch.setitem(
+        llm_service.KIND_BUILDERS, "ping", lambda _s, _inv, _st: ("say ok", None, None)
+    )
+    gone_store = FakeSecretStore()
+    status = llm_service.execute_invocation(db_session, invocation.id, secret_store=gone_store)
+    assert status == "failed"
+    db_session.refresh(invocation)
+    assert invocation.error is not None
+    assert invocation.error.startswith("llm_credential_missing:")
+    assert "re-enter the API key" in invocation.error
+    assert "SecretNotFoundError" not in invocation.error
+    assert "internal:" not in invocation.error
 
 
 def test_test_settings_uses_stored_key_only_for_same_destination(

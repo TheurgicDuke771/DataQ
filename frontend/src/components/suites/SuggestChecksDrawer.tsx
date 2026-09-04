@@ -11,6 +11,7 @@ import { createCheck } from '../../api/suites';
 import { suggestionToCheck } from './suggestions';
 import { errorMessage, fetchFailure } from '../../utils/errors';
 import { DimensionTag } from '../checks/checkBadges';
+import { AiCaveat } from '../shared/AiCaveat';
 import SimpleList from '../SimpleList';
 
 type SuggestState =
@@ -128,10 +129,13 @@ function SuggestBody({ suiteId, onAdded }: { suiteId: string; onAdded: () => voi
   return (
     <Flex vertical gap={16}>
       <Flex justify="space-between" align="center" wrap gap={8}>
-        <Typography.Text type="secondary">
-          {suggestions.length} suggestion{suggestions.length === 1 ? '' : 's'} passed validation.
-          Nothing is created until you add it.
-        </Typography.Text>
+        <Flex vertical gap={2}>
+          <Typography.Text type="secondary">
+            {suggestions.length} suggestion{suggestions.length === 1 ? '' : 's'} passed validation.
+            Nothing is created until you add it.
+          </Typography.Text>
+          <AiCaveat />
+        </Flex>
         <Button
           type="primary"
           size="small"

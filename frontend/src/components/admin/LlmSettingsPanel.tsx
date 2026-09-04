@@ -10,6 +10,7 @@ import {
   Spin,
   Switch,
   Tag,
+  Tooltip,
   Typography,
 } from 'antd';
 import { useState } from 'react';
@@ -172,9 +173,17 @@ function LlmForm({ config, onChanged }: { config: LlmConfig; onChanged: () => vo
         <Tag color={config.enabled ? 'success' : 'default'}>
           {config.enabled ? 'Enabled' : 'Disabled'}
         </Tag>
-        <Tag color={config.has_credential ? 'success' : 'default'}>
-          {config.has_credential ? 'Credential set' : 'No credential'}
-        </Tag>
+        <Tooltip
+          title={
+            config.has_credential
+              ? 'A key is stored, but this does not confirm it still resolves — press Test to check.'
+              : undefined
+          }
+        >
+          <Tag color={config.has_credential ? 'success' : 'default'}>
+            {config.has_credential ? 'Credential set' : 'No credential'}
+          </Tag>
+        </Tooltip>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           Updated {formatTimestamp(config.updated_at)}
         </Typography.Text>

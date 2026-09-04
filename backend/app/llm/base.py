@@ -57,6 +57,28 @@ class LLMRequestInvalidError(DataQError):
     code = "llm_request_invalid"
 
 
+class LLMCredentialMissingError(DataQError):
+    """The provider's stored credential *reference* no longer resolves — the
+    secret was rotated, deleted, or the store was recreated out from under the
+    saved config (#1849). Distinct from `LLMNotConfiguredError`: a reference IS
+    stored, so "add a provider" is the wrong instruction; "re-enter the key" is
+    the right one. The message never names the secret ref.
+    """
+
+    status_code = 409
+    code = "llm_credential_missing"
+
+
+class LLMSecretStoreUnavailableError(DataQError):
+    """The secret store itself could not be reached while resolving the
+    provider's credential — a transient outage, not evidence the credential is
+    gone (#1849, mirrors the ADR 0039 outage/missing distinction).
+    """
+
+    status_code = 502
+    code = "secret_store_unavailable"
+
+
 @dataclass(frozen=True)
 class LLMResult:
     text: str

@@ -41,11 +41,13 @@ from backend.app.db.models import (
 )
 from backend.app.llm.anthropic_provider import AnthropicProvider
 from backend.app.llm.base import (
+    LLMCredentialMissingError,
     LLMNotConfiguredError,
     LLMOutputInvalidError,
     LLMProvider,
     LLMProviderError,
     LLMResult,
+    LLMSecretStoreUnavailableError,
     LLMUnavailableError,
 )
 from backend.app.llm.openai_compat import OpenAICompatProvider
@@ -177,20 +179,42 @@ def _require_row(row: LlmSetting | None, *, require_enabled: bool) -> None:
         )
 
 
+def _resolve_provider_api_key(secret_store: SecretStore, secret_ref: str) -> str:
+    """Read the provider's stored credential, mapping a store failure to a typed,
+    actionable DataQError (#1849) — never the raw store exception (which surfaced
+    to a poller as `internal: SecretNotFoundError`, and never the secret ref/name
+    itself, which stays out of every message here).
+    """
+    try:
+        return secret_store.get(secret_ref)
+    except SecretNotFoundError as exc:
+        raise LLMCredentialMissingError(
+            "the LLM provider credential could not be read — a workspace admin must "
+            "re-enter the API key"
+        ) from exc
+    except SecretStoreUnavailableError as exc:
+        raise LLMSecretStoreUnavailableError(
+            "the secret store is unreachable — the stored credential could not be read"
+        ) from exc
+
+
 def build_provider(
     session: Session, secret_store: SecretStore, *, require_enabled: bool = True
 ) -> LLMProvider:
     row = get_settings_row(session)
     _require_row(row, require_enabled=require_enabled)
     assert row is not None  # _require_row raised otherwise  # nosec B101
+    api_key = (
+        _resolve_provider_api_key(secret_store, row.api_key_secret_ref)
+        if row.api_key_secret_ref is not None
+        else None
+    )
     return _provider_from(
         provider=row.provider,
         base_url=row.base_url,
         model=row.model,
         structured_output=row.structured_output,
-        api_key=(
-            secret_store.get(row.api_key_secret_ref) if row.api_key_secret_ref is not None else None
-        ),
+        api_key=api_key,
     )
 
 
