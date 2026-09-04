@@ -1,4 +1,4 @@
-import { Alert, Button, Flex, List, Tag, Typography } from 'antd';
+import { Alert, Button, Flex, Tag, Typography } from 'antd';
 import { useEffect, useRef, useState } from 'react';
 
 import { getIncidentNarrative, type IncidentNarrativeRead } from '../../api/incidents';
@@ -6,6 +6,7 @@ import { generateRcaNarrative, type RcaNarrative, runLlmFeature } from '../../ap
 import { useAsyncData } from '../../hooks/useAsyncData';
 import { errorMessage, fetchFailure } from '../../utils/errors';
 import { formatTimestamp } from '../results/resultsFormat';
+import SimpleList from '../SimpleList';
 
 const CONFIDENCE_COLORS: Record<string, string> = {
   high: 'green',
@@ -115,26 +116,28 @@ function NarrativeBody({ narrative, at }: { narrative: RcaNarrative; at: string 
     <Flex vertical gap={10}>
       <Typography.Paragraph style={{ margin: 0 }}>{narrative.summary}</Typography.Paragraph>
       {narrative.ranked_hypotheses.length > 0 && (
-        <List
-          size="small"
-          header={<Typography.Text strong>Ranked hypotheses</Typography.Text>}
-          dataSource={narrative.ranked_hypotheses}
-          renderItem={(h, i) => (
-            <List.Item>
-              <Flex vertical gap={4}>
-                <span>
-                  {i + 1}. {h.cause}
-                </span>
-                <Flex gap={4} wrap>
-                  <Tag color={CONFIDENCE_COLORS[h.confidence] ?? 'default'}>{h.confidence}</Tag>
-                  {h.evidence_refs.map((ref) => (
-                    <Tag key={ref}>{ref}</Tag>
-                  ))}
+        <div>
+          <Typography.Text strong>Ranked hypotheses</Typography.Text>
+          <SimpleList
+            size="small"
+            dataSource={narrative.ranked_hypotheses}
+            renderItem={(h, i) => (
+              <SimpleList.Item>
+                <Flex vertical gap={4}>
+                  <span>
+                    {i + 1}. {h.cause}
+                  </span>
+                  <Flex gap={4} wrap>
+                    <Tag color={CONFIDENCE_COLORS[h.confidence] ?? 'default'}>{h.confidence}</Tag>
+                    {h.evidence_refs.map((ref) => (
+                      <Tag key={ref}>{ref}</Tag>
+                    ))}
+                  </Flex>
                 </Flex>
-              </Flex>
-            </List.Item>
-          )}
-        />
+              </SimpleList.Item>
+            )}
+          />
+        </div>
       )}
       {narrative.blind_spots.length > 0 && (
         <Alert

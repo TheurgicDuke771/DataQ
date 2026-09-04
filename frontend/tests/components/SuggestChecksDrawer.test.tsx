@@ -76,7 +76,7 @@ afterEach(() => vi.clearAllMocks());
 
 /** The `<li>` List item wrapping a suggestion's title. */
 async function itemFor(name: string): Promise<HTMLElement> {
-  const li = (await screen.findByText(name)).closest('li');
+  const li = (await screen.findByText(name)).closest('[role=listitem]') as HTMLElement | null;
   if (!li) throw new Error(`no list item for ${name}`);
   return li;
 }

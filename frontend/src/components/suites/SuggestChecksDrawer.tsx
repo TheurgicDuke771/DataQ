@@ -1,4 +1,4 @@
-import { Alert, App, Button, Drawer, Empty, Flex, List, Space, Tag, Typography } from 'antd';
+import { Alert, App, Button, Drawer, Empty, Flex, Space, Tag, Typography } from 'antd';
 import { useEffect, useRef, useState } from 'react';
 
 import {
@@ -11,6 +11,7 @@ import { createCheck } from '../../api/suites';
 import { suggestionToCheck } from './suggestions';
 import { errorMessage, fetchFailure } from '../../utils/errors';
 import { DimensionTag } from '../checks/checkBadges';
+import SimpleList from '../SimpleList';
 
 type SuggestState =
   | { status: 'running' }
@@ -143,10 +144,10 @@ function SuggestBody({ suiteId, onAdded }: { suiteId: string; onAdded: () => voi
       {suggestions.length === 0 ? (
         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No suggestion survived." />
       ) : (
-        <List
+        <SimpleList
           dataSource={suggestions.map((s, index) => ({ s, index }))}
           renderItem={({ s, index }) => (
-            <List.Item
+            <SimpleList.Item
               actions={[
                 added.has(index) ? (
                   <Tag key="added" color="success">
@@ -164,7 +165,7 @@ function SuggestBody({ suiteId, onAdded }: { suiteId: string; onAdded: () => voi
                 ),
               ]}
             >
-              <List.Item.Meta
+              <SimpleList.Item.Meta
                 title={
                   <Space size={6} wrap>
                     <span>{s.name}</span>
@@ -182,7 +183,7 @@ function SuggestBody({ suiteId, onAdded }: { suiteId: string; onAdded: () => voi
                   </Flex>
                 }
               />
-            </List.Item>
+            </SimpleList.Item>
           )}
         />
       )}
