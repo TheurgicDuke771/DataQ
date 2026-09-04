@@ -257,3 +257,29 @@ describe('CheckNew — type_ hint (issue #768)', () => {
     expect(await screen.findByText(/execution engine/i)).toBeInTheDocument();
   });
 });
+
+describe('CheckNew — "Generate from a description" shortcut card (#1845 follow-up)', () => {
+  it('is hidden when Custom SQL is not offered (no SQL connection loaded)', () => {
+    renderPage();
+    expect(screen.queryByText('Generate from a description')).not.toBeInTheDocument();
+  });
+
+  it('jumps straight to the Custom SQL config form with the generate panel showing', async () => {
+    const user = userEvent.setup();
+    mockGetSuite.mockResolvedValue(suite);
+    mockGetConnection.mockResolvedValue(snowflakeConnection);
+    renderPage();
+
+    await user.click(await screen.findByText('Generate from a description'));
+
+    // Landed directly on step 3 — no intermediate category/expectation click needed — with the
+    // SQL-generation panel already rendered, not just a bare Custom SQL editor.
+    expect(await screen.findByTestId('sql-generate-panel')).toBeInTheDocument();
+    expect(screen.getByLabelText('Name')).toBeInTheDocument();
+
+    // "Back" returns to the (single-entry) Custom SQL expectation list, not all the way to the
+    // category grid — it went through `setCategory`, same as picking the real category would.
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+    expect(await screen.findByRole('heading', { name: 'Custom SQL' })).toBeInTheDocument();
+  });
+});

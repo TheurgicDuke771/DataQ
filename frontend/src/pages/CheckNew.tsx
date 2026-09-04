@@ -15,7 +15,7 @@ import {
 import { ColumnProfilePanel } from '../components/checks/ColumnProfilePanel';
 import { DryRunPreview } from '../components/checks/DryRunPreview';
 import { SqlGeneratePanel } from '../components/checks/SqlGeneratePanel';
-import { isCustomSql } from '../components/checks/customSql';
+import { CUSTOM_SQL_EXPECTATION_TYPE, isCustomSql } from '../components/checks/customSql';
 import {
   configFieldsFor,
   effectiveEngineFor,
@@ -216,11 +216,36 @@ export function CheckNew() {
     );
   }
 
+  // Step 1 — pick a category. "Generate from a description" is a picker-only shortcut, not a
+  // real category — it exists nowhere backend-side (no `check.kind`, no catalog entry): clicking
+  // it jumps straight to Custom SQL's config form with the generate panel already showing
+  // (`isCustomSql`, below), and the check it produces is byte-identical to a hand-written Custom
+  // SQL one. It gets a full card in the same grid, not a separate callout, because a reader
+  // scanning for "the AI thing" should be able to find it exactly the way they find any other
+  // check type — equal weight, same click.
+  const hasCustomSql = categories.some((g) => g.category === 'Custom SQL');
+
   // Step 1 — pick a category.
   return (
     <Page width={'form'}>
       <Header title="New check" onBack={backToSuite} backLabel="Cancel" />
       <Flex wrap gap={12}>
+        {hasCustomSql && (
+          <Card
+            hoverable
+            size="small"
+            style={{ width: 220 }}
+            onClick={() => {
+              setCategory('Custom SQL');
+              setExpectationType(CUSTOM_SQL_EXPECTATION_TYPE);
+            }}
+          >
+            <Typography.Text strong>Generate from a description</Typography.Text>
+            <Typography.Paragraph type="secondary" style={{ margin: 0, fontSize: 12 }}>
+              Describe the rule in plain language — DataQ writes the Custom SQL
+            </Typography.Paragraph>
+          </Card>
+        )}
         {categories.map((g) => (
           <Card
             key={g.category}
