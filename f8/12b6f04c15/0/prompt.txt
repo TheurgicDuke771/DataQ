@@ -1,0 +1,15 @@
+Once this lands, we need to re-capture the llm docs screenshot and clips
+
+---
+
+<task-notification>
+<task-id>b2xvuuo4s</task-id>
+<tool-use-id>toolu_01T6XiP2TP2ZtcVaEE8CiL3U</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/e6d12f61-62ed-4c73-afa6-5a85fc724f47/tasks/b2xvuuo4s.output</output-file>
+<status>completed</status>
+<summary>Background command "Poll #1859 until merged or CI fails" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Also, do we need to add anything in the landing page? highlighting these llm features or one of the screenshot/clip?
