@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "ffa802b70fcc",
+  "strategy": "manual-commit",
+  "branch": "feature/nl-sql-picker-shortcut",
+  "checkpoints_count": 6,
+  "files_touched": [
+    "frontend/src/pages/CheckNew.tsx",
+    "frontend/tests/pages/CheckNew.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ff/a802b70fcc/0/metadata.json",
+      "transcript": "/ff/a802b70fcc/0/full.jsonl",
+      "compact_transcript": "/ff/a802b70fcc/0/transcript.jsonl",
+      "content_hash": "/ff/a802b70fcc/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 64,
+    "cache_creation_tokens": 33825,
+    "cache_read_tokens": 29814702,
+    "output_tokens": 15022,
+    "api_call_count": 32
+  }
+}
