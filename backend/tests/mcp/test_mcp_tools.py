@@ -4478,6 +4478,82 @@ def test_run_results_report_how_much_of_the_sample_was_masked(
     assert row["check_id"] == str(check.id)
 
 
+def test_get_run_results_reports_zero_sample_redaction_state_when_privacy_mode_on(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """#1873: MCP must carry the same distinction REST does — a failed check's
+    sample null'd by zero-sample mode is not the same claim as a check that had
+    nothing to redact.
+    """
+    from backend.app.core.config import get_settings
+
+    monkeypatch.setenv("PRIVACY_ZERO_SAMPLE_MODE", "true")
+    get_settings.cache_clear()
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    check = Check(
+        suite_id=suite.id, name="c", kind="expectation", expectation_type="expect_x", config={}
+    )
+    db_session.add(check)
+    db_session.commit()
+    run = Run(suite_id=suite.id, status="succeeded")
+    db_session.add(run)
+    db_session.commit()
+    db_session.add(Result(run_id=run.id, check_id=check.id, status="fail", sample_failures=None))
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    row = server.get_run_results(str(run.id))["checks"][0]
+    assert row["sample_failures"] is None
+    assert row["redaction"] == "zero_sample"
+
+
+def test_get_run_results_does_not_flag_zero_sample_for_a_passing_check(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    from backend.app.core.config import get_settings
+
+    monkeypatch.setenv("PRIVACY_ZERO_SAMPLE_MODE", "true")
+    get_settings.cache_clear()
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    check = Check(
+        suite_id=suite.id, name="c", kind="expectation", expectation_type="expect_x", config={}
+    )
+    db_session.add(check)
+    db_session.commit()
+    run = Run(suite_id=suite.id, status="succeeded")
+    db_session.add(run)
+    db_session.commit()
+    db_session.add(Result(run_id=run.id, check_id=check.id, status="pass", sample_failures=None))
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    row = server.get_run_results(str(run.id))["checks"][0]
+    assert row["redaction"] is None
+
+
+def test_get_run_results_does_not_flag_zero_sample_when_privacy_mode_off(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    check = Check(
+        suite_id=suite.id, name="c", kind="expectation", expectation_type="expect_x", config={}
+    )
+    db_session.add(check)
+    db_session.commit()
+    run = Run(suite_id=suite.id, status="succeeded")
+    db_session.add(run)
+    db_session.commit()
+    db_session.add(Result(run_id=run.id, check_id=check.id, status="fail", sample_failures=None))
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    row = server.get_run_results(str(run.id))["checks"][0]
+    assert row["redaction"] is None
+
+
 def test_get_run_status_marks_a_running_run_as_not_final(db_session: Any, monkeypatch: Any) -> None:
     """`counts` on a mid-run suite is progress, not a verdict. The sibling tools
     have carried `results_final` since #318; this one emitted the counts bare, so

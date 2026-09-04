@@ -396,7 +396,15 @@ def _run_results_payload(
     rendered = [
         {
             "result_id": str(r.id),
-            **_redacted_sample(r, _tested_column(r.id), policy, tags),
+            **_redacted_sample(
+                r,
+                _tested_column(r.id),
+                policy,
+                tags,
+                # `kind` is immutable per check, so its current value is valid history too
+                # (unlike `tested_column`/`expectation_type`, there is no version to resolve).
+                check_kind=checks[r.check_id].kind if r.check_id in checks else None,
+            ),
             "observed_value": run_service.redact_observed_value(
                 r.observed_value,
                 tested_column=_tested_column(r.id),
@@ -515,6 +523,8 @@ def _redacted_sample(
     tested_column: str | None,
     policy: dict[str, Any] | None,
     tags: dict[str, str] | None = None,
+    *,
+    check_kind: str | None = None,
 ) -> dict[str, Any]:
     """The failing-row sample plus **how much of it was masked** (#424/#1115).
 
@@ -524,12 +534,21 @@ def _redacted_sample(
     confident: mask tokens reported as the data, or a fully-masked sample
     reported as "no failing rows were captured".
 
-    `redaction` is `full` / `partial` / `none`, or `null` when the sample carried
-    no row-level content at all — which is the one case where there is nothing
-    true to claim either way.
+    `redaction` is `full` / `partial` / `none` / `zero_sample` (#1873 — a null
+    sample the deployment's zero-sample privacy mode suppressed, not one that was
+    genuinely empty), or `null` when the sample carried no row-level content at
+    all and zero-sample mode isn't why — which is the one case where there is
+    nothing true to claim either way.
     """
+    zero_sample = get_settings().privacy_zero_sample_mode and run_service.zero_sample_suppressed(
+        status=result.status, check_kind=check_kind
+    )
     sample, state, redacted_columns = run_service.redact_sample_failures_with_state(
-        result.sample_failures, tested_column=tested_column, policy=policy, tags=tags
+        result.sample_failures,
+        tested_column=tested_column,
+        policy=policy,
+        tags=tags,
+        zero_sample=zero_sample,
     )
     return {
         "sample_failures": sample,
@@ -638,9 +657,12 @@ def get_suite_results(suite_id: str) -> dict[str, Any]:
     — null means a complete read; a non-null record means the verdict came from
     a sample), any sample failing rows, and ``redaction`` / ``redacted_columns``
     saying how much of those rows was masked. A masked sample is not an absent
-    one — never describe redacted rows as "no failing rows". Returns an empty
-    result set if the suite has never run. Requires at least view access to the
-    suite.
+    one — never describe redacted rows as "no failing rows". ``redaction:
+    "zero_sample"`` (#1873) is a THIRD reading of a null sample: this
+    deployment's zero-sample privacy mode never persisted one for this
+    failing/erroring result at all, distinct from a genuinely sample-free check
+    (e.g. a passing one). Returns an empty result set if the suite has never
+    run. Requires at least view access to the suite.
 
     ``engine`` is the check's **current** engine, not the one that produced this
     particular result — like ``name``, it is not snapshotted per result. If the
@@ -1216,7 +1238,8 @@ def get_run_results(run_id: str) -> dict[str, Any]:
     expectation output, and the two have different semantics), its
     pass/warn/fail/critical (or skip/error) status, the observed vs expected
     value, how much of the dataset the check saw, and any sample failing rows
-    (PII-redacted).
+    (PII-redacted; see ``get_suite_results`` for what a null sample's
+    ``redaction`` states mean, including ``"zero_sample"``, #1873).
 
     ``engine`` is the check's **current** engine, not the one that produced this
     particular result — like ``name``, it is not snapshotted per result; use

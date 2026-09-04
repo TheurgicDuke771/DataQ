@@ -783,6 +783,54 @@ def test_zero_sample_mode_on_still_shows_a_safe_aggregate_scalar(
     assert row.observed_value == {"observed_value": 34680}
 
 
+# ─────────────── zero-sample suppression state (#1873, amends #1676) ───────────
+
+
+def test_zero_sample_suppressed_true_for_a_failing_expectation() -> None:
+    assert run_service.zero_sample_suppressed(status="fail", check_kind="expectation") is True
+    assert run_service.zero_sample_suppressed(status="critical", check_kind="comparison") is True
+    assert run_service.zero_sample_suppressed(status="error", check_kind="expectation") is True
+
+
+def test_zero_sample_suppressed_false_for_a_passing_or_skipped_result() -> None:
+    """A check that passed/skipped never had a sample regardless of the switch —
+    reporting `zero_sample` there would over-claim suppression that never happened.
+    """
+    assert run_service.zero_sample_suppressed(status="pass", check_kind="expectation") is False
+    assert run_service.zero_sample_suppressed(status="skip", check_kind="expectation") is False
+
+
+def test_zero_sample_suppressed_false_for_a_scalar_monitor_kind() -> None:
+    """Freshness/volume/schema_drift/anomaly compute one number and never carry a
+    per-row sample, so a failing monitor is not zero-sample suppression either.
+    """
+    for kind in MONITOR_KINDS:
+        assert run_service.zero_sample_suppressed(status="fail", check_kind=kind) is False
+
+
+def test_redact_sample_failures_with_state_reports_zero_sample_for_a_null_sample() -> None:
+    sample, state, redacted_columns = run_service.redact_sample_failures_with_state(
+        None, zero_sample=True
+    )
+    assert sample is None
+    assert state == "zero_sample"
+    assert redacted_columns == []
+
+
+def test_redact_sample_failures_with_state_ignores_zero_sample_when_a_sample_exists() -> None:
+    """`zero_sample=True` only overrides the NULL case — a genuinely persisted
+    sample (zero-sample mode off, or off at run time and later flipped on) is
+    still redacted normally, not mislabelled as suppressed.
+    """
+    sample, state, _redacted_columns = run_service.redact_sample_failures_with_state(
+        {"partial_unexpected_list": ["alice@example.com"]},
+        tested_column="email",
+        zero_sample=True,
+    )
+    assert sample is not None
+    assert state != "zero_sample"
+
+
 # ───────────────────────── failure path ────────────────────────────
 
 

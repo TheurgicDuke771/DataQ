@@ -4875,7 +4875,7 @@
         "type": "object"
       },
       "ResultRead": {
-        "description": "One check's result within a run. `metric_value` is the SQL-aggregatable\nbadness scalar (ADR 0012); `observed_value`/`expected_value` are GX summary values.\n\n`redaction` is tri-state (#424): full / partial / none \u2014 null means \"no sample\".\nA \"sampled\" caveat must key on `sampling.sampled`, NOT rows < total_rows\n(`total_rows` is legitimately null for head samples).",
+        "description": "One check's result within a run. `metric_value` is the SQL-aggregatable\nbadness scalar (ADR 0012); `observed_value`/`expected_value` are GX summary values.\n\n`redaction` (#424, `zero_sample` added #1873): `full`/`partial`/`none` describe\ncolumn-policy-based redaction of a REAL persisted sample; `zero_sample` means this\ndeployment's zero-sample privacy mode (`GET /admin/deployment.zero_sample_mode`)\nnever persisted a sample for this result at all. Only a `null` sample that genuinely\nnever had one \u2014 a passing check, or a check kind/type with no row-level data \u2014 omits\nthe field.\nA \"sampled\" caveat must key on `sampling.sampled`, NOT rows < total_rows\n(`total_rows` is legitimately null for head samples).",
         "properties": {
           "check_id": {
             "format": "uuid",
@@ -4946,7 +4946,8 @@
                 "enum": [
                   "full",
                   "partial",
-                  "none"
+                  "none",
+                  "zero_sample"
                 ],
                 "type": "string"
               },

@@ -117,9 +117,9 @@ export function RunReport({
       )}
 
       {/* No sample failing rows in this report — see the docstring above. Kept
-          state-neutral (#1122 review): redaction is per-column with four
-          possible states since #417/#1115, and a printed artifact is read out
-          of context, so this must not claim a specific redaction outcome. */}
+          state-neutral (#1122 review): redaction has several possible states
+          (#417/#1115/#1873), and a printed artifact is read out of context, so
+          this must not claim a specific redaction outcome. */}
       <p className="rd-report-footnote">
         Sample failing rows are not included in this report; review them in-app on each check's
         expanded row (redaction policy applies).

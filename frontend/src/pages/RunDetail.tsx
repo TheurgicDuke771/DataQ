@@ -352,10 +352,19 @@ function SampleFailures({
   redactedColumns,
 }: {
   sample: Record<string, unknown> | null;
-  redaction: 'full' | 'partial' | 'none' | null;
+  redaction: 'full' | 'partial' | 'none' | 'zero_sample' | null;
   redactedColumns: string[];
 }) {
-  if (!sample) return null;
+  // #1873: a null sample under `zero_sample` was SUPPRESSED, not absent — say so
+  // rather than rendering nothing, which would read identically to "no sample".
+  if (!sample) {
+    return redaction === 'zero_sample' ? (
+      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        Failing rows suppressed — this deployment's zero-sample privacy mode never
+        persisted a sample for this result.
+      </Typography.Text>
+    ) : null;
+  }
   const count = typeof sample.unexpected_count === 'number' ? sample.unexpected_count : null;
   const percent = typeof sample.unexpected_percent === 'number' ? sample.unexpected_percent : null;
   // #1183: prefer `unexpected_index_list` when it's present and dict-shaped — those rows already
@@ -600,8 +609,12 @@ function ResultsTable({
             </Flex>
           );
         },
-        // Expandable when we can show a trend (known check) or a failing sample.
-        rowExpandable: (record) => checks.has(record.check_id) || record.sample_failures !== null,
+        // Expandable when we can show a trend (known check), a failing sample, or the
+        // #1873 zero-sample suppression notice (also a null `sample_failures`).
+        rowExpandable: (record) =>
+          checks.has(record.check_id) ||
+          record.sample_failures !== null ||
+          record.redaction === 'zero_sample',
       }}
     />
   );

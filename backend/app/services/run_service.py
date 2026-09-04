@@ -37,6 +37,7 @@ from backend.app.db.chunked_dml import CHUNK_SIZE, chunked_dml
 from backend.app.db.models import (
     CHECK_ORDER,
     COMPARISON_KIND,
+    FAILING_TIERS,
     GX_ENGINE,
     RESULT_OPERATIONAL_STATUSES,
     RESULT_STATUSES,
@@ -838,8 +839,10 @@ def _values_by_column(rows: Sequence[Any]) -> dict[str, list[Any]]:
     return dict(out)
 
 
-# Tri-state redaction summary surfaced beside `sample_failures` (#424/#415).
-RedactionState = Literal["full", "partial", "none"]
+# Redaction summary surfaced beside `sample_failures` (#424/#415); `zero_sample` (#1873)
+# distinguishes a null sample SUPPRESSED by zero-sample mode (#1676) from one that was
+# genuinely empty — both read `null` on the wire otherwise.
+RedactionState = Literal["full", "partial", "none", "zero_sample"]
 
 
 @dataclass
@@ -1293,14 +1296,40 @@ def redact_sample_failures(
     return out
 
 
+# Result statuses whose outcome can carry a violating-row sample at all — `pass`/`skip`
+# never do, so a null sample there is never zero-sample suppression.
+_ZERO_SAMPLE_ELIGIBLE_STATUSES = frozenset({*FAILING_TIERS, "error"})
+
+# Check kinds that produce row-level content when they fail/error. The scalar monitor
+# kinds (freshness/volume/schema_drift/anomaly) compute a single number and structurally
+# never had a sample to suppress.
+_ZERO_SAMPLE_ELIGIBLE_KINDS = frozenset({_EXPECTATION_KIND, COMPARISON_KIND})
+
+
+def zero_sample_suppressed(*, status: str, check_kind: str | None) -> bool:
+    """Whether a null `sample_failures` on this result is zero-sample-mode
+    suppression (#1676) rather than genuinely having had nothing to redact (#1873).
+    Callers must additionally gate this on `Settings().privacy_zero_sample_mode`.
+    """
+    return status in _ZERO_SAMPLE_ELIGIBLE_STATUSES and check_kind in _ZERO_SAMPLE_ELIGIBLE_KINDS
+
+
 def redact_sample_failures_with_state(
     sample: dict[str, Any] | None,
     *,
     tested_column: str | None = None,
     policy: dict[str, Any] | None = None,
     tags: Mapping[str, str] | None = None,
+    zero_sample: bool = False,
 ) -> tuple[dict[str, Any] | None, RedactionState | None, list[str]]:
-    """`redact_sample_failures` plus an honest redaction summary (#424)."""
+    """`redact_sample_failures` plus an honest redaction summary (#424).
+
+    `zero_sample=True` (from `zero_sample_suppressed`) reports `"zero_sample"` for a
+    null sample instead of `None` — a suppressed sample must not read the same as a
+    check that never had one.
+    """
+    if sample is None and zero_sample:
+        return None, "zero_sample", []
     tracker = _RedactionTracker()
     redacted = redact_sample_failures(
         sample, tested_column=tested_column, policy=policy, tags=tags, tracker=tracker

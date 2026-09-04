@@ -49,7 +49,10 @@ export interface Result {
   observed_value: Record<string, unknown> | null;
   expected_value: Record<string, unknown> | null;
   sample_failures: Record<string, unknown> | null;
-  redaction: 'full' | 'partial' | 'none' | null;
+  /** `zero_sample` (#1873) means the deployment's zero-sample privacy mode never
+   *  persisted a sample for this result at all — distinct from a `null` sample
+   *  that genuinely had nothing to redact. */
+  redaction: 'full' | 'partial' | 'none' | 'zero_sample' | null;
   redacted_columns: string[];
   /** How much of the dataset this check saw (#595); null = a complete read. */
   sampling?: ResultSampling | null;
