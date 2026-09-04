@@ -108,7 +108,7 @@ function SecretsTab() {
       type="info"
       showIcon
       title="Credentials live in the secret store, never the database"
-      description="Connection credentials and notification webhooks are written through the configured secret store (Azure Key Vault in production) and referenced only by key. There's nothing to edit here — secrets are rotated from the connection's Re-authenticate action."
+      description="Connection credentials and notification webhooks are written through the configured secret store (Azure Key Vault, AWS Secrets Manager, or OpenBao, depending on the deployment) and referenced only by key. There's nothing to edit here — secrets are rotated from the connection's Re-authenticate action."
     />
   );
 }
@@ -121,10 +121,10 @@ function NotificationsTab() {
       title="Alerts are configured per suite"
       description={
         <span>
-          Microsoft Teams alerts (webhook + fail / warn / always threshold) are set on each suite so
-          the owning team is notified for their data. Open a suite from{' '}
-          <Link to="/suites">Suites</Link> to configure its notifications. A workspace-wide default
-          channel is a post-v1 follow-up.
+          Teams, Slack and email alerts (webhook/recipient + fail / warn / always threshold) are set
+          on each suite so the owning team is notified for their data, falling back to the
+          workspace-wide default configured for the deployment when a suite sets none. Open a suite
+          from <Link to="/suites">Suites</Link> to configure its notifications.
         </span>
       }
     />

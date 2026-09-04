@@ -9,6 +9,7 @@ One-page reference: what runs where. For the readable tour of everything DataQ o
 | Check kind | Snowflake | Unity Catalog | ADLS Gen2 (files) | S3 (files)ˢ | Iceberg |
 |---|:-:|:-:|:-:|:-:|:-:|
 | GX expectations (column / table shape) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Snowflake DMF (native metric functions)ᵈ | ✅ | — | — | — | — |
 | Custom SQL (rows returned = failures)ᶜ | ✅ | ✅ | — | — | — |
 | Freshness monitor (hours since latest timestamp) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Freshness from **file arrival time** (no column — catches "no new file") | — | — | ✅ | ✅ | — |
@@ -50,6 +51,12 @@ Unity Catalog table, including the operational-`error` path when a column will n
 resolve. Custom SQL stays binary pass/fail on both SQL datasources (ADR 0019 §4 — a
 row count is not a bandable metric), so `metric_value` is null by design, not by
 omission.
+
+ᵈ **Snowflake DMF** (ADR [0036](../adr/0036-connection-anchored-check-engines.md)) is the
+first platform-native check engine — an alternative `check.engine` for four expectation
+types (null count, null percent, duplicate count, unique count) that invokes Snowflake's
+own `SNOWFLAKE.CORE.*` metric functions instead of a GX expectation. Engine is selected per
+check, on a Snowflake connection only; `kind` stays `expectation` either way.
 
 ˢ **S3 means AWS S3 *and* any S3-compatible store** — MinIO, Ceph/RadosGW, Cloudflare R2,
 Wasabi, Backblaze B2, SeaweedFS or an on-prem gateway. Set the connection's optional
@@ -157,7 +164,7 @@ catalog knowing about them (mechanism ④).
 
 | Capability | Notes |
 |---|---|
-| Channels | Teams (workspace + per-suite webhook), Slack, email — [details](../guides/notifications.md) |
+| Channels | Teams, Slack, email — each workspace default or per-suite override; reusable channels (incl. a generic webhook type) also exist, API-only currently — [details](../guides/notifications.md) |
 | Threshold | Per suite: fail-only / warn+ (default) / always |
 | Routing | Severity-aware urgency; critical escalates |
 | Dedup | First failure / escalation only; clean run resets |

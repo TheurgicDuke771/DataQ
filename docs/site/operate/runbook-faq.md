@@ -44,9 +44,10 @@ Manual checklist (the mutating tail):
 
 ## Known limitations
 
-- **GX-only** check engine — platform-native engines are connection-anchored per ADR 0036
-  (Snowflake DMF is the first planned native engine; Databricks DQX and Dataplex are
-  trigger-gated); batch-oriented (not streaming).
+- **GX by default**, with platform-native engines connection-anchored per ADR 0036 — a
+  Snowflake connection additionally offers the **DMF** engine (four expectation types
+  currently); Databricks DQX and Dataplex are trigger-gated and not yet built. Batch-oriented
+  (not streaming).
 - **Single tenant**, suite-level access sharing **plus a stored workspace role** — Admin / Member / Viewer (ADR 0033); connection management is Admin-only. `WORKSPACE_ADMIN_EMAILS` is a bootstrap seed and lockout break-glass, not the day-to-day mechanism.
 - Interactive **datasource browsing** (container browser, 3-level UC catalog picker) is
   deferred — you specify targets explicitly. JSON flat files deferred (CSV/Parquet in v1).

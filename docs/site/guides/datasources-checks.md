@@ -151,16 +151,25 @@ column — the symptom is a **column dropdown offering a single long name** like
 ### Very large targets: sampling and the scan cap
 
 Snowflake and Iceberg monitors answer from the warehouse or from file metadata, so
-size is not a worker concern there. **Flat files and Unity Catalog are different**:
-their expectations run against a DataFrame the worker holds, so a big enough target
-runs the worker out of memory. Two things guard that.
+size is not a worker concern there. **Unity Catalog is different for the checks that
+still need a DataFrame**: the common expectation types (not-null, unique, between,
+in-set, length, regex, row-count and more) push down to a Databricks-SQL batch by
+default, so the warehouse evaluates them and the worker never materializes the
+table — the same "cost scales with the warehouse" shape as Snowflake. A handful of
+types (`expect_column_values_to_be_of_type`, suites with a declared sample) still
+run against a DataFrame the worker holds, and **flat files always do**, so a big
+enough target on either of those paths runs the worker out of memory. Two things
+guard that.
 
-**A hard cap, on by default.** Before a run materializes anything it checks the
-object's size (flat files) or the table's `COUNT(*)` (Unity Catalog). Over the cap
-the run ends **failed** with a message naming the target, the two numbers, and what
-to do — never a half-finished run or a silent hang. Defaults are 128 MiB and 1.5M
-rows, tuned for the reference 2 GiB worker; an operator can change them
-(`RUN_MAX_SCAN_BYTES` / `RUN_MAX_SCAN_ROWS` — see `deploy/README.md`).
+**A hard cap, on by default, on the DataFrame path.** Before a run materializes
+anything it checks the object's size (flat files) or the table's `COUNT(*)` (Unity
+Catalog, when the run isn't pushed down). Over the cap the run ends **failed** with
+a message naming the target, the two numbers, and what to do — never a
+half-finished run or a silent hang. Defaults are 128 MiB and 1.5M rows, tuned for
+the reference 2 GiB worker; an operator can change them (`RUN_MAX_SCAN_BYTES` /
+`RUN_MAX_SCAN_ROWS` — see `deploy/README.md`). A pushed-down Unity Catalog check is
+not subject to this cap — it has been run against 200M-row tables with flat worker
+memory.
 
 **Sampling, opt-in per suite.** Add a `sampling` block to the suite's target and
 checks run against a bounded sample instead of the whole dataset:
@@ -290,6 +299,15 @@ a two-part name would silently resolve against the session's default schema — 
 its custom-SQL checks (with that reason on the result) while every other check in
 the suite runs normally. Set the schema on the suite's run target to fix it.
 Snowflake is unaffected — its schema comes from the connection.
+
+### Snowflake DMF (ADR 0036)
+
+On a Snowflake connection, the check editor offers a separate **Snowflake DMF**
+category for four types — null count, null percent, duplicate count, unique count —
+that run on Snowflake's own `SNOWFLAKE.CORE.*` **Data Metric Functions** instead of a
+GX expectation. Same authoring flow (pick the type, set the column); the difference
+is the `engine` the check runs on (`dmf` vs the default `gx`). Not offered on other
+datasources.
 
 ### Freshness monitor (all datasources — ADR 0012/0030)
 
