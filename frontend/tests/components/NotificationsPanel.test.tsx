@@ -250,6 +250,27 @@ describe('NotificationsPanel', () => {
 });
 
 describe('NotificationsPanel channel picker', () => {
+  it('fetches listChannels and listSuiteChannels in parallel for a manager (#1879 review)', async () => {
+    // An earlier version of the #1879 fix gated `ManagedChannelPicker`'s mount on
+    // `linked` having already resolved, which serialized the two GETs. Assert
+    // listChannels is called WITHOUT waiting on listSuiteChannels to resolve first.
+    mockGet.mockResolvedValue(CONFIG);
+    let resolveLinked: (v: NotificationChannel[]) => void = () => {};
+    mockListSuiteChannels.mockReturnValue(
+      new Promise((resolve) => {
+        resolveLinked = resolve;
+      }),
+    );
+    mockListChannels.mockResolvedValue([channel({ id: 'c1', name: 'on-call' })]);
+    renderPanel();
+
+    await waitFor(() => expect(mockListChannels).toHaveBeenCalled());
+    // listSuiteChannels is still unresolved at this point — proving listChannels
+    // didn't wait for it.
+    expect(mockListSuiteChannels).toHaveBeenCalled();
+    resolveLinked([]);
+  });
+
   it("pre-selects the suite's already-linked channels", async () => {
     mockGet.mockResolvedValue(CONFIG);
     mockListChannels.mockResolvedValue([
