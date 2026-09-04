@@ -1523,6 +1523,59 @@ def test_get_run_results_reports_per_check_engine(db_session: Any, monkeypatch: 
     assert by_name == {"dmf check": "dmf", "gx check": "gx"}
 
 
+def test_get_run_results_reports_the_engine_as_of_the_run_not_current(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """/code-review on #1876: a result produced while the check was `dmf` must
+    keep reporting `engine: "dmf"` even after the check is later re-pointed to
+    `gx` — the live `checks[...].engine` the first cut read is wrong here, since
+    the result's `observed_value` is still the old engine's output.
+
+    `created_at` is forced apart explicitly (not relied on from wall-clock call
+    ordering) since two ORM inserts in the same test can land in the same
+    microsecond, which `historical_check_engine`'s `<=` tie-break would resolve
+    to the LATER version — the same edge case `test_historical_check_context.py`
+    guards against for `(column, expectation_type)`.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+    created = server.create_check(
+        str(suite.id),
+        name="null count",
+        expectation_type="dmf:null_count",
+        config={"column": "EMAIL"},
+        fail_threshold=1,
+        engine="dmf",
+    )
+    check_id = uuid.UUID(created["id"])
+    t0 = datetime.now(UTC)
+    run = Run(suite_id=suite.id, status="succeeded")
+    db_session.add(run)
+    db_session.flush()
+    db_session.add(Result(run_id=run.id, check_id=check_id, status="pass", created_at=t0))
+    db_session.commit()
+
+    # Re-point the check AFTER the result was written.
+    server.update_check(
+        str(suite.id),
+        created["id"],
+        expectation_type="expect_column_values_to_not_be_null",
+        config={"column": "EMAIL"},
+        engine="gx",
+    )
+    from backend.app.db.models import CheckVersion
+
+    latest_version = db_session.query(CheckVersion).filter_by(check_id=check_id, version_no=2).one()
+    latest_version.created_at = t0 + timedelta(seconds=1)
+    db_session.commit()
+
+    (check,) = server.get_run_results(str(run.id))["checks"]
+    assert check["engine"] == "dmf"
+
+
 def test_get_run_results_withholds_an_incomplete_runs_partial_results(
     db_session: Any, monkeypatch: Any
 ) -> None:

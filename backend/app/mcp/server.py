@@ -382,6 +382,10 @@ def _run_results_payload(
     # written (#1489) — not the check's current state, which is freely editable
     # after the fact and would silently re-label what old results show/audit.
     context = run_service.historical_check_context(session, results, checks)
+    # Same rule for `engine` (#1869 review): an old result's observed_value/
+    # metric_value reflect whichever engine actually produced it, not whatever
+    # the check has since been re-pointed to.
+    engine_by_result = run_service.historical_check_engine(session, results, checks)
 
     def _tested_column(result_id: uuid.UUID) -> str | None:
         return context.get(result_id, (None, None))[0]
@@ -465,11 +469,10 @@ def _run_results_payload(
                 # WHO evaluated this check (ADR 0036) — a dmf result's
                 # `metric_value`/`observed_value` is a Snowflake DMF metric, not a
                 # GX expectation output, and the two have different semantics an
-                # LLM would otherwise conflate. The check's CURRENT engine, same
-                # as `name` above — not resolved as of the run, since a
-                # re-pointed check re-evaluates under the new engine on its next
-                # run regardless of which engine produced this particular result.
-                "engine": ((checks[r.check_id].engine or "gx") if r.check_id in checks else None),
+                # LLM would otherwise conflate. Resolved AS OF this result (like
+                # `context` above): a check re-pointed gx<->dmf after this run
+                # must not have its old result mislabeled with the new engine.
+                "engine": engine_by_result.get(r.id),
                 "status": r.status,
                 "metric_value": _num(r.metric_value),
                 # How much of the dataset this check actually saw (#595).

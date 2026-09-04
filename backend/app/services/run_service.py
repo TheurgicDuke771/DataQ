@@ -1001,6 +1001,34 @@ def historical_check_context(
     )
 
 
+def _versions_by_check(
+    session: Session, check_ids: set[uuid.UUID]
+) -> dict[uuid.UUID, list[CheckVersion]]:
+    versions_by_check: dict[uuid.UUID, list[CheckVersion]] = defaultdict(list)
+    if check_ids:
+        for version in session.scalars(
+            select(CheckVersion)
+            .where(CheckVersion.check_id.in_(check_ids))
+            .order_by(CheckVersion.check_id, CheckVersion.created_at)
+        ):
+            versions_by_check[version.check_id].append(version)
+    return versions_by_check
+
+
+def _effective_version(versions: list[CheckVersion] | None, at: datetime) -> CheckVersion | None:
+    if not versions:
+        return None
+    # Last version at-or-before `at`; if all are after (clock skew), the earliest
+    # beats the live check as an approximation of history.
+    effective = versions[0]
+    for version in versions:
+        if version.created_at <= at:
+            effective = version
+        else:
+            break
+    return effective
+
+
 def historical_check_context_at[K: Hashable](
     session: Session,
     subjects: Mapping[K, tuple[uuid.UUID | None, datetime]],
@@ -1012,34 +1040,45 @@ def historical_check_context_at[K: Hashable](
     incident's evidence at its `last_seen_at` (#1809).
     """
     check_ids = {check_id for check_id, _at in subjects.values() if check_id is not None}
-    versions_by_check: dict[uuid.UUID, list[CheckVersion]] = defaultdict(list)
-    if check_ids:
-        for version in session.scalars(
-            select(CheckVersion)
-            .where(CheckVersion.check_id.in_(check_ids))
-            .order_by(CheckVersion.check_id, CheckVersion.created_at)
-        ):
-            versions_by_check[version.check_id].append(version)
+    versions_by_check = _versions_by_check(session, check_ids)
 
     def _resolve(check_id: uuid.UUID | None, at: datetime) -> tuple[str | None, str | None]:
         check = checks.get(check_id) if check_id is not None else None
-        versions = versions_by_check.get(check_id) if check_id is not None else None
-        if not versions:
+        effective = _effective_version(
+            versions_by_check.get(check_id) if check_id is not None else None, at
+        )
+        if effective is None:
             return (
                 (check.config.get("column") if check else None),
                 (check.expectation_type if check else None),
             )
-        # Last version at-or-before `at`; if all are after (clock skew), the earliest
-        # beats the live check as an approximation of history.
-        effective = versions[0]
-        for version in versions:
-            if version.created_at <= at:
-                effective = version
-            else:
-                break
         return effective.config.get("column"), effective.expectation_type
 
     return {key: _resolve(check_id, at) for key, (check_id, at) in subjects.items()}
+
+
+def historical_check_engine(
+    session: Session,
+    results: Sequence[Result],
+    checks: Mapping[uuid.UUID, Check],
+) -> dict[uuid.UUID, str]:
+    """Per-**result** `engine` (ADR 0036), resolved as of WHEN that result was
+    written — a check re-pointed gx<->dmf after a run must not have its old
+    results' `engine` reported as the check's current one (#1869 review).
+    """
+    check_ids = {r.check_id for r in results if r.check_id is not None}
+    versions_by_check = _versions_by_check(session, check_ids)
+
+    def _resolve(check_id: uuid.UUID | None, at: datetime) -> str:
+        check = checks.get(check_id) if check_id is not None else None
+        effective = _effective_version(
+            versions_by_check.get(check_id) if check_id is not None else None, at
+        )
+        if effective is not None:
+            return effective.engine or GX_ENGINE
+        return (check.engine or GX_ENGINE) if check else GX_ENGINE
+
+    return {r.id: _resolve(r.check_id, r.created_at) for r in results}
 
 
 # Expectation types whose scalar `observed_value` is a literal cell, not a computed statistic
