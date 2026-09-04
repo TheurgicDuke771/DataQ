@@ -3333,10 +3333,15 @@
               }
             ],
             "title": "Region"
+          },
+          "zero_sample_mode": {
+            "title": "Zero Sample Mode",
+            "type": "boolean"
           }
         },
         "required": [
           "region",
+          "zero_sample_mode",
           "external_transfers"
         ],
         "title": "DeploymentPostureRead",
