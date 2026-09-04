@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "f052c8d617d6",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1530-1531-dmf-dryrun-mcp-engine",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/checks.py",
+    "backend/app/mcp/server.py",
+    "backend/app/services/dryrun_service.py",
+    "backend/tests/api/test_checks.py",
+    "backend/tests/mcp/test_mcp_tools.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f0/52c8d617d6/0/metadata.json",
+      "transcript": "/f0/52c8d617d6/0/full.jsonl",
+      "compact_transcript": "/f0/52c8d617d6/0/transcript.jsonl",
+      "content_hash": "/f0/52c8d617d6/0/content_hash.txt",
+      "prompt": "/f0/52c8d617d6/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 192,
+    "cache_creation_tokens": 215902,
+    "cache_read_tokens": 18063008,
+    "output_tokens": 42952,
+    "api_call_count": 96
+  }
+}

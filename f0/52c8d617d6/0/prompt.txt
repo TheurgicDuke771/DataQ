@@ -1,0 +1,14 @@
+Hey, 
+Check the remaining items from week 5 
+research and plan the details [web and internal docs]. 
+Check filled issues, create additional if required. 
+rank them based on priority and dependencies. 
+Create a TODO list, start the execution. 
+
+note: keep the comments at minimum [~ 0.2 prose to code ratio]
+
+---
+
+proceed straight through this order. 
+also you can use small number of parallel agents (~3) if required. 
+complete as much as possible.
