@@ -318,4 +318,16 @@ describe('NotificationsPanel channel picker', () => {
 
     expect(await screen.findByText('No channels linked.')).toBeInTheDocument();
   });
+
+  it('never fetches the full workspace channel list for a viewer (#1879)', async () => {
+    // A viewer only ever sees the already-linked tags (from listSuiteChannels) — the
+    // full listChannels fetch exists solely to populate the editable Select's options,
+    // which a viewer never renders.
+    mockGet.mockResolvedValue(CONFIG);
+    mockListSuiteChannels.mockResolvedValue([channel({ id: 'c1', name: 'on-call' })]);
+    renderPanel({ canManage: false });
+
+    expect(await screen.findByText('on-call')).toBeInTheDocument();
+    expect(mockListChannels).not.toHaveBeenCalled();
+  });
 });

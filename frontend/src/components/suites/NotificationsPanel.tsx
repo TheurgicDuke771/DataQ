@@ -88,7 +88,13 @@ export function NotificationsPanel({
  * independently server-side.
  */
 function ChannelPicker({ suiteId, canManage }: { suiteId: string; canManage: boolean }) {
-  const all = useAsyncData(listChannels);
+  // The full workspace channel list is only ever rendered as `<Select>` OPTIONS for
+  // someone who can actually link/unlink — a viewer sees just the already-linked tags
+  // below. Fetching it unconditionally cost every suite-detail page view an extra GET
+  // for viewers, who never use it (#1879). `listChannels` is only called from the
+  // `canManage` branch's own component, so a viewer's mount never issues that hook's
+  // effect at all — conditionally mounting a CHILD component is Rules-of-Hooks-safe;
+  // conditionally calling the hook itself inside one component would not be.
   const linked = useAsyncData(() => listSuiteChannels(suiteId));
 
   return (
@@ -103,17 +109,7 @@ function ChannelPicker({ suiteId, canManage }: { suiteId: string; canManage: boo
         </Flex>
       }
     >
-      {(all.state.status === 'loading' || linked.state.status === 'loading') && (
-        <Spin description="Loading channels…" />
-      )}
-      {all.state.status === 'error' && (
-        <Alert
-          type="error"
-          showIcon
-          title="Failed to load channels"
-          description={all.state.error}
-        />
-      )}
+      {linked.state.status === 'loading' && <Spin description="Loading channels…" />}
       {linked.state.status === 'error' && (
         <Alert
           type="error"
@@ -122,34 +118,69 @@ function ChannelPicker({ suiteId, canManage }: { suiteId: string; canManage: boo
           description={linked.state.error}
         />
       )}
-      {all.state.status === 'ok' && linked.state.status === 'ok' && (
-        <ChannelPickerBody
-          // Remount when the linked set actually changes underneath us (render-
-          // phase reset, no setState-in-effect) — a same-set reload keeps the key.
-          key={linked.state.data
-            .map((c) => c.id)
-            .sort()
-            .join(',')}
-          suiteId={suiteId}
-          canManage={canManage}
-          allChannels={all.state.data}
-          initialLinked={linked.state.data}
-          onResync={linked.reload}
-        />
-      )}
+      {linked.state.status === 'ok' &&
+        (canManage ? (
+          <ManagedChannelPicker
+            suiteId={suiteId}
+            initialLinked={linked.state.data}
+            onResync={linked.reload}
+          />
+        ) : linked.state.data.length === 0 ? (
+          <Typography.Text type="secondary">No channels linked.</Typography.Text>
+        ) : (
+          <Flex gap={4} wrap>
+            {linked.state.data.map((c) => (
+              <Tag key={c.id}>{c.name}</Tag>
+            ))}
+          </Flex>
+        ))}
     </Card>
+  );
+}
+
+/** The editable multi-select — mounted only for a `canManage` caller (#1879), so its
+ *  `listChannels` fetch (the full workspace list, needed for the option set) never
+ *  runs for a viewer. */
+function ManagedChannelPicker({
+  suiteId,
+  initialLinked,
+  onResync,
+}: {
+  suiteId: string;
+  initialLinked: NotificationChannel[];
+  onResync: () => void;
+}) {
+  const all = useAsyncData(listChannels);
+
+  if (all.state.status === 'loading') return <Spin description="Loading channels…" />;
+  if (all.state.status === 'error') {
+    return (
+      <Alert type="error" showIcon title="Failed to load channels" description={all.state.error} />
+    );
+  }
+  return (
+    <ChannelPickerBody
+      // Remount when the linked set actually changes underneath us (render-
+      // phase reset, no setState-in-effect) — a same-set reload keeps the key.
+      key={initialLinked
+        .map((c) => c.id)
+        .sort()
+        .join(',')}
+      suiteId={suiteId}
+      allChannels={all.state.data}
+      initialLinked={initialLinked}
+      onResync={onResync}
+    />
   );
 }
 
 function ChannelPickerBody({
   suiteId,
-  canManage,
   allChannels,
   initialLinked,
   onResync,
 }: {
   suiteId: string;
-  canManage: boolean;
   allChannels: NotificationChannel[];
   initialLinked: NotificationChannel[];
   onResync: () => void;
@@ -157,18 +188,6 @@ function ChannelPickerBody({
   const { message } = App.useApp();
   const [selected, setSelected] = useState<string[]>(initialLinked.map((c) => c.id));
   const [saving, setSaving] = useState(false);
-
-  if (!canManage) {
-    return initialLinked.length === 0 ? (
-      <Typography.Text type="secondary">No channels linked.</Typography.Text>
-    ) : (
-      <Flex gap={4} wrap>
-        {initialLinked.map((c) => (
-          <Tag key={c.id}>{c.name}</Tag>
-        ))}
-      </Flex>
-    );
-  }
 
   const onChange = async (nextIds: string[]) => {
     const added = nextIds.filter((id) => !selected.includes(id));
