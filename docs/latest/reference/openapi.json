@@ -1624,6 +1624,13 @@
             ],
             "title": "Critical Threshold"
           },
+          "engine": {
+            "default": "gx",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Engine",
+            "type": "string"
+          },
           "expectation_type": {
             "maxLength": 128,
             "minLength": 1,
