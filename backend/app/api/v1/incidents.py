@@ -21,7 +21,7 @@ from backend.app.core.errors import DataQError
 from backend.app.core.roles import is_workspace_admin
 from backend.app.db.models import INCIDENT_STATUSES, Incident, User
 from backend.app.db.session import get_db
-from backend.app.services import incident_service
+from backend.app.services import incident_service, llm_rca
 
 router = APIRouter(tags=["incidents"])
 
@@ -197,6 +197,49 @@ def get_incident(
     )
     evidence = incident_service.evidence_for_caller(db, incident, user_id=current_user.id)
     return _to_detail(incident, evidence)
+
+
+class IncidentNarrativeRead(ApiModel):
+    """The latest root-cause narrative for an incident (#1633), as the UI reads it.
+
+    `narrative` is null both when none was ever generated (the common case — RCA
+    is on demand) and when one exists but is withheld from this caller; the two
+    are told apart by `withheld_reason`, so a client never renders "no narrative"
+    over one it simply may not read.
+    """
+
+    narrative: dict[str, Any] | None
+    invocation_id: uuid.UUID | None
+    generated_at: datetime | None
+    withheld_reason: str | None
+
+
+@router.get(
+    "/incidents/{incident_id}/narrative",
+    response_model=IncidentNarrativeRead,
+    summary="Latest root-cause narrative for an incident (view)",
+)
+def get_incident_narrative(
+    incident_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> IncidentNarrativeRead:
+    incident = incident_service.load_visible_incident(
+        db, incident_id, user_id=current_user.id, for_action=False
+    )
+    invocation, withheld = llm_rca.narrative_for_caller(
+        db, incident, user_id=current_user.id, is_admin=is_workspace_admin(current_user)
+    )
+    if invocation is None:
+        return IncidentNarrativeRead(
+            narrative=None, invocation_id=None, generated_at=None, withheld_reason=None
+        )
+    return IncidentNarrativeRead(
+        narrative=None if withheld else invocation.response,
+        invocation_id=invocation.id,
+        generated_at=invocation.finished_at or invocation.created_at,
+        withheld_reason=withheld,
+    )
 
 
 @router.post(

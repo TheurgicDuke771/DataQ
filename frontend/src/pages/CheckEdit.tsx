@@ -16,6 +16,8 @@ import { CheckHistoryDrawer } from '../components/checks/CheckHistoryDrawer';
 import { CheckTrend } from '../components/checks/CheckTrend';
 import { ColumnProfilePanel } from '../components/checks/ColumnProfilePanel';
 import { DryRunPreview } from '../components/checks/DryRunPreview';
+import { SqlGeneratePanel } from '../components/checks/SqlGeneratePanel';
+import { isCustomSql } from '../components/checks/customSql';
 import {
   configFieldsFor,
   effectiveEngineFor,
@@ -244,6 +246,11 @@ function CheckEditForm({
               {spec.description}
             </Typography.Paragraph>
             {showEngineChoice && <EngineField />}
+            {isCustomSql(selectedType) && (
+              <Form.Item>
+                <SqlGeneratePanel suiteId={suiteId} form={form} />
+              </Form.Item>
+            )}
             {configFieldsFor(spec, connectionType)
               .filter((field) => fieldVisible(field, configValues))
               .map((field) => (

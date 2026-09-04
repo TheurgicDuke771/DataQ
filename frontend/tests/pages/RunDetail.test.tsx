@@ -21,7 +21,17 @@ vi.mock('../../src/api/suites', async (importOriginal) => {
 
 vi.mock('../../src/api/incidents', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api/incidents')>();
-  return { ...actual, listIncidents: vi.fn(), getIncident: vi.fn() };
+  return {
+    ...actual,
+    listIncidents: vi.fn(),
+    getIncident: vi.fn(),
+    getIncidentNarrative: vi.fn().mockResolvedValue({
+      narrative: null,
+      invocation_id: null,
+      generated_at: null,
+      withheld_reason: null,
+    }),
+  };
 });
 
 vi.mock('../../src/utils/download', async (importOriginal) => {

@@ -47,6 +47,7 @@ import { ConnectionTypeAvatar } from '../components/connections/connectionVisual
 import { useCanAuthor, useWorkspaceRole } from '../auth/useMe';
 import { Page } from '../components/layout/Page';
 import { LiveRunProgress } from '../components/runs/LiveRunProgress';
+import { SuggestChecksDrawer } from '../components/suites/SuggestChecksDrawer';
 import {
   DELETION_IMPACT_UNAVAILABLE,
   describeDeletionImpact,
@@ -570,6 +571,7 @@ function ChecksList({
 }) {
   const { message, modal } = App.useApp();
   const confirmDelete = useConfirmDelete();
+  const [suggestOpen, setSuggestOpen] = useState(false);
   // Ticks so isSnoozed() re-evaluates while the page stays open: without it an
   // expired snooze keeps showing its badge/Unsnooze until the next refetch.
   const [now, setNow] = useState(() => Date.now());
@@ -637,11 +639,24 @@ function ChecksList({
       size="small"
       title={`Checks (${checks.length})`}
       extra={
-        <Button type="primary" size="small" onClick={onAdd}>
-          Add check
-        </Button>
+        <Flex gap={8}>
+          {canEditChecks && (
+            <Button size="small" onClick={() => setSuggestOpen(true)}>
+              Suggest checks
+            </Button>
+          )}
+          <Button type="primary" size="small" onClick={onAdd}>
+            Add check
+          </Button>
+        </Flex>
       }
     >
+      <SuggestChecksDrawer
+        suiteId={suiteId}
+        open={suggestOpen}
+        onClose={() => setSuggestOpen(false)}
+        onAdded={onChanged}
+      />
       {checks.length === 0 ? (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}

@@ -23,6 +23,7 @@ import uuid
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_logger
@@ -289,6 +290,7 @@ def build_prompt(
     profile_text, columns = _profile_prompt(
         session, suite, connection, secret_store=secret_store, actor=actor
     )
+    remember_columns(session, invocation, columns)
     cadence_text, include_freshness = _cadence_context(session, suite)
     coverage_text = _coverage_warning_text(_near_misses(session, suite, actor))
     qualified = llm_prompt_context.qualified_target(suite)
@@ -301,12 +303,52 @@ def build_prompt(
     return prompt, system, schema
 
 
+#: `request` key carrying the column names the prompt was built from — the
+#: validator refuses a suggestion naming any other column (#1720). Persisted on
+#: the row (explicit UPDATE, never a dirtied ORM object — see execute_invocation)
+#: so the record shows what "validated" was measured against.
+COLUMNS_KEY = "columns"
+
+
+def remember_columns(session: Session, invocation: LlmInvocation, columns: list[str]) -> None:
+    session.execute(
+        update(LlmInvocation)
+        .where(LlmInvocation.id == invocation.id)
+        .values(request={**(invocation.request or {}), COLUMNS_KEY: list(columns)})
+    )
+    session.commit()
+
+
+def _known_columns(session: Session, invocation: LlmInvocation) -> set[str]:
+    """The prompt's column list, case-folded (Snowflake folds unquoted identifiers;
+    the profiler already reports one casing). Refuses rather than skipping when
+    absent: a validator that cannot see the columns cannot call anything validated.
+    """
+    request = session.scalar(select(LlmInvocation.request).where(LlmInvocation.id == invocation.id))
+    raw = (request or {}).get(COLUMNS_KEY) if isinstance(request, dict) else None
+    if not isinstance(raw, list) or not raw:
+        raise LLMRequestInvalidError(
+            "the column list this suggestion run was built from is missing — cannot validate"
+        )
+    return {str(c).casefold() for c in raw}
+
+
+def _column_rejection(config: dict[str, Any], key: str, known: set[str]) -> str | None:
+    name = config.get(key)
+    if not isinstance(name, str) or name.casefold() not in known:
+        echoed = repr(name)[:_REASON_ECHO_MAX_CHARS]
+        return f"{key} {echoed} is not a column of the target table"
+    return None
+
+
 def _validate_freshness_suggestion(
-    connection_type: str, raw: dict[str, Any]
+    connection_type: str, raw: dict[str, Any], known_columns: set[str]
 ) -> tuple[dict[str, Any] | None, str | None]:
     config = raw.get("config")
     if not isinstance(config, dict):
         return None, "config must be an object"
+    if (reason := _column_rejection(config, "column", known_columns)) is not None:
+        return None, reason
     threshold_raw = raw.get("fail_threshold_hours")
     fail_threshold: Decimal | None = None
     if threshold_raw is not None:
@@ -347,14 +389,16 @@ def _validate_freshness_suggestion(
 
 
 def _validate_one(
-    connection_type: str, raw: dict[str, Any]
+    connection_type: str, raw: dict[str, Any], known_columns: set[str]
 ) -> tuple[dict[str, Any] | None, str | None]:
-    """One suggestion through the same gate a human's `create_check` reaches.
-    Returns (accepted suggestion, None) or (None, rejection reason).
+    """One suggestion through the same gate a human's `create_check` reaches,
+    plus the one check `create_check` cannot make — that the named column is a
+    column of the table the prompt described (#1720). Returns (accepted
+    suggestion, None) or (None, rejection reason).
     """
     expectation_type = raw.get("expectation_type")
     if expectation_type == FRESHNESS_EXPECTATION_TYPE:
-        return _validate_freshness_suggestion(connection_type, raw)
+        return _validate_freshness_suggestion(connection_type, raw, known_columns)
     config = raw.get("config")
     if (
         not isinstance(expectation_type, str)
@@ -369,6 +413,8 @@ def _validate_one(
         return None, f"expectation_type {echoed} is not in the offered vocabulary"
     if not isinstance(config, dict):
         return None, "config must be an object"
+    if (reason := _column_rejection(config, "column", known_columns)) is not None:
+        return None, reason
     try:
         check_service.validate_expectation_check(expectation_type, config)
         check_service.reject_dataframe_only_expectation(
@@ -436,6 +482,7 @@ def validate_output(
     if connection is None:
         raise LLMRequestInvalidError("the suite's connection no longer exists")
     connection_type = connection.type
+    known_columns = _known_columns(session, invocation)
     raw_suggestions = payload.get("suggestions")
     if not isinstance(raw_suggestions, list):
         raise LLMOutputInvalidError("provider did not return a suggestions list")
@@ -459,7 +506,7 @@ def validate_output(
                 }
             )
             continue
-        ok, reason = _validate_one(connection_type, raw)
+        ok, reason = _validate_one(connection_type, raw, known_columns)
         if ok is None:
             rejected.append({"expectation_type": raw.get("expectation_type"), "reason": reason})
             continue

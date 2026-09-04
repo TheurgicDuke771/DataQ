@@ -18,6 +18,12 @@ vi.mock('../../src/api/incidents', () => ({
   acknowledgeIncident: vi.fn(),
   resolveIncident: vi.fn(),
   getIncident: vi.fn(),
+  getIncidentNarrative: vi.fn().mockResolvedValue({
+    narrative: null,
+    invocation_id: null,
+    generated_at: null,
+    withheld_reason: null,
+  }),
 }));
 const mockList = vi.mocked(listIncidents);
 const mockAck = vi.mocked(acknowledgeIncident);

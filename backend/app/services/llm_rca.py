@@ -456,7 +456,14 @@ def latest_narrative_for_incident(
     comment on this) the same way #1648's `get_enabled_binding` does; the
     tiebreak is stable-but-arbitrary, not truly "most recent".
     """
-    invocation = session.scalars(
+    invocation = latest_narrative_invocation(session, incident_id)
+    return invocation.response if invocation is not None else None
+
+
+def latest_narrative_invocation(session: Session, incident_id: uuid.UUID) -> LlmInvocation | None:
+    """The row behind `latest_narrative_for_incident` — the UI read needs the
+    requester and timestamp beside the response."""
+    return session.scalars(
         select(LlmInvocation)
         .where(
             LlmInvocation.kind == RCA_KIND,
@@ -465,7 +472,34 @@ def latest_narrative_for_incident(
         )
         .order_by(LlmInvocation.created_at.desc(), LlmInvocation.id.desc())
     ).first()
-    return invocation.response if invocation is not None else None
+
+
+#: Why a stored narrative is not shown to a caller who can otherwise read the
+#: incident — the same rule alert delivery applies (`latest_narrative_for_alert`).
+NARRATIVE_WITHHELD_CROSS_SUITE = (
+    "generated from another user's view of an asset that other suites also check; "
+    "request your own to read one scoped to your grants"
+)
+
+
+def narrative_for_caller(
+    session: Session, incident: Incident, *, user_id: uuid.UUID, is_admin: bool
+) -> tuple[LlmInvocation | None, str | None]:
+    """The latest narrative a caller may read, or `(row, reason)` when one exists
+    but is withheld. A narrative is free text built from its REQUESTER's grant-scoped
+    view: the requester and a workspace admin always see it; anyone else only when
+    the incident's evidence shows no same-asset sibling on another suite, since a
+    cross-suite check name inside a sentence cannot be stripped after the fact.
+    """
+    invocation = latest_narrative_invocation(session, incident.id)
+    if invocation is None:
+        return None, None
+    if is_admin or invocation.requested_by_user_id == user_id:
+        return invocation, None
+    evidence = incident.evidence if isinstance(incident.evidence, dict) else {}
+    if evidence.get("same_asset_siblings"):
+        return invocation, NARRATIVE_WITHHELD_CROSS_SUITE
+    return invocation, None
 
 
 def latest_narrative_for_alert(session: Session, incident: Incident) -> dict[str, Any] | None:

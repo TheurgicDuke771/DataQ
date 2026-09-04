@@ -21,6 +21,7 @@ import {
   RESULT_STATUS_COLORS,
 } from '../results/resultsFormat';
 import { AssetLink } from './AssetLink';
+import { IncidentNarrativeSection } from './IncidentNarrativeSection';
 
 /**
  * The layer-1 evidence card (`services/incident_evidence.py`, ADR 0034 decision 4; #1634 —
@@ -86,6 +87,7 @@ function EvidenceBody({ incidentId }: { incidentId: string }) {
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               Captured {formatTimestamp(evidence.generated_at)}
             </Typography.Text>
+            <IncidentNarrativeSection incidentId={incidentId} />
             <CheckAssetSection check={evidence.check} asset={evidence.asset} />
             <FailingResultSection result={evidence.failing_result} />
             <MetricTrendSection trend={evidence.metric_trend} />
