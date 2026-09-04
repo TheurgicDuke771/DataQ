@@ -961,184 +961,136 @@ reliability, never safety.
 When a check fails, DataQ opens an **incident** and captures an **evidence card** at that
 moment: the failing result, the metric's recent trend, the other checks in the same run,
 the upstream pipeline run if one triggered it, and the downstream tables that depend on the
-asset. You can read the card yourself from the asset page.
+asset. Open it from the asset page:
 
 ![The incident evidence drawer on an asset: the failing result, expected vs observed values, the metric trend and the sibling checks from the same run](../assets/screenshots/incident-evidence.png){ .screenshot }
 
-*The model is handed this card plus a longer result history for the check, both from
-DataQ's own database — nothing is fetched fresh from the warehouse, so the narrative
-describes the failure as it was captured, not as the table is now.*
+Click **Explain this failure** (or **Regenerate**, once one exists) at the top of the
+Root-cause narrative section:
 
-Ask for the narrative with the incident id:
+<video class="clip" autoplay loop muted playsinline poster="../../assets/videos/explain-failure.jpg">
+  <source src="../../assets/videos/explain-failure.mp4" type="video/mp4">
+</video>
 
-```bash
-curl -X POST https://<your-dataq-host>/api/v1/llm/rca_narrative \
-  -H "Authorization: Bearer dq_live_…" -H "Content-Type: application/json" \
-  -d '{"incident_id": "669964c0-bf09-4e93-960d-7866f7e73b0f"}'
-# → 202 {"invocation_id": "5e7c…", "status": "pending"}
-```
+*The narrative renders in its own bordered card. The ⓘ next to the title is what the model
+was sent; the ⓘ next to the timestamp is what the evidence card could not see, both on
+hover rather than always on the page.*
 
-The call is queued to a worker; poll `GET /api/v1/llm/invocations/{invocation_id}` until
-`status` is `succeeded` or `failed`. This is what a 14-billion-parameter local model
-returned for the incident above — a `status in set` check on an orders table where 18 % of
-rows carried a status outside `new / paid / shipped / cancelled`, up from 6 % the run
-before:
-
-```json
-{
-  "summary": "The 'status in set' check likely failed because 18% of the order statuses in the ORDERS table do not match the expected set 'new', 'paid', 'shipped', 'cancelled'. Recent check failures show this percentage rising from 6% to 18%, indicating an issue with order status data integrity.",
-  "ranked_hypotheses": [
-    {
-      "cause": "Data entry errors or updates involving unsupported values have been introduced in the status column.",
-      "confidence": "high",
-      "evidence_refs": ["check_history", "metric_trend", "failing_result"]
-    },
-    {
-      "cause": "Upstream data sources or processes feeding status values have changed, introducing values outside the allowed set.",
-      "confidence": "medium",
-      "evidence_refs": ["kind_detail", "check_history", "metric_trend"]
-    }
-  ],
-  "blind_spots": [
-    "no upstream orchestration pipeline run is linked — either this run wasn't pipeline-triggered, or none could be matched",
-    "no downstream lineage is recorded for this asset — cannot rule out downstream impact",
-    "no before/after column profile — profile comparison isn't implemented yet"
-  ],
-  "suggested_next_checks": [
-    "Examine recent changes in data entry practices or source data",
-    "Verify if there have been changes in upstream systems providing order status updates"
-  ]
-}
-```
-
-Three things make this usable rather than merely plausible:
+The narrative itself:
 
 - **Every hypothesis cites evidence layers** from a closed list (`failing_result`,
-  `metric_trend`, `sibling_checks`, `upstream_pipeline_run`, …). A hypothesis that cites
-  none is dropped before you see it; if the model produces nothing citeable, the
-  invocation **fails** instead of returning an empty story.
-- **`blind_spots` is computed by DataQ, not the model.** It lists what the evidence card
-  could not see — no linked pipeline run, no lineage — and the prompt forbids the model
-  from asserting confidence over those gaps.
+  `metric_trend`, `sibling_checks`, `upstream_pipeline_run`, …), shown as tags under each
+  one. A hypothesis that cites none is dropped before you see it; if the model produces
+  nothing citeable, the generation **fails** instead of returning an empty story. The model
+  is told to keep those citations in the tags, not repeat the layer names inside its own
+  sentences.
+- **Blind spots are computed by DataQ, not the model** — hover the ⓘ next to the timestamp.
+  It lists what the evidence card structurally could not see (no linked pipeline run, no
+  lineage, no before/after profile), and the prompt forbids the model from asserting
+  confidence over those gaps.
 - **The narrative reaches the next alert.** Once one exists for an incident, the
   Teams / Slack / email / webhook line for that incident carries its one-line takeaway —
   unless other suites also check the same asset, in which case the alert withholds it, since
-  the narrative may name a check the alert's audience is not granted to see:
+  the narrative may name a check the alert's audience is not granted to see. The generic
+  **webhook** channel is the exception: its JSON payload carries the whole narrative object.
 
-```text
-Incident 669964c0 (status in set) — critical, occurrence 2 · not pipeline-triggered (manual
-or scheduled run); 2/3 other check(s) in this run also failing; no downstream lineage
-recorded · AI summary: The 'status in set' check likely failed because 18% of the order
-statuses in the ORDERS table do not match the expected set 'new', 'paid', 'shipped',
-'cancelled'. Recent check failures show this percentage r…
-```
+Generating the narrative needs `view` on the incident's suite. Reading it back is narrower:
+only the person who requested it, or a workspace Admin, can poll it — a colleague with the
+same suite grant gets a 404 for your invocation id and has to request their own. It never
+re-runs the check and never changes the suite.
 
-(The clause is capped so a Slack section never overflows. The generic **webhook** channel
-is the exception: its JSON payload carries the whole narrative object, so treat a webhook
-receiver as a full reader of it.)
-
-Generating the narrative needs `view` on the incident's suite. Reading the invocation back
-is narrower: only the person who requested it, or a workspace Admin, can poll it — a
-colleague with the same suite grant gets a 404 for your invocation id and has to request
-their own. It never re-runs the check and never changes the suite.
+??? note "Scripted / MCP access"
+    ```bash
+    curl -X POST https://<your-dataq-host>/api/v1/llm/rca_narrative \
+      -H "Authorization: Bearer dq_live_…" -H "Content-Type: application/json" \
+      -d '{"incident_id": "<incident id>"}'
+    # → 202 {"invocation_id": "5e7c…", "status": "pending"}
+    ```
+    Poll `GET /api/v1/llm/invocations/{invocation_id}` until `status` is `succeeded` or
+    `failed`; the response is the same `{summary, ranked_hypotheses, blind_spots,
+    suggested_next_checks}` shape shown above.
 
 ## Write SQL from a sentence
 
-Custom-SQL checks are the most flexible check type and the slowest to author. Describe the
-rule in plain language against a suite whose target is a table on a SQL datasource
-(Snowflake or Unity Catalog):
+Custom-SQL checks are the most flexible check type and the slowest to author. On a suite
+whose target is a table on a SQL datasource (Snowflake or Unity Catalog), start a check,
+pick **Custom SQL**, and describe the rule instead of writing it:
 
-```bash
-curl -X POST https://<your-dataq-host>/api/v1/llm/sql_generation \
-  -H "Authorization: Bearer dq_live_…" -H "Content-Type: application/json" \
-  -d '{
-    "suite_id": "<suite id>",
-    "description": "Every order must have a positive total amount, and no order may be dated in the future",
-    "include_profile": true
-  }'
-```
+<video class="clip" autoplay loop muted playsinline poster="../../assets/videos/generate-sql.jpg">
+  <source src="../../assets/videos/generate-sql.mp4" type="video/mp4">
+</video>
 
 DataQ lists the target's columns from the warehouse, adds masked profile statistics if you
-asked for them, and asks for **one read-only `SELECT`**. The model's SQL then passes the
-same validator a human's custom SQL does — a single `SELECT` / `WITH` statement, nothing
-chained after a `;`, no write or DDL keywords — before it is ever stored. This is what a
-live Snowflake connection and the same 14-billion-parameter local model returned for the
-description above, against an orders table:
+tick **Include column profile**, and asks for **one read-only `SELECT`**. The model's SQL
+then passes the same validator a human's custom SQL does — a single `SELECT` / `WITH`
+statement, nothing chained after a `;`, no write or DDL keywords — before it lands in the
+editor:
 
-```json
-{
-  "sql": "SELECT order_number, order_total, order_ts FROM RETAIL.ORDERS_HEADER WHERE order_total <= 0 OR order_ts > CURRENT_TIMESTAMP()",
-  "explanation": "Identifies orders with a non-positive total amount or with an order timestamp in the future."
-}
-```
+![The Custom SQL check editor after Generate SQL: the description, the generated SQL in the editor, and the AI-generated caveat](../assets/screenshots/check-editor-sql-generate.png){ .screenshot }
 
-Paste the result into the custom-SQL editor like any hand-written query and **dry-run it**
-before saving — generation never creates a check by itself. For a rule that spans several
-tables on the *same* connection, add `additional_tables` (up to four); cross-connection joins
-are refused structurally, because reconciling two datasources is what the
+Nothing is saved yet — review the SQL, **dry-run it**, then create the check like any
+hand-written one. For a rule that spans several tables on the *same* connection, add
+`additional_tables` (up to four) via the API; cross-connection joins are refused
+structurally, because reconciling two datasources is what the
 [comparison check](datasources-checks.md) is for.
+
+??? note "Scripted / MCP access"
+    ```bash
+    curl -X POST https://<your-dataq-host>/api/v1/llm/sql_generation \
+      -H "Authorization: Bearer dq_live_…" -H "Content-Type: application/json" \
+      -d '{
+        "suite_id": "<suite id>",
+        "description": "Every order must have a positive total amount, and no order may be dated in the future",
+        "include_profile": true
+      }'
+    ```
+    This is what a live Snowflake connection and a 14-billion-parameter local model
+    returned for the description above, against an orders table:
+
+    ```json
+    {
+      "sql": "SELECT order_number, order_total, order_ts FROM RETAIL.ORDERS_HEADER WHERE order_total <= 0 OR order_ts > CURRENT_TIMESTAMP()",
+      "explanation": "Identifies orders with a non-positive total amount or with an order timestamp in the future."
+    }
+    ```
 
 ## Suggest checks for a table
 
-For a suite with a table target and no checks yet, ask for a starter set:
+For a suite with a table target and no checks yet, click **Suggest checks** on the checks
+card:
 
-```bash
-curl -X POST https://<your-dataq-host>/api/v1/llm/check_suggestions \
-  -H "Authorization: Bearer dq_live_…" -H "Content-Type: application/json" \
-  -d '{"suite_id": "<suite id>"}'
-```
+<video class="clip" autoplay loop muted playsinline poster="../../assets/videos/suggest-checks.jpg">
+  <source src="../../assets/videos/suggest-checks.mp4" type="video/mp4">
+</video>
 
 DataQ profiles the table's columns live (masked statistics only), sends the profile with a
 **closed vocabulary of check types** — a subset of the check editor's catalog: column-level
 value, null, set, range, regex and uniqueness checks, but no row-count or cross-column
-types — and gets back candidate checks, each with a name, a rationale and a full config. A
-**freshness** suggestion is offered only when the suite has an enabled pipeline trigger
+types — and gets back candidate checks, each with a name, a rationale and a full config:
+
+![The Suggested checks drawer: validated suggestions with name, expectation type, dimension, rationale and config, an Add button per row and Add all remaining](../assets/screenshots/suggest-checks.png){ .screenshot }
+
+A **freshness** suggestion is offered only when the suite has an enabled pipeline trigger
 binding, because its threshold is grounded in that pipeline's observed cadence, not in the
-column profile — when offered, it carries a `fail_threshold_hours` field instead of a
-`config` threshold. Every candidate then goes through the validator `create_check` uses; a
-suggestion naming a column the table doesn't have is refused the same way, and one that
-fails is dropped and reported under `rejected` — if *all* fail, the invocation fails rather
-than returning "nothing". This is what the same live connection and model returned for a
-suite with no trigger binding (so no freshness candidate):
+column profile. Every candidate goes through the same validator `create_check` uses — a
+suggestion naming a column the table doesn't have is refused the same way a human's typo
+would be — and one that fails is dropped and shown under a rejection warning, with the
+reason; if *all* fail, the whole generation fails rather than returning nothing.
+Suggestions are proposals: nothing is created until you click **Add** (or **Add all
+remaining**), so one you disagree with costs a glance. A separate warning surfaces any
+pipeline trigger binding that *nearly* matched this suite (right pipeline, wrong
+environment) — a coverage gap no column profile could reveal either way.
 
-```json
-{
-  "suggestions": [
-    {
-      "expectation_type": "expect_column_values_to_not_be_null",
-      "name": "store_id_not_null_for_store_orders",
-      "rationale": "Store ID should not be null for orders placed in stores.",
-      "config": {"column": "store_id", "mostly": 0.318},
-      "dimension": "completeness"
-    },
-    {
-      "expectation_type": "expect_column_distinct_values_to_be_in_set",
-      "name": "valid_promo_ids",
-      "rationale": "Ensure only valid promo IDs are in the table.",
-      "config": {
-        "column": "promo_id",
-        "value_set": ["PROMO-0001", "PROMO-0002", "PROMO-0009", "PROMO-0011", "PROMO-0012"]
-      },
-      "dimension": "validity"
-    },
-    {
-      "expectation_type": "expect_column_values_to_match_regex",
-      "name": "order_number_format",
-      "rationale": "Verify that all order numbers follow the expected format.",
-      "config": {"column": "order_number", "regex": "^ORD-[0-9]{4}$"},
-      "dimension": "validity"
-    }
-  ],
-  "rejected": [],
-  "coverage_warnings": []
-}
-```
-
-`coverage_warnings` is computed by DataQ, not the model: it lists pipeline trigger
-bindings that *nearly* matched this suite (right pipeline, wrong environment) — a gap no
-column profile can reveal. Suggestions are proposals: nothing is created until you add them,
-so one you disagree with costs a glance. Use them as the first pass on a new table, then read
-the asset page's per-dimension coverage to see what they left out.
+??? note "Scripted / MCP access"
+    ```bash
+    curl -X POST https://<your-dataq-host>/api/v1/llm/check_suggestions \
+      -H "Authorization: Bearer dq_live_…" -H "Content-Type: application/json" \
+      -d '{"suite_id": "<suite id>"}'
+    ```
+    The response is `{suggestions, rejected, coverage_warnings}` — each suggestion carries
+    `expectation_type`, `name`, `rationale`, `config` and `dimension` (plus
+    `fail_threshold_hours` instead of a threshold inside `config` for a freshness
+    suggestion).
 
 ## What is recorded, what it costs, who may call
 

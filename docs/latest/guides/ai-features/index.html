@@ -2446,79 +2446,72 @@ list for <em>your</em> deployment is on the Admin page above the panel.</p>
 <p>When a check fails, DataQ opens an <strong>incident</strong> and captures an <strong>evidence card</strong> at that
 moment: the failing result, the metric's recent trend, the other checks in the same run,
 the upstream pipeline run if one triggered it, and the downstream tables that depend on the
-asset. You can read the card yourself from the asset page.</p>
+asset. Open it from the asset page:</p>
 <p><a class="glightbox" data-type="image" data-width="auto" data-height="auto" href="../../assets/screenshots/incident-evidence.png" data-desc-position="bottom"><img alt="The incident evidence drawer on an asset: the failing result, expected vs observed values, the metric trend and the sibling checks from the same run" class="screenshot" src="../../assets/screenshots/incident-evidence.png"></a></p>
-<p><em>The model is handed this card plus a longer result history for the check, both from
-DataQ's own database — nothing is fetched fresh from the warehouse, so the narrative
-describes the failure as it was captured, not as the table is now.</em></p>
-<p>Ask for the narrative with the incident id:</p>
-<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>https://&lt;your-dataq-host&gt;/api/v1/llm/rca_narrative<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer dq_live_…"</span><span class="w"> </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"incident_id": "669964c0-bf09-4e93-960d-7866f7e73b0f"}'</span>
-<span class="c1"># → 202 {"invocation_id": "5e7c…", "status": "pending"}</span>
-</code></pre></div>
-<p>The call is queued to a worker; poll <code>GET /api/v1/llm/invocations/{invocation_id}</code> until
-<code>status</code> is <code>succeeded</code> or <code>failed</code>. This is what a 14-billion-parameter local model
-returned for the incident above — a <code>status in set</code> check on an orders table where 18 % of
-rows carried a status outside <code>new / paid / shipped / cancelled</code>, up from 6 % the run
-before:</p>
-<div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">"summary"</span><span class="p">:</span><span class="w"> </span><span class="s2">"The 'status in set' check likely failed because 18% of the order statuses in the ORDERS table do not match the expected set 'new', 'paid', 'shipped', 'cancelled'. Recent check failures show this percentage rising from 6% to 18%, indicating an issue with order status data integrity."</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">"ranked_hypotheses"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<span class="w">    </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">"cause"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Data entry errors or updates involving unsupported values have been introduced in the status column."</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">"confidence"</span><span class="p">:</span><span class="w"> </span><span class="s2">"high"</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">"evidence_refs"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"check_history"</span><span class="p">,</span><span class="w"> </span><span class="s2">"metric_trend"</span><span class="p">,</span><span class="w"> </span><span class="s2">"failing_result"</span><span class="p">]</span>
-<span class="w">    </span><span class="p">},</span>
-<span class="w">    </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">"cause"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Upstream data sources or processes feeding status values have changed, introducing values outside the allowed set."</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">"confidence"</span><span class="p">:</span><span class="w"> </span><span class="s2">"medium"</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">"evidence_refs"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"kind_detail"</span><span class="p">,</span><span class="w"> </span><span class="s2">"check_history"</span><span class="p">,</span><span class="w"> </span><span class="s2">"metric_trend"</span><span class="p">]</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="w">  </span><span class="p">],</span>
-<span class="w">  </span><span class="nt">"blind_spots"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<span class="w">    </span><span class="s2">"no upstream orchestration pipeline run is linked — either this run wasn't pipeline-triggered, or none could be matched"</span><span class="p">,</span>
-<span class="w">    </span><span class="s2">"no downstream lineage is recorded for this asset — cannot rule out downstream impact"</span><span class="p">,</span>
-<span class="w">    </span><span class="s2">"no before/after column profile — profile comparison isn't implemented yet"</span>
-<span class="w">  </span><span class="p">],</span>
-<span class="w">  </span><span class="nt">"suggested_next_checks"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<span class="w">    </span><span class="s2">"Examine recent changes in data entry practices or source data"</span><span class="p">,</span>
-<span class="w">    </span><span class="s2">"Verify if there have been changes in upstream systems providing order status updates"</span>
-<span class="w">  </span><span class="p">]</span>
-<span class="p">}</span>
-</code></pre></div>
-<p>Three things make this usable rather than merely plausible:</p>
+<p>Click <strong>Explain this failure</strong> (or <strong>Regenerate</strong>, once one exists) at the top of the
+Root-cause narrative section:</p>
+<video class="clip" autoplay="" loop="" muted="" playsinline="" poster="../../assets/videos/explain-failure.jpg">
+  <source src="../../assets/videos/explain-failure.mp4" type="video/mp4">
+</video>
+
+<p><em>The narrative renders in its own bordered card. The ⓘ next to the title is what the model
+was sent; the ⓘ next to the timestamp is what the evidence card could not see, both on
+hover rather than always on the page.</em></p>
+<p>The narrative itself:</p>
 <ul>
 <li><strong>Every hypothesis cites evidence layers</strong> from a closed list (<code>failing_result</code>,
-  <code>metric_trend</code>, <code>sibling_checks</code>, <code>upstream_pipeline_run</code>, …). A hypothesis that cites
-  none is dropped before you see it; if the model produces nothing citeable, the
-  invocation <strong>fails</strong> instead of returning an empty story.</li>
-<li><strong><code>blind_spots</code> is computed by DataQ, not the model.</strong> It lists what the evidence card
-  could not see — no linked pipeline run, no lineage — and the prompt forbids the model
-  from asserting confidence over those gaps.</li>
+  <code>metric_trend</code>, <code>sibling_checks</code>, <code>upstream_pipeline_run</code>, …), shown as tags under each
+  one. A hypothesis that cites none is dropped before you see it; if the model produces
+  nothing citeable, the generation <strong>fails</strong> instead of returning an empty story. The model
+  is told to keep those citations in the tags, not repeat the layer names inside its own
+  sentences.</li>
+<li><strong>Blind spots are computed by DataQ, not the model</strong> — hover the ⓘ next to the timestamp.
+  It lists what the evidence card structurally could not see (no linked pipeline run, no
+  lineage, no before/after profile), and the prompt forbids the model from asserting
+  confidence over those gaps.</li>
 <li><strong>The narrative reaches the next alert.</strong> Once one exists for an incident, the
   Teams / Slack / email / webhook line for that incident carries its one-line takeaway —
   unless other suites also check the same asset, in which case the alert withholds it, since
-  the narrative may name a check the alert's audience is not granted to see:</li>
+  the narrative may name a check the alert's audience is not granted to see. The generic
+  <strong>webhook</strong> channel is the exception: its JSON payload carries the whole narrative object.</li>
 </ul>
-<div class="highlight"><pre><span></span><code>Incident 669964c0 (status in set) — critical, occurrence 2 · not pipeline-triggered (manual
-or scheduled run); 2/3 other check(s) in this run also failing; no downstream lineage
-recorded · AI summary: The 'status in set' check likely failed because 18% of the order
-statuses in the ORDERS table do not match the expected set 'new', 'paid', 'shipped',
-'cancelled'. Recent check failures show this percentage r…
+<p>Generating the narrative needs <code>view</code> on the incident's suite. Reading it back is narrower:
+only the person who requested it, or a workspace Admin, can poll it — a colleague with the
+same suite grant gets a 404 for your invocation id and has to request their own. It never
+re-runs the check and never changes the suite.</p>
+<details class="note">
+<summary>Scripted / MCP access</summary>
+<p></p><div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>https://&lt;your-dataq-host&gt;/api/v1/llm/rca_narrative<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer dq_live_…"</span><span class="w"> </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"incident_id": "&lt;incident id&gt;"}'</span>
+<span class="c1"># → 202 {"invocation_id": "5e7c…", "status": "pending"}</span>
 </code></pre></div>
-<p>(The clause is capped so a Slack section never overflows. The generic <strong>webhook</strong> channel
-is the exception: its JSON payload carries the whole narrative object, so treat a webhook
-receiver as a full reader of it.)</p>
-<p>Generating the narrative needs <code>view</code> on the incident's suite. Reading the invocation back
-is narrower: only the person who requested it, or a workspace Admin, can poll it — a
-colleague with the same suite grant gets a 404 for your invocation id and has to request
-their own. It never re-runs the check and never changes the suite.</p>
+Poll <code>GET /api/v1/llm/invocations/{invocation_id}</code> until <code>status</code> is <code>succeeded</code> or
+<code>failed</code>; the response is the same <code>{summary, ranked_hypotheses, blind_spots,
+suggested_next_checks}</code> shape shown above.<p></p>
+</details>
 <h2 id="write-sql-from-a-sentence">Write SQL from a sentence<a class="headerlink" href="#write-sql-from-a-sentence" title="Permanent link">¶</a></h2>
-<p>Custom-SQL checks are the most flexible check type and the slowest to author. Describe the
-rule in plain language against a suite whose target is a table on a SQL datasource
-(Snowflake or Unity Catalog):</p>
-<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>https://&lt;your-dataq-host&gt;/api/v1/llm/sql_generation<span class="w"> </span><span class="se">\</span>
+<p>Custom-SQL checks are the most flexible check type and the slowest to author. On a suite
+whose target is a table on a SQL datasource (Snowflake or Unity Catalog), start a check,
+pick <strong>Custom SQL</strong>, and describe the rule instead of writing it:</p>
+<video class="clip" autoplay="" loop="" muted="" playsinline="" poster="../../assets/videos/generate-sql.jpg">
+  <source src="../../assets/videos/generate-sql.mp4" type="video/mp4">
+</video>
+
+<p>DataQ lists the target's columns from the warehouse, adds masked profile statistics if you
+tick <strong>Include column profile</strong>, and asks for <strong>one read-only <code>SELECT</code></strong>. The model's SQL
+then passes the same validator a human's custom SQL does — a single <code>SELECT</code> / <code>WITH</code>
+statement, nothing chained after a <code>;</code>, no write or DDL keywords — before it lands in the
+editor:</p>
+<p><a class="glightbox" data-type="image" data-width="auto" data-height="auto" href="../../assets/screenshots/check-editor-sql-generate.png" data-desc-position="bottom"><img alt="The Custom SQL check editor after Generate SQL: the description, the generated SQL in the editor, and the AI-generated caveat" class="screenshot" src="../../assets/screenshots/check-editor-sql-generate.png"></a></p>
+<p>Nothing is saved yet — review the SQL, <strong>dry-run it</strong>, then create the check like any
+hand-written one. For a rule that spans several tables on the <em>same</em> connection, add
+<code>additional_tables</code> (up to four) via the API; cross-connection joins are refused
+structurally, because reconciling two datasources is what the
+<a href="../datasources-checks/">comparison check</a> is for.</p>
+<details class="note">
+<summary>Scripted / MCP access</summary>
+<p></p><div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>https://&lt;your-dataq-host&gt;/api/v1/llm/sql_generation<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer dq_live_…"</span><span class="w"> </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
 <span class="s1">    "suite_id": "&lt;suite id&gt;",</span>
@@ -2526,76 +2519,47 @@ rule in plain language against a suite whose target is a table on a SQL datasour
 <span class="s1">    "include_profile": true</span>
 <span class="s1">  }'</span>
 </code></pre></div>
-<p>DataQ lists the target's columns from the warehouse, adds masked profile statistics if you
-asked for them, and asks for <strong>one read-only <code>SELECT</code></strong>. The model's SQL then passes the
-same validator a human's custom SQL does — a single <code>SELECT</code> / <code>WITH</code> statement, nothing
-chained after a <code>;</code>, no write or DDL keywords — before it is ever stored. This is what a
-live Snowflake connection and the same 14-billion-parameter local model returned for the
-description above, against an orders table:</p>
+This is what a live Snowflake connection and a 14-billion-parameter local model
+returned for the description above, against an orders table:<p></p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
 <span class="w">  </span><span class="nt">"sql"</span><span class="p">:</span><span class="w"> </span><span class="s2">"SELECT order_number, order_total, order_ts FROM RETAIL.ORDERS_HEADER WHERE order_total &lt;= 0 OR order_ts &gt; CURRENT_TIMESTAMP()"</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"explanation"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Identifies orders with a non-positive total amount or with an order timestamp in the future."</span>
 <span class="p">}</span>
 </code></pre></div>
-<p>Paste the result into the custom-SQL editor like any hand-written query and <strong>dry-run it</strong>
-before saving — generation never creates a check by itself. For a rule that spans several
-tables on the <em>same</em> connection, add <code>additional_tables</code> (up to four); cross-connection joins
-are refused structurally, because reconciling two datasources is what the
-<a href="../datasources-checks/">comparison check</a> is for.</p>
+</details>
 <h2 id="suggest-checks-for-a-table">Suggest checks for a table<a class="headerlink" href="#suggest-checks-for-a-table" title="Permanent link">¶</a></h2>
-<p>For a suite with a table target and no checks yet, ask for a starter set:</p>
-<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>https://&lt;your-dataq-host&gt;/api/v1/llm/check_suggestions<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer dq_live_…"</span><span class="w"> </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"suite_id": "&lt;suite id&gt;"}'</span>
-</code></pre></div>
+<p>For a suite with a table target and no checks yet, click <strong>Suggest checks</strong> on the checks
+card:</p>
+<video class="clip" autoplay="" loop="" muted="" playsinline="" poster="../../assets/videos/suggest-checks.jpg">
+  <source src="../../assets/videos/suggest-checks.mp4" type="video/mp4">
+</video>
+
 <p>DataQ profiles the table's columns live (masked statistics only), sends the profile with a
 <strong>closed vocabulary of check types</strong> — a subset of the check editor's catalog: column-level
 value, null, set, range, regex and uniqueness checks, but no row-count or cross-column
-types — and gets back candidate checks, each with a name, a rationale and a full config. A
-<strong>freshness</strong> suggestion is offered only when the suite has an enabled pipeline trigger
+types — and gets back candidate checks, each with a name, a rationale and a full config:</p>
+<p><a class="glightbox" data-type="image" data-width="auto" data-height="auto" href="../../assets/screenshots/suggest-checks.png" data-desc-position="bottom"><img alt="The Suggested checks drawer: validated suggestions with name, expectation type, dimension, rationale and config, an Add button per row and Add all remaining" class="screenshot" src="../../assets/screenshots/suggest-checks.png"></a></p>
+<p>A <strong>freshness</strong> suggestion is offered only when the suite has an enabled pipeline trigger
 binding, because its threshold is grounded in that pipeline's observed cadence, not in the
-column profile — when offered, it carries a <code>fail_threshold_hours</code> field instead of a
-<code>config</code> threshold. Every candidate then goes through the validator <code>create_check</code> uses; a
-suggestion naming a column the table doesn't have is refused the same way, and one that
-fails is dropped and reported under <code>rejected</code> — if <em>all</em> fail, the invocation fails rather
-than returning "nothing". This is what the same live connection and model returned for a
-suite with no trigger binding (so no freshness candidate):</p>
-<div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">"suggestions"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<span class="w">    </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"expect_column_values_to_not_be_null"</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"store_id_not_null_for_store_orders"</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">"rationale"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Store ID should not be null for orders placed in stores."</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"store_id"</span><span class="p">,</span><span class="w"> </span><span class="nt">"mostly"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.318</span><span class="p">},</span>
-<span class="w">      </span><span class="nt">"dimension"</span><span class="p">:</span><span class="w"> </span><span class="s2">"completeness"</span>
-<span class="w">    </span><span class="p">},</span>
-<span class="w">    </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"expect_column_distinct_values_to_be_in_set"</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"valid_promo_ids"</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">"rationale"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Ensure only valid promo IDs are in the table."</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"promo_id"</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">"value_set"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"PROMO-0001"</span><span class="p">,</span><span class="w"> </span><span class="s2">"PROMO-0002"</span><span class="p">,</span><span class="w"> </span><span class="s2">"PROMO-0009"</span><span class="p">,</span><span class="w"> </span><span class="s2">"PROMO-0011"</span><span class="p">,</span><span class="w"> </span><span class="s2">"PROMO-0012"</span><span class="p">]</span>
-<span class="w">      </span><span class="p">},</span>
-<span class="w">      </span><span class="nt">"dimension"</span><span class="p">:</span><span class="w"> </span><span class="s2">"validity"</span>
-<span class="w">    </span><span class="p">},</span>
-<span class="w">    </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"expect_column_values_to_match_regex"</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"order_number_format"</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">"rationale"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Verify that all order numbers follow the expected format."</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"order_number"</span><span class="p">,</span><span class="w"> </span><span class="nt">"regex"</span><span class="p">:</span><span class="w"> </span><span class="s2">"^ORD-[0-9]{4}$"</span><span class="p">},</span>
-<span class="w">      </span><span class="nt">"dimension"</span><span class="p">:</span><span class="w"> </span><span class="s2">"validity"</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="w">  </span><span class="p">],</span>
-<span class="w">  </span><span class="nt">"rejected"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
-<span class="w">  </span><span class="nt">"coverage_warnings"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span>
-<span class="p">}</span>
+column profile. Every candidate goes through the same validator <code>create_check</code> uses — a
+suggestion naming a column the table doesn't have is refused the same way a human's typo
+would be — and one that fails is dropped and shown under a rejection warning, with the
+reason; if <em>all</em> fail, the whole generation fails rather than returning nothing.
+Suggestions are proposals: nothing is created until you click <strong>Add</strong> (or <strong>Add all
+remaining</strong>), so one you disagree with costs a glance. A separate warning surfaces any
+pipeline trigger binding that <em>nearly</em> matched this suite (right pipeline, wrong
+environment) — a coverage gap no column profile could reveal either way.</p>
+<details class="note">
+<summary>Scripted / MCP access</summary>
+<p></p><div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>https://&lt;your-dataq-host&gt;/api/v1/llm/check_suggestions<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer dq_live_…"</span><span class="w"> </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"suite_id": "&lt;suite id&gt;"}'</span>
 </code></pre></div>
-<p><code>coverage_warnings</code> is computed by DataQ, not the model: it lists pipeline trigger
-bindings that <em>nearly</em> matched this suite (right pipeline, wrong environment) — a gap no
-column profile can reveal. Suggestions are proposals: nothing is created until you add them,
-so one you disagree with costs a glance. Use them as the first pass on a new table, then read
-the asset page's per-dimension coverage to see what they left out.</p>
+The response is <code>{suggestions, rejected, coverage_warnings}</code> — each suggestion carries
+<code>expectation_type</code>, <code>name</code>, <code>rationale</code>, <code>config</code> and <code>dimension</code> (plus
+<code>fail_threshold_hours</code> instead of a threshold inside <code>config</code> for a freshness
+suggestion).<p></p>
+</details>
 <h2 id="what-is-recorded-what-it-costs-who-may-call">What is recorded, what it costs, who may call<a class="headerlink" href="#what-is-recorded-what-it-costs-who-may-call" title="Permanent link">¶</a></h2>
 <ul>
 <li><strong>Every call is a row in <code>llm_invocations</code></strong> — kind, requester, suite, token counts,
