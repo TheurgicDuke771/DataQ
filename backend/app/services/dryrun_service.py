@@ -5,13 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
 from backend.app.core.errors import DataQError
 from backend.app.core.jsonsafe import sanitize_json
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
-from backend.app.datasources.base import CheckSpec
+from backend.app.datasources.base import CheckOutcome, CheckSpec
 from backend.app.datasources.flatfile import BatchNotFoundError
 from backend.app.datasources.monitors import ANOMALY, SCHEMA_DRIFT
 from backend.app.datasources.registry import (
@@ -20,10 +20,12 @@ from backend.app.datasources.registry import (
     owned_runner,
 )
 from backend.app.datasources.sql import strip_statement_echo
-from backend.app.db.models import Connection
+from backend.app.db.models import GX_ENGINE, Connection
 from backend.app.services import run_target
 from backend.app.services.check_service import (
     reject_thresholds_on_unbanded,
+    validate_engine,
+    validate_engine_compatibility,
     validate_expectation_check,
     validate_threshold_ordering,
 )
@@ -73,6 +75,7 @@ def dry_run_check(
     critical_threshold: Decimal | None,
     target: dict[str, Any] | None,
     secret_store: SecretStore,
+    engine: str = GX_ENGINE,
 ) -> DryRunOutcome:
     """Run one check against the suite's run ``target`` and return a preview."""
     # #568: a preview must never accept a threshold set that a save would reject — same shared
@@ -82,6 +85,32 @@ def dry_run_check(
         fail_threshold=fail_threshold,
         critical_threshold=critical_threshold,
     )
+    # #1530: a save would 422 on an engine the connection doesn't offer or can't evaluate this
+    # kind/type/config with — a preview must reject the same way, not fall through to the GX
+    # runner and 502 blaming the datasource.
+    validate_engine(engine, connection_type=connection.type)
+    validate_engine_compatibility(
+        engine,
+        kind=kind,
+        expectation_type=expectation_type,
+        config=config,
+        warn_threshold=warn_threshold,
+        fail_threshold=fail_threshold,
+        critical_threshold=critical_threshold,
+    )
+    if engine != GX_ENGINE:
+        return _dry_run_native(
+            connection,
+            engine=engine,
+            kind=kind,
+            expectation_type=expectation_type,
+            config=config,
+            warn_threshold=warn_threshold,
+            fail_threshold=fail_threshold,
+            critical_threshold=critical_threshold,
+            target=target,
+            secret_store=secret_store,
+        )
     if kind == SCHEMA_DRIFT:
         return _dry_run_schema_drift(
             connection, config=config, target=target, secret_store=secret_store
@@ -200,6 +229,120 @@ def dry_run_check(
         )
         # Preview exactly what a persisted run would record: an unevaluable check (#122) is 'error',
         # not a misleading 'fail' tag, and surfaces the GX message.
+        if check_outcome.errored:
+            error_message = strip_statement_echo(check_outcome.error_message)
+            observed = {"error": error_message} if error_message else None
+        else:
+            observed = sanitize_json(check_outcome.observed_value)
+        return DryRunOutcome(
+            status=status,
+            metric_value=metric,
+            observed_value=observed,
+            expected_value=sanitize_json(check_outcome.expected_value),
+        )
+
+
+def _dry_run_native(
+    connection: Connection,
+    *,
+    engine: str,
+    kind: str,
+    expectation_type: str,
+    config: dict[str, Any],
+    warn_threshold: Decimal | None,
+    fail_threshold: Decimal | None,
+    critical_threshold: Decimal | None,
+    target: dict[str, Any] | None,
+    secret_store: SecretStore,
+) -> DryRunOutcome:
+    """Preview a platform-native (ADR 0036) check via the connection's own
+    ``run_native_check`` — the same partition `run_service._run_outcome_phases`
+    uses for a persisted run, so a preview never routes a dmf/dqx check through
+    the GX runner (#1530).
+    """
+    resolved = run_target.resolve_target(connection.type, target)
+    try:
+        runner = build_check_runner(
+            conn_type=connection.type,
+            config=connection.config,
+            secret_ref=connection.secret_ref,
+            secret_store=secret_store,
+            catalog=resolved.catalog,
+            sampling=resolved.sampling,
+        )
+    except UnsupportedConnectionTypeError as exc:
+        raise DryRunUnsupportedError(
+            f"dry-run is not supported for {connection.type!r} connections",
+            detail={"type": connection.type},
+        ) from exc
+    except Exception as exc:
+        log.warning(
+            "dry_run_failed", connection_type=connection.type, error_type=type(exc).__name__
+        )
+        raise DryRunFailedError(
+            "dry run could not connect to the datasource",
+            detail={"reason": safe_failure_reason(exc)},
+        ) from exc
+
+    with owned_runner(runner):
+        native_run = getattr(runner, "run_native_check", None)
+        advertised = frozenset(getattr(runner, "supported_native_engines", frozenset()))
+        if engine not in advertised or not callable(native_run):
+            raise DryRunUnsupportedError(
+                f"engine {engine!r} is not available on this connection — the connection "
+                "cannot run this platform-native engine (ADR 0036)",
+                detail={"engine": engine, "connection_type": connection.type},
+            )
+        try:
+            table = run_target.materialize_path(
+                connection.type,
+                connection.config,
+                resolved,
+                secret_ref=connection.secret_ref,
+                secret_store=secret_store,
+            )
+        except BatchNotFoundError as exc:
+            raise DryRunNoDataError(
+                "no file has landed for the suite's batch target yet — dry-run needs live data",
+                detail={"connection_type": connection.type},
+            ) from exc
+        except DataQError:
+            raise
+        except Exception as exc:
+            log.warning(
+                "dry_run_failed", connection_type=connection.type, error_type=type(exc).__name__
+            )
+            raise DryRunFailedError(
+                "dry run could not list the datasource store",
+                detail={"reason": safe_failure_reason(exc)},
+            ) from exc
+
+        try:
+            check_outcome = cast(
+                CheckOutcome,
+                native_run(
+                    kind=kind,
+                    expectation_type=expectation_type,
+                    config=dict(config),
+                    table=table,
+                    schema=resolved.schema,
+                ),
+            )
+        except Exception as exc:
+            log.warning(
+                "dry_run_failed", connection_type=connection.type, error_type=type(exc).__name__
+            )
+            raise DryRunFailedError(
+                "dry run could not execute against the datasource",
+                detail={"table": table, "reason": safe_failure_reason(exc)},
+            ) from exc
+
+        status, metric = resolve_status(
+            check_outcome,
+            warn_threshold=warn_threshold,
+            fail_threshold=fail_threshold,
+            critical_threshold=critical_threshold,
+        )
         if check_outcome.errored:
             error_message = strip_statement_echo(check_outcome.error_message)
             observed = {"error": error_message} if error_message else None

@@ -429,6 +429,9 @@ class CheckDryRunRequest(ApiRequestModel):
     warn_threshold: Decimal | None = None
     fail_threshold: Decimal | None = None
     critical_threshold: Decimal | None = None
+    # Evaluating engine (ADR 0036); default 'gx'. #1530: a dmf preview must route through the
+    # connection's native runner, not the GX one.
+    engine: str = Field(default="gx", min_length=1, max_length=32)
     # The target comes from the suite's own run target (#215/#532) — resolved server-side exactly
     # like a persisted run.
 
@@ -468,6 +471,7 @@ def dry_run_check(
         critical_threshold=payload.critical_threshold,
         target=suite.target,
         secret_store=secret_store,
+        engine=payload.engine,
     )
     # Live probe: real values, nothing persisted — so both the redaction ladder and the G1 access
     # audit, which hang off a Result row, missed this route entirely (#1419 / #1479).

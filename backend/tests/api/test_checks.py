@@ -1611,11 +1611,18 @@ def test_import_records_initial_version_per_check(client: TestClient, db_session
 
 class _FakeRunner:
     def __init__(
-        self, outcome: SuiteOutcome | None = None, raises: Exception | None = None
+        self,
+        outcome: SuiteOutcome | None = None,
+        raises: Exception | None = None,
+        native_outcome: CheckOutcome | None = None,
+        supported_native_engines: frozenset[str] = frozenset(),
     ) -> None:
         self._outcome = outcome
         self._raises = raises
         self.called_with: dict[str, Any] | None = None
+        self._native_outcome = native_outcome
+        self.supported_native_engines = supported_native_engines
+        self.native_called_with: dict[str, Any] | None = None
 
     def run_checks(
         self,
@@ -1630,6 +1637,27 @@ class _FakeRunner:
             raise self._raises
         assert self._outcome is not None
         return self._outcome
+
+    def run_native_check(
+        self,
+        *,
+        kind: str,
+        expectation_type: str,
+        config: dict[str, Any],
+        table: str,
+        schema: str | None,
+    ) -> CheckOutcome:
+        self.native_called_with = {
+            "kind": kind,
+            "expectation_type": expectation_type,
+            "config": config,
+            "table": table,
+            "schema": schema,
+        }
+        if self._raises is not None:
+            raise self._raises
+        assert self._native_outcome is not None
+        return self._native_outcome
 
 
 def _patch_runner(
@@ -1678,6 +1706,83 @@ def test_dryrun_returns_pass_preview(
     body = resp.json()
     assert body["status"] == "pass"
     assert body["observed_value"] == {"observed_value": 5}
+
+
+def _dmf_dryrun_body(**overrides: Any) -> dict[str, Any]:
+    body = _dryrun_body(
+        expectation_type="dmf:null_count",
+        config={"column": "order_id"},
+        engine="dmf",
+        # dmf:null_count is a banded metric (unlike dmf:unique_count) — needs a threshold.
+        fail_threshold=1,
+    )
+    body.update(overrides)
+    return body
+
+
+def test_dryrun_dmf_engine_routes_to_native_check_not_gx(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # #1530: an engine="dmf" preview must go through `run_native_check`, never build a GX
+    # CheckSpec and 502 blaming the datasource.
+    sid = _suite_id(client, db_session, target=_SF_TARGET)
+    runner = _FakeRunner(
+        native_outcome=CheckOutcome(
+            "dmf:null_count", success=True, observed_value={"observed_value": 0}
+        ),
+        supported_native_engines=frozenset({"dmf"}),
+    )
+    _patch_runner(monkeypatch, runner)
+    resp = client.post(f"/api/v1/suites/{sid}/checks/dryrun", json=_dmf_dryrun_body())
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "pass"
+    assert runner.native_called_with is not None
+    assert runner.called_with is None  # the GX path was never invoked
+
+
+def test_dryrun_rejects_unknown_engine(client: TestClient, db_session: Any) -> None:
+    sid = _suite_id(client, db_session, target=_SF_TARGET)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks/dryrun", json=_dryrun_body(engine="not-a-real-engine")
+    )
+    assert resp.status_code == 422
+
+
+def test_dryrun_rejects_engine_the_connection_does_not_offer(
+    client: TestClient, db_session: Any
+) -> None:
+    # s3 doesn't offer dmf (engines.py) — a preview must 422 the same way a save would,
+    # not fall through to the GX runner.
+    sid = _suite_id(client, db_session, conn_type="s3", target={"path": "s3://b/orders.csv"})
+    resp = client.post(f"/api/v1/suites/{sid}/checks/dryrun", json=_dmf_dryrun_body())
+    assert resp.status_code == 422
+
+
+def test_dryrun_rejects_engine_kind_mismatch(client: TestClient, db_session: Any) -> None:
+    # A gx-shaped expectation_type with engine="dmf" must be refused before hitting a runner.
+    sid = _suite_id(client, db_session, target=_SF_TARGET)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks/dryrun",
+        json=_dryrun_body(
+            expectation_type="expect_column_values_to_not_be_null",
+            config={"column": "order_id"},
+            engine="dmf",
+        ),
+    )
+    assert resp.status_code == 422
+
+
+def test_dryrun_native_engine_unavailable_on_runner(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The connection offers dmf (engines.py) but the runner the registry actually builds
+    # doesn't advertise it — the defensive branch, not the save-time 422.
+    sid = _suite_id(client, db_session, target=_SF_TARGET)
+    runner = _FakeRunner(supported_native_engines=frozenset())
+    _patch_runner(monkeypatch, runner)
+    resp = client.post(f"/api/v1/suites/{sid}/checks/dryrun", json=_dmf_dryrun_body())
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "dry_run_unsupported"
 
 
 def test_dryrun_rejects_inverted_thresholds(

@@ -365,6 +365,97 @@ def test_create_check_persists(db_session: Any, monkeypatch: Any) -> None:
     assert persisted.config == {"column": "email"}
 
 
+def test_create_check_defaults_to_gx_and_persists_engine(db_session: Any, monkeypatch: Any) -> None:
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+
+    out = server.create_check(
+        str(suite.id),
+        name="email not null",
+        expectation_type="expect_column_values_to_not_be_null",
+        config={"column": "email"},
+    )
+    assert out["engine"] == "gx"
+    assert db_session.get(Check, uuid.UUID(out["id"])).engine == "gx"
+
+
+def test_create_check_dmf_engine_persists_and_is_visible_on_read(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """#1531: a dmf check must be visible AS dmf through the MCP read surface, not
+    indistinguishable from a gx one.
+    """
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+
+    out = server.create_check(
+        str(suite.id),
+        name="null count",
+        expectation_type="dmf:null_count",
+        config={"column": "email"},
+        fail_threshold=1,
+        engine="dmf",
+    )
+    assert out["engine"] == "dmf"
+    check_id = out["id"]
+
+    listed = server.list_checks(str(suite.id))
+    assert listed["checks"][0]["engine"] == "dmf"
+    got = server.get_check(str(suite.id), check_id)
+    assert got["engine"] == "dmf"
+
+
+def test_create_check_engine_kind_mismatch_is_refused(db_session: Any, monkeypatch: Any) -> None:
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+
+    with pytest.raises(ToolError):
+        server.create_check(
+            str(suite.id),
+            name="bad",
+            expectation_type="expect_column_values_to_not_be_null",
+            config={"column": "email"},
+            engine="dmf",
+        )
+
+
+def test_update_check_re_points_engine(db_session: Any, monkeypatch: Any) -> None:
+    """#1531: recreating a dmf check via `create_check` with no `engine` silently
+    converts it to gx (the import_suite precedent) — `update_check` must let a
+    caller re-point one explicitly instead, and leave it alone when omitted.
+    """
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+    check = Check(
+        suite_id=suite.id,
+        name="c",
+        expectation_type="dmf:null_count",
+        config={"column": "email"},
+        fail_threshold=Decimal("1"),
+        engine="dmf",
+    )
+    db_session.add(check)
+    db_session.commit()
+
+    # Omitted `engine` leaves it alone.
+    out = server.update_check(str(suite.id), str(check.id), name="renamed")
+    assert out["engine"] == "dmf"
+
+    # Explicit `engine` re-points it, validated against the effective post-update shape.
+    out = server.update_check(
+        str(suite.id),
+        str(check.id),
+        expectation_type="expect_column_values_to_not_be_null",
+        config={"column": "email"},
+        engine="gx",
+    )
+    assert out["engine"] == "gx"
+
+
 def test_create_check_rejects_nul_bytes(db_session: Any, monkeypatch: Any) -> None:
     """NUL can't reach Postgres (#567) — the MCP boundary rejects it as a clean
     ToolError (mirroring the REST ApiModel guard), wherever it hides: the name
@@ -2425,6 +2516,33 @@ def test_dryrun_check_persists_nothing(db_session: Any, monkeypatch: Any) -> Non
     assert out["metric_value"] == 0.0
     assert db_session.scalars(select(Check).where(Check.suite_id == suite.id)).all() == []
     assert db_session.scalars(select(Run).where(Run.suite_id == suite.id)).all() == []
+
+
+def test_dryrun_check_threads_engine_to_the_service(db_session: Any, monkeypatch: Any) -> None:
+    """#1530/#1531: the MCP tool must offer the same `engine` parameter the REST
+    dry-run route does, not silently drop it and route a dmf preview through GX.
+    """
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+    captured: dict[str, Any] = {}
+
+    def _fake_dry_run(*_a: Any, **kw: Any) -> Any:
+        captured.update(kw)
+        return SimpleNamespace(
+            status="pass", metric_value=None, observed_value=None, expected_value=None
+        )
+
+    monkeypatch.setattr(dryrun_service, "dry_run_check", _fake_dry_run)
+
+    server.dryrun_check(
+        str(suite.id),
+        expectation_type="dmf:null_count",
+        config={"column": "email"},
+        fail_threshold=1,
+        engine="dmf",
+    )
+    assert captured["engine"] == "dmf"
 
 
 def test_dryrun_check_refuses_a_monitor_kind_it_cannot_preview(

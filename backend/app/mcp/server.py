@@ -818,6 +818,11 @@ def _check_summary(check: Check) -> dict[str, Any]:
         "name": check.name,
         "kind": check.kind,
         "expectation_type": check.expectation_type,
+        # WHO evaluates this check (ADR 0036) — 'gx' unless the check was authored against a
+        # platform-native engine (currently 'dmf'). Without this a dmf check reads identically to
+        # a gx one: same kind/type/config, no way to know which evaluator produced its results, or
+        # that recreating it without `engine` would silently convert it to gx (#1531).
+        "engine": check.engine or "gx",
         "dimension": check.dimension,
         # Non-NULL exactly for `kind='comparison'` (a table CHECK enforces the
         # equivalence): the baseline connection the suite's dataset is diffed
@@ -1780,9 +1785,10 @@ def create_check(
     critical_threshold: float | None = None,
     source_connection_id: str | None = None,
     dimension: str | None = None,
+    engine: str = "gx",
 ) -> dict[str, Any]:
-    """Add a new check (a Great Expectations expectation) to a suite. Requires
-    edit access to the suite. Returns the created check's id.
+    """Add a new check (a Great Expectations expectation, by default) to a
+    suite. Requires edit access to the suite. Returns the created check's id.
 
     Use this for 'add a null check on email to the customer suite'. ``name`` is a
     human label; ``expectation_type`` is a GX expectation (e.g.
@@ -1845,6 +1851,15 @@ def create_check(
     unclassified check renders as a coverage gap on the asset scorecard, not
     an error. Only pass ``dimension`` explicitly when the user names one.
 
+    ``engine`` (ADR 0036) selects WHO evaluates the check: ``gx`` (default,
+    every connection) or a platform-native engine only some connections
+    offer — currently ``dmf`` on Snowflake, evaluating one of its own metric
+    types (e.g. ``dmf:null_count``) rather than a GX expectation. Passing a
+    ``gx``-shaped ``expectation_type``/``config`` with ``engine="dmf"``, or
+    vice versa, is refused with a 422 naming the mismatch — it is not
+    auto-detected from the type string. A connection that doesn't offer the
+    requested engine is refused the same way, naming what it does offer.
+
     **Creating a check does not run it.** It takes effect on the suite's next
     run (manual, scheduled, or trigger-fired) and changes nothing about past
     runs or results.
@@ -1875,6 +1890,7 @@ def create_check(
             fail_threshold=_dec(fail_threshold),
             critical_threshold=_dec(critical_threshold),
             dimension=dimension,
+            engine=engine,
             actor_id=user.id,
         )
         return {
@@ -1882,6 +1898,7 @@ def create_check(
             "suite_id": suite_id,
             "name": check.name,
             "expectation_type": check.expectation_type,
+            "engine": check.engine or "gx",
             "dimension": check.dimension,
         }
 
@@ -1897,6 +1914,7 @@ def update_check(
     fail_threshold: float | None = None,
     critical_threshold: float | None = None,
     dimension: str | None = None,
+    engine: str | None = None,
 ) -> dict[str, Any]:
     """Change an existing check's definition — a partial update.
 
@@ -1922,6 +1940,15 @@ def update_check(
     Changing ``expectation_type`` is held to the same vetted set ``create_check``
     describes, so a type outside it is refused here too and the check keeps its
     current definition.
+
+    Omitting ``engine`` leaves it as it was — a dmf check stays dmf, a gx check
+    stays gx. Passing it re-points the check to the named engine (ADR 0036),
+    validated against the SUITE'S connection and the effective post-update
+    kind/type/config exactly like ``create_check``; get it wrong (e.g. a gx
+    expectation with ``engine="dmf"``) and the update is refused, keeping the
+    check's prior definition. Recreating a dmf check via ``create_check`` with
+    no ``engine`` argument silently converts it to gx — always read the current
+    ``engine`` first if you mean to preserve it.
 
     Every update snapshots the new state as a check version, so the change is
     reviewable with ``list_check_versions`` and reversible with
@@ -1949,6 +1976,7 @@ def update_check(
             fail_threshold=_dec(fail_threshold),
             critical_threshold=_dec(critical_threshold),
             dimension=dimension,
+            engine=engine,
             actor_id=user.id,
         )
         return _check_summary(check)
@@ -2081,6 +2109,7 @@ def dryrun_check(
     warn_threshold: float | None = None,
     fail_threshold: float | None = None,
     critical_threshold: float | None = None,
+    engine: str = "gx",
 ) -> dict[str, Any]:
     """Preview a check against live data WITHOUT saving it.
 
@@ -2113,6 +2142,13 @@ def dryrun_check(
     outside DataQ's vetted set (see ``create_check``) is refused here rather than
     previewed and then rejected at creation.
 
+    ``engine`` (ADR 0036, default ``gx``) previews the check against the
+    connection's own native engine — currently ``dmf`` on Snowflake — instead
+    of the GX runner, held to the same engine/connection and
+    engine/kind/type/config compatibility rules ``create_check`` describes. A
+    mismatch (e.g. a gx expectation with ``engine="dmf"``) is refused here,
+    not routed through GX and reported as a datasource failure.
+
     This is the authoring loop: dry-run, adjust the threshold, dry-run again, and
     only then create. Requires edit access to the suite.
     """
@@ -2133,6 +2169,7 @@ def dryrun_check(
             critical_threshold=_dec(critical_threshold),
             target=suite.target,
             secret_store=get_secret_store(),
+            engine=engine,
         )
         # Redaction follows the DESTINATION (#1419/#1479, `services.live_probe`).
         # An MCP consumer is `EGRESS`: a model that will quote the value into a
