@@ -157,6 +157,28 @@ def _expected_value(kwargs: Any) -> dict[str, Any] | None:
     return cleaned or None
 
 
+#: The exact message great_expectations' own `ExpectColumnValuesToBeOfType._validate`
+#: raises when `column` is absent from the already-introspected `table.column_types`
+#: metric: a bare `[...][0]` on an empty list, i.e. a plain `IndexError` with no
+#: column name or context. GX successfully read the table's real columns — the crash
+#: IS the signal this one isn't among them (#1850) — so this is narrowly rewritten
+#: into the same "does not exist" wording the sibling map-type expectations already
+#: get for free from a live SQL error, rather than patched in the vendored library.
+_OF_TYPE_EXPECTATION = "expect_column_values_to_be_of_type"
+_OF_TYPE_MISSING_COLUMN_MESSAGE = "list index out of range"
+
+
+def _rewrite_of_type_missing_column(
+    expectation_type: str, kwargs: Any, error_message: str | None
+) -> str | None:
+    if expectation_type != _OF_TYPE_EXPECTATION or error_message != _OF_TYPE_MISSING_COLUMN_MESSAGE:
+        return error_message
+    column = dict(kwargs).get("column") if kwargs else None
+    if not isinstance(column, str) or not column:
+        return error_message
+    return f'the column "{column}" does not exist on this table'
+
+
 def _submission_index(check_result: Any) -> int | None:
     """The ``dataq_index`` marker stamped into this result's expectation `meta`, or
     ``None`` when absent (a manually-constructed / legacy result carrying no marker).
@@ -202,6 +224,10 @@ def to_suite_outcome(gx_result: Any) -> SuiteOutcome:
         detail: dict[str, Any] = check_result.result or {}
         observed = _bounded_observed_value(detail)
         errored, error_message = _check_errored(getattr(check_result, "exception_info", None))
+        if errored:
+            error_message = _rewrite_of_type_missing_column(
+                config.type, config.kwargs, error_message
+            )
         outcomes.append(
             CheckOutcome(
                 expectation_type=config.type,
