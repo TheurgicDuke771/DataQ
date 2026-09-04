@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "256f3121f093",
+  "strategy": "manual-commit",
+  "branch": "docs/ai-features-ui-recapture",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/e2e-docs/README.md",
+    "scripts/docs/capture-stack.sh"
+  ],
+  "sessions": [
+    {
+      "metadata": "/25/6f3121f093/0/metadata.json",
+      "transcript": "/25/6f3121f093/0/full.jsonl",
+      "compact_transcript": "/25/6f3121f093/0/transcript.jsonl",
+      "content_hash": "/25/6f3121f093/0/content_hash.txt",
+      "prompt": "/25/6f3121f093/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 46,
+    "cache_creation_tokens": 18198,
+    "cache_read_tokens": 19683931,
+    "output_tokens": 8531,
+    "api_call_count": 23
+  }
+}
