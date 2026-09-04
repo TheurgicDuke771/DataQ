@@ -1,4 +1,5 @@
 import { api } from './client';
+import type { RcaNarrative } from './llm';
 
 /**
  * Incidents API — the stateful, deduped, evidence-carrying roll-up of the per-result alert signal
@@ -137,5 +138,20 @@ export async function resolveIncident(incidentId: string, note?: string): Promis
   const { data } = await api.post<IncidentDetail>(`/incidents/${incidentId}/resolve`, {
     note: note ?? null,
   });
+  return data;
+}
+
+/** `GET /incidents/{id}/narrative` — the latest root-cause narrative (#1845). `narrative` is
+ *  null both when none exists and when one is withheld from this caller; `withheld_reason`
+ *  tells the two apart, so the UI never renders "none" over one it may not read. */
+export interface IncidentNarrativeRead {
+  narrative: RcaNarrative | null;
+  invocation_id: string | null;
+  generated_at: string | null;
+  withheld_reason: string | null;
+}
+
+export async function getIncidentNarrative(incidentId: string): Promise<IncidentNarrativeRead> {
+  const { data } = await api.get<IncidentNarrativeRead>(`/incidents/${incidentId}/narrative`);
   return data;
 }
