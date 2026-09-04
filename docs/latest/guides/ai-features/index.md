@@ -154,7 +154,7 @@ curl -X POST https://<your-dataq-host>/api/v1/llm/sql_generation \
   -H "Authorization: Bearer dq_live_…" -H "Content-Type: application/json" \
   -d '{
     "suite_id": "<suite id>",
-    "description": "No order line may have a negative quantity or a unit price of zero",
+    "description": "Every order must have a positive total amount, and no order may be dated in the future",
     "include_profile": true
   }'
 ```
@@ -162,14 +162,14 @@ curl -X POST https://<your-dataq-host>/api/v1/llm/sql_generation \
 DataQ lists the target's columns from the warehouse, adds masked profile statistics if you
 asked for them, and asks for **one read-only `SELECT`**. The model's SQL then passes the
 same validator a human's custom SQL does — a single `SELECT` / `WITH` statement, nothing
-chained after a `;`, no write or DDL keywords — before it is ever stored. The invocation's
-`response` has the shape below (illustrative — the SQL is the model's, the validation is
-DataQ's):
+chained after a `;`, no write or DDL keywords — before it is ever stored. This is what a
+live Snowflake connection and the same 14-billion-parameter local model returned for the
+description above, against an orders table:
 
 ```json
 {
-  "sql": "SELECT * FROM ORDER_LINES WHERE QUANTITY < 0 OR UNIT_PRICE = 0",
-  "explanation": "Returns the rows that break the rule; the check fails when this returns any row."
+  "sql": "SELECT order_number, order_total, order_ts FROM RETAIL.ORDERS_HEADER WHERE order_total <= 0 OR order_ts > CURRENT_TIMESTAMP()",
+  "explanation": "Identifies orders with a non-positive total amount or with an order timestamp in the future."
 }
 ```
 
@@ -195,28 +195,39 @@ value, null, set, range, regex and uniqueness checks, but no row-count or cross-
 types — and gets back candidate checks, each with a name, a rationale and a full config. A
 **freshness** suggestion is offered only when the suite has an enabled pipeline trigger
 binding, because its threshold is grounded in that pipeline's observed cadence, not in the
-column profile. Every candidate then
-goes through the validator `create_check` uses; one that fails is dropped and reported under
-`rejected`, and if *all* fail the invocation fails rather than returning "nothing". The
-success shape (illustrative):
+column profile — when offered, it carries a `fail_threshold_hours` field instead of a
+`config` threshold. Every candidate then goes through the validator `create_check` uses; a
+suggestion naming a column the table doesn't have is refused the same way, and one that
+fails is dropped and reported under `rejected` — if *all* fail, the invocation fails rather
+than returning "nothing". This is what the same live connection and model returned for a
+suite with no trigger binding (so no freshness candidate):
 
 ```json
 {
   "suggestions": [
     {
       "expectation_type": "expect_column_values_to_not_be_null",
-      "name": "order_id not null",
-      "rationale": "0 nulls in the profile; a key column should stay that way.",
-      "config": {"column": "order_id"},
+      "name": "store_id_not_null_for_store_orders",
+      "rationale": "Store ID should not be null for orders placed in stores.",
+      "config": {"column": "store_id", "mostly": 0.318},
       "dimension": "completeness"
     },
     {
-      "expectation_type": "monitor:freshness",
-      "name": "order_ts arrives daily",
-      "rationale": "order_ts is the only timestamp column; the bound pipeline lands daily.",
-      "config": {"column": "order_ts"},
-      "dimension": "timeliness",
-      "fail_threshold_hours": 26
+      "expectation_type": "expect_column_distinct_values_to_be_in_set",
+      "name": "valid_promo_ids",
+      "rationale": "Ensure only valid promo IDs are in the table.",
+      "config": {
+        "column": "promo_id",
+        "value_set": ["PROMO-0001", "PROMO-0002", "PROMO-0009", "PROMO-0011", "PROMO-0012"]
+      },
+      "dimension": "validity"
+    },
+    {
+      "expectation_type": "expect_column_values_to_match_regex",
+      "name": "order_number_format",
+      "rationale": "Verify that all order numbers follow the expected format.",
+      "config": {"column": "order_number", "regex": "^ORD-[0-9]{4}$"},
+      "dimension": "validity"
     }
   ],
   "rejected": [],

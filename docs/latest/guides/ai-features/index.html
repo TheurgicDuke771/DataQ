@@ -2522,19 +2522,19 @@ rule in plain language against a suite whose target is a table on a SQL datasour
 <span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer dq_live_…"</span><span class="w"> </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
 <span class="s1">    "suite_id": "&lt;suite id&gt;",</span>
-<span class="s1">    "description": "No order line may have a negative quantity or a unit price of zero",</span>
+<span class="s1">    "description": "Every order must have a positive total amount, and no order may be dated in the future",</span>
 <span class="s1">    "include_profile": true</span>
 <span class="s1">  }'</span>
 </code></pre></div>
 <p>DataQ lists the target's columns from the warehouse, adds masked profile statistics if you
 asked for them, and asks for <strong>one read-only <code>SELECT</code></strong>. The model's SQL then passes the
 same validator a human's custom SQL does — a single <code>SELECT</code> / <code>WITH</code> statement, nothing
-chained after a <code>;</code>, no write or DDL keywords — before it is ever stored. The invocation's
-<code>response</code> has the shape below (illustrative — the SQL is the model's, the validation is
-DataQ's):</p>
+chained after a <code>;</code>, no write or DDL keywords — before it is ever stored. This is what a
+live Snowflake connection and the same 14-billion-parameter local model returned for the
+description above, against an orders table:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">"sql"</span><span class="p">:</span><span class="w"> </span><span class="s2">"SELECT * FROM ORDER_LINES WHERE QUANTITY &lt; 0 OR UNIT_PRICE = 0"</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">"explanation"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Returns the rows that break the rule; the check fails when this returns any row."</span>
+<span class="w">  </span><span class="nt">"sql"</span><span class="p">:</span><span class="w"> </span><span class="s2">"SELECT order_number, order_total, order_ts FROM RETAIL.ORDERS_HEADER WHERE order_total &lt;= 0 OR order_ts &gt; CURRENT_TIMESTAMP()"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"explanation"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Identifies orders with a non-positive total amount or with an order timestamp in the future."</span>
 <span class="p">}</span>
 </code></pre></div>
 <p>Paste the result into the custom-SQL editor like any hand-written query and <strong>dry-run it</strong>
@@ -2554,26 +2554,37 @@ value, null, set, range, regex and uniqueness checks, but no row-count or cross-
 types — and gets back candidate checks, each with a name, a rationale and a full config. A
 <strong>freshness</strong> suggestion is offered only when the suite has an enabled pipeline trigger
 binding, because its threshold is grounded in that pipeline's observed cadence, not in the
-column profile. Every candidate then
-goes through the validator <code>create_check</code> uses; one that fails is dropped and reported under
-<code>rejected</code>, and if <em>all</em> fail the invocation fails rather than returning "nothing". The
-success shape (illustrative):</p>
+column profile — when offered, it carries a <code>fail_threshold_hours</code> field instead of a
+<code>config</code> threshold. Every candidate then goes through the validator <code>create_check</code> uses; a
+suggestion naming a column the table doesn't have is refused the same way, and one that
+fails is dropped and reported under <code>rejected</code> — if <em>all</em> fail, the invocation fails rather
+than returning "nothing". This is what the same live connection and model returned for a
+suite with no trigger binding (so no freshness candidate):</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
 <span class="w">  </span><span class="nt">"suggestions"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <span class="w">    </span><span class="p">{</span>
 <span class="w">      </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"expect_column_values_to_not_be_null"</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"order_id not null"</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">"rationale"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0 nulls in the profile; a key column should stay that way."</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"order_id"</span><span class="p">},</span>
+<span class="w">      </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"store_id_not_null_for_store_orders"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"rationale"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Store ID should not be null for orders placed in stores."</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"store_id"</span><span class="p">,</span><span class="w"> </span><span class="nt">"mostly"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.318</span><span class="p">},</span>
 <span class="w">      </span><span class="nt">"dimension"</span><span class="p">:</span><span class="w"> </span><span class="s2">"completeness"</span>
 <span class="w">    </span><span class="p">},</span>
 <span class="w">    </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"monitor:freshness"</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"order_ts arrives daily"</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">"rationale"</span><span class="p">:</span><span class="w"> </span><span class="s2">"order_ts is the only timestamp column; the bound pipeline lands daily."</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"order_ts"</span><span class="p">},</span>
-<span class="w">      </span><span class="nt">"dimension"</span><span class="p">:</span><span class="w"> </span><span class="s2">"timeliness"</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">"fail_threshold_hours"</span><span class="p">:</span><span class="w"> </span><span class="mi">26</span>
+<span class="w">      </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"expect_column_distinct_values_to_be_in_set"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"valid_promo_ids"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"rationale"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Ensure only valid promo IDs are in the table."</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"promo_id"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"value_set"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"PROMO-0001"</span><span class="p">,</span><span class="w"> </span><span class="s2">"PROMO-0002"</span><span class="p">,</span><span class="w"> </span><span class="s2">"PROMO-0009"</span><span class="p">,</span><span class="w"> </span><span class="s2">"PROMO-0011"</span><span class="p">,</span><span class="w"> </span><span class="s2">"PROMO-0012"</span><span class="p">]</span>
+<span class="w">      </span><span class="p">},</span>
+<span class="w">      </span><span class="nt">"dimension"</span><span class="p">:</span><span class="w"> </span><span class="s2">"validity"</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"expect_column_values_to_match_regex"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"order_number_format"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"rationale"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Verify that all order numbers follow the expected format."</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"order_number"</span><span class="p">,</span><span class="w"> </span><span class="nt">"regex"</span><span class="p">:</span><span class="w"> </span><span class="s2">"^ORD-[0-9]{4}$"</span><span class="p">},</span>
+<span class="w">      </span><span class="nt">"dimension"</span><span class="p">:</span><span class="w"> </span><span class="s2">"validity"</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">],</span>
 <span class="w">  </span><span class="nt">"rejected"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
