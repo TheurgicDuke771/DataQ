@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "83193fd9b764",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1530-1531-dmf-dryrun-mcp-engine",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/83/193fd9b764/0/metadata.json",
+      "transcript": "/83/193fd9b764/0/full.jsonl",
+      "compact_transcript": "/83/193fd9b764/0/transcript.jsonl",
+      "content_hash": "/83/193fd9b764/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 300,
+    "cache_creation_tokens": 290255,
+    "cache_read_tokens": 33892751,
+    "output_tokens": 71877,
+    "api_call_count": 150
+  }
+}
