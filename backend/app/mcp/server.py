@@ -865,12 +865,13 @@ def list_checks(
     check, to find its id. Returns, per check: its id, human name, kind
     (``expectation`` for a Great Expectations rule, or a monitor kind —
     ``freshness`` / ``volume`` / ``schema_drift`` / ``anomaly`` / ``comparison``),
-    the expectation type, its DQ dimension (accuracy / completeness / consistency
-    / integrity / timeliness / uniqueness / validity, or null when unclassified),
-    its configuration, the baseline connection for a comparison check, any
-    warn/fail/critical severity thresholds, and whether its alerts are currently
-    snoozed. This is the suite's *definition* — for how those checks last
-    performed, use ``get_suite_results``.
+    the expectation type, ``engine`` (ADR 0036 — ``gx`` unless it was authored
+    against a platform-native engine like ``dmf``), its DQ dimension (accuracy /
+    completeness / consistency / integrity / timeliness / uniqueness / validity,
+    or null when unclassified), its configuration, the baseline connection for a
+    comparison check, any warn/fail/critical severity thresholds, and whether its
+    alerts are currently snoozed. This is the suite's *definition* — for how
+    those checks last performed, use ``get_suite_results``.
 
     A null ``alert_snoozed_until`` rules out a per-check snooze only — it does
     **not** mean an alert would have been delivered, which also depends on the
