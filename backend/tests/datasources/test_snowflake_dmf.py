@@ -13,6 +13,7 @@ from backend.app.datasources.monitors import MonitorConfigError
 from backend.app.datasources.snowflake_dmf import (
     build_dmf_statement,
     evaluate_dmf_check,
+    probe_dmf_capability,
 )
 
 
@@ -300,3 +301,34 @@ def test_a_bad_dmf_identifier_is_echoed_bounded() -> None:
     message = str(exc_info.value)
     assert message.startswith("invalid table identifier: 'xxx") and message.endswith("…")
     assert len(message) < 300
+
+
+# ── connection-test-time capability probe (#1867) ───────────────────────────
+
+
+def test_probe_dmf_capability_success() -> None:
+    assert probe_dmf_capability(lambda s: 3600) == {"available": True}
+
+
+def test_probe_dmf_capability_classifies_a_privilege_failure() -> None:
+    def boom(statement: str) -> Any:
+        raise RuntimeError("Insufficient privileges to operate on data metric function")
+
+    result = probe_dmf_capability(boom)
+    assert result["available"] is False
+    assert "SNOWFLAKE.DATA_METRIC_USER" in result["reason"]
+
+
+def test_probe_dmf_capability_never_stores_the_raw_exception_text() -> None:
+    # An unrecognized failure shape falls through to `safe_failure_reason`, which
+    # is itself classified — the raw driver text (DSN/credential-bearing) must
+    # never survive into the stored reason (#1867, mirroring the #900 rule).
+    secret_bearing_text = "connection failed: user=svc_dataq password=hunter2 unreachable"
+
+    def boom(statement: str) -> Any:
+        raise RuntimeError(secret_bearing_text)
+
+    result = probe_dmf_capability(boom)
+    assert result["available"] is False
+    assert "hunter2" not in result["reason"]
+    assert "svc_dataq" not in result["reason"]

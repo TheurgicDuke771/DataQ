@@ -131,7 +131,13 @@ export function CheckNew() {
           <Form.Item name="name" label="Name" rules={[{ required: true }]}>
             <Input placeholder="e.g. order_id not null" />
           </Form.Item>
-          {showEngineChoice && <EngineField />}
+          {showEngineChoice && (
+            <EngineField
+              dmfCapability={
+                state.status === 'ok' ? state.data.connection?.engine_capabilities?.dmf : undefined
+              }
+            />
+          )}
           {suiteId && isCustomSql(expectationType) && (
             <Form.Item>
               <SqlGeneratePanel suiteId={suiteId} form={form} />

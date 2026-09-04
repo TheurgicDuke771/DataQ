@@ -56,12 +56,15 @@ class _PassAdapter:
         # `_validated_config` only checks that this doesn't raise — the return value is unused.
         return None
 
-    def test(self, raw: dict[str, Any], secret: str) -> None:
-        return None
+    def test(
+        self, raw: dict[str, Any], secret: str, *, capability_probe: Any = None, **_: Any
+    ) -> None:
+        if capability_probe is not None:
+            capability_probe(None)  # no real connection object to hand back
 
 
 class _FailAdapter(_PassAdapter):
-    def test(self, raw: dict[str, Any], secret: str) -> None:
+    def test(self, raw: dict[str, Any], secret: str, **_: Any) -> None:
         raise RuntimeError("warehouse unreachable")
 
 
@@ -76,7 +79,7 @@ class _OptionalSecretAdapter(_PassAdapter):
     def __init__(self) -> None:
         self.received_secret: str | object | None = "UNSET"
 
-    def test(self, raw: dict[str, Any], secret: str | None) -> None:
+    def test(self, raw: dict[str, Any], secret: str | None, **_: Any) -> None:
         self.received_secret = secret
 
 
@@ -501,6 +504,91 @@ def test_test_connection_secret_required_adapter_unaffected(db_session: Any) -> 
     conn = _create(db_session, FakeSecretStore(), secret=None)
     with pytest.raises(ConnectionTestFailedError, match="no stored credential"):
         svc.test_connection(db_session, conn.id, secret_store=FakeSecretStore())
+
+
+# ──────── DMF capability probe on test/reauth, snowflake only (#1867) ──────
+
+
+class _AvailableDmfAdapter(_PassAdapter):
+    def _probe_dmf_on_connection(self, conn: Any) -> dict[str, Any]:
+        return {"available": True}
+
+
+class _UnavailableDmfAdapter(_PassAdapter):
+    def _probe_dmf_on_connection(self, conn: Any) -> dict[str, Any]:
+        return {"available": False, "reason": "DMFs need Enterprise Edition"}
+
+
+class _BuggyDmfAdapter(_PassAdapter):
+    """Simulates the probe itself blowing up (network hiccup, bug) — distinct
+    from a classified DMF-unavailable result, which the real probe never raises
+    for (it's caught and classified inside `probe_dmf_capability`).
+    """
+
+    def _probe_dmf_on_connection(self, conn: Any) -> dict[str, Any]:
+        raise RuntimeError("connection reset by peer, host=10.0.0.5 user=svc_dataq")
+
+
+def test_test_connection_stores_dmf_available(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = FakeSecretStore()
+    conn = _create(db_session, store)
+    monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _AvailableDmfAdapter())
+    svc.test_connection(db_session, conn.id, secret_store=store)
+    db_session.refresh(conn)
+    assert conn.engine_capabilities == {"dmf": {"available": True}}
+
+
+def test_test_connection_stores_dmf_unavailable_with_classified_reason(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = FakeSecretStore()
+    conn = _create(db_session, store)
+    monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _UnavailableDmfAdapter())
+    svc.test_connection(db_session, conn.id, secret_store=store)
+    db_session.refresh(conn)
+    assert conn.engine_capabilities == {
+        "dmf": {"available": False, "reason": "DMFs need Enterprise Edition"}
+    }
+
+
+def test_test_connection_probe_failure_does_not_fail_the_connection_test(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The DMF probe is a soft signal (ADR 0036 §3): a connection that tests green
+    # must stay green even if the capability probe blows up.
+    store = FakeSecretStore()
+    conn = _create(db_session, store)
+    monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _BuggyDmfAdapter())
+    svc.test_connection(db_session, conn.id, secret_store=store)  # no raise
+    db_session.refresh(conn)
+    assert conn.engine_capabilities is None
+
+
+def test_test_connection_non_snowflake_leaves_engine_capabilities_untouched(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = FakeSecretStore()
+    conn = _create_adf(db_session, store)
+    monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _PassAdapter())
+    svc.test_connection(db_session, conn.id, secret_store=store)
+    db_session.refresh(conn)
+    assert conn.engine_capabilities is None
+
+
+def test_reauth_connection_also_stores_dmf_capability(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `reauth_connection` verifies through the same `test_connection` probe (#838).
+    store = FakeSecretStore()
+    conn = _create(db_session, store)
+    monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _AvailableDmfAdapter())
+    svc.reauth_connection(
+        db_session, conn.id, secret="new-p@ss", secret_store=store, actor_id=_author_of(conn)
+    )
+    db_session.refresh(conn)
+    assert conn.engine_capabilities == {"dmf": {"available": True}}
 
 
 # ───────────────── draft connection test — unsaved probe (#351) ────────────

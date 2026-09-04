@@ -158,6 +158,19 @@ export interface Connection {
    */
   inventory_sync_last_table_count?: number | null;
   inventory_sync_zero_since?: string | null;
+  /**
+   * Native-engine capability probe (#1867, ADR 0036 §3) — `snowflake` only.
+   * `undefined`/`null` until the connection has been tested at least once;
+   * that is "never probed", not "unavailable".
+   */
+  engine_capabilities?: { dmf?: DmfCapability } | null;
+}
+
+/** The `engine_capabilities.dmf` shape a Snowflake connection test/reauth writes. */
+export interface DmfCapability {
+  available: boolean;
+  /** Classified, safe-to-display remediation — never a raw driver/exception message. */
+  reason?: string;
 }
 
 /** Human-readable labels for the connection types, for grouping + display. */

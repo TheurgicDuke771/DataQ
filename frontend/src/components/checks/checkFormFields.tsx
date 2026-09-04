@@ -12,7 +12,7 @@ import {
 import type { Rule } from 'antd/es/form';
 import { lazy, Suspense } from 'react';
 
-import type { ConnectionType } from '../../api/connections';
+import type { ConnectionType, DmfCapability } from '../../api/connections';
 import { ENGINE_LABEL } from './checkBadges';
 import { parseList } from './checkForm';
 import { validateCustomSqlQuery } from './customSql';
@@ -145,19 +145,47 @@ export function ConfigFieldItem({
   );
 }
 
+const ENGINE_HELP =
+  "Great Expectations reads the data into a batch to evaluate it; Snowflake DMF runs SNOWFLAKE.CORE.FRESHNESS natively in the warehouse — no data leaves Snowflake, but it's Snowflake-only and evaluates fewer check types.";
+
 /** The GX/DMF engine choice (ADR 0036) — shown only for Freshness on Snowflake. */
-export function EngineField({ initialValue }: { initialValue?: string }) {
+export function EngineField({
+  initialValue,
+  dmfCapability,
+}: {
+  initialValue?: string;
+  /** The connection's probed DMF capability (#1867) — `undefined` means never tested. */
+  dmfCapability?: DmfCapability;
+}) {
+  const dmfUnavailable = dmfCapability?.available === false;
   return (
     <Form.Item
       name="engine"
       label="Engine"
       initialValue={initialValue ?? 'gx'}
-      extra="Great Expectations reads the data into a batch to evaluate it; Snowflake DMF runs SNOWFLAKE.CORE.FRESHNESS natively in the warehouse — no data leaves Snowflake, but it's Snowflake-only and evaluates fewer check types."
+      extra={
+        dmfUnavailable ? (
+          <>
+            {ENGINE_HELP}{' '}
+            <Typography.Text type="warning">
+              ⚠ DMF was unavailable the last time this connection was tested
+              {dmfCapability?.reason ? `: ${dmfCapability.reason}` : ''}. Still selectable — the
+              connection's grants may have changed since.
+            </Typography.Text>
+          </>
+        ) : (
+          ENGINE_HELP
+        )
+      }
     >
       <Select
-        // Built from ENGINE_LABEL (checkBadges.tsx) so a newly-offered engine or a label change
-        // has exactly one place to update.
-        options={Object.entries(ENGINE_LABEL).map(([value, label]) => ({ value, label }))}
+        // Built from ENGINE_LABEL (checkBadges.tsx) so a newly-offered engine or a label change has
+        // exactly one place to update; the DMF option is left selectable even when unavailable (see
+        // the caveat above) rather than disabled, since the reason it's shown in `extra`.
+        options={Object.entries(ENGINE_LABEL).map(([value, label]) => ({
+          value,
+          label: value === 'dmf' && dmfUnavailable ? `${label} ⚠` : label,
+        }))}
       />
     </Form.Item>
   );

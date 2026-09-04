@@ -3,7 +3,7 @@ import { App, Button, Card, Drawer, Flex, Form, Input, Select, Spin, Typography 
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
-import { type ConnectionType, getConnection } from '../api/connections';
+import { type ConnectionType, type DmfCapability, getConnection } from '../api/connections';
 import { canRunSuite, type Check, getCheck, getSuite, updateCheck } from '../api/suites';
 import { buildCheckPayload, configToForm } from '../components/checks/checkForm';
 import {
@@ -82,6 +82,7 @@ function CheckEditView({ suiteId, checkId }: { suiteId?: string; checkId?: strin
             check={state.data.check}
             target={state.data.suite.target}
             connectionType={state.data.connection?.type}
+            dmfCapability={state.data.connection?.engine_capabilities?.dmf}
             // History's Restore action is edit-gated the same way the rest of
             // the suite's write actions are (Suites.tsx `canRun`).
             canRestore={canRunSuite(state.data.suite)}
@@ -100,6 +101,7 @@ function CheckEditForm({
   check,
   target,
   connectionType,
+  dmfCapability,
   canRestore,
   onRestored,
   onCancel,
@@ -109,6 +111,8 @@ function CheckEditForm({
   check: Check;
   target: Record<string, unknown> | null;
   connectionType?: ConnectionType;
+  /** The connection's probed DMF capability (#1867) — `undefined` means never tested. */
+  dmfCapability?: DmfCapability;
   /** Whether the caller may restore a version (#283) — passed straight through
    *  to `CheckHistoryDrawer`. */
   canRestore: boolean;
@@ -245,7 +249,7 @@ function CheckEditForm({
             <Typography.Paragraph type="secondary" style={{ marginTop: -8 }}>
               {spec.description}
             </Typography.Paragraph>
-            {showEngineChoice && <EngineField />}
+            {showEngineChoice && <EngineField dmfCapability={dmfCapability} />}
             {isCustomSql(selectedType) && (
               <Form.Item>
                 <SqlGeneratePanel suiteId={suiteId} form={form} />

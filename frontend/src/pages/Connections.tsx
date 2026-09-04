@@ -386,6 +386,24 @@ function ConnectionCard({
                 />
               </Tooltip>
             )}
+            {/* Native-engine capability probe (#1867, ADR 0036 §3) — snowflake only, and
+                supplementary: a check's own engine choice is where this actually matters, so this
+                stays a quiet badge rather than a headline status. */}
+            {connection.type === 'snowflake' &&
+              (connection.engine_capabilities?.dmf === undefined ||
+              connection.engine_capabilities.dmf === null ? (
+                <Tooltip title="DMF availability hasn't been probed yet — it's checked the next time this connection is tested.">
+                  <Badge status="default" text="DMF: not yet tested" />
+                </Tooltip>
+              ) : connection.engine_capabilities.dmf.available ? (
+                <Badge status="success" text="DMF available" />
+              ) : (
+                <Tooltip
+                  title={connection.engine_capabilities.dmf.reason ?? 'DMF is not available'}
+                >
+                  <Badge status="warning" text="DMF unavailable" />
+                </Tooltip>
+              ))}
             {/* Opted-in inventory sync (#1104) whose principal can't read the
                 enumeration query — e.g. a UC PAT missing SELECT on
                 system.information_schema — used to fail every daily tick with

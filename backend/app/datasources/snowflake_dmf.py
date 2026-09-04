@@ -151,6 +151,19 @@ def evaluate_dmf_check(
         )
 
 
+def probe_dmf_capability(fetch_scalar: Any) -> dict[str, Any]:
+    """Connection-test-time DMF availability probe (#1867) — a self-contained
+    system-DMF call (no table access needed) that exercises exactly the
+    edition + grant requirements a real dmf-engine check would hit. Never
+    raises; the result is the `engine_capabilities["dmf"]` shape.
+    """
+    try:
+        fetch_scalar("SELECT SNOWFLAKE.CORE.FRESHNESS(SELECT CURRENT_TIMESTAMP())")
+        return {"available": True}
+    except Exception as exc:
+        return {"available": False, "reason": _classify_dmf_error(exc)}
+
+
 def _classify_dmf_error(exc: Exception) -> str:
     """Fixed guidance for the DMF failure shapes live testing surfaced —
     Snowflake's own messages either mislead when generically classified (an

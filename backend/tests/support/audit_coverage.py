@@ -105,7 +105,10 @@ EXEMPT: Final[dict[tuple[str, str], str]] = {
         "saves nothing to the suite it narrates, unlike the two above"
     ),
     ("POST", "/api/v1/connections/{connection_id}/test"): (
-        "an outbound reachability probe; changes no configuration"
+        "an outbound reachability probe. On Snowflake it also (re-)writes "
+        "engine_capabilities (#1867) -- but that's a re-derivable diagnostic the "
+        "probe recomputes identically on every call, not user-authored config, so "
+        "it stays exempt rather than generating an audit event per Test click"
     ),
     ("POST", "/api/v1/suites/{suite_id}/checks/dryrun"): (
         "evaluates a check without saving it — the point of a dry run"

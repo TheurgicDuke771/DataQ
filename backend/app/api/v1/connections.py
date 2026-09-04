@@ -96,6 +96,10 @@ class ConnectionRead(ApiModel):
     inventory_sync_last_table_count: int | None = None
     inventory_sync_zero_since: datetime | None = None
 
+    # Native-engine capability probe (#1867, ADR 0036 §3) — `snowflake` only; `None` until the
+    # connection has been tested at least once (never probed), not "unavailable".
+    engine_capabilities: dict[str, Any] | None = None
+
     @classmethod
     def from_model(
         cls, conn: Connection, health: svc.DatasourceHealth | None = None
@@ -124,6 +128,7 @@ class ConnectionRead(ApiModel):
             inventory_sync_failing_since=conn.inventory_sync_failing_since,
             inventory_sync_last_table_count=conn.inventory_sync_last_table_count,
             inventory_sync_zero_since=conn.inventory_sync_zero_since,
+            engine_capabilities=conn.engine_capabilities,
         )
 
 

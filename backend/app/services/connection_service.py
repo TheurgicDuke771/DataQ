@@ -877,6 +877,52 @@ def delete_connection(
     log.info("connection_deleted", connection_id=str(connection_id))
 
 
+def _capability_probe_kwargs(adapter: Any, capabilities: dict[str, Any]) -> dict[str, Any]:
+    """`test()`'s optional `capability_probe` kwarg, run on the SAME connection
+    `test()` already opened (#1867 review — a second Snowflake login purely for
+    the DMF probe would double every Test/Reauth click's latency). Empty for any
+    adapter that offers no native-engine probe.
+    """
+    prober = getattr(adapter, "_probe_dmf_on_connection", None)
+    if prober is None:
+        return {}
+
+    def _run(conn: Any) -> None:
+        try:
+            capabilities["dmf"] = prober(conn)
+        except Exception:
+            # Soft signal: a capability-probe bug must never fail a successful
+            # connectivity test.
+            log.warning("connection_dmf_probe_failed")
+
+    return {"capability_probe": _run}
+
+
+def _persist_engine_capabilities(
+    session: Session, conn: Connection, capabilities: dict[str, Any]
+) -> None:
+    """Soft signal, never a test failure: a connection can test successfully even
+    when a native engine isn't available on it, so a persistence error here is
+    logged and swallowed, not raised (#1867).
+    """
+    if not capabilities:
+        return
+    try:
+        conn.engine_capabilities = capabilities
+        session.commit()
+    except Exception:
+        # A commit failure here must not turn a genuinely successful connectivity
+        # test into a 500.
+        session.rollback()
+        log.warning("connection_capability_probe_persist_failed", connection_id=str(conn.id))
+        return
+    log.info(
+        "connection_capability_probe_completed",
+        connection_id=str(conn.id),
+        dmf_available=capabilities.get("dmf", {}).get("available"),
+    )
+
+
 def test_connection(
     session: Session,
     connection_id: uuid.UUID,
@@ -902,8 +948,14 @@ def test_connection(
             detail={"connection_id": str(connection_id)},
         )
 
+    capabilities: dict[str, Any] = {}
     try:
-        adapter.test(dict(conn.config), secret, **_extra_secrets(conn.config, secret_store))
+        adapter.test(
+            dict(conn.config),
+            secret,
+            **_capability_probe_kwargs(adapter, capabilities),
+            **_extra_secrets(conn.config, secret_store),
+        )
     except Exception as exc:
         log.warning(
             "connection_test_failed",
@@ -917,6 +969,7 @@ def test_connection(
         ) from exc
 
     log.info("connection_test_succeeded", connection_id=str(connection_id))
+    _persist_engine_capabilities(session, conn, capabilities)
 
 
 def test_draft_connection(
