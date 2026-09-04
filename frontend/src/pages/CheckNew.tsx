@@ -186,7 +186,12 @@ export function CheckNew() {
     );
   }
 
-  // Step 2 — pick an expectation within the chosen category.
+  // Step 2 — pick an expectation within the chosen category. Custom SQL's real catalog entry
+  // (`group.specs`) has exactly one item — the check it describes IS the one GX expectation,
+  // and that count must stay accurate. "Generate from a description" beside it is a picker-only
+  // shortcut, not a second expectation type: it sets the SAME expectationType (below), so the
+  // resulting config form is identical either way — the choice here is only about how you'd
+  // rather start, hand-writing or describing the rule for the model to translate.
   if (category) {
     const group = categories.find((g) => g.category === category);
     return (
@@ -211,41 +216,30 @@ export function CheckNew() {
               </Typography.Paragraph>
             </Card>
           ))}
+          {category === 'Custom SQL' && (
+            <Card
+              hoverable
+              size="small"
+              style={{ width: 320 }}
+              onClick={() => setExpectationType(CUSTOM_SQL_EXPECTATION_TYPE)}
+            >
+              <Typography.Text strong>Generate from a description</Typography.Text>
+              <Typography.Paragraph type="secondary" style={{ margin: 0, fontSize: 12 }}>
+                Describe the rule in plain language — DataQ writes the SQL, in the same editor
+                below.
+              </Typography.Paragraph>
+            </Card>
+          )}
         </Flex>
       </Page>
     );
   }
-
-  // Step 1 — pick a category. "Generate from a description" is a picker-only shortcut, not a
-  // real category — it exists nowhere backend-side (no `check.kind`, no catalog entry): clicking
-  // it jumps straight to Custom SQL's config form with the generate panel already showing
-  // (`isCustomSql`, below), and the check it produces is byte-identical to a hand-written Custom
-  // SQL one. It gets a full card in the same grid, not a separate callout, because a reader
-  // scanning for "the AI thing" should be able to find it exactly the way they find any other
-  // check type — equal weight, same click.
-  const hasCustomSql = categories.some((g) => g.category === 'Custom SQL');
 
   // Step 1 — pick a category.
   return (
     <Page width={'form'}>
       <Header title="New check" onBack={backToSuite} backLabel="Cancel" />
       <Flex wrap gap={12}>
-        {hasCustomSql && (
-          <Card
-            hoverable
-            size="small"
-            style={{ width: 220 }}
-            onClick={() => {
-              setCategory('Custom SQL');
-              setExpectationType(CUSTOM_SQL_EXPECTATION_TYPE);
-            }}
-          >
-            <Typography.Text strong>Generate from a description</Typography.Text>
-            <Typography.Paragraph type="secondary" style={{ margin: 0, fontSize: 12 }}>
-              Describe the rule in plain language — DataQ writes the Custom SQL
-            </Typography.Paragraph>
-          </Card>
-        )}
         {categories.map((g) => (
           <Card
             key={g.category}

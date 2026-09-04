@@ -1,5 +1,5 @@
 import { App as AntApp } from 'antd';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -259,27 +259,45 @@ describe('CheckNew — type_ hint (issue #768)', () => {
 });
 
 describe('CheckNew — "Generate from a description" shortcut card (#1845 follow-up)', () => {
-  it('is hidden when Custom SQL is not offered (no SQL connection loaded)', () => {
+  it("does not appear in the category grid, and Custom SQL's count stays honest at 1", async () => {
+    mockGetSuite.mockResolvedValue(suite);
+    mockGetConnection.mockResolvedValue(snowflakeConnection);
     renderPage();
+
+    // Not a category of its own — it sets the SAME expectationType as the real Custom SQL
+    // spec, so the outer grid must never claim there are two expectation types here.
     expect(screen.queryByText('Generate from a description')).not.toBeInTheDocument();
+    const customSqlCard = (await screen.findByText('Custom SQL')).closest('.ant-card');
+    expect(customSqlCard).not.toBeNull();
+    expect(within(customSqlCard as HTMLElement).getByText('1 expectation')).toBeInTheDocument();
   });
 
-  it('jumps straight to the Custom SQL config form with the generate panel showing', async () => {
+  it('is absent from the Custom SQL step when Custom SQL is not offered (no SQL connection)', () => {
+    renderPage();
+    expect(screen.queryByText('Custom SQL')).not.toBeInTheDocument();
+  });
+
+  it('sits beside the real Custom SQL card and lands on the identical config form', async () => {
     const user = userEvent.setup();
     mockGetSuite.mockResolvedValue(suite);
     mockGetConnection.mockResolvedValue(snowflakeConnection);
     renderPage();
 
-    await user.click(await screen.findByText('Generate from a description'));
+    await user.click(await screen.findByText('Custom SQL'));
+    // Both cards are visible on the same step — the real expectation and the shortcut.
+    expect(await screen.findByText(/A SQL query that should return no rows/)).toBeInTheDocument();
+    expect(screen.getByText('Generate from a description')).toBeInTheDocument();
 
-    // Landed directly on step 3 — no intermediate category/expectation click needed — with the
-    // SQL-generation panel already rendered, not just a bare Custom SQL editor.
+    await user.click(screen.getByText('Generate from a description'));
+
+    // Identical destination to clicking the real Custom SQL card: the same config form, with
+    // the generate panel visible (it always is, regardless of which card was clicked).
     expect(await screen.findByTestId('sql-generate-panel')).toBeInTheDocument();
     expect(screen.getByLabelText('Name')).toBeInTheDocument();
 
-    // "Back" returns to the (single-entry) Custom SQL expectation list, not all the way to the
-    // category grid — it went through `setCategory`, same as picking the real category would.
+    // "Back" returns to the Custom SQL step, where both cards are still there.
     await user.click(screen.getByRole('button', { name: 'Back' }));
     expect(await screen.findByRole('heading', { name: 'Custom SQL' })).toBeInTheDocument();
+    expect(screen.getByText('Generate from a description')).toBeInTheDocument();
   });
 });
