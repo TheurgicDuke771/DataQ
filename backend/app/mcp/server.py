@@ -2126,9 +2126,12 @@ def dryrun_check(
     expected values.
 
     **Only ``expectation``, ``schema_drift`` and ``anomaly`` kinds can be
-    previewed.** A ``freshness`` or ``volume`` monitor check has no dry-run
-    support at all — refused with an error. The only way to check one is to
-    create it and run the suite.
+    previewed with the default ``gx`` engine.** A ``freshness`` or ``volume``
+    monitor check has no ``gx`` dry-run support — refused with an error. The
+    one exception: ``kind="freshness"`` WITH ``engine="dmf"`` (Snowflake) CAN
+    be previewed — it runs the native DMF freshness query, not the GX path.
+    ``volume`` has no preview under any engine. When in doubt, the only way to
+    check a monitor is to create it and run the suite.
 
     **A preview reads what a real run would read, so it inherits the target's
     sampling.** On ADLS / S3 / Iceberg the evaluation may be over a capped

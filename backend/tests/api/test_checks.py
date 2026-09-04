@@ -1785,6 +1785,35 @@ def test_dryrun_native_engine_unavailable_on_runner(
     assert resp.json()["error"]["code"] == "dry_run_unsupported"
 
 
+def test_dryrun_dmf_freshness_kind_is_previewable(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A dmf freshness preview is the one exception to "monitor kinds have no dry-run" (unlike
+    # gx, DMF_KINDS includes freshness) — found stale-docstring-wise by /code-review on #1868's
+    # MCP dryrun_check docstring; this proves the REST path really does support it.
+    sid = _suite_id(client, db_session, target=_SF_TARGET)
+    runner = _FakeRunner(
+        native_outcome=CheckOutcome(
+            "monitor:freshness", success=True, observed_value={"age_hours": 1.0}
+        ),
+        supported_native_engines=frozenset({"dmf"}),
+    )
+    _patch_runner(monkeypatch, runner)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks/dryrun",
+        json=_dryrun_body(
+            kind="freshness",
+            expectation_type="monitor:freshness",
+            config={"column": "updated_at"},
+            engine="dmf",
+            fail_threshold=48,
+        ),
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "pass"
+    assert runner.native_called_with is not None
+
+
 def test_dryrun_rejects_inverted_thresholds(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
