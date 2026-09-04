@@ -181,10 +181,17 @@ export class LlmInvocationTimeout extends Error {
 const sleep = (ms: number, signal?: AbortSignal) =>
   new Promise<void>((resolve, reject) => {
     const id = setTimeout(resolve, ms);
-    signal?.addEventListener('abort', () => {
-      clearTimeout(id);
-      reject(new DOMException('aborted', 'AbortError'));
-    });
+    // { once: true }: without it, a poll loop re-arming this on every 2s tick over a
+    // multi-minute local-model generation accumulates one listener per tick on the
+    // caller's long-lived signal.
+    signal?.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(id);
+        reject(new DOMException('aborted', 'AbortError'));
+      },
+      { once: true },
+    );
   });
 
 /**
