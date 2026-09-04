@@ -101,6 +101,13 @@ class Settings(BaseSettings):
 
     sample_failures_retention_days: int = 30
 
+    # Zero-sample privacy mode (#1676): when True, no failing-row sample is ever
+    # PERSISTED — `_build_result` forces `sample_failures` null and drops the
+    # monitor "provoking cell" (`unparsed_value`, #989) at write time, so every
+    # downstream reader (results API, alerts, MCP) inherits the suppression for
+    # free rather than needing its own gate.
+    privacy_zero_sample_mode: bool = False
+
     # Audit-log retention (ADR 0041 §2.7).
     audit_retention_days: int = 365
 

@@ -153,6 +153,8 @@ export interface ExternalTransfer {
 export interface DeploymentPosture {
   /** The jurisdiction this deployment declares (`DEPLOYMENT_REGION`) — `null` = not declared. */
   region: string | null;
+  /** Zero-sample privacy mode (#1676) — when true, no failing-row sample is ever persisted. */
+  zero_sample_mode: boolean;
   external_transfers: ExternalTransfer[];
 }
 

@@ -13,6 +13,7 @@ from sqlalchemy import delete, func, null, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
+from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.jsonsafe import sanitize_json
 from backend.app.core.logging import get_logger
@@ -71,17 +72,30 @@ def _build_result(run_id: uuid.UUID, check: Check, outcome: CheckOutcome) -> Res
         fail_threshold=check.fail_threshold,
         critical_threshold=check.critical_threshold,
     )
+    # Zero-sample privacy mode (#1676): a deployment-level switch, so this is the ONE choke
+    # point every check kind funnels through — gate it here and every reader (results API,
+    # alerts, MCP) inherits the suppression from what's actually persisted.
+    zero_sample = get_settings().privacy_zero_sample_mode
     if outcome.errored:
         # One funnel to `observed_value` for every kind, so the #1203 strip can't diverge.
         error_message = strip_statement_echo(outcome.error_message)
         observed = {"error": error_message} if error_message else None
-        # The provoking cell (#989) rides separately so the read layer can redact it.
-        if outcome.observed_value and "unparsed_value" in outcome.observed_value:
+        # The provoking cell (#989) rides separately so the read layer can redact it — under
+        # zero-sample mode it never leaves the runner at all, not even redacted.
+        if (
+            not zero_sample
+            and outcome.observed_value
+            and "unparsed_value" in outcome.observed_value
+        ):
             observed = {**(observed or {}), **sanitize_json(outcome.observed_value)}
         sample = None
     else:
         observed = sanitize_json(outcome.observed_value)
-        sample = sanitize_json(outcome.sample_failures)
+        if zero_sample:
+            observed = _strip_row_level_observed_value(
+                observed, expectation_type=outcome.expectation_type
+            )
+        sample = None if zero_sample else sanitize_json(outcome.sample_failures)
     return Result(
         run_id=run_id,
         check_id=check.id,
@@ -1036,6 +1050,26 @@ _CELL_SCALAR_EXPECTATION_TYPES = frozenset(
         "expect_column_min_to_be_between",
     }
 )
+
+
+def _strip_row_level_observed_value(
+    observed: dict[str, Any] | None, *, expectation_type: str | None
+) -> dict[str, Any] | None:
+    """Zero-sample mode (#1676): drop `observed_value`'s inner value when it is itself
+    row-level data — a list of real column values (set/distinct-value expectations), or a
+    literal cell (`_CELL_SCALAR_EXPECTATION_TYPES`) — rather than a computed aggregate.
+
+    Mirrors the read-time ladder's own classification (`redact_observed_value`) but applies
+    UNCONDITIONALLY, not gated by column policy/tags: zero-sample mode's whole point is not
+    persisting the value at all, not persisting it and masking it on read.
+    """
+    if not isinstance(observed, dict) or "observed_value" not in observed:
+        return observed
+    value = observed["observed_value"]
+    row_level = isinstance(value, list) or expectation_type in _CELL_SCALAR_EXPECTATION_TYPES
+    if not row_level:
+        return observed
+    return {key: val for key, val in observed.items() if key != "observed_value"}
 
 
 def observed_value_exposes_cells(

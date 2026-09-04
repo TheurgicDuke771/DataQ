@@ -359,6 +359,14 @@ function DeploymentPostureSection() {
               )}
             </Typography.Text>
           </Flex>
+          <Flex vertical gap={4}>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              Zero-sample privacy mode
+            </Typography.Text>
+            <Tag color={state.data.zero_sample_mode ? 'green' : 'default'}>
+              {state.data.zero_sample_mode ? 'on — no failing-row samples persisted' : 'off'}
+            </Tag>
+          </Flex>
           <Table<ExternalTransfer>
             scroll={{ x: 'max-content' }}
             dataSource={state.data.external_transfers}
