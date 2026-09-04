@@ -3,7 +3,7 @@
   "checkpoint_id": "a81a97f44cae",
   "strategy": "manual-commit",
   "branch": "docs/issue-1733-staleness-sweep",
-  "checkpoints_count": 1,
+  "checkpoints_count": 4,
   "files_touched": [
     "README.md",
     "backend/app/mcp/server.py",
@@ -27,13 +27,20 @@
       "compact_transcript": "/a8/1a97f44cae/0/transcript.jsonl",
       "content_hash": "/a8/1a97f44cae/0/content_hash.txt",
       "prompt": ""
+    },
+    {
+      "metadata": "/a8/1a97f44cae/1/metadata.json",
+      "transcript": "/a8/1a97f44cae/1/full.jsonl",
+      "compact_transcript": "/a8/1a97f44cae/1/transcript.jsonl",
+      "content_hash": "/a8/1a97f44cae/1/content_hash.txt",
+      "prompt": "/a8/1a97f44cae/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 42,
-    "cache_creation_tokens": 40075,
-    "cache_read_tokens": 5688662,
-    "output_tokens": 15367,
-    "api_call_count": 21
+    "input_tokens": 32625,
+    "cache_creation_tokens": 3948707,
+    "cache_read_tokens": 514953116,
+    "output_tokens": 494866,
+    "api_call_count": 1024
   }
 }

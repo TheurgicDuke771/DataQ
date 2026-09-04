@@ -1,0 +1,57 @@
+Once this lands, we need to re-capture the llm docs screenshot and clips
+
+---
+
+<task-notification>
+<task-id>b2xvuuo4s</task-id>
+<tool-use-id>toolu_01T6XiP2TP2ZtcVaEE8CiL3U</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/e6d12f61-62ed-4c73-afa6-5a85fc724f47/tasks/b2xvuuo4s.output</output-file>
+<status>completed</status>
+<summary>Background command "Poll #1859 until merged or CI fails" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Also, do we need to add anything in the landing page? highlighting these llm features or one of the screenshot/clip?
+
+---
+
+<task-notification>
+<task-id>bxlx8bbcl</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/e6d12f61-62ed-4c73-afa6-5a85fc724f47/tasks/bxlx8bbcl.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch PR 1861's CI run to completion" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b6sfgu79c</task-id>
+<tool-use-id>toolu_01XBm36jXciz4GmtMfBQyjGz</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/e6d12f61-62ed-4c73-afa6-5a85fc724f47/tasks/b6sfgu79c.output</output-file>
+<status>completed</status>
+<summary>Background command "Poll until PR 1862 actually merges, in the background" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+can you check the screenshot for this section - https://theurgicduke771.github.io/DataQ/docs/latest/guides/ai-features/#turn-it-on
+
+---
+
+<task-notification>
+<task-id>b0nwvcvs8</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/e6d12f61-62ed-4c73-afa6-5a85fc724f47/tasks/b0nwvcvs8.output</output-file>
+<status>completed</status>
+<summary>Background command "Poll until PR 1865 actually merges" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Check on the background polls for PR #1861 and #1862 merge status. If either poll notification hasn't arrived yet, check manually with gh pr view. Once both are merged, update docs/progress.md with a consolidated note covering the recapture screenshot, the video trim, and refresh the open-issue/PR counts. If pnpm audit fails again on either, retry it (known flaky 503).
+
+---
+
+swithch to main, sync with remote, remove all dead worktrees, temp files. prune all un-necessary remote/local branches
