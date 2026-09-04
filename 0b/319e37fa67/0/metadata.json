@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "0b319e37fa67",
+  "session_id": "bebce0fa-ad53-418f-b867-850e81800c93",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-04T14:59:15.871657Z",
+  "branch": "fix/issue-1530-1531-dmf-dryrun-mcp-engine",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/mcp/server.py"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "2b2cb59c1a7c",
+  "checkpoint_transcript_start": 790,
+  "transcript_lines_at_start": 790,
+  "compact_transcript_start": 119,
+  "token_usage": {
+    "input_tokens": 30,
+    "cache_creation_tokens": 18177,
+    "cache_read_tokens": 4448129,
+    "output_tokens": 8601,
+    "api_call_count": 15
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-04T14:59:15.819548Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 38,
+    "human_modified": 9,
+    "human_removed": 0,
+    "total_committed": 38,
+    "total_lines_changed": 47,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
