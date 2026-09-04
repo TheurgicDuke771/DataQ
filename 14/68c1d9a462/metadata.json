@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "1468c1d9a462",
+  "strategy": "manual-commit",
+  "branch": "docs/ops-log-1392-rehearsal",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/14/68c1d9a462/0/metadata.json",
+      "transcript": "/14/68c1d9a462/0/full.jsonl",
+      "compact_transcript": "/14/68c1d9a462/0/transcript.jsonl",
+      "content_hash": "/14/68c1d9a462/0/content_hash.txt",
+      "prompt": "/14/68c1d9a462/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 628,
+    "cache_creation_tokens": 522130,
+    "cache_read_tokens": 106567708,
+    "output_tokens": 130726,
+    "api_call_count": 314
+  }
+}
