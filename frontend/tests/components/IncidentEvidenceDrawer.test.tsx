@@ -18,6 +18,12 @@ function renderDrawer(incidentId: string | null, onClose = vi.fn()) {
 
 vi.mock('../../src/api/incidents', () => ({
   getIncident: vi.fn(),
+  getIncidentNarrative: vi.fn().mockResolvedValue({
+    narrative: null,
+    invocation_id: null,
+    generated_at: null,
+    withheld_reason: null,
+  }),
 }));
 const mockGetIncident = vi.mocked(getIncident);
 
