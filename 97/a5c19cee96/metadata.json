@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "97a5c19cee96",
+  "strategy": "manual-commit",
+  "branch": "marketing/highlight-llm-features",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "marketing/index.html"
+  ],
+  "sessions": [
+    {
+      "metadata": "/97/a5c19cee96/0/metadata.json",
+      "transcript": "/97/a5c19cee96/0/full.jsonl",
+      "compact_transcript": "/97/a5c19cee96/0/transcript.jsonl",
+      "content_hash": "/97/a5c19cee96/0/content_hash.txt",
+      "prompt": "/97/a5c19cee96/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 24431,
+    "cache_creation_tokens": 721852,
+    "cache_read_tokens": 277486176,
+    "output_tokens": 288185,
+    "api_call_count": 487
+  }
+}
