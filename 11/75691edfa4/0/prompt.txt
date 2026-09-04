@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>by5xqp3w0</task-id>
+<tool-use-id>toolu_01FrJoyuPgzvGzoZjDrm1BHV</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/e6d12f61-62ed-4c73-afa6-5a85fc724f47/tasks/by5xqp3w0.output</output-file>
+<status>completed</status>
+<summary>Background command "Poll #1854 and #1856 until both merged or a real failure appears" completed (exit code 0)</summary>
+</task-notification>
