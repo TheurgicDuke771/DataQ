@@ -86,7 +86,13 @@ RCA_SCHEMA: dict[str, Any] = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "cause": {"type": "string"},
+                    "cause": {
+                        "type": "string",
+                        "description": "One plain-language sentence explaining this hypothesis. "
+                        "Citation happens in evidence_refs, a separate structured field — never "
+                        "name an evidence layer (e.g. 'metric_trend', 'failing_result') inside "
+                        "this sentence itself.",
+                    },
                     "confidence": {"type": "string", "enum": sorted(_CONFIDENCE_LEVELS)},
                     "evidence_refs": {
                         "type": "array",
