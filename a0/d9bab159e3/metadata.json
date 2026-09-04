@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "a0d9bab159e3",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1845-llm-ui",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/site/reference/openapi.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/a0/d9bab159e3/0/metadata.json",
+      "transcript": "/a0/d9bab159e3/0/full.jsonl",
+      "compact_transcript": "/a0/d9bab159e3/0/transcript.jsonl",
+      "content_hash": "/a0/d9bab159e3/0/content_hash.txt",
+      "prompt": "/a0/d9bab159e3/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 28,
+    "cache_creation_tokens": 9896,
+    "cache_read_tokens": 6689998,
+    "output_tokens": 2711,
+    "api_call_count": 14
+  }
+}
