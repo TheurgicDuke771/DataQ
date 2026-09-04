@@ -360,8 +360,8 @@ function SampleFailures({
   if (!sample) {
     return redaction === 'zero_sample' ? (
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        Failing rows suppressed — this deployment's zero-sample privacy mode never
-        persisted a sample for this result.
+        Failing rows suppressed — this deployment's zero-sample privacy mode never persisted a
+        sample for this result.
       </Typography.Text>
     ) : null;
   }
