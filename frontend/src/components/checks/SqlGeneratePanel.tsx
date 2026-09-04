@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { generateSql, runLlmFeature, type SqlGenerationResponse } from '../../api/llm';
 import { errorMessage, fetchFailure } from '../../utils/errors';
+import { AiCaveat } from '../shared/AiCaveat';
 import { CUSTOM_SQL_QUERY_KEY } from './customSql';
 
 /** Server-side cap on the description (`llm_sqlgen.MAX_DESCRIPTION_CHARS`); refused, never clipped. */
@@ -120,13 +121,16 @@ export function SqlGeneratePanel({
         )}
       </Flex>
       {state.status === 'done' && (
-        <Alert
-          type="success"
-          showIcon
-          title="SQL generated — review it in the editor, then dry-run"
-          description={state.result.explanation || undefined}
-          data-testid="sql-generate-result"
-        />
+        <>
+          <Alert
+            type="success"
+            showIcon
+            title="SQL generated — review it in the editor, then dry-run"
+            description={state.result.explanation || undefined}
+            data-testid="sql-generate-result"
+          />
+          <AiCaveat />
+        </>
       )}
       {state.status === 'failed' && (
         <Alert type="error" showIcon title="Generation failed" description={state.error} />
