@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "0a9174b82876",
+  "strategy": "manual-commit",
+  "branch": "docs/w5-progress-update",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0a/9174b82876/0/metadata.json",
+      "transcript": "/0a/9174b82876/0/full.jsonl",
+      "compact_transcript": "/0a/9174b82876/0/transcript.jsonl",
+      "content_hash": "/0a/9174b82876/0/content_hash.txt",
+      "prompt": "/0a/9174b82876/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 562,
+    "cache_creation_tokens": 479745,
+    "cache_read_tokens": 88934317,
+    "output_tokens": 116254,
+    "api_call_count": 281
+  }
+}
