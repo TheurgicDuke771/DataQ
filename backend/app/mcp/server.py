@@ -382,6 +382,10 @@ def _run_results_payload(
     # written (#1489) — not the check's current state, which is freely editable
     # after the fact and would silently re-label what old results show/audit.
     context = run_service.historical_check_context(session, results, checks)
+    # Same rule for `engine` (#1869 review): an old result's observed_value/
+    # metric_value reflect whichever engine actually produced it, not whatever
+    # the check has since been re-pointed to.
+    engine_by_result = run_service.historical_check_engine(session, results, checks)
 
     def _tested_column(result_id: uuid.UUID) -> str | None:
         return context.get(result_id, (None, None))[0]
@@ -462,6 +466,13 @@ def _run_results_payload(
                 # instead of name-matching back through `list_checks`.
                 "check_id": str(r.check_id) if r.check_id else None,
                 "name": checks[r.check_id].name if r.check_id in checks else None,
+                # WHO evaluated this check (ADR 0036) — a dmf result's
+                # `metric_value`/`observed_value` is a Snowflake DMF metric, not a
+                # GX expectation output, and the two have different semantics an
+                # LLM would otherwise conflate. Resolved AS OF this result (like
+                # `context` above): a check re-pointed gx<->dmf after this run
+                # must not have its old result mislabeled with the new engine.
+                "engine": engine_by_result.get(r.id),
                 "status": r.status,
                 "metric_value": _num(r.metric_value),
                 # How much of the dataset this check actually saw (#595).
@@ -617,15 +628,25 @@ def get_suite_results(suite_id: str) -> dict[str, Any]:
     night"; use ``list_runs`` + ``get_run_results`` to reach an earlier run.
 
     Returns the most recent run's lifecycle status plus, per check: the check
-    name and id, its pass/warn/fail/critical (or skip/error) status, the observed
-    vs expected value (**redacted on the same column-aware policy as the
-    samples** — a masked observed value is not the measured one), how much of the
-    dataset the check actually saw (``sampling`` — null means a complete read; a
-    non-null record means the verdict came from a sample), any sample failing
-    rows, and ``redaction`` / ``redacted_columns`` saying how much of those rows
-    was masked. A masked sample is not an absent one — never describe redacted
-    rows as "no failing rows". Returns an empty result set if the suite has never
-    run. Requires at least view access to the suite.
+    name and id, ``engine`` (ADR 0036 — ``gx`` unless the check runs against a
+    platform-native engine like ``dmf``; a ``dmf`` result's ``observed_value`` /
+    ``metric_value`` is a Snowflake DMF metric, not a GX expectation output, and
+    the two have different semantics), its pass/warn/fail/critical (or
+    skip/error) status, the observed vs expected value (**redacted on the same
+    column-aware policy as the samples** — a masked observed value is not the
+    measured one), how much of the dataset the check actually saw (``sampling``
+    — null means a complete read; a non-null record means the verdict came from
+    a sample), any sample failing rows, and ``redaction`` / ``redacted_columns``
+    saying how much of those rows was masked. A masked sample is not an absent
+    one — never describe redacted rows as "no failing rows". Returns an empty
+    result set if the suite has never run. Requires at least view access to the
+    suite.
+
+    ``engine`` is the check's **current** engine, not the one that produced this
+    particular result — like ``name``, it is not snapshotted per result. If the
+    check was re-pointed to a different engine after this run, this reflects the
+    new engine; use ``list_check_versions`` for the engine as of a specific
+    edit.
 
     If the latest run has not finished successfully, `checks` is empty and
     `run.results_final` is false — the run is still executing, or it failed and
@@ -1002,9 +1023,10 @@ def list_check_versions(
     Use this for 'who changed this threshold?', 'what did this check look like
     last week?', or 'was this check edited around the time it started failing?'.
     Returns up to ``limit`` snapshots, newest first: the ``version_no``, the
-    check's name, kind, expectation type, dimension, full ``config`` and the three
-    severity thresholds **as they were at that version**, plus when the change was
-    made and who made it.
+    check's name, kind, expectation type, ``engine`` (ADR 0036 — ``gx`` unless it
+    was pointed at a platform-native engine like ``dmf`` **as of that version**),
+    dimension, full ``config`` and the three severity thresholds **as they were
+    at that version**, plus when the change was made and who made it.
 
     ``total`` reports how many versions exist regardless of ``limit``, so a short
     page is not mistaken for the whole history — the oldest versions are the ones
@@ -1049,6 +1071,10 @@ def list_check_versions(
                     "name": v.name,
                     "kind": v.kind,
                     "expectation_type": v.expectation_type,
+                    # Snapshotted (ADR 0036), same reason as `dimension` below —
+                    # a check re-pointed dmf->gx->dmf has no visible history of
+                    # that change without the value AS OF each version.
+                    "engine": v.engine or "gx",
                     # Snapshotted (ADR 0038) — reporting the check's CURRENT
                     # dimension beside an OLD config would misstate what the
                     # check was at that version.
@@ -1184,9 +1210,17 @@ def get_run_results(run_id: str) -> dict[str, Any]:
     Use this to drill into a run found via ``list_runs`` — 'why did last night's
     orders run fail?' — or to read a historical run rather than the latest one
     (which is what ``get_suite_results`` returns). Returns the run's lifecycle
-    status plus, per check: the check name, its pass/warn/fail/critical (or
-    skip/error) status, the observed vs expected value, how much of the dataset
-    the check saw, and any sample failing rows (PII-redacted).
+    status plus, per check: the check name, ``engine`` (ADR 0036 — ``gx`` unless
+    the check runs against a platform-native engine like ``dmf``; a ``dmf``
+    result's observed/metric value is a Snowflake DMF metric, not a GX
+    expectation output, and the two have different semantics), its
+    pass/warn/fail/critical (or skip/error) status, the observed vs expected
+    value, how much of the dataset the check saw, and any sample failing rows
+    (PII-redacted).
+
+    ``engine`` is the check's **current** engine, not the one that produced this
+    particular result — like ``name``, it is not snapshotted per result; use
+    ``list_check_versions`` for the engine as of a specific edit.
 
     If the run has not finished successfully, ``checks`` is empty and
     ``run.results_final`` is false — it is still executing, or it failed and

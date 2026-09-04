@@ -1484,6 +1484,98 @@ def test_get_run_results_returns_that_runs_checks(db_session: Any, monkeypatch: 
     assert server.get_suite_results(str(suite.id))["checks"][0]["status"] == "pass"
 
 
+def test_get_run_results_reports_per_check_engine(db_session: Any, monkeypatch: Any) -> None:
+    """#1869: a dmf-evaluated result's `observed_value`/`metric_value` is a
+    Snowflake DMF metric, not a GX expectation output — an LLM needs `engine`
+    per check to avoid conflating the two. `get_suite_results` shares the same
+    payload builder, so one run covers both tools.
+    """
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    run = Run(suite_id=suite.id, status="succeeded")
+    db_session.add(run)
+    db_session.flush()
+    dmf_check = Check(
+        suite_id=suite.id,
+        name="dmf check",
+        expectation_type="dmf:null_count",
+        config={"column": "EMAIL"},
+        fail_threshold=Decimal("1"),
+        engine="dmf",
+    )
+    gx_check = Check(
+        suite_id=suite.id,
+        name="gx check",
+        expectation_type="expect_column_values_to_not_be_null",
+        config={"column": "EMAIL"},
+    )
+    db_session.add_all([dmf_check, gx_check])
+    db_session.flush()
+    db_session.add(Result(run_id=run.id, check_id=dmf_check.id, status="pass"))
+    db_session.add(Result(run_id=run.id, check_id=gx_check.id, status="pass"))
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    by_name = {c["name"]: c["engine"] for c in server.get_run_results(str(run.id))["checks"]}
+    assert by_name == {"dmf check": "dmf", "gx check": "gx"}
+
+    by_name = {c["name"]: c["engine"] for c in server.get_suite_results(str(suite.id))["checks"]}
+    assert by_name == {"dmf check": "dmf", "gx check": "gx"}
+
+
+def test_get_run_results_reports_the_engine_as_of_the_run_not_current(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """/code-review on #1876: a result produced while the check was `dmf` must
+    keep reporting `engine: "dmf"` even after the check is later re-pointed to
+    `gx` — the live `checks[...].engine` the first cut read is wrong here, since
+    the result's `observed_value` is still the old engine's output.
+
+    `created_at` is forced apart explicitly (not relied on from wall-clock call
+    ordering) since two ORM inserts in the same test can land in the same
+    microsecond, which `historical_check_engine`'s `<=` tie-break would resolve
+    to the LATER version — the same edge case `test_historical_check_context.py`
+    guards against for `(column, expectation_type)`.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+    created = server.create_check(
+        str(suite.id),
+        name="null count",
+        expectation_type="dmf:null_count",
+        config={"column": "EMAIL"},
+        fail_threshold=1,
+        engine="dmf",
+    )
+    check_id = uuid.UUID(created["id"])
+    t0 = datetime.now(UTC)
+    run = Run(suite_id=suite.id, status="succeeded")
+    db_session.add(run)
+    db_session.flush()
+    db_session.add(Result(run_id=run.id, check_id=check_id, status="pass", created_at=t0))
+    db_session.commit()
+
+    # Re-point the check AFTER the result was written.
+    server.update_check(
+        str(suite.id),
+        created["id"],
+        expectation_type="expect_column_values_to_not_be_null",
+        config={"column": "EMAIL"},
+        engine="gx",
+    )
+    from backend.app.db.models import CheckVersion
+
+    latest_version = db_session.query(CheckVersion).filter_by(check_id=check_id, version_no=2).one()
+    latest_version.created_at = t0 + timedelta(seconds=1)
+    db_session.commit()
+
+    (check,) = server.get_run_results(str(run.id))["checks"]
+    assert check["engine"] == "dmf"
+
+
 def test_get_run_results_withholds_an_incomplete_runs_partial_results(
     db_session: Any, monkeypatch: Any
 ) -> None:
@@ -3793,6 +3885,44 @@ def test_list_check_versions_truncates_honestly(db_session: Any, monkeypatch: An
     assert [v["version_no"] for v in out["versions"]] == [5, 4]
     # And the default returns the lot when it fits, so `total` is not a page size.
     assert len(server.list_check_versions(str(suite.id), created["id"])["versions"]) == 5
+
+
+def test_list_check_versions_reports_engine_as_of_each_version(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """#1869: `CheckVersion.engine` is snapshotted on every save, so a check
+    re-pointed dmf -> gx -> dmf must have that history visible per version — not
+    just its current state, which `list_checks`/`get_check` already expose.
+    """
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+    created = server.create_check(
+        str(suite.id),
+        name="null count",
+        expectation_type="dmf:null_count",
+        config={"column": "EMAIL"},
+        fail_threshold=1,
+        engine="dmf",
+    )
+    server.update_check(
+        str(suite.id),
+        created["id"],
+        expectation_type="expect_column_values_to_not_be_null",
+        config={"column": "EMAIL"},
+        engine="gx",
+    )
+    server.update_check(
+        str(suite.id),
+        created["id"],
+        expectation_type="dmf:null_count",
+        config={"column": "EMAIL"},
+        engine="dmf",
+    )
+
+    versions = server.list_check_versions(str(suite.id), created["id"])["versions"]
+    assert [v["version_no"] for v in versions] == [3, 2, 1]
+    assert [v["engine"] for v in versions] == ["dmf", "gx", "dmf"]
 
 
 def test_create_trigger_binding_names_the_disabled_collision(
