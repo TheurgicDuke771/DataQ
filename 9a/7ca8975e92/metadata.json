@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "9a7ca8975e92",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1845-llm-ui",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/api/v1/incidents.py",
+    "backend/app/services/llm_rca.py",
+    "backend/tests/api/test_incident_narrative_route.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/9a/7ca8975e92/0/metadata.json",
+      "transcript": "/9a/7ca8975e92/0/full.jsonl",
+      "compact_transcript": "/9a/7ca8975e92/0/transcript.jsonl",
+      "content_hash": "/9a/7ca8975e92/0/content_hash.txt",
+      "prompt": "/9a/7ca8975e92/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2012,
+    "cache_creation_tokens": 58993,
+    "cache_read_tokens": 8154989,
+    "output_tokens": 30442,
+    "api_call_count": 24
+  }
+}
