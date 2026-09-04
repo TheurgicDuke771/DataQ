@@ -27,7 +27,7 @@ describe('suggestionToCheck', () => {
       expectation_type: 'monitor:freshness',
       name: 'orders arrive daily',
       rationale: 'r',
-      config: { timestamp_column: 'order_ts' },
+      config: { column: 'order_ts' },
       dimension: 'timeliness',
       fail_threshold_hours: 26,
     });

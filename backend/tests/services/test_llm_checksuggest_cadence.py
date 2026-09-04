@@ -33,9 +33,16 @@ def admin(db_session: Any) -> User:
     return admin_user(db_session, prefix="cadence")
 
 
+KNOWN_COLUMNS = ("EMAIL", "LOADED_AT", "AMOUNT", "ID", "STATUS")
+
+
 def _invocation(db_session: Any, suite: Suite, admin: User) -> LlmInvocation:
     invocation = LlmInvocation(
-        kind=llm_checksuggest.CHECKSUGGEST_KIND, requested_by_user_id=admin.id, suite_id=suite.id
+        kind=llm_checksuggest.CHECKSUGGEST_KIND,
+        requested_by_user_id=admin.id,
+        suite_id=suite.id,
+        # What build_prompt records for the validator's column gate (#1720).
+        request={llm_checksuggest.COLUMNS_KEY: list(KNOWN_COLUMNS)},
     )
     db_session.add(invocation)
     db_session.commit()
@@ -405,3 +412,20 @@ def test_coverage_warnings_surfaces_a_real_near_miss(db_session: Any, admin: Use
     warning = out["coverage_warnings"][0]
     assert warning["run_env"] == "qa"
     assert warning["binding_env"] == "dev"
+
+
+def test_build_prompt_records_the_column_list_for_the_validator(
+    db_session: Any, admin: User, monkeypatch: Any
+) -> None:
+    """The validator's column gate (#1720) reads what build_prompt persisted, so
+    the two can never disagree about which columns "exist"."""
+    suite = make_sql_suite(db_session, admin)
+    _mock_profile(monkeypatch)
+    invocation = _invocation(db_session, suite, admin)
+    prompt, _system, _schema = llm_checksuggest.build_prompt(
+        db_session, invocation, FakeSecretStore()
+    )
+    listed = prompt.split("Columns: ", 1)[1].split("\n", 1)[0].split(", ")
+    db_session.expire_all()
+    stored = db_session.get(LlmInvocation, invocation.id)
+    assert stored.request[llm_checksuggest.COLUMNS_KEY] == listed

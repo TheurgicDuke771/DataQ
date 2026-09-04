@@ -47,7 +47,7 @@ const RESULT: CheckSuggestionsResponse = {
       expectation_type: 'monitor:freshness',
       name: 'orders arrive daily',
       rationale: 'bound pipeline lands daily',
-      config: { timestamp_column: 'order_ts' },
+      config: { column: 'order_ts' },
       dimension: 'timeliness',
       fail_threshold_hours: 26,
     },
@@ -107,7 +107,7 @@ describe('SuggestChecksDrawer', () => {
       name: 'orders arrive daily',
       kind: 'freshness',
       expectation_type: 'monitor:freshness',
-      config: { timestamp_column: 'order_ts' },
+      config: { column: 'order_ts' },
       dimension: 'timeliness',
       fail_threshold: 26,
     });

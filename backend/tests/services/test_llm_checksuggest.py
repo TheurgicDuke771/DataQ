@@ -22,9 +22,16 @@ def admin(db_session: Any) -> User:
     return admin_user(db_session, prefix="checksuggest")
 
 
+KNOWN_COLUMNS = ("EMAIL", "LOADED_AT", "AMOUNT", "ID", "STATUS", *(f"COL_{i}" for i in range(40)))
+
+
 def _invocation(db_session: Any, suite: Suite, admin: User) -> LlmInvocation:
     invocation = LlmInvocation(
-        kind=llm_checksuggest.CHECKSUGGEST_KIND, requested_by_user_id=admin.id, suite_id=suite.id
+        kind=llm_checksuggest.CHECKSUGGEST_KIND,
+        requested_by_user_id=admin.id,
+        suite_id=suite.id,
+        # What build_prompt records for the validator's column gate (#1720).
+        request={llm_checksuggest.COLUMNS_KEY: list(KNOWN_COLUMNS)},
     )
     db_session.add(invocation)
     db_session.commit()
@@ -266,7 +273,7 @@ def test_validate_one_caps_an_out_of_vocabulary_expectation_type_in_the_reason()
     formatter.
     """
     huge_type = "z" * 5000
-    ok, reason = llm_checksuggest._validate_one("snowflake", {"expectation_type": huge_type})
+    ok, reason = llm_checksuggest._validate_one("snowflake", {"expectation_type": huge_type}, set())
     assert ok is None
     assert reason is not None
     assert len(reason) < 200
@@ -544,3 +551,82 @@ def test_end_to_end_execute_applies_the_output_gate(
     assert bad.error is not None and bad.error.startswith("llm_output_invalid:")
     assert bad.input_tokens == 7  # a refused generation still billed
     assert bad.output_tokens == 3
+
+
+# ── #1720: a suggestion must name a column of the table the prompt described ──
+
+
+def test_output_gate_rejects_a_column_the_table_does_not_have(db_session: Any, admin: User) -> None:
+    suite = make_sql_suite(db_session, admin)
+    invocation = _invocation(db_session, suite, admin)
+    hallucinated = _suggestion(config={"column": "phone_number"})
+    real = _suggestion(name="real", config={"column": "EMAIL"})
+    out = llm_checksuggest.validate_output(
+        db_session, invocation, {"suggestions": [hallucinated, real]}
+    )
+    assert [s["name"] for s in out["suggestions"]] == ["real"]
+    assert out["rejected"] == [
+        {
+            "expectation_type": "expect_column_values_to_not_be_null",
+            "reason": "column 'phone_number' is not a column of the target table",
+        }
+    ]
+
+
+def test_output_gate_matches_columns_case_insensitively(db_session: Any, admin: User) -> None:
+    """Snowflake folds unquoted identifiers; the profiler reports one casing and
+    the model may echo another — that is not a hallucination."""
+    suite = make_sql_suite(db_session, admin)
+    invocation = _invocation(db_session, suite, admin)
+    out = llm_checksuggest.validate_output(
+        db_session, invocation, {"suggestions": [_suggestion(config={"column": "email"})]}
+    )
+    assert out["suggestions"][0]["config"] == {"column": "email"}
+    assert out["rejected"] == []
+
+
+def test_output_gate_rejects_freshness_on_an_unknown_timestamp_column(
+    db_session: Any, admin: User
+) -> None:
+    suite = make_sql_suite(db_session, admin)
+    invocation = _invocation(db_session, suite, admin)
+    freshness = {
+        "expectation_type": llm_checksuggest.FRESHNESS_EXPECTATION_TYPE,
+        "name": "arrives daily",
+        "rationale": "r",
+        "config": {"column": "updated_at"},
+        "fail_threshold_hours": 26,
+    }
+    with pytest.raises(LLMOutputInvalidError) as exc:
+        llm_checksuggest.validate_output(db_session, invocation, {"suggestions": [freshness]})
+    assert "column 'updated_at' is not a column of the target table" in str(exc.value)
+
+
+def test_output_gate_refuses_to_validate_without_the_column_list(
+    db_session: Any, admin: User
+) -> None:
+    """No list means the builder never ran for this row — refuse, never skip the gate."""
+    suite = make_sql_suite(db_session, admin)
+    invocation = LlmInvocation(
+        kind=llm_checksuggest.CHECKSUGGEST_KIND, requested_by_user_id=admin.id, suite_id=suite.id
+    )
+    db_session.add(invocation)
+    db_session.commit()
+    with pytest.raises(LLMRequestInvalidError, match="column list"):
+        llm_checksuggest.validate_output(db_session, invocation, {"suggestions": [_suggestion()]})
+
+
+def test_remember_columns_persists_on_the_row(db_session: Any, admin: User) -> None:
+    suite = make_sql_suite(db_session, admin)
+    invocation = LlmInvocation(
+        kind=llm_checksuggest.CHECKSUGGEST_KIND,
+        requested_by_user_id=admin.id,
+        suite_id=suite.id,
+        request={"keep": "me"},
+    )
+    db_session.add(invocation)
+    db_session.commit()
+    llm_checksuggest.remember_columns(db_session, invocation, ["A", "B"])
+    db_session.expire_all()
+    stored = db_session.get(LlmInvocation, invocation.id)
+    assert stored.request == {"keep": "me", llm_checksuggest.COLUMNS_KEY: ["A", "B"]}
