@@ -1,0 +1,11 @@
+<task-notification>
+<task-id>bwt4xziqp</task-id>
+<tool-use-id>toolu_01QmT61PzmtxVbiVkzp3Mp53</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/08ac61b5-2554-41b8-8b37-1622a0336b55/tasks/bwt4xziqp.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for #1828's CI and merge it" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+switch to main, sync with remote, delete dead wortrees, temp files, and prune un-necessary remote/local branches

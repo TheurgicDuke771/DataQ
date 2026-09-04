@@ -1,0 +1,57 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "b7ca4af3bbcc",
+  "strategy": "manual-commit",
+  "branch": "feature/nl-sql-picker-shortcut",
+  "checkpoints_count": 3,
+  "files_touched": [
+    ".claude/worktrees/agent-a1649784d55e56ae8/backend/tests/core/test_auth_unauthenticated_message.py",
+    ".claude/worktrees/agent-a452503bce5a8b138/backend/alembic/versions/4a5f1e4d5daa_add_llm_invocations_status_open_index.py",
+    ".claude/worktrees/agent-a452503bce5a8b138/backend/app/db/models.py",
+    ".claude/worktrees/agent-a452503bce5a8b138/backend/tests/db/test_llm_invocations_status_index_migration.py",
+    ".claude/worktrees/agent-a63f4b9478f2d9e42/backend/app/services/incident_evidence.py",
+    ".claude/worktrees/agent-a63f4b9478f2d9e42/backend/app/services/incident_service.py",
+    ".claude/worktrees/agent-a63f4b9478f2d9e42/backend/tests/services/test_incident_evidence.py",
+    ".claude/worktrees/agent-a63f4b9478f2d9e42/backend/tests/services/test_incident_service.py",
+    ".claude/worktrees/agent-abb47e628f2dfb6af/backend/app/services/check_service.py",
+    ".claude/worktrees/agent-ae5ce8d47e1188f23/.env.app.example",
+    ".claude/worktrees/agent-ae5ce8d47e1188f23/.github/workflows/ci.yml",
+    ".claude/worktrees/agent-ae5ce8d47e1188f23/backend/app/api/v1/auth_otp.py",
+    ".claude/worktrees/agent-ae5ce8d47e1188f23/backend/app/services/otp_service.py",
+    ".claude/worktrees/agent-ae5ce8d47e1188f23/backend/app/services/run_dispatch.py",
+    ".claude/worktrees/agent-ae5ce8d47e1188f23/backend/app/worker/celery_app.py",
+    ".claude/worktrees/agent-ae5ce8d47e1188f23/backend/app/worker/tasks.py",
+    ".claude/worktrees/agent-ae5ce8d47e1188f23/backend/tests/api/test_auth_otp.py",
+    ".claude/worktrees/agent-ae5ce8d47e1188f23/backend/tests/services/test_otp_service.py",
+    ".claude/worktrees/agent-ae5ce8d47e1188f23/backend/tests/services/test_run_dispatch.py",
+    ".claude/worktrees/agent-ae5ce8d47e1188f23/backend/tests/worker/test_celery_app.py",
+    ".claude/worktrees/agent-ae5ce8d47e1188f23/backend/tests/worker/test_otp_send_task.py",
+    ".claude/worktrees/agent-ae5ce8d47e1188f23/docs/site/adr/0032-email-otp-signin.md",
+    ".claude/worktrees/agent-ae5ce8d47e1188f23/docs/site/changelog.md",
+    ".claude/worktrees/agent-ae5ce8d47e1188f23/docs/site/getting-started.md",
+    ".claude/worktrees/agent-ae5ce8d47e1188f23/docs/site/security.md",
+    ".claude/worktrees/agent-ae5ce8d47e1188f23/frontend/e2e-otp/README.md",
+    ".claude/worktrees/agent-ae5ce8d47e1188f23/frontend/e2e-otp/fixtures.ts",
+    ".claude/worktrees/agent-ae5ce8d47e1188f23/scripts/e2e-otp-stack.sh",
+    ".claude/worktrees/agent-aff029ec336e6783f/backend/app/core/jsonsafe.py",
+    ".claude/worktrees/agent-aff029ec336e6783f/backend/app/services/profile_service.py",
+    ".claude/worktrees/agent-aff029ec336e6783f/backend/tests/core/test_jsonsafe.py",
+    ".claude/worktrees/agent-aff029ec336e6783f/backend/tests/services/test_profile_service.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b7/ca4af3bbcc/0/metadata.json",
+      "transcript": "/b7/ca4af3bbcc/0/full.jsonl",
+      "compact_transcript": "/b7/ca4af3bbcc/0/transcript.jsonl",
+      "content_hash": "/b7/ca4af3bbcc/0/content_hash.txt",
+      "prompt": "/b7/ca4af3bbcc/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 37456,
+    "cache_creation_tokens": 1775572,
+    "cache_read_tokens": 138098685,
+    "output_tokens": 309090,
+    "api_call_count": 322
+  }
+}
