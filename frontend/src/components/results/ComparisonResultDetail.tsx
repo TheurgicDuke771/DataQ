@@ -112,6 +112,17 @@ export function ComparisonResultDetail({ runId, result }: { runId: string; resul
           />
         </div>
       )}
+      {result.redaction === 'zero_sample' && (
+        // #1880 review: BUCKETS below reads exactly like "no mismatched rows" when
+        // sample_failures is null — this deployment's zero-sample privacy mode never
+        // persisted per-bucket rows for this result, distinct from a genuinely
+        // sample-free comparison. The counts above are unaffected (aggregates, not
+        // row-level content) and stay accurate.
+        <Typography.Text type="secondary" data-testid="comparison-zero-sample-note">
+          Per-bucket row samples were not captured — this deployment's zero-sample privacy mode
+          never persists them.
+        </Typography.Text>
+      )}
       {BUCKETS.map(({ key, label }) => {
         const rows = sample[key];
         if (!Array.isArray(rows) || rows.length === 0) return null;

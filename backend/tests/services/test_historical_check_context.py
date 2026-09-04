@@ -51,12 +51,13 @@ def _version(
     expectation_type: str,
     column: str,
     engine: str = "gx",
+    kind: str | None = None,
 ) -> CheckVersion:
     version = CheckVersion(
         check_id=check.id,
         version_no=version_no,
         name=check.name,
-        kind=check.kind,
+        kind=kind or check.kind,
         expectation_type=expectation_type,
         config={"column": column},
         created_at=created_at,
@@ -181,6 +182,52 @@ def test_historical_check_engine_falls_back_to_the_live_check_with_no_version_hi
     engines = run_service.historical_check_engine(db_session, [result], {check.id: check})
 
     assert engines[result.id] == "gx"
+
+
+def test_historical_check_kind_resolves_the_version_in_effect(db_session: Any) -> None:
+    # #1880 review: `zero_sample_suppressed` was resolving `kind` from the LIVE check
+    # (justified by a now-corrected inline comment claiming kind has no version to
+    # resolve) — `CheckVersion.kind` is snapshotted specifically so a stale result
+    # isn't re-labeled if kind ever becomes editable, same rule as engine (#1869).
+    _suite, check = _suite_and_check(db_session)
+    _version(
+        db_session,
+        check,
+        version_no=1,
+        created_at=_T0,
+        expectation_type="v1_type",
+        column="v1_column",
+        kind="freshness",
+    )
+    _version(
+        db_session,
+        check,
+        version_no=2,
+        created_at=_T0 + timedelta(days=1),
+        expectation_type="v2_type",
+        column="v2_column",
+        kind="expectation",
+    )
+    before_edit = _result(db_session, check, created_at=_T0 + timedelta(hours=1))
+    after_edit = _result(db_session, check, created_at=_T0 + timedelta(days=2))
+
+    kinds = run_service.historical_check_kind(
+        db_session, [before_edit, after_edit], {check.id: check}
+    )
+
+    assert kinds[before_edit.id] == "freshness"
+    assert kinds[after_edit.id] == "expectation"
+
+
+def test_historical_check_kind_falls_back_to_the_live_check_with_no_version_history(
+    db_session: Any,
+) -> None:
+    _suite, check = _suite_and_check(db_session)
+    result = _result(db_session, check, created_at=_T0)
+
+    kinds = run_service.historical_check_kind(db_session, [result], {check.id: check})
+
+    assert kinds[result.id] == "expectation"
 
 
 def test_a_result_with_no_check_id_resolves_to_none() -> None:

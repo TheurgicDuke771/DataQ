@@ -17,6 +17,7 @@ from backend.app.core.auth import get_current_user
 from backend.app.core.roles import is_workspace_admin
 from backend.app.db.models import (
     COMPARISON_KIND,
+    GX_ENGINE,
     PIPELINE_RUN_STATUSES,
     RUN_STATUSES,
     Check,
@@ -65,7 +66,12 @@ class ResultRead(ApiModel):
     """One check's result within a run. `metric_value` is the SQL-aggregatable
     badness scalar (ADR 0012); `observed_value`/`expected_value` are GX summary values.
 
-    `redaction` is tri-state (#424): full / partial / none — null means "no sample".
+    `redaction` (#424, `zero_sample` added #1873): `full`/`partial`/`none` describe
+    column-policy-based redaction of a REAL persisted sample; `zero_sample` means this
+    deployment's zero-sample privacy mode (`GET /admin/deployment.zero_sample_mode`)
+    never persisted a sample for this result at all. Only a `null` sample that genuinely
+    never had one — a passing check, or a check kind/type with no row-level data — omits
+    the field.
     A "sampled" caveat must key on `sampling.sampled`, NOT rows < total_rows
     (`total_rows` is legitimately null for head samples).
     """
@@ -80,7 +86,7 @@ class ResultRead(ApiModel):
     observed_value: dict[str, Any] | None
     expected_value: dict[str, Any] | None
     sample_failures: dict[str, Any] | None  # column-aware redaction (#415); see `redaction` below
-    redaction: Literal["full", "partial", "none"] | None = None
+    redaction: Literal["full", "partial", "none", "zero_sample"] | None = None
     redacted_columns: list[str] = Field(default_factory=list)
     sampling: dict[str, Any] | None = None
 
@@ -230,12 +236,21 @@ def _result_read(
     *,
     tested_column: str | None = None,
     expectation_type: str | None = None,
+    check_kind: str | None = None,
+    engine: str = GX_ENGINE,
     policy: dict[str, Any] | None = None,
     tags: dict[str, str] | None = None,
 ) -> ResultRead:
     """Map a `Result` ORM row to `ResultRead`, redacting `sample_failures`."""
+    zero_sample = svc.zero_sample_suppressed(
+        status=result.status, check_kind=check_kind, engine=engine
+    )
     sample, redaction, redacted_columns = svc.redact_sample_failures_with_state(
-        result.sample_failures, tested_column=tested_column, policy=policy, tags=tags
+        result.sample_failures,
+        tested_column=tested_column,
+        policy=policy,
+        tags=tags,
+        zero_sample=zero_sample,
     )
     return ResultRead(
         id=result.id,
@@ -318,6 +333,12 @@ def get_run(
     # Per-RESULT (tested_column, expectation_type) as of when each result was written (#1489) — not
     # the check's current state.
     context = svc.historical_check_context(db, results, checks)
+    # Same rule for `kind`/`engine` (#1880 review): `CheckVersion` snapshots both
+    # specifically so a stale result is never re-labeled by a later edit, and
+    # `zero_sample_suppressed` needs the engine as of THIS result — a `dmf`-engine
+    # check never had a row-level sample regardless of the privacy setting.
+    kind_by_result = svc.historical_check_kind(db, results, checks)
+    engine_by_result = svc.historical_check_engine(db, results, checks)
     # `Run` has no `results` relationship to validate a RunDetailRead from directly, so validate
     # the run fields (as RunRead), graft the data-quality outcome (#571 — else checks_total/passed
     # stay at the 0/0 default here), and attach the separately-fetched, redaction-gated results.
@@ -328,6 +349,8 @@ def get_run(
             r,
             tested_column=context.get(r.id, (None, None))[0],
             expectation_type=expectation_types[r.id],
+            check_kind=kind_by_result.get(r.id),
+            engine=engine_by_result.get(r.id, GX_ENGINE),
             policy=policy,
             tags=tags,
         )

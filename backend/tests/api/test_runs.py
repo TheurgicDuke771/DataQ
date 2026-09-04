@@ -683,6 +683,124 @@ def test_get_run_reports_null_redaction_state_when_no_sample(
     assert result["redacted_columns"] == []
 
 
+def test_get_run_reports_zero_sample_redaction_state_when_privacy_mode_on(
+    client: TestClient, db_session: Any, monkeypatch: Any
+) -> None:
+    """#1873: a failed check's sample was nulled by zero-sample mode (#1676), not
+    by having nothing to redact — the wire payload must say so, not read like the
+    check found no violating rows at all.
+    """
+    monkeypatch.setenv("PRIVACY_ZERO_SAMPLE_MODE", "true")
+    get_settings.cache_clear()
+    dev = _user(db_session, "dev@ex")
+    suite = _suite(db_session, dev, target={"table": "T"})
+    check = Check(suite_id=suite.id, name="c", kind="expectation", expectation_type="expect_x")
+    db_session.add(check)
+    db_session.flush()
+    run = _run(db_session, suite, status="succeeded")
+    # Mirrors what `_build_result` actually persists under zero-sample mode: the
+    # check failed, but `sample_failures` is null — same wire shape a check with
+    # nothing to redact would have, absent the fix.
+    db_session.add(Result(run_id=run.id, check_id=check.id, status="fail", sample_failures=None))
+    db_session.commit()
+
+    _as(dev)
+    result = client.get(f"/api/v1/runs/{run.id}").json()["results"][0]
+    assert result["sample_failures"] is None
+    assert result["redaction"] == "zero_sample"
+    assert result["redacted_columns"] == []
+
+
+def test_get_run_does_not_flag_zero_sample_for_a_passing_check(
+    client: TestClient, db_session: Any, monkeypatch: Any
+) -> None:
+    """A passing check's null sample is genuine — zero-sample mode must not be
+    blamed for a redaction that was never applicable in the first place.
+    """
+    monkeypatch.setenv("PRIVACY_ZERO_SAMPLE_MODE", "true")
+    get_settings.cache_clear()
+    dev = _user(db_session, "dev@ex")
+    suite = _suite(db_session, dev, target={"table": "T"})
+    check = Check(suite_id=suite.id, name="c", kind="expectation", expectation_type="expect_x")
+    db_session.add(check)
+    db_session.flush()
+    run = _run(db_session, suite, status="succeeded")
+    db_session.add(Result(run_id=run.id, check_id=check.id, status="pass", sample_failures=None))
+    db_session.commit()
+
+    _as(dev)
+    result = client.get(f"/api/v1/runs/{run.id}").json()["results"][0]
+    assert result["redaction"] is None
+
+
+def test_get_run_does_not_flag_zero_sample_when_privacy_mode_off(
+    client: TestClient, db_session: Any
+) -> None:
+    """Control for the two tests above: the switch off is the pre-#1873
+    behaviour — a failed check's null sample reads as `null`, not `zero_sample`.
+    """
+    dev = _user(db_session, "dev@ex")
+    suite = _suite(db_session, dev, target={"table": "T"})
+    check = Check(suite_id=suite.id, name="c", kind="expectation", expectation_type="expect_x")
+    db_session.add(check)
+    db_session.flush()
+    run = _run(db_session, suite, status="succeeded")
+    db_session.add(Result(run_id=run.id, check_id=check.id, status="fail", sample_failures=None))
+    db_session.commit()
+
+    _as(dev)
+    result = client.get(f"/api/v1/runs/{run.id}").json()["results"][0]
+    assert result["redaction"] is None
+
+
+def test_get_run_does_not_flag_zero_sample_for_an_errored_result(
+    client: TestClient, db_session: Any, monkeypatch: Any
+) -> None:
+    """`_build_result` nulls `sample_failures` for EVERY errored outcome
+    unconditionally — an errored result's null sample is never caused by
+    zero-sample mode, so it must not be reported as such (#1880 review).
+    """
+    monkeypatch.setenv("PRIVACY_ZERO_SAMPLE_MODE", "true")
+    get_settings.cache_clear()
+    dev = _user(db_session, "dev@ex")
+    suite = _suite(db_session, dev, target={"table": "T"})
+    check = Check(suite_id=suite.id, name="c", kind="expectation", expectation_type="expect_x")
+    db_session.add(check)
+    db_session.flush()
+    run = _run(db_session, suite, status="succeeded")
+    db_session.add(Result(run_id=run.id, check_id=check.id, status="error", sample_failures=None))
+    db_session.commit()
+
+    _as(dev)
+    result = client.get(f"/api/v1/runs/{run.id}").json()["results"][0]
+    assert result["redaction"] is None
+
+
+def test_get_run_does_not_flag_zero_sample_for_a_dmf_engine_check(
+    client: TestClient, db_session: Any, monkeypatch: Any
+) -> None:
+    """A `dmf`-engine check (ADR 0036) is a pure scalar Snowflake metric — it
+    never had a row-level sample to suppress, with or without the privacy
+    switch, the same structural exclusion as an errored result (#1880 review).
+    """
+    monkeypatch.setenv("PRIVACY_ZERO_SAMPLE_MODE", "true")
+    get_settings.cache_clear()
+    dev = _user(db_session, "dev@ex")
+    suite = _suite(db_session, dev, target={"table": "T"})
+    check = Check(
+        suite_id=suite.id, name="c", kind="expectation", expectation_type="expect_x", engine="dmf"
+    )
+    db_session.add(check)
+    db_session.flush()
+    run = _run(db_session, suite, status="succeeded")
+    db_session.add(Result(run_id=run.id, check_id=check.id, status="fail", sample_failures=None))
+    db_session.commit()
+
+    _as(dev)
+    result = client.get(f"/api/v1/runs/{run.id}").json()["results"][0]
+    assert result["redaction"] is None
+
+
 def test_get_run_unknown_returns_404(client: TestClient, db_session: Any) -> None:
     dev = _user(db_session, "dev@ex")
     _as(dev)

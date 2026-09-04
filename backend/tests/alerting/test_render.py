@@ -17,8 +17,9 @@ def _check(
     observed: dict[str, Any] | None = None,
     expected: dict[str, Any] | None = None,
     sample: dict[str, Any] | None = None,
+    suppressed: bool = False,
 ) -> CheckReport:
-    return CheckReport("c", "expect_x", status, metric, observed, expected, sample)
+    return CheckReport("c", "expect_x", status, metric, observed, expected, sample, suppressed)
 
 
 def _report(**overrides: object) -> RunReport:
@@ -47,6 +48,24 @@ def test_sample_note_prefers_percent_then_count() -> None:
     # A falsy zero count must still render (not be dropped as "missing").
     assert render.check_sample_note(_check(sample={"unexpected_count": 0})) == "0 unexpected"
     assert render.check_sample_note(_check(sample=None)) == ""
+
+
+def test_sample_note_says_so_when_suppressed_by_zero_sample_mode() -> None:
+    """#1880 review: a suppressed sample must not read as "nothing to report" —
+    it must say the privacy switch is why nothing is shown, the same third
+    reading of a null sample #1873 gave REST/MCP.
+    """
+    assert (
+        render.check_sample_note(_check(sample=None, suppressed=True))
+        == "sample suppressed (zero-sample privacy mode)"
+    )
+    # A real, populated sample still reports its actual content even if the flag
+    # is set (e.g. the privacy switch flipped on after this run's sample was
+    # already persisted) — the note must never contradict data that's present.
+    assert (
+        render.check_sample_note(_check(sample={"unexpected_count": 2}, suppressed=True))
+        == "2 unexpected"
+    )
 
 
 # ── check_detail ──────────────────────────────────────────────────────────────

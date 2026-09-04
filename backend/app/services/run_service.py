@@ -37,6 +37,7 @@ from backend.app.db.chunked_dml import CHUNK_SIZE, chunked_dml
 from backend.app.db.models import (
     CHECK_ORDER,
     COMPARISON_KIND,
+    FAILING_TIERS,
     GX_ENGINE,
     RESULT_OPERATIONAL_STATUSES,
     RESULT_STATUSES,
@@ -838,8 +839,10 @@ def _values_by_column(rows: Sequence[Any]) -> dict[str, list[Any]]:
     return dict(out)
 
 
-# Tri-state redaction summary surfaced beside `sample_failures` (#424/#415).
-RedactionState = Literal["full", "partial", "none"]
+# Redaction summary surfaced beside `sample_failures` (#424/#415); `zero_sample` (#1873)
+# distinguishes a null sample SUPPRESSED by zero-sample mode (#1676) from one that was
+# genuinely empty — both read `null` on the wire otherwise.
+RedactionState = Literal["full", "partial", "none", "zero_sample"]
 
 
 @dataclass
@@ -1081,6 +1084,34 @@ def historical_check_engine(
     return {r.id: _resolve(r.check_id, r.created_at) for r in results}
 
 
+def historical_check_kind(
+    session: Session,
+    results: Sequence[Result],
+    checks: Mapping[uuid.UUID, Check],
+) -> dict[uuid.UUID, str | None]:
+    """Per-**result** `kind`, resolved as of WHEN that result was written.
+
+    `CheckVersion.kind` is immutable in today's editor but is snapshotted anyway
+    (see the model) specifically so a stale result is never re-labeled by a later
+    edit; using the check's LIVE `kind` here would repeat the exact #1489 mistake
+    `historical_check_context` exists to avoid (#1880 review — `zero_sample_suppressed`
+    needs this to classify old results correctly if `kind` ever becomes editable).
+    """
+    check_ids = {r.check_id for r in results if r.check_id is not None}
+    versions_by_check = _versions_by_check(session, check_ids)
+
+    def _resolve(check_id: uuid.UUID | None, at: datetime) -> str | None:
+        check = checks.get(check_id) if check_id is not None else None
+        effective = _effective_version(
+            versions_by_check.get(check_id) if check_id is not None else None, at
+        )
+        if effective is not None:
+            return effective.kind
+        return check.kind if check else None
+
+    return {r.id: _resolve(r.check_id, r.created_at) for r in results}
+
+
 # Expectation types whose scalar `observed_value` is a literal cell, not a computed statistic
 # (#1486).
 _CELL_SCALAR_EXPECTATION_TYPES = frozenset(
@@ -1293,14 +1324,57 @@ def redact_sample_failures(
     return out
 
 
+# Result statuses whose outcome can carry a violating-row sample at all — `pass`/`skip`
+# never do. `error` is deliberately excluded too: `_build_result` nulls `sample_failures`
+# for EVERY errored outcome unconditionally (see above), so an errored result's null
+# sample is never caused by zero-sample mode and must not be reported as such (#1880
+# review).
+_ZERO_SAMPLE_ELIGIBLE_STATUSES = frozenset(FAILING_TIERS)
+
+# Check kinds that produce row-level content when they fail. The scalar monitor kinds
+# (freshness/volume/schema_drift/anomaly) compute a single number and structurally
+# never had a sample to suppress.
+_ZERO_SAMPLE_ELIGIBLE_KINDS = frozenset({_EXPECTATION_KIND, COMPARISON_KIND})
+
+
+def zero_sample_suppressed(*, status: str, check_kind: str | None, engine: str) -> bool:
+    """Whether a null `sample_failures` on this result is zero-sample-mode
+    suppression (#1676) rather than genuinely having had nothing to redact (#1873).
+
+    Folds the `Settings().privacy_zero_sample_mode` gate in here rather than leaving it
+    to callers (#1880 review — two call sites had each spelled out the same `and`,
+    which is exactly the kind of duplicated security-relevant gate that silently drifts).
+
+    `engine` must be the check's engine AS OF this result (`historical_check_engine`),
+    not its live value: a `dmf`-engine check (ADR 0036) is a pure scalar metric and
+    `_build_result` never routes it through the sample-persisting path at all, with or
+    without zero-sample mode on, so it is excluded here for the same structural reason
+    as the scalar monitor kinds above (#1880 review).
+    """
+    return (
+        get_settings().privacy_zero_sample_mode
+        and status in _ZERO_SAMPLE_ELIGIBLE_STATUSES
+        and check_kind in _ZERO_SAMPLE_ELIGIBLE_KINDS
+        and engine == GX_ENGINE
+    )
+
+
 def redact_sample_failures_with_state(
     sample: dict[str, Any] | None,
     *,
     tested_column: str | None = None,
     policy: dict[str, Any] | None = None,
     tags: Mapping[str, str] | None = None,
+    zero_sample: bool = False,
 ) -> tuple[dict[str, Any] | None, RedactionState | None, list[str]]:
-    """`redact_sample_failures` plus an honest redaction summary (#424)."""
+    """`redact_sample_failures` plus an honest redaction summary (#424).
+
+    `zero_sample=True` (from `zero_sample_suppressed`) reports `"zero_sample"` for a
+    null sample instead of `None` — a suppressed sample must not read the same as a
+    check that never had one.
+    """
+    if sample is None and zero_sample:
+        return None, "zero_sample", []
     tracker = _RedactionTracker()
     redacted = redact_sample_failures(
         sample, tested_column=tested_column, policy=policy, tags=tags, tracker=tracker
