@@ -11,6 +11,7 @@ from sqlalchemy import Update
 from sqlalchemy.exc import StatementError
 from sqlalchemy.orm import Session
 
+from backend.app.core.config import get_settings
 from backend.app.datasources.base import (
     SAMPLE_ROW_CAP,
     CheckOutcome,
@@ -535,6 +536,135 @@ def test_nan_in_sample_failures_is_sanitised_before_persist() -> None:
 
     (row,) = session.added
     assert row.sample_failures == {"partial_unexpected_list": [None, 2.0]}
+
+
+# ───────────────────────── zero-sample privacy mode (#1676) ────────────────
+
+
+def test_zero_sample_mode_off_persists_sample_failures_as_today(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Baseline control: with the switch off, a rich failing sample persists as
+    before — the regression-proof anchor for the ON tests below.
+    """
+    monkeypatch.setenv("PRIVACY_ZERO_SAMPLE_MODE", "false")
+    get_settings.cache_clear()
+    session = FakeSession()
+    rich_sample = {"partial_unexpected_list": ["alice@example.com"], "unexpected_count": 1}
+    runner = FakeRunner(
+        SuiteOutcome(
+            success=False, checks=[CheckOutcome("x", success=False, sample_failures=rich_sample)]
+        )
+    )
+
+    run_service.execute_run(_sess(session), run=_run(), checks=_checks(1), runner=runner, table="T")
+
+    (row,) = session.added
+    assert row.sample_failures == rich_sample
+
+
+def test_zero_sample_mode_on_suppresses_sample_failures(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The core switch: a failing check with a rich sample persists NO
+    sample_failures at all — aggregates (status, metric_value) still flow.
+    """
+    monkeypatch.setenv("PRIVACY_ZERO_SAMPLE_MODE", "true")
+    get_settings.cache_clear()
+    session = FakeSession()
+    rich_sample = {
+        "partial_unexpected_list": ["alice@example.com", "bob@example.com"],
+        "unexpected_index_list": [{"email": "alice@example.com", "id": 1}],
+        "unexpected_count": 2,
+        "unexpected_percent": 5.5,
+    }
+    check = Check(
+        id=uuid.uuid4(),
+        suite_id=uuid.uuid4(),
+        name="c",
+        kind="expectation",
+        expectation_type="x",
+        config={},
+        warn_threshold=Decimal("1"),
+        fail_threshold=Decimal("5"),
+        critical_threshold=Decimal("20"),
+    )
+    outcome = SuiteOutcome(
+        success=False, checks=[CheckOutcome("x", success=False, sample_failures=rich_sample)]
+    )
+
+    run_service.execute_run(
+        _sess(session), run=_run(), checks=[check], runner=FakeRunner(outcome=outcome), table="T"
+    )
+
+    (row,) = session.added
+    assert row.sample_failures is None
+    assert row.status == "fail"  # 5.5 in [fail(5), critical(20)) — banding still works
+    assert row.metric_value == Decimal("5.5")
+
+
+def test_zero_sample_mode_on_suppresses_the_provoking_cell_on_an_errored_outcome(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The errored-branch sibling door: `_build_result` also merges a monitor's
+    "provoking cell" (`unparsed_value`, #989) into `observed_value` when a
+    freshness/anomaly measurement can't parse the target's own data — that is
+    row-level data too and must be gated the same as `sample_failures` (the
+    guard-at-one-door-not-its-sibling failure mode the issue calls out).
+    """
+    monkeypatch.setenv("PRIVACY_ZERO_SAMPLE_MODE", "true")
+    get_settings.cache_clear()
+    session = FakeSession()
+    outcome = SuiteOutcome(
+        success=False,
+        checks=[
+            CheckOutcome(
+                "monitor:freshness",
+                success=False,
+                errored=True,
+                error_message="freshness value from MAX(order_ts) is not a parseable timestamp",
+                observed_value={"unparsed_value": "not-a-real-timestamp", "column": "order_ts"},
+            )
+        ],
+    )
+
+    run_service.execute_run(
+        _sess(session), run=_run(), checks=_checks(1), runner=FakeRunner(outcome=outcome), table="T"
+    )
+
+    (row,) = session.added
+    assert row.status == "error"
+    assert row.sample_failures is None
+    # The safe-marked message survives (#989); the raw cell does not.
+    assert row.observed_value == {"error": outcome.checks[0].error_message}
+    assert "not-a-real-timestamp" not in str(row.observed_value)
+
+
+def test_zero_sample_mode_off_still_merges_the_provoking_cell(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Control for the test above: the existing #989 merge is untouched off."""
+    monkeypatch.setenv("PRIVACY_ZERO_SAMPLE_MODE", "false")
+    get_settings.cache_clear()
+    session = FakeSession()
+    outcome = SuiteOutcome(
+        success=False,
+        checks=[
+            CheckOutcome(
+                "monitor:freshness",
+                success=False,
+                errored=True,
+                error_message="freshness value from MAX(order_ts) is not a parseable timestamp",
+                observed_value={"unparsed_value": "not-a-real-timestamp", "column": "order_ts"},
+            )
+        ],
+    )
+
+    run_service.execute_run(
+        _sess(session), run=_run(), checks=_checks(1), runner=FakeRunner(outcome=outcome), table="T"
+    )
+
+    (row,) = session.added
+    assert row.observed_value is not None
+    assert row.observed_value["unparsed_value"] == "not-a-real-timestamp"
 
 
 # ───────────────────────── failure path ────────────────────────────

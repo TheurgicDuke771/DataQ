@@ -7,6 +7,15 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Added
 
+- **Zero-sample privacy mode.** A deployment-level switch
+  (`PRIVACY_ZERO_SAMPLE_MODE=true`) that stops any failing-row sample from
+  ever being persisted — aggregates (`metric_value`, unexpected
+  counts/percents) only. Gated at the one write-path choke point every check
+  kind funnels through, so results, alerts and MCP all inherit the
+  suppression; `GET /admin/deployment` reports whether it's on. For
+  HIPAA/EU-tier deployments that need a stronger posture than the existing
+  column-aware redaction.
+
 - **Generate a custom-SQL check from a plain-English rule (API).** With an LLM
   provider configured, describe a rule ("order timestamps must never be in the
   future") to `POST /api/v1/llm/sql_generation` and DataQ drafts the violation

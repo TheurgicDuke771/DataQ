@@ -88,6 +88,30 @@ def test_the_live_mcp_transfer_vector_is_listed(client: TestClient) -> None:
     assert "secret_store" in names
 
 
+def test_zero_sample_mode_is_reported_off_by_default(client: TestClient) -> None:
+    """The default posture: samples flow, and the alert/mcp details say so."""
+    body = client.get("/api/v1/admin/deployment").json()
+    assert body["zero_sample_mode"] is False
+    alert = next(t for t in body["external_transfers"] if t["name"] == "alert_delivery")
+    assert "Zero-sample" not in alert["detail"]
+
+
+def test_zero_sample_mode_on_is_surfaced_in_posture_and_transfer_details(
+    client: TestClient, monkeypatch: Any
+) -> None:
+    """An auditor reading this endpoint must see the switch AND its effect on the
+    two vectors that would otherwise carry a failing-row sample (#1676).
+    """
+    monkeypatch.setenv("PRIVACY_ZERO_SAMPLE_MODE", "true")
+    get_settings.cache_clear()
+    body = client.get("/api/v1/admin/deployment").json()
+    assert body["zero_sample_mode"] is True
+    alert = next(t for t in body["external_transfers"] if t["name"] == "alert_delivery")
+    mcp = next(t for t in body["external_transfers"] if t["name"] == "mcp_ai_clients")
+    assert "Zero-sample" in alert["detail"]
+    assert "Zero-sample" in mcp["detail"]
+
+
 def test_per_suite_alerting_counts_as_an_alert_transfer(
     client: TestClient, db_session: Any
 ) -> None:

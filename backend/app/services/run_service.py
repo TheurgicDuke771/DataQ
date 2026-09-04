@@ -13,6 +13,7 @@ from sqlalchemy import delete, func, null, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
+from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.jsonsafe import sanitize_json
 from backend.app.core.logging import get_logger
@@ -71,17 +72,26 @@ def _build_result(run_id: uuid.UUID, check: Check, outcome: CheckOutcome) -> Res
         fail_threshold=check.fail_threshold,
         critical_threshold=check.critical_threshold,
     )
+    # Zero-sample privacy mode (#1676): a deployment-level switch, so this is the ONE choke
+    # point every check kind funnels through — gate it here and every reader (results API,
+    # alerts, MCP) inherits the suppression from what's actually persisted.
+    zero_sample = get_settings().privacy_zero_sample_mode
     if outcome.errored:
         # One funnel to `observed_value` for every kind, so the #1203 strip can't diverge.
         error_message = strip_statement_echo(outcome.error_message)
         observed = {"error": error_message} if error_message else None
-        # The provoking cell (#989) rides separately so the read layer can redact it.
-        if outcome.observed_value and "unparsed_value" in outcome.observed_value:
+        # The provoking cell (#989) rides separately so the read layer can redact it — under
+        # zero-sample mode it never leaves the runner at all, not even redacted.
+        if (
+            not zero_sample
+            and outcome.observed_value
+            and "unparsed_value" in outcome.observed_value
+        ):
             observed = {**(observed or {}), **sanitize_json(outcome.observed_value)}
         sample = None
     else:
         observed = sanitize_json(outcome.observed_value)
-        sample = sanitize_json(outcome.sample_failures)
+        sample = None if zero_sample else sanitize_json(outcome.sample_failures)
     return Result(
         run_id=run_id,
         check_id=check.id,

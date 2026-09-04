@@ -455,6 +455,10 @@ class DeploymentPostureRead(ApiModel):
 
     #: The jurisdiction this deployment declares (`DEPLOYMENT_REGION`).
     region: str | None
+    #: Zero-sample privacy mode (#1676): when True, no failing-row sample is ever
+    #: persisted anywhere in this deployment — aggregates/metric_value/unexpected-counts
+    #: only, across results, alerts and MCP.
+    zero_sample_mode: bool
     #: Ways data can leave that jurisdiction, each with whether it is live here.
     external_transfers: list[ExternalTransfer]
 
@@ -542,6 +546,7 @@ def get_deployment_posture(db: Annotated[Session, Depends(get_db)]) -> Deploymen
             )
         )
     )
+    zero_sample = settings.privacy_zero_sample_mode
     transfers = [
         ExternalTransfer(
             name="alert_delivery",
@@ -552,11 +557,17 @@ def get_deployment_posture(db: Annotated[Session, Depends(get_db)]) -> Deploymen
             )
             or per_suite_alerting,
             detail=(
-                "Alerts carry check names, statuses and — when a failing sample is "
-                "included — redacted sample values, to whatever webhook or mailbox "
-                "the operator configured. That endpoint's own location is outside "
-                "DataQ's knowledge, so this is a transfer whose destination only "
-                "the operator can attest to."
+                "Zero-sample privacy mode is ON: alerts carry check names, statuses "
+                "and aggregate counts only — no failing-row sample is ever included, "
+                "not even redacted."
+                if zero_sample
+                else (
+                    "Alerts carry check names, statuses and — when a failing sample is "
+                    "included — redacted sample values, to whatever webhook or mailbox "
+                    "the operator configured. That endpoint's own location is outside "
+                    "DataQ's knowledge, so this is a transfer whose destination only "
+                    "the operator can attest to."
+                )
             ),
         ),
         # TWO distinct LLM vectors: the unbuilt outbound one was listed while the LIVE
@@ -565,13 +576,19 @@ def get_deployment_posture(db: Annotated[Session, Depends(get_db)]) -> Deploymen
             name="mcp_ai_clients",
             enabled=mcp_enabled(settings),
             detail=(
-                "The /mcp surface serves run results, redacted failing samples and "
-                "check configuration to whatever AI client holds a valid PAT — "
-                "Claude Desktop, Copilot, Cursor. The model provider behind that "
-                "client, and its jurisdiction, are chosen by the token holder and "
-                "are outside DataQ's knowledge. This is a live transfer path today, "
-                "not a future one, and it is the more consequential of the two "
-                "LLM entries here."
+                "Zero-sample privacy mode is ON: /mcp serves run results and check "
+                "configuration to whatever AI client holds a valid PAT, but never a "
+                "failing-row sample — aggregate counts only."
+                if zero_sample
+                else (
+                    "The /mcp surface serves run results, redacted failing samples and "
+                    "check configuration to whatever AI client holds a valid PAT — "
+                    "Claude Desktop, Copilot, Cursor. The model provider behind that "
+                    "client, and its jurisdiction, are chosen by the token holder and "
+                    "are outside DataQ's knowledge. This is a live transfer path today, "
+                    "not a future one, and it is the more consequential of the two "
+                    "LLM entries here."
+                )
             ),
         ),
         _llm_intelligence_transfer(db),
@@ -611,6 +628,7 @@ def get_deployment_posture(db: Annotated[Session, Depends(get_db)]) -> Deploymen
     ]
     return DeploymentPostureRead(
         region=settings.deployment_region or None,
+        zero_sample_mode=zero_sample,
         external_transfers=transfers,
     )
 

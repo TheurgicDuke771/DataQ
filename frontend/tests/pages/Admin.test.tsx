@@ -163,6 +163,7 @@ const AUDIT_PAGE_2: AuditEventPage = {
 };
 const DEPLOYMENT_POSTURE: DeploymentPosture = {
   region: 'us-east-1',
+  zero_sample_mode: false,
   external_transfers: [
     { name: 'alert_delivery', enabled: true, detail: 'Alerts go to a configured webhook.' },
   ],
@@ -235,6 +236,7 @@ describe('Admin', () => {
     expect(screen.getByText('us-east-1')).toBeInTheDocument();
     expect(screen.getByText('alert_delivery')).toBeInTheDocument();
     expect(screen.getByText('live')).toBeInTheDocument();
+    expect(screen.getByText('off')).toBeInTheDocument(); // zero-sample mode, off by default
   });
 
   it('Next actually refetches the next page — not just a local page-number bump', async () => {
