@@ -664,6 +664,27 @@ def test_adapter_probe_dmf_requires_a_secret() -> None:
         SnowflakeConnectionAdapter().probe_dmf(_CONFIG, None)
 
 
+def test_adapter_test_runs_capability_probe_on_the_same_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#1867 review: a connection-service caller wiring `capability_probe` into
+    `test()` must get ONE Snowflake login, not two — `create_engine` called once.
+    """
+    created: list[object] = []
+    engine = _FakeScalarEngine([])
+
+    def _create_engine(url: object, **kw: object) -> _FakeScalarEngine:
+        created.append(url)
+        return engine
+
+    monkeypatch.setattr("sqlalchemy.create_engine", _create_engine)
+    seen: list[object] = []
+    SnowflakeConnectionAdapter().test(_CONFIG, "p@ss", capability_probe=seen.append)
+    assert len(created) == 1
+    assert len(seen) == 1  # the probe ran, handed the same live connection
+    assert engine.disposed is True
+
+
 # ───────────────────────── registry ────────────────────────────────
 
 

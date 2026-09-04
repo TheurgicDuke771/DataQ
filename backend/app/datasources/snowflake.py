@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+from collections.abc import Callable
 from typing import Any, ClassVar, Literal
 from urllib.parse import quote_plus
 
@@ -293,8 +294,21 @@ class SnowflakeConnectionAdapter:
     def validate_config(self, raw: dict[str, Any]) -> SnowflakeConfig:
         return SnowflakeConfig.model_validate(raw)
 
-    def test(self, raw: dict[str, Any], secret: str | None, **_: Any) -> None:
-        """Open a connection and run ``SELECT 1``; raise on any failure."""
+    def test(
+        self,
+        raw: dict[str, Any],
+        secret: str | None,
+        *,
+        capability_probe: Callable[[Any], None] | None = None,
+        **_: Any,
+    ) -> None:
+        """Open a connection and run ``SELECT 1``; raise on any failure.
+
+        ``capability_probe``, when given, runs on the SAME connection right after
+        (#1867 review) — a second `test`-time login for the DMF probe would double
+        every Test/Reauth click's latency for no reason, since both need nothing
+        but a live session.
+        """
         if secret is None:
             raise ValueError("a credential is required to test a snowflake connection")
         from sqlalchemy import create_engine, text
@@ -311,14 +325,18 @@ class SnowflakeConnectionAdapter:
         try:
             with engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
+                if capability_probe is not None:
+                    capability_probe(conn)
         finally:
             engine.dispose()
 
     def probe_dmf(self, raw: dict[str, Any], secret: str | None) -> dict[str, Any]:
         """DMF availability (#1867), on an ALREADY-verified-live connection —
-        callers only invoke this after `test` succeeds.
+        callers only invoke this after `test` succeeds. Prefer passing
+        `capability_probe` to `test()` instead when both run in the same
+        request, to avoid a second Snowflake login.
         """
-        from sqlalchemy import create_engine, text
+        from sqlalchemy import create_engine
 
         if secret is None:
             raise ValueError("a credential is required to probe DMF availability")
@@ -333,6 +351,12 @@ class SnowflakeConnectionAdapter:
         )
         try:
             with engine.connect() as conn:
-                return probe_dmf_capability(lambda stmt: conn.execute(text(stmt)).scalar())
+                return self._probe_dmf_on_connection(conn)
         finally:
             engine.dispose()
+
+    @staticmethod
+    def _probe_dmf_on_connection(conn: Any) -> dict[str, Any]:
+        from sqlalchemy import text
+
+        return probe_dmf_capability(lambda stmt: conn.execute(text(stmt)).scalar())
