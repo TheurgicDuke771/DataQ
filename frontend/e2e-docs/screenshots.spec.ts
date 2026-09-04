@@ -168,3 +168,30 @@ test('asset — incident evidence card', async ({ page }) => {
   await expect(page.getByText('Incident evidence')).toBeVisible();
   await shot(page, 'incident-evidence');
 });
+
+// The two live-warehouse captures below need a real SQL connection (`DOCS_SNOWFLAKE_ACCOUNT`
+// at capture-stack start, see the README) — they profile/introspect the target table for real.
+
+test('check editor — SQL generated from a description', async ({ page }) => {
+  await page.goto('/suites');
+  await page.getByText('Retail orders (reader)').click();
+  await heading(page, 'Retail orders (reader)', 4);
+  await page.getByRole('button', { name: 'Add check' }).click();
+  await page.getByText('Custom SQL', { exact: true }).click();
+  await page.getByText(/A SQL query that should return no rows/).click();
+  await page
+    .getByLabel('Rule description')
+    .fill('Every order must have a positive total amount, and no order may be dated in the future');
+  await page.getByRole('button', { name: 'Generate SQL' }).click();
+  await expect(page.getByTestId('sql-generate-result')).toBeVisible({ timeout: 60_000 });
+  await shot(page, 'check-editor-sql-generate');
+});
+
+test('suite — suggested checks', async ({ page }) => {
+  await page.goto('/suites');
+  await page.getByText('Retail orders (reader)').click();
+  await heading(page, 'Retail orders (reader)', 4);
+  await page.getByRole('button', { name: 'Suggest checks' }).click();
+  await expect(page.getByText(/suggestion.+passed validation/)).toBeVisible({ timeout: 60_000 });
+  await shot(page, 'suggest-checks');
+});

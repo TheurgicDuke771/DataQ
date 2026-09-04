@@ -112,3 +112,70 @@ test('configure-llm', async ({ page }) => {
   });
   await beat(2500);
 });
+
+// Needs a live SQL connection (DOCS_SNOWFLAKE_ACCOUNT at capture-stack start).
+test('generate-sql', async ({ page }) => {
+  await page.goto('/suites');
+  await expect(page.getByRole('heading', { name: 'Suites', level: 3 })).toBeVisible();
+  await beat();
+  await page.getByText('Retail orders (reader)').click();
+  await expect(
+    page.getByRole('heading', { name: 'Retail orders (reader)', level: 4 }),
+  ).toBeVisible();
+  await beat(1000);
+  await page.getByRole('button', { name: 'Add check' }).click();
+  await beat(800);
+  await page.getByText('Custom SQL', { exact: true }).click();
+  await beat(600);
+  await page.getByText(/A SQL query that should return no rows/).click();
+  await beat(1000);
+  await page
+    .getByLabel('Rule description')
+    .pressSequentially(
+      'Every order must have a positive total amount, and no order may be dated in the future',
+      { delay: 15 },
+    );
+  await beat(600);
+  await page.getByRole('button', { name: 'Generate SQL' }).click();
+  await expect(page.getByTestId('sql-generate-result')).toBeVisible({ timeout: 60_000 });
+  await beat(2000);
+});
+
+// Needs a live SQL connection (DOCS_SNOWFLAKE_ACCOUNT at capture-stack start).
+test('suggest-checks', async ({ page }) => {
+  await page.goto('/suites');
+  await expect(page.getByRole('heading', { name: 'Suites', level: 3 })).toBeVisible();
+  await beat();
+  await page.getByText('Retail orders (reader)').click();
+  await expect(
+    page.getByRole('heading', { name: 'Retail orders (reader)', level: 4 }),
+  ).toBeVisible();
+  await beat(1000);
+  await page.getByRole('button', { name: 'Suggest checks' }).click();
+  await expect(page.getByText(/suggestion.+passed validation/)).toBeVisible({ timeout: 60_000 });
+  await beat(2500);
+});
+
+// Needs a real narrative to regenerate over — the seeded incident already carries one.
+test('explain-failure', async ({ page }) => {
+  await page.goto('/assets');
+  await expect(page.getByRole('heading', { name: /Assets/ })).toBeVisible();
+  await beat();
+  await page.getByRole('treeitem', { name: /^ORDERS dev/ }).click();
+  await beat(1000);
+  await page
+    .getByRole('table')
+    .filter({ hasText: 'Evidence' })
+    .getByRole('button', { name: 'View', exact: true })
+    .first()
+    .click();
+  await expect(page.getByText('Incident evidence')).toBeVisible();
+  await beat(1000);
+  await page.getByRole('button', { name: /Explain this failure|Regenerate/ }).click();
+  // A stored narrative may already be showing — wait for the fresh generation to actually
+  // finish (the transient "Asking the model" text gone), not just for a card to exist.
+  await expect(page.getByText('Asking the model')).toBeVisible();
+  await expect(page.getByText('Asking the model')).toBeHidden({ timeout: 60_000 });
+  await expect(page.getByTestId('rca-narrative-card')).toBeVisible();
+  await beat(2500);
+});

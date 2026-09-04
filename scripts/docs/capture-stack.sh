@@ -73,6 +73,29 @@ start() {
     "http://127.0.0.1:${API_PORT}/api/v1/admin/llm" \
     -d "{\"provider\":\"openai_compatible\",\"model\":\"${DOCS_LLM_MODEL:-qwen2.5:14b}\",\"base_url\":\"${DOCS_LLM_BASE_URL:-http://127.0.0.1:11434/v1}\",\"api_key\":\"docs-capture-placeholder\",\"structured_output\":\"prompt_json\",\"enabled\":true}" \
     || { echo "could not seed the LLM provider config"; exit 1; }
+  # Optional: a real Snowflake reader connection + suite, for the SQL-generation and
+  # suggest-checks captures (both need to introspect a live table — a fake config
+  # errors on every call). Skipped when DOCS_SNOWFLAKE_ACCOUNT is unset, so the base
+  # capture set still works with no warehouse credentials at hand; export it (plus
+  # DOCS_SNOWFLAKE_USER/_SECRET, the rest default to the harness reader's shape —
+  # DATAQ_DB.RETAIL, warehouse DATAQ_WH, role DATAQ_READER) before `start` to enable
+  # them. `DOCS_SNOWFLAKE_SECRET` is read from the environment only — never logged,
+  # never written to a file here.
+  if [ -n "${DOCS_SNOWFLAKE_ACCOUNT:-}" ]; then
+    conn_id="$(curl -sf -X POST -H 'Content-Type: application/json' \
+      "http://127.0.0.1:${API_PORT}/api/v1/connections" \
+      -d "{\"name\":\"snowflake-docs-reader\",\"type\":\"snowflake\",\"env\":\"dev\",\"config\":{\"account\":\"${DOCS_SNOWFLAKE_ACCOUNT}\",\"user\":\"${DOCS_SNOWFLAKE_USER:?export DOCS_SNOWFLAKE_USER to enable the live-warehouse captures}\",\"database\":\"${DOCS_SNOWFLAKE_DATABASE:-DATAQ_DB}\",\"schema\":\"${DOCS_SNOWFLAKE_SCHEMA:-RETAIL}\",\"warehouse\":\"${DOCS_SNOWFLAKE_WAREHOUSE:-DATAQ_WH}\",\"role\":\"${DOCS_SNOWFLAKE_ROLE:-DATAQ_READER}\",\"auth_type\":\"password\"},\"secret\":\"${DOCS_SNOWFLAKE_SECRET:?export DOCS_SNOWFLAKE_SECRET to enable the live-warehouse captures}\"}" \
+      | python3 -c 'import sys,json;print(json.load(sys.stdin).get("id",""))')" \
+      || { echo "could not create the docs Snowflake connection"; exit 1; }
+    if [ -z "$conn_id" ]; then
+      echo "docs Snowflake connection created but the response carried no id — aborting rather than silently skipping the live-warehouse captures"; exit 1
+    fi
+    curl -sf -o /dev/null -X POST -H 'Content-Type: application/json' \
+      "http://127.0.0.1:${API_PORT}/api/v1/suites" \
+      -d "{\"name\":\"Retail orders (reader)\",\"connection_id\":\"$conn_id\",\"target\":{\"table\":\"${DOCS_SNOWFLAKE_TABLE:-ORDERS_HEADER}\",\"schema\":\"${DOCS_SNOWFLAKE_SCHEMA:-RETAIL}\"}}" \
+      || { echo "could not create the docs Snowflake suite"; exit 1; }
+    echo "live-warehouse captures enabled (connection $conn_id)"
+  fi
   (cd "$ROOT/frontend" && VITE_API_PROXY_TARGET="http://127.0.0.1:${API_PORT}" VITE_AUTH_DEV_BYPASS=true \
       nohup pnpm dev --host 127.0.0.1 --port "$WEB_PORT" --strictPort >"$RUN/web.log" 2>&1 </dev/null & echo $! >"$RUN/web.pid")
   for _ in $(seq 1 40); do
