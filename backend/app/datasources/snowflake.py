@@ -24,7 +24,11 @@ from backend.app.datasources.gx_runner import (
     to_suite_outcome,
 )
 from backend.app.datasources.monitors import FRESHNESS, VOLUME, run_monitors_over_engine
-from backend.app.datasources.snowflake_dmf import DMF_ENGINE, evaluate_dmf_check
+from backend.app.datasources.snowflake_dmf import (
+    DMF_ENGINE,
+    evaluate_dmf_check,
+    probe_dmf_capability,
+)
 from backend.app.datasources.sql import LazyEngine, fold_reflection_keyed_columns
 
 __all__ = [
@@ -307,5 +311,28 @@ class SnowflakeConnectionAdapter:
         try:
             with engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
+        finally:
+            engine.dispose()
+
+    def probe_dmf(self, raw: dict[str, Any], secret: str | None) -> dict[str, Any]:
+        """DMF availability (#1867), on an ALREADY-verified-live connection —
+        callers only invoke this after `test` succeeds.
+        """
+        from sqlalchemy import create_engine, text
+
+        if secret is None:
+            raise ValueError("a credential is required to probe DMF availability")
+        config = self.validate_config(raw)
+        engine = create_engine(
+            build_connection_string(config, secret),
+            connect_args={
+                "login_timeout": _TEST_LOGIN_TIMEOUT,
+                "network_timeout": _TEST_NETWORK_TIMEOUT,
+                **build_connect_args(config, secret),
+            },
+        )
+        try:
+            with engine.connect() as conn:
+                return probe_dmf_capability(lambda stmt: conn.execute(text(stmt)).scalar())
         finally:
             engine.dispose()

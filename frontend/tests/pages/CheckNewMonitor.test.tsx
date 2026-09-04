@@ -47,9 +47,9 @@ const connection: Connection = {
   created_by: 'u1',
 };
 
-function renderPage() {
+function renderPage(connectionOverride: Connection = connection) {
   mockGetSuite.mockResolvedValue(suite);
-  mockGetConnection.mockResolvedValue(connection);
+  mockGetConnection.mockResolvedValue(connectionOverride);
   return render(
     <MemoryRouter initialEntries={['/suites/s1/checks/new']}>
       <AntApp>
@@ -405,5 +405,30 @@ describe('CheckNew — Snowflake DMF engine (ADR 0036)', () => {
         expectation_type: 'monitor:freshness',
       }),
     );
+  });
+
+  it('warns on the DMF engine option when the connection probe found it unavailable (#1867)', async () => {
+    const user = userEvent.setup();
+    renderPage({
+      ...connection,
+      engine_capabilities: {
+        dmf: {
+          available: false,
+          reason: "the connection's role cannot invoke Snowflake system data metric functions",
+        },
+      },
+    });
+
+    await user.click(await screen.findByText('Freshness'));
+    await user.click(await screen.findByText('How stale is the target?', { exact: false }));
+
+    // The caveat renders up front (not just inside the dropdown) so it's seen before opening it.
+    expect(
+      await screen.findByText(/DMF was unavailable the last time this connection was tested/),
+    ).toBeInTheDocument();
+
+    // Still offered (not disabled — the connection's grants can change after this page loads).
+    await user.click(await screen.findByLabelText('Engine'));
+    expect(await screen.findByTitle('Snowflake DMF (native) ⚠')).toBeInTheDocument();
   });
 });

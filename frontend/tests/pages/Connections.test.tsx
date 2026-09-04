@@ -344,4 +344,54 @@ describe('Connections', () => {
 
     await waitFor(() => expect(mockDelete).toHaveBeenCalledWith('c1'));
   });
+
+  // ── DMF capability probe (#1867, ADR 0036 §3) ─────────────────────────────
+
+  it('shows "not yet tested" for a snowflake connection that has never been probed', async () => {
+    mockList.mockResolvedValue([conn({ id: 'c1', name: 'sf-fresh', engine_capabilities: null })]);
+
+    renderPage();
+
+    expect(await screen.findByText('DMF: not yet tested')).toBeInTheDocument();
+  });
+
+  it('shows DMF as available once the probe succeeds', async () => {
+    mockList.mockResolvedValue([
+      conn({ id: 'c1', name: 'sf-dmf-ok', engine_capabilities: { dmf: { available: true } } }),
+    ]);
+
+    renderPage();
+
+    expect(await screen.findByText('DMF available')).toBeInTheDocument();
+    expect(screen.queryByText(/DMF: not yet tested/)).not.toBeInTheDocument();
+  });
+
+  it('flags DMF as unavailable with its classified reason, never raw driver text', async () => {
+    mockList.mockResolvedValue([
+      conn({
+        id: 'c1',
+        name: 'sf-no-dmf',
+        engine_capabilities: {
+          dmf: {
+            available: false,
+            reason:
+              "the connection's role cannot invoke Snowflake system data metric functions — DMFs need Enterprise Edition and the SNOWFLAKE.DATA_METRIC_USER database role",
+          },
+        },
+      }),
+    ]);
+
+    renderPage();
+
+    expect(await screen.findByText('DMF unavailable')).toBeInTheDocument();
+  });
+
+  it('never renders a DMF badge for a non-snowflake connection', async () => {
+    mockList.mockResolvedValue([conn({ id: 'c1', name: 's3-lake', type: 's3' })]);
+
+    renderPage();
+
+    await screen.findByText('s3-lake');
+    expect(screen.queryByText(/DMF/)).not.toBeInTheDocument();
+  });
 });

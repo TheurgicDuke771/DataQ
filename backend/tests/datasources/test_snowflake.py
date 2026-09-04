@@ -594,6 +594,76 @@ def test_adapter_test_disposes_engine_on_failure(monkeypatch: pytest.MonkeyPatch
     assert engine.disposed is True
 
 
+# ───────────────── DMF capability probe (#1867) ─────────────────────
+
+
+class _ScalarResult:
+    def __init__(self, value: object) -> None:
+        self._value = value
+
+    def scalar(self) -> object:
+        return self._value
+
+
+class _FakeScalarConn:
+    """Not a `_FakeConn` subclass — `.execute(...)` here returns an object with
+    `.scalar()`, the shape `probe_dmf` needs (and the real driver's cursor exposes),
+    where `_FakeConn.execute` returns `None`.
+    """
+
+    def __init__(self, executed: list[str], *, scalar: object = 3600, raises: bool = False) -> None:
+        self._executed = executed
+        self._scalar = scalar
+        self._raises = raises
+
+    def execute(self, statement: object) -> _ScalarResult:
+        self._executed.append(str(statement))
+        if self._raises:
+            raise RuntimeError("Insufficient privileges to operate on data metric function")
+        return _ScalarResult(self._scalar)
+
+    def __enter__(self) -> "_FakeScalarConn":
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+
+class _FakeScalarEngine:
+    def __init__(self, executed: list[str], **conn_kwargs: object) -> None:
+        self._executed = executed
+        self._conn_kwargs = conn_kwargs
+        self.disposed = False
+
+    def connect(self) -> _FakeScalarConn:
+        return _FakeScalarConn(self._executed, **self._conn_kwargs)  # type: ignore[arg-type]
+
+    def dispose(self) -> None:
+        self.disposed = True
+
+
+def test_adapter_probe_dmf_available(monkeypatch: pytest.MonkeyPatch) -> None:
+    engine = _FakeScalarEngine([])
+    monkeypatch.setattr("sqlalchemy.create_engine", lambda url, **kw: engine)
+    result = SnowflakeConnectionAdapter().probe_dmf(_CONFIG, "p@ss")
+    assert result == {"available": True}
+    assert engine.disposed is True
+
+
+def test_adapter_probe_dmf_unavailable_is_classified(monkeypatch: pytest.MonkeyPatch) -> None:
+    engine = _FakeScalarEngine([], raises=True)
+    monkeypatch.setattr("sqlalchemy.create_engine", lambda url, **kw: engine)
+    result = SnowflakeConnectionAdapter().probe_dmf(_CONFIG, "p@ss")
+    assert result["available"] is False
+    assert "SNOWFLAKE.DATA_METRIC_USER" in result["reason"]
+    assert engine.disposed is True
+
+
+def test_adapter_probe_dmf_requires_a_secret() -> None:
+    with pytest.raises(ValueError, match="credential is required"):
+        SnowflakeConnectionAdapter().probe_dmf(_CONFIG, None)
+
+
 # ───────────────────────── registry ────────────────────────────────
 
 

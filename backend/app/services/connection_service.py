@@ -877,6 +877,32 @@ def delete_connection(
     log.info("connection_deleted", connection_id=str(connection_id))
 
 
+def _probe_engine_capabilities(session: Session, conn: Connection, secret: str | None) -> None:
+    """Native-engine capability probe (#1867, ADR 0036 §3) — run only after `test`
+    already proved the connection is live. Soft signal, never a test failure: a
+    connection can test successfully even when a native engine isn't available
+    on it, so a probe error here is logged and swallowed, not raised.
+    """
+    if conn.type != "snowflake":
+        return
+    adapter = get_connection_adapter(conn.type)
+    probe = getattr(adapter, "probe_dmf", None)
+    if probe is None:
+        return
+    try:
+        dmf = probe(dict(conn.config), secret)
+    except Exception:
+        log.warning("connection_dmf_probe_failed", connection_id=str(conn.id))
+        return
+    conn.engine_capabilities = {"dmf": dmf}
+    session.commit()
+    log.info(
+        "connection_dmf_probe_completed",
+        connection_id=str(conn.id),
+        dmf_available=dmf.get("available"),
+    )
+
+
 def test_connection(
     session: Session,
     connection_id: uuid.UUID,
@@ -917,6 +943,7 @@ def test_connection(
         ) from exc
 
     log.info("connection_test_succeeded", connection_id=str(connection_id))
+    _probe_engine_capabilities(session, conn, secret)
 
 
 def test_draft_connection(
