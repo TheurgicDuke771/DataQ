@@ -667,6 +667,122 @@ def test_zero_sample_mode_off_still_merges_the_provoking_cell(
     assert row.observed_value["unparsed_value"] == "not-a-real-timestamp"
 
 
+def test_zero_sample_mode_on_suppresses_a_list_shaped_observed_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-errored, set/distinct-value expectation's `observed_value` is itself a
+    list of the column's real values, not a computed aggregate — /code-review
+    caught this as untouched by the original gate, which only nulled
+    `sample_failures`. Fixed via `_strip_row_level_observed_value`.
+    """
+    monkeypatch.setenv("PRIVACY_ZERO_SAMPLE_MODE", "true")
+    get_settings.cache_clear()
+    session = FakeSession()
+    outcome = SuiteOutcome(
+        success=False,
+        checks=[
+            CheckOutcome(
+                "expect_column_distinct_values_to_be_in_set",
+                success=False,
+                observed_value={"observed_value": ["alice@example.com", "bob@example.com"]},
+            )
+        ],
+    )
+
+    run_service.execute_run(
+        _sess(session), run=_run(), checks=_checks(1), runner=FakeRunner(outcome=outcome), table="T"
+    )
+
+    (row,) = session.added
+    assert row.observed_value == {}
+    assert "alice@example.com" not in str(row.observed_value)
+
+
+def test_zero_sample_mode_off_still_shows_a_list_shaped_observed_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Control for the test above: unchanged off."""
+    monkeypatch.setenv("PRIVACY_ZERO_SAMPLE_MODE", "false")
+    get_settings.cache_clear()
+    session = FakeSession()
+    outcome = SuiteOutcome(
+        success=False,
+        checks=[
+            CheckOutcome(
+                "expect_column_distinct_values_to_be_in_set",
+                success=False,
+                observed_value={"observed_value": ["alice@example.com"]},
+            )
+        ],
+    )
+
+    run_service.execute_run(
+        _sess(session), run=_run(), checks=_checks(1), runner=FakeRunner(outcome=outcome), table="T"
+    )
+
+    (row,) = session.added
+    assert row.observed_value == {"observed_value": ["alice@example.com"]}
+
+
+def test_zero_sample_mode_on_suppresses_a_cell_scalar_observed_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`expect_column_max_to_be_between`'s scalar `observed_value` is the literal
+    warehouse cell (the column's real MAX), not a statistic — must be gated the
+    same way as the list-shaped case above.
+    """
+    monkeypatch.setenv("PRIVACY_ZERO_SAMPLE_MODE", "true")
+    get_settings.cache_clear()
+    session = FakeSession()
+    outcome = SuiteOutcome(
+        success=False,
+        checks=[
+            CheckOutcome(
+                "expect_column_max_to_be_between",
+                success=False,
+                observed_value={"observed_value": 987654.32},
+            )
+        ],
+    )
+
+    run_service.execute_run(
+        _sess(session), run=_run(), checks=_checks(1), runner=FakeRunner(outcome=outcome), table="T"
+    )
+
+    (row,) = session.added
+    assert row.observed_value == {}
+    assert "987654" not in str(row.observed_value)
+
+
+def test_zero_sample_mode_on_still_shows_a_safe_aggregate_scalar(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A row-count/unexpected-count style scalar is a computed statistic, not a
+    cell — zero-sample mode must not over-null it (metric_value/aggregates
+    still flow per the issue's own text).
+    """
+    monkeypatch.setenv("PRIVACY_ZERO_SAMPLE_MODE", "true")
+    get_settings.cache_clear()
+    session = FakeSession()
+    outcome = SuiteOutcome(
+        success=True,
+        checks=[
+            CheckOutcome(
+                "expect_table_row_count_to_be_between",
+                success=True,
+                observed_value={"observed_value": 34680},
+            )
+        ],
+    )
+
+    run_service.execute_run(
+        _sess(session), run=_run(), checks=_checks(1), runner=FakeRunner(outcome=outcome), table="T"
+    )
+
+    (row,) = session.added
+    assert row.observed_value == {"observed_value": 34680}
+
+
 # ───────────────────────── failure path ────────────────────────────
 
 

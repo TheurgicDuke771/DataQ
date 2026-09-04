@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
+from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.jsonsafe import sanitize_json
 from backend.app.core.logging import get_logger
@@ -29,6 +30,7 @@ from backend.app.services.check_service import (
 )
 from backend.app.services.custom_sql import is_custom_sql, validate_custom_sql_check
 from backend.app.services.failure_classifier import safe_failure_reason
+from backend.app.services.run_service import _strip_row_level_observed_value
 from backend.app.services.severity import resolve_status
 
 log = get_logger(__name__)
@@ -205,6 +207,12 @@ def dry_run_check(
             observed = {"error": error_message} if error_message else None
         else:
             observed = sanitize_json(check_outcome.observed_value)
+            # Zero-sample mode (#1676): a preview must not show a live row-level value the
+            # persisted path would never write, regardless of the suite's column policy.
+            if get_settings().privacy_zero_sample_mode:
+                observed = _strip_row_level_observed_value(
+                    observed, expectation_type=expectation_type
+                )
         return DryRunOutcome(
             status=status,
             metric_value=metric,

@@ -463,6 +463,14 @@ class DeploymentPostureRead(ApiModel):
     external_transfers: list[ExternalTransfer]
 
 
+def _zero_sample_detail(*, zero_sample: bool, on: str, off: str) -> str:
+    """Shared on/off phrasing for a transfer vector zero-sample mode (#1676)
+    changes, following `_llm_intelligence_transfer`'s per-state-detail precedent
+    rather than a hand-duplicated ternary at each call site.
+    """
+    return on if zero_sample else off
+
+
 def _llm_intelligence_transfer(db: Session) -> ExternalTransfer:
     """The outbound-LLM posture row (ADR 0042): honest in BOTH states."""
     row = llm_service.get_settings_row(db)
@@ -556,18 +564,20 @@ def get_deployment_posture(db: Annotated[Session, Depends(get_db)]) -> Deploymen
                 or settings.email_to
             )
             or per_suite_alerting,
-            detail=(
-                "Zero-sample privacy mode is ON: alerts carry check names, statuses "
-                "and aggregate counts only — no failing-row sample is ever included, "
-                "not even redacted."
-                if zero_sample
-                else (
+            detail=_zero_sample_detail(
+                zero_sample=zero_sample,
+                on=(
+                    "Zero-sample privacy mode is ON: alerts carry check names, statuses "
+                    "and aggregate counts only — no failing-row sample is ever included, "
+                    "not even redacted."
+                ),
+                off=(
                     "Alerts carry check names, statuses and — when a failing sample is "
                     "included — redacted sample values, to whatever webhook or mailbox "
                     "the operator configured. That endpoint's own location is outside "
                     "DataQ's knowledge, so this is a transfer whose destination only "
                     "the operator can attest to."
-                )
+                ),
             ),
         ),
         # TWO distinct LLM vectors: the unbuilt outbound one was listed while the LIVE
@@ -575,12 +585,14 @@ def get_deployment_posture(db: Annotated[Session, Depends(get_db)]) -> Deploymen
         ExternalTransfer(
             name="mcp_ai_clients",
             enabled=mcp_enabled(settings),
-            detail=(
-                "Zero-sample privacy mode is ON: /mcp serves run results and check "
-                "configuration to whatever AI client holds a valid PAT, but never a "
-                "failing-row sample — aggregate counts only."
-                if zero_sample
-                else (
+            detail=_zero_sample_detail(
+                zero_sample=zero_sample,
+                on=(
+                    "Zero-sample privacy mode is ON: /mcp serves run results and check "
+                    "configuration to whatever AI client holds a valid PAT, but never a "
+                    "failing-row sample — aggregate counts only."
+                ),
+                off=(
                     "The /mcp surface serves run results, redacted failing samples and "
                     "check configuration to whatever AI client holds a valid PAT — "
                     "Claude Desktop, Copilot, Cursor. The model provider behind that "
@@ -588,7 +600,7 @@ def get_deployment_posture(db: Annotated[Session, Depends(get_db)]) -> Deploymen
                     "are outside DataQ's knowledge. This is a live transfer path today, "
                     "not a future one, and it is the more consequential of the two "
                     "LLM entries here."
-                )
+                ),
             ),
         ),
         _llm_intelligence_transfer(db),
