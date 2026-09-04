@@ -14,6 +14,8 @@ import {
 } from '../components/checks/checkFormFields';
 import { ColumnProfilePanel } from '../components/checks/ColumnProfilePanel';
 import { DryRunPreview } from '../components/checks/DryRunPreview';
+import { SqlGeneratePanel } from '../components/checks/SqlGeneratePanel';
+import { isCustomSql } from '../components/checks/customSql';
 import {
   configFieldsFor,
   effectiveEngineFor,
@@ -130,6 +132,11 @@ export function CheckNew() {
             <Input placeholder="e.g. order_id not null" />
           </Form.Item>
           {showEngineChoice && <EngineField />}
+          {suiteId && isCustomSql(expectationType) && (
+            <Form.Item>
+              <SqlGeneratePanel suiteId={suiteId} form={form} />
+            </Form.Item>
+          )}
           {spec.kind === 'comparison' ? (
             <ComparisonCheckForm
               connections={state.status === 'ok' ? state.data.connections : []}
