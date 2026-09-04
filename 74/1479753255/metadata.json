@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "741479753255",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1849-llm-credential-honesty",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/admin.py",
+    "backend/app/llm/base.py",
+    "backend/app/services/llm_service.py",
+    "frontend/src/api/llm.ts",
+    "frontend/src/components/admin/LlmSettingsPanel.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/74/1479753255/0/metadata.json",
+      "transcript": "/74/1479753255/0/full.jsonl",
+      "compact_transcript": "/74/1479753255/0/transcript.jsonl",
+      "content_hash": "/74/1479753255/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 106,
+    "cache_creation_tokens": 60643,
+    "cache_read_tokens": 29704421,
+    "output_tokens": 26027,
+    "api_call_count": 53
+  }
+}
