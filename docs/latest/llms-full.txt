@@ -3492,7 +3492,10 @@ omission.
 first platform-native check engine — an alternative `check.engine` for four expectation
 types (null count, null percent, duplicate count, unique count) that invokes Snowflake's
 own `SNOWFLAKE.CORE.*` metric functions instead of a GX expectation. Engine is selected per
-check, on a Snowflake connection only; `kind` stays `expectation` either way.
+check, on a Snowflake connection only; `kind` stays `expectation` either way. Testing or
+re-authenticating a Snowflake connection also probes DMF availability (Enterprise Edition +
+grant) and stores the result on the connection — surfaced on the connection list and, as a caveat
+rather than a hard gate, in the check editor's engine picker.
 
 ˢ **S3 means AWS S3 *and* any S3-compatible store** — MinIO, Ceph/RadosGW, Cloudflare R2,
 Wasabi, Backblaze B2, SeaweedFS or an on-prem gateway. Set the connection's optional

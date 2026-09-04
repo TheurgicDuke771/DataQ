@@ -2621,7 +2621,10 @@ omission.</p>
 first platform-native check engine — an alternative <code>check.engine</code> for four expectation
 types (null count, null percent, duplicate count, unique count) that invokes Snowflake's
 own <code>SNOWFLAKE.CORE.*</code> metric functions instead of a GX expectation. Engine is selected per
-check, on a Snowflake connection only; <code>kind</code> stays <code>expectation</code> either way.</p>
+check, on a Snowflake connection only; <code>kind</code> stays <code>expectation</code> either way. Testing or
+re-authenticating a Snowflake connection also probes DMF availability (Enterprise Edition +
+grant) and stores the result on the connection — surfaced on the connection list and, as a caveat
+rather than a hard gate, in the check editor's engine picker.</p>
 <p>ˢ <strong>S3 means AWS S3 <em>and</em> any S3-compatible store</strong> — MinIO, Ceph/RadosGW, Cloudflare R2,
 Wasabi, Backblaze B2, SeaweedFS or an on-prem gateway. Set the connection's optional
 endpoint URL; every row in this column applies identically either way. See
