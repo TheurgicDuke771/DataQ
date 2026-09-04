@@ -2067,7 +2067,7 @@ The endpoint accepts the **same credentials as the REST API** (ADR [0008](../adr
     [0032](../adr/0032-email-otp-signin.md)) has no identity provider to issue bearer
     tokens, so an **API key is the only `/mcp` credential** there — mint one as
     below and use it exactly the same way. Everything else is identical, including
-    all 48 tools and per-suite permissions. Two rejections are deliberate in that
+    all 50 tools and per-suite permissions. Two rejections are deliberate in that
     mode: a raw JWT is refused (there is nothing to validate it against), and your
     **sign-in session is never accepted** — it is a browser credential and does not
     authenticate `/mcp`, whether presented as a bearer or carried as a cookie.
@@ -2125,7 +2125,7 @@ Start it via the command palette (`Cmd/Ctrl+Shift+P`) → **MCP: List Servers** 
 
 **Cursor** (`~/.cursor/mcp.json`) uses the same `mcpServers` shape as Claude Desktop.
 
-## The 48 tools
+## The 50 tools
 
 Each tool is a thin wrapper over the same service layer as the REST API — per-suite
 authorization (`view` for a read, `edit` for a mutation) and failing-sample redaction apply
@@ -2135,7 +2135,7 @@ drift-checked in CI, so it cannot go stale the way an earlier hand-typed pass of
 
 The tools split three ways, not two:
 
-- **Read-only** (25) — reads gated on `view` where a suite is named; workspace-wide reads such as
+- **Read-only** (27) — reads gated on `view` where a suite is named; workspace-wide reads such as
   `list_suites` and `get_health_score` need only a signed-in user.
 - **Changes state** (18) — every one gates on `edit` access to the affected suite (schedule,
   binding and incident tools via the suite they target); `import_suite` additionally requires
@@ -2832,7 +2832,8 @@ the per-PR history lives in the repo's commit log and pull requests.
   the product is unchanged. Changing the provider or endpoint URL requires re-supplying the
   credential, so a stored key can never be redirected to a new destination.
 
-- **MCP `get_doc` — the published docs, reachable from a conversation (48 tools total).**
+- **MCP `get_doc` — the published docs, reachable from a conversation (48 tools total at the
+  time — since risen to 50; see below).**
   A curated set of user-facing pages (best practices, the feature matrix, security, getting
   started, MCP setup, and the five compliance runbooks/templates) is now readable through the
   MCP surface, verbatim and unsummarized — so "what are DataQ's best practices for authoring a
@@ -2870,6 +2871,18 @@ the per-PR history lives in the repo's commit log and pull requests.
   as a literal in the JSON, the template itself is only ever shown to a workspace admin — every
   other user sees just whether one is set. Changing a channel's destination URL while it has a
   stored auth header now requires re-supplying that header's value in the same request.
+
+- **MCP read tools for reusable notification channels (50 tools total).**
+  `list_notification_channels` lists every channel in the workspace, and
+  `list_suite_channels` lists the ones linked to one suite — the read surface
+  `get_notification_config`'s `*_source: "channel"` and `*_channel_linked`
+  fields could name but never identify. Same presence-not-value discipline as
+  every other credential-bearing MCP field: a webhook/HMAC/auth-header value is
+  never returned, only whether one is set, and a channel's `payload_template`
+  is withheld from every caller including a workspace admin (stricter than the
+  REST read, since it can carry a receiver's routing key as a plain JSON
+  literal). Channel *mutation* (create/update/delete/link/unlink) stays
+  REST-only for now.
 
 - **Alerts now credit the asset owner, not just the suite creator.** When a table has an
   assigned owner, the "Owner" shown on a run alert (Teams card, Slack message, email) is that
@@ -3695,8 +3708,8 @@ run against), and the description is the opening of what an AI assistant is show
 
 | | Count |
 |---|---|
-| Tools | 48 |
-| Read-only | 25 |
+| Tools | 50 |
+| Read-only | 27 |
 | Changes state | 18 |
 | Live probe | 5 |
 
@@ -3728,8 +3741,10 @@ connection mutation, and a credential must never transit an LLM.
 | `list_checks` | `view` on the suite | List the checks (rules and monitors) configured on one suite. |
 | `list_connections` | any signed-in user | List the configured datasource and orchestration connections, with health. |
 | `list_incidents` | any signed-in user; suite-scoped when a suite is named | List data-quality incidents — what is unresolved *right now*, and since when. |
+| `list_notification_channels` | any signed-in user | List every reusable notification channel defined in the workspace. |
 | `list_runs` | any signed-in user; suite-scoped when a suite is named | List recent suite runs, newest first, with each run's data-quality outcome. |
 | `list_schedules` | any signed-in user; suite-scoped when a suite is named | List the cron schedules that run suites automatically. |
+| `list_suite_channels` | `view` on the suite | List the reusable notification channels linked to one suite. |
 | `list_suites` | any signed-in user | List the data-quality suites the current user can access. |
 | `list_trigger_bindings` | any signed-in user; suite-scoped when a suite is named | List the orchestration triggers that run a suite when a pipeline succeeds. |
 

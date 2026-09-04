@@ -2344,11 +2344,11 @@ run against), and the description is the opening of what an AI assistant is show
 <tbody>
 <tr>
 <td>Tools</td>
-<td>48</td>
+<td>50</td>
 </tr>
 <tr>
 <td>Read-only</td>
-<td>25</td>
+<td>27</td>
 </tr>
 <tr>
 <td>Changes state</td>
@@ -2478,6 +2478,11 @@ connection mutation, and a credential must never transit an LLM.</p>
 <td>List data-quality incidents — what is unresolved <em>right now</em>, and since when.</td>
 </tr>
 <tr>
+<td><code>list_notification_channels</code></td>
+<td>any signed-in user</td>
+<td>List every reusable notification channel defined in the workspace.</td>
+</tr>
+<tr>
 <td><code>list_runs</code></td>
 <td>any signed-in user; suite-scoped when a suite is named</td>
 <td>List recent suite runs, newest first, with each run's data-quality outcome.</td>
@@ -2486,6 +2491,11 @@ connection mutation, and a credential must never transit an LLM.</p>
 <td><code>list_schedules</code></td>
 <td>any signed-in user; suite-scoped when a suite is named</td>
 <td>List the cron schedules that run suites automatically.</td>
+</tr>
+<tr>
+<td><code>list_suite_channels</code></td>
+<td><code>view</code> on the suite</td>
+<td>List the reusable notification channels linked to one suite.</td>
 </tr>
 <tr>
 <td><code>list_suites</code></td>

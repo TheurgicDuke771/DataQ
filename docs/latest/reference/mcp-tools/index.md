@@ -6,8 +6,8 @@ run against), and the description is the opening of what an AI assistant is show
 
 | | Count |
 |---|---|
-| Tools | 48 |
-| Read-only | 25 |
+| Tools | 50 |
+| Read-only | 27 |
 | Changes state | 18 |
 | Live probe | 5 |
 
@@ -39,8 +39,10 @@ connection mutation, and a credential must never transit an LLM.
 | `list_checks` | `view` on the suite | List the checks (rules and monitors) configured on one suite. |
 | `list_connections` | any signed-in user | List the configured datasource and orchestration connections, with health. |
 | `list_incidents` | any signed-in user; suite-scoped when a suite is named | List data-quality incidents — what is unresolved *right now*, and since when. |
+| `list_notification_channels` | any signed-in user | List every reusable notification channel defined in the workspace. |
 | `list_runs` | any signed-in user; suite-scoped when a suite is named | List recent suite runs, newest first, with each run's data-quality outcome. |
 | `list_schedules` | any signed-in user; suite-scoped when a suite is named | List the cron schedules that run suites automatically. |
+| `list_suite_channels` | `view` on the suite | List the reusable notification channels linked to one suite. |
 | `list_suites` | any signed-in user | List the data-quality suites the current user can access. |
 | `list_trigger_bindings` | any signed-in user; suite-scoped when a suite is named | List the orchestration triggers that run a suite when a pipeline succeeds. |
 

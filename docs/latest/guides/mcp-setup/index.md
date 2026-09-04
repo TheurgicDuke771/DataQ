@@ -22,7 +22,7 @@ The endpoint accepts the **same credentials as the REST API** (ADR [0008](../adr
     [0032](../adr/0032-email-otp-signin.md)) has no identity provider to issue bearer
     tokens, so an **API key is the only `/mcp` credential** there — mint one as
     below and use it exactly the same way. Everything else is identical, including
-    all 48 tools and per-suite permissions. Two rejections are deliberate in that
+    all 50 tools and per-suite permissions. Two rejections are deliberate in that
     mode: a raw JWT is refused (there is nothing to validate it against), and your
     **sign-in session is never accepted** — it is a browser credential and does not
     authenticate `/mcp`, whether presented as a bearer or carried as a cookie.
@@ -80,7 +80,7 @@ Start it via the command palette (`Cmd/Ctrl+Shift+P`) → **MCP: List Servers** 
 
 **Cursor** (`~/.cursor/mcp.json`) uses the same `mcpServers` shape as Claude Desktop.
 
-## The 48 tools
+## The 50 tools
 
 Each tool is a thin wrapper over the same service layer as the REST API — per-suite
 authorization (`view` for a read, `edit` for a mutation) and failing-sample redaction apply
@@ -90,7 +90,7 @@ drift-checked in CI, so it cannot go stale the way an earlier hand-typed pass of
 
 The tools split three ways, not two:
 
-- **Read-only** (25) — reads gated on `view` where a suite is named; workspace-wide reads such as
+- **Read-only** (27) — reads gated on `view` where a suite is named; workspace-wide reads such as
   `list_suites` and `get_health_score` need only a signed-in user.
 - **Changes state** (18) — every one gates on `edit` access to the affected suite (schedule,
   binding and incident tools via the suite they target); `import_suite` additionally requires

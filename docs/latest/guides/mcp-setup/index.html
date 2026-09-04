@@ -1056,10 +1056,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#the-48-tools" class="md-nav__link">
+  <a href="#the-50-tools" class="md-nav__link">
     <span class="md-ellipsis">
       
-        The 48 tools
+        The 50 tools
       
     </span>
   </a>
@@ -2321,10 +2321,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#the-48-tools" class="md-nav__link">
+  <a href="#the-50-tools" class="md-nav__link">
     <span class="md-ellipsis">
       
-        The 48 tools
+        The 50 tools
       
     </span>
   </a>
@@ -2405,7 +2405,7 @@ confusing 401. Always configure clients with the <code>/mcp/</code> form.</p>
 <a href="../../adr/0032-email-otp-signin/">0032</a>) has no identity provider to issue bearer
 tokens, so an <strong>API key is the only <code>/mcp</code> credential</strong> there — mint one as
 below and use it exactly the same way. Everything else is identical, including
-all 48 tools and per-suite permissions. Two rejections are deliberate in that
+all 50 tools and per-suite permissions. Two rejections are deliberate in that
 mode: a raw JWT is refused (there is nothing to validate it against), and your
 <strong>sign-in session is never accepted</strong> — it is a browser credential and does not
 authenticate <code>/mcp</code>, whether presented as a bearer or carried as a cookie.</p>
@@ -2453,7 +2453,7 @@ itself, <code>.gitignore</code> already covers <code>.vscode/*</code>).</p>
 </code></pre></div>
 <p>Start it via the command palette (<code>Cmd/Ctrl+Shift+P</code>) → <strong>MCP: List Servers</strong> → <em>dataq</em> → Start (or open Copilot Chat in agent mode — configured servers start on demand).</p>
 <p><strong>Cursor</strong> (<code>~/.cursor/mcp.json</code>) uses the same <code>mcpServers</code> shape as Claude Desktop.</p>
-<h2 id="the-48-tools">The 48 tools<a class="headerlink" href="#the-48-tools" title="Permanent link">¶</a></h2>
+<h2 id="the-50-tools">The 50 tools<a class="headerlink" href="#the-50-tools" title="Permanent link">¶</a></h2>
 <p>Each tool is a thin wrapper over the same service layer as the REST API — per-suite
 authorization (<code>view</code> for a read, <code>edit</code> for a mutation) and failing-sample redaction apply
 identically. <strong>The complete list — every tool, who can call it, and what it does — is the
@@ -2461,7 +2461,7 @@ identically. <strong>The complete list — every tool, who can call it, and what
 drift-checked in CI, so it cannot go stale the way an earlier hand-typed pass of this page did.</p>
 <p>The tools split three ways, not two:</p>
 <ul>
-<li><strong>Read-only</strong> (25) — reads gated on <code>view</code> where a suite is named; workspace-wide reads such as
+<li><strong>Read-only</strong> (27) — reads gated on <code>view</code> where a suite is named; workspace-wide reads such as
   <code>list_suites</code> and <code>get_health_score</code> need only a signed-in user.</li>
 <li><strong>Changes state</strong> (18) — every one gates on <code>edit</code> access to the affected suite (schedule,
   binding and incident tools via the suite they target); <code>import_suite</code> additionally requires
