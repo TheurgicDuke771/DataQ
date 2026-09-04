@@ -3158,6 +3158,15 @@ are the reason this mode is opt-in rather than the default:</p>
   the boundary, column-aware</strong>: a suite's <strong>column policy</strong> (auto-derived by a classifier or
   set by hand) keeps non-sensitive breach values debuggable while masking PII columns to
   <code>&lt;redacted&gt;</code>. The numeric counts and row/column shape are kept.</li>
+<li><strong>Zero-sample privacy mode</strong> (<code>PRIVACY_ZERO_SAMPLE_MODE=true</code>) is a deployment-level
+  step past redaction: no failing-row sample is ever <strong>persisted</strong> at all — not full, not
+  redacted — only aggregates (<code>metric_value</code>, unexpected counts/percents). It gates the one
+  write-path choke point every check kind funnels through, so results, alerts and MCP all
+  inherit the suppression from what's actually in the database. <code>GET /admin/deployment</code>
+  reports whether it's on. <strong>Both the api and the worker process must be restarted</strong> after
+  changing this setting — each process caches its own config, so a rolling restart that
+  updates only one can leave the reported posture and the worker's actual behavior
+  disagreeing until the second process comes back up.</li>
 <li><strong>Logs &amp; traces</strong> are PII-redacted at the logger level, and secret values never enter them.</li>
 </ul>
 <h2 id="retention">Retention<a class="headerlink" href="#retention" title="Permanent link">¶</a></h2>

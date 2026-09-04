@@ -237,6 +237,15 @@ DataQ runs checks *against* your data; it is **not** a copy of your data. What i
   the boundary, column-aware**: a suite's **column policy** (auto-derived by a classifier or
   set by hand) keeps non-sensitive breach values debuggable while masking PII columns to
   `<redacted>`. The numeric counts and row/column shape are kept.
+- **Zero-sample privacy mode** (`PRIVACY_ZERO_SAMPLE_MODE=true`) is a deployment-level
+  step past redaction: no failing-row sample is ever **persisted** at all — not full, not
+  redacted — only aggregates (`metric_value`, unexpected counts/percents). It gates the one
+  write-path choke point every check kind funnels through, so results, alerts and MCP all
+  inherit the suppression from what's actually in the database. `GET /admin/deployment`
+  reports whether it's on. **Both the api and the worker process must be restarted** after
+  changing this setting — each process caches its own config, so a rolling restart that
+  updates only one can leave the reported posture and the worker's actual behavior
+  disagreeing until the second process comes back up.
 - **Logs & traces** are PII-redacted at the logger level, and secret values never enter them.
 
 ## Retention
