@@ -1084,6 +1084,34 @@ def historical_check_engine(
     return {r.id: _resolve(r.check_id, r.created_at) for r in results}
 
 
+def historical_check_kind(
+    session: Session,
+    results: Sequence[Result],
+    checks: Mapping[uuid.UUID, Check],
+) -> dict[uuid.UUID, str | None]:
+    """Per-**result** `kind`, resolved as of WHEN that result was written.
+
+    `CheckVersion.kind` is immutable in today's editor but is snapshotted anyway
+    (see the model) specifically so a stale result is never re-labeled by a later
+    edit; using the check's LIVE `kind` here would repeat the exact #1489 mistake
+    `historical_check_context` exists to avoid (#1880 review — `zero_sample_suppressed`
+    needs this to classify old results correctly if `kind` ever becomes editable).
+    """
+    check_ids = {r.check_id for r in results if r.check_id is not None}
+    versions_by_check = _versions_by_check(session, check_ids)
+
+    def _resolve(check_id: uuid.UUID | None, at: datetime) -> str | None:
+        check = checks.get(check_id) if check_id is not None else None
+        effective = _effective_version(
+            versions_by_check.get(check_id) if check_id is not None else None, at
+        )
+        if effective is not None:
+            return effective.kind
+        return check.kind if check else None
+
+    return {r.id: _resolve(r.check_id, r.created_at) for r in results}
+
+
 # Expectation types whose scalar `observed_value` is a literal cell, not a computed statistic
 # (#1486).
 _CELL_SCALAR_EXPECTATION_TYPES = frozenset(
@@ -1297,21 +1325,38 @@ def redact_sample_failures(
 
 
 # Result statuses whose outcome can carry a violating-row sample at all — `pass`/`skip`
-# never do, so a null sample there is never zero-sample suppression.
-_ZERO_SAMPLE_ELIGIBLE_STATUSES = frozenset({*FAILING_TIERS, "error"})
+# never do. `error` is deliberately excluded too: `_build_result` nulls `sample_failures`
+# for EVERY errored outcome unconditionally (see above), so an errored result's null
+# sample is never caused by zero-sample mode and must not be reported as such (#1880
+# review).
+_ZERO_SAMPLE_ELIGIBLE_STATUSES = frozenset(FAILING_TIERS)
 
-# Check kinds that produce row-level content when they fail/error. The scalar monitor
-# kinds (freshness/volume/schema_drift/anomaly) compute a single number and structurally
+# Check kinds that produce row-level content when they fail. The scalar monitor kinds
+# (freshness/volume/schema_drift/anomaly) compute a single number and structurally
 # never had a sample to suppress.
 _ZERO_SAMPLE_ELIGIBLE_KINDS = frozenset({_EXPECTATION_KIND, COMPARISON_KIND})
 
 
-def zero_sample_suppressed(*, status: str, check_kind: str | None) -> bool:
+def zero_sample_suppressed(*, status: str, check_kind: str | None, engine: str) -> bool:
     """Whether a null `sample_failures` on this result is zero-sample-mode
     suppression (#1676) rather than genuinely having had nothing to redact (#1873).
-    Callers must additionally gate this on `Settings().privacy_zero_sample_mode`.
+
+    Folds the `Settings().privacy_zero_sample_mode` gate in here rather than leaving it
+    to callers (#1880 review — two call sites had each spelled out the same `and`,
+    which is exactly the kind of duplicated security-relevant gate that silently drifts).
+
+    `engine` must be the check's engine AS OF this result (`historical_check_engine`),
+    not its live value: a `dmf`-engine check (ADR 0036) is a pure scalar metric and
+    `_build_result` never routes it through the sample-persisting path at all, with or
+    without zero-sample mode on, so it is excluded here for the same structural reason
+    as the scalar monitor kinds above (#1880 review).
     """
-    return status in _ZERO_SAMPLE_ELIGIBLE_STATUSES and check_kind in _ZERO_SAMPLE_ELIGIBLE_KINDS
+    return (
+        get_settings().privacy_zero_sample_mode
+        and status in _ZERO_SAMPLE_ELIGIBLE_STATUSES
+        and check_kind in _ZERO_SAMPLE_ELIGIBLE_KINDS
+        and engine == GX_ENGINE
+    )
 
 
 def redact_sample_failures_with_state(

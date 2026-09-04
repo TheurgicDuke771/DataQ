@@ -377,6 +377,33 @@ def test_build_report_all_pass_is_success(db_session: Any) -> None:
     assert report.has_failures is False
 
 
+def test_build_report_flags_sample_suppressed_when_privacy_mode_on(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#1880 review: the alert-delivery path never got the #1873 honesty
+    treatment — a failing check's sample nulled by zero-sample mode must not
+    render identically to a check that genuinely had nothing to redact.
+    """
+    monkeypatch.setenv("PRIVACY_ZERO_SAMPLE_MODE", "true")
+    from backend.app.core.config import get_settings
+
+    get_settings.cache_clear()
+    _suite, run = _suite_with_check(db_session, status="fail", sample=None)
+
+    check_report = builder.build_run_report(db_session, run).checks[0]
+    assert check_report.sample_summary is None
+    assert check_report.sample_suppressed is True
+
+
+def test_build_report_does_not_flag_sample_suppressed_when_privacy_mode_off(
+    db_session: Any,
+) -> None:
+    _suite, run = _suite_with_check(db_session, status="fail", sample=None)
+
+    check_report = builder.build_run_report(db_session, run).checks[0]
+    assert check_report.sample_suppressed is False
+
+
 def test_check_report_is_frozen() -> None:
     rep = CheckReport(
         check_name="c",

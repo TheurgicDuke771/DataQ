@@ -41,6 +41,7 @@ from backend.app.core.secrets import get_secret_store
 from backend.app.db.models import (
     CONNECTION_TYPES,
     ENVS,
+    GX_ENGINE,
     INCIDENT_STATUSES,
     ORCHESTRATION_PROVIDERS,
     PIPELINE_RUN_STATUSES,
@@ -382,10 +383,12 @@ def _run_results_payload(
     # written (#1489) — not the check's current state, which is freely editable
     # after the fact and would silently re-label what old results show/audit.
     context = run_service.historical_check_context(session, results, checks)
-    # Same rule for `engine` (#1869 review): an old result's observed_value/
-    # metric_value reflect whichever engine actually produced it, not whatever
-    # the check has since been re-pointed to.
+    # Same rule for `engine`/`kind` (#1869/#1880 review): an old result's
+    # observed_value/metric_value reflect whichever engine actually produced it, not
+    # whatever the check has since been re-pointed to, and `zero_sample_suppressed`
+    # needs both as of THIS result.
     engine_by_result = run_service.historical_check_engine(session, results, checks)
+    kind_by_result = run_service.historical_check_kind(session, results, checks)
 
     def _tested_column(result_id: uuid.UUID) -> str | None:
         return context.get(result_id, (None, None))[0]
@@ -401,9 +404,8 @@ def _run_results_payload(
                 _tested_column(r.id),
                 policy,
                 tags,
-                # `kind` is immutable per check, so its current value is valid history too
-                # (unlike `tested_column`/`expectation_type`, there is no version to resolve).
-                check_kind=checks[r.check_id].kind if r.check_id in checks else None,
+                check_kind=kind_by_result.get(r.id),
+                engine=engine_by_result.get(r.id, GX_ENGINE),
             ),
             "observed_value": run_service.redact_observed_value(
                 r.observed_value,
@@ -525,6 +527,7 @@ def _redacted_sample(
     tags: dict[str, str] | None = None,
     *,
     check_kind: str | None = None,
+    engine: str = GX_ENGINE,
 ) -> dict[str, Any]:
     """The failing-row sample plus **how much of it was masked** (#424/#1115).
 
@@ -540,8 +543,8 @@ def _redacted_sample(
     all and zero-sample mode isn't why — which is the one case where there is
     nothing true to claim either way.
     """
-    zero_sample = get_settings().privacy_zero_sample_mode and run_service.zero_sample_suppressed(
-        status=result.status, check_kind=check_kind
+    zero_sample = run_service.zero_sample_suppressed(
+        status=result.status, check_kind=check_kind, engine=engine
     )
     sample, state, redacted_columns = run_service.redact_sample_failures_with_state(
         result.sample_failures,

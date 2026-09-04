@@ -19,6 +19,7 @@ from backend.app.alerting.base import (
 from backend.app.core.config import get_settings
 from backend.app.db.models import (
     FAILING_TIERS,
+    GX_ENGINE,
     Asset,
     Check,
     Connection,
@@ -100,6 +101,12 @@ def build_run_report(session: Session, run: Run) -> RunReport:
     # MCP read paths apply.
     tags = asset.column_tags if asset is not None else None
     results: list[Result] = run_service.list_results(session, run.id)
+    # Per-result `kind`/`engine` as of THIS result (#1880 review) — the same rule
+    # `zero_sample_suppressed` needs on REST/MCP applies here: a `dmf`-engine check
+    # is a pure scalar metric and never had a sample to suppress, with or without
+    # the privacy switch.
+    kind_by_result = run_service.historical_check_kind(session, results, checks)
+    engine_by_result = run_service.historical_check_engine(session, results, checks)
 
     counts: dict[str, int] = {}
     check_reports: list[CheckReport] = []
@@ -129,6 +136,11 @@ def build_run_report(session: Session, run: Run) -> RunReport:
                     tested_column=(check.config.get("column") if check is not None else None),
                     policy=suite.column_policy if suite is not None else None,
                     tags=tags,
+                ),
+                sample_suppressed=run_service.zero_sample_suppressed(
+                    status=result.status,
+                    check_kind=kind_by_result.get(result.id),
+                    engine=engine_by_result.get(result.id, GX_ENGINE),
                 ),
             )
         )

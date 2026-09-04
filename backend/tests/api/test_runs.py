@@ -753,6 +753,54 @@ def test_get_run_does_not_flag_zero_sample_when_privacy_mode_off(
     assert result["redaction"] is None
 
 
+def test_get_run_does_not_flag_zero_sample_for_an_errored_result(
+    client: TestClient, db_session: Any, monkeypatch: Any
+) -> None:
+    """`_build_result` nulls `sample_failures` for EVERY errored outcome
+    unconditionally — an errored result's null sample is never caused by
+    zero-sample mode, so it must not be reported as such (#1880 review).
+    """
+    monkeypatch.setenv("PRIVACY_ZERO_SAMPLE_MODE", "true")
+    get_settings.cache_clear()
+    dev = _user(db_session, "dev@ex")
+    suite = _suite(db_session, dev, target={"table": "T"})
+    check = Check(suite_id=suite.id, name="c", kind="expectation", expectation_type="expect_x")
+    db_session.add(check)
+    db_session.flush()
+    run = _run(db_session, suite, status="succeeded")
+    db_session.add(Result(run_id=run.id, check_id=check.id, status="error", sample_failures=None))
+    db_session.commit()
+
+    _as(dev)
+    result = client.get(f"/api/v1/runs/{run.id}").json()["results"][0]
+    assert result["redaction"] is None
+
+
+def test_get_run_does_not_flag_zero_sample_for_a_dmf_engine_check(
+    client: TestClient, db_session: Any, monkeypatch: Any
+) -> None:
+    """A `dmf`-engine check (ADR 0036) is a pure scalar Snowflake metric — it
+    never had a row-level sample to suppress, with or without the privacy
+    switch, the same structural exclusion as an errored result (#1880 review).
+    """
+    monkeypatch.setenv("PRIVACY_ZERO_SAMPLE_MODE", "true")
+    get_settings.cache_clear()
+    dev = _user(db_session, "dev@ex")
+    suite = _suite(db_session, dev, target={"table": "T"})
+    check = Check(
+        suite_id=suite.id, name="c", kind="expectation", expectation_type="expect_x", engine="dmf"
+    )
+    db_session.add(check)
+    db_session.flush()
+    run = _run(db_session, suite, status="succeeded")
+    db_session.add(Result(run_id=run.id, check_id=check.id, status="fail", sample_failures=None))
+    db_session.commit()
+
+    _as(dev)
+    result = client.get(f"/api/v1/runs/{run.id}").json()["results"][0]
+    assert result["redaction"] is None
+
+
 def test_get_run_unknown_returns_404(client: TestClient, db_session: Any) -> None:
     dev = _user(db_session, "dev@ex")
     _as(dev)

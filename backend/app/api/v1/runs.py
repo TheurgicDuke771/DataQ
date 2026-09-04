@@ -14,10 +14,10 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import TOTAL_COUNT_HEADER, ApiModel, total_count_responses
 from backend.app.core.auth import get_current_user
-from backend.app.core.config import get_settings
 from backend.app.core.roles import is_workspace_admin
 from backend.app.db.models import (
     COMPARISON_KIND,
+    GX_ENGINE,
     PIPELINE_RUN_STATUSES,
     RUN_STATUSES,
     Check,
@@ -237,12 +237,13 @@ def _result_read(
     tested_column: str | None = None,
     expectation_type: str | None = None,
     check_kind: str | None = None,
+    engine: str = GX_ENGINE,
     policy: dict[str, Any] | None = None,
     tags: dict[str, str] | None = None,
 ) -> ResultRead:
     """Map a `Result` ORM row to `ResultRead`, redacting `sample_failures`."""
-    zero_sample = get_settings().privacy_zero_sample_mode and svc.zero_sample_suppressed(
-        status=result.status, check_kind=check_kind
+    zero_sample = svc.zero_sample_suppressed(
+        status=result.status, check_kind=check_kind, engine=engine
     )
     sample, redaction, redacted_columns = svc.redact_sample_failures_with_state(
         result.sample_failures,
@@ -332,6 +333,12 @@ def get_run(
     # Per-RESULT (tested_column, expectation_type) as of when each result was written (#1489) — not
     # the check's current state.
     context = svc.historical_check_context(db, results, checks)
+    # Same rule for `kind`/`engine` (#1880 review): `CheckVersion` snapshots both
+    # specifically so a stale result is never re-labeled by a later edit, and
+    # `zero_sample_suppressed` needs the engine as of THIS result — a `dmf`-engine
+    # check never had a row-level sample regardless of the privacy setting.
+    kind_by_result = svc.historical_check_kind(db, results, checks)
+    engine_by_result = svc.historical_check_engine(db, results, checks)
     # `Run` has no `results` relationship to validate a RunDetailRead from directly, so validate
     # the run fields (as RunRead), graft the data-quality outcome (#571 — else checks_total/passed
     # stay at the 0/0 default here), and attach the separately-fetched, redaction-gated results.
@@ -342,10 +349,8 @@ def get_run(
             r,
             tested_column=context.get(r.id, (None, None))[0],
             expectation_type=expectation_types[r.id],
-            # `kind` is immutable per check (db/models.py), so the check's CURRENT kind is
-            # valid history too — unlike `tested_column`/`expectation_type` there is no
-            # version to resolve.
-            check_kind=checks[r.check_id].kind if r.check_id in checks else None,
+            check_kind=kind_by_result.get(r.id),
+            engine=engine_by_result.get(r.id, GX_ENGINE),
             policy=policy,
             tags=tags,
         )

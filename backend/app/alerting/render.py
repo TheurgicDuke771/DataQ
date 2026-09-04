@@ -49,7 +49,18 @@ def check_sample_note(check: CheckReport) -> str:
     """The redacted failing-sample summary — ``"3.2% unexpected"`` /
     ``"51 unexpected"`` — or ``""`` when there's no sample. Prefers percent; falls
     back to count (a falsy ``0`` count must still render, so test ``is not None``).
+
+    ``sample_suppressed`` (#1873/#1880) is a THIRD reading of an empty
+    ``sample_summary``: this deployment's zero-sample privacy mode never
+    persisted one for this result, distinct from a genuinely sample-free check —
+    an alert must say so rather than silently reading identically to "nothing
+    was found". Only overrides an EMPTY summary — a real, populated summary
+    (e.g. the privacy switch flipped on after this run persisted its sample)
+    still reports its actual content, mirroring `redact_sample_failures_with_state`'s
+    own `sample is None` guard.
     """
+    if not check.sample_summary and check.sample_suppressed:
+        return "sample suppressed (zero-sample privacy mode)"
     sample = check.sample_summary or {}
     pct = sample.get("unexpected_percent")
     if pct is not None:

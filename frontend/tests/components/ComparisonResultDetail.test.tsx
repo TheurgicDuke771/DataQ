@@ -69,6 +69,33 @@ describe('ComparisonResultDetail', () => {
     expect(screen.getByText('Matched')).toBeInTheDocument();
     expect(screen.queryByText('Mismatched (sample)')).not.toBeInTheDocument();
   });
+
+  it('explains a suppressed sample instead of reading like a clean reconciliation (#1880 review)', () => {
+    // Counts show real mismatches, but redaction is zero_sample — without the
+    // note, this is indistinguishable from the "fully reconciled" case above.
+    render(
+      <App>
+        <ComparisonResultDetail
+          runId="run1"
+          result={{ ...result, sample_failures: null, redaction: 'zero_sample' }}
+        />
+      </App>,
+    );
+    expect(screen.getByTestId('comparison-zero-sample-note')).toBeInTheDocument();
+    expect(screen.queryByText('Mismatched (sample)')).not.toBeInTheDocument();
+  });
+
+  it('omits the zero-sample note for a genuinely reconciled result', () => {
+    render(
+      <App>
+        <ComparisonResultDetail
+          runId="run1"
+          result={{ ...result, sample_failures: null, observed_value: { matched: 5 } }}
+        />
+      </App>,
+    );
+    expect(screen.queryByTestId('comparison-zero-sample-note')).not.toBeInTheDocument();
+  });
 });
 
 describe('ComparisonResultDetail — columns grain (#799)', () => {

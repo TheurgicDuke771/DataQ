@@ -4554,6 +4554,69 @@ def test_get_run_results_does_not_flag_zero_sample_when_privacy_mode_off(
     assert row["redaction"] is None
 
 
+def test_get_run_results_does_not_flag_zero_sample_for_an_errored_result(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """`_build_result` nulls `sample_failures` for EVERY errored outcome
+    unconditionally — an errored result's null sample is never caused by
+    zero-sample mode, so it must not be reported as such (#1880 review).
+    """
+    from backend.app.core.config import get_settings
+
+    monkeypatch.setenv("PRIVACY_ZERO_SAMPLE_MODE", "true")
+    get_settings.cache_clear()
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    check = Check(
+        suite_id=suite.id, name="c", kind="expectation", expectation_type="expect_x", config={}
+    )
+    db_session.add(check)
+    db_session.commit()
+    run = Run(suite_id=suite.id, status="succeeded")
+    db_session.add(run)
+    db_session.commit()
+    db_session.add(Result(run_id=run.id, check_id=check.id, status="error", sample_failures=None))
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    row = server.get_run_results(str(run.id))["checks"][0]
+    assert row["redaction"] is None
+
+
+def test_get_run_results_does_not_flag_zero_sample_for_a_dmf_engine_check(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """A `dmf`-engine check (ADR 0036) is a pure scalar Snowflake metric — it
+    never had a row-level sample to suppress, with or without the privacy
+    switch, the same structural exclusion as an errored result (#1880 review).
+    """
+    from backend.app.core.config import get_settings
+
+    monkeypatch.setenv("PRIVACY_ZERO_SAMPLE_MODE", "true")
+    get_settings.cache_clear()
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    check = Check(
+        suite_id=suite.id,
+        name="c",
+        kind="expectation",
+        expectation_type="expect_x",
+        config={},
+        engine="dmf",
+    )
+    db_session.add(check)
+    db_session.commit()
+    run = Run(suite_id=suite.id, status="succeeded")
+    db_session.add(run)
+    db_session.commit()
+    db_session.add(Result(run_id=run.id, check_id=check.id, status="fail", sample_failures=None))
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    row = server.get_run_results(str(run.id))["checks"][0]
+    assert row["redaction"] is None
+
+
 def test_get_run_status_marks_a_running_run_as_not_final(db_session: Any, monkeypatch: Any) -> None:
     """`counts` on a mid-run suite is progress, not a verdict. The sibling tools
     have carried `results_final` since #318; this one emitted the counts bare, so

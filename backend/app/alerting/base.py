@@ -103,6 +103,12 @@ class CheckReport:
     observed_value: dict[str, Any] | None
     expected_value: dict[str, Any] | None
     sample_summary: dict[str, Any] | None
+    # Whether a null `sample_summary` is this deployment's zero-sample privacy mode
+    # (#1676) rather than genuinely having had nothing to redact — the same
+    # third-reading-of-a-null-sample distinction #1873 added to REST/MCP, extended
+    # here so an alert doesn't silently look identical to "nothing was found"
+    # (#1880 review).
+    sample_suppressed: bool = False
 
 
 @dataclass(frozen=True)
