@@ -1,0 +1,523 @@
+<task-notification>
+<task-id>a5c2a71b194d21d20</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/bebce0fa-ad53-418f-b867-850e81800c93/tasks/a5c2a71b194d21d20.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement #1775 MCP channel read tools" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+Implemented GitHub issue #1775: two new read-only MCP tools for reusable notification channels.
+
+**Built:**
+- `list_notification_channels()` — workspace-wide list of all channels, gated `read` (no per-resource authz, matching `list_connections`).
+- `list_suite_channels(suite_id)` — channels linked to one suite, gated `suite:view`.
+- Both share a `_channel_summary()` helper mirroring `ChannelRead`'s presence-not-value shape (`has_webhook`, `has_hmac_secret`, `has_auth_header` booleans; `webhook_url` echoed since it's a destination not a credential). `payload_template` is deliberately withheld from **every** caller including workspace admins — stricter than REST, since it can carry a receiver's routing key as a plain JSON literal.
+- Updated `get_notification_config`'s docstring, which previously said "no MCP tool currently lists or identifies which channel" — now points at `list_suite_channels`.
+- Added both tools to `backend/tests/support/mcp_gates.py`'s `GATES` and to the RBAC sweep's probe-args table in `backend/tests/api/test_role_enforcement.py`.
+- 12 new tests in `backend/tests/mcp/test_mcp_tools.py`: shape checks, explicit no-credential-value assertions (including a dedicated workspace-admin test, since MCP is stricter than REST here), empty-list semantics, and suite-view denial.
+
+**mcp-honesty-reviewer findings:** Ran mandatorily via the Agent tool. Verdict: zero honesty defects in the new tools — credential discipline, population/scope-conflation caveats (channel existing vs. actually delivering; email channel presence vs. SMTP readiness), and sibling-docstring staleness were all already correctly handled. One actionable finding: the hand-typed tool-count prose (48→50, 25→27 read-only) was stale across `docs/site/guides/mcp-setup.md`, `docs/site/reference/changelog.md`, and `CLAUDE.md`, and the generated `docs/site/reference/mcp-tools.md` needed regeneration. Fixed all four in this PR; `export_docs_reference.py --check` now passes clean.
+
+**Test results:** `backend/tests/mcp/` + `backend/tests/api/test_role_enforcement.py` — 377 passed, 1 skipped (pre-existing/unrelated). `ruff`, `black --check`, `mypy` all clean on every changed file.
+
+**PR:** https://github.com/TheurgicDuke771/DataQ/pull/1871 (branch `feat/issue-1775-mcp-channel-read-tools`, milestone "v1.2 Week 5 — native engines (DMF) + notification channels", `Fixes #1775`)</result>
+<usage><subagent_tokens>252664</subagent_tokens><tool_uses>77</tool_uses><duration_ms>677706</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a5c2a71b194d21d20</worktreePath><worktreeBranch>worktree-agent-a5c2a71b194d21d20</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a539f52788ecb1edb</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/bebce0fa-ad53-418f-b867-850e81800c93/tasks/a539f52788ecb1edb.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement #1676 zero-sample privacy mode" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>PR created: **https://github.com/TheurgicDuke771/DataQ/pull/1872**
+
+## Summary
+
+**What I verified vs. the prior research:**
+- Confirmed claims 1–5 (the `run_service._build_result` choke point, GX's aggregate-only `observed_value`, comparison checks being aggregate-only, dry-run never carrying samples, incidents never reading `sample_failures`).
+- **Corrected claim 5**: the "alerts never reference `sample_failures`, zero grep hits" claim was wrong — `backend/app/alerting/builder.py::build_run_report` reads `result.sample_failures` directly via `run_service.redact_sample_failures` to build outbound alert payloads. This needed no separate code change since it reads what's persisted, but it's exactly the "guard at one door, not its sibling" risk the issue warned about, and confirms gating at the single write-path choke point (rather than chasing every consumer) is the right architecture.
+
+**What was built:**
+- `PRIVACY_ZERO_SAMPLE_MODE` setting (`backend/app/core/config.py`)
+- Gated `_build_result()` in `run_service.py`: forces `sample_failures` null and suppresses the `unparsed_value` "provoking cell" merge in the errored branch — `metric_value`/aggregate `observed_value`/`sampling` still flow through
+- `GET /admin/deployment` + Admin UI now report the posture (`zero_sample_mode` field, plus dynamic alert/MCP transfer-vector descriptions)
+- Docs: security overview, changelog, `.env.app.example`
+
+**Tests:** 4 new backend tests in `test_run_service.py` (ON/OFF pairs for both the happy path and the errored-branch provoking cell), mutation-checked by temporarily disabling the gate and confirming both ON tests fail for the right reason; 2 new admin-endpoint tests; 1 new frontend assertion. Full backend suite (5822 passed) and frontend typecheck/lint/tests all green.
+
+One unrelated pre-existing flake (`test_a_disabled_transfer_vector_is_still_listed`, caused by local dev-DB `llm_settings` state) was found, reproduced on `main`, and left untouched/noted in the PR description rather than silently ignored.</result>
+<usage><subagent_tokens>298243</subagent_tokens><tool_uses>125</tool_uses><duration_ms>772330</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a539f52788ecb1edb</worktreePath><worktreeBranch>worktree-agent-a539f52788ecb1edb</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ab27abc7671df6f64</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/bebce0fa-ad53-418f-b867-850e81800c93/tasks/ab27abc7671df6f64.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle C: cross-file tracer" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>No mention of restart requirements for this setting anywhere in the deploy runbook or docs. Both findings are substantiated. Final report below.
+
+```json
+[
+  {
+    "file": "backend/app/services/run_service.py",
+    "line": 83,
+    "summary": "Zero-sample privacy mode nulls sample_failures but leaves observed_value's list-shaped row data untouched, contradicting the PR's own compliance claim.",
+    "failure_scenario": "In `_build_result`'s non-errored branch, `observed = sanitize_json(outcome.observed_value)` runs unconditionally — it is NOT gated by `zero_sample` (only `sample = None if zero_sample else sanitize_json(outcome.sample_failures)` is). For a failed set-oriented expectation (e.g. `expect_column_values_to_be_in_set`), GX's `observed_value` is a literal list of the actual offending column values (`gx_runner._bounded_observed_value`, up to `SAMPLE_ROW_CAP` rows) — real target data, not metadata. The codebase already treats this as equally PII-bearing: the #1253 retention sweep (`run_service.purge_expired_sample_failures`, `worker/celery_app.py` comment 'Daily PII scrub of `sample_failures` + list-shaped `observed_value`') purges both, and `incident_evidence.py`'s docstring states outright 'observed_value can itself carry a literal warehouse cell value (or a list of them) ... real target data'. Under `PRIVACY_ZERO_SAMPLE_MODE=true`, a HIPAA/EU-tier deployment operator relying on `GET /admin/deployment`'s new claim — 'no failing-row sample is ever persisted anywhere in this deployment ... aggregates only' — would be wrong: raw row-level values from a failed set-membership check are still written to `results.observed_value` and reachable via the results API/alerts/MCP (redacted at READ time by `redact_observed_value`, but never suppressed at WRITE time the way the PR advertises)."
+  },
+  {
+    "file": "backend/app/core/config.py",
+    "line": 629,
+    "summary": "get_settings() is per-process @lru_cache(maxsize=1) with no cross-process invalidation, so flipping PRIVACY_ZERO_SAMPLE_MODE can make the admin posture endpoint report 'on' while the Celery worker (which actually calls _build_result) is still persisting real samples until independently restarted.",
+    "failure_scenario": "An operator sets `PRIVACY_ZERO_SAMPLE_MODE=true` and restarts only the api container (or the api process picks it up first in a rolling deploy). `GET /admin/deployment` immediately reports `zero_sample_mode: true` with the reassuring 'Zero-sample privacy mode is ON' detail text — but the worker process, which executes `execute_run` → `_build_result` inside a Celery task, has its own separate `get_settings()` cache built at its own process start and keeps returning the old cached `Settings` object (`privacy_zero_sample_mode=False`) until it too is restarted. There is no `get_settings.cache_clear()` call, config-change signal, or documented restart-both-processes requirement anywhere in `deploy/README.md` or the changelog/security docs added by this PR. Since this specific setting's whole purpose is a compliance attestation surfaced to an auditor via the admin page, the asymmetry means the reported posture can be actively wrong (claiming a stronger guarantee than what the worker is currently doing) for as long as the worker's restart lags the api's."
+  }
+]
+```
+
+**Verification notes on the task's other checks:**
+1. `_build_result` callers — confirmed exhaustive: every `OutcomePhase` (native-engine, expectation, monitor/scalar, comparison, stateful-monitor) resolved in `_run_outcome_phases` is mapped through `_build_result` at `run_service.py:327` inside `execute_run`'s single loop. No check kind bypasses it.
+3. `DeploymentPostureRead`/`zero_sample_mode` — only consumer is `frontend/src/pages/Admin.tsx` via `frontend/src/api/admin.ts`'s `DeploymentPosture` interface, and both were updated in the same PR consistently (field required on both sides, one call site). No breakage found.
+4. Answered above as finding #2 — `get_settings()` is indeed `@lru_cache(maxsize=1)` (`backend/app/core/config.py:629`), consistently read by both `admin.py` and `run_service.py` with no invalidation path outside tests (`get_settings.cache_clear()` appears only in test files).</result>
+<usage><subagent_tokens>143338</subagent_tokens><tool_uses>20</tool_uses><duration_ms>119247</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a178ea6247523d816</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/bebce0fa-ad53-418f-b867-850e81800c93/tasks/a178ea6247523d816.output</output-file>
+<status>completed</status>
+<summary>Agent "Altitude + Conventions angles" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+[
+  {
+    "file": "backend/app/services/run_service.py",
+    "line": 83,
+    "summary": "zero_sample_mode nulls sample_failures and the errored-branch unparsed_value cell, but leaves Result.observed_value untouched on the non-errored branch — even when it is list-shaped and carries the same raw row-level values sample_failures does.",
+    "failure_scenario": "`_build_result`'s else-branch does `observed = sanitize_json(outcome.observed_value)` unconditionally — `zero_sample` never gates it. The repo's own DPIA sheet (docs/site/security/compliance/dpia-input-sheet.md line 31) documents exactly this vector: \"`results.observed_value` (list-shaped) — A set-oriented expectation's full observed distinct-value list can reproduce column values\", mitigated only by \"the same redaction ladder\" (i.e. read-time, column-policy-dependent masking — precisely the weaker guarantee zero_sample_mode is marketed as a step past). `backend/app/services/incident_evidence.py` already has a dedicated `_strip_sample_lists()` (line 232) applied when building incident evidence specifically because this field can leak sample data — but that stripping is NOT reused in `_build_result`, so the persisted `results.observed_value` row itself still carries the raw list under zero_sample_mode. This directly contradicts the shipped claims: changelog.md (\"stops any failing-row sample from ever being persisted\") and docs/site/security/overview.md (\"no failing-row sample is ever persisted at all — not full, not redacted\"). This is the same 'guard at one door, not its sibling' shape the project's own memory file (feedback docs, six prior recurrences) calls out — the PR gates the errored branch's sibling field but not the non-errored branch's structurally identical one, and no test in the PR (test_run_service.py) exercises a non-errored, list-shaped `observed_value` under zero_sample_mode, so this gap has no red test either."
+  },
+  {
+    "file": "backend/app/api/v1/admin.py",
+    "line": 559,
+    "summary": "The zero_sample narrative is hand-duplicated inline as `\"Zero-sample privacy mode is ON: ...\" if zero_sample else (...)` in both the alert_delivery and mcp_ai_clients ExternalTransfer entries, rather than factored into a shared helper the way `_llm_intelligence_transfer` already exists as a precedent for multi-state detail text in this exact function.",
+    "failure_scenario": "The file already establishes a convention for non-trivial branching detail text: `_llm_intelligence_transfer(db)` (line 461) is pulled out into its own function once the branching passed two states. This PR adds a second axis of branching (on/off × per-vector) directly inline as duplicated ternaries with a duplicated string prefix (\"Zero-sample privacy mode is ON: ...\") instead of following that precedent. Concretely this means: if a third vector that zero_sample_mode affects is added later (the PR's own docstring comment names 'results, alerts and MCP' as the three readers, but only two of the three transfer rows are updated here — the `results` reader isn't an `ExternalTransfer` row at all, so there's no single place enforcing that every relevant vector's detail text gets updated when the flag's scope changes), it requires writing a third hand-written ternary rather than extending one function whose signature already takes the flag. Given this codebase's own recorded history of shipping a docstring/detail that goes stale the moment a neighboring capability changes (the #1424/#1442 'adding a tool ages its neighbours' lesson, mentioned repeatedly for MCP but same shape here for admin posture text), this is a concrete case of the pattern the PR should have been alert to, applied to itself."
+  }
+]
+```
+
+Summary of investigation: I read the full diff, `backend/app/core/config.py` (Settings field grouping — placement next to `sample_failures_retention_days` is fine, matches existing convention), the existing `redact_sample_failures`/`_RedactionTracker`/`redact_observed_value` read-time ladder, the retention-sweep precedent (`purge_expired_sample_failures`, which already nulls `sample_failures` and the `unparsed_value` cell at persistence-adjacent time — so gating at `_build_result` write-time is consistent with established precedent, not a bandaid, and I did not flag that as an altitude problem), `incident_evidence.py`'s `_strip_sample_lists`, and `docs/site/security/compliance/dpia-input-sheet.md`. The one substantive finding is that the PR's persisted-suppression guarantee has a real gap (list-shaped `observed_value` on non-errored outcomes) that the codebase's own compliance documentation and a sibling module (`incident_evidence.py`) already show is a known, previously-mitigated-elsewhere risk of the same shape. I did not find a quotable CLAUDE.md/CONTRIBUTING.md rule violation (comment density, naming, doc updates, migration discipline all match prevailing repo conventions), so no conventions-angle candidates are reported.</result>
+<usage><subagent_tokens>140435</subagent_tokens><tool_uses>23</tool_uses><duration_ms>185456</duration_ms></usage>
+</task-notification>
+
+---
+
+Check merge status of PR #1868 (DMF dry-run/MCP engine fix, #1530/#1531) and PR #1872 (zero-sample privacy mode, #1676 - just pushed a critical fix for observed_value row-level data gap found by 5-agent code-review, auto-merge queued). Once both merge: finalize the held docs/progress.md draft (currently stashed on the fix/issue-1530-1531 branch, git stash list to find it) - update it with accurate merge state for #1530/#1531/#1775/#1676, commit and push to main directly. Then check the W5 milestone (gh issue list --milestone) for remaining open items - should just be #1392 and #1257 (harness/ops, low urgency) left. Do #1392 (tofu plan -destroy rehearsal only, NOT a real destroy) and #1257 (harness Snowflake grant narrowing) if capacity allows - both are harness-only, low-risk, low-priority per their own issue text. Report final W5 milestone status.
+
+---
+
+Check merge status of PR #1868 and PR #1872 - just fixed #1868's Playwright flake (reran the job) and #1872's stale openapi.json (pushed fix). Once both merge, finalize docs/progress.md (draft stashed on fix/issue-1530-1531-dmf-dryrun-mcp-engine branch - git stash list to find it) with accurate merge state for #1530/#1531/#1775/#1676, commit and push to main directly. Then check W5 milestone remaining open items via gh issue list --milestone "v1.2 Week 5 — native engines (DMF) + notification channels" --state open - should be just #1392 and #1257 left (harness/ops, low urgency). Work on those if capacity allows: #1392 is tofu plan -destroy rehearsal only (NOT a real destroy - read the issue body carefully, it explicitly warns against running destroy casually), #1257 is Snowflake grant narrowing in the harness (separate repo ~/Coding/Python/DataQ-harness/). Report final W5 milestone status when done.
+
+---
+
+let's take up the #1761 (are we making it a drop-down select from what admin have already configured?)
+And then #1867, #1869, #1873. 
+Also close the pending part from #1392
+
+---
+
+<task-notification>
+<task-id>a78e90ef514dd0a41</task-id>
+<tool-use-id>toolu_01QDRyWtrJxEioACvNENJXSZ</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/bebce0fa-ad53-418f-b867-850e81800c93/tasks/a78e90ef514dd0a41.output</output-file>
+<status>completed</status>
+<summary>Agent "Build #1761 frontend UI for notification channels" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The agent is now working in the background on implementing issue #1761 (notification channels frontend UI) in an isolated worktree. It will:
+
+- Create branch `feat/issue-1761-notification-channels-ui`
+- Build the API client, Admin channels card, and suite picker per the spec
+- Write tests, run typecheck/lint/test
+- Commit, push, and open the PR with the required title, milestone, and `Fixes #1761`
+
+I'll report back once it completes with the PR URL and summary — no need to wait or poll in the meantime.</result>
+<usage><subagent_tokens>108237</subagent_tokens><tool_uses>1</tool_uses><duration_ms>57331</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aba4662f2c9a163f6</task-id>
+<tool-use-id>toolu_017bedXsH8dKUE6EzzG7Ri7W</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/bebce0fa-ad53-418f-b867-850e81800c93/tasks/aba4662f2c9a163f6.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix #1869 MCP engine field gaps" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>PR opened: https://github.com/TheurgicDuke771/DataQ/pull/1876
+
+## Summary
+
+**Changes to `backend/app/mcp/server.py`:**
+1. `list_check_versions` — added `"engine": v.engine or "gx"` to the per-version dict, read from `CheckVersion.engine` (snapshotted on every check save/edit). Docstring updated to name it.
+2. `_run_results_payload` (shared by `get_run_results`/`get_suite_results`) — added a per-check `"engine"` field, read from the current `Check.engine` (same source as `name`, not resolved historically like `tested_column`/`expectation_type`). Both tools' docstrings updated, with an explicit disclosure that `engine` reflects the check's *current* engine, not the one that produced that specific historical result — pointing readers at `list_check_versions` for the as-of-version value.
+
+**mcp-honesty-reviewer findings:** none — verdict "Pass, no stale neighbours found." It specifically verified the current-vs-historical tradeoff is disclosed accurately, confirmed `CheckVersion.engine` is genuinely snapshotted in `check_service.py`, and flagged only a non-blocking style nit (redundant parens) not worth a follow-up.
+
+**Tests added** in `backend/tests/mcp/test_mcp_tools.py`:
+- `test_list_check_versions_reports_engine_as_of_each_version` — re-points a check dmf→gx→dmf via `update_check` and asserts each version snapshot shows the right engine.
+- `test_get_run_results_reports_per_check_engine` — builds a run with one dmf check and one gx check, asserts both `get_run_results` and `get_suite_results` report the correct `engine` per check.
+
+**Test/lint results:** `pytest backend/tests/mcp/ -q --no-cov` → 276 passed (7 engine-related tests, all pass). `ruff`, `black --check`, `mypy`, `bandit` all clean on the changed files.
+
+PR: https://github.com/TheurgicDuke771/DataQ/pull/1876 (branch `fix/issue-1869-mcp-engine-gaps`, milestone "v1.2 Week 5 — native engines (DMF) + notification channels", `Fixes #1869`).</result>
+<usage><subagent_tokens>208661</subagent_tokens><tool_uses>46</tool_uses><duration_ms>346613</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-aba4662f2c9a163f6</worktreePath><worktreeBranch>worktree-agent-aba4662f2c9a163f6</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a2a0394d39562c607</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/bebce0fa-ad53-418f-b867-850e81800c93/tasks/a2a0394d39562c607.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement #1867 DMF capability probe" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>PR #1877 is open, correctly titled and milestoned, targeting `main`, with `Fixes #1867`.
+
+## Summary
+
+Implemented issue #1867 on branch `feat/issue-1867-dmf-capability-probe`:
+
+**Backend**
+- `backend/app/datasources/snowflake_dmf.py`: new `probe_dmf_capability(fetch_scalar)` — runs a self-contained `SELECT SNOWFLAKE.CORE.FRESHNESS(SELECT CURRENT_TIMESTAMP())` and returns `{"available": True}` or `{"available": False, "reason": &lt;classified&gt;}`, reusing the existing `_classify_dmf_error` (edition/grant/generic classification, never raw exception text).
+- `backend/app/datasources/snowflake.py`: `SnowflakeConnectionAdapter.probe_dmf(raw, secret)` opens a connection (mirrors `test()`'s engine/timeout setup) and calls the probe.
+- `backend/app/services/connection_service.py`: `test_connection` now calls a new `_probe_engine_capabilities` helper after the base `adapter.test(...)` succeeds. It's Snowflake-only (`conn.type != "snowflake"` returns early), soft-fails (probe blowing up is logged and swallowed, never raises), and persists `Connection.engine_capabilities = {"dmf": {...}}`. `reauth_connection` gets this for free since it re-invokes `test_connection`.
+- `backend/app/api/v1/connections.py`: `ConnectionRead.engine_capabilities` added and wired in `from_model`.
+
+**Frontend**
+- `src/api/connections.ts`: `Connection.engine_capabilities` + `DmfCapability` type.
+- `src/pages/Connections.tsx`: a small badge per Snowflake connection — "DMF: not yet tested" / "DMF available" / "DMF unavailable" (tooltip with the classified reason).
+- `src/components/checks/checkFormFields.tsx`: `EngineField` accepts `dmfCapability`; when unavailable, the `dmf` option is labeled with a `⚠` and the field's help text gains a warning caveat with the reason — left selectable, not disabled, since grants can change after page load. Threaded through `CheckNew.tsx` and `CheckEdit.tsx` from the already-loaded connection.
+- Note: this antd v6 build's `Select` doesn't support `optionRender`/ReactNode option labels the way older antd did, so the warning is done via plain-string option labels plus `Form.Item` `extra` text rather than a rich Tooltip-in-dropdown.
+
+**Docs**: one line added to `docs/site/reference/feature-matrix.md` footnote ᵈ (published-docs lint forbids citing issue numbers, so kept ticket-free).
+
+**Tests**: new backend tests in `test_snowflake_dmf.py` (probe success/classified-failure/never-raw-text), `test_snowflake.py` (adapter `probe_dmf` success/failure/no-secret), `test_connection_service.py` (stores available/unavailable, probe failure doesn't fail the connection test, non-Snowflake untouched, `reauth_connection` also stores it). New frontend tests in `Connections.test.tsx` (all badge states) and `CheckNewMonitor.test.tsx` (warning caveat + flagged option, still selectable).
+
+**Verification**: backend — targeted suite 243 passed; full suite 5855 passed/10 skipped; `mypy app/` and all changed test files clean; ruff/black clean. Frontend — `pnpm typecheck`/`pnpm lint` clean; full `pnpm vitest run` 1248 passed/107 files.</result>
+<usage><subagent_tokens>290006</subagent_tokens><tool_uses>157</tool_uses><duration_ms>1587630</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a2a0394d39562c607</worktreePath><worktreeBranch>worktree-agent-a2a0394d39562c607</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+#1877 CI failed
+#1876 & #1878 CI completed
+
+---
+
+#1876 and #1878 merged (unresolved inline review threads were blocking auto-merge - resolved via GraphQL resolveReviewThread, standard fix for this repo). Check PR #1877 CI completion (just fixed the stale openapi.json, re-running). Also check status of #1873 (zero-sample redaction state) - should have a PR by now, find it via gh pr list if not already tracked, review with full URL, verify tests, merge when clean. Once #1877 merges: check for any unresolved review threads blocking auto-merge (same GraphQL fix pattern) and resolve if the findings were addressed. Then update docs/progress.md via a new branch+PR (main is protected, direct commits blocked). Report final status: all of #1392/#1257/#1867/#1869/#1873/#1761 plus #1879 follow-up, and overall W5 milestone completion state.
+
+---
+
+<task-notification>
+<task-id>a268ab95225a623bb</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/bebce0fa-ad53-418f-b867-850e81800c93/tasks/a268ab95225a623bb.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle G - conventions CLAUDE.md" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Setting already existed pre-PR (from #1676), no new config addition here — consistent with the diff not touching config.py. Everything checks out.
+
+I reviewed the full diff against CLAUDE.md and CONTRIBUTING.md's stated rules:
+
+- **Migration rule**: `sample_failures` is a JSONB column (`backend/app/db/models.py:665`) with no DB-persisted redaction enum; `redaction`/`zero_sample` is computed at read time in `run_service.py`/`server.py`/`runs.py`. No schema change occurs, so "Backward-compatible migrations only" is not implicated — correctly no migration in this PR.
+- **PII redaction at logger, not call site**: no `logger.`/`log.` calls appear anywhere in the diff.
+- **MCP docstrings LLM-facing**: the `server.py` docstring edits (`get_suite_results`, `get_run_results`) read as plain-language explanations of what a null vs `zero_sample` value means, consistent with the existing tone of neighboring docstrings — no REST-specific phrasing leaked in.
+- **Prose-trim bar**: the new docstrings are proportionate to the concept being introduced (a third state that changes the meaning of an existing null) and match the density of the pre-existing docstrings they extend.
+
+No CLEAR violations of any CLAUDE.md/CONTRIBUTING.md rule found in this diff.
+
+```json
+[]
+```</result>
+<usage><subagent_tokens>114442</subagent_tokens><tool_uses>4</tool_uses><duration_ms>22016</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ae50a07267f373ed4</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/bebce0fa-ad53-418f-b867-850e81800c93/tasks/ae50a07267f373ed4.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle D - reuse" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+[
+  {
+    "file": "backend/app/api/v1/runs.py",
+    "line": 246,
+    "summary": "`_result_read` computes `zero_sample = get_settings().privacy_zero_sample_mode and svc.zero_sample_suppressed(status=result.status, check_kind=check_kind)` — the exact same expression (module aliases aside) as `backend/app/mcp/server.py:_redacted_sample` line ~540. `zero_sample_suppressed`'s own docstring explicitly says 'Callers must additionally gate this on Settings().privacy_zero_sample_mode', pushing a two-line composed check into every call site instead of making the helper itself the single source of truth.",
+    "failure_scenario": "This is also a direct regression against the file's own stated design: `_build_result` (run_service.py L76-79) carries a comment saying the settings check is meant to be 'the ONE choke point every check kind funnels through — gate it here and every reader (results API, alerts, MCP) inherits the suppression from what's actually persisted.' PR #1880 reintroduces a second choke point on the READ side, duplicated across REST and MCP. If a third reader (e.g. alert delivery, or a future export/report path) needs the same check and a dev copies one of these two sites, or if `privacy_zero_sample_mode` is ever renamed/logic changes (e.g. gains a per-suite override), only one of the two call sites might get updated — silently reintroducing the exact `null`-reads-as-'nothing to redact' bug #1873 fixes, in whichever surface was missed. Fix: fold the settings check into `zero_sample_suppressed(status, check_kind)` itself (read `get_settings()` internally, as `_build_result` already does), so callers just pass `zero_sample=svc.zero_sample_suppressed(status=result.status, check_kind=check_kind)` with no way to forget the flag."
+  },
+  {
+    "file": "backend/app/mcp/server.py",
+    "line": 538,
+    "summary": "Same duplicated computation as above, mirrored verbatim in `_redacted_sample`: `zero_sample = get_settings().privacy_zero_sample_mode and run_service.zero_sample_suppressed(status=result.status, check_kind=check_kind)`.",
+    "failure_scenario": "Same drift risk as the runs.py entry — two independently-maintained copies of a security/privacy-relevant gate (masking a sample). Because the tests in this PR (test_get_run_reports_zero_sample_redaction_state_when_privacy_mode_on, test_get_run_results_reports_zero_sample_redaction_state_when_privacy_mode_on) exercise each site separately, a future edit that updates the REST copy but not the MCP copy (or vice versa) would pass CI while leaving one surface reporting stale/wrong redaction state — exactly the class of MCP/REST-parity bug this codebase's memory notes call out repeatedly (e.g. the 404-no-leak rule 'moved out of the HTTP layer' for incidents for this same reason)."
+  },
+  {
+    "file": "backend/app/api/v1/runs.py",
+    "line": 348,
+    "summary": "`check_kind=checks[r.check_id].kind if r.check_id in checks else None` duplicates the exact lookup idiom already present in `backend/app/mcp/server.py:476` (`checks[r.check_id].name if r.check_id in checks else None`) and is now also repeated a third time verbatim at `backend/app/mcp/server.py:406` in this same PR.",
+    "failure_scenario": "Three near-identical `dict.__contains__` + `dict.__getitem__` double-lookups for 'attribute of the check this result belongs to, or None if the check was deleted/unknown' — the natural single-lookup form is `checks.get(r.check_id)` then `.attr if found else None`. Low severity on its own, but it's now the third copy of the same pattern in two files; a helper like `_check_attr(checks, check_id, attr)` (or simply standardizing on `.get()`) would both de-duplicate and fix the redundant double dict lookup. Cosmetic/efficiency, not correctness — flagged because the PR itself adds a fresh instance of a pattern the file already had, rather than factoring it out."
+  },
+  {
+    "file": "backend/app/services/run_service.py",
+    "line": 1301,
+    "summary": "`_ZERO_SAMPLE_ELIGIBLE_STATUSES = frozenset({*FAILING_TIERS, \"error\"})` reinvents 'every status except pass/skip' by hand-listing `FAILING_TIERS` plus the literal string `\"error\"`, rather than deriving it from `RESULT_STATUSES`/`RESULT_OPERATIONAL_STATUSES` already in db/models.py (`RESULT_OPERATIONAL_STATUSES = (\"skip\", \"error\")`, `RESULT_STATUSES = _RESULT_SEVERITY_TIERS + RESULT_OPERATIONAL_STATUSES`).",
+    "failure_scenario": "Not an exact duplicate of an existing named constant (no prior set already equals FAILING_TIERS ∪ {\"error\"}), but it is a parallel, independently-maintained enumeration of 'statuses that aren't pass/skip' sitting beside the codebase's own `RESULT_STATUSES`/`RESULT_OPERATIONAL_STATUSES`/`SEVERITY_RANK` machinery in db/models.py (which the PR already imports `FAILING_TIERS` from). If a future status is added to `RESULT_STATUSES` that isn't a failing tier and isn't 'skip' (e.g. a new operational status), `_ZERO_SAMPLE_ELIGIBLE_STATUSES` silently excludes it unless someone remembers to touch this second, unrelated file — the exact 'guard applied at one door and not its sibling' shape this project's own history flags repeatedly (see the #1424/#1444 MCP honesty writeups). Safer to express it as `frozenset(RESULT_STATUSES) - {\"pass\", \"skip\"}` so it tracks the canonical status list automatically."
+  }
+]
+```
+
+Summary: the two `zero_sample = get_settings()... and svc.zero_sample_suppressed(...)` computations in `backend/app/api/v1/runs.py` (`_result_read`, ~line 246) and `backend/app/mcp/server.py` (`_redacted_sample`, ~line 538) are verbatim-duplicated gating logic that directly contradicts the file's own stated "ONE choke point" design principle already documented in `_build_result` (run_service.py ~L76-79). The fix is to move the `privacy_zero_sample_mode` check inside `zero_sample_suppressed()` itself rather than requiring every caller to remember to AND it in — the function's own docstring already flags this as a caller obligation, which is the duplication risk made explicit. Secondary, lower-severity findings: the `checks[r.check_id].X if r.check_id in checks else None` lookup idiom is now repeated three times across two files (could use `.get()` + a tiny helper), and `_ZERO_SAMPLE_ELIGIBLE_STATUSES` hand-enumerates `FAILING_TIERS + "error"` instead of deriving from the existing `RESULT_STATUSES`/`RESULT_OPERATIONAL_STATUSES` constants in `db/models.py`.</result>
+<usage><subagent_tokens>119631</subagent_tokens><tool_uses>7</tool_uses><duration_ms>62409</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aa7f553e9684e1c88</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/bebce0fa-ad53-418f-b867-850e81800c93/tasks/aa7f553e9684e1c88.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle E - simplification and efficiency" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+[
+  {
+    "file": "backend/app/services/run_service.py",
+    "line": "1315-1330 (zero_sample_suppressed)",
+    "summary": "`zero_sample_suppressed(*, status, check_kind)` requires both call sites to separately AND it with `get_settings().privacy_zero_sample_mode`, and the function's own docstring has to warn callers about this ('Callers must additionally gate this on `Settings().privacy_zero_sample_mode`') — a caveat that signals the function is at the wrong altitude.",
+    "failure_scenario": "Simpler form: fold the settings check into `zero_sample_suppressed` itself (`return get_settings().privacy_zero_sample_mode and status in ... and check_kind in ...`), dropping the caveat from the docstring and the extra `get_settings().privacy_zero_sample_mode and` clause from both `backend/app/api/v1/runs.py:244` and `backend/app/mcp/server.py:543`. A future third caller (there will likely be one, since this state is now surfaced in two places already) could otherwise forget the settings gate and report `zero_sample` unconditionally, which is exactly the bug class this file is built to prevent."
+  },
+  {
+    "file": "backend/app/api/v1/runs.py",
+    "line": "236-248 (_result_read signature and zero_sample computation)",
+    "summary": "`_result_read` now takes both `check_kind` (to determine eligibility) and computes `zero_sample` inline, duplicating the identical 4-line pattern in `backend/app/mcp/server.py:540-545` (`_redacted_sample`) almost verbatim — same expression, same settings call, same variable name.",
+    "failure_scenario": "If the eligibility rule changes again (e.g. a 5th monitor kind added, or the settings flag renamed), both copies must be found and edited in lockstep; folding the settings gate into `zero_sample_suppressed` (finding above) collapses both call sites to a single one-line `svc.zero_sample_suppressed(status=result.status, check_kind=check_kind)` call, removing the duplication rather than just noting it."
+  },
+  {
+    "file": "frontend/src/pages/RunDetail.tsx",
+    "line": "358-367 (SampleFailures early-return branch)",
+    "summary": "The new branch nests a ternary inside the early return (`if (!sample) { return redaction === 'zero_sample' ? (&lt;Text&gt;...) : null; }`), mixing the 'bail out' shape with a conditional render in one statement.",
+    "failure_scenario": "A flatter, more readable form separates the two states as sibling guard clauses: `if (!sample &amp;&amp; redaction === 'zero_sample') return (&lt;Text&gt;...suppressed...&lt;/Text&gt;); if (!sample) return null;` — each guard reads as one decision instead of a nested ternary that requires parsing both branches to see that the common case (`null`) is still there."
+  },
+  {
+    "file": "backend/app/mcp/server.py",
+    "line": "396-410 (rendered result dict construction) and 526-545 (_redacted_sample)",
+    "summary": "`check_kind=checks[r.check_id].kind if r.check_id in checks else None` is computed once per result row inside a dict comprehension/loop, calling `get_settings()` again for every row via `_redacted_sample`.",
+    "failure_scenario": "Not a real cost in practice — `get_settings()` is `@lru_cache(maxsize=1)`-decorated in `backend/app/core/config.py:635`, so each call is a cache-hit dict/function-call, not env/config re-parsing. Flagged only because folding the flag check into `zero_sample_suppressed` (finding 1) would also cut this to a single per-row call site instead of two (the boolean AND plus the function call), marginally reducing per-row overhead in `get_run_results`/`get_suite_results` for runs with many results."
+  },
+  {
+    "file": "backend/app/api/v1/runs.py",
+    "line": "329 (checks map) — verified NOT a regression",
+    "summary": "Verified: `checks = {c.id: c for c in db.scalars(...)}` is built exactly once per request (before the per-row `reads = [...]` loop) in both `runs.py:329` and `server.py:374`; the PR only adds an O(1) dict lookup (`checks[r.check_id].kind`) per row, not a new per-row DB query.",
+    "failure_scenario": "No wasted work here — recorded as a checked-and-cleared candidate so it isn't re-flagged: the `checks` map long predates this PR and this PR's only addition is a dict lookup already covered by the existing map."
+  }
+]
+```</result>
+<usage><subagent_tokens>115173</subagent_tokens><tool_uses>5</tool_uses><duration_ms>76029</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ad9b0edf87f0cbd9f</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/bebce0fa-ad53-418f-b867-850e81800c93/tasks/ad9b0edf87f0cbd9f.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle F - altitude" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+[
+  {
+    "file": "backend/app/services/run_service.py",
+    "line": 1299,
+    "summary": "`_ZERO_SAMPLE_ELIGIBLE_STATUSES`/`_ZERO_SAMPLE_ELIGIBLE_KINDS` in `zero_sample_suppressed()` is a hand-maintained, after-the-fact (status, kind) heuristic guessing at what `_build_result()` (lines 76-99) actually did at write time. The write path is unconditional: `sample = None if zero_sample else sanitize_json(outcome.sample_failures)` nulls `sample_failures` for ANY non-errored `CheckOutcome` regardless of `check.kind` or status, whenever `privacy_zero_sample_mode` is on. Nothing on the `Result` row or `CheckOutcome` records that this specific null was zero-sample-suppressed vs. genuinely empty — the read path reconstructs that fact by re-deriving which (status, kind) combos it believes COULD have had a sample, rather than the write path stamping an explicit marker (e.g. a boolean column or a sentinel value) at the one choke point the PR's own comment calls out (\"the ONE choke point every check kind funnels through\").",
+    "failure_scenario": "Today freshness/volume/schema_drift/anomaly CheckOutcomes never populate `sample_failures`, so `_ZERO_SAMPLE_ELIGIBLE_KINDS = {expectation, comparison}` happens to be correct. If a future monitor-kind change starts attaching row-level evidence to e.g. `schema_drift` (columns that drifted) or `anomaly` (offending rows) — a natural extension given CheckOutcome.sample_failures is a generic field with no kind restriction — `_build_result` will silently null it under zero-sample mode exactly as it does for expectation/comparison today, but `zero_sample_suppressed()` won't be updated in lockstep (nothing forces it to be), so the read path will report `redaction: null` for a result that was actually suppressed. A caller (REST/MCP/LLM) will read that as \"this check had nothing to redact\" when in fact real evidence was hidden by the privacy switch — the exact confusion #1873 was written to prevent, reintroduced for the next kind that grows a sample."
+  },
+  {
+    "file": "backend/app/api/v1/runs.py",
+    "line": 339,
+    "summary": "`check_kind=checks[r.check_id].kind if r.check_id in checks else None` resolves the CHECK'S CURRENT `kind`, justified by an inline comment that kind is immutable and \"unlike tested_column/expectation_type there is no version to resolve.\" That claim is false: `CheckVersion.kind` (backend/app/db/models.py:535) IS snapshotted on every version — the model's own comment says \"kind is immutable but snapshotted for a self-contained record,\" i.e. the codebase already anticipated needing historical kind and built the column for it. The same function/call site resolves `tested_column`/`expectation_type` historically via `svc.historical_check_context(db, results, checks)` (line 334) specifically because trusting the current check row for a stale result was already shown to be wrong (#1489, referenced in `historical_check_context`'s own docstring) — yet this PR mixes that lesson with the opposite approach for a sibling field on the identical result row.",
+    "failure_scenario": "If a later migration or feature ever allows editing a check's `kind` (plausible — the schema literally snapshots it as if to survive one), the immutability assumption breaks silently: any old result computed under the check's ORIGINAL kind will be re-classified using its NEW kind. A check changed from `expectation` to a scalar monitor kind would flip an old suppressed-sample result from `zero_sample` to `null` (or vice-versa for the reverse edit), misreporting historical evidence with no test able to catch it because today's test suite only exercises a check whose kind never changes across the result's lifetime."
+  },
+  {
+    "file": "backend/app/services/run_service.py",
+    "line": 76,
+    "summary": "The actual fix for #1873's underlying problem belongs at the write choke point identified in the PR's own comment (line 76-78: \"gate it here and every reader ... inherits the suppression from what's actually persisted\") — but the PR only patches the read side (`zero_sample_suppressed` + 3 call sites) to reconstruct intent after the fact, rather than having `_build_result` stamp an explicit, authoritative marker when it nulls `sample_failures` for privacy reasons (e.g. persisting `redaction='zero_sample'` directly on the Result row, or a boolean flag). The write path already unconditionally KNOWS why the sample is null (`if zero_sample: sample = None`) at the exact moment it discards the information — the read-side heuristic re-derives an approximation of that fact from (status, current-kind) after it's already been thrown away.",
+    "failure_scenario": "Any future write-path change to `_build_result` (a new operational status, a new kind gaining evidence, a change in when `zero_sample` gating applies, e.g. extending it to `skip`) requires a matching, manually-synchronized edit to `_ZERO_SAMPLE_ELIGIBLE_STATUSES`/`_ZERO_SAMPLE_ELIGIBLE_KINDS` in a completely different function/file, with no compiler or DB constraint tying them together. Two developers (or one developer months later) touching the write path without knowing the read-side heuristic exists will silently desync the two, producing wrong `redaction` values on the wire that no test guards against beyond the specific (status, kind) combinations the current test file happens to enumerate."
+  }
+]
+```</result>
+<usage><subagent_tokens>121833</subagent_tokens><tool_uses>15</tool_uses><duration_ms>189582</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a2f71fe42984d1b22</task-id>
+<tool-use-id>toolu_01HHuUyXBgASgUqV3XeG6HCq</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/bebce0fa-ad53-418f-b867-850e81800c93/tasks/a2f71fe42984d1b22.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle C - cross-file tracer" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I have sufficient evidence. Here is the final report.
+
+```json
+[
+  {
+    "file": "backend/app/alerting/builder.py",
+    "line": 127,
+    "summary": "Alert delivery (`build_run_report` -&gt; `redact_sample_failures`) never calls the new `zero_sample_suppressed`/`redaction` machinery; it only gets a redacted `sample_summary` dict.",
+    "failure_scenario": "With `privacy_zero_sample_mode` on, a failing check's `sample_failures` is null at write time (run_service.py:76-99). `check_sample_note`/`check_sample_values` in backend/app/alerting/render.py then silently render an empty string (\"\") for that check, so a Slack/Teams/email alert for a genuinely failing check looks identical to one where the sample redactor found nothing to show — the same 'partial-as-final'/'null-means-two-things' honesty gap #1873 just fixed on REST and MCP is left unfixed on the one surface CLAUDE.md's #1772 incident specifically flagged as forwarding evidence unmasked. The run_service.py:76-78 comment ('every reader (results API, alerts, MCP) inherits the suppression') is true only for the raw suppression, not the new honesty label — alerts are a caller of `redact_sample_failures_with_state`'s sibling `redact_sample_failures` that was not updated, so this PR created a REST/MCP-vs-alerts divergence in what a null sample is claimed to mean."
+  },
+  {
+    "file": "backend/app/api/v1/runs.py",
+    "line": 348,
+    "summary": "`check_kind=checks[r.check_id].kind if r.check_id in checks else None` silently falls back to `check_kind=None` when a result's check is missing from the suite-scoped `checks` map.",
+    "failure_scenario": "Since `Result.check_id` is `ondelete=\"CASCADE\"` from `Check` (per project memory), a result with no matching check should not exist in practice, so this is low-risk — but it is an unguarded assumption: if it ever does happen (e.g. a race, or a future soft-delete of Check), `zero_sample_suppressed(status=..., check_kind=None)` returns False unconditionally (None not in `_ZERO_SAMPLE_ELIGIBLE_KINDS`), so a genuinely zero-sample-suppressed result would silently report `redaction: null` instead of `\"zero_sample\"` — reintroducing exactly the ambiguity this PR exists to remove, with no test covering the fallback branch."
+  },
+  {
+    "file": "frontend/src/pages/RunDetail.tsx",
+    "line": 418,
+    "summary": "The `redactionLabel` ternary chain (full/none/partial) has no explicit `zero_sample` case and falls through to `null` (no label shown).",
+    "failure_scenario": "Verified benign, not a bug: this code only executes inside the branch of `SampleFailures` reached when `sample` is truthy (the `if (!sample) return ...` above it handles `zero_sample` explicitly with its own message). Since `redact_sample_failures_with_state` only ever emits `\"zero_sample\"` when `sample is None`, `redactionLabel`'s ternary can never actually observe `redaction === 'zero_sample'` with a non-null sample — included only because it's the one place a reviewer would expect an exhaustive switch and might flag it without checking the invariant."
+  },
+  {
+    "file": "backend/app/services/run_service.py",
+    "line": 79,
+    "summary": "`_build_result` nulls `sample_failures` under zero-sample mode for EVERY check kind (including scalar monitor kinds), but `_ZERO_SAMPLE_ELIGIBLE_KINDS` (line ~1305) only allowlists `expectation`/`comparison`.",
+    "failure_scenario": "Verified benign: freshness/volume/schema_drift/anomaly runners never populate `CheckOutcome.sample_failures` in the first place (only `gx_runner.py`'s `_extract_sample_failures` does, feeding expectation/comparison outcomes), so `sample` is already `None` for those kinds regardless of the zero-sample flag — `zero_sample_suppressed` correctly returns False for them since there was never anything to suppress. No mismatch between what's persisted and what the predicate reports."
+  },
+  {
+    "file": "backend/app/core/config.py",
+    "line": 636,
+    "summary": "Both `runs.py` and `server.py` call the same module-level `get_settings()` (`@lru_cache(maxsize=1)`), so the two new call sites cannot observe divergent config.",
+    "failure_scenario": "Verified benign, not a bug: `backend/app/api/v1/runs.py` newly imports `from backend.app.core.config import get_settings` (added in this diff) and `backend/app/mcp/server.py` already imports the same singleton — both resolve through one process-wide cache, so there is no split-brain risk in production. `get_settings.cache_clear()` is test-only, as documented."
+  }
+]
+```
+
+**Summary of what to actually act on:** the one real, non-verified-benign finding is the **alert-delivery gap** (`backend/app/alerting/builder.py` / `render.py`) — it's the sole consumer of `redact_sample_failures`/`sample_failures` that PR #1880 left out of the zero-sample honesty story, producing a REST/MCP-vs-alert divergence on exactly the surface (`evidence.failing_result` → alert delivery) CLAUDE.md's #1772 precedent was about. The `check_kind` fallback-to-`None` in `runs.py`/`server.py` is a secondary, low-probability latent gap worth a one-line comment or a defensive test, given `Result.check_id` CASCADE should make it unreachable today. Everything else checked (frontend switch, aggregate/report iterators, Settings caching, monitor-kind eligibility) came back clean.</result>
+<usage><subagent_tokens>143550</subagent_tokens><tool_uses>34</tool_uses><duration_ms>336916</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a7dfe3e4ac462b6af</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/bebce0fa-ad53-418f-b867-850e81800c93/tasks/a7dfe3e4ac462b6af.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle A - line by line diff scan" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Based on my review, here is the final report.
+
+```json
+[
+  {
+    "file": "backend/app/services/run_service.py",
+    "line": 1301,
+    "summary": "_ZERO_SAMPLE_ELIGIBLE_STATUSES includes \"error\", but `_build_result` (lines 80-92) sets `sample = None` unconditionally for every errored outcome, regardless of `zero_sample`. An errored check NEVER persists a sample_failures row even with zero-sample mode OFF, so zero-sample mode is never the reason the sample is null for status=\"error\".",
+    "failure_scenario": "Deploy with PRIVACY_ZERO_SAMPLE_MODE=true. Any check that errors (e.g. a Snowflake connectivity blip, a bad SQL statement, a schema mismatch) gets redaction=\"zero_sample\" and the UI/MCP tell the user 'this deployment's zero-sample privacy mode never persisted a sample for this result' — a confident, false claim, since the sample would have been null with the privacy mode off too. This mislabels the single most common operational-failure status and is untested (the PR's new tests only cover status=\"fail\")."
+  },
+  {
+    "file": "backend/app/services/run_service.py",
+    "line": 1306,
+    "summary": "_ZERO_SAMPLE_ELIGIBLE_KINDS only excludes the scalar monitor kinds (freshness/volume/schema_drift/anomaly) from zero-sample eligibility, but doesn't account for check.engine. A `kind=\"expectation\"` check evaluated by the DMF native engine (backend/app/datasources/snowflake_dmf.py `_column_metric_outcome`/`_freshness_outcome`) NEVER constructs a CheckOutcome with sample_failures — it's a pure scalar metric — regardless of the zero-sample setting.",
+    "failure_scenario": "A Snowflake connection's check is authored with engine=\"dmf\" (ADR 0036) and kind=\"expectation\" (DMF only supports kind==\"expectation\" per `build_dmf_statement`). Under zero-sample mode on, if the DMF metric breaches a threshold (warn/fail/critical), `checks[r.check_id].kind` returns \"expectation\" and `zero_sample_suppressed` returns True even though this check structurally never had a row-level sample to suppress — same false-attribution bug as the error-status case, just on the engine axis instead of status. Not covered by any new test (all new tests use GX-engine expectation checks)."
+  }
+]
+```
+
+Both findings share one root cause: `zero_sample_suppressed(status, check_kind)` treats `(status, kind)` as a complete proxy for "would this result ever carry a real sample," but two other factors also unconditionally guarantee `sample_failures is None` independent of the privacy setting — `outcome.errored` and a native (non-GX) `engine`. In both cases the new code reports `"zero_sample"` (a specific, confident causal claim) when the true reason is structural, not the privacy switch — exactly the "literally-null and misleading" honesty-defect class this codebase's history repeatedly flags.</result>
+<usage><subagent_tokens>144593</subagent_tokens><tool_uses>31</tool_uses><duration_ms>395164</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ab3ef3b8d560770fc</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/bebce0fa-ad53-418f-b867-850e81800c93/tasks/ab3ef3b8d560770fc.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle B - removed-behavior auditor" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Findings
+
+I traced every deleted/replaced diff line to its invariant and checked whether the new 4-state logic re-establishes it everywhere. Both callers of `redact_sample_failures_with_state` (REST `runs.py`, MCP `server.py`) were updated together, thread `check_kind` correctly, and both route through the single `_run_results_payload`/`_result_read` builders — no orphaned caller found for point 1/2. However, the eligibility logic in `run_service.py` and the frontend's dual expanded-row render paths each have a real gap:
+
+```json
+[
+  {
+    "file": "backend/app/services/run_service.py",
+    "line": 1306,
+    "summary": "`_ZERO_SAMPLE_ELIGIBLE_KINDS = frozenset({_EXPECTATION_KIND, COMPARISON_KIND})` and `zero_sample_suppressed()` (line 1309-1314) key only on `check_kind`, never on `check.engine`. A DMF-engine check (ADR 0036) keeps `kind == 'expectation'` (kind is explicitly orthogonal to engine per CLAUDE.md) but its runner (`backend/app/datasources/snowflake_dmf.py`) never touches `sample_failures` at all — greped zero hits — so a DMF result's null sample is never eligible content to suppress, regardless of the privacy-mode setting.",
+    "failure_scenario": "A failing DMF-engine check under `PRIVACY_ZERO_SAMPLE_MODE=true` gets `redaction: \"zero_sample\"` and the UI/MCP text 'this deployment's zero-sample privacy mode never persisted a sample for this result' — which is false: DMF checks never persist a row-level sample even with the mode OFF, exactly the same 'structurally never had a sample' case the code deliberately excludes for freshness/volume/schema_drift/anomaly (comment at line 1303-1305), just missed for the engine axis instead of the kind axis."
+  },
+  {
+    "file": "frontend/src/components/results/ComparisonResultDetail.tsx",
+    "line": 43,
+    "summary": "`const sample = (result.sample_failures ?? {}) as Record&lt;string, unknown&gt;;` reads `result.sample_failures` directly and never looks at `result.redaction`. Meanwhile `run_service.py`'s `_ZERO_SAMPLE_ELIGIBLE_KINDS` explicitly includes `COMPARISON_KIND`, so a comparison-kind check IS a case the backend zero-sample-suppresses. In `RunDetail.tsx` (line 600-608), `expandedRowRender` picks `&lt;ComparisonResultDetail&gt;` over `&lt;SampleFailures&gt;` whenever `check.kind === 'comparison'` — so the new zero_sample notice added to `SampleFailures` (line 358-366) is unreachable for this kind.",
+    "failure_scenario": "A failing/erroring comparison check under zero-sample mode has `sample_failures: null`, `redaction: \"zero_sample\"`. The row is now expandable (rowExpandable was extended to check `redaction === 'zero_sample'`), but expanding it renders `ComparisonResultDetail` with `sample = {}` — every bucket count (mismatched/additional_in_source/additional_in_target) reads as absent/zero, exactly the 'nothing to redact' misreading #1873 was filed to fix, just reintroduced through the comparison-detail branch instead of the plain-sample branch the PR patched."
+  }
+]
+```
+
+Both are concrete, code-quoted gaps rather than speculative ones — every other call site I checked (frontend `Result`/`ResultRead` TS unions, `alerting/builder.py`, `incident_evidence.py` which explicitly never reads `sample_failures`, `data_subject_requests.py`, MCP `get_suite_results`/`get_run_results` via the shared `_run_results_payload`, and the deleted-check `check_id not in checks` path, which can't actually orphan a `Result` since `results.check_id` is `ondelete="CASCADE"`) were verified consistent with the new 4-state model.</result>
+<usage><subagent_tokens>151712</subagent_tokens><tool_uses>42</tool_uses><duration_ms>500951</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bwidb0qrd</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/bebce0fa-ad53-418f-b867-850e81800c93/tasks/bwidb0qrd.output</output-file>
+<status>completed</status>
+<summary>Background command "cd backend &amp;&amp; export TEST_DATABASE_URL="REDACTED" &amp;&amp; export DATABASE_URL="$TEST_DATABASE_URL" &amp;&amp; conda run -n dataq python -m pytest -q --no-cov 2&gt;&amp;1 | tail -80" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Check CI status on PR #1880 (gh pr checks 1880). If all green, check for and resolve any unresolved review threads blocking auto-merge (via GraphQL resolveReviewThread, since the review findings were addressed in commits f043ff1d and 2d7b7b9f), then merge PR #1880. Then update docs/progress.md via a new branch+PR (main is protected — direct commits are blocked by pre-commit hook). Finally report final status of #1392/#1257/#1867/#1869/#1873/#1761/#1879 and overall W5 milestone completion state, as the user originally requested.
+
+---
+
+<task-notification>
+<task-id>baipe3ov6</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/bebce0fa-ad53-418f-b867-850e81800c93/tasks/baipe3ov6.output</output-file>
+<status>completed</status>
+<summary>Background command "gh pr checks 1881 --watch 2&gt;&amp;1 | tail -40" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+okay, let's fix #1879 too

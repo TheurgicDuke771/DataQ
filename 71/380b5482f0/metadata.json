@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "71380b5482f0",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1879-channel-picker-fetch",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/71/380b5482f0/0/metadata.json",
+      "transcript": "/71/380b5482f0/0/full.jsonl",
+      "compact_transcript": "/71/380b5482f0/0/transcript.jsonl",
+      "content_hash": "/71/380b5482f0/0/content_hash.txt",
+      "prompt": "/71/380b5482f0/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1560,
+    "cache_creation_tokens": 2355890,
+    "cache_read_tokens": 386965940,
+    "output_tokens": 302304,
+    "api_call_count": 780
+  }
+}
