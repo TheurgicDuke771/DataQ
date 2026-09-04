@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "be58aa13d25f",
+  "strategy": "manual-commit",
+  "branch": "docs/fix-scrollcard-admin-llm",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/be/58aa13d25f/0/metadata.json",
+      "transcript": "/be/58aa13d25f/0/full.jsonl",
+      "compact_transcript": "/be/58aa13d25f/0/transcript.jsonl",
+      "content_hash": "/be/58aa13d25f/0/content_hash.txt",
+      "prompt": "/be/58aa13d25f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 32517,
+    "cache_creation_tokens": 3885823,
+    "cache_read_tokens": 497881656,
+    "output_tokens": 469120,
+    "api_call_count": 970
+  }
+}
