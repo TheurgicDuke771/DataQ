@@ -1,0 +1,92 @@
+<task-notification>
+<task-id>a5c2a71b194d21d20</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/bebce0fa-ad53-418f-b867-850e81800c93/tasks/a5c2a71b194d21d20.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement #1775 MCP channel read tools" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+Implemented GitHub issue #1775: two new read-only MCP tools for reusable notification channels.
+
+**Built:**
+- `list_notification_channels()` — workspace-wide list of all channels, gated `read` (no per-resource authz, matching `list_connections`).
+- `list_suite_channels(suite_id)` — channels linked to one suite, gated `suite:view`.
+- Both share a `_channel_summary()` helper mirroring `ChannelRead`'s presence-not-value shape (`has_webhook`, `has_hmac_secret`, `has_auth_header` booleans; `webhook_url` echoed since it's a destination not a credential). `payload_template` is deliberately withheld from **every** caller including workspace admins — stricter than REST, since it can carry a receiver's routing key as a plain JSON literal.
+- Updated `get_notification_config`'s docstring, which previously said "no MCP tool currently lists or identifies which channel" — now points at `list_suite_channels`.
+- Added both tools to `backend/tests/support/mcp_gates.py`'s `GATES` and to the RBAC sweep's probe-args table in `backend/tests/api/test_role_enforcement.py`.
+- 12 new tests in `backend/tests/mcp/test_mcp_tools.py`: shape checks, explicit no-credential-value assertions (including a dedicated workspace-admin test, since MCP is stricter than REST here), empty-list semantics, and suite-view denial.
+
+**mcp-honesty-reviewer findings:** Ran mandatorily via the Agent tool. Verdict: zero honesty defects in the new tools — credential discipline, population/scope-conflation caveats (channel existing vs. actually delivering; email channel presence vs. SMTP readiness), and sibling-docstring staleness were all already correctly handled. One actionable finding: the hand-typed tool-count prose (48→50, 25→27 read-only) was stale across `docs/site/guides/mcp-setup.md`, `docs/site/reference/changelog.md`, and `CLAUDE.md`, and the generated `docs/site/reference/mcp-tools.md` needed regeneration. Fixed all four in this PR; `export_docs_reference.py --check` now passes clean.
+
+**Test results:** `backend/tests/mcp/` + `backend/tests/api/test_role_enforcement.py` — 377 passed, 1 skipped (pre-existing/unrelated). `ruff`, `black --check`, `mypy` all clean on every changed file.
+
+**PR:** https://github.com/TheurgicDuke771/DataQ/pull/1871 (branch `feat/issue-1775-mcp-channel-read-tools`, milestone "v1.2 Week 5 — native engines (DMF) + notification channels", `Fixes #1775`)</result>
+<usage><subagent_tokens>252664</subagent_tokens><tool_uses>77</tool_uses><duration_ms>677706</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a5c2a71b194d21d20</worktreePath><worktreeBranch>worktree-agent-a5c2a71b194d21d20</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a539f52788ecb1edb</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/bebce0fa-ad53-418f-b867-850e81800c93/tasks/a539f52788ecb1edb.output</output-file>
+<status>completed</status>
+<summary>Agent "Implement #1676 zero-sample privacy mode" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>PR created: **https://github.com/TheurgicDuke771/DataQ/pull/1872**
+
+## Summary
+
+**What I verified vs. the prior research:**
+- Confirmed claims 1–5 (the `run_service._build_result` choke point, GX's aggregate-only `observed_value`, comparison checks being aggregate-only, dry-run never carrying samples, incidents never reading `sample_failures`).
+- **Corrected claim 5**: the "alerts never reference `sample_failures`, zero grep hits" claim was wrong — `backend/app/alerting/builder.py::build_run_report` reads `result.sample_failures` directly via `run_service.redact_sample_failures` to build outbound alert payloads. This needed no separate code change since it reads what's persisted, but it's exactly the "guard at one door, not its sibling" risk the issue warned about, and confirms gating at the single write-path choke point (rather than chasing every consumer) is the right architecture.
+
+**What was built:**
+- `PRIVACY_ZERO_SAMPLE_MODE` setting (`backend/app/core/config.py`)
+- Gated `_build_result()` in `run_service.py`: forces `sample_failures` null and suppresses the `unparsed_value` "provoking cell" merge in the errored branch — `metric_value`/aggregate `observed_value`/`sampling` still flow through
+- `GET /admin/deployment` + Admin UI now report the posture (`zero_sample_mode` field, plus dynamic alert/MCP transfer-vector descriptions)
+- Docs: security overview, changelog, `.env.app.example`
+
+**Tests:** 4 new backend tests in `test_run_service.py` (ON/OFF pairs for both the happy path and the errored-branch provoking cell), mutation-checked by temporarily disabling the gate and confirming both ON tests fail for the right reason; 2 new admin-endpoint tests; 1 new frontend assertion. Full backend suite (5822 passed) and frontend typecheck/lint/tests all green.
+
+One unrelated pre-existing flake (`test_a_disabled_transfer_vector_is_still_listed`, caused by local dev-DB `llm_settings` state) was found, reproduced on `main`, and left untouched/noted in the PR description rather than silently ignored.</result>
+<usage><subagent_tokens>298243</subagent_tokens><tool_uses>125</tool_uses><duration_ms>772330</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a539f52788ecb1edb</worktreePath><worktreeBranch>worktree-agent-a539f52788ecb1edb</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ab27abc7671df6f64</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/bebce0fa-ad53-418f-b867-850e81800c93/tasks/ab27abc7671df6f64.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle C: cross-file tracer" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>No mention of restart requirements for this setting anywhere in the deploy runbook or docs. Both findings are substantiated. Final report below.
+
+```json
+[
+  {
+    "file": "backend/app/services/run_service.py",
+    "line": 83,
+    "summary": "Zero-sample privacy mode nulls sample_failures but leaves observed_value's list-shaped row data untouched, contradicting the PR's own compliance claim.",
+    "failure_scenario": "In `_build_result`'s non-errored branch, `observed = sanitize_json(outcome.observed_value)` runs unconditionally — it is NOT gated by `zero_sample` (only `sample = None if zero_sample else sanitize_json(outcome.sample_failures)` is). For a failed set-oriented expectation (e.g. `expect_column_values_to_be_in_set`), GX's `observed_value` is a literal list of the actual offending column values (`gx_runner._bounded_observed_value`, up to `SAMPLE_ROW_CAP` rows) — real target data, not metadata. The codebase already treats this as equally PII-bearing: the #1253 retention sweep (`run_service.purge_expired_sample_failures`, `worker/celery_app.py` comment 'Daily PII scrub of `sample_failures` + list-shaped `observed_value`') purges both, and `incident_evidence.py`'s docstring states outright 'observed_value can itself carry a literal warehouse cell value (or a list of them) ... real target data'. Under `PRIVACY_ZERO_SAMPLE_MODE=true`, a HIPAA/EU-tier deployment operator relying on `GET /admin/deployment`'s new claim — 'no failing-row sample is ever persisted anywhere in this deployment ... aggregates only' — would be wrong: raw row-level values from a failed set-membership check are still written to `results.observed_value` and reachable via the results API/alerts/MCP (redacted at READ time by `redact_observed_value`, but never suppressed at WRITE time the way the PR advertises)."
+  },
+  {
+    "file": "backend/app/core/config.py",
+    "line": 629,
+    "summary": "get_settings() is per-process @lru_cache(maxsize=1) with no cross-process invalidation, so flipping PRIVACY_ZERO_SAMPLE_MODE can make the admin posture endpoint report 'on' while the Celery worker (which actually calls _build_result) is still persisting real samples until independently restarted.",
+    "failure_scenario": "An operator sets `PRIVACY_ZERO_SAMPLE_MODE=true` and restarts only the api container (or the api process picks it up first in a rolling deploy). `GET /admin/deployment` immediately reports `zero_sample_mode: true` with the reassuring 'Zero-sample privacy mode is ON' detail text — but the worker process, which executes `execute_run` → `_build_result` inside a Celery task, has its own separate `get_settings()` cache built at its own process start and keeps returning the old cached `Settings` object (`privacy_zero_sample_mode=False`) until it too is restarted. There is no `get_settings.cache_clear()` call, config-change signal, or documented restart-both-processes requirement anywhere in `deploy/README.md` or the changelog/security docs added by this PR. Since this specific setting's whole purpose is a compliance attestation surfaced to an auditor via the admin page, the asymmetry means the reported posture can be actively wrong (claiming a stronger guarantee than what the worker is currently doing) for as long as the worker's restart lags the api's."
+  }
+]
+```
+
+**Verification notes on the task's other checks:**
+1. `_build_result` callers — confirmed exhaustive: every `OutcomePhase` (native-engine, expectation, monitor/scalar, comparison, stateful-monitor) resolved in `_run_outcome_phases` is mapped through `_build_result` at `run_service.py:327` inside `execute_run`'s single loop. No check kind bypasses it.
+3. `DeploymentPostureRead`/`zero_sample_mode` — only consumer is `frontend/src/pages/Admin.tsx` via `frontend/src/api/admin.ts`'s `DeploymentPosture` interface, and both were updated in the same PR consistently (field required on both sides, one call site). No breakage found.
+4. Answered above as finding #2 — `get_settings()` is indeed `@lru_cache(maxsize=1)` (`backend/app/core/config.py:629`), consistently read by both `admin.py` and `run_service.py` with no invalidation path outside tests (`get_settings.cache_clear()` appears only in test files).</result>
+<usage><subagent_tokens>143338</subagent_tokens><tool_uses>20</tool_uses><duration_ms>119247</duration_ms></usage>
+</task-notification>
