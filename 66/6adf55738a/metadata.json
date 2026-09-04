@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "666adf55738a",
+  "strategy": "manual-commit",
+  "branch": "docs/recapture-custom-sql-picker",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "docs/site/guides/ai-features.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/66/6adf55738a/0/metadata.json",
+      "transcript": "/66/6adf55738a/0/full.jsonl",
+      "compact_transcript": "/66/6adf55738a/0/transcript.jsonl",
+      "content_hash": "/66/6adf55738a/0/content_hash.txt",
+      "prompt": "/66/6adf55738a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 32247,
+    "cache_creation_tokens": 3192529,
+    "cache_read_tokens": 462233606,
+    "output_tokens": 424305,
+    "api_call_count": 835
+  }
+}
