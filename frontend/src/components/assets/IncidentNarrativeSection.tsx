@@ -6,6 +6,7 @@ import { generateRcaNarrative, type RcaNarrative, runLlmFeature } from '../../ap
 import { useAsyncData } from '../../hooks/useAsyncData';
 import { errorMessage, fetchFailure } from '../../utils/errors';
 import { formatTimestamp } from '../results/resultsFormat';
+import { AiCaveat } from '../shared/AiCaveat';
 import SimpleList from '../SimpleList';
 
 const CONFIDENCE_COLORS: Record<string, string> = {
@@ -172,6 +173,7 @@ function NarrativeBody({ narrative, at }: { narrative: RcaNarrative; at: string 
         Generated {at ? formatTimestamp(at) : '—'} · computed from the stored evidence and the
         check&apos;s result history; hypotheses cite evidence layers, blind spots are DataQ&apos;s.
       </Typography.Text>
+      <AiCaveat />
     </Flex>
   );
 }
