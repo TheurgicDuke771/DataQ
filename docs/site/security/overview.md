@@ -553,14 +553,25 @@ considered:
   two LLM entries, and an earlier draft listed only the other one.
 - **LLM intelligence** — the *outbound* direction, DataQ calling a model on its
   own behalf: **built, off by default** until an admin configures a provider and
-  credential, sent to that admin-chosen endpoint. SQL-generation and
-  check-suggestion prompts are schema plus masked aggregate profiler statistics;
-  root-cause-analysis narratives additionally send the triggering check's own
-  observed value — routed through the same column-policy/warehouse-tag floor
-  every other results surface applies — and its expected value (a
-  check-authored threshold, not warehouse data, so never masked). **Never raw
-  sample rows**, on either path. Every call — feature invocation or admin test
-  probe alike — is recorded with requester and token counts.
+  credential, sent to that admin-chosen endpoint. What each feature sends
+  differs and is enumerated exactly, not summarized as one shape:
+    - **SQL generation** — the target's column names, plus each column's null
+      rate and distinct count if the caller asks for the profile. No min/max, no
+      frequent values, no cell content.
+    - **Check suggestions** — column names with null rate, distinct count,
+      min/max, and each **non-sensitive** column's five most frequent literal
+      values (masked to a placeholder on any column the column-policy or
+      warehouse-tag floor marks sensitive — an unclassified free-text column is
+      not masked, so its most common cell contents do leave the deployment).
+    - **Root-cause narratives** — the stored evidence card (check/asset
+      identifiers, statuses, metric values) plus the triggering check's own
+      observed value — routed through the same column-policy/warehouse-tag
+      floor every other results surface applies — and its expected value (a
+      check-authored threshold, not warehouse data, so never masked). No
+      column profile on this path.
+
+  **Never raw sample rows**, on any path. Every call — feature invocation or
+  admin test probe alike — is recorded with requester and token counts.
 - **Sign-in email** — email-OTP codes to user addresses via the configured SMTP
   relay: account identifiers rather than warehouse content, relay operator-chosen.
 - **Secret store** — warehouse credentials in Key Vault / Secrets Manager /

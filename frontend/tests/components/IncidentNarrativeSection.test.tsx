@@ -42,7 +42,7 @@ function row(over: Partial<LlmInvocation<RcaNarrative>>): LlmInvocation<RcaNarra
 afterEach(() => vi.clearAllMocks());
 
 describe('IncidentNarrativeSection', () => {
-  it('renders the stored narrative with hypotheses, refs and blind spots', async () => {
+  it('renders the stored narrative with hypotheses, refs and suggested checks visible', async () => {
     mockGet.mockResolvedValue({
       narrative: NARRATIVE,
       invocation_id: 'inv-0',
@@ -54,9 +54,38 @@ describe('IncidentNarrativeSection', () => {
     expect(screen.getByText(/Bad upstream values/)).toBeInTheDocument();
     expect(screen.getByText('high')).toBeInTheDocument();
     expect(screen.getByText('failing_result')).toBeInTheDocument();
-    expect(screen.getByText('no upstream pipeline run is linked')).toBeInTheDocument();
     expect(screen.getByText('Check the loader')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Regenerate' })).toBeInTheDocument();
+    // Kept out of the always-visible narrative — surfaced via the info tooltip instead.
+    expect(screen.queryByText('no upstream pipeline run is linked')).not.toBeInTheDocument();
+  });
+
+  it('puts the blind spots and how-it-was-computed note in the info tooltip, not the narrative', async () => {
+    mockGet.mockResolvedValue({
+      narrative: NARRATIVE,
+      invocation_id: 'inv-0',
+      generated_at: '2026-09-03T00:00:00Z',
+      withheld_reason: null,
+    });
+    const user = userEvent.setup();
+    render(<IncidentNarrativeSection incidentId="inc-1" />);
+    await screen.findByText('18% of statuses fall outside the allowed set.');
+
+    await user.hover(screen.getByLabelText('What this evidence could not see'));
+    const tip = await screen.findByRole('tooltip');
+    expect(tip).toHaveTextContent('no upstream pipeline run is linked');
+    expect(tip).toHaveTextContent('hypotheses cite evidence layers');
+  });
+
+  it('puts the data-egress disclosure in its own info tooltip on the title', async () => {
+    mockGet.mockResolvedValue(NONE);
+    const user = userEvent.setup();
+    render(<IncidentNarrativeSection incidentId="inc-1" />);
+    await screen.findByText(/None generated yet/);
+
+    await user.hover(screen.getByLabelText('What the model sees'));
+    const tip = await screen.findByRole('tooltip');
+    expect(tip).toHaveTextContent('up to 180 points of result history');
   });
 
   it('says a narrative is withheld rather than absent', async () => {
