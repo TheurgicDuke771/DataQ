@@ -158,6 +158,32 @@ def test_build_provider_unconfigured_and_disabled_raise_not_configured(
         llm_service.build_provider(db_session, FakeSecretStore())
 
 
+def test_unconfigured_and_disabled_read_as_two_different_states(
+    db_session: Any, admin: User
+) -> None:
+    """Same `llm_not_configured` code either way (#1848) — callers branch on the code, not the
+    message — but a Member hitting a configured-but-DISABLED provider must not be told "nobody
+    has set this up" (they can't act on that; only an admin re-enabling it fixes it)."""
+    with pytest.raises(LLMNotConfiguredError) as never_configured:
+        llm_service.create_invocation(db_session, kind="ping", requested_by=admin)
+    assert "add one" in str(never_configured.value)
+    assert "disabled" not in str(never_configured.value)
+
+    llm_service.save_settings(
+        db_session,
+        draft=_draft(api_key="sk-1", enabled=False),
+        actor=admin,
+        secret_store=FakeSecretStore(),
+    )
+    with pytest.raises(LLMNotConfiguredError) as disabled:
+        llm_service.create_invocation(db_session, kind="ping", requested_by=admin)
+    assert "disabled" in str(disabled.value)
+    assert "add one" not in str(disabled.value)
+    # Same code both times — a caller (the REST route, the frontend) must be able to keep
+    # branching on the code alone; only the message differs.
+    assert never_configured.value.code == disabled.value.code == "llm_not_configured"
+
+
 def test_test_settings_uses_stored_key_only_for_same_destination(
     db_session: Any, admin: User, monkeypatch: pytest.MonkeyPatch
 ) -> None:

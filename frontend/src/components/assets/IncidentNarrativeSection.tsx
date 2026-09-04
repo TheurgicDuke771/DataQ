@@ -79,10 +79,15 @@ export function IncidentNarrativeSection({ incidentId }: { incidentId: string })
           {shown ? 'Regenerate' : 'Explain this failure'}
         </Button>
       </Flex>
+      <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
+        The model sees the stored evidence card — check and asset identifiers, statuses, metric
+        values, and this check&apos;s observed/expected values after the same redaction every
+        results surface applies — plus up to 180 points of result history. No column profile, no
+        sample rows, and nothing is fetched fresh from the warehouse.
+      </Typography.Text>
       {gen.status === 'running' && (
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          Asking the model about this evidence card and the check&apos;s history — nothing is
-          fetched from the warehouse. A local model can take a minute…
+          Asking the model — a local model can take a minute…
         </Typography.Text>
       )}
       {gen.status === 'failed' && (

@@ -161,12 +161,28 @@ def save_settings(
     return row
 
 
+def _require_row(row: LlmSetting | None, *, require_enabled: bool) -> None:
+    """Shared `llm_not_configured` gate for `build_provider` and `create_invocation`
+    (#1848) — same error code either way (callers branch on the code, not the
+    message, same as the rest of this seam's taxonomy), but the message tells
+    "nobody has set this up" apart from "an admin turned it off", since only
+    the first needs "add one" and the second would send a Member down the
+    wrong path (they cannot re-enable it themselves).
+    """
+    if row is None:
+        raise LLMNotConfiguredError("no LLM provider is configured — a workspace admin can add one")
+    if require_enabled and not row.enabled:
+        raise LLMNotConfiguredError(
+            "outbound LLM calls are disabled by a workspace admin — ask them to re-enable it"
+        )
+
+
 def build_provider(
     session: Session, secret_store: SecretStore, *, require_enabled: bool = True
 ) -> LLMProvider:
     row = get_settings_row(session)
-    if row is None or (require_enabled and not row.enabled):
-        raise LLMNotConfiguredError("no LLM provider is configured — a workspace admin can add one")
+    _require_row(row, require_enabled=require_enabled)
+    assert row is not None  # _require_row raised otherwise  # nosec B101
     return _provider_from(
         provider=row.provider,
         base_url=row.base_url,
@@ -330,8 +346,7 @@ def create_invocation(
     request: dict[str, Any] | None = None,
 ) -> LlmInvocation:
     row = get_settings_row(session)
-    if row is None or not row.enabled:
-        raise LLMNotConfiguredError("no LLM provider is configured — a workspace admin can add one")
+    _require_row(row, require_enabled=True)
     invocation = LlmInvocation(
         kind=kind, requested_by_user_id=requested_by.id, suite_id=suite_id, request=request
     )
