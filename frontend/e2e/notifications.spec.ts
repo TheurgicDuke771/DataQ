@@ -10,7 +10,9 @@ test.describe('Suite notifications panel', () => {
     await page.goto('/suites');
     await page.getByText('Orders quality').click();
     await expect(page).toHaveURL(/\/suites\/[0-9a-f-]+$/);
-    await expect(card(page).getByText('Notifications', { exact: true })).toBeVisible();
+    // #1761: this card's title changed from "Notifications" to "Legacy per-suite
+    // webhook" now that a reusable-channel picker sits alongside it.
+    await expect(card(page).getByText('Legacy per-suite webhook', { exact: true })).toBeVisible();
   };
 
   test('configure threshold routing and persist it across a reload', async ({ page }) => {

@@ -8,7 +8,15 @@ import {
   putNotifications,
   type SuiteNotification,
 } from '../../src/api/notifications';
+import {
+  linkSuiteChannel,
+  listChannels,
+  listSuiteChannels,
+  type NotificationChannel,
+  unlinkSuiteChannel,
+} from '../../src/api/notificationChannels';
 import { NotificationsPanel } from '../../src/components/suites/NotificationsPanel';
+import { selectOption } from '../support/antd';
 
 vi.mock('../../src/api/notifications', () => ({
   getNotifications: vi.fn(),
@@ -16,8 +24,19 @@ vi.mock('../../src/api/notifications', () => ({
   deleteNotifications: vi.fn(),
 }));
 
+vi.mock('../../src/api/notificationChannels', () => ({
+  listChannels: vi.fn(),
+  listSuiteChannels: vi.fn(),
+  linkSuiteChannel: vi.fn(),
+  unlinkSuiteChannel: vi.fn(),
+}));
+
 const mockGet = vi.mocked(getNotifications);
 const mockPut = vi.mocked(putNotifications);
+const mockListChannels = vi.mocked(listChannels);
+const mockListSuiteChannels = vi.mocked(listSuiteChannels);
+const mockLink = vi.mocked(linkSuiteChannel);
+const mockUnlink = vi.mocked(unlinkSuiteChannel);
 
 const CONFIG: SuiteNotification = {
   configured: true,
@@ -28,6 +47,24 @@ const CONFIG: SuiteNotification = {
   email_recipients: null,
 };
 
+function channel(overrides: Partial<NotificationChannel> = {}): NotificationChannel {
+  return {
+    id: 'c1',
+    name: 'on-call-teams',
+    type: 'teams',
+    has_webhook: true,
+    email_recipients: null,
+    webhook_url: null,
+    has_hmac_secret: false,
+    hmac_secret: null,
+    payload_template: null,
+    has_payload_template: false,
+    auth_header_name: null,
+    has_auth_header: false,
+    ...overrides,
+  };
+}
+
 function renderPanel(props: Partial<Parameters<typeof NotificationsPanel>[0]> = {}) {
   return render(
     <AntApp>
@@ -37,6 +74,11 @@ function renderPanel(props: Partial<Parameters<typeof NotificationsPanel>[0]> = 
 }
 
 afterEach(() => vi.clearAllMocks());
+
+// Every NotificationsPanel test mounts the ChannelPicker too — default it empty so
+// tests that don't care about channels aren't left hanging on an unresolved fetch.
+mockListChannels.mockResolvedValue([]);
+mockListSuiteChannels.mockResolvedValue([]);
 
 describe('NotificationsPanel', () => {
   it('loads and shows the current config', async () => {
@@ -204,5 +246,76 @@ describe('NotificationsPanel', () => {
     mockGet.mockRejectedValue(new Error('boom'));
     renderPanel();
     expect(await screen.findByText('Failed to load notifications')).toBeInTheDocument();
+  });
+});
+
+describe('NotificationsPanel channel picker', () => {
+  it("pre-selects the suite's already-linked channels", async () => {
+    mockGet.mockResolvedValue(CONFIG);
+    mockListChannels.mockResolvedValue([
+      channel({ id: 'c1', name: 'on-call' }),
+      channel({ id: 'c2', name: 'pager' }),
+    ]);
+    mockListSuiteChannels.mockResolvedValue([channel({ id: 'c1', name: 'on-call' })]);
+    renderPanel();
+
+    expect(await screen.findByText('on-call (teams)')).toBeInTheDocument();
+    expect(screen.queryByText('pager (teams)')).not.toBeInTheDocument();
+  });
+
+  it('selecting a new channel calls PUT for the suite/channel pair', async () => {
+    mockGet.mockResolvedValue(CONFIG);
+    mockListChannels.mockResolvedValue([
+      channel({ id: 'c1', name: 'on-call' }),
+      channel({ id: 'c2', name: 'pager' }),
+    ]);
+    mockListSuiteChannels.mockResolvedValue([]);
+    mockLink.mockResolvedValue();
+    const user = userEvent.setup();
+    renderPanel();
+    await screen.findByLabelText('Linked channels');
+
+    await selectOption(user, 'pager (teams)', { index: 1, by: 'text' });
+
+    await waitFor(() => expect(mockLink).toHaveBeenCalledWith('s1', 'c2'));
+    expect(mockUnlink).not.toHaveBeenCalled();
+  });
+
+  it('deselecting a linked channel calls DELETE for the suite/channel pair', async () => {
+    mockGet.mockResolvedValue(CONFIG);
+    mockListChannels.mockResolvedValue([channel({ id: 'c1', name: 'on-call' })]);
+    mockListSuiteChannels.mockResolvedValue([channel({ id: 'c1', name: 'on-call' })]);
+    mockUnlink.mockResolvedValue();
+    const user = userEvent.setup();
+    renderPanel();
+    await screen.findByText('on-call (teams)');
+
+    // Clicking an already-selected option in an antd multi-select toggles it off.
+    await selectOption(user, 'on-call (teams)', { index: 1, by: 'text' });
+
+    await waitFor(() => expect(mockUnlink).toHaveBeenCalledWith('s1', 'c1'));
+    expect(mockLink).not.toHaveBeenCalled();
+  });
+
+  it('renders read-only for a viewer, with no mutation handlers wired up', async () => {
+    mockGet.mockResolvedValue(CONFIG);
+    mockListChannels.mockResolvedValue([channel({ id: 'c1', name: 'on-call' })]);
+    mockListSuiteChannels.mockResolvedValue([channel({ id: 'c1', name: 'on-call' })]);
+    renderPanel({ canManage: false });
+
+    expect(await screen.findByText('on-call')).toBeInTheDocument();
+    // No editable Select for a viewer — just the plain tag list.
+    expect(screen.queryByLabelText('Linked channels')).not.toBeInTheDocument();
+    expect(mockLink).not.toHaveBeenCalled();
+    expect(mockUnlink).not.toHaveBeenCalled();
+  });
+
+  it('shows a plain empty state for a viewer with nothing linked', async () => {
+    mockGet.mockResolvedValue(CONFIG);
+    mockListChannels.mockResolvedValue([]);
+    mockListSuiteChannels.mockResolvedValue([]);
+    renderPanel({ canManage: false });
+
+    expect(await screen.findByText('No channels linked.')).toBeInTheDocument();
   });
 });

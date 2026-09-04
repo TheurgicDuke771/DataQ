@@ -7,6 +7,13 @@ import {
   putNotifications,
   type SuiteNotificationUpdate,
 } from '../../api/notifications';
+import {
+  linkSuiteChannel,
+  listChannels,
+  listSuiteChannels,
+  type NotificationChannel,
+  unlinkSuiteChannel,
+} from '../../api/notificationChannels';
 import { useAsyncData } from '../../hooks/useAsyncData';
 import { errorMessage } from '../../utils/errors';
 
@@ -30,45 +37,169 @@ export function NotificationsPanel({
   const { state, reload } = useAsyncData(() => getNotifications(suiteId));
 
   return (
+    <Flex vertical gap={16}>
+      <Card
+        size="small"
+        title={
+          <Flex vertical gap={2}>
+            <Typography.Text strong>Legacy per-suite webhook</Typography.Text>
+            <Typography.Text type="secondary" style={{ fontSize: 12, fontWeight: 400 }}>
+              Send this suite's run outcomes to Microsoft Teams, Slack, or email.
+            </Typography.Text>
+          </Flex>
+        }
+      >
+        {state.status === 'loading' ? (
+          <Spin description="Loading notifications…" />
+        ) : state.status === 'error' ? (
+          <Alert
+            type="error"
+            showIcon
+            title="Failed to load notifications"
+            description={state.error}
+          />
+        ) : (
+          <NotificationsForm
+            // Remount on a config change so the form re-seeds from the loaded values (render-phase
+            // reset, no setState-in-effect); an unchanged reload keeps the same key.
+            key={
+              `${state.data.enabled}:${state.data.alert_on}:${state.data.has_webhook}` +
+              `:${state.data.has_slack_webhook}:${state.data.email_recipients ?? ''}`
+            }
+            suiteId={suiteId}
+            canManage={canManage}
+            initialEnabled={state.data.enabled}
+            initialAlertOn={state.data.alert_on}
+            hasWebhook={state.data.has_webhook}
+            hasSlackWebhook={state.data.has_slack_webhook}
+            initialEmail={state.data.email_recipients ?? ''}
+            onChanged={reload}
+          />
+        )}
+      </Card>
+      <ChannelPicker suiteId={suiteId} canManage={canManage} />
+    </Flex>
+  );
+}
+
+/**
+ * Reusable-channel linking (#1761, admin-managed destinations from Settings → Notifications).
+ * Coexists with the legacy per-suite webhook above rather than replacing it — both paths deliver
+ * independently server-side.
+ */
+function ChannelPicker({ suiteId, canManage }: { suiteId: string; canManage: boolean }) {
+  const all = useAsyncData(listChannels);
+  const linked = useAsyncData(() => listSuiteChannels(suiteId));
+
+  return (
     <Card
       size="small"
       title={
         <Flex vertical gap={2}>
-          <Typography.Text strong>Notifications</Typography.Text>
+          <Typography.Text strong>Linked channels (admin-managed)</Typography.Text>
           <Typography.Text type="secondary" style={{ fontSize: 12, fontWeight: 400 }}>
-            Send this suite's run outcomes to Microsoft Teams, Slack, or email.
+            Reusable destinations configured once in Settings and linked to any number of suites.
           </Typography.Text>
         </Flex>
       }
     >
-      {state.status === 'loading' ? (
-        <Spin description="Loading notifications…" />
-      ) : state.status === 'error' ? (
+      {(all.state.status === 'loading' || linked.state.status === 'loading') && (
+        <Spin description="Loading channels…" />
+      )}
+      {all.state.status === 'error' && (
         <Alert
           type="error"
           showIcon
-          title="Failed to load notifications"
-          description={state.error}
+          title="Failed to load channels"
+          description={all.state.error}
         />
-      ) : (
-        <NotificationsForm
-          // Remount on a config change so the form re-seeds from the loaded values (render-phase
-          // reset, no setState-in-effect); an unchanged reload keeps the same key.
-          key={
-            `${state.data.enabled}:${state.data.alert_on}:${state.data.has_webhook}` +
-            `:${state.data.has_slack_webhook}:${state.data.email_recipients ?? ''}`
-          }
+      )}
+      {linked.state.status === 'error' && (
+        <Alert
+          type="error"
+          showIcon
+          title="Failed to load linked channels"
+          description={linked.state.error}
+        />
+      )}
+      {all.state.status === 'ok' && linked.state.status === 'ok' && (
+        <ChannelPickerBody
+          // Remount when the linked set actually changes underneath us (render-
+          // phase reset, no setState-in-effect) — a same-set reload keeps the key.
+          key={linked.state.data
+            .map((c) => c.id)
+            .sort()
+            .join(',')}
           suiteId={suiteId}
           canManage={canManage}
-          initialEnabled={state.data.enabled}
-          initialAlertOn={state.data.alert_on}
-          hasWebhook={state.data.has_webhook}
-          hasSlackWebhook={state.data.has_slack_webhook}
-          initialEmail={state.data.email_recipients ?? ''}
-          onChanged={reload}
+          allChannels={all.state.data}
+          initialLinked={linked.state.data}
+          onResync={linked.reload}
         />
       )}
     </Card>
+  );
+}
+
+function ChannelPickerBody({
+  suiteId,
+  canManage,
+  allChannels,
+  initialLinked,
+  onResync,
+}: {
+  suiteId: string;
+  canManage: boolean;
+  allChannels: NotificationChannel[];
+  initialLinked: NotificationChannel[];
+  onResync: () => void;
+}) {
+  const { message } = App.useApp();
+  const [selected, setSelected] = useState<string[]>(initialLinked.map((c) => c.id));
+  const [saving, setSaving] = useState(false);
+
+  if (!canManage) {
+    return initialLinked.length === 0 ? (
+      <Typography.Text type="secondary">No channels linked.</Typography.Text>
+    ) : (
+      <Flex gap={4} wrap>
+        {initialLinked.map((c) => (
+          <Tag key={c.id}>{c.name}</Tag>
+        ))}
+      </Flex>
+    );
+  }
+
+  const onChange = async (nextIds: string[]) => {
+    const added = nextIds.filter((id) => !selected.includes(id));
+    const removed = selected.filter((id) => !nextIds.includes(id));
+    setSelected(nextIds); // optimistic — diffed against the prior selection, not blown away/recreated
+    setSaving(true);
+    try {
+      await Promise.all([
+        ...added.map((id) => linkSuiteChannel(suiteId, id)),
+        ...removed.map((id) => unlinkSuiteChannel(suiteId, id)),
+      ]);
+    } catch (err) {
+      message.error(`Failed to update linked channels: ${errorMessage(err)}`);
+      onResync(); // resync the checked set to whatever actually landed server-side
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Select
+      mode="multiple"
+      value={selected}
+      onChange={(v) => void onChange(v)}
+      disabled={saving}
+      loading={saving}
+      style={{ width: '100%' }}
+      placeholder="No channels linked"
+      aria-label="Linked channels"
+      options={allChannels.map((c) => ({ value: c.id, label: `${c.name} (${c.type})` }))}
+    />
   );
 }
 
