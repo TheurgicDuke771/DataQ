@@ -115,7 +115,11 @@ re-runs the check and never changes the suite.
 
 Custom-SQL checks are the most flexible check type and the slowest to author. On a suite
 whose target is a table on a SQL datasource (Snowflake or Unity Catalog), start a check,
-pick **Custom SQL**, and describe the rule instead of writing it:
+pick **Custom SQL**, and describe the rule instead of writing it. **Generate from a
+description** sits beside the hand-written Custom SQL card — same check type underneath,
+just a different starting point:
+
+![The Custom SQL category with two cards: "Custom SQL" for hand-written queries and "Generate from a description" for the model to translate](../assets/screenshots/check-editor-custom-sql-picker.png){ .screenshot }
 
 <video class="clip" autoplay loop muted playsinline poster="../../assets/videos/generate-sql.jpg">
   <source src="../../assets/videos/generate-sql.mp4" type="video/mp4">
