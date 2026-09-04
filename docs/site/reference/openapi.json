@@ -3675,6 +3675,66 @@
         "title": "IncidentDetailRead",
         "type": "object"
       },
+      "IncidentNarrativeRead": {
+        "description": "The latest root-cause narrative for an incident (#1633), as the UI reads it.\n\n`narrative` is null both when none was ever generated (the common case \u2014 RCA\nis on demand) and when one exists but is withheld from this caller; the two\nare told apart by `withheld_reason`, so a client never renders \"no narrative\"\nover one it simply may not read.",
+        "properties": {
+          "generated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generated At"
+          },
+          "invocation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invocation Id"
+          },
+          "narrative": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Narrative"
+          },
+          "withheld_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Withheld Reason"
+          }
+        },
+        "required": [
+          "narrative",
+          "invocation_id",
+          "generated_at",
+          "withheld_reason"
+        ],
+        "title": "IncidentNarrativeRead",
+        "type": "object"
+      },
       "IncidentRead": {
         "description": "List-row / summary view of an incident. ``check_name`` / ``asset_*`` are\nlifted from the snapshotted evidence card (fallbacks when absent) so the list\nrenders without a join; ``latest_status`` is the breaching tier of the most\nrecent occurrence.",
         "properties": {
@@ -8276,6 +8336,49 @@
           }
         },
         "summary": "Acknowledge an incident (requires edit on its suite)",
+        "tags": [
+          "incidents"
+        ]
+      }
+    },
+    "/api/v1/incidents/{incident_id}/narrative": {
+      "get": {
+        "operationId": "get_incident_narrative_api_v1_incidents__incident_id__narrative_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentNarrativeRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Latest root-cause narrative for an incident (view)",
         "tags": [
           "incidents"
         ]
