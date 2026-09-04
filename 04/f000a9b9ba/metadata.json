@@ -1,0 +1,38 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "04f000a9b9ba",
+  "strategy": "manual-commit",
+  "branch": "docs/ai-features-ui-recapture",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/site/assets/screenshots/check-editor-sql-generate.png",
+    "docs/site/assets/screenshots/suggest-checks.png",
+    "docs/site/assets/videos/explain-failure.jpg",
+    "docs/site/assets/videos/explain-failure.mp4",
+    "docs/site/assets/videos/generate-sql.jpg",
+    "docs/site/assets/videos/generate-sql.mp4",
+    "docs/site/assets/videos/suggest-checks.jpg",
+    "docs/site/assets/videos/suggest-checks.mp4",
+    "docs/site/guides/ai-features.md",
+    "frontend/e2e-docs/README.md",
+    "frontend/e2e-docs/screenshots.spec.ts",
+    "frontend/e2e-docs/videos.spec.ts",
+    "scripts/docs/capture-stack.sh"
+  ],
+  "sessions": [
+    {
+      "metadata": "/04/f000a9b9ba/0/metadata.json",
+      "transcript": "/04/f000a9b9ba/0/full.jsonl",
+      "compact_transcript": "/04/f000a9b9ba/0/transcript.jsonl",
+      "content_hash": "/04/f000a9b9ba/0/content_hash.txt",
+      "prompt": "/04/f000a9b9ba/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 140,
+    "cache_creation_tokens": 77558,
+    "cache_read_tokens": 56601747,
+    "output_tokens": 34211,
+    "api_call_count": 70
+  }
+}

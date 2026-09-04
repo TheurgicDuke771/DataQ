@@ -1,0 +1,2 @@
+let's rresume capturing the screenshot and clips and update the llm docs page properly. 
+Also isn't #1831 closed?
