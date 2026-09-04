@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "35077fe14884",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1845-llm-ui",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "frontend/src/components/assets/IncidentNarrativeSection.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/35/077fe14884/0/metadata.json",
+      "transcript": "/35/077fe14884/0/full.jsonl",
+      "compact_transcript": "/35/077fe14884/0/transcript.jsonl",
+      "content_hash": "/35/077fe14884/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 21063,
+    "cache_creation_tokens": 594359,
+    "cache_read_tokens": 39703932,
+    "output_tokens": 149242,
+    "api_call_count": 166
+  }
+}
