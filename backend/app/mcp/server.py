@@ -91,7 +91,7 @@ _INSTRUCTIONS = (
     "DataQ is a data-quality monitoring platform. These tools read and act on DQ "
     "suites (collections of checks), their runs and results, the overall health "
     "score, and orchestration (ADF/Airflow) pipeline status. Use them to answer "
-    "questions like 'what failed today?', 'run the orders suite on DEV', 'why did "
+    "questions like 'what failed today?', 'run the orders suite', 'why did "
     "the customer pipeline fail?', or 'add a null check on email'."
 )
 

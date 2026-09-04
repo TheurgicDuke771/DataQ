@@ -29,7 +29,8 @@ Two sentences of conclusion:
 2. **Past the ceiling, today's failure is silent** — the OOM-killed run sits in
    `running` for up to 60 minutes until the stuck-run reaper fails it,
    with no memory-attributed reason. A size-probe + hard-cap ("refuse with
-   `error`, don't OOM"), described below, is the fix.
+   `error`, don't OOM"), described in the v1.1 section below, has since shipped
+   and is enforced on every flat-file and unaudited-UC read.
 
 ## Environment & method
 
@@ -39,7 +40,7 @@ Two sentences of conclusion:
 | Measurement rig | docker-compose stack pinned to **production parity**: worker at 1 CPU / 2 GiB / `celery --concurrency=4` (the value the worker now pins in its Celery config, `WORKER_CONCURRENCY` — the prefork default reads the *host's* core count, not the container's, and had silently differed between the two reference deployments), driven through the real REST API |
 | Iceberg leg | run against the deployed stack (the native catalog wasn't reachable from the local rig) — wall via REST, worker memory via the platform metric |
 | Worker memory sampling | `docker stats` at 1 Hz (local); 1-min max metric (prod) |
-| Checks per rung | 5 expectations (not-null ×2, between ×2, unique ×1) + volume & freshness monitors where the type supports them (SQL/UC/Iceberg — flat files reject monitor kinds by design) |
+| Checks per rung | 5 expectations (not-null ×2, between ×2, unique ×1) + volume & freshness monitors on the SQL/UC/Iceberg rungs (flat files also support freshness/volume, incl. arrival-time freshness, but weren't run through this particular campaign) |
 | Data shape | 6-col order-lines (`line_id`, `order_id`, `sku_id`, `qty`, `unit_price`, `line_ts`) — same shape as the original baseline campaign |
 
 Data generation (all regenerable in seconds — nothing needs to be archived):

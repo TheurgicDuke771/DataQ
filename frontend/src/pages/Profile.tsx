@@ -111,9 +111,9 @@ export function Profile() {
           title="DQ alerts are configured per suite"
           description={
             <span>
-              Microsoft Teams alerts (webhook + fail / warn / always threshold) are set on each
-              suite, so the right team is notified for the data they own. Open a suite from{' '}
-              <Link to="/suites">Suites</Link> to configure its notifications.
+              Teams, Slack and email alerts (webhook/recipient + fail / warn / always threshold) are
+              set on each suite, so the right team is notified for the data they own. Open a suite
+              from <Link to="/suites">Suites</Link> to configure its notifications.
             </span>
           }
         />
