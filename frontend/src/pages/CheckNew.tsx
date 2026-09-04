@@ -225,8 +225,7 @@ export function CheckNew() {
             >
               <Typography.Text strong>Generate from a description</Typography.Text>
               <Typography.Paragraph type="secondary" style={{ margin: 0, fontSize: 12 }}>
-                Describe the rule in plain language — DataQ writes the SQL, in the same editor
-                below.
+                Describe the rule in plain language — DataQ writes the SQL.
               </Typography.Paragraph>
             </Card>
           )}
