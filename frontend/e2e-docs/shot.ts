@@ -15,9 +15,14 @@ export async function heading(page: Page, name: string | RegExp, level = 3): Pro
   await expect(page.getByRole('heading', { name, level })).toBeVisible();
 }
 
-/** Scroll the antd Card whose title contains `title` to the top of the viewport. */
+/** Scroll the antd Card whose title contains `title` into view. */
 export async function scrollCard(page: Page, title: string): Promise<void> {
-  await page
-    .getByText(title, { exact: true })
-    .evaluate((el) => el.closest('.ant-card')?.scrollIntoView({ block: 'start' }));
+  // The admin page scrolls an inner container, not the window — a raw DOM
+  // `scrollIntoView()` inside `.evaluate()` silently no-ops there (#1864).
+  // Playwright's own `scrollIntoViewIfNeeded()` drives the real scroll container,
+  // but the page's cards load asynchronously and reflow as each arrives, so
+  // scrolling before that settles targets a position that shifts out from under
+  // it — wait for the network to go idle first.
+  await page.waitForLoadState('networkidle');
+  await page.getByText(title, { exact: true }).scrollIntoViewIfNeeded();
 }
