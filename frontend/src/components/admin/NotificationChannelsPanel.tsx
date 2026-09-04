@@ -251,29 +251,9 @@ function ChannelFormModal({
   // beyond this modal's local state, cleared on close.
   const [revealedSecret, setRevealedSecret] = useState<string | null>(null);
 
-  const reset = () => {
-    setName(channel?.name ?? '');
-    setType(channel?.type ?? 'teams');
-    setWebhook('');
-    setClearWebhook(false);
-    setEmailRecipients(channel?.email_recipients ?? '');
-    setWebhookUrl(channel?.webhook_url ?? '');
-    setPayloadTemplate(
-      channel?.payload_template ? JSON.stringify(channel.payload_template, null, 2) : '',
-    );
-    setClearPayloadTemplate(false);
-    setAuthHeaderName(channel?.auth_header_name ?? '');
-    setAuthHeaderValue('');
-    setClearAuthHeaderValue(false);
-    setRegenerateHmac(false);
-    setTemplateError(undefined);
-    setRevealedSecret(null);
-  };
-
-  const close = () => {
-    reset();
-    onClose();
-  };
+  // No reset-on-close: the modal unmounts (a fresh `key` per open in the parent) the instant
+  // `onClose` sets `modal` to null, so any state reset here would never be observed (#1878 review
+  // — this used to be dead code).
 
   const onSubmit = async () => {
     let template: Record<string, unknown> | undefined;
@@ -321,7 +301,7 @@ function ChannelFormModal({
         // ApiKeysPanel's CreateTokenModal show-once pattern).
         setRevealedSecret(saved.hmac_secret);
       } else {
-        close();
+        onClose();
       }
     } catch (err) {
       message.error(`${isEdit ? 'Save' : 'Create'} failed: ${errorMessage(err)}`);
@@ -340,19 +320,19 @@ function ChannelFormModal({
             ? `Edit “${channel?.name}”`
             : 'New channel'
       }
-      onCancel={close}
+      onCancel={onClose}
       // Unmount on close so the revealed plaintext key leaves the DOM entirely,
       // not just hidden — reinforces show-once (same as ApiKeysPanel).
       destroyOnHidden
       mask={{ closable: !revealedSecret }}
       footer={
         revealedSecret ? (
-          <Button type="primary" onClick={close}>
+          <Button type="primary" onClick={onClose}>
             Done
           </Button>
         ) : (
           [
-            <Button key="cancel" onClick={close}>
+            <Button key="cancel" onClick={onClose}>
               Cancel
             </Button>,
             <Button
@@ -400,7 +380,19 @@ function ChannelFormModal({
             ) : (
               <Select<ChannelType>
                 value={type}
-                onChange={setType}
+                onChange={(next) => {
+                  // A create-only field belongs to exactly one type — switching types with a
+                  // filled-in field from the PREVIOUS type left in place sends a payload the
+                  // backend's `_validate_destination` rejects (422, #1878 review): both `webhook`
+                  // and `webhook_url` set at once looks like nothing the user actually did.
+                  setType(next);
+                  setWebhook('');
+                  setWebhookUrl('');
+                  setEmailRecipients('');
+                  setAuthHeaderName('');
+                  setAuthHeaderValue('');
+                  setPayloadTemplate('');
+                }}
                 aria-label="Channel type"
                 options={CHANNEL_TYPES.map((t) => ({ value: t, label: CHANNEL_TYPE_LABELS[t] }))}
               />
@@ -488,7 +480,14 @@ function ChannelFormModal({
                   )}
                 </Flex>
               </Form.Item>
-              <Form.Item label="Extra auth header name (optional)">
+              <Form.Item
+                label="Extra auth header name (optional)"
+                extra={
+                  isEdit && channel.has_auth_header
+                    ? 'Blanking this also deletes the stored header value below — the two are one credential slot, not independent fields.'
+                    : undefined
+                }
+              >
                 <Input
                   value={authHeaderName}
                   onChange={(e) => setAuthHeaderName(e.target.value)}
@@ -496,7 +495,26 @@ function ChannelFormModal({
                   aria-label="Auth header name"
                 />
               </Form.Item>
-              <Form.Item label="Extra auth header value">
+              <Form.Item
+                label="Extra auth header value"
+                extra={
+                  // The backend's credential-redirect guard (#1401 class) refuses a webhook_url
+                  // change on a channel with a stored auth header unless the value is re-supplied
+                  // in the SAME edit — "leave blank to keep" is only true when the URL is
+                  // unchanged (#1878 review).
+                  isEdit &&
+                  channel.has_auth_header &&
+                  webhookUrl !== (channel.webhook_url ?? '') &&
+                  !authHeaderValue.trim() &&
+                  !clearAuthHeaderValue ? (
+                    <Typography.Text type="warning" style={{ fontSize: 12 }}>
+                      The webhook URL changed — re-enter the stored header value here too, or the
+                      save will be refused (a credential can't silently follow a destination
+                      change).
+                    </Typography.Text>
+                  ) : undefined
+                }
+              >
                 <Flex vertical gap={4}>
                   <Input.Password
                     value={authHeaderValue}

@@ -122,6 +122,35 @@ describe('NotificationChannelsPanel', () => {
     expect(screen.getByLabelText('Channel name')).toHaveValue('');
   });
 
+  it("switching Type clears the previous type's field so the payload never mixes both (#1878 review)", async () => {
+    mockList.mockResolvedValue([]);
+    mockCreate.mockResolvedValue(WEBHOOK_CHANNEL);
+    const user = userEvent.setup();
+    renderPanel();
+    await screen.findByText('No channels yet.');
+
+    await user.click(screen.getByRole('button', { name: /New channel/ }));
+    await user.type(screen.getByLabelText('Channel name'), 'pagerduty');
+    // Fill the Teams field (default type), THEN switch to a generic webhook.
+    await user.type(screen.getByLabelText('Webhook URL'), 'https://teams.example/hook');
+    await selectOption(user, 'Generic webhook', { by: 'text' });
+    await user.type(
+      screen.getByLabelText('Webhook destination URL'),
+      'https://events.example/hook',
+    );
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    // Only the fields belonging to the FINAL type reach the payload — no stale `webhook`
+    // left over from Teams, which the backend would 422 on for a webhook-type channel.
+    await waitFor(() =>
+      expect(mockCreate).toHaveBeenCalledWith({
+        name: 'pagerduty',
+        type: 'webhook',
+        webhook_url: 'https://events.example/hook',
+      }),
+    );
+  });
+
   it('creates a Teams channel with no secret reveal (non-webhook types mint no HMAC key)', async () => {
     mockList.mockResolvedValue([]);
     mockCreate.mockResolvedValue(TEAMS_CHANNEL);
