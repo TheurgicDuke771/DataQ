@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "4161e893b7ca",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1848-llm-wording-honesty",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/components/assets/IncidentNarrativeSection.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/41/61e893b7ca/0/metadata.json",
+      "transcript": "/41/61e893b7ca/0/full.jsonl",
+      "compact_transcript": "/41/61e893b7ca/0/transcript.jsonl",
+      "content_hash": "/41/61e893b7ca/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 31351,
+    "cache_creation_tokens": 1280340,
+    "cache_read_tokens": 150053373,
+    "output_tokens": 249923,
+    "api_call_count": 385
+  }
+}
