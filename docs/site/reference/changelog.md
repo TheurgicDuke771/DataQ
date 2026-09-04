@@ -53,7 +53,8 @@ the per-PR history lives in the repo's commit log and pull requests.
   the product is unchanged. Changing the provider or endpoint URL requires re-supplying the
   credential, so a stored key can never be redirected to a new destination.
 
-- **MCP `get_doc` — the published docs, reachable from a conversation (48 tools total).**
+- **MCP `get_doc` — the published docs, reachable from a conversation (48 tools total at the
+  time — since risen to 50; see below).**
   A curated set of user-facing pages (best practices, the feature matrix, security, getting
   started, MCP setup, and the five compliance runbooks/templates) is now readable through the
   MCP surface, verbatim and unsummarized — so "what are DataQ's best practices for authoring a
@@ -91,6 +92,18 @@ the per-PR history lives in the repo's commit log and pull requests.
   as a literal in the JSON, the template itself is only ever shown to a workspace admin — every
   other user sees just whether one is set. Changing a channel's destination URL while it has a
   stored auth header now requires re-supplying that header's value in the same request.
+
+- **MCP read tools for reusable notification channels (50 tools total).**
+  `list_notification_channels` lists every channel in the workspace, and
+  `list_suite_channels` lists the ones linked to one suite — the read surface
+  `get_notification_config`'s `*_source: "channel"` and `*_channel_linked`
+  fields could name but never identify. Same presence-not-value discipline as
+  every other credential-bearing MCP field: a webhook/HMAC/auth-header value is
+  never returned, only whether one is set, and a channel's `payload_template`
+  is withheld from every caller including a workspace admin (stricter than the
+  REST read, since it can carry a receiver's routing key as a plain JSON
+  literal). Channel *mutation* (create/update/delete/link/unlink) stays
+  REST-only for now.
 
 - **Alerts now credit the asset owner, not just the suite creator.** When a table has an
   assigned owner, the "Owner" shown on a run alert (Teams card, Slack message, email) is that

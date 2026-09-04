@@ -47,6 +47,7 @@ from backend.app.db.models import (
     Asset,
     Check,
     Connection,
+    NotificationChannel,
     Run,
     Suite,
     User,
@@ -1431,6 +1432,124 @@ def list_trigger_bindings(
         ]
 
 
+def _channel_summary(channel: NotificationChannel) -> dict[str, Any]:
+    """The presence-not-value shape shared by both channel tools — mirrors
+    `ChannelRead` (REST) minus the two admin-only exceptions: `webhook_url` is a
+    destination, not a credential, so it is safe to echo (`ChannelRead` does the
+    same); `payload_template` is the opposite case and is deliberately dropped
+    to `has_payload_template` for EVERY MCP caller, including a workspace admin
+    — unlike the REST route, which shows it to an admin. That is a stricter
+    choice than REST makes: a payload template commonly carries a receiver's
+    static routing/integration key as a literal JSON value (#1663), which
+    functions as a credential even though its storage column doesn't, and MCP
+    has no narrower "admin, but not into an LLM context" tier to gate it with.
+    """
+    return {
+        "id": str(channel.id),
+        "name": channel.name,
+        "type": channel.type,
+        # Teams/Slack only — the incoming-webhook URL, stored as a SecretStore
+        # ref. A "webhook"-type (generic HMAC) channel never sets this; its
+        # destination is `webhook_url` below and its signing key is
+        # `has_hmac_secret`. Never conflate the two — see the docstrings.
+        "has_webhook": channel.webhook_secret_ref is not None,
+        "email_recipients": channel.email_recipients,
+        # Generic-webhook destination only. This IS the URL, not a credential —
+        # the HMAC signature (`has_hmac_secret`) is what secures delivery, same
+        # rationale `ChannelRead` documents for the REST read.
+        "webhook_url": channel.webhook_url,
+        "has_hmac_secret": channel.hmac_secret_ref is not None,
+        # Never the template itself, for any caller — see `_channel_summary`'s
+        # own docstring above for why this MCP surface is stricter than REST.
+        "has_payload_template": channel.payload_template is not None,
+        "auth_header_name": channel.auth_header_name,
+        "has_auth_header": channel.auth_header_secret_ref is not None,
+    }
+
+
+@mcp.tool
+def list_notification_channels() -> list[dict[str, Any]]:
+    """List every reusable notification channel defined in the workspace.
+
+    Use this for 'what channels exist?', 'is there a PagerDuty channel set up?',
+    or to find the id `list_suite_channels`/`get_notification_config` names as
+    a suite's ``"channel"`` alert source. A channel (#1514) is a destination —
+    Teams, Slack, email, or a generic HMAC-signed webhook — defined once and
+    linked to any number of suites; it carries no routing policy of its own
+    (severity, enabled, snooze all live per-suite, see ``get_notification_config``).
+    Returns every channel in the workspace, not just ones a suite is currently
+    using — workspace-wide, like ``list_connections``, not suite-scoped.
+
+    Returns, per channel: its id, name, ``type`` (``teams`` / ``slack`` /
+    ``email`` / ``webhook``), ``email_recipients`` (comma-separated, for an
+    ``email`` channel), ``webhook_url`` (the generic-webhook destination, for a
+    ``webhook`` channel), and presence-only booleans for every credential the
+    channel may hold: ``has_webhook`` (a Teams/Slack incoming-webhook URL),
+    ``has_hmac_secret`` (a generic webhook's signing key), and ``has_auth_header``
+    (an optional extra header value some receivers need). ``auth_header_name``
+    (the header's NAME, not its value) is returned when set.
+
+    **No credential value is ever returned, from any caller, including a
+    workspace admin.** A webhook URL and an HMAC signing key are bearer
+    credentials — this tool reports only whether one is stored, the same
+    presence-not-value discipline ``get_notification_config`` and
+    ``list_connections`` already use for connection secrets. ``webhook_url`` is
+    the one exception, and only for a generic ``webhook`` channel: it is the
+    destination being posted TO, not the credential securing delivery (the HMAC
+    signature is), so it is safe to echo. A channel's ``payload_template`` (a
+    receiver-specific reshaping of the generic payload) is deliberately never
+    included here at all — not even to an admin, unlike the REST API — because
+    it commonly carries a receiver's routing/integration key as a literal JSON
+    value; only ``has_payload_template`` is reported.
+
+    **A channel existing here does not mean it is delivering anything.** A
+    channel with no suite linked to it (see ``list_suite_channels``) never
+    fires. An ``email`` channel supplying recipients still needs the workspace
+    SMTP transport configured, exactly like the workspace default recipients —
+    see ``get_notification_config``'s ``has_email_recipients`` gate for that
+    check; this tool cannot tell you whether SMTP is wired up.
+    """
+    with _ctx() as (session, _user), _service_errors():
+        # Workspace resource, not suite-scoped: every authenticated caller may
+        # list channels, exactly as the REST route does (`notification_channels
+        # .list_channels` carries no suite-authz check) — mutations are
+        # Admin-gated, but there are none of those here, and MCP exposes no
+        # channel-mutation tool at all yet (issue #1775 scope: read-only).
+        return [_channel_summary(c) for c in channel_service.list_channels(session)]
+
+
+@mcp.tool
+def list_suite_channels(suite_id: str) -> list[dict[str, Any]]:
+    """List the reusable notification channels linked to one suite.
+
+    Use this to answer what ``get_notification_config``'s ``*_channel_linked``
+    fields and ``*_source: "channel"`` can only gesture at: WHICH channel is
+    delivering, and what type it is. ``get_notification_config`` reports that a
+    linked channel exists for a suite; this tool is how you identify it — for
+    'who gets told when orders fails?', follow up a ``"channel"`` source or a
+    ``*_channel_linked: true`` here to see the actual channel(s).
+
+    Returns the same shape as ``list_notification_channels`` (id, name, type,
+    and presence-only credential booleans — no credential value, ever, from any
+    caller), scoped to channels linked to this suite. An empty list means no
+    channel is linked — the suite's alerts, if any, come solely from its own
+    override or the workspace default (see ``get_notification_config``), not
+    from a reusable channel.
+
+    **Delivery is additive, not either/or (see ``get_notification_config``):**
+    every channel returned here delivers ALONGSIDE the suite/workspace
+    destination of the same type, not instead of it. And a linked ``email``
+    channel still needs the workspace SMTP transport configured to actually
+    send — this tool reports the link, not whether mail delivery is wired up.
+
+    Requires view access to the suite.
+    """
+    sid = _parse_uuid(suite_id, field="suite_id")
+    with _ctx() as (session, user), _service_errors():
+        require_permission(session, sid, user.id, minimum="view")
+        return [_channel_summary(c) for c in channel_service.list_channels_for_suite(session, sid)]
+
+
 @mcp.tool
 def get_notification_config(suite_id: str) -> dict[str, Any]:
     """Get a suite's alert notification settings.
@@ -1456,8 +1575,9 @@ def get_notification_config(suite_id: str) -> dict[str, Any]:
     destination with every linked channel of the same type, so
     ``*_channel_linked`` is reported **independently** of ``*_source`` — when
     it's ``true`` alongside a ``*_source`` of ``"suite"`` or ``"workspace"``,
-    alerts go to **both** destinations, not one. No MCP tool currently lists or
-    identifies which channel that is; this tool can only report that one exists.
+    alerts go to **both** destinations, not one. This tool can only report that
+    a linked channel exists, not identify it — call ``list_suite_channels`` for
+    WHICH channel(s) and their type.
 
     Webhook **URLs are never returned** — only whether one is set. A webhook URL
     is a bearer credential: anyone holding it can post into that channel, so it
