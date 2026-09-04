@@ -1044,6 +1044,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#snowflake-dmf-adr-0036" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Snowflake DMF (ADR 0036)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#freshness-monitor-all-datasources-adr-00120030" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2592,6 +2603,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#snowflake-dmf-adr-0036" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Snowflake DMF (ADR 0036)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#freshness-monitor-all-datasources-adr-00120030" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2903,15 +2925,24 @@ column — the symptom is a <strong>column dropdown offering a single long name<
 <code>id;email;amount</code>. Convert the file to one of the four separators, or to Parquet.</p>
 <h3 id="very-large-targets-sampling-and-the-scan-cap">Very large targets: sampling and the scan cap<a class="headerlink" href="#very-large-targets-sampling-and-the-scan-cap" title="Permanent link">¶</a></h3>
 <p>Snowflake and Iceberg monitors answer from the warehouse or from file metadata, so
-size is not a worker concern there. <strong>Flat files and Unity Catalog are different</strong>:
-their expectations run against a DataFrame the worker holds, so a big enough target
-runs the worker out of memory. Two things guard that.</p>
-<p><strong>A hard cap, on by default.</strong> Before a run materializes anything it checks the
-object's size (flat files) or the table's <code>COUNT(*)</code> (Unity Catalog). Over the cap
-the run ends <strong>failed</strong> with a message naming the target, the two numbers, and what
-to do — never a half-finished run or a silent hang. Defaults are 128 MiB and 1.5M
-rows, tuned for the reference 2 GiB worker; an operator can change them
-(<code>RUN_MAX_SCAN_BYTES</code> / <code>RUN_MAX_SCAN_ROWS</code> — see <code>deploy/README.md</code>).</p>
+size is not a worker concern there. <strong>Unity Catalog is different for the checks that
+still need a DataFrame</strong>: the common expectation types (not-null, unique, between,
+in-set, length, regex, row-count and more) push down to a Databricks-SQL batch by
+default, so the warehouse evaluates them and the worker never materializes the
+table — the same "cost scales with the warehouse" shape as Snowflake. A handful of
+types (<code>expect_column_values_to_be_of_type</code>, suites with a declared sample) still
+run against a DataFrame the worker holds, and <strong>flat files always do</strong>, so a big
+enough target on either of those paths runs the worker out of memory. Two things
+guard that.</p>
+<p><strong>A hard cap, on by default, on the DataFrame path.</strong> Before a run materializes
+anything it checks the object's size (flat files) or the table's <code>COUNT(*)</code> (Unity
+Catalog, when the run isn't pushed down). Over the cap the run ends <strong>failed</strong> with
+a message naming the target, the two numbers, and what to do — never a
+half-finished run or a silent hang. Defaults are 128 MiB and 1.5M rows, tuned for
+the reference 2 GiB worker; an operator can change them (<code>RUN_MAX_SCAN_BYTES</code> /
+<code>RUN_MAX_SCAN_ROWS</code> — see <code>deploy/README.md</code>). A pushed-down Unity Catalog check is
+not subject to this cap — it has been run against 200M-row tables with flat worker
+memory.</p>
 <p><strong>Sampling, opt-in per suite.</strong> Add a <code>sampling</code> block to the suite's target and
 checks run against a bounded sample instead of the whole dataset:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span><span class="w"> </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"landing/orders.csv"</span><span class="p">,</span>
@@ -3021,6 +3052,13 @@ a two-part name would silently resolve against the session's default schema — 
 its custom-SQL checks (with that reason on the result) while every other check in
 the suite runs normally. Set the schema on the suite's run target to fix it.
 Snowflake is unaffected — its schema comes from the connection.</p>
+<h3 id="snowflake-dmf-adr-0036">Snowflake DMF (ADR 0036)<a class="headerlink" href="#snowflake-dmf-adr-0036" title="Permanent link">¶</a></h3>
+<p>On a Snowflake connection, the check editor offers a separate <strong>Snowflake DMF</strong>
+category for four types — null count, null percent, duplicate count, unique count —
+that run on Snowflake's own <code>SNOWFLAKE.CORE.*</code> <strong>Data Metric Functions</strong> instead of a
+GX expectation. Same authoring flow (pick the type, set the column); the difference
+is the <code>engine</code> the check runs on (<code>dmf</code> vs the default <code>gx</code>). Not offered on other
+datasources.</p>
 <h3 id="freshness-monitor-all-datasources-adr-00120030">Freshness monitor (all datasources — ADR 0012/0030)<a class="headerlink" href="#freshness-monitor-all-datasources-adr-00120030" title="Permanent link">¶</a></h3>
 <p><em>How stale is the target?</em> Point it at the load/updated <strong>timestamp column</strong>; the check
 measures hours since <code>MAX(column)</code> and bands that age with the thresholds. A <strong>fail or

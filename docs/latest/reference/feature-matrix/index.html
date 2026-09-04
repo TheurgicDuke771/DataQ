@@ -2500,6 +2500,14 @@
 <td style="text-align: center;">✅</td>
 </tr>
 <tr>
+<td>Snowflake DMF (native metric functions)ᵈ</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+</tr>
+<tr>
 <td>Custom SQL (rows returned = failures)ᶜ</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
@@ -2609,6 +2617,11 @@ Unity Catalog table, including the operational-<code>error</code> path when a co
 resolve. Custom SQL stays binary pass/fail on both SQL datasources (ADR 0019 §4 — a
 row count is not a bandable metric), so <code>metric_value</code> is null by design, not by
 omission.</p>
+<p>ᵈ <strong>Snowflake DMF</strong> (ADR <a href="../../adr/0036-connection-anchored-check-engines/">0036</a>) is the
+first platform-native check engine — an alternative <code>check.engine</code> for four expectation
+types (null count, null percent, duplicate count, unique count) that invokes Snowflake's
+own <code>SNOWFLAKE.CORE.*</code> metric functions instead of a GX expectation. Engine is selected per
+check, on a Snowflake connection only; <code>kind</code> stays <code>expectation</code> either way.</p>
 <p>ˢ <strong>S3 means AWS S3 <em>and</em> any S3-compatible store</strong> — MinIO, Ceph/RadosGW, Cloudflare R2,
 Wasabi, Backblaze B2, SeaweedFS or an on-prem gateway. Set the connection's optional
 endpoint URL; every row in this column applies identically either way. See
@@ -2820,7 +2833,7 @@ catalog knowing about them (mechanism ④).</p>
 <tbody>
 <tr>
 <td>Channels</td>
-<td>Teams (workspace + per-suite webhook), Slack, email — <a href="../../guides/notifications/">details</a></td>
+<td>Teams, Slack, email — each workspace default or per-suite override; reusable channels (incl. a generic webhook type) also exist, API-only currently — <a href="../../guides/notifications/">details</a></td>
 </tr>
 <tr>
 <td>Threshold</td>

@@ -2439,13 +2439,13 @@ behaviour. Alerts fire from the worker as soon as a run reaches a terminal state
 </tr>
 <tr>
 <td>Slack</td>
-<td>Workspace</td>
-<td>Incoming-webhook URL (secret store)</td>
+<td>Workspace default <strong>or per-suite override</strong></td>
+<td>Incoming-webhook URL; same per-suite panel as Teams</td>
 </tr>
 <tr>
 <td>Email (SMTP)</td>
-<td>Workspace</td>
-<td>SMTP host/port + from/to + password secret</td>
+<td>Workspace default <strong>or per-suite override</strong></td>
+<td>SMTP host/port + from/password at the workspace level; a suite may override the <strong>recipient</strong> list</td>
 </tr>
 </tbody>
 </table>
@@ -2455,8 +2455,11 @@ behaviour. Alerts fire from the worker as soon as a run reaches a terminal state
 A channel with no configuration is simply skipped; configuring none disables alerting.
 Webhook URLs are validated against a <strong>per-channel</strong> host allow-list (Teams:
 <code>webhook.office.com</code> / <code>logic.azure.com</code>; Slack: <code>hooks.slack.com</code>) so a typo can't
-exfiltrate alerts to an arbitrary endpoint. Only Teams has a per-suite override; Slack
-and email are workspace-wide.</p>
+exfiltrate alerts to an arbitrary endpoint. Teams, Slack and email all support a
+per-suite override; a suite that sets none falls back to its workspace default.</p>
+<p>A separate, reusable <strong>notification channel</strong> model also exists (create once, attach to
+any suite) covering Teams/Slack/email plus a generic webhook type — currently API-only,
+with no dedicated UI yet.</p>
 <h2 id="per-suite-configuration">Per-suite configuration<a class="headerlink" href="#per-suite-configuration" title="Permanent link">¶</a></h2>
 <p>Open a suite → <strong>Notifications</strong> panel:</p>
 <ul>
@@ -2465,6 +2468,9 @@ and email are workspace-wide.</p>
   (every run)</code>.</li>
 <li><strong>Teams webhook</strong> — optional per-suite override of the workspace webhook. Write-only:
   the tag shows <em>set / not set</em>, the URL is never displayed again.</li>
+<li><strong>Slack webhook</strong> — optional per-suite override of the workspace webhook, same write-only
+  behaviour as Teams.</li>
+<li><strong>Email recipients</strong> — optional per-suite override of the workspace <code>EMAIL_TO</code> list.</li>
 </ul>
 <h2 id="severity-aware-routing">Severity-aware routing<a class="headerlink" href="#severity-aware-routing" title="Permanent link">¶</a></h2>
 <p>The run's <strong>worst severity</strong> decides how loudly the alert lands: <code>warn</code> renders quiet,

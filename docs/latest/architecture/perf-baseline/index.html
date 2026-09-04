@@ -2750,7 +2750,8 @@ it fails</em> when it does.</p>
 <li><strong>Past the ceiling, today's failure is silent</strong> — the OOM-killed run sits in
    <code>running</code> for up to 60 minutes until the stuck-run reaper fails it,
    with no memory-attributed reason. A size-probe + hard-cap ("refuse with
-   <code>error</code>, don't OOM"), described below, is the fix.</li>
+   <code>error</code>, don't OOM"), described in the v1.1 section below, has since shipped
+   and is enforced on every flat-file and unaudited-UC read.</li>
 </ol>
 <h2 id="environment-method">Environment &amp; method<a class="headerlink" href="#environment-method" title="Permanent link">¶</a></h2>
 <table>
@@ -2779,7 +2780,7 @@ it fails</em> when it does.</p>
 </tr>
 <tr>
 <td>Checks per rung</td>
-<td>5 expectations (not-null ×2, between ×2, unique ×1) + volume &amp; freshness monitors where the type supports them (SQL/UC/Iceberg — flat files reject monitor kinds by design)</td>
+<td>5 expectations (not-null ×2, between ×2, unique ×1) + volume &amp; freshness monitors on the SQL/UC/Iceberg rungs (flat files also support freshness/volume, incl. arrival-time freshness, but weren't run through this particular campaign)</td>
 </tr>
 <tr>
 <td>Data shape</td>

@@ -184,6 +184,20 @@ URL); linking/unlinking a suite follows that suite's own `view`/`edit` grant.
 | GET | `/orchestration/near-misses` | Succeeded pipeline runs that matched **no** enabled binding (why a trigger never fired). |
 | POST | `/orchestration/events/{provider}` | Inbound webhook (adf / airflow / dbt) — authenticated by shared-secret / HMAC, not a PAT. |
 
+### LLM-assisted authoring (ADR 0042)
+
+Each POST queues an async invocation (`202`, `LlmInvocationQueued`) run by the worker
+against the configured `LLMProvider`; poll `GET /llm/invocations/{id}` for the result.
+Rate-limited under a dedicated `llm` class (per-principal and per-IP), since each call is
+an outbound model request.
+
+| Method | Path | What |
+|---|---|---|
+| POST | `/llm/sql_generation` | Draft a custom-SQL check from a natural-language rule (suite edit). |
+| POST | `/llm/check_suggestions` | Suggest checks for a suite from its column profile (suite edit). |
+| POST | `/llm/rca_narrative` | Root-cause narrative for a failed check, from an incident's evidence card. |
+| GET | `/llm/invocations/{id}` | Poll one invocation — requester or workspace admin only. |
+
 ### Admin (workspace-admin only)
 
 | Method | Path | What |

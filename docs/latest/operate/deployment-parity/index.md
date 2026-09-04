@@ -35,7 +35,7 @@ is the **same code everywhere**. Where the installations genuinely differ:
 | Assets / lineage / incidents / DQ scorecard | live-verified (Snowflake full-tier lineage, UC dbt lineage, inventory sync) | deployed — same code; warehouse-lineage sweep enabled but not yet exercised against that account's grants | ✅ (Marquez reference consumer via `--profile lineage`) |
 | Alerting — Teams / Slack | live-verified | deployed, unexercised | pointable anywhere |
 | Alerting — email | configured | live-verified (SES) | Mailpit |
-| MCP (47 tools) | E2E-verified | E2E-verified (PAT) | works; PAT-only under OTP (no IdP ⇒ no bearer) |
+| MCP (48 tools) | E2E-verified | E2E-verified (PAT) | works; PAT-only under OTP (no IdP ⇒ no bearer) |
 | Rate limiting | on (`RATE_LIMIT_XFF_TRUSTED_HOPS=3`, verified against a live XFF) | on (same setting; verified through CloudFront — a spoofed `X-Forwarded-For` cannot escape the bucket, since hops=3 selects the edge-appended viewer IP) | off by design |
 | Browser security headers (CSP/HSTS/nosniff/frame-ancestors) | on — `connect-src` narrowed to the Azure AD origin | on — `connect-src` narrowed to both Cognito origins (issuer + hosted UI) | on, permissive `connect-src` default |
 | Edge rate limiting (WAF) | **none** — no Front Door/WAF in front of the Container App; the in-app limiter is the only layer | on — CloudFront WAF per-IP ceiling **in front of** the in-app limiter | n/a |

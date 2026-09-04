@@ -2581,7 +2581,10 @@ anomaly / comparison</strong> monitor kinds:</p>
 </li>
 <li>
 <p><strong>GX expectations</strong> — column- and table-shape rules (not-null, unique, in-set, row
-  count, value ranges, …) from the GX catalog, with a form editor.</p>
+  count, value ranges, …) from the GX catalog, with a form editor. On a Snowflake
+  connection, four of these (null count/percent, duplicate count, unique count) can
+  instead run on Snowflake's own <strong>Data Metric Functions (DMF)</strong> engine — a separate
+  category in the check editor, selected per check.</p>
 </li>
 <li><strong>Custom SQL</strong> — an escape hatch for cross-column/join rules: rows returned = failures.
   Read-only, single-statement (enforced). SQL datasources only.</li>

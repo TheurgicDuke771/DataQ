@@ -143,7 +143,7 @@ are the reason this mode is opt-in rather than the default:
   data-access audit trail as a prerequisite before granting it in a regulated deployment.
   `WORKSPACE_ADMIN_EMAILS` still resolves to Admin as a **bootstrap / break-glass** path for a
   fresh or locked-out workspace — keep that allowlist minimal, and prefer in-app role
-  management (**Admin → Users**) once at least one Admin exists. It only ever *grants*:
+  management (**Admin → Members**) once at least one Admin exists. It only ever *grants*:
   removing an address never demotes anyone, so demotion has exactly one route, where the
   guard runs.
 - **An env-level actor can always mint an Admin.** This is the deliberate cost of keeping a

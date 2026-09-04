@@ -663,6 +663,15 @@
 </a>
 </li>
 <li class="md-nav__item">
+<a class="md-nav__link" href="#llm-assisted-authoring-adr-0042">
+<span class="md-ellipsis">
+      
+        LLM-assisted authoring (ADR 0042)
+      
+    </span>
+</a>
+</li>
+<li class="md-nav__item">
 <a class="md-nav__link" href="#admin-workspace-admin-only">
 <span class="md-ellipsis">
       
@@ -1160,6 +1169,15 @@
 </a>
 </li>
 <li class="md-nav__item">
+<a class="md-nav__link" href="#llm-assisted-authoring-adr-0042">
+<span class="md-ellipsis">
+      
+        LLM-assisted authoring (ADR 0042)
+      
+    </span>
+</a>
+</li>
+<li class="md-nav__item">
 <a class="md-nav__link" href="#admin-workspace-admin-only">
 <span class="md-ellipsis">
       
@@ -1637,6 +1655,42 @@ URL); linking/unlinking a suite follows that suite's own <code>view</code>/<code
 <td>POST</td>
 <td><code>/orchestration/events/{provider}</code></td>
 <td>Inbound webhook (adf / airflow / dbt) — authenticated by shared-secret / HMAC, not a PAT.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="llm-assisted-authoring-adr-0042">LLM-assisted authoring (ADR 0042)<a class="headerlink" href="#llm-assisted-authoring-adr-0042" title="Permanent link">¶</a></h3>
+<p>Each POST queues an async invocation (<code>202</code>, <code>LlmInvocationQueued</code>) run by the worker
+against the configured <code>LLMProvider</code>; poll <code>GET /llm/invocations/{id}</code> for the result.
+Rate-limited under a dedicated <code>llm</code> class (per-principal and per-IP), since each call is
+an outbound model request.</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>What</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>POST</td>
+<td><code>/llm/sql_generation</code></td>
+<td>Draft a custom-SQL check from a natural-language rule (suite edit).</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/llm/check_suggestions</code></td>
+<td>Suggest checks for a suite from its column profile (suite edit).</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/llm/rca_narrative</code></td>
+<td>Root-cause narrative for a failed check, from an incident's evidence card.</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/llm/invocations/{id}</code></td>
+<td>Poll one invocation — requester or workspace admin only.</td>
 </tr>
 </tbody>
 </table>

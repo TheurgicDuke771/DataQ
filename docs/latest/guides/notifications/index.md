@@ -9,8 +9,8 @@ behaviour. Alerts fire from the worker as soon as a run reaches a terminal state
 | Channel | Configured by | How |
 |---|---|---|
 | Microsoft Teams | Workspace default **or per-suite override** | Incoming-webhook URL; the per-suite URL is set on the suite's **Notifications** panel (write-only — stored in the secret store, never echoed back) |
-| Slack | Workspace | Incoming-webhook URL (secret store) |
-| Email (SMTP) | Workspace | SMTP host/port + from/to + password secret |
+| Slack | Workspace default **or per-suite override** | Incoming-webhook URL; same per-suite panel as Teams |
+| Email (SMTP) | Workspace default **or per-suite override** | SMTP host/port + from/password at the workspace level; a suite may override the **recipient** list |
 
 Workspace-level channels are enabled by environment configuration
 (`TEAMS_WEBHOOK_SECRET_NAME`, `SLACK_WEBHOOK_SECRET_NAME`, `EMAIL_*` — see the
@@ -18,8 +18,12 @@ Workspace-level channels are enabled by environment configuration
 A channel with no configuration is simply skipped; configuring none disables alerting.
 Webhook URLs are validated against a **per-channel** host allow-list (Teams:
 `webhook.office.com` / `logic.azure.com`; Slack: `hooks.slack.com`) so a typo can't
-exfiltrate alerts to an arbitrary endpoint. Only Teams has a per-suite override; Slack
-and email are workspace-wide.
+exfiltrate alerts to an arbitrary endpoint. Teams, Slack and email all support a
+per-suite override; a suite that sets none falls back to its workspace default.
+
+A separate, reusable **notification channel** model also exists (create once, attach to
+any suite) covering Teams/Slack/email plus a generic webhook type — currently API-only,
+with no dedicated UI yet.
 
 ## Per-suite configuration
 
@@ -30,6 +34,9 @@ Open a suite → **Notifications** panel:
   (every run)`.
 - **Teams webhook** — optional per-suite override of the workspace webhook. Write-only:
   the tag shows *set / not set*, the URL is never displayed again.
+- **Slack webhook** — optional per-suite override of the workspace webhook, same write-only
+  behaviour as Teams.
+- **Email recipients** — optional per-suite override of the workspace `EMAIL_TO` list.
 
 ## Severity-aware routing
 

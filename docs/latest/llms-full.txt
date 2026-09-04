@@ -1457,16 +1457,25 @@ column — the symptom is a **column dropdown offering a single long name** like
 ### Very large targets: sampling and the scan cap
 
 Snowflake and Iceberg monitors answer from the warehouse or from file metadata, so
-size is not a worker concern there. **Flat files and Unity Catalog are different**:
-their expectations run against a DataFrame the worker holds, so a big enough target
-runs the worker out of memory. Two things guard that.
+size is not a worker concern there. **Unity Catalog is different for the checks that
+still need a DataFrame**: the common expectation types (not-null, unique, between,
+in-set, length, regex, row-count and more) push down to a Databricks-SQL batch by
+default, so the warehouse evaluates them and the worker never materializes the
+table — the same "cost scales with the warehouse" shape as Snowflake. A handful of
+types (`expect_column_values_to_be_of_type`, suites with a declared sample) still
+run against a DataFrame the worker holds, and **flat files always do**, so a big
+enough target on either of those paths runs the worker out of memory. Two things
+guard that.
 
-**A hard cap, on by default.** Before a run materializes anything it checks the
-object's size (flat files) or the table's `COUNT(*)` (Unity Catalog). Over the cap
-the run ends **failed** with a message naming the target, the two numbers, and what
-to do — never a half-finished run or a silent hang. Defaults are 128 MiB and 1.5M
-rows, tuned for the reference 2 GiB worker; an operator can change them
-(`RUN_MAX_SCAN_BYTES` / `RUN_MAX_SCAN_ROWS` — see `deploy/README.md`).
+**A hard cap, on by default, on the DataFrame path.** Before a run materializes
+anything it checks the object's size (flat files) or the table's `COUNT(*)` (Unity
+Catalog, when the run isn't pushed down). Over the cap the run ends **failed** with
+a message naming the target, the two numbers, and what to do — never a
+half-finished run or a silent hang. Defaults are 128 MiB and 1.5M rows, tuned for
+the reference 2 GiB worker; an operator can change them (`RUN_MAX_SCAN_BYTES` /
+`RUN_MAX_SCAN_ROWS` — see `deploy/README.md`). A pushed-down Unity Catalog check is
+not subject to this cap — it has been run against 200M-row tables with flat worker
+memory.
 
 **Sampling, opt-in per suite.** Add a `sampling` block to the suite's target and
 checks run against a bounded sample instead of the whole dataset:
@@ -1596,6 +1605,15 @@ a two-part name would silently resolve against the session's default schema — 
 its custom-SQL checks (with that reason on the result) while every other check in
 the suite runs normally. Set the schema on the suite's run target to fix it.
 Snowflake is unaffected — its schema comes from the connection.
+
+### Snowflake DMF (ADR 0036)
+
+On a Snowflake connection, the check editor offers a separate **Snowflake DMF**
+category for four types — null count, null percent, duplicate count, unique count —
+that run on Snowflake's own `SNOWFLAKE.CORE.*` **Data Metric Functions** instead of a
+GX expectation. Same authoring flow (pick the type, set the column); the difference
+is the `engine` the check runs on (`dmf` vs the default `gx`). Not offered on other
+datasources.
 
 ### Freshness monitor (all datasources — ADR 0012/0030)
 
@@ -1801,7 +1819,10 @@ anomaly / comparison** monitor kinds:
   **scorecard** below. See [Datasources & checks](datasources-checks.md#dq-dimension-adr-0038).
 
 - **GX expectations** — column- and table-shape rules (not-null, unique, in-set, row
-  count, value ranges, …) from the GX catalog, with a form editor.
+  count, value ranges, …) from the GX catalog, with a form editor. On a Snowflake
+  connection, four of these (null count/percent, duplicate count, unique count) can
+  instead run on Snowflake's own **Data Metric Functions (DMF)** engine — a separate
+  category in the check editor, selected per check.
 - **Custom SQL** — an escape hatch for cross-column/join rules: rows returned = failures.
   Read-only, single-statement (enforced). SQL datasources only.
 - **Freshness monitor** — hours since the latest timestamp (is the data stale?). On a
@@ -2152,8 +2173,8 @@ behaviour. Alerts fire from the worker as soon as a run reaches a terminal state
 | Channel | Configured by | How |
 |---|---|---|
 | Microsoft Teams | Workspace default **or per-suite override** | Incoming-webhook URL; the per-suite URL is set on the suite's **Notifications** panel (write-only — stored in the secret store, never echoed back) |
-| Slack | Workspace | Incoming-webhook URL (secret store) |
-| Email (SMTP) | Workspace | SMTP host/port + from/to + password secret |
+| Slack | Workspace default **or per-suite override** | Incoming-webhook URL; same per-suite panel as Teams |
+| Email (SMTP) | Workspace default **or per-suite override** | SMTP host/port + from/password at the workspace level; a suite may override the **recipient** list |
 
 Workspace-level channels are enabled by environment configuration
 (`TEAMS_WEBHOOK_SECRET_NAME`, `SLACK_WEBHOOK_SECRET_NAME`, `EMAIL_*` — see the
@@ -2161,8 +2182,12 @@ Workspace-level channels are enabled by environment configuration
 A channel with no configuration is simply skipped; configuring none disables alerting.
 Webhook URLs are validated against a **per-channel** host allow-list (Teams:
 `webhook.office.com` / `logic.azure.com`; Slack: `hooks.slack.com`) so a typo can't
-exfiltrate alerts to an arbitrary endpoint. Only Teams has a per-suite override; Slack
-and email are workspace-wide.
+exfiltrate alerts to an arbitrary endpoint. Teams, Slack and email all support a
+per-suite override; a suite that sets none falls back to its workspace default.
+
+A separate, reusable **notification channel** model also exists (create once, attach to
+any suite) covering Teams/Slack/email plus a generic webhook type — currently API-only,
+with no dedicated UI yet.
 
 ## Per-suite configuration
 
@@ -2173,6 +2198,9 @@ Open a suite → **Notifications** panel:
   (every run)`.
 - **Teams webhook** — optional per-suite override of the workspace webhook. Write-only:
   the tag shows *set / not set*, the URL is never displayed again.
+- **Slack webhook** — optional per-suite override of the workspace webhook, same write-only
+  behaviour as Teams.
+- **Email recipients** — optional per-suite override of the workspace `EMAIL_TO` list.
 
 ## Severity-aware routing
 
@@ -3395,6 +3423,7 @@ One-page reference: what runs where. For the readable tour of everything DataQ o
 | Check kind | Snowflake | Unity Catalog | ADLS Gen2 (files) | S3 (files)ˢ | Iceberg |
 |---|:-:|:-:|:-:|:-:|:-:|
 | GX expectations (column / table shape) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Snowflake DMF (native metric functions)ᵈ | ✅ | — | — | — | — |
 | Custom SQL (rows returned = failures)ᶜ | ✅ | ✅ | — | — | — |
 | Freshness monitor (hours since latest timestamp) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Freshness from **file arrival time** (no column — catches "no new file") | — | — | ✅ | ✅ | — |
@@ -3436,6 +3465,12 @@ Unity Catalog table, including the operational-`error` path when a column will n
 resolve. Custom SQL stays binary pass/fail on both SQL datasources (ADR 0019 §4 — a
 row count is not a bandable metric), so `metric_value` is null by design, not by
 omission.
+
+ᵈ **Snowflake DMF** (ADR [0036](../adr/0036-connection-anchored-check-engines.md)) is the
+first platform-native check engine — an alternative `check.engine` for four expectation
+types (null count, null percent, duplicate count, unique count) that invokes Snowflake's
+own `SNOWFLAKE.CORE.*` metric functions instead of a GX expectation. Engine is selected per
+check, on a Snowflake connection only; `kind` stays `expectation` either way.
 
 ˢ **S3 means AWS S3 *and* any S3-compatible store** — MinIO, Ceph/RadosGW, Cloudflare R2,
 Wasabi, Backblaze B2, SeaweedFS or an on-prem gateway. Set the connection's optional
@@ -3543,7 +3578,7 @@ catalog knowing about them (mechanism ④).
 
 | Capability | Notes |
 |---|---|
-| Channels | Teams (workspace + per-suite webhook), Slack, email — [details](../guides/notifications.md) |
+| Channels | Teams, Slack, email — each workspace default or per-suite override; reusable channels (incl. a generic webhook type) also exist, API-only currently — [details](../guides/notifications.md) |
 | Threshold | Per suite: fail-only / warn+ (default) / always |
 | Routing | Severity-aware urgency; critical escalates |
 | Dedup | First failure / escalation only; clean run resets |
@@ -3925,6 +3960,20 @@ URL); linking/unlinking a suite follows that suite's own `view`/`edit` grant.
 | GET | `/pipeline_runs` · `/orchestration/pipelines` | Monitored orchestrator runs. |
 | GET | `/orchestration/near-misses` | Succeeded pipeline runs that matched **no** enabled binding (why a trigger never fired). |
 | POST | `/orchestration/events/{provider}` | Inbound webhook (adf / airflow / dbt) — authenticated by shared-secret / HMAC, not a PAT. |
+
+### LLM-assisted authoring (ADR 0042)
+
+Each POST queues an async invocation (`202`, `LlmInvocationQueued`) run by the worker
+against the configured `LLMProvider`; poll `GET /llm/invocations/{id}` for the result.
+Rate-limited under a dedicated `llm` class (per-principal and per-IP), since each call is
+an outbound model request.
+
+| Method | Path | What |
+|---|---|---|
+| POST | `/llm/sql_generation` | Draft a custom-SQL check from a natural-language rule (suite edit). |
+| POST | `/llm/check_suggestions` | Suggest checks for a suite from its column profile (suite edit). |
+| POST | `/llm/rca_narrative` | Root-cause narrative for a failed check, from an incident's evidence card. |
+| GET | `/llm/invocations/{id}` | Poll one invocation — requester or workspace admin only. |
 
 ### Admin (workspace-admin only)
 
@@ -4978,7 +5027,8 @@ Two sentences of conclusion:
 2. **Past the ceiling, today's failure is silent** — the OOM-killed run sits in
    `running` for up to 60 minutes until the stuck-run reaper fails it,
    with no memory-attributed reason. A size-probe + hard-cap ("refuse with
-   `error`, don't OOM"), described below, is the fix.
+   `error`, don't OOM"), described in the v1.1 section below, has since shipped
+   and is enforced on every flat-file and unaudited-UC read.
 
 ## Environment & method
 
@@ -4988,7 +5038,7 @@ Two sentences of conclusion:
 | Measurement rig | docker-compose stack pinned to **production parity**: worker at 1 CPU / 2 GiB / `celery --concurrency=4` (the value the worker now pins in its Celery config, `WORKER_CONCURRENCY` — the prefork default reads the *host's* core count, not the container's, and had silently differed between the two reference deployments), driven through the real REST API |
 | Iceberg leg | run against the deployed stack (the native catalog wasn't reachable from the local rig) — wall via REST, worker memory via the platform metric |
 | Worker memory sampling | `docker stats` at 1 Hz (local); 1-min max metric (prod) |
-| Checks per rung | 5 expectations (not-null ×2, between ×2, unique ×1) + volume & freshness monitors where the type supports them (SQL/UC/Iceberg — flat files reject monitor kinds by design) |
+| Checks per rung | 5 expectations (not-null ×2, between ×2, unique ×1) + volume & freshness monitors on the SQL/UC/Iceberg rungs (flat files also support freshness/volume, incl. arrival-time freshness, but weren't run through this particular campaign) |
 | Data shape | 6-col order-lines (`line_id`, `order_id`, `sku_id`, `qty`, `unit_price`, `line_ts`) — same shape as the original baseline campaign |
 
 Data generation (all regenerable in seconds — nothing needs to be archived):
@@ -5520,7 +5570,7 @@ are the reason this mode is opt-in rather than the default:
   data-access audit trail as a prerequisite before granting it in a regulated deployment.
   `WORKSPACE_ADMIN_EMAILS` still resolves to Admin as a **bootstrap / break-glass** path for a
   fresh or locked-out workspace — keep that allowlist minimal, and prefer in-app role
-  management (**Admin → Users**) once at least one Admin exists. It only ever *grants*:
+  management (**Admin → Members**) once at least one Admin exists. It only ever *grants*:
   removing an address never demotes anyone, so demotion has exactly one route, where the
   guard runs.
 - **An env-level actor can always mint an Admin.** This is the deliberate cost of keeping a
@@ -6642,7 +6692,7 @@ is the **same code everywhere**. Where the installations genuinely differ:
 | Assets / lineage / incidents / DQ scorecard | live-verified (Snowflake full-tier lineage, UC dbt lineage, inventory sync) | deployed — same code; warehouse-lineage sweep enabled but not yet exercised against that account's grants | ✅ (Marquez reference consumer via `--profile lineage`) |
 | Alerting — Teams / Slack | live-verified | deployed, unexercised | pointable anywhere |
 | Alerting — email | configured | live-verified (SES) | Mailpit |
-| MCP (47 tools) | E2E-verified | E2E-verified (PAT) | works; PAT-only under OTP (no IdP ⇒ no bearer) |
+| MCP (48 tools) | E2E-verified | E2E-verified (PAT) | works; PAT-only under OTP (no IdP ⇒ no bearer) |
 | Rate limiting | on (`RATE_LIMIT_XFF_TRUSTED_HOPS=3`, verified against a live XFF) | on (same setting; verified through CloudFront — a spoofed `X-Forwarded-For` cannot escape the bucket, since hops=3 selects the edge-appended viewer IP) | off by design |
 | Browser security headers (CSP/HSTS/nosniff/frame-ancestors) | on — `connect-src` narrowed to the Azure AD origin | on — `connect-src` narrowed to both Cognito origins (issuer + hosted UI) | on, permissive `connect-src` default |
 | Edge rate limiting (WAF) | **none** — no Front Door/WAF in front of the Container App; the in-app limiter is the only layer | on — CloudFront WAF per-IP ceiling **in front of** the in-app limiter | n/a |
@@ -6928,7 +6978,7 @@ the checklists — see the repository's `deploy/README.md`.
 | A check reports `error`, not `fail` | Its evaluation threw (cast failure, missing column, SQL error) — an operational problem with the check/target, not a data breach. Fix the check config or the schema drift. |
 | Scheduled run didn't happen at 9:00 | Check the schedule's **timezone** (9:00 in which zone?), whether it's **paused**, and whether the platform was down over the tick — missed ticks are [not backfilled](../guides/scheduling.md). |
 | No alert for a red run | See the [notifications troubleshooting table](../guides/notifications.md#troubleshooting) — threshold, dedup, and snooze all gate delivery. |
-| Freshness/volume check missing in the editor | Freshness and volume now run on **every** datasource including ADLS Gen2 / S3 flat files — on a flat file, omitting the timestamp column measures the file's **arrival time** instead. Only **custom SQL** is Snowflake/UC-only. |
+| Freshness/volume check missing in the editor | Freshness and volume now run on **every** datasource including ADLS Gen2 / S3 flat files — on a flat file, omitting the timestamp column measures the file's **arrival time** instead. **Custom SQL** and **anomaly** monitors are Snowflake/UC-only (both need a SQL datasource); the **Snowflake DMF** engine is Snowflake-only. |
 
 ## Operating notes
 
@@ -6987,9 +7037,10 @@ Manual checklist (the mutating tail):
 
 ## Known limitations
 
-- **GX-only** check engine — platform-native engines are connection-anchored per ADR 0036
-  (Snowflake DMF is the first planned native engine; Databricks DQX and Dataplex are
-  trigger-gated); batch-oriented (not streaming).
+- **GX by default**, with platform-native engines connection-anchored per ADR 0036 — a
+  Snowflake connection additionally offers the **DMF** engine (four expectation types
+  currently); Databricks DQX and Dataplex are trigger-gated and not yet built. Batch-oriented
+  (not streaming).
 - **Single tenant**, suite-level access sharing **plus a stored workspace role** — Admin / Member / Viewer (ADR 0033); connection management is Admin-only. `WORKSPACE_ADMIN_EMAILS` is a bootstrap seed and lockout break-glass, not the day-to-day mechanism.
 - Interactive **datasource browsing** (container browser, 3-level UC catalog picker) is
   deferred — you specify targets explicitly. JSON flat files deferred (CSV/Parquet in v1).
