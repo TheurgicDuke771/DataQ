@@ -2741,6 +2741,18 @@
             ],
             "title": "Credential Expiry Checked At"
           },
+          "engine_capabilities": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Engine Capabilities"
+          },
           "env": {
             "title": "Env",
             "type": "string"
