@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "574cfcfebb8f",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1850-of-type-missing-column",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/datasources/gx_runner.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/57/4cfcfebb8f/0/metadata.json",
+      "transcript": "/57/4cfcfebb8f/0/full.jsonl",
+      "compact_transcript": "/57/4cfcfebb8f/0/transcript.jsonl",
+      "content_hash": "/57/4cfcfebb8f/0/content_hash.txt",
+      "prompt": "/57/4cfcfebb8f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 80,
+    "cache_creation_tokens": 38575,
+    "cache_read_tokens": 20115122,
+    "output_tokens": 17503,
+    "api_call_count": 40
+  }
+}
