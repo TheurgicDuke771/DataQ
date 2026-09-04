@@ -3521,20 +3521,32 @@ considered:</p>
   two LLM entries, and an earlier draft listed only the other one.</li>
 <li><strong>LLM intelligence</strong> — the <em>outbound</em> direction, DataQ calling a model on its
   own behalf: <strong>built, off by default</strong> until an admin configures a provider and
-  credential, sent to that admin-chosen endpoint. SQL-generation and
-  check-suggestion prompts are schema plus masked aggregate profiler statistics;
-  root-cause-analysis narratives additionally send the triggering check's own
-  observed value — routed through the same column-policy/warehouse-tag floor
-  every other results surface applies — and its expected value (a
-  check-authored threshold, not warehouse data, so never masked). <strong>Never raw
-  sample rows</strong>, on either path. Every call — feature invocation or admin test
-  probe alike — is recorded with requester and token counts.</li>
-<li><strong>Sign-in email</strong> — email-OTP codes to user addresses via the configured SMTP
-  relay: account identifiers rather than warehouse content, relay operator-chosen.</li>
-<li><strong>Secret store</strong> — warehouse credentials in Key Vault / Secrets Manager /
-  OpenBao. Not customer data, but a remote store is a location, and the
-  credentials it holds unlock the systems the customer data lives in.</li>
+  credential, sent to that admin-chosen endpoint. What each feature sends
+  differs and is enumerated exactly, not summarized as one shape:<ul>
+<li><strong>SQL generation</strong> — the target's column names, plus each column's null
+  rate and distinct count if the caller asks for the profile. No min/max, no
+  frequent values, no cell content.</li>
+<li><strong>Check suggestions</strong> — column names with null rate, distinct count,
+  min/max, and each <strong>non-sensitive</strong> column's five most frequent literal
+  values (masked to a placeholder on any column the column-policy or
+  warehouse-tag floor marks sensitive — an unclassified free-text column is
+  not masked, so its most common cell contents do leave the deployment).</li>
+<li><strong>Root-cause narratives</strong> — the stored evidence card (check/asset
+  identifiers, statuses, metric values) plus the triggering check's own
+  observed value — routed through the same column-policy/warehouse-tag
+  floor every other results surface applies — and its expected value (a
+  check-authored threshold, not warehouse data, so never masked). No
+  column profile on this path.</li>
 </ul>
+</li>
+</ul>
+<p><strong>Never raw sample rows</strong>, on any path. Every call — feature invocation or
+  admin test probe alike — is recorded with requester and token counts.
+- <strong>Sign-in email</strong> — email-OTP codes to user addresses via the configured SMTP
+  relay: account identifiers rather than warehouse content, relay operator-chosen.
+- <strong>Secret store</strong> — warehouse credentials in Key Vault / Secrets Manager /
+  OpenBao. Not customer data, but a remote store is a location, and the
+  credentials it holds unlock the systems the customer data lives in.</p>
 <p>Deploying into another jurisdiction is a variable change, not a fork: the same
 images and the same IaC take a different region. What DataQ does <strong>not</strong> do is
 verify the result — that remains the deploying organization's attestation, which
