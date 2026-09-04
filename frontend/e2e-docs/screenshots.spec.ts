@@ -169,6 +169,18 @@ test('asset — incident evidence card', async ({ page }) => {
   await shot(page, 'incident-evidence');
 });
 
+test('check editor — Custom SQL step with the "Generate from a description" shortcut', async ({
+  page,
+}) => {
+  await page.goto('/suites');
+  await page.getByText('Orders quality').click();
+  await heading(page, 'Orders quality', 4);
+  await page.getByRole('button', { name: 'Add check' }).click();
+  await page.getByText('Custom SQL', { exact: true }).click();
+  await expect(page.getByText('Generate from a description')).toBeVisible();
+  await shot(page, 'check-editor-custom-sql-picker');
+});
+
 // The two live-warehouse captures below need a real SQL connection (`DOCS_SNOWFLAKE_ACCOUNT`
 // at capture-stack start, see the README) — they profile/introspect the target table for real.
 
