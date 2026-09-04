@@ -15,7 +15,7 @@ import {
 import { ColumnProfilePanel } from '../components/checks/ColumnProfilePanel';
 import { DryRunPreview } from '../components/checks/DryRunPreview';
 import { SqlGeneratePanel } from '../components/checks/SqlGeneratePanel';
-import { isCustomSql } from '../components/checks/customSql';
+import { CUSTOM_SQL_EXPECTATION_TYPE, isCustomSql } from '../components/checks/customSql';
 import {
   configFieldsFor,
   effectiveEngineFor,
@@ -186,7 +186,12 @@ export function CheckNew() {
     );
   }
 
-  // Step 2 — pick an expectation within the chosen category.
+  // Step 2 — pick an expectation within the chosen category. Custom SQL's real catalog entry
+  // (`group.specs`) has exactly one item — the check it describes IS the one GX expectation,
+  // and that count must stay accurate. "Generate from a description" beside it is a picker-only
+  // shortcut, not a second expectation type: it sets the SAME expectationType (below), so the
+  // resulting config form is identical either way — the choice here is only about how you'd
+  // rather start, hand-writing or describing the rule for the model to translate.
   if (category) {
     const group = categories.find((g) => g.category === category);
     return (
@@ -211,6 +216,19 @@ export function CheckNew() {
               </Typography.Paragraph>
             </Card>
           ))}
+          {category === 'Custom SQL' && (
+            <Card
+              hoverable
+              size="small"
+              style={{ width: 320 }}
+              onClick={() => setExpectationType(CUSTOM_SQL_EXPECTATION_TYPE)}
+            >
+              <Typography.Text strong>Generate from a description</Typography.Text>
+              <Typography.Paragraph type="secondary" style={{ margin: 0, fontSize: 12 }}>
+                Describe the rule in plain language — DataQ writes the SQL.
+              </Typography.Paragraph>
+            </Card>
+          )}
         </Flex>
       </Page>
     );
