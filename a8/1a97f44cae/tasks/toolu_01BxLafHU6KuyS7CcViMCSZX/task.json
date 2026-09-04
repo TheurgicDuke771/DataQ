@@ -1,0 +1,23 @@
+{
+  "tool_use_id": "toolu_01BxLafHU6KuyS7CcViMCSZX",
+  "agent_id": "a5c2a71b194d21d20",
+  "task_description": "Implement #1775 MCP channel read tools",
+  "files": [
+    "README.md",
+    "backend/app/mcp/server.py",
+    "docs/site/architecture/perf-baseline.md",
+    "docs/site/guides/datasources-checks.md",
+    "docs/site/guides/features.md",
+    "docs/site/guides/notifications.md",
+    "docs/site/operate/deployment-parity.md",
+    "docs/site/operate/observability.md",
+    "docs/site/operate/runbook-faq.md",
+    "docs/site/reference/feature-matrix.md",
+    "docs/site/reference/rest-api.md",
+    "docs/site/security/overview.md",
+    "frontend/src/pages/Profile.tsx",
+    "frontend/src/pages/Settings.tsx"
+  ],
+  "started_at": "2026-09-04T07:56:02.590257-07:00",
+  "completed_at": "2026-09-04T07:56:02.59661-07:00"
+}

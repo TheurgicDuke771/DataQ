@@ -1,0 +1,53 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "a81a97f44cae",
+  "session_id": "bebce0fa-ad53-418f-b867-850e81800c93",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-04T14:57:06.791472Z",
+  "branch": "docs/issue-1733-staleness-sweep",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "README.md",
+    "backend/app/mcp/server.py",
+    "docs/site/architecture/perf-baseline.md",
+    "docs/site/guides/datasources-checks.md",
+    "docs/site/guides/features.md",
+    "docs/site/guides/notifications.md",
+    "docs/site/operate/deployment-parity.md",
+    "docs/site/operate/observability.md",
+    "docs/site/operate/runbook-faq.md",
+    "docs/site/reference/feature-matrix.md",
+    "docs/site/reference/rest-api.md",
+    "docs/site/security/overview.md",
+    "frontend/src/pages/Profile.tsx",
+    "frontend/src/pages/Settings.tsx"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "2b2cb59c1a7c",
+  "checkpoint_transcript_start": 634,
+  "transcript_lines_at_start": 634,
+  "compact_transcript_start": 98,
+  "token_usage": {
+    "input_tokens": 42,
+    "cache_creation_tokens": 40075,
+    "cache_read_tokens": 5688662,
+    "output_tokens": 15367,
+    "api_call_count": 21
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-04T14:57:06.737589Z",
+    "agent_lines": 86,
+    "agent_removed": 72,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 86,
+    "total_lines_changed": 158,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}

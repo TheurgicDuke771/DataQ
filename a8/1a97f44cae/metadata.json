@@ -1,0 +1,39 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "a81a97f44cae",
+  "strategy": "manual-commit",
+  "branch": "docs/issue-1733-staleness-sweep",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "README.md",
+    "backend/app/mcp/server.py",
+    "docs/site/architecture/perf-baseline.md",
+    "docs/site/guides/datasources-checks.md",
+    "docs/site/guides/features.md",
+    "docs/site/guides/notifications.md",
+    "docs/site/operate/deployment-parity.md",
+    "docs/site/operate/observability.md",
+    "docs/site/operate/runbook-faq.md",
+    "docs/site/reference/feature-matrix.md",
+    "docs/site/reference/rest-api.md",
+    "docs/site/security/overview.md",
+    "frontend/src/pages/Profile.tsx",
+    "frontend/src/pages/Settings.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/a8/1a97f44cae/0/metadata.json",
+      "transcript": "/a8/1a97f44cae/0/full.jsonl",
+      "compact_transcript": "/a8/1a97f44cae/0/transcript.jsonl",
+      "content_hash": "/a8/1a97f44cae/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 42,
+    "cache_creation_tokens": 40075,
+    "cache_read_tokens": 5688662,
+    "output_tokens": 15367,
+    "api_call_count": 21
+  }
+}
