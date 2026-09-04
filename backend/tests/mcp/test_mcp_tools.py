@@ -2043,12 +2043,15 @@ def test_get_notification_config_credits_email_when_from_is_unset(
     assert out["email_recipients_source"] == "workspace"
 
 
-def _link_channel(db_session: Any, suite: Suite, *, type: str, **fields: Any) -> None:
+def _link_channel(
+    db_session: Any, suite: Suite, *, type: str, **fields: Any
+) -> NotificationChannel:
     channel = NotificationChannel(id=uuid.uuid4(), name="c", type=type, created_by=None, **fields)
     db_session.add(channel)
     db_session.flush()
     db_session.add(SuiteNotificationChannel(suite_id=suite.id, channel_id=channel.id))
     db_session.commit()
+    return channel
 
 
 def test_get_notification_config_credits_a_linked_teams_channel(
@@ -2223,6 +2226,163 @@ def test_list_trigger_bindings_rejects_an_unknown_env(db_session: Any, monkeypat
     _as(monkeypatch, db_session, _user(db_session))
     with pytest.raises(ToolError):
         server.list_trigger_bindings(env="staging")
+
+
+# ─────────────── reusable notification channels (#1775) ───────────────────
+
+
+def _NO_CREDENTIAL_VALUES() -> tuple[str, ...]:
+    return ("hook-secret-value", "hmac-secret-value", "auth-header-secret-value")
+
+
+def test_list_notification_channels_shapes_every_channel_workspace_wide(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """Workspace-wide, like `list_connections` — no suite scoping, and it
+    returns a channel even when nothing links to it yet.
+    """
+    user = _user(db_session)
+    channel = NotificationChannel(
+        id=uuid.uuid4(),
+        name="pagerduty-oncall",
+        type="webhook",
+        webhook_url="https://events.pagerduty.example/v2/enqueue",
+        hmac_secret_ref="channel-hmac-ref",
+        payload_template={"routing_key": "should-never-appear"},
+        auth_header_name="X-Routing-Key",
+        auth_header_secret_ref="channel-auth-ref",
+        created_by=None,
+    )
+    db_session.add(channel)
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    (out,) = server.list_notification_channels()
+    assert out["id"] == str(channel.id)
+    assert out["name"] == "pagerduty-oncall"
+    assert out["type"] == "webhook"
+    assert out["webhook_url"] == "https://events.pagerduty.example/v2/enqueue"
+    assert out["has_hmac_secret"] is True
+    assert out["has_auth_header"] is True
+    assert out["auth_header_name"] == "X-Routing-Key"
+    assert out["has_payload_template"] is True
+    assert out["has_webhook"] is False
+
+
+def test_list_notification_channels_never_returns_a_credential_value(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """The load-bearing constraint (#1775): presence booleans only, for every
+    credential-bearing field, from every caller — asserted on the raw values,
+    not just the field names, so a future refactor renaming a field can't
+    quietly reintroduce a leak past this test.
+    """
+    user = _user(db_session)
+    channel = NotificationChannel(
+        id=uuid.uuid4(),
+        name="teams-oncall",
+        type="teams",
+        webhook_secret_ref="hook-secret-value",
+        created_by=None,
+    )
+    generic = NotificationChannel(
+        id=uuid.uuid4(),
+        name="generic-hook",
+        type="webhook",
+        webhook_url="https://receiver.example/hook",
+        hmac_secret_ref="hmac-secret-value",
+        payload_template={"integration_key": "should-never-appear"},
+        auth_header_name="X-Auth",
+        auth_header_secret_ref="auth-header-secret-value",
+        created_by=None,
+    )
+    db_session.add_all([channel, generic])
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    out = server.list_notification_channels()
+
+    serialized = str(out)
+    for leaked in _NO_CREDENTIAL_VALUES():
+        assert leaked not in serialized, f"{leaked!r} leaked into the payload"
+    # `payload_template` itself must never appear — not even the KEY — for any
+    # caller, including a workspace admin (stricter than the REST `ChannelRead`,
+    # which does show it to an admin): the value can carry a receiver's
+    # routing/integration key as a plain JSON literal (#1663).
+    assert all("payload_template" not in c or c["payload_template"] is None for c in out)
+    assert "should-never-appear" not in serialized
+
+
+def test_list_notification_channels_never_returns_a_credential_value_for_a_workspace_admin(
+    db_session: Any, monkeypatch: Any, make_workspace_admin: Any
+) -> None:
+    """Same guarantee, for the one caller REST treats differently. MCP has no
+    "admin, but not into an LLM context" tier, so it holds the line REST
+    relaxes for `payload_template`.
+    """
+    admin = _user(db_session, "admin@acme.io")
+    make_workspace_admin(admin.email)
+    channel = NotificationChannel(
+        id=uuid.uuid4(),
+        name="generic-hook",
+        type="webhook",
+        webhook_url="https://receiver.example/hook",
+        hmac_secret_ref="hmac-secret-value",
+        payload_template={"integration_key": "should-never-appear"},
+        created_by=None,
+    )
+    db_session.add(channel)
+    db_session.commit()
+    _as(monkeypatch, db_session, admin)
+
+    (out,) = server.list_notification_channels()
+    assert "hmac-secret-value" not in str(out)
+    assert "should-never-appear" not in str(out)
+    assert out.get("payload_template") is None
+    assert out["has_payload_template"] is True
+
+
+def test_list_suite_channels_returns_only_channels_linked_to_the_suite(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    other_suite = _suite(db_session, user)
+    linked = _link_channel(db_session, suite, type="slack", webhook_secret_ref="hook-secret-value")
+    _link_channel(db_session, other_suite, type="email", email_recipients="oncall@acme.io")
+    _as(monkeypatch, db_session, user)
+
+    out = server.list_suite_channels(str(suite.id))
+
+    assert [c["id"] for c in out] == [str(linked.id)]
+    assert out[0]["type"] == "slack"
+    assert out[0]["has_webhook"] is True
+    assert "hook-secret-value" not in str(out)
+
+
+def test_list_suite_channels_empty_means_no_channel_linked(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """An empty list is a real answer here (no linked channel), not an authz
+    denial or an error — distinguishing the two matters for #828-shaped
+    misreads.
+    """
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+
+    assert server.list_suite_channels(str(suite.id)) == []
+
+
+def test_list_suite_channels_denied_for_inaccessible_suite(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    owner = _user(db_session, "owner@acme.io")
+    suite = _suite(db_session, owner)
+    _link_channel(db_session, suite, type="teams", webhook_secret_ref="hook-secret-value")
+    _as(monkeypatch, db_session, _user(db_session, "outsider@acme.io"))
+    with pytest.raises(ToolError):
+        server.list_suite_channels(str(suite.id))
 
 
 # ──────────────── the coarse workspace-role axis on MCP (ADR 0033) ─────────

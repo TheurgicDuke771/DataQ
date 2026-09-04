@@ -14,6 +14,7 @@ GATES: dict[str, str] = {
     "get_suite_performance": "read",
     "list_assets": "read",
     "list_connections": "read",
+    "list_notification_channels": "read",
     "list_suites": "read",
     # ── accessible-suite scoped, and view-gated when a suite is named ────────
     "get_near_misses": "read:suite-optional",
@@ -32,6 +33,7 @@ GATES: dict[str, str] = {
     "get_suite_results": "suite:view",
     "list_check_versions": "suite:view",
     "list_checks": "suite:view",
+    "list_suite_channels": "suite:view",
     # ── writes (and live probes) gated on the suite ────────────────────────── `profile_column` is
     # here, not with the reads: it persists nothing.
     "cancel_run": "suite:edit",
