@@ -192,7 +192,11 @@ class LlmSettingsRead(ApiModel):
     model: str | None = None
     structured_output: str | None = None
     enabled: bool = False
-    #: Whether a credential is stored — the value itself is never returned.
+    #: Whether a credential REFERENCE is stored — the value itself is never
+    #: returned, and this is NOT confirmation the secret still resolves (#1849):
+    #: the store can be purged or recreated out from under a saved config. Use
+    #: `POST /admin/llm/test` for a live resolvability check — it reports
+    #: `llm_credential_missing` distinctly when the reference is dangling.
     has_credential: bool = False
     updated_at: datetime | None = None
 

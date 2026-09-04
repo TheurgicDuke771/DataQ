@@ -12,7 +12,10 @@ export interface LlmConfig {
   model: string | null;
   structured_output: StructuredOutputMode | null;
   enabled: boolean;
-  /** Whether a credential is stored — the key itself is write-only, never returned. */
+  /** Whether a credential REFERENCE is stored — the key itself is write-only, never returned,
+   *  and this is NOT confirmation the secret still resolves (#1849): the store can be purged
+   *  or recreated out from under a saved config. `testLlmConfig` is the live resolvability
+   *  check — it reports `llm_credential_missing` distinctly when the reference is dangling. */
   has_credential: boolean;
   updated_at: string | null;
 }
