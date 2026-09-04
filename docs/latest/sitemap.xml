@@ -2,354 +2,354 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0001-trunk-based-branching/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0002-conventional-commits/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0003-gx-only-for-v1/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0004-orchestration-abstraction/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0005-severity-tier-weights/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0006-adf-webhook-authentication/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0007-airflow-callback-model/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0008-mcp-server/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0009-flat-monorepo-layout/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0010-provider-agnostic-infrastructure-seams/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0011-extensibility-seams-for-deferred-integrations/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0012-monitor-kind-seam/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0013-marketplace-distribution-and-anti-lock-in/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0014-reconciliation-comparison-check-kind/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0015-two-connection-comparison-check-model/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0016-severity-derivation-semantics/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0017-python-313-runtime-upgrade/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0018-results-surface-and-grafana-deferral/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0019-custom-sql-check-kind/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0020-history-and-audit-strategy/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0021-demo-test-data-environment-strategy/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0022-week6-prototype-adoption-and-chart-library/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0023-container-image-registry-ghcr/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0024-app-deployment-infrastructure/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0025-production-image-pip-slim/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0026-auth-api-keys-and-principal-seam/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0027-suite-permission-model-workspace-admin/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0028-cloud-neutral-image-runtime-config-generic-oidc/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0029-dbt-orchestration-provider/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0030-iceberg-native-read-path/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0031-oss-byol-distribution-licensing/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0032-email-otp-signin/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0033-workspace-roles-rbac/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0034-asset-entity-openlineage-identity-lineage-pull/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0035-request-rate-limiting/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0036-connection-anchored-check-engines/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0037-workspace-visible-asset-identity/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0038-dq-dimension-classification/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0039-openbao-self-hosted-secret-backend/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0040-warehouse-inventory-sync-table-enumeration-seam/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0041-history-audit-strategy/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/adr/0042-llm-provider-seam/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/architecture/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/architecture/contributing/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/architecture/evidence-card/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/architecture/mcp-honesty/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/architecture/overview/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/architecture/perf-baseline/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/get-started/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/get-started/ask-assistant/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/get-started/concepts/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/get-started/connect-pipeline/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/get-started/first-alert/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/get-started/first-suite/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/get-started/install/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/guides/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/guides/ai-features/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/guides/api-keys/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/guides/best-practices/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/guides/datasources-checks/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/guides/features/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/guides/mcp-setup/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/guides/notifications/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/guides/orchestration/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/guides/recommended-usage/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/guides/scheduling/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/operate/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/operate/deployment-parity/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/operate/deployment/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/operate/observability/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/operate/runbook-faq/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/operate/troubleshooting/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/reference/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/reference/changelog/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/reference/check-types/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/reference/feature-matrix/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/reference/glossary/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/reference/mcp-tools/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/reference/rest-api/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/security/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/security/overview/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/security/compliance/breach-notification-runbook/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/security/compliance/data-subject-rights-runbook/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/security/compliance/dpa-baa-templates/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/security/compliance/dpia-input-sheet/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
     <url>
          <loc>https://theurgicduke771.github.io/DataQ/docs/latest/security/compliance/sub-processors/</loc>
-         <lastmod>2026-09-03</lastmod>
+         <lastmod>2026-09-04</lastmod>
     </url>
 </urlset>

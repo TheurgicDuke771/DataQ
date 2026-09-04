@@ -1113,7 +1113,7 @@ success shape (illustrative):
       "expectation_type": "monitor:freshness",
       "name": "order_ts arrives daily",
       "rationale": "order_ts is the only timestamp column; the bound pipeline lands daily.",
-      "config": {"timestamp_column": "order_ts"},
+      "config": {"column": "order_ts"},
       "dimension": "timeliness",
       "fail_threshold_hours": 26
     }
