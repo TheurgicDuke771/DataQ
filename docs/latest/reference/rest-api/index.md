@@ -75,6 +75,17 @@ is Member+; list and read are open to any authenticated user (responses carry `h
 never secret material). A Member's PAT hitting `POST /connections` gets `403` regardless of
 any suite grant — the two axes are independent.
 
+**Credential health.** Each datasource connection in `GET /connections` carries a
+`credential_health` object — `status` (`healthy` / `failing` / `unknown`),
+`consecutive_auth_failures`, `last_auth_success_at`, `last_auth_failure_at` and a classified
+`last_error`. It is derived from real use (runs, dry-runs, profiles and
+`POST /connections/{id}/test`), never a periodic probe, and only a credential **rejection**
+moves it: a missing grant, an unreachable host and a bad table name leave it untouched.
+`unknown` means the credential has not been used yet and is never reported as `healthy`.
+Orchestration connections carry `null` here — theirs is the poll health above.
+`GET /admin/health` returns the same shape for every datasource connection at once, worst
+status first.
+
 **Moving a connection to a new host.** A `PATCH` that changes a field deciding *where* the
 credential is sent — `account` (Snowflake), `account_url` (ADLS), `endpoint_url` (S3, dbt),
 `workspace_url` (Unity Catalog), `catalog_uri` / `warehouse` / `properties` /
@@ -207,31 +218,5 @@ an outbound model request.
 | GET | `/admin/audit-events` | The append-only audit log (config + data-access events, ADR 0041). |
 | GET | `/admin/deployment` | Declared residency / deployment posture (`DEPLOYMENT_REGION`). |
 | GET | `/admin/orchestration/webhooks` | Webhook receiver URLs + auth mode per provider. |
-| GET | `/admin/health` | Poll staleness per orchestration connection, beat heartbeat, broker queue depth. |
 | GET | `/admin/secret-sweep` | Last orphan-secret sweep report — `never_run` if the sweep hasn't recorded one. |
 | POST | `/admin/secret-sweep/run` | Run the orphan-secret sweep now, always report-only (audited). |
-| POST | `/admin/auth-email/test` | SMTP pre-flight for the OTP mailer (per-admin throttled). |
-
-## Example: trigger a suite and poll it
-
-```bash
-# find the suite id
-curl -s -H "Authorization: Bearer $TOKEN" $BASE/suites | jq '.[] | {id, name}'
-
-# trigger a run
-RUN=$(curl -s -X POST -H "Authorization: Bearer $TOKEN" $BASE/suites/$SUITE_ID/run | jq -r .id)
-
-# poll progress until terminal
-curl -s -H "Authorization: Bearer $TOKEN" $BASE/runs/$RUN/progress | jq '{status, completed_checks, total_checks}'
-```
-
-Prefer natural language? The same actions are available to AI assistants over
-[MCP](../guides/mcp-setup.md).
-
-## Interactive explorer
-
-The complete contract, generated from the running application on every change
-(`backend/scripts/export_docs_reference.py`, drift-checked in CI). Download the raw spec at
-[`openapi.json`](openapi.json) — it is also the input for the planned Python client.
-
-<swagger-ui src="openapi.json" docExpansion="none" defaultModelsExpandDepth="0"/>

@@ -43,6 +43,34 @@ changed, so an Admin who may *rotate* a credential still cannot *read* one by po
 connection at a host they control and pressing Test. Moving a connection is fully supported —
 doing it with a credential you don't know is not.
 
+### Credential health
+
+A datasource connection reports whether its stored credential is still being **accepted**,
+so an expired or revoked one is visible without anyone pressing Test. It has three states:
+
+| State | Meaning |
+|---|---|
+| **Unknown** | The credential has not been used yet. Nothing has run, dry-run, profiled or tested against this connection, so DataQ has observed nothing about it. |
+| **Healthy** | The datasource accepted the credential the last time DataQ used it. |
+| **Failing** | The datasource **rejected** the credential. The connection also shows how many consecutive rejections it has had, and a classified reason — never raw driver text, which can carry a token or DSN fragment. |
+
+**Unknown is not a clean bill of health**, and it is never silently upgraded to healthy: a
+connection nothing uses stays unknown indefinitely. That is deliberate — the signal is
+derived from work DataQ already does rather than from a periodic probe, so it costs no
+warehouse credits and cannot report on a connection nobody has exercised.
+
+Only credential **rejections** move this signal. A missing SELECT grant, an unreachable
+host and a bad table name all leave it untouched, because none of them says the credential
+is dead — those surface as the run's own failure reason instead.
+
+Re-authenticating a connection, or a passing **Test connection**, clears the signal
+immediately; you do not have to wait for the next scheduled run to confirm a rotation
+worked. Workspace admins see every datasource connection's credential health together on
+the admin health view.
+
+Orchestration providers (ADF, Airflow, dbt) do not carry this signal — their equivalent is
+polling health, which is reported separately.
+
 ### S3-compatible object stores
 
 The **S3** connection is not AWS-only. Leave **Endpoint URL** blank and it addresses AWS
