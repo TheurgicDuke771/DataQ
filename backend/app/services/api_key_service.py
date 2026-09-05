@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.db.models import ApiKey, User
-from backend.app.services import audit_service
+from backend.app.services import audit_service, membership_service
 
 log = get_logger(__name__)
 
@@ -158,6 +158,11 @@ def resolve_token(db: Session, token: str) -> User:
     if user is None:  # cascade should make this unreachable; fail closed anyway
         log.warning("api_key_orphaned", api_key_id=str(key.id), key_prefix=key.key_prefix)
         raise ApiKeyAuthError()
+    # Choke point 3 of ADR 0043 decision 4, and the widest gap it closes: a PAT
+    # authenticates as its owner (ADR 0026), so membership must be re-checked at
+    # RESOLUTION -- checked only at mint, a departed member's PAT works forever.
+    # This covers /mcp too: the verifier turns the raise into a 401.
+    membership_service.require_member(db, user.email, door="api_key")
     if key.last_used_at is None or now - key.last_used_at >= _LAST_USED_WRITE_INTERVAL:
         key.last_used_at = now
         db.commit()

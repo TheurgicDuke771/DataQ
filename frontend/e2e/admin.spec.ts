@@ -191,6 +191,51 @@ test.describe('Admin control centre', () => {
     await expect(page.getByText(/dev-bypass identity/i)).toBeVisible();
     await expect(row).toContainText('admin');
   });
+
+  // Workspace membership (ADR 0043, #1693).
+  const membershipTable = (page: import('@playwright/test').Page) =>
+    page
+      .getByRole('main')
+      .locator('table')
+      .filter({ has: page.getByRole('columnheader', { name: 'Source', exact: true }) });
+
+  test('admits a member, shows it pending, then removes it', async ({ page }) => {
+    await page.goto('/admin/members');
+    const email = `e2e-${Date.now()}@dataq.local`;
+
+    await expect(page.getByText('Workspace membership')).toBeVisible();
+    await page.getByRole('button', { name: 'Add member' }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByPlaceholder('person@example.com').fill(email);
+    await dialog.getByRole('button', { name: 'Add', exact: true }).click();
+
+    // Admitted but never signed in — not a failure state, and the table says so.
+    const row = membershipTable(page).locator('tr').filter({ hasText: email }).first();
+    await expect(row).toBeVisible();
+    await expect(row).toContainText('pending first sign-in');
+
+    // Reload proves it PERSISTED, and — the point of this spec — that writing the
+    // first managed member did not lock this dev-bypass lane out of its own app.
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Admin', level: 3 })).toBeVisible();
+    const reloaded = membershipTable(page).locator('tr').filter({ hasText: email }).first();
+    await expect(reloaded).toBeVisible();
+
+    // Put it back, so the spec is re-runnable against a persistent stack.
+    await reloaded.getByRole('button', { name: 'Remove' }).click();
+    await page.getByRole('button', { name: 'Remove member' }).click();
+    await expect(membershipTable(page).locator('tr').filter({ hasText: email })).toHaveCount(0);
+  });
+
+  test('the switch-on import is surfaced for review, not left to be discovered', async ({
+    page,
+  }) => {
+    await page.goto('/admin/members');
+    // The first add imported every existing user provisionally; the banner names
+    // them, and the dev-bypass identity is among them.
+    await expect(page.getByText(/Review \d+ imported member/)).toBeVisible();
+    await expect(page.getByText('dev-bypass@dataq.local').first()).toBeVisible();
+  });
 });
 
 // Workspace-admin suite writes (#1698). Everything here acts on a suite the spec

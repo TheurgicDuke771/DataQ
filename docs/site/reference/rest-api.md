@@ -219,6 +219,10 @@ an outbound model request.
 | DELETE | `/admin/suites/{id}/access/{grant_id}` | Revoke any per-suite share, on any suite (audited as an admin override). |
 | POST | `/admin/suites/{id}/transfer` | Transfer suite ownership. A viewer cannot own (422); transferring to the current owner is a 409. The previous owner keeps an `edit` grant unless `keep_previous_owner_access` is false. |
 | DELETE | `/admin/suites/{id}` | Delete any suite. Same cascade as the owner's own delete; the audit event carries the destroyed counts. |
+| GET | `/admin/members` | Workspace membership, with whether enforcement is on and how many users a first add would import. |
+| POST | `/admin/members` | Admit an address, with an optional initial role. The first add turns enforcement on and imports existing users for review (audited). |
+| DELETE | `/admin/members/{id}` | Withdraw a membership — bites on the next request for every credential kind. Last-admin guarded; `confirm_self=true` to remove your own (audited). |
+| POST | `/admin/members/{id}/confirm` | Clear the provisional flag on an imported member. Grants nothing new (audited). |
 | GET | `/admin/audit-events` | The append-only audit log (config + data-access events, ADR 0041). |
 | GET | `/admin/deployment` | Declared residency / deployment posture (`DEPLOYMENT_REGION`). |
 | GET | `/admin/orchestration/webhooks` | Webhook receiver URLs + auth mode per provider. |

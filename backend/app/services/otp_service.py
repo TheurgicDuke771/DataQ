@@ -22,9 +22,11 @@ from backend.app.core.circuit_breaker import (
 )
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.errors import DataQError
+from backend.app.core.identity import normalize_email
 from backend.app.core.logging import get_logger
 from backend.app.core.roles import bootstrap_role, should_promote_to_admin
 from backend.app.db.models import ADMIN_ROLE, OtpCode, User
+from backend.app.services import membership_service
 
 log = get_logger(__name__)
 
@@ -42,18 +44,27 @@ class CodeMailer(Protocol):
     def send_code(self, *, to: str, code: str, expires_in_minutes: int) -> None: ...
 
 
-def normalize_email(email: str) -> str:
-    """The ONE email normalization rule: strip + lower."""
-    return email.strip().lower()
-
-
-def is_signup_eligible(email: str, settings: Settings | None = None) -> bool:
-    """Whether `email` (already normalized) may sign up / sign in via OTP."""
+def env_signup_allowed(email: str, settings: Settings | None = None) -> bool:
+    """The env-allowlist half of OTP eligibility, on its own. Grant-only."""
     s = settings or get_settings()
-    if email in s.auth_otp_allowed_email_set:
-        return True
     _, _, domain = email.partition("@")
-    return bool(domain) and domain in s.auth_otp_allowed_domain_set
+    return email in s.auth_otp_allowed_email_set or (
+        bool(domain) and domain in s.auth_otp_allowed_domain_set
+    )
+
+
+def is_signup_eligible(db: Session, email: str, settings: Settings | None = None) -> bool:
+    """Whether `email` (already normalized) may sign up / sign in via OTP.
+
+    Choke point 4 of ADR 0043 decision 4, applied at both call sites, so the
+    check that stops delivery is the check that stops redemption. The env
+    allowlist stays grant-only and remains boot-mandatory (ADR 0032 decision 2).
+    """
+    s = settings or get_settings()
+    env_allowed = env_signup_allowed(email, s)
+    return membership_service.is_member(
+        db, email, env_allowed=env_allowed, unmanaged_default=env_allowed, settings=s
+    )
 
 
 class OtpVerifyError(DataQError):
@@ -255,7 +266,7 @@ def request_code(
     s = settings or get_settings()
     normalized = normalize_email(email)
 
-    if not is_signup_eligible(normalized, s):
+    if not is_signup_eligible(db, normalized, s):
         # Send NOTHING.
         log.info("otp_request_ineligible")
         return RequestOutcome(sent=False, reason="ineligible")
@@ -351,7 +362,7 @@ def verify_code(db: Session, email: str, code: str, *, settings: Settings | None
 
     # Re-check eligibility at redemption, not only at request: an operator who
     # removes somebody from the allowlist within the 10-minute TTL means it.
-    if not is_signup_eligible(normalized, s):
+    if not is_signup_eligible(db, normalized, s):
         log.warning("otp_verify_failed", reason="no_longer_eligible")
         raise OtpVerifyError()
 
@@ -379,7 +390,12 @@ def resolve_or_create_user(db: Session, normalized_email: str) -> User:
         email=normalized_email,
         # ADR 0033 decision 8's precedence lives inside `bootstrap_role`, shared with the OIDC/AAD
         # sign-in path: the allowlist write-through WINS over the signup default.
-        role=bootstrap_role(normalized_email, default=get_settings().auth_otp_default_role),
+        # New-row branch only: the promote-only update above is untouched.
+        role=bootstrap_role(
+            normalized_email,
+            default=membership_service.initial_role_for(db, normalized_email)
+            or get_settings().auth_otp_default_role,
+        ),
         last_seen_at=now,
     )
     db.add(user)
@@ -425,6 +441,7 @@ __all__ = [
     "QueuedCodeMailer",
     "RedisOtpCounterStore",
     "RequestOutcome",
+    "env_signup_allowed",
     "is_signup_eligible",
     "normalize_email",
     "purge_expired_codes",

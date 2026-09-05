@@ -4723,6 +4723,165 @@
         "title": "MeUpdate",
         "type": "object"
       },
+      "MemberAddedRead": {
+        "properties": {
+          "auto_imported_count": {
+            "title": "Auto Imported Count",
+            "type": "integer"
+          },
+          "enforcement_active": {
+            "title": "Enforcement Active",
+            "type": "boolean"
+          },
+          "member": {
+            "$ref": "#/components/schemas/MemberRead"
+          }
+        },
+        "required": [
+          "member",
+          "auto_imported_count",
+          "enforcement_active"
+        ],
+        "title": "MemberAddedRead",
+        "type": "object"
+      },
+      "MemberCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          },
+          "initial_role": {
+            "default": "member",
+            "enum": [
+              "admin",
+              "member",
+              "viewer"
+            ],
+            "title": "Initial Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "MemberCreate",
+        "type": "object"
+      },
+      "MemberRead": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "initial_role": {
+            "title": "Initial Role",
+            "type": "string"
+          },
+          "invited_by_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invited By Email"
+          },
+          "source": {
+            "enum": [
+              "admin",
+              "auto_import"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "pending"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "stored_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stored Role"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "initial_role",
+          "source",
+          "invited_by_email",
+          "created_at",
+          "user_id",
+          "stored_role",
+          "status"
+        ],
+        "title": "MemberRead",
+        "type": "object"
+      },
+      "MembershipRead": {
+        "properties": {
+          "enforcement_active": {
+            "title": "Enforcement Active",
+            "type": "boolean"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/MemberRead"
+            },
+            "title": "Members",
+            "type": "array"
+          },
+          "unmanaged_user_count": {
+            "title": "Unmanaged User Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enforcement_active",
+          "unmanaged_user_count",
+          "members"
+        ],
+        "title": "MembershipRead",
+        "type": "object"
+      },
       "NearMissRead": {
         "description": "A currently-active #1186 trigger-binding env mismatch (#1199).",
         "properties": {
@@ -8013,6 +8172,161 @@
           }
         },
         "summary": "Live-probe an LLM config draft \u2014 draft isn't saved, the call is audited (admin)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/members": {
+      "get": {
+        "description": "Who is admitted to this workspace, and whether membership is being enforced.\n\nAn empty list means enforcement is OFF, not that nobody has access: who may\nsign in is then decided entirely by the deployment's env allowlists.",
+        "operationId": "list_members_api_v1_admin_members_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MembershipRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Workspace members (admin)",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "description": "Admit `email`. Their identity provider still has to let them authenticate \u2014\nthis grants admission, it does not create an account anywhere.\n\nThe FIRST add turns enforcement on and imports every existing user as a\nprovisional member in the same transaction, so nobody is evicted by the switch.",
+        "operationId": "add_member_api_v1_admin_members_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberAddedRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admit an address to the workspace (admin)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/members/{member_id}": {
+      "delete": {
+        "description": "Withdraw a membership. It bites on that person's next request, whatever\ncredential they hold \u2014 their browser session and every PAT they own stop\nresolving. Refused for the last stored-role admin.",
+        "operationId": "remove_member_api_v1_admin_members__member_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Member Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Required to remove your own membership.",
+            "in": "query",
+            "name": "confirm_self",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Required to remove your own membership.",
+              "title": "Confirm Self",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Withdraw a membership (admin)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/members/{member_id}/confirm": {
+      "post": {
+        "description": "Clear the provisional flag on a row the switch-on import admitted.\n\nConfirming changes nothing about their access \u2014 they already have it. It\nrecords that an admin looked at the row and meant to keep it.",
+        "operationId": "confirm_member_api_v1_admin_members__member_id__confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Member Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm an auto-imported member (admin)",
         "tags": [
           "admin"
         ]

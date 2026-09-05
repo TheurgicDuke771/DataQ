@@ -246,6 +246,16 @@ _API_KEY_FIELDS: Final[tuple[str, ...]] = ("id", "user_id", "name", "revoked_at"
 
 _USER_FIELDS: Final[tuple[str, ...]] = ("id", "email", "display_name", "role")
 
+# The address is the record here, so it is IN the payload on purpose — unlike a log
+# line, where the discipline stays counts/domains/digests (ADR 0043 decision 2).
+_WORKSPACE_MEMBER_FIELDS: Final[tuple[str, ...]] = (
+    "id",
+    "email",
+    "initial_role",
+    "source",
+    "invited_by",
+)
+
 # Metadata mutation only (ADR 0041 §2.5).
 _ASSET_FIELDS: Final[tuple[str, ...]] = (
     "id",
@@ -283,6 +293,7 @@ _SERIALIZERS: Final[dict[str, tuple[str, ...]]] = {
     "share": _SHARE_FIELDS,
     "api_key": _API_KEY_FIELDS,
     "user": _USER_FIELDS,
+    "workspace_member": _WORKSPACE_MEMBER_FIELDS,
     "asset": _ASSET_FIELDS,
     "incident": _INCIDENT_FIELDS,
     "llm_setting": _LLM_SETTING_FIELDS,
