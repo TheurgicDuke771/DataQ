@@ -46,6 +46,9 @@ export interface AdminAccess {
   user_email: string;
   user_name: string | null;
   permission: string; // 'owner' | 'admin' | 'edit' | 'view'
+  /** The share row a revoke targets — `null` on an implicit owner row, which is
+   *  not a grant (transfer ownership instead). */
+  grant_id: string | null;
 }
 
 export async function listAdminSuites(): Promise<AdminSuite[]> {
@@ -67,6 +70,36 @@ export async function setAdminUserRole(userId: string, role: WorkspaceRole): Pro
 export async function listAdminAccess(): Promise<AdminAccess[]> {
   const { data } = await api.get<AdminAccess[]>('/admin/access');
   return data;
+}
+
+/** Revoke any per-suite grant as a workspace admin, grant or suite unowned. */
+export async function revokeAdminGrant(suiteId: string, grantId: string): Promise<void> {
+  await api.delete(`/admin/suites/${suiteId}/access/${grantId}`);
+}
+
+export interface SuiteTransferResult {
+  suite_id: string;
+  previous_owner_id: string | null;
+  new_owner_id: string;
+  /** What the previous owner keeps — `null` when they keep nothing. */
+  previous_owner_permission: string | null;
+}
+
+/** Hand a suite to another user — the offboarding primitive. */
+export async function transferAdminSuite(
+  suiteId: string,
+  payload: { new_owner_user_id: string; keep_previous_owner_access: boolean },
+): Promise<SuiteTransferResult> {
+  const { data } = await api.post<SuiteTransferResult>(
+    `/admin/suites/${suiteId}/transfer`,
+    payload,
+  );
+  return data;
+}
+
+/** Delete any suite in the workspace. The cascade is the owner's own delete. */
+export async function deleteAdminSuite(suiteId: string): Promise<void> {
+  await api.delete(`/admin/suites/${suiteId}`);
 }
 
 /** One orchestration provider's inbound-webhook config (#490). */

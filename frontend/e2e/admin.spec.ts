@@ -156,3 +156,99 @@ test.describe('Admin control centre', () => {
     await expect(row).toContainText('admin');
   });
 });
+
+// Workspace-admin suite writes (#1698). Everything here acts on a suite the spec
+// creates itself over the API — the seeded suites carry the rest of the E2E lane's
+// expectations, and two of these three verbs are irreversible.
+test.describe('Admin suite writes', () => {
+  const ANALYST = 'analyst@dataq.local';
+
+  async function seedSuite(page: import('@playwright/test').Page) {
+    const suiteName = `e2e-admin-writes-${Date.now()}`;
+    const connections = await (await page.request.get('/api/v1/connections')).json();
+    const datasource = connections.find(
+      (c: { type: string }) => !['adf', 'airflow', 'dbt'].includes(c.type),
+    );
+    expect(datasource, 'the seeded stack has a datasource connection').toBeTruthy();
+    const created = await page.request.post('/api/v1/suites', {
+      data: { name: suiteName, connection_id: datasource.id },
+    });
+    expect(created.ok()).toBe(true);
+    const suite = await created.json();
+
+    const users = await (await page.request.get('/api/v1/admin/users')).json();
+    const analyst = users.find((u: { email: string }) => u.email === ANALYST);
+    expect(analyst, 'the demo seed provisions the analyst').toBeTruthy();
+    return { suiteId: suite.id as string, suiteName, analystId: analyst.id as string };
+  }
+
+  test('revokes a per-suite grant the admin never owned', async ({ page }) => {
+    const { suiteId, suiteName, analystId } = await seedSuite(page);
+    const shared = await page.request.post(`/api/v1/suites/${suiteId}/shares`, {
+      data: { user_id: analystId, permission: 'view' },
+    });
+    expect(shared.ok()).toBe(true);
+
+    await page.goto('/admin/members');
+    const row = page
+      .getByRole('main')
+      .locator('tr')
+      .filter({ hasText: suiteName })
+      .filter({ hasText: ANALYST });
+    await expect(row).toBeVisible();
+
+    await row.getByRole('button', { name: 'Revoke' }).click();
+    await page.locator('.ant-popconfirm').getByRole('button', { name: 'Revoke' }).click();
+
+    // Reload to prove the grant is gone from the SERVER, not just this render.
+    await page.reload();
+    await expect(
+      page.getByRole('main').locator('tr').filter({ hasText: suiteName }).filter({
+        hasText: ANALYST,
+      }),
+    ).toHaveCount(0);
+
+    await page.request.delete(`/api/v1/admin/suites/${suiteId}`);
+  });
+
+  test('transfers ownership and then deletes the suite behind a typed confirmation', async ({
+    page,
+  }) => {
+    const { suiteId, suiteName } = await seedSuite(page);
+
+    await page.goto('/admin/suites');
+    const row = page.getByRole('main').locator('tr').filter({ hasText: suiteName });
+    await expect(row).toBeVisible();
+
+    await row.getByRole('button', { name: 'Transfer' }).click();
+    // Keyboard selection: rc-virtual-list parks options off-viewport, so clicking
+    // an option by role is flaky in this lane (see notifications.spec.ts).
+    const picker = page.getByRole('dialog').getByRole('combobox');
+    await picker.fill('analyst');
+    await expect(page.getByText(new RegExp(ANALYST))).toBeVisible();
+    await picker.press('Enter');
+    await page.getByRole('dialog').getByRole('button', { name: 'Transfer' }).click();
+
+    await page.reload();
+    await expect(page.getByRole('main').locator('tr').filter({ hasText: suiteName })).toContainText(
+      ANALYST,
+    );
+
+    // Delete — on the suite this spec created, never a seeded one.
+    const afterTransfer = page.getByRole('main').locator('tr').filter({ hasText: suiteName });
+    await afterTransfer.getByRole('button', { name: 'Delete' }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByText(/This cannot be undone/)).toBeVisible();
+    const confirm = dialog.getByRole('button', { name: 'Delete' });
+    await expect(confirm).toBeDisabled();
+    await dialog.getByLabel('Suite name confirmation').fill(suiteName);
+    await expect(confirm).toBeEnabled();
+    await confirm.click();
+
+    await page.reload();
+    await expect(page.getByRole('main').locator('tr').filter({ hasText: suiteName })).toHaveCount(
+      0,
+    );
+    expect((await page.request.get(`/api/v1/suites/${suiteId}`)).status()).toBe(404);
+  });
+});
