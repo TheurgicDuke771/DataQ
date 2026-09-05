@@ -20,6 +20,7 @@ from starlette.requests import Request
 import backend.app.core.auth as auth_mod
 from backend.app.core.config import Settings
 from backend.app.core.errors import DataQError
+from backend.app.core.identity import identity_log_fields
 from backend.app.core.logging import _PII_KEYS
 from backend.app.db.models import User
 from backend.app.services import api_key_service, user_service
@@ -423,8 +424,10 @@ def test_oidc_allowlist_denies_an_address_not_on_it(
             db_session,
         )
     # 403, not 401: the token is valid, so re-authenticating would loop forever.
+    # The allowlist is now one input to the membership predicate, so the refusal
+    # arrives with the membership code rather than a second, parallel one.
     assert excinfo.value.status_code == 403
-    assert excinfo.value.code == "forbidden"
+    assert excinfo.value.code == "not_a_workspace_member"
 
 
 @_OIDC_DEPS
@@ -1190,27 +1193,25 @@ def test_fetch_userinfo_malformed_200_raises_value_error(
         auth_mod.fetch_userinfo("https://example-idp.test", "tok-bad")
 
 
-def test_denied_identity_names_the_caller_without_logging_the_address() -> None:
+def test_identity_log_fields_names_the_caller_without_logging_the_address() -> None:
     """`email=` would be swallowed by `_PII_KEYS`, and the 403 body deliberately
     doesn't echo the address — so if this helper also said nothing, a
     misconfigured allowlist would be undiagnosable from every surface at once.
     """
-    fields = auth_mod._denied_identity("Someone@Example.com")
+    fields = identity_log_fields("Someone@Example.com")
     assert fields["email_domain"] == "example.com"
     # Stable (so repeated denials correlate) but not the address itself.
-    assert (
-        fields["email_digest"] == auth_mod._denied_identity("someone@example.com")["email_digest"]
-    )
+    assert fields["email_digest"] == identity_log_fields("someone@example.com")["email_digest"]
     assert "someone@example.com" not in str(fields)
     assert "someone" not in fields["email_digest"]
     # None of the keys may be one the logger redacts, or we are back to silence.
     assert not (set(fields) & _PII_KEYS)
 
 
-def test_denied_identity_handles_an_address_with_no_domain() -> None:
+def test_identity_log_fields_handles_an_address_with_no_domain() -> None:
     """An empty/garbled `email` claim reaches here (userinfo outage, #1346), and
     the log line must still render rather than raise inside the denial path.
     """
-    fields = auth_mod._denied_identity("")
+    fields = identity_log_fields("")
     assert fields["email_domain"] == "(none)"
     assert fields["email_digest"]

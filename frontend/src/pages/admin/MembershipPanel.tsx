@@ -1,4 +1,4 @@
-import { Alert, Button, Flex, Modal, Popconfirm, Space, Tag, Typography } from 'antd';
+import { Alert, App, Button, Flex, Popconfirm, Space, Tag, Tooltip } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useState } from 'react';
 
@@ -12,7 +12,7 @@ import {
 import { useMe } from '../../auth/useMe';
 import { formatTimestamp } from '../../components/results/resultsFormat';
 import { useAsyncData } from '../../hooks/useAsyncData';
-import { fetchFailure } from '../../utils/errors';
+import { errorMessage } from '../../utils/errors';
 import { AddMemberModal } from './AddMemberModal';
 import { DataTable, Section } from './parts';
 
@@ -20,9 +20,11 @@ import { DataTable, Section } from './parts';
 export function MembershipPanel() {
   const { state, reload } = useAsyncData(listWorkspaceMembers);
   const me = useMe();
+  // `App.useApp()`, not the static `Modal`/`message` — the static ones render
+  // outside the theme provider, which is the rule RoleEditor already follows.
+  const { modal, message } = App.useApp();
   const [adding, setAdding] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   const myEmail = me.status === 'ok' ? me.data.email.toLowerCase() : null;
   const view: MembershipView | null = state.status === 'ok' ? state.data : null;
@@ -30,16 +32,18 @@ export function MembershipPanel() {
 
   const act = async (id: string, run: () => Promise<unknown>) => {
     setBusyId(id);
-    setError(null);
     try {
       await run();
       reload();
     } catch (err: unknown) {
-      setError(fetchFailure(err, String(err)).message);
+      message.error(errorMessage(err));
     } finally {
       setBusyId(null);
     }
   };
+
+  const confirm = (member: WorkspaceMember) =>
+    void act(member.id, () => confirmWorkspaceMember(member.id));
 
   const remove = (member: WorkspaceMember) => {
     const isSelf = myEmail !== null && member.email.toLowerCase() === myEmail;
@@ -47,7 +51,7 @@ export function MembershipPanel() {
       void act(member.id, () => removeWorkspaceMember(member.id));
       return;
     }
-    Modal.confirm({
+    modal.confirm({
       title: 'Remove your own membership?',
       content:
         'You will be signed out of this workspace on your next request, and every API key ' +
@@ -60,8 +64,17 @@ export function MembershipPanel() {
 
   return (
     <Section title="Workspace membership">
-      {error && (
-        <Alert type="error" showIcon title={error} closable={{ onClose: () => setError(null) }} />
+      {view && view.enforcement_active && !view.enforced && (
+        <Alert
+          type="warning"
+          showIcon
+          title="Membership is not enforced on this stack"
+          description={
+            view.enforced_reason
+              ? `${view.enforced_reason} — the list below is recorded, but no door is checking it.`
+              : 'No door is checking the list below.'
+          }
+        />
       )}
 
       {view && !view.enforcement_active && (
@@ -83,35 +96,22 @@ export function MembershipPanel() {
           showIcon
           title={`Review ${imported.length} imported member${imported.length === 1 ? '' : 's'}`}
           description={
-            <Flex vertical gap={8}>
-              <Typography.Text>
-                These were admitted automatically when enforcement was turned on, so nobody lost
-                access. A user row proves somebody signed in once, not that they still belong here.
-              </Typography.Text>
-              {imported.map((m) => (
-                <Flex key={m.id} gap={8} align="center" wrap>
-                  <Typography.Text code>{m.email}</Typography.Text>
-                  <Button
-                    size="small"
-                    loading={busyId === m.id}
-                    onClick={() => act(m.id, () => confirmWorkspaceMember(m.id))}
-                  >
-                    Confirm
-                  </Button>
-                  <Popconfirm
-                    title="Remove this member?"
-                    description="They lose access on their next request, including any API keys."
-                    okText="Remove member"
-                    okButtonProps={{ danger: true }}
-                    onConfirm={() => remove(m)}
-                  >
-                    <Button size="small" danger loading={busyId === m.id}>
-                      Remove
-                    </Button>
-                  </Popconfirm>
-                </Flex>
-              ))}
-            </Flex>
+            'These were admitted automatically when enforcement was turned on, so nobody lost ' +
+            'access. A user row proves somebody signed in once, not that they still belong here. ' +
+            'Confirm or remove each one in the table below.'
+          }
+        />
+      )}
+
+      {view && view.env_allowed_domains.length > 0 && (
+        <Alert
+          type="info"
+          showIcon
+          title="Some addresses are admitted by domain"
+          description={
+            `Anyone at ${view.env_allowed_domains.join(', ')} is admitted by this deployment's ` +
+            'environment. Those people cannot be listed or removed here — edit the allowlist ' +
+            'variable and restart.'
           }
         />
       )}
@@ -124,7 +124,7 @@ export function MembershipPanel() {
 
       <DataTable
         state={state.status === 'ok' ? { status: 'ok', data: state.data.members } : state}
-        columns={columns(busyId, remove)}
+        columns={columns(busyId, remove, confirm)}
         rowKey={(m) => m.id}
         errorMessage="Failed to load workspace members"
       />
@@ -143,18 +143,18 @@ export function MembershipPanel() {
 const columns = (
   busyId: string | null,
   remove: (m: WorkspaceMember) => void,
+  confirm: (m: WorkspaceMember) => void,
 ): ColumnsType<WorkspaceMember> => [
   { title: 'Email', dataIndex: 'email' },
   { title: 'Initial role', dataIndex: 'initial_role' },
   {
     title: 'Source',
     dataIndex: 'source',
-    render: (source: string) =>
-      source === 'auto_import' ? (
-        <Tag color="orange">imported — review</Tag>
-      ) : (
-        <Tag color="blue">added</Tag>
-      ),
+    render: (source: string) => {
+      if (source === 'auto_import') return <Tag color="orange">imported — review</Tag>;
+      if (source === 'env') return <Tag>listed in the environment</Tag>;
+      return <Tag color="blue">added</Tag>;
+    },
   },
   {
     title: 'Added by',
@@ -177,17 +177,34 @@ const columns = (
     key: 'actions',
     render: (_, m) => (
       <Space>
-        <Popconfirm
-          title="Remove this member?"
-          description="They lose access on their next request, including any API keys they hold."
-          okText="Remove member"
-          okButtonProps={{ danger: true }}
-          onConfirm={() => remove(m)}
-        >
-          <Button size="small" danger loading={busyId === m.id}>
-            Remove
+        {m.source === 'auto_import' && (
+          <Button size="small" loading={busyId === m.id} onClick={() => confirm(m)}>
+            Confirm
           </Button>
-        </Popconfirm>
+        )}
+        {m.removable ? (
+          <Popconfirm
+            title="Remove this member?"
+            description={
+              m.env_listed
+                ? 'An env var also names this address, so they keep access until it is removed there too.'
+                : 'They lose access on their next request, including any API keys they hold.'
+            }
+            okText="Remove member"
+            okButtonProps={{ danger: true }}
+            onConfirm={() => remove(m)}
+          >
+            <Button size="small" danger loading={busyId === m.id}>
+              Remove
+            </Button>
+          </Popconfirm>
+        ) : (
+          <Tooltip title="Listed in the environment — remove it there">
+            <Button size="small" danger disabled>
+              Remove
+            </Button>
+          </Tooltip>
+        )}
       </Space>
     ),
   },

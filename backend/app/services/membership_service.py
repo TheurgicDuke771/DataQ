@@ -1,24 +1,24 @@
 """In-app workspace membership — ADR 0043.
 
-The table's own emptiness is the enforcement switch. While `workspace_members`
-has no rows, `is_member` returns whatever the caller's own env allowlist decided,
-so every door behaves exactly as it did before this module existed. Once the
-table has a row, membership is `union(env allowlist, workspace_members)`.
+The table's emptiness is the switch: with no rows `is_member` returns the
+deployment's env-allowlist verdict, which is what every door did before this
+module existed; with rows it is `union(env allowlists, the table)`.
 """
 
 from __future__ import annotations
 
+import enum
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import exists, func, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError, ProgrammingError
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.errors import DataQError
-from backend.app.core.identity import identity_log_fields, normalize_email
+from backend.app.core.identity import allowlisted, identity_log_fields, normalize_email
 from backend.app.core.logging import get_logger
 from backend.app.db.models import (
     ADMIN_MEMBER_SOURCE,
@@ -29,11 +29,27 @@ from backend.app.db.models import (
     WorkspaceMember,
 )
 from backend.app.services import audit_service
+from backend.app.services.membership_guard import (
+    RoleChangeRejectedError,
+    _table_missing,
+    assert_admin_remains,
+)
+from backend.app.services.membership_guard import enforcement_active as enforcement_active
 
 log = get_logger(__name__)
 
 #: `audit_service` entity type for every event this module records.
 AUDIT_ENTITY = "workspace_member"
+
+#: Synthetic `source` for a row that exists only in the environment.
+ENV_MEMBER_SOURCE = "env"
+
+#: Namespace for the stable synthetic id of an env-listed row.
+_ENV_ROW_NAMESPACE = uuid.UUID("6f9f5d2e-9a4c-4e5a-9a1f-0043004d4249")
+
+#: Shared by the switch-on write (exclusive) and every sign-in that may create a
+#: user row (shared), so the import cannot miss a concurrent first sign-in.
+SIGNIN_LOCK_KEY = 4300431
 
 
 class MembershipDeniedError(DataQError):
@@ -44,8 +60,7 @@ class MembershipDeniedError(DataQError):
             "This account is not a member of this DataQ workspace.",
             code="not_a_workspace_member",
             # 403, not 401: the credential IS valid, so re-authenticating would
-            # loop the SPA forever. At /mcp the verifier turns this into a 401,
-            # which ADR 0043 decision 4 records as a known asymmetry.
+            # loop the SPA forever. /mcp turns this into a 401 (decision 4).
             status_code=403,
         )
 
@@ -62,12 +77,61 @@ class MembershipChangeRejectedError(DataQError):
     code = "membership_change_rejected"
 
 
+# ── The env half of the rule ──────────────────────────────────────────────────
+
+
+class EnvVerdict(enum.Enum):
+    """What this deployment's env allowlists say, before the table is consulted."""
+
+    GRANTED = "granted"
+    DENIED = "denied"
+    NO_ALLOWLIST = "no_allowlist"
+
+
+def _access_allowlists(s: Settings) -> list[tuple[frozenset[str], frozenset[str]]]:
+    """The allowlists that gate a door on THIS deployment.
+
+    An unconfigured mode contributes nothing: reading an unrelated mode's env var
+    would deny an entire Azure-AD tenant, which has no app-side allowlist at all.
+    """
+    gates = []
+    if s.generic_oidc_configured and s.oidc_allowlist_configured:
+        gates.append((s.oidc_allowed_email_set, s.oidc_allowed_domain_set))
+    if s.otp_auth_configured:
+        gates.append((s.auth_otp_allowed_email_set, s.auth_otp_allowed_domain_set))
+    return gates
+
+
+def env_verdict(email: str, settings: Settings | None = None) -> EnvVerdict:
+    """The env allowlists' verdict on `email`. `WORKSPACE_ADMIN_EMAILS` grants
+    only (ADR 0033 decision 6): the way back into a locked-out workspace.
+    """
+    s = settings or get_settings()
+    gates = _access_allowlists(s)
+    if s.is_admin_email(email) or any(allowlisted(email, *gate) for gate in gates):
+        return EnvVerdict.GRANTED
+    return EnvVerdict.DENIED if gates else EnvVerdict.NO_ALLOWLIST
+
+
+def env_listed_addresses(settings: Settings | None = None) -> tuple[str, ...]:
+    """Every address an env var names outright — a domain entry names nobody."""
+    s = settings or get_settings()
+    addresses = set(s.workspace_admin_email_set)
+    for emails, _ in _access_allowlists(s):
+        addresses |= emails
+    return tuple(sorted(addresses))
+
+
+def env_allowed_domains(settings: Settings | None = None) -> tuple[str, ...]:
+    """Domains an env var admits wholesale — un-enumerable, so shown as themselves."""
+    s = settings or get_settings()
+    domains: set[str] = set()
+    for _, gate_domains in _access_allowlists(s):
+        domains |= gate_domains
+    return tuple(sorted(domains))
+
+
 # ── The predicate every door reads ────────────────────────────────────────────
-
-
-def enforcement_active(db: Session, /) -> bool:
-    """Whether any managed member exists — the switch itself (decision 3)."""
-    return bool(db.execute(select(exists().select_from(WorkspaceMember))).scalar())
 
 
 def _row_for(db: Session, normalized: str) -> WorkspaceMember | None:
@@ -76,73 +140,65 @@ def _row_for(db: Session, normalized: str) -> WorkspaceMember | None:
     ).scalar_one_or_none()
 
 
-def is_member(
-    db: Session,
-    email: str,
-    *,
-    env_allowed: bool,
-    unmanaged_default: bool = True,
-    settings: Settings | None = None,
-) -> bool:
-    """Whether `email` may hold or keep access to this workspace.
-
-    `env_allowed` is an explicit env-allowlist entry, which stays grant-only
-    (decision 7): it can admit, and can never remove somebody the table admits.
-    Doors with no allowlist of their own pass False. It has no default, so a
-    door cannot silently inherit somebody else's answer.
-
-    `unmanaged_default` is what this door decides while the table is empty —
-    its behaviour before this table existed. A door whose env allowlist is its
-    whole rule (generic OIDC, OTP) passes its own verdict here; a door that has
-    never had an app-side gate (Azure AD, sessions, PATs) leaves it True.
+def _decide(db: Session, email: str, s: Settings) -> tuple[bool, WorkspaceMember | None]:
+    """`(admitted, the row that admitted them)`. The row is handed back so a
+    caller needing `initial_role` does not repeat the lookup.
     """
-    s = settings or get_settings()
-    # Dev bypass is exempt, and the exemption is a mode predicate rather than a
-    # comparison against DEV_BYPASS_EMAIL, which a caller on a real deployment
-    # could supply (decision 5). Without it the local and eval stacks would be
-    # unbootable the moment an admin wrote the first row. `dev_bypass_active`,
-    # not `dev_bypass_allowed`: the latter stays true beside email OTP, where the
-    # ladder picks OTP and the bypass identity is never minted.
     if s.dev_bypass_active:
-        return True
-    if env_allowed:
-        return True
-    if not enforcement_active(db):
-        return unmanaged_default
-    return _row_for(db, normalize_email(email)) is not None
+        return True, None
+    verdict = env_verdict(email, s)
+    try:
+        row = _row_for(db, normalize_email(email))
+    except ProgrammingError as exc:
+        if not _table_missing(db, exc):
+            raise
+        log.warning("membership_table_missing", effect="membership is not enforced")
+        return verdict is not EnvVerdict.DENIED, None
+    if row is not None or verdict is EnvVerdict.GRANTED:
+        return True, row
+    if enforcement_active(db):
+        return False, None
+    return verdict is not EnvVerdict.DENIED, None
+
+
+def is_member(db: Session, email: str, *, settings: Settings | None = None) -> bool:
+    """Whether `email` may hold or keep access. The env grant is derived here,
+    not passed in: a door cannot be handed a different answer than its siblings.
+    """
+    return _decide(db, email, settings or get_settings())[0]
 
 
 def require_member(
-    db: Session,
-    email: str,
-    *,
-    door: str,
-    env_allowed: bool = False,
-    unmanaged_default: bool = True,
-    settings: Settings | None = None,
-) -> None:
+    db: Session, email: str, *, door: str, settings: Settings | None = None
+) -> WorkspaceMember | None:
     """`is_member`, raising at the door instead of returning False."""
-    if is_member(
-        db,
-        email,
-        env_allowed=env_allowed,
-        unmanaged_default=unmanaged_default,
-        settings=settings,
-    ):
-        return
+    allowed, row = _decide(db, email, settings or get_settings())
+    if allowed:
+        return row
     log.warning("auth_membership_denied", door=door, **identity_log_fields(email))
     raise MembershipDeniedError()
 
 
 def initial_role_for(db: Session, email: str) -> str | None:
-    """The pre-provisioned role for `email`, or None when it is not listed.
-
-    Seeds a user row on the NEW-row branch only (decision 9) — the caller must
-    never route it through an upsert's conflict branch, which would overwrite an
-    in-app role change on every request.
+    """The pre-provisioned role for `email`, or None. New-row branch only
+    (decision 9): a conflict branch would overwrite an in-app role change.
     """
     row = _row_for(db, normalize_email(email))
     return row.initial_role if row is not None else None
+
+
+def _advisory_lock(db: Session, *, shared: bool) -> None:
+    if db.get_bind().dialect.name != "postgresql":  # pragma: no cover — Postgres in CI
+        return
+    fn = func.pg_advisory_xact_lock_shared if shared else func.pg_advisory_xact_lock
+    db.execute(select(fn(SIGNIN_LOCK_KEY)))
+
+
+def lock_signin(db: Session) -> None:
+    """Hold off a switch-on until this sign-in's user row has committed, so the
+    import cannot miss it and leave that person neither imported nor a member.
+    """
+    _advisory_lock(db, shared=True)
 
 
 # ── Admin CRUD ────────────────────────────────────────────────────────────────
@@ -159,18 +215,45 @@ class MemberRow:
     #: The `users` row this address has signed in as, if any.
     user_id: uuid.UUID | None
     stored_role: str | None
+    #: An env var names this address, so removing the table row does not revoke it.
+    env_listed: bool
 
     @property
     def status(self) -> str:
         return "active" if self.user_id is not None else "pending"
 
+    @property
+    def removable(self) -> bool:
+        return self.source != ENV_MEMBER_SOURCE
+
+
+@dataclass(frozen=True)
+class EnforcementStatus:
+    #: The table has at least one row.
+    enforcement_active: bool
+    #: Whether any door is actually gated right now, and why not when it is not.
+    enforced: bool
+    enforced_reason: str | None
+
 
 @dataclass(frozen=True)
 class MembershipView:
-    enforcement_active: bool
+    status: EnforcementStatus
     #: Existing `users` rows the first managed add would auto-import (decision 8).
     unmanaged_user_count: int
+    #: Domains an env var admits wholesale — no row can represent them.
+    env_allowed_domains: tuple[str, ...]
     members: tuple[MemberRow, ...]
+
+
+def enforcement_status(db: Session, settings: Settings | None = None) -> EnforcementStatus:
+    s = settings or get_settings()
+    active = enforcement_active(db)
+    if s.dev_bypass_active:
+        return EnforcementStatus(active, False, "developer bypass is active on this deployment")
+    if not active:
+        return EnforcementStatus(False, False, "no members have been added yet")
+    return EnforcementStatus(True, True, None)
 
 
 def _validate_email(email: str) -> str:
@@ -190,45 +273,75 @@ def _users_by_email(db: Session) -> dict[str, User]:
     return {normalize_email(u.email): u for u in db.scalars(select(User)).all()}
 
 
-def list_members(db: Session) -> MembershipView:
+def _env_row_id(normalized: str) -> uuid.UUID:
+    return uuid.uuid5(_ENV_ROW_NAMESPACE, normalized)
+
+
+def _member_row(
+    row: WorkspaceMember,
+    users: dict[str, User],
+    inviters: dict[uuid.UUID, str],
+    env_addresses: frozenset[str],
+) -> MemberRow:
+    normalized = normalize_email(row.email)
+    user = users.get(normalized)
+    return MemberRow(
+        id=row.id,
+        email=row.email,
+        initial_role=row.initial_role,
+        source=row.source,
+        invited_by_email=inviters.get(row.invited_by) if row.invited_by else None,
+        created_at=row.created_at,
+        user_id=user.id if user else None,
+        stored_role=user.role if user else None,
+        env_listed=normalized in env_addresses,
+    )
+
+
+def _env_member_row(normalized: str, users: dict[str, User], now: datetime) -> MemberRow:
+    user = users.get(normalized)
+    return MemberRow(
+        id=_env_row_id(normalized),
+        email=normalized,
+        initial_role=user.role if user else "",
+        source=ENV_MEMBER_SOURCE,
+        invited_by_email=None,
+        created_at=now,
+        user_id=user.id if user else None,
+        stored_role=user.role if user else None,
+        env_listed=True,
+    )
+
+
+def list_members(db: Session, settings: Settings | None = None) -> MembershipView:
+    """Every admitted address, table-managed and env-listed alike: omitting an
+    env-listed one reads as "not admitted", and removing the managed row of
+    somebody the environment also names would look like a completed removal.
+    """
+    s = settings or get_settings()
     rows = db.scalars(select(WorkspaceMember).order_by(WorkspaceMember.created_at)).all()
     users = _users_by_email(db)
     inviters = {u.id: u.email for u in users.values()}
-    members = tuple(
-        MemberRow(
-            id=row.id,
-            email=row.email,
-            initial_role=row.initial_role,
-            source=row.source,
-            invited_by_email=inviters.get(row.invited_by) if row.invited_by else None,
-            created_at=row.created_at,
-            user_id=(
-                users[normalize_email(row.email)].id
-                if normalize_email(row.email) in users
-                else None
-            ),
-            stored_role=(
-                users[normalize_email(row.email)].role
-                if normalize_email(row.email) in users
-                else None
-            ),
-        )
-        for row in rows
-    )
+    env_addresses = frozenset(env_listed_addresses(s))
+    members = [_member_row(row, users, inviters, env_addresses) for row in rows]
     listed = {normalize_email(row.email) for row in rows}
+    now = datetime.now(tz=None).astimezone()
+    members.extend(
+        _env_member_row(address, users, now) for address in sorted(env_addresses - listed)
+    )
     return MembershipView(
-        enforcement_active=bool(rows),
+        status=enforcement_status(db, s),
         unmanaged_user_count=sum(1 for email in users if email not in listed),
-        members=members,
+        env_allowed_domains=env_allowed_domains(s),
+        members=tuple(members),
     )
 
 
 def _auto_import(db: Session, *, exclude: str) -> int:
     """Admit every existing user row, provisionally, in the caller's transaction.
 
-    Turning enforcement on can never evict a current user. These rows are marked
-    `auto_import` because a `users` row proves somebody once signed in, not that
-    they are still meant to be here — the Members page shows them for review.
+    Enforcement can never evict a current user, but a `users` row proves somebody
+    once signed in, not that they still belong — hence `auto_import`.
     """
     count = 0
     seen: set[str] = {exclude}
@@ -254,23 +367,34 @@ def _auto_import(db: Session, *, exclude: str) -> int:
 class AddOutcome:
     member: MemberRow
     auto_imported_count: int
+    status: EnforcementStatus
 
 
-def add_member(db: Session, *, email: str, initial_role: str, actor: User) -> AddOutcome:
+def add_member(
+    db: Session,
+    *,
+    email: str,
+    initial_role: str,
+    actor: User,
+    settings: Settings | None = None,
+) -> AddOutcome:
     """Admit `email`. The first managed add also turns enforcement on."""
+    s = settings or get_settings()
     if initial_role not in WORKSPACE_ROLES:
         raise MembershipChangeRejectedError(
             f"unknown workspace role: {initial_role!r}",
             detail={"role": initial_role, "allowed": list(WORKSPACE_ROLES)},
         )
     normalized = _validate_email(email)
+    # Exclusive: the import below must not read `users` just before a sign-in
+    # commits one.
+    _advisory_lock(db, shared=False)
     if _row_for(db, normalized) is not None:
         raise MembershipChangeRejectedError(
             "that address is already a workspace member",
             detail={"email": normalized},
         )
-    # Same transaction as the insert below, so the switch and the import commit
-    # together or not at all — it is part of the first write, or it is a race.
+    # Same transaction as the insert: switch and import commit together, or not.
     imported = 0 if enforcement_active(db) else _auto_import(db, exclude=normalized)
     row = WorkspaceMember(
         id=uuid.uuid4(),
@@ -295,8 +419,6 @@ def add_member(db: Session, *, email: str, initial_role: str, actor: User) -> Ad
         db.commit()
     except IntegrityError as exc:
         db.rollback()
-        # A concurrent first write imported the same address. Nothing partial
-        # survives — the whole transaction went back.
         raise MembershipChangeRejectedError(
             "another membership change landed first; reload the members list and retry"
         ) from exc
@@ -308,17 +430,26 @@ def add_member(db: Session, *, email: str, initial_role: str, actor: User) -> Ad
         auto_imported_count=imported,
         **identity_log_fields(normalized),
     )
-    return AddOutcome(member=_reread(db, row.id), auto_imported_count=imported)
+    return AddOutcome(
+        member=_reread(db, row.id, s),
+        auto_imported_count=imported,
+        status=enforcement_status(db, s),
+    )
 
 
-def _reread(db: Session, member_id: uuid.UUID) -> MemberRow:
+def _reread(db: Session, member_id: uuid.UUID, settings: Settings | None = None) -> MemberRow:
     """One row through the SAME builder the list uses, so a response cannot
-    carry a different computed shape than the table it lands in.
+    disagree with the table it lands in.
     """
-    for row in list_members(db).members:
-        if row.id == member_id:
-            return row
-    raise MemberNotFoundError("workspace member not found", detail={"member_id": str(member_id)})
+    row = db.get(WorkspaceMember, member_id)
+    if row is None:
+        raise MemberNotFoundError(
+            "workspace member not found", detail={"member_id": str(member_id)}
+        )
+    s = settings or get_settings()
+    users = _users_by_email(db)
+    inviters = {u.id: u.email for u in users.values()}
+    return _member_row(row, users, inviters, frozenset(env_listed_addresses(s)))
 
 
 def _locked_member(db: Session, member_id: uuid.UUID) -> WorkspaceMember:
@@ -332,15 +463,31 @@ def _locked_member(db: Session, member_id: uuid.UUID) -> WorkspaceMember:
     return row
 
 
+def _refuse_env_removal(db: Session, member_id: uuid.UUID, s: Settings) -> None:
+    """No row to delete; name the variable instead of 404ing."""
+    for address in env_listed_addresses(s):
+        if _env_row_id(address) == member_id:
+            raise MembershipChangeRejectedError(
+                "this address is admitted by the environment, not by the members "
+                "table — remove it from AUTH_OTP_ALLOWED_EMAILS / OIDC_ALLOWED_EMAILS "
+                "/ WORKSPACE_ADMIN_EMAILS and restart",
+                detail={"email": address},
+            )
+
+
 def remove_member(
-    db: Session, member_id: uuid.UUID, *, actor: User, confirm_self: bool = False
+    db: Session,
+    member_id: uuid.UUID,
+    *,
+    actor: User,
+    confirm_self: bool = False,
+    settings: Settings | None = None,
 ) -> None:
-    """Withdraw a membership. Bites on the removed user's next request."""
-    # Unlocked read first, for existence and the self-check. The locks below are
-    # then taken in one fixed order — admin users, admin memberships by id, the
-    # target — so two concurrent removals queue instead of deadlocking.
+    """Withdraw a membership. Bites on that person's next request."""
+    s = settings or get_settings()
     row = db.get(WorkspaceMember, member_id)
     if row is None:
+        _refuse_env_removal(db, member_id, s)
         raise MemberNotFoundError(
             "workspace member not found", detail={"member_id": str(member_id)}
         )
@@ -353,38 +500,16 @@ def remove_member(
             detail={"member_id": str(member_id)},
         )
 
-    # Everything below decides from LOCKED state. Stored-role admins only: an
-    # allowlist-resolved admin can vanish with the next deploy, so it cannot
-    # satisfy the invariant it is the recovery path for.
-    admin_emails = set(
-        db.scalars(
-            select(func.lower(User.email))
-            .where(User.role == ADMIN_ROLE)
-            .order_by(User.id)
-            .with_for_update()
-        ).all()
-    )
-    # Locking the admins' MEMBERSHIP rows is what makes the guard hold. Removing a
-    # membership changes no `users` row, so two concurrent removals that locked
-    # only `users` would both see two admins and both succeed, leaving none.
-    admin_member_ids = (
-        set(
-            db.scalars(
-                select(WorkspaceMember.id)
-                .where(func.lower(WorkspaceMember.email).in_(admin_emails))
-                .order_by(WorkspaceMember.id)
-                .with_for_update()
-            ).all()
-        )
-        if admin_emails
-        else set()
-    )
+    # Only an admin's membership can breach the invariant; only it pays the locks.
+    if _stored_role(db, normalized) == ADMIN_ROLE:
+        try:
+            assert_admin_remains(db, exclude_member_id=member_id)
+        except RoleChangeRejectedError as exc:
+            raise MembershipChangeRejectedError(
+                "this is the last admin in the workspace — promote another admin first",
+                detail={"member_id": str(member_id)},
+            ) from exc
     row = _locked_member(db, member_id)
-    if row.id in admin_member_ids and admin_member_ids <= {row.id}:
-        raise MembershipChangeRejectedError(
-            "this is the last admin in the workspace — promote another admin first",
-            detail={"member_id": str(member_id)},
-        )
 
     before = audit_service.snapshot(AUDIT_ENTITY, row)
     db.delete(row)
@@ -402,12 +527,15 @@ def remove_member(
     )
 
 
+def _stored_role(db: Session, normalized: str) -> str | None:
+    return db.scalars(select(User.role).where(func.lower(User.email) == normalized)).first()
+
+
 def confirm_member(db: Session, member_id: uuid.UUID, *, actor: User) -> MemberRow:
     """Clear the provisional flag on an auto-imported row (decision 8)."""
     row = _locked_member(db, member_id)
     if row.source == ADMIN_MEMBER_SOURCE:
-        # Idempotent: a UI that re-submits an already-confirmed row should not
-        # surface a failure.
+        # Idempotent: a re-submitted confirm must not surface a failure.
         return _reread(db, member_id)
     before = audit_service.snapshot(AUDIT_ENTITY, row)
     row.source = ADMIN_MEMBER_SOURCE

@@ -86,7 +86,7 @@ def test_normalization_matches_the_admin_allowlist_rule() -> None:
     ("email", "eligible"),
     [
         ("ada@acme.io", True),  # allowed domain
-        ("ada@ACME.io", False),  # NOT normalized by the caller → the caller must normalize
+        ("ada@ACME.io", True),  # the shared rule normalizes; casing must not decide access
         ("grace@other.org", False),
         ("nobody@", False),
         ("no-at-sign", False),
@@ -109,6 +109,16 @@ def test_a_domain_suffix_is_not_a_domain_match() -> None:
     """
     assert not svc.env_signup_allowed("ada@evil-acme.io", _settings())
     assert not svc.env_signup_allowed("ada@acme.io.evil.net", _settings())
+
+
+def test_a_domain_suffix_is_not_a_domain_match_at_the_door(db_session: Any) -> None:
+    """The same lookalikes through `is_signup_eligible`, which is what the OTP
+    endpoints actually call — a helper can be right while its caller is not.
+    """
+    s = _settings()
+    assert svc.is_signup_eligible(db_session, "ada@acme.io", s) is True
+    assert svc.is_signup_eligible(db_session, "ada@evil-acme.io", s) is False
+    assert svc.is_signup_eligible(db_session, "ada@acme.io.evil.net", s) is False
 
 
 # ── request: eligibility gating + anti-enumeration ───────────────────────────

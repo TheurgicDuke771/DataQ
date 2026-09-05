@@ -16,11 +16,7 @@ from backend.app.core.auth import (
     DEV_BYPASS_AAD_OID,
     DEV_BYPASS_DISPLAY_NAME,
     DEV_BYPASS_EMAIL,
-    _denied_identity,
-    _dev_bypass_allowed,
     _merge_userinfo,
-    _oidc_access_allowed,
-    _oidc_allowlist_grants,
     _upsert_user,
     discover_jwks_uri,
     fetch_userinfo,
@@ -57,7 +53,7 @@ def mcp_auth_mode(settings: Settings | None = None) -> McpAuthMode:
         return "generic_oidc"
     if s.otp_auth_configured:
         return "pat_only"
-    if _dev_bypass_allowed(s):
+    if s.dev_bypass_allowed:
         return "dev_bypass"
     return "disabled"
 
@@ -132,7 +128,21 @@ def build_auth_provider(settings: Settings | None = None) -> AuthProvider | None
 def resolve_current_user(session: Session) -> User:
     """Resolve and upsert the calling user — the MCP twin of ``get_current_user``.
     Reuses ``core.auth`` so claim handling cannot drift from the REST path.
+
+    Membership is re-checked on whatever principal comes back, so a resolver
+    added later is gated by being reached through here at all.
     """
+    try:
+        user = _resolve_principal(session)
+        membership_service.require_member(session, user.email, door="mcp", settings=get_settings())
+    except membership_service.MembershipDeniedError as exc:
+        # One error type on this surface: the REST 403 has no meaning to an MCP
+        # client, which is told it is not authenticated (ADR 0043 decision 4).
+        raise McpAuthError("this account is not a member of this DataQ workspace") from exc
+    return user
+
+
+def _resolve_principal(session: Session) -> User:
     token = get_access_token()
     if token is not None:
         claims: dict[str, Any] = token.claims or {}
@@ -172,26 +182,16 @@ def resolve_current_user(session: Session) -> User:
                             raise McpAuthError("userinfo subject does not match the token")
                         claims = merged
                 email = normalize_email(str(claims.get("email") or ""))
-                # Same allowlist the REST resolver applies (#1386), and the same
-                # grant-only membership union on top of it (ADR 0043).
-                env_allowed = _oidc_allowlist_grants(email, settings)
-                if not membership_service.is_member(
-                    session,
-                    email,
-                    env_allowed=env_allowed,
-                    unmanaged_default=_oidc_access_allowed(email, settings),
-                    settings=settings,
-                ):
-                    log.warning("mcp_oidc_access_denied", **_denied_identity(email))
-                    raise McpAuthError("this account is not authorized for this DataQ workspace")
                 name = claims.get("name")
+                # The allowlist gate lives inside `_upsert_user`, exactly as on
+                # REST — checking it here too could only ever disagree with it.
                 return _upsert_user(
                     session,
                     aad_object_id=str(subject),
                     email=email,
                     display_name=str(name) if name is not None else None,
                     oidc_issuer=settings.oidc_issuer,
-                    env_allowed=env_allowed,
+                    settings=settings,
                 )
         else:
             # Mirror the REST validator's guest policy — /mcp must not accept an
@@ -215,13 +215,18 @@ def resolve_current_user(session: Session) -> User:
                     email=email,
                     display_name=str(name) if name is not None else None,
                     oidc_issuer=_AZURE_ISSUER,
+                    settings=settings,
                 )
-    if _dev_bypass_allowed(get_settings()):
+    # `mcp_auth_mode`, not `dev_bypass_allowed`: the latter stays true beside email
+    # OTP, where the ladder picks `pat_only` and this identity is never minted —
+    # and where `membership_service` would not exempt it either.
+    if mcp_auth_mode() == "dev_bypass":
         return _upsert_user(
             session,
             aad_object_id=DEV_BYPASS_AAD_OID,
             email=DEV_BYPASS_EMAIL,
             display_name=DEV_BYPASS_DISPLAY_NAME,
+            settings=get_settings(),
         )
     # The auth provider rejects unauthenticated calls before any tool runs;
     # defence-in-depth for the (mis)configured case.

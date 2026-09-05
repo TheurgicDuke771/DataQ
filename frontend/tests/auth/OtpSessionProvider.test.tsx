@@ -8,6 +8,7 @@ import type { MeResponse } from '../../src/api/me';
 
 const probeSession = vi.fn();
 const endSession = vi.fn();
+const codeOf = vi.fn(() => undefined);
 
 beforeEach(() => {
   vi.resetModules();
@@ -18,7 +19,7 @@ beforeEach(() => {
   probeSession.mockResolvedValue(null);
   endSession.mockResolvedValue(undefined);
   vi.doMock('../../src/auth/config', () => ({ authMode: 'otp' }));
-  vi.doMock('../../src/auth/otpClient', () => ({ probeSession, endSession }));
+  vi.doMock('../../src/auth/otpClient', () => ({ probeSession, endSession, codeOf }));
 });
 
 afterEach(() => {
@@ -188,7 +189,7 @@ describe('OtpSessionProvider — other auth modes', () => {
     // A probe here would race the OIDC token acquisition and 401 for no reason.
     vi.doUnmock('../../src/auth/config');
     (window as { __DATAQ_CONFIG__?: unknown }).__DATAQ_CONFIG__ = { auth };
-    vi.doMock('../../src/auth/otpClient', () => ({ probeSession, endSession }));
+    vi.doMock('../../src/auth/otpClient', () => ({ probeSession, endSession, codeOf }));
     const { OtpSessionProvider } = await import('../../src/auth/OtpSessionProvider');
     render(
       <OtpSessionProvider>

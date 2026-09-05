@@ -44,7 +44,8 @@ def test_an_empty_list_says_enforcement_is_off(client: TestClient, db_session: A
     body = client.get("/api/v1/admin/members").json()
 
     assert body["enforcement_active"] is False
-    assert body["members"] == []
+    # Env-listed addresses are shown as read-only rows; no MANAGED row exists yet.
+    assert [m for m in body["members"] if m["source"] != "env"] == []
     assert body["unmanaged_user_count"] >= 1
 
 

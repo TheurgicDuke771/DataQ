@@ -31,6 +31,12 @@ from backend.app.db.models import (
 )
 from backend.app.orchestration.registry import get_orchestration_provider
 from backend.app.services import audit_service, otp_service
+from backend.app.services.membership_guard import (
+    RoleChangeRejectedError as RoleChangeRejectedError,
+)
+from backend.app.services.membership_guard import (
+    assert_admin_remains as assert_admin_remains,
+)
 from backend.app.services.suite_authz import OWNER
 
 log = get_logger(__name__)
@@ -365,13 +371,6 @@ def enforce_preflight_quota(user_id: UUID, settings: Settings | None = None) -> 
 # way to CHANGE a workspace role.
 
 
-class RoleChangeRejectedError(DataQError):
-    """A role change the workspace's invariants forbid — 409, never a silent no-op."""
-
-    status_code = 409
-    code = "role_change_rejected"
-
-
 class UserNotFoundError(DataQError):
     status_code = 404
     code = "user_not_found"
@@ -402,9 +401,6 @@ def set_user_role(
     ).scalar_one_or_none()
     if target is None:  # pragma: no cover — deleted between the check and the lock
         raise UserNotFoundError("user not found", detail={"user_id": str(user_id)})
-    admin_ids = set(
-        session.scalars(select(User.id).where(User.role == ADMIN_ROLE).with_for_update()).all()
-    )
     previous = target.role
 
     if previous == new_role:
@@ -419,15 +415,11 @@ def set_user_role(
             detail={"user_id": str(user_id)},
         )
 
-    # `target.id in admin_ids`, not `previous == ADMIN_ROLE`: both now come from the same locked
-    # snapshot.
-    if target.id in admin_ids and admin_ids <= {target.id}:
-        raise RoleChangeRejectedError(
-            "cannot remove the last workspace admin — promote another user to "
-            "admin first. (Admins granted only by WORKSPACE_ADMIN_EMAILS do not "
-            "count: that allowlist is a recovery path, not the invariant.)",
-            detail={"user_id": str(user_id), "stored_admin_count": len(admin_ids)},
-        )
+    # Keyed on the REQUESTED role, never on `previous`: `target` may be an
+    # identity-mapped object this session loaded before the lock, so its `role`
+    # can be stale. Excluding a non-admin costs nothing.
+    if new_role != ADMIN_ROLE:
+        assert_admin_remains(session, exclude_user_id=target.id)
 
     target.role = new_role
     # The durable record (ADR 0041 phase 1, #1318).

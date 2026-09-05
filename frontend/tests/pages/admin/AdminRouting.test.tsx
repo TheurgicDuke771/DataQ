@@ -30,7 +30,10 @@ vi.mock('../../../src/api/admin', () => ({
   testAuthEmail: vi.fn(),
   listWorkspaceMembers: vi.fn(async () => ({
     enforcement_active: false,
+    enforced: false,
+    enforced_reason: 'no members have been added yet',
     unmanaged_user_count: 0,
+    env_allowed_domains: [],
     members: [],
   })),
   addWorkspaceMember: vi.fn(),

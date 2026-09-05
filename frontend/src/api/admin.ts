@@ -71,8 +71,9 @@ export async function setAdminUserRole(userId: string, role: WorkspaceRole): Pro
  *  Who is admitted to the workspace, as opposed to what they can do once in.
  *  Adding a member does NOT create an account at the identity provider. */
 
-/** How the row got there: a deliberate add, or the switch-on import awaiting review. */
-export type MemberSource = 'admin' | 'auto_import';
+/** How the row got there: a deliberate add, the switch-on import awaiting review,
+ *  or an address named by an env var, which has no row to manage here at all. */
+export type MemberSource = 'admin' | 'auto_import' | 'env';
 
 export interface WorkspaceMember {
   id: string;
@@ -86,20 +87,33 @@ export interface WorkspaceMember {
   stored_role: WorkspaceRole | null;
   /** `pending` means admitted but never signed in — not a failure state. */
   status: 'active' | 'pending';
+  /** An env var also names this address, so removing the row does not revoke it. */
+  env_listed: boolean;
+  /** False for an `env` row: there is nothing here to delete. */
+  removable: boolean;
 }
 
-export interface MembershipView {
-  /** False while the list is empty: who may sign in is then env config alone. */
+/** Whether membership is switched on, and whether it is actually being enforced. */
+export interface EnforcementState {
+  /** The members table has at least one row. */
   enforcement_active: boolean;
+  /** Whether any door is gated right now — false under developer bypass. */
+  enforced: boolean;
+  /** Why not, when `enforced` is false. */
+  enforced_reason: string | null;
+}
+
+export interface MembershipView extends EnforcementState {
   /** Existing users the FIRST add would import as provisional members. */
   unmanaged_user_count: number;
+  /** Domains an env var admits wholesale; no row can stand for one. */
+  env_allowed_domains: string[];
   members: WorkspaceMember[];
 }
 
-export interface MemberAdded {
+export interface MemberAdded extends EnforcementState {
   member: WorkspaceMember;
   auto_imported_count: number;
-  enforcement_active: boolean;
 }
 
 export async function listWorkspaceMembers(signal?: AbortSignal): Promise<MembershipView> {
