@@ -29,7 +29,12 @@ from backend.app.db.models import (
     User,
     worst_severity,
 )
-from backend.app.services import incident_service, llm_rca, run_service
+from backend.app.services import (
+    incident_service,
+    llm_rca,
+    privacy_settings_service,
+    run_service,
+)
 
 
 def _run_url(run_id: uuid.UUID) -> str | None:
@@ -107,6 +112,8 @@ def build_run_report(session: Session, run: Run) -> RunReport:
     # the privacy switch.
     kind_by_result = run_service.historical_check_kind(session, results, checks)
     engine_by_result = run_service.historical_check_engine(session, results, checks)
+    # Resolved once per report (#1887), not per result.
+    zero_sample_mode = privacy_settings_service.zero_sample_mode(session)
 
     counts: dict[str, int] = {}
     check_reports: list[CheckReport] = []
@@ -141,6 +148,7 @@ def build_run_report(session: Session, run: Run) -> RunReport:
                     status=result.status,
                     check_kind=kind_by_result.get(result.id),
                     engine=engine_by_result.get(result.id, GX_ENGINE),
+                    zero_sample_mode=zero_sample_mode,
                 ),
             )
         )

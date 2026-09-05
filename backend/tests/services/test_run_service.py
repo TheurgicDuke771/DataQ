@@ -45,6 +45,12 @@ class FakeSession:
         # status — read back by `scalar` (the cancel poll) and by `refresh`.
         self._refresh_status = refresh_status
 
+    def get(self, model: object, pk: object) -> None:
+        """No singleton config rows in this fake — the privacy resolver (#1887) reads
+        `privacy_settings` per run, and "no row" is the same as the mode being off.
+        """
+        return None
+
     def add_all(self, rows: list[Result]) -> None:
         if self._add_all_raises is not None:
             raise self._add_all_raises
@@ -786,96 +792,89 @@ def test_zero_sample_mode_on_still_shows_a_safe_aggregate_scalar(
 # ─────────────── zero-sample suppression state (#1873, amends #1676) ───────────
 
 
-def test_zero_sample_suppressed_true_for_a_failing_expectation(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("PRIVACY_ZERO_SAMPLE_MODE", "true")
-    get_settings.cache_clear()
+def test_zero_sample_suppressed_true_for_a_failing_expectation() -> None:
     assert (
-        run_service.zero_sample_suppressed(status="fail", check_kind="expectation", engine="gx")
+        run_service.zero_sample_suppressed(
+            status="fail", check_kind="expectation", engine="gx", zero_sample_mode=True
+        )
         is True
     )
     assert (
-        run_service.zero_sample_suppressed(status="critical", check_kind="comparison", engine="gx")
+        run_service.zero_sample_suppressed(
+            status="critical", check_kind="comparison", engine="gx", zero_sample_mode=True
+        )
         is True
     )
 
 
-def test_zero_sample_suppressed_false_when_the_setting_is_off(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_zero_sample_suppressed_false_when_the_setting_is_off() -> None:
     """The eligible-status/kind/engine combo alone must not report suppression —
-    the deployment-level switch is the gate, folded into the function itself so a
-    caller can't forget it (#1880 review).
+    the workspace switch is the gate, a required argument so a caller can't forget
+    it (#1880 review, #1887).
     """
-    monkeypatch.setenv("PRIVACY_ZERO_SAMPLE_MODE", "false")
-    get_settings.cache_clear()
     assert (
-        run_service.zero_sample_suppressed(status="fail", check_kind="expectation", engine="gx")
+        run_service.zero_sample_suppressed(
+            status="fail", check_kind="expectation", engine="gx", zero_sample_mode=False
+        )
         is False
     )
 
 
-def test_zero_sample_suppressed_false_for_an_errored_result(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_zero_sample_suppressed_false_for_an_errored_result() -> None:
     """`_build_result` nulls `sample_failures` for EVERY errored outcome
     unconditionally (see above) — an errored result's null sample is never
     caused by zero-sample mode, so reporting it as suppressed would be a false
     causal claim (#1880 review).
     """
-    monkeypatch.setenv("PRIVACY_ZERO_SAMPLE_MODE", "true")
-    get_settings.cache_clear()
     assert (
-        run_service.zero_sample_suppressed(status="error", check_kind="expectation", engine="gx")
+        run_service.zero_sample_suppressed(
+            status="error", check_kind="expectation", engine="gx", zero_sample_mode=True
+        )
         is False
     )
 
 
-def test_zero_sample_suppressed_false_for_a_passing_or_skipped_result(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_zero_sample_suppressed_false_for_a_passing_or_skipped_result() -> None:
     """A check that passed/skipped never had a sample regardless of the switch —
     reporting `zero_sample` there would over-claim suppression that never happened.
     """
-    monkeypatch.setenv("PRIVACY_ZERO_SAMPLE_MODE", "true")
-    get_settings.cache_clear()
     assert (
-        run_service.zero_sample_suppressed(status="pass", check_kind="expectation", engine="gx")
+        run_service.zero_sample_suppressed(
+            status="pass", check_kind="expectation", engine="gx", zero_sample_mode=True
+        )
         is False
     )
     assert (
-        run_service.zero_sample_suppressed(status="skip", check_kind="expectation", engine="gx")
+        run_service.zero_sample_suppressed(
+            status="skip", check_kind="expectation", engine="gx", zero_sample_mode=True
+        )
         is False
     )
 
 
-def test_zero_sample_suppressed_false_for_a_scalar_monitor_kind(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_zero_sample_suppressed_false_for_a_scalar_monitor_kind() -> None:
     """Freshness/volume/schema_drift/anomaly compute one number and never carry a
     per-row sample, so a failing monitor is not zero-sample suppression either.
     """
-    monkeypatch.setenv("PRIVACY_ZERO_SAMPLE_MODE", "true")
-    get_settings.cache_clear()
     for kind in MONITOR_KINDS:
         assert (
-            run_service.zero_sample_suppressed(status="fail", check_kind=kind, engine="gx") is False
+            run_service.zero_sample_suppressed(
+                status="fail", check_kind=kind, engine="gx", zero_sample_mode=True
+            )
+            is False
         )
 
 
-def test_zero_sample_suppressed_false_for_a_dmf_engine_check(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_zero_sample_suppressed_false_for_a_dmf_engine_check() -> None:
     """A `dmf`-engine check (ADR 0036) is a pure scalar Snowflake metric — its
     runner never constructs a row-level sample, with or without the privacy
     switch, so labelling its null sample `zero_sample` would be the same false
     causal claim as the errored-result case above (#1880 review).
     """
-    monkeypatch.setenv("PRIVACY_ZERO_SAMPLE_MODE", "true")
-    get_settings.cache_clear()
     assert (
-        run_service.zero_sample_suppressed(status="fail", check_kind="expectation", engine="dmf")
+        run_service.zero_sample_suppressed(
+            status="fail", check_kind="expectation", engine="dmf", zero_sample_mode=True
+        )
         is False
     )
 

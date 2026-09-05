@@ -5,6 +5,12 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ## Unreleased
 
+### Added
+
+- **Zero-sample mode is a workspace setting.** Admin → Settings → Privacy & failing samples
+  turns it on without a restart; the environment variable stays the floor and cannot be
+  turned off from the app. `GET /admin/deployment` now says which of the two is in force.
+
 ### Changed
 
 - ⚠️ **Every DataQ user signs in.** The local stack has one sign-in mode, emailed

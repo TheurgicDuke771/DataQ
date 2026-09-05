@@ -8,7 +8,11 @@ import { authMethodLabel } from '../../../src/auth/config';
 import { AdminSettings } from '../../../src/pages/admin/AdminSettings';
 import { renderSubPage } from './adminFixtures';
 
-vi.mock('../../../src/api/admin', () => ({ testAuthEmail: vi.fn() }));
+vi.mock('../../../src/api/admin', () => ({
+  testAuthEmail: vi.fn(),
+  getPrivacySettings: vi.fn(() => new Promise(() => {})),
+  putPrivacySettings: vi.fn(),
+}));
 vi.mock('../../../src/api/llm', () => ({
   getLlmConfig: vi.fn(),
   updateLlmConfig: vi.fn(),

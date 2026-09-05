@@ -13,7 +13,6 @@ from sqlalchemy import delete, func, null, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
-from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.jsonsafe import sanitize_json
 from backend.app.core.logging import get_logger
@@ -50,7 +49,7 @@ from backend.app.db.models import (
     Run,
     worst_severity,
 )
-from backend.app.services import run_dispatch, suite_service
+from backend.app.services import privacy_settings_service, run_dispatch, suite_service
 from backend.app.services.column_classification import ColumnClass, classify_column, is_sensitive
 from backend.app.services.failure_classifier import safe_failure_reason
 from backend.app.services.rollup import status_histograms
@@ -63,9 +62,15 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
-def _build_result(run_id: uuid.UUID, check: Check, outcome: CheckOutcome) -> Result:
+def _build_result(
+    run_id: uuid.UUID, check: Check, outcome: CheckOutcome, *, zero_sample: bool
+) -> Result:
     """Map a check + its GX outcome to a `Result`, deriving the severity tier
     (ADR 0005/0016; the scalar persists as `metric_value`, ADR 0012).
+
+    `zero_sample` is the EFFECTIVE privacy mode from
+    `privacy_settings_service.zero_sample_mode`, resolved once per run by the
+    caller rather than re-read per check (#1887).
     """
     status, metric = resolve_status(
         outcome,
@@ -73,10 +78,9 @@ def _build_result(run_id: uuid.UUID, check: Check, outcome: CheckOutcome) -> Res
         fail_threshold=check.fail_threshold,
         critical_threshold=check.critical_threshold,
     )
-    # Zero-sample privacy mode (#1676): a deployment-level switch, so this is the ONE choke
+    # Zero-sample privacy mode (#1676): a workspace-level switch, so this is the ONE choke
     # point every check kind funnels through — gate it here and every reader (results API,
     # alerts, MCP) inherits the suppression from what's actually persisted.
-    zero_sample = get_settings().privacy_zero_sample_mode
     if outcome.errored:
         # One funnel to `observed_value` for every kind, so the #1203 strip can't diverge.
         error_message = strip_statement_echo(outcome.error_message)
@@ -314,6 +318,9 @@ def execute_run(
     """Run ``checks`` against ``table`` via ``runner`` and persist the outcome."""
     run.status = "running"
     run.started_at = _now()
+    # Resolved once per run, not per check: the switch is a workspace setting read
+    # per task (#1887), and a run must persist under one consistent policy.
+    zero_sample = privacy_settings_service.zero_sample_mode(session)
     session.commit()
     log.info(
         "run_started",
@@ -339,7 +346,7 @@ def execute_run(
             stateful_monitor_executor=stateful_monitor_executor,
         ):
             rows = [
-                _build_result(run.id, checks[i], check_outcome)
+                _build_result(run.id, checks[i], check_outcome, zero_sample=zero_sample)
                 for i, check_outcome in phase.resolved
             ]
             session.add_all(rows)
@@ -1337,13 +1344,19 @@ _ZERO_SAMPLE_ELIGIBLE_STATUSES = frozenset(FAILING_TIERS)
 _ZERO_SAMPLE_ELIGIBLE_KINDS = frozenset({_EXPECTATION_KIND, COMPARISON_KIND})
 
 
-def zero_sample_suppressed(*, status: str, check_kind: str | None, engine: str) -> bool:
+def zero_sample_suppressed(
+    *, status: str, check_kind: str | None, engine: str, zero_sample_mode: bool
+) -> bool:
     """Whether a null `sample_failures` on this result is zero-sample-mode
     suppression (#1676) rather than genuinely having had nothing to redact (#1873).
 
-    Folds the `Settings().privacy_zero_sample_mode` gate in here rather than leaving it
-    to callers (#1880 review — two call sites had each spelled out the same `and`,
-    which is exactly the kind of duplicated security-relevant gate that silently drifts).
+    Folds the privacy-mode gate in here rather than leaving it to callers (#1880
+    review — two call sites had each spelled out the same `and`, which is exactly
+    the kind of duplicated security-relevant gate that silently drifts).
+    `zero_sample_mode` is the EFFECTIVE value from
+    `privacy_settings_service.zero_sample_mode`, resolved once per request or task
+    by the caller (#1887) — it is a required argument so a new call site cannot
+    quietly omit the gate.
 
     `engine` must be the check's engine AS OF this result (`historical_check_engine`),
     not its live value: a `dmf`-engine check (ADR 0036) is a pure scalar metric and
@@ -1352,7 +1365,7 @@ def zero_sample_suppressed(*, status: str, check_kind: str | None, engine: str) 
     as the scalar monitor kinds above (#1880 review).
     """
     return (
-        get_settings().privacy_zero_sample_mode
+        zero_sample_mode
         and status in _ZERO_SAMPLE_ELIGIBLE_STATUSES
         and check_kind in _ZERO_SAMPLE_ELIGIBLE_KINDS
         and engine == GX_ENGINE
