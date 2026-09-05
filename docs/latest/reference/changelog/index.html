@@ -2400,9 +2400,22 @@ the per-PR history lives in the repo's commit log and pull requests.</p>
 <h2 id="unreleased">Unreleased<a class="headerlink" href="#unreleased" title="Permanent link">¶</a></h2>
 <h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">¶</a></h3>
 <ul>
-<li><strong>Zero-sample mode is a workspace setting.</strong> Admin → Settings → Privacy &amp; failing samples
+<li>
+<p><strong>Offboarding is one guided pass.</strong> Admin → Members → <strong>Offboard</strong> hands a departing
+  member's suites to somebody else, revokes every API key and browser session they hold,
+  and withdraws their membership — in a single transaction, so a half-finished departure
+  is not a state the workspace can end up in. A preview says what will be touched before
+  anything is typed, the last Admin is refused, and the confirmation is the member's own
+  address typed out. Their authored history is kept. Where an environment allowlist would
+  still admit the address, the step is skipped and the variable named rather than a
+  withdrawal being reported that did not happen. See the
+  <a href="../../guides/admin/">admin control centre guide</a>.</p>
+</li>
+<li>
+<p><strong>Zero-sample mode is a workspace setting.</strong> Admin → Settings → Privacy &amp; failing samples
   turns it on without a restart; the environment variable stays the floor and cannot be
-  turned off from the app. <code>GET /admin/deployment</code> now says which of the two is in force.</li>
+  turned off from the app. <code>GET /admin/deployment</code> now says which of the two is in force.</p>
+</li>
 </ul>
 <h3 id="changed">Changed<a class="headerlink" href="#changed" title="Permanent link">¶</a></h3>
 <ul>

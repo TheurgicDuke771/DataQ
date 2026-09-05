@@ -237,6 +237,42 @@ the workspace would have nobody who can manage it. And removing **your own** mem
 asks for an extra confirmation, because it signs you out and only another admin can add you
 back.
 
+### Offboarding
+
+Removing a membership is one step of a departure. **Offboard** on a member's row does the
+whole thing in one pass, in a fixed order, as a single transaction: either every step lands
+or none of them do.
+
+1. **Guards first.** The pass is refused outright for the last stored-role Admin, and the
+   member's own email address has to be typed to confirm.
+2. **Their suites change owner.** Every suite they own goes to the person you name. The
+   departing member keeps no access to those suites — the opposite of the standalone
+   transfer, where an owner handing something over usually stays involved. A workspace
+   Viewer cannot inherit, because a Viewer cannot own a suite; change their role first.
+3. **Their credentials stop working.** Every unexpired API key and every live browser
+   session is revoked.
+4. **Their membership is withdrawn**, which is what makes a fresh sign-in fail as well.
+
+The preview you see before confirming is read-only and reserves nothing: it lists the suites
+with their check and run counts, how many live keys and sessions there are, and whether
+membership can be withdrawn at all.
+
+**What is kept.** Offboarding is not erasure. The account row survives, and so does
+everything their name is on — the connections they created, the check versions they edited,
+and the runs and results underneath the suites they handed over. Erasing a person's data is
+a separate, deliberate act on the Compliance page.
+
+**The env-listed caveat.** Membership is the union of the member list and the deployment's
+own allowlists, so an address named in `OIDC_ALLOWED_EMAILS`, `OIDC_ALLOWED_DOMAINS`,
+`AUTH_OTP_ALLOWED_EMAILS`, `AUTH_OTP_ALLOWED_DOMAINS` or `WORKSPACE_ADMIN_EMAILS` still signs
+in after their row is gone. Rather than delete a row and report a withdrawal that did not
+happen, the pass **skips that step and names the variable** you have to edit. The same
+applies when there is no membership row at all.
+
+The closing receipt is the record: what was transferred, how many keys and sessions were
+revoked, whether membership was withdrawn, and every step that did not run with its reason.
+Each step also writes its own audit event, alongside one for the pass as a whole.
+
 ### Seed and emergency access
 
 Two deployment settings stay available and are deliberately grant-only, as break-glass:

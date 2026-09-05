@@ -3103,6 +3103,16 @@ an outbound model request.</p>
 </tr>
 <tr>
 <td>GET</td>
+<td><code>/admin/offboarding/{user_id}/preview</code></td>
+<td>What offboarding this user would do: suites they own with counts, live tokens and sessions, whether membership can be withdrawn here, and whether they are the last admin. Reserves nothing.</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/admin/offboarding/{user_id}</code></td>
+<td>Transfer every suite they own, revoke every token and session, withdraw their membership — one transaction. Last-admin guarded; <code>confirm_email</code> must match. A step that cannot run is reported in <code>skipped</code> with its reason. Authored history is kept (audited).</td>
+</tr>
+<tr>
+<td>GET</td>
 <td><code>/admin/audit-events</code></td>
 <td>The append-only audit log (config + data-access events, ADR 0041).</td>
 </tr>

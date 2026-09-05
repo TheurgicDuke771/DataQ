@@ -1331,6 +1331,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#offboarding" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Offboarding
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#seed-and-emergency-access" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2834,6 +2845,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#offboarding" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Offboarding
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#seed-and-emergency-access" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3272,6 +3294,37 @@ holding:</p>
 the workspace would have nobody who can manage it. And removing <strong>your own</strong> membership
 asks for an extra confirmation, because it signs you out and only another admin can add you
 back.</p>
+<h3 id="offboarding">Offboarding<a class="headerlink" href="#offboarding" title="Permanent link">¶</a></h3>
+<p>Removing a membership is one step of a departure. <strong>Offboard</strong> on a member's row does the
+whole thing in one pass, in a fixed order, as a single transaction: either every step lands
+or none of them do.</p>
+<ol>
+<li><strong>Guards first.</strong> The pass is refused outright for the last stored-role Admin, and the
+   member's own email address has to be typed to confirm.</li>
+<li><strong>Their suites change owner.</strong> Every suite they own goes to the person you name. The
+   departing member keeps no access to those suites — the opposite of the standalone
+   transfer, where an owner handing something over usually stays involved. A workspace
+   Viewer cannot inherit, because a Viewer cannot own a suite; change their role first.</li>
+<li><strong>Their credentials stop working.</strong> Every unexpired API key and every live browser
+   session is revoked.</li>
+<li><strong>Their membership is withdrawn</strong>, which is what makes a fresh sign-in fail as well.</li>
+</ol>
+<p>The preview you see before confirming is read-only and reserves nothing: it lists the suites
+with their check and run counts, how many live keys and sessions there are, and whether
+membership can be withdrawn at all.</p>
+<p><strong>What is kept.</strong> Offboarding is not erasure. The account row survives, and so does
+everything their name is on — the connections they created, the check versions they edited,
+and the runs and results underneath the suites they handed over. Erasing a person's data is
+a separate, deliberate act on the Compliance page.</p>
+<p><strong>The env-listed caveat.</strong> Membership is the union of the member list and the deployment's
+own allowlists, so an address named in <code>OIDC_ALLOWED_EMAILS</code>, <code>OIDC_ALLOWED_DOMAINS</code>,
+<code>AUTH_OTP_ALLOWED_EMAILS</code>, <code>AUTH_OTP_ALLOWED_DOMAINS</code> or <code>WORKSPACE_ADMIN_EMAILS</code> still signs
+in after their row is gone. Rather than delete a row and report a withdrawal that did not
+happen, the pass <strong>skips that step and names the variable</strong> you have to edit. The same
+applies when there is no membership row at all.</p>
+<p>The closing receipt is the record: what was transferred, how many keys and sessions were
+revoked, whether membership was withdrawn, and every step that did not run with its reason.
+Each step also writes its own audit event, alongside one for the pass as a whole.</p>
 <h3 id="seed-and-emergency-access">Seed and emergency access<a class="headerlink" href="#seed-and-emergency-access" title="Permanent link">¶</a></h3>
 <p>Two deployment settings stay available and are deliberately grant-only, as break-glass:</p>
 <table>
