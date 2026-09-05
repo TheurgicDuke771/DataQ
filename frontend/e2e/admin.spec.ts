@@ -47,8 +47,58 @@ test.describe('Admin control centre', () => {
 
   test('compliance exposes the audit log and the deployment posture', async ({ page }) => {
     await page.goto('/admin/compliance');
-    await expect(page.getByText('Audit log')).toBeVisible();
+    // `exact`: the data-subject card below also mentions the audit log in prose.
+    await expect(page.getByText('Audit log', { exact: true })).toBeVisible();
     await expect(page.getByText('Deployment & data residency')).toBeVisible();
+  });
+
+  test('verifies the audit chain on demand, and not before', async ({ page }) => {
+    await page.goto('/admin/compliance');
+    // The check walks the whole hashed set, so it must not fire on load.
+    await expect(page.getByText('Not verified this session')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Verify now' }).click();
+    // A seeded stack has hashed rows, so this is 'Intact'; a chain-less one is
+    // 'Nothing to verify'. Either is a real answer — 'Not verified' is not.
+    await expect(page.getByText(/^(Intact|Nothing to verify|Broken)$/).first()).toBeVisible();
+    await expect(page.getByText('Events in chain')).toBeVisible();
+  });
+
+  test('answers a data-subject request and gates erasure behind the typed value', async ({
+    page,
+  }) => {
+    await page.goto('/admin/compliance');
+    await expect(page.getByText('Data-subject rights (GDPR / CCPA)')).toBeVisible();
+
+    // Both verbs stay disabled until a subject is actually named.
+    await expect(page.getByRole('button', { name: 'Export data' })).toBeDisabled();
+
+    const subject = 'nobody-e2e@example.invalid';
+    await page.getByPlaceholder('e.g. email').fill('email');
+    await page.getByPlaceholder('e.g. alice@example.com').fill(subject);
+
+    await page.getByRole('button', { name: 'Export data' }).click();
+    await expect(page.getByText('Export receipt')).toBeVisible();
+    // The seed captures no per-column sample rows, so the honest empty answer is
+    // the expected one — and it is the one that must not read as a clean bill of
+    // health for the warehouse.
+    await expect(page.getByText('No captured data matches this subject')).toBeVisible();
+    // `.last()`: antd's own dismiss "X" carries aria-label="Close" too, so the
+    // footer button is the second match.
+    await page.getByRole('button', { name: 'Close' }).last().click();
+
+    // Erasure is only exercised as far as its gate: the seed has no disposable
+    // subject, and erasure is irreversible.
+    await page.getByRole('button', { name: 'Erase subject' }).click();
+    const confirm = page.getByRole('button', { name: 'Erase permanently' });
+    await expect(confirm).toBeDisabled();
+    await page.getByLabel('Type the subject value to confirm').fill(subject.slice(0, -1));
+    await expect(confirm).toBeDisabled();
+    await page.getByLabel('Type the subject value to confirm').fill(subject);
+    await expect(confirm).toBeEnabled();
+
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    await expect(page.getByText('Erasure receipt')).toBeHidden();
   });
 
   // Role management (ADR 0033, #742).
