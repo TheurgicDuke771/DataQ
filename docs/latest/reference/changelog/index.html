@@ -2558,6 +2558,21 @@ the per-PR history lives in the repo's commit log and pull requests.</p>
 <h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">¶</a></h3>
 <ul>
 <li>
+<p><strong>Four admin capabilities that had no UI now have one.</strong> On <strong>Admin → Compliance</strong>:
+  audit-chain verification behind an explicit <strong>Verify now</strong> (it reads the whole hashed
+  set, so it never runs on page load) reporting intact / broken-at-an-event / nothing-to-
+  verify / not-verified as four distinct answers, plus the legacy-row count and whether an
+  external anchor exists; and the <strong>data-subject rights</strong> tools — GDPR Art 15/20 export
+  and Art 17 (CCPA delete) erasure over the samples DataQ has captured, with erasure gated
+  on retyping the subject value exactly and both actions producing an on-screen receipt.
+  On <strong>Admin → Settings</strong>, the email pre-flight result now stays on the card with the
+  failing transport stage and the request ID instead of passing by in a toast. On
+  <strong>Admin → Integrations</strong>, each webhook row states its auth mode, so it is obvious which
+  URLs are themselves credentials. See the
+  <a href="../../guides/admin/">admin control centre guide</a> and the
+  <a href="../../security/compliance/data-subject-rights-runbook/">data-subject-rights runbook</a>.</p>
+</li>
+<li>
 <p><strong>Admin workspace health API.</strong> <code>GET /api/v1/admin/health</code> reports per-connection
   orchestration poll staleness (<code>on_cadence</code> / <code>stalled</code> / <code>failing</code> / <code>unknown</code> — a
   connection never polled never reads healthy, and one erroring on every attempt

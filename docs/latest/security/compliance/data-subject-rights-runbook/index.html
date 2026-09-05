@@ -1948,6 +1948,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#1a-driving-it-from-the-app" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1a. Driving it from the app
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#2-access-export-gdpr-art-15-20" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2344,6 +2355,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#1a-driving-it-from-the-app" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1a. Driving it from the app
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#2-access-export-gdpr-art-15-20" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2462,6 +2484,21 @@ it has itself captured and stored.</p>
 credential, because an unredacted export of regulated data is exactly that
 sensitive. There is no MCP tool for either capability, for the same reason MCP
 carries no connection-credential tool at all.</p>
+<h2 id="1a-driving-it-from-the-app">1a. Driving it from the app<a class="headerlink" href="#1a-driving-it-from-the-app" title="Permanent link">¶</a></h2>
+<p>Both capabilities have a UI: <strong>Admin → Compliance → Data-subject rights</strong>. Enter the
+identifier column and the value, then <strong>Export data</strong> or <strong>Erase subject</strong>. This is the
+normal path — the API below is the same machinery, for scripting a bulk response or for a
+deployment where the operator works from a shell.</p>
+<p>The UI adds three things the raw endpoints do not:</p>
+<ul>
+<li><strong>Erasure is gated on retyping the value exactly.</strong> The endpoint has no confirmation
+  argument, and a mis-pasted value erases a different subject's data.</li>
+<li><strong>The receipt is rendered as well as downloadable</strong>, so it is still readable where the
+  browser blocks a script-initiated download. Keep it with the request record.</li>
+<li><strong>A partial erasure is shown as a warning</strong>, not as success, with the per-store counts
+  broken out.</li>
+</ul>
+<p>The audit events both actions write are visible in the audit log on the same page.</p>
 <h2 id="2-access-export-gdpr-art-15-20">2. Access / export (GDPR Art 15 / 20)<a class="headerlink" href="#2-access-export-gdpr-art-15-20" title="Permanent link">¶</a></h2>
 <div class="highlight"><pre><span></span><code>POST /api/v1/admin/data-subject-requests/export
 {"column": "email", "value": "alice@example.com"}

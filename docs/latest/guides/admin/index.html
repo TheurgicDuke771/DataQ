@@ -1146,6 +1146,67 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#compliance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Compliance
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Compliance">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#audit-chain" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Audit chain
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#data-subject-rights" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data-subject rights
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#settings-email-pre-flight" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings — email pre-flight
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#integrations-webhook-auth" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Integrations — webhook auth
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2338,6 +2399,67 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#compliance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Compliance
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Compliance">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#audit-chain" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Audit chain
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#data-subject-rights" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data-subject rights
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#settings-email-pre-flight" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings — email pre-flight
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#integrations-webhook-auth" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Integrations — webhook auth
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2422,12 +2544,12 @@ without losing your place. <code>/admin</code> on its own lands on <strong>Overv
 <tr>
 <td>Compliance</td>
 <td><code>/admin/compliance</code></td>
-<td>The audit log with its filters and retention disclosure, and the deployment / data-residency posture.</td>
+<td>The audit log with its filters and retention disclosure, audit-chain verification, the data-subject-rights tools, and the deployment / data-residency posture.</td>
 </tr>
 <tr>
 <td>Integrations</td>
 <td><code>/admin/integrations</code></td>
-<td>Ready-to-paste inbound webhook URLs for each configured orchestration provider.</td>
+<td>Ready-to-paste inbound webhook URLs for each configured orchestration provider, with the auth mode each one uses.</td>
 </tr>
 </tbody>
 </table>
@@ -2451,6 +2573,82 @@ longer looking at.</p>
 signal exists. Poll staleness, scheduler heartbeat, queue depth and datasource credential
 health have no read API today, so an empty panel means nothing is being watched — not that
 everything is healthy. Rows appear here as those signals ship.</p>
+<h2 id="compliance">Compliance<a class="headerlink" href="#compliance" title="Permanent link">¶</a></h2>
+<h3 id="audit-chain">Audit chain<a class="headerlink" href="#audit-chain" title="Permanent link">¶</a></h3>
+<p>Every audit event is hashed over the one before it, so an edited or deleted row breaks the
+chain. <strong>Verify now</strong> walks that chain and reports one of four answers:</p>
+<table>
+<thead>
+<tr>
+<th>Answer</th>
+<th>What it means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Intact</td>
+<td>Every hashed row verified against its predecessor.</td>
+</tr>
+<tr>
+<td>Broken</td>
+<td>A mismatch was found. The card names the first blamed event, when it was recorded, and both hashes; rows after that point cannot be shown to be untampered.</td>
+</tr>
+<tr>
+<td>Nothing to verify</td>
+<td>No hashed row exists yet. This is <strong>not</strong> a clean bill of health — nothing was checked.</td>
+</tr>
+<tr>
+<td>Not verified — the check failed</td>
+<td>The verification itself did not complete. It says nothing about whether the chain is intact.</td>
+</tr>
+</tbody>
+</table>
+<p>Verification is never run when the page loads, and the card says so until you ask for it:
+the check reads the whole hashed set into memory, which takes time on a large log.</p>
+<p>The card also reports two things a bare pass would hide. <strong>Not covered by the chain</strong> counts
+rows written before hashing shipped — real audit history that the chain simply does not
+cover, never folded into the verified count. <strong>External anchor</strong> reports whether the chain
+head is published outside the database: without one, the chain is only <em>internally</em>
+consistent, because anyone able to rewrite the whole table could rewrite the hashes with it.</p>
+<h3 id="data-subject-rights">Data-subject rights<a class="headerlink" href="#data-subject-rights" title="Permanent link">¶</a></h3>
+<p>The access/export and erasure tools answer a GDPR Article 15/20 or Article 17 (CCPA delete)
+request against the sample data DataQ itself has captured. <strong>They never touch your
+warehouse</strong>, which remains your system of record and your responsibility to act on
+separately.</p>
+<p>A subject is entered the way your warehouse identifies them — an <strong>identifier column</strong> and
+its <strong>value</strong>, such as <code>email</code> and <code>alice@example.com</code>. DataQ holds no people-table, so
+there is no user to pick from a list.</p>
+<ul>
+<li><strong>Export data</strong> searches every suite in the workspace and returns each captured cell
+  naming that pair, with the suite, check and run it came from. The result is deliberately
+  <strong>unredacted</strong>: this is the subject's own access right, and the usual masking exists to
+  protect <em>other</em> people from an unrelated viewer. The receipt is rendered on screen and
+  offered as a download, so it is still readable where a browser blocks the download.</li>
+<li><strong>Erase subject</strong> removes only the matching row or cell, from results and from stored
+  incident evidence — not the surrounding sample, and not other subjects' rows. It runs
+  synchronously, cannot be undone, and is therefore gated behind retyping the value exactly.
+  The receipt reports matched and erased counts per store, so a partial erasure reads as a
+  warning rather than as done.</li>
+</ul>
+<p>An export that finds nothing means DataQ has captured nothing naming that subject. It is
+not a statement about your warehouse, which was neither read nor changed.</p>
+<p>Both actions write an audit event — <code>data_subject_request.export</code> (recorded with whether
+anything was actually exposed) and <code>data_subject_request.erase</code> — visible in the audit log
+on the same page. The erasure's event is written in the same transaction as the scrub, so
+an applied erasure cannot go unrecorded.</p>
+<h2 id="settings-email-pre-flight">Settings — email pre-flight<a class="headerlink" href="#settings-email-pre-flight" title="Permanent link">¶</a></h2>
+<p><strong>Send test email</strong> sends a real message to <em>your own</em> address over the configured sign-in
+mailer. It takes no recipient, so it cannot be used to relay mail. The outcome stays on the
+card rather than passing by in a toast: a failure names the transport stage that broke —
+connect, TLS, auth or send — and carries the request ID to search the server log by. A
+success means the mailer accepted the message; if it then never arrives, the relay is the
+next place to look, not this configuration.</p>
+<h2 id="integrations-webhook-auth">Integrations — webhook auth<a class="headerlink" href="#integrations-webhook-auth" title="Permanent link">¶</a></h2>
+<p>Each inbound webhook row states the auth mode it uses, because that determines how the URL
+must be handled. The Azure Data Factory URL carries a <strong>shared secret in the query string</strong>
+— Azure Monitor supports no other mode — so the URL <em>is</em> a credential and is masked behind
+a reveal toggle. Airflow and dbt use an <strong>HMAC signature header</strong> instead, with the signing
+key held in the secret store, so their URLs carry no secret.</p>
 
 
 
