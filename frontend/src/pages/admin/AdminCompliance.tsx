@@ -14,13 +14,18 @@ import { Filter } from '../../components/shared/Filter';
 import { WINDOW_PRESETS } from '../../components/shared/windowPresets';
 import { useAsyncData } from '../../hooks/useAsyncData';
 import { mapAsync } from './asyncHelpers';
+import { AuditChainCard } from './AuditChainCard';
+import { DataSubjectCard } from './DataSubjectCard';
 import { DataTable, Section } from './parts';
 
-/** Compliance surface: the G1 audit log + the #1555 deployment-posture readout. */
+/** Compliance surface: the audit log, its tamper-evidence status, the
+ *  data-subject-rights machinery, and the deployment-posture readout. */
 export function AdminCompliance() {
   return (
     <Flex vertical gap={16}>
       <AuditLogSection />
+      <AuditChainCard />
+      <DataSubjectCard />
       <DeploymentPostureSection />
     </Flex>
   );
