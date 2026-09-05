@@ -286,12 +286,16 @@ def offboard(
             actor=actor,
             keep_previous_owner_access=keep_previous_owner_access,
         )
-        inner.close()
-        db.commit()
     except BaseException:
-        inner.close()
-        db.rollback()
+        # `inner` releases its savepoint state first, and the `finally` makes the
+        # outer rollback run even if that close is what failed.
+        try:
+            inner.close()
+        finally:
+            db.rollback()
         raise
+    inner.close()
+    db.commit()
     db.expire_all()
     log.info(
         "user_offboarded",
