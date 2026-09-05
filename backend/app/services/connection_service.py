@@ -14,7 +14,7 @@ from sqlalchemy import func, select, true
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from backend.app.core.errors import DataQError
+from backend.app.core.errors import DataQError, jsonable_errors
 from backend.app.core.logging import get_logger
 from backend.app.core.secret_names import connection_secret_ref
 from backend.app.core.secrets import SecretNotFoundError, SecretStore, SecretWriteError
@@ -180,7 +180,7 @@ def _validate_extra_secret_supported(conn_type: str, config: Mapping[str, Any], 
     except ValidationError as exc:
         raise ConnectionConfigInvalidError(
             f"{conn_type!r} connections do not accept a {field!r} credential",
-            detail={"errors": exc.errors()},
+            detail={"errors": jsonable_errors(exc.errors())},
         ) from exc
 
 
@@ -222,7 +222,7 @@ def _validated_config(conn_type: str, config: dict[str, Any]) -> None:
     except ValidationError as exc:
         raise ConnectionConfigInvalidError(
             f"Invalid config for {conn_type!r} connection",
-            detail={"errors": exc.errors()},
+            detail={"errors": jsonable_errors(exc.errors())},
         ) from exc
 
 
