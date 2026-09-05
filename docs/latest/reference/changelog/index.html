@@ -2401,6 +2401,19 @@ the per-PR history lives in the repo's commit log and pull requests.</p>
 <h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">¶</a></h3>
 <ul>
 <li>
+<p><strong>Admins can now operate the workspace, not just observe it.</strong> <strong>Admin → Members</strong>
+  gains <strong>Revoke</strong> on any per-suite access grant — previously only a suite's own owner
+  could remove a share, so cleaning up after a departure meant first being granted access
+  to every suite. <strong>Admin → Suites</strong> gains <strong>Transfer</strong>, the offboarding primitive: a suite
+  moves to a new owner, who gets full control, while the previous owner keeps an editor
+  grant unless you clear the checkbox (workspace viewers cannot own a suite and are not
+  offered). It also gains <strong>Delete</strong> for any suite, behind a confirmation that states the
+  exact number of checks, runs, results, schedules and trigger bindings the cascade would
+  destroy and requires the suite's name to be typed. All three are audited with the
+  admin-override recorded, and the delete's event carries the counts. See the
+  <a href="../../guides/admin/">admin control centre guide</a>.</p>
+</li>
+<li>
 <p><strong>Workspace membership is managed in the app.</strong> <strong>Admin → Members</strong> gains an
   <strong>Add member</strong> dialog (email plus an optional initial role) and per-row removal,
   so admitting or removing somebody no longer means editing deployment config and

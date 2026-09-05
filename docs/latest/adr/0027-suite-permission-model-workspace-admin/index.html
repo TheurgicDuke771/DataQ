@@ -2308,6 +2308,7 @@ stales this ADR's "resolved from the allowlist at the <code>/me</code>/API layer
 implementation line and the Related ADR-0010 "off a config allowlist" pointer.
 The implicit-suite-admin rule below is <strong>unchanged</strong>; the grant model gains one
 rule — no <code>edit</code> shares to Viewers (their effective level caps at <code>view</code>).</p>
+<p><strong>Amendment (2026-09-05, admin write pass):</strong> ownership is no longer immutable. A workspace admin can transfer a suite to another member or admin (<code>POST /admin/suites/{id}/transfer</code>), revoke any per-suite share, and delete any suite; every one of these is audited with <code>admin_override: true</code>. The previous owner keeps an <code>edit</code> grant by default (clamped to <code>view</code> for a Viewer). <code>created_by</code> now means <em>current owner</em>; the creator at any past moment is recoverable from the <code>suite.transfer</code> audit trail.</p>
 <p><strong>Companion (2026-07-18, <a href="../0037-workspace-visible-asset-identity/">ADR 0037</a>):</strong> the
 suite ladder below remains the <em>only</em> grant model — but it now guards <strong>suite-derived
 detail only</strong> (suite/check config, runs, results, samples, incidents, and the
@@ -2405,9 +2406,10 @@ visibility and for workspace-admin write actions, which this decision absorbs.</
   supports <strong>multiple</strong> workspace-admins — use that to avoid a bottleneck. (For
   most teams, "manage access" and "delete" are governance actions, so centralising
   them is acceptable.)
-- <strong><code>owner</code> remains immutable / non-reassignable.</strong> Workspace-admin is now the
-  succession path for an orphaned suite; explicit owner-reassignment stays a
-  separate future item.</p>
+- <strong><code>owner</code> was immutable / non-reassignable until the admin write pass</strong> (see the
+  amendment at the top): a workspace admin can now transfer a suite to another
+  member or admin. <code>created_by</code> then names the current owner; the original creator
+  is preserved in the <code>suite.transfer</code> audit event, not on the row.</p>
 <p><strong>Implementation shape</strong>
 - <code>effective_permission</code> / <code>effective_permissions</code> return <code>admin</code> when the user
   is a workspace-admin (computed, not a <code>shares</code> lookup).

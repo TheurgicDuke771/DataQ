@@ -3087,7 +3087,9 @@ are the reason this mode is opt-in rather than the default:</p>
   does not create accounts at your identity provider; that stays a prerequisite.</li>
 <li><strong>Workspace roles — Admin / Member / Viewer.</strong> A stored <code>users.role</code> (ADR 0033), not just
   an env allowlist. <strong>Admin</strong> has workspace-wide visibility over every suite, its results,
-  and schedules, and is the <em>only</em> role that can create, edit, delete or re-auth a
+  and schedules; can revoke any per-suite share, transfer any suite to another member or
+  admin, and delete any suite (each audited with an admin-override flag and, for delete,
+  the exact counts destroyed); and is the <em>only</em> role that can create, edit, delete or re-auth a
   <strong>connection</strong> — a Member can reference, test and run against an existing connection but
   cannot mutate or re-credential it (closes the earlier hole where any authenticated user
   could delete or re-point the Snowflake connection every suite ran on). Testing a <strong>saved</strong>

@@ -3067,6 +3067,21 @@ an outbound model request.</p>
 <td>Change a workspace role (last-admin guarded; audit-tabled).</td>
 </tr>
 <tr>
+<td>DELETE</td>
+<td><code>/admin/suites/{id}/access/{grant_id}</code></td>
+<td>Revoke any per-suite share, on any suite (audited as an admin override).</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/admin/suites/{id}/transfer</code></td>
+<td>Transfer suite ownership. A viewer cannot own (422); transferring to the current owner is a 409. The previous owner keeps an <code>edit</code> grant unless <code>keep_previous_owner_access</code> is false.</td>
+</tr>
+<tr>
+<td>DELETE</td>
+<td><code>/admin/suites/{id}</code></td>
+<td>Delete any suite. Same cascade as the owner's own delete; the audit event carries the destroyed counts.</td>
+</tr>
+<tr>
 <td>GET</td>
 <td><code>/admin/members</code></td>
 <td>Workspace membership, with whether enforcement is on and how many users a first add would import.</td>

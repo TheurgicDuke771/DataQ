@@ -1209,6 +1209,84 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#roles-and-access-grants" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Roles and access grants
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#revoking-any-share" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Revoking any share
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#suites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Suites
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Suites">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#transferring-ownership" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Transferring ownership
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#deleting-any-suite" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deleting any suite
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#members_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Members
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Members">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
   <a href="#adding-a-member" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2584,6 +2662,84 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#roles-and-access-grants" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Roles and access grants
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#revoking-any-share" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Revoking any share
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#suites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Suites
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Suites">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#transferring-ownership" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Transferring ownership
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#deleting-any-suite" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deleting any suite
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#members_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Members
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Members">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
   <a href="#adding-a-member" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2918,6 +3074,54 @@ Anything not in that checklist is unmonitored, not clear.</p>
 reason rather than dropped, so the page never answers "is anything wrong?" with silence it
 has not earned.</p>
 <h2 id="members">Members<a class="headerlink" href="#members" title="Permanent link">¶</a></h2>
+<h3 id="roles-and-access-grants">Roles and access grants<a class="headerlink" href="#roles-and-access-grants" title="Permanent link">¶</a></h3>
+<p>The <strong>Members</strong> table carries every user with their workspace role, editable in place. The
+last stored-role Admin cannot be demoted: the workspace would have nobody able to manage
+connections or membership, so the change is refused with the reason rather than accepted
+and silently reverted. Admins granted only by the environment allowlist do not count
+towards that guard — the allowlist is a recovery path, not the invariant.</p>
+<p>Below it, <strong>Access grants</strong> lists every per-suite grant in the workspace: one row per
+owner and one per share, unscoped by who owns what.</p>
+<h3 id="revoking-any-share">Revoking any share<a class="headerlink" href="#revoking-any-share" title="Permanent link">¶</a></h3>
+<p>An Admin can revoke <strong>any</strong> per-suite share from this table, including on suites they
+neither own nor have been shared. Until now that was possible only for the suite's own
+owner, from the suite's sharing panel — which meant an Admin cleaning up after a departure
+had to be granted access to each suite first.</p>
+<p>The confirmation names the user, the level and the suite, because a grant row is read out
+of context here. Revoking is audited with the admin-override flag and the grant that was
+removed, so the trail survives the row.</p>
+<p>An <strong>owner</strong> row is not a grant and has no Revoke: ownership is not something a share
+carries, and it moves by transfer instead.</p>
+<h2 id="suites">Suites<a class="headerlink" href="#suites" title="Permanent link">¶</a></h2>
+<h3 id="transferring-ownership">Transferring ownership<a class="headerlink" href="#transferring-ownership" title="Permanent link">¶</a></h3>
+<p><strong>Transfer</strong> hands a suite to another user — the offboarding primitive. When somebody
+leaves, their suites keep running, but nobody can manage sharing or delete them until an
+owner exists again.</p>
+<ul>
+<li>The new owner gets full control: the suite, its checks and its history.</li>
+<li>The previous owner keeps an <strong>editor</strong> grant by default, so a handover does not lock the
+  person still doing the work out of it. Clearing that checkbox removes their access
+  entirely, which is what an offboarding wants.</li>
+<li><strong>Workspace viewers cannot own a suite.</strong> Viewers are read-only everywhere, so they are
+  not listed in the picker and the transfer is refused if attempted another way. Change
+  their workspace role to member first.</li>
+<li>A previous owner who is themselves a viewer keeps <strong>view</strong>, not edit, for the same
+  reason.</li>
+</ul>
+<p>Both owners are recorded in the audit event.</p>
+<h3 id="deleting-any-suite">Deleting any suite<a class="headerlink" href="#deleting-any-suite" title="Permanent link">¶</a></h3>
+<p><strong>Delete</strong> removes any suite in the workspace. Before the confirmation appears, DataQ
+counts exactly what the delete would destroy — checks, runs, results, and any schedules or
+trigger bindings pointing at the suite — and states it plainly. The counts are exact, never
+estimated; if they cannot be read, the confirmation says so rather than showing a number it
+does not have, and the delete is still available.</p>
+<p>Because this runs on a suite the Admin may not recognise, the confirmation requires the
+suite's <strong>name to be typed</strong>. The delete cascades and <strong>cannot be undone</strong>: the run history,
+results and monitor baselines go with the suite. The audit event records the counts, so
+what was destroyed is still answerable afterwards.</p>
+<p>If the goal is to stop a suite running rather than erase it, disable its schedules and
+trigger bindings instead — that keeps the history.</p>
+<h2 id="members_1">Members<a class="headerlink" href="#members_1" title="Permanent link">¶</a></h2>
 <p>The Members tab manages two different things, and it helps to keep them apart:</p>
 <ul>
 <li><strong>Workspace membership</strong> — <em>who is allowed into this workspace at all.</em></li>

@@ -26,6 +26,18 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Added
 
+- **Admins can now operate the workspace, not just observe it.** **Admin → Members**
+  gains **Revoke** on any per-suite access grant — previously only a suite's own owner
+  could remove a share, so cleaning up after a departure meant first being granted access
+  to every suite. **Admin → Suites** gains **Transfer**, the offboarding primitive: a suite
+  moves to a new owner, who gets full control, while the previous owner keeps an editor
+  grant unless you clear the checkbox (workspace viewers cannot own a suite and are not
+  offered). It also gains **Delete** for any suite, behind a confirmation that states the
+  exact number of checks, runs, results, schedules and trigger bindings the cascade would
+  destroy and requires the suite's name to be typed. All three are audited with the
+  admin-override recorded, and the delete's event carries the counts. See the
+  [admin control centre guide](../guides/admin.md).
+
 - **Workspace membership is managed in the app.** **Admin → Members** gains an
   **Add member** dialog (email plus an optional initial role) and per-row removal,
   so admitting or removing somebody no longer means editing deployment config and

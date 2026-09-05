@@ -1013,6 +1013,69 @@ has not earned.
 
 ## Members
 
+### Roles and access grants
+
+The **Members** table carries every user with their workspace role, editable in place. The
+last stored-role Admin cannot be demoted: the workspace would have nobody able to manage
+connections or membership, so the change is refused with the reason rather than accepted
+and silently reverted. Admins granted only by the environment allowlist do not count
+towards that guard — the allowlist is a recovery path, not the invariant.
+
+Below it, **Access grants** lists every per-suite grant in the workspace: one row per
+owner and one per share, unscoped by who owns what.
+
+### Revoking any share
+
+An Admin can revoke **any** per-suite share from this table, including on suites they
+neither own nor have been shared. Until now that was possible only for the suite's own
+owner, from the suite's sharing panel — which meant an Admin cleaning up after a departure
+had to be granted access to each suite first.
+
+The confirmation names the user, the level and the suite, because a grant row is read out
+of context here. Revoking is audited with the admin-override flag and the grant that was
+removed, so the trail survives the row.
+
+An **owner** row is not a grant and has no Revoke: ownership is not something a share
+carries, and it moves by transfer instead.
+
+## Suites
+
+### Transferring ownership
+
+**Transfer** hands a suite to another user — the offboarding primitive. When somebody
+leaves, their suites keep running, but nobody can manage sharing or delete them until an
+owner exists again.
+
+- The new owner gets full control: the suite, its checks and its history.
+- The previous owner keeps an **editor** grant by default, so a handover does not lock the
+  person still doing the work out of it. Clearing that checkbox removes their access
+  entirely, which is what an offboarding wants.
+- **Workspace viewers cannot own a suite.** Viewers are read-only everywhere, so they are
+  not listed in the picker and the transfer is refused if attempted another way. Change
+  their workspace role to member first.
+- A previous owner who is themselves a viewer keeps **view**, not edit, for the same
+  reason.
+
+Both owners are recorded in the audit event.
+
+### Deleting any suite
+
+**Delete** removes any suite in the workspace. Before the confirmation appears, DataQ
+counts exactly what the delete would destroy — checks, runs, results, and any schedules or
+trigger bindings pointing at the suite — and states it plainly. The counts are exact, never
+estimated; if they cannot be read, the confirmation says so rather than showing a number it
+does not have, and the delete is still available.
+
+Because this runs on a suite the Admin may not recognise, the confirmation requires the
+suite's **name to be typed**. The delete cascades and **cannot be undone**: the run history,
+results and monitor baselines go with the suite. The audit event records the counts, so
+what was destroyed is still answerable afterwards.
+
+If the goal is to stop a suite running rather than erase it, disable its schedules and
+trigger bindings instead — that keeps the history.
+
+## Members
+
 The Members tab manages two different things, and it helps to keep them apart:
 
 - **Workspace membership** — *who is allowed into this workspace at all.*
@@ -3104,6 +3167,18 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Added
 
+- **Admins can now operate the workspace, not just observe it.** **Admin → Members**
+  gains **Revoke** on any per-suite access grant — previously only a suite's own owner
+  could remove a share, so cleaning up after a departure meant first being granted access
+  to every suite. **Admin → Suites** gains **Transfer**, the offboarding primitive: a suite
+  moves to a new owner, who gets full control, while the previous owner keeps an editor
+  grant unless you clear the checkbox (workspace viewers cannot own a suite and are not
+  offered). It also gains **Delete** for any suite, behind a confirmation that states the
+  exact number of checks, runs, results, schedules and trigger bindings the cascade would
+  destroy and requires the suite's name to be typed. All three are audited with the
+  admin-override recorded, and the delete's event carries the counts. See the
+  [admin control centre guide](../guides/admin.md).
+
 - **Workspace membership is managed in the app.** **Admin → Members** gains an
   **Add member** dialog (email plus an optional initial role) and per-row removal,
   so admitting or removing somebody no longer means editing deployment config and
@@ -3875,6 +3950,9 @@ an outbound model request.
 | GET | `/admin/suites` · `/admin/users` · `/admin/access` | Unscoped workspace-wide views. |
 | GET | `/admin/overview` | The four Overview stat cards — members, suites, open incidents, runs today (UTC day). |
 | PATCH | `/admin/users/{id}/role` | Change a workspace role (last-admin guarded; audit-tabled). |
+| DELETE | `/admin/suites/{id}/access/{grant_id}` | Revoke any per-suite share, on any suite (audited as an admin override). |
+| POST | `/admin/suites/{id}/transfer` | Transfer suite ownership. A viewer cannot own (422); transferring to the current owner is a 409. The previous owner keeps an `edit` grant unless `keep_previous_owner_access` is false. |
+| DELETE | `/admin/suites/{id}` | Delete any suite. Same cascade as the owner's own delete; the audit event carries the destroyed counts. |
 | GET | `/admin/members` | Workspace membership, with whether enforcement is on and how many users a first add would import. |
 | POST | `/admin/members` | Admit an address, with an optional initial role. The first add turns enforcement on and imports existing users for review (audited). |
 | DELETE | `/admin/members/{id}` | Withdraw a membership — bites on the next request for every credential kind. Last-admin guarded; `confirm_self=true` to remove your own (audited). |
@@ -5446,7 +5524,9 @@ are the reason this mode is opt-in rather than the default:
   does not create accounts at your identity provider; that stays a prerequisite.
 - **Workspace roles — Admin / Member / Viewer.** A stored `users.role` (ADR 0033), not just
   an env allowlist. **Admin** has workspace-wide visibility over every suite, its results,
-  and schedules, and is the *only* role that can create, edit, delete or re-auth a
+  and schedules; can revoke any per-suite share, transfer any suite to another member or
+  admin, and delete any suite (each audited with an admin-override flag and, for delete,
+  the exact counts destroyed); and is the *only* role that can create, edit, delete or re-auth a
   **connection** — a Member can reference, test and run against an existing connection but
   cannot mutate or re-credential it (closes the earlier hole where any authenticated user
   could delete or re-point the Snowflake connection every suite ran on). Testing a **saved**
@@ -9762,6 +9842,8 @@ is answered by the indexed-SHA-256 design above (no caching layer needed).
 > The implicit-suite-admin rule below is **unchanged**; the grant model gains one
 > rule — no `edit` shares to Viewers (their effective level caps at `view`).
 
+> **Amendment (2026-09-05, admin write pass):** ownership is no longer immutable. A workspace admin can transfer a suite to another member or admin (`POST /admin/suites/{id}/transfer`), revoke any per-suite share, and delete any suite; every one of these is audited with `admin_override: true`. The previous owner keeps an `edit` grant by default (clamped to `view` for a Viewer). `created_by` now means *current owner*; the creator at any past moment is recoverable from the `suite.transfer` audit trail.
+
 > **Companion (2026-07-18, [ADR 0037](0037-workspace-visible-asset-identity.md)):** the
 > suite ladder below remains the *only* grant model — but it now guards **suite-derived
 > detail only** (suite/check config, runs, results, samples, incidents, and the
@@ -9848,9 +9930,10 @@ Net per suite: **one owner + workspace-admin-as-admin + edit/view collaborators.
   supports **multiple** workspace-admins — use that to avoid a bottleneck. (For
   most teams, "manage access" and "delete" are governance actions, so centralising
   them is acceptable.)
-- **`owner` remains immutable / non-reassignable.** Workspace-admin is now the
-  succession path for an orphaned suite; explicit owner-reassignment stays a
-  separate future item.
+- **`owner` was immutable / non-reassignable until the admin write pass** (see the
+  amendment at the top): a workspace admin can now transfer a suite to another
+  member or admin. `created_by` then names the current owner; the original creator
+  is preserved in the `suite.transfer` audit event, not on the row.
 
 **Implementation shape**
 - `effective_permission` / `effective_permissions` return `admin` when the user
