@@ -57,6 +57,11 @@ function WebhookRow({ webhook }: { webhook: AdminWebhook }) {
       title={
         <Flex align="center" gap={8}>
           <Tag color={secretBearing ? 'geekblue' : 'cyan'}>{PROVIDER_LABELS[webhook.provider]}</Tag>
+          {/* The auth mode is what tells an operator whether a leaked URL is
+              itself a credential, so it belongs in the header, not the footnote. */}
+          <Tag color={secretBearing ? 'orange' : 'green'}>
+            {secretBearing ? 'Auth: shared secret in URL' : 'Auth: HMAC signature'}
+          </Tag>
           {!webhook.token_configured && <Tag color="error">webhook secret not set</Tag>}
         </Flex>
       }

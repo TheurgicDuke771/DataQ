@@ -86,4 +86,19 @@ describe('AdminSettings', () => {
     expect(await screen.findByText(/'auth' stage/)).toBeInTheDocument();
     await waitFor(() => expect(mockTestAuthEmail).toHaveBeenCalledTimes(1));
   });
+
+  it('carries the request ID on a failure, so the server log can be searched by it', async () => {
+    mockTestAuthEmail.mockRejectedValue(
+      Object.assign(new Error('SMTP pre-flight failed'), {
+        isAxiosError: true,
+        response: { status: 502, headers: { 'x-request-id': 'req-abc123' } },
+      }),
+    );
+    renderSubPage(<AdminSettings />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Send test email/ }));
+
+    expect(await screen.findByText('SMTP pre-flight test failed')).toBeInTheDocument();
+    expect(screen.getByText('req-abc123')).toBeInTheDocument();
+  });
 });
