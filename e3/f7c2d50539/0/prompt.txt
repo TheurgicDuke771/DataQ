@@ -1,0 +1,227 @@
+<task-notification>
+<task-id>a201fb52eda6c39cf</task-id>
+<tool-use-id>toolu_01U99L4HQUmedkHHe7UD8LNh</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a201fb52eda6c39cf.output</output-file>
+<status>completed</status>
+<summary>Agent "#1699 offboarding flow" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Work is complete and pushed; only the full-suite verification is outstanding. Summary of where things stand:
+
+**Branch:** `feature/issue-1699-offboarding` (6 commits, pushed, merged with latest `origin/main` twice).
+
+**What's built** — new files only, so the in-flight #1907 membership refactor is untouched (`membership_service.py`, `admin_service.py`, `core/auth.py`, `MembershipPanel.tsx` all show zero diff):
+- `backend/app/services/offboarding_service.py` — the pass, running the reused primitives on a session joined to the caller's connection with `join_transaction_mode="create_savepoint"`, so their internal `commit()` calls release savepoints inside one transaction.
+- `backend/app/api/v1/admin_offboarding.py` — preview + pass, own admin-gated router, mounted in `main.py`.
+- `frontend/src/pages/admin/OffboardModal.tsx` + one column in `AdminMembers.tsx`.
+- Docs: guide section, REST rows, changelog, regenerated `openapi.json`.
+
+**Verified:** 28 offboarding tests green on the private `dataq_test_1699` DB (real, not skipped); atomicity mutation-checked twice; black/ruff/mypy (full sweep incl. tests+scripts)/bandit clean; frontend lint/format/typecheck/coverage green at 89.4% lines; `mkdocs build --strict` clean.
+
+**Notable finding during hardening:** moving the outer `db.rollback()` ahead of `inner.close()` turned five tests red — the close-before-rollback ordering is load-bearing, and that's now stated in the code rather than left as an accident.</result>
+<usage><subagent_tokens>390331</subagent_tokens><tool_uses>177</tool_uses><duration_ms>1889536</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a201fb52eda6c39cf</worktreePath><worktreeBranch>worktree-agent-a201fb52eda6c39cf</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a201fb52eda6c39cf</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a201fb52eda6c39cf.output</output-file>
+<status>completed</status>
+<summary>Agent "#1699 offboarding flow" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>PR is up and verified: title, milestone `v1.2 Week 7 — feature burn-down`, state OPEN, body carrying `Fixes #1699` + `Refs #1888` and the savepoint / close-before-rollback finding. Not merged, no `/code-review` run.
+
+**PR:** https://github.com/TheurgicDuke771/DataQ/pull/1913
+
+**Verification**
+- Full backend suite on the private DB (`dataq_test_1699`): **6163 passed, 10 skipped, 97.02% coverage**, gate met. `black --check` / `ruff` / `mypy backend/app backend/tests backend/scripts` / `bandit` clean.
+- Frontend: `lint` / `format:check` / `typecheck` / `test:coverage` green (89.4% lines vs the 80 gate); 9 new modal tests.
+- `mkdocs build --strict` clean; `openapi.json` regenerated.
+- Atomicity mutation-checked twice — swapping the rollback for a commit turns the ordering test red.
+
+**Two things the process caught, not me**
+- The repo's assert-hygiene guard found three of my tests running the request *inside* the assert (`python -O` deletes both and they pass doing nothing). Three more had the same defect behind a local helper where the AST check can't see it; hoisted those too.
+- Restructuring the rollback into a plain `finally` turned five tests red — `inner.close()` must precede the outer rollback. The ordering is load-bearing and now says so in the code.
+
+**Skipped, with reasons**
+- **Playwright not executed.** The spec is collected (60 tests / 15 files) but running it needs a scratch dev-bypass stack with seeded data; the compose stack here is the local prod-mirror in OTP mode with real connections, which I wouldn't repurpose. That leg goes to CI.
+- **`/code-review` not run** and **not merged**, per instruction.
+- **`docs/progress.md` untouched** (another agent owns it this session); PR ticks the N/A box.
+- One pre-existing flake observed and self-resolved: `test_poll_lock_timeout.py` briefly self-deadlocked on `connections` (`FOR UPDATE` holder vs a `transactionid` waiter, with autovacuum on the same table) and cleared via the lock timeout. Untouched by this PR — worth filing if it recurs in CI.
+
+None of the four files reserved for #1907 are touched — `git diff origin/main..HEAD --stat` shows zero changes to `membership_service.py`, `admin_service.py`, `core/auth.py`, `MembershipPanel.tsx`. Merged `origin/main` twice; expect one more before merge.
+
+result: PR #1913 opened — https://github.com/TheurgicDuke771/DataQ/pull/1913 — DataQ admin offboarding (transfer suites, revoke PATs and sessions, withdraw membership in one atomic audited pass), backend suite green at 6163 passed / 97.02% coverage, frontend and docs gates green, Playwright deferred to CI.</result>
+<usage><subagent_tokens>441423</subagent_tokens><tool_uses>266</tool_uses><duration_ms>2434457</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a201fb52eda6c39cf</worktreePath><worktreeBranch>worktree-agent-a201fb52eda6c39cf</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a201fb52eda6c39cf</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a201fb52eda6c39cf.output</output-file>
+<status>completed</status>
+<summary>Agent "#1699 offboarding flow" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>That notification is a leftover waiter from the suite runs I'd already collected — no new information, and nothing further to do. The work is delivered at PR #1913.</result>
+<usage><subagent_tokens>437235</subagent_tokens><tool_uses>266</tool_uses><duration_ms>2451822</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a201fb52eda6c39cf</worktreePath><worktreeBranch>worktree-agent-a201fb52eda6c39cf</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a201fb52eda6c39cf</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a201fb52eda6c39cf.output</output-file>
+<status>completed</status>
+<summary>Agent "#1699 offboarding flow" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Another stale waiter from the earlier suite runs — nothing new. #1699 is complete and delivered at PR #1913.</result>
+<usage><subagent_tokens>437591</subagent_tokens><tool_uses>266</tool_uses><duration_ms>2455177</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a201fb52eda6c39cf</worktreePath><worktreeBranch>worktree-agent-a201fb52eda6c39cf</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ac2b04158e71f09ee</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/ac2b04158e71f09ee.output</output-file>
+<status>failed</status>
+<summary>Agent "Efficiency angle" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message · your session limit resets 3:30pm (America/Vancouver) (error type rate_limit, HTTP 429, request id req_011CekpuLguaraxHz2yBeVWU, model sent to the API: claude-fable-5-1)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ac30f16521f0c8a86</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/ac30f16521f0c8a86.output</output-file>
+<status>failed</status>
+<summary>Agent "Simplification angle" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message · your session limit resets 3:30pm (America/Vancouver) (error type rate_limit, HTTP 429, request id req_011CekpuNZGvqnzs987Etzq8, model sent to the API: claude-fable-5-1)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aeced695939816da5</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/aeced695939816da5.output</output-file>
+<status>failed</status>
+<summary>Agent "Angle B removed-behavior audit" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message · your session limit resets 3:30pm (America/Vancouver) (error type rate_limit, HTTP 429, request id req_011CekpuV1U9K4u7mjAnpzJL, model sent to the API: claude-fable-5-1)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a4ca19c76e3bb684b</task-id>
+<tool-use-id>toolu_01UrhATe8eAZrTUDtVWoNa2B</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a4ca19c76e3bb684b.output</output-file>
+<status>failed</status>
+<summary>Agent "Reuse angle" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message · your session limit resets 3:30pm (America/Vancouver) (error type rate_limit, HTTP 429, request id req_011CekpuUZBWKcK27qGQA425, model sent to the API: claude-fable-5-1)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a8ad4348d44b3f7c9</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a8ad4348d44b3f7c9.output</output-file>
+<status>failed</status>
+<summary>Agent "Angle C cross-file tracer" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message · your session limit resets 3:30pm (America/Vancouver) (error type rate_limit, HTTP 429, request id req_011CekpubHVjoYynevcuVtRf, model sent to the API: claude-fable-5-1)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a06e092e17e897cf2</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a06e092e17e897cf2.output</output-file>
+<status>failed</status>
+<summary>Agent "Altitude angle" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message · your session limit resets 3:30pm (America/Vancouver) (error type rate_limit, HTTP 429, request id req_011Cekpuw7c1znfJQFXZnGpi, model sent to the API: claude-fable-5-1)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ac3d7830bf93063ca</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/ac3d7830bf93063ca.output</output-file>
+<status>failed</status>
+<summary>Agent "Conventions angle (CLAUDE.md)" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message · your session limit resets 3:30pm (America/Vancouver) (error type rate_limit, HTTP 429, request id req_011Cekpvf3Vpzz7oQNM1okio, model sent to the API: claude-fable-5-1)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a5da7829937de13ff</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a5da7829937de13ff.output</output-file>
+<status>failed</status>
+<summary>Agent "Angle A line-by-line scan" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message · your session limit resets 3:30pm (America/Vancouver) (error type rate_limit, HTTP 429, request id req_011Cekq1hL3nnowgnz7t2Q6e, model sent to the API: claude-fable-5-1)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aa358e69282a3e8fa</task-id>
+<tool-use-id>toolu_01TVEi9TzaLzQPRpz4fFVYYv</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/aa358e69282a3e8fa.output</output-file>
+<status>failed</status>
+<summary>Agent "#1907 membership follow-up fix" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message · your session limit resets 3:30pm (America/Vancouver) (error type rate_limit, HTTP 429, request id req_011Cekq31uXsHqCWp1xkhB2f, model sent to the API: claude-opus-5)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>0.193 — under the bar. Running the full verification battery now.</result>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-aa358e69282a3e8fa</worktreePath><worktreeBranch>worktree-agent-aa358e69282a3e8fa</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+continue...
+
+---
+
+<task-notification>
+<task-id>b8y2uvyqk</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/b8y2uvyqk.output</output-file>
+<status>completed</status>
+<summary>Background command "Full verification battery for #1907 (backend suite on a private DB, frontend coverage, docs)" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+1913 failed, 1914 completed
+
+---
+
+<task-notification>
+<task-id>bz11lgiby</task-id>
+<tool-use-id>toolu_01Qfdj2ZynZC2uVH1PP91Nrc</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/bz11lgiby.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for #1914 to merge or fail" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bcfgu61to</task-id>
+<tool-use-id>toolu_01DMucKYYokg6HkdgR8NKsbn</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/bcfgu61to.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for #1913 to merge or fail" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Are we fixing #1903 & #1909?

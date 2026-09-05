@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "e3f7c2d50539",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1909-config-error-500",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/e3/f7c2d50539/0/metadata.json",
+      "transcript": "/e3/f7c2d50539/0/full.jsonl",
+      "compact_transcript": "/e3/f7c2d50539/0/transcript.jsonl",
+      "content_hash": "/e3/f7c2d50539/0/content_hash.txt",
+      "prompt": "/e3/f7c2d50539/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 9922,
+    "cache_creation_tokens": 3982098,
+    "cache_read_tokens": 191607307,
+    "output_tokens": 309531,
+    "api_call_count": 391
+  }
+}
