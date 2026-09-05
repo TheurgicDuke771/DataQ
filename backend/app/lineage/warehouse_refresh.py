@@ -22,6 +22,7 @@ from backend.app.lineage.warehouse import (
     WarehouseLineageUnavailableError,
     get_warehouse_lineage_provider,
 )
+from backend.app.services import credential_health
 from backend.app.services.asset_service import upsert_assets
 from backend.app.services.failure_classifier import classify_failure_reason
 
@@ -193,15 +194,20 @@ def refresh_connection_lineage(
 
     # A snapshot source ignores the stored watermark; a log source reads from it.
     since = connection.lineage_watermark if provider.is_incremental else None
-    try:
-        with _open_connection(connection, secret_store) as conn:
-            outcome = refresh_warehouse_edges(
-                session, connection=connection, provider=provider, conn=conn, since=since
-            )
-    except Exception as exc:
-        # Opening the datasource failed (bad/unreadable credential, unreachable host).
-        _record_refresh_error(session, connection, exc)
-        return None
+    # Credential-health seam (#1697). This path SWALLOWS its exception into connection
+    # state, so the rejection is handed over explicitly — a clean return would otherwise
+    # read as a working credential.
+    with credential_health.credential_use(session, connection) as credential:
+        try:
+            with _open_connection(connection, secret_store) as conn:
+                outcome = refresh_warehouse_edges(
+                    session, connection=connection, provider=provider, conn=conn, since=since
+                )
+        except Exception as exc:
+            # Opening the datasource failed (bad/unreadable credential, unreachable host).
+            credential.failed(exc)
+            _record_refresh_error(session, connection, exc)
+            return None
 
     if outcome is None:
         # refresh_warehouse_edges already logged the unavailable/failed cause and left

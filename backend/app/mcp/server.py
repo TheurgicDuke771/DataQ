@@ -69,6 +69,7 @@ from backend.app.services import (
     channel_service,
     check_service,
     connection_service,
+    credential_health,
     dashboard_service,
     dryrun_service,
     incident_service,
@@ -1305,6 +1306,19 @@ def list_connections(type: str | None = None, env: str | None = None) -> list[di
     the two apart, and null there means we have never looked. Report all of these
     as silence rather than reassurance.
 
+    ``credential_health`` answers the narrower question "is this connection's
+    stored credential still accepted?" — and it is the right field for "why did
+    every suite on this warehouse start failing?". Its ``status`` is
+    ``healthy`` / ``failing`` / ``unknown``, and **only a credential REJECTION
+    moves it**: a missing SELECT grant, an unreachable host and a bad table name
+    all leave it untouched, because none of them says the credential is dead. It
+    is derived from work DataQ already does — runs, dry-runs, profiles, and
+    ``test_connection`` — never from a periodic probe, so a connection nothing
+    has used is ``unknown`` indefinitely. **``unknown`` is not a clean bill of
+    health**; it means nothing has been observed, and it is also what every
+    connection reads until it is next used. ``credential_health`` is ``null`` on
+    an orchestration connection, whose equivalent is the poll fields above.
+
     ``last_run_error``/``last_poll_error`` are a **stored, classified** reason
     from the connection's last real run or poll (safe to quote verbatim — never
     raw driver text). This is a different thing from ``test_connection``, which
@@ -1360,6 +1374,27 @@ def list_connections(type: str | None = None, env: str | None = None) -> list[di
                     "credential_expiry_checked_at": (
                         c.credential_expiry_checked_at.isoformat()
                         if c.credential_expiry_checked_at
+                        else None
+                    ),
+                    # Datasource credential health (#1697). `None` on an orchestration
+                    # connection, which has the poll signal instead — not "healthy".
+                    "credential_health": (
+                        {
+                            "status": credential_health.credential_status(c),
+                            "consecutive_auth_failures": c.consecutive_auth_failures or 0,
+                            "last_auth_failure_at": (
+                                c.last_auth_failure_at.isoformat()
+                                if c.last_auth_failure_at
+                                else None
+                            ),
+                            "last_auth_success_at": (
+                                c.last_auth_success_at.isoformat()
+                                if c.last_auth_success_at
+                                else None
+                            ),
+                            "last_error": c.last_auth_error,
+                        }
+                        if credential_health.is_datasource(c.type)
                         else None
                     ),
                 }
@@ -2345,6 +2380,7 @@ def dryrun_check(
             raise ToolError("suite has no connection")
         outcome = dryrun_service.dry_run_check(
             connection,
+            session=session,
             kind=kind,
             expectation_type=expectation_type,
             config=config or {},
@@ -2779,6 +2815,7 @@ def suggest_column_policy(suite_id: str) -> dict[str, Any]:
         )
         policy = profile_service.suggest_policy_for_target(
             connection,
+            session=session,
             table=table,
             schema=schema,
             catalog=catalog,
@@ -3786,6 +3823,7 @@ def list_columns(
             namespace = None
         columns = profile_service.list_columns(
             connection,
+            session=session,
             table=table,
             schema=schema,
             catalog=catalog,
@@ -3969,6 +4007,7 @@ def profile_column(
             namespace = None
         result = profile_service.profile_connection(
             connection,
+            session=session,
             columns=columns,
             top_n=top_n,
             table=table,

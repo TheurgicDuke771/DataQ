@@ -107,6 +107,7 @@ def list_columns_for_target(
     try:
         columns = profile_service.list_columns(
             connection,
+            session=session,
             secret_store=secret_store,
             table=table,
             schema=schema,
@@ -221,6 +222,7 @@ def masked_profile_for_target(
     try:
         profile = profile_service.profile_connection(
             connection,
+            session=session,
             columns=columns,
             top_n=top_n,
             secret_store=secret_store,

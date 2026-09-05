@@ -40,6 +40,7 @@ from backend.app.services import (
     column_tags,
     comparison_run,
     connection_service,
+    credential_health,
     cron,
     incident_service,
     llm_kinds,  # noqa: F401 — registers every LLM feature kind in the worker
@@ -105,114 +106,120 @@ def _run_suite(session: Session, *, run_id: uuid.UUID) -> str:
         log.info("run_suite_already_cancelled", run_id=str(run_id))
         return "cancelled"
 
-    try:
-        suite = session.get(Suite, run.suite_id)
-        connection = session.get(Connection, suite.connection_id) if suite is not None else None
-        if suite is None or connection is None:
-            raise RuntimeError("suite or connection not found for run")
-        target = run_target.resolve_target(connection.type, suite.target)
-        checks = list(session.scalars(select(Check).where(Check.suite_id == suite.id)))
-        runner = build_check_runner(
-            conn_type=connection.type,
-            config=connection.config,
-            secret_ref=connection.secret_ref,
-            secret_store=get_secret_store(),
-            catalog=target.catalog,
-            # Suite row cap (#595); `resolve_target` already refused it on
-            # pushdown datasources, so it is never silently dropped here.
-            sampling=target.sampling,
-        )
-    except Exception as exc:
-        return _terminal_failed(
-            session,
-            run,
-            event="run_suite_setup_failed",
-            run_id=run_id,
-            reason=classify_failure_reason(exc),
-        )
-
-    # Refresh warehouse column classifications (G3/#433) here — the read path must not open a
-    # warehouse connection, and this is the moment we're connected.
-    try:
-        column_tags.refresh_asset_column_tags(
-            session,
-            suite=suite,
-            connection=connection,
-            target=target,
-            secret_store=get_secret_store(),
-        )
-    except Exception:  # pragma: no cover - the callee already swallows
-        log.warning("column_tags_refresh_skipped", run_id=str(run_id), exc_info=True)
-
-    # Everything below runs inside `owned_runner`, which releases the shared
-    # engine pool (#427) on every exit.
-    with owned_runner(runner):
-        # Kept separate from setup so a missing batch is a skip, not a setup failure.
+    suite = session.get(Suite, run.suite_id)
+    connection = session.get(Connection, suite.connection_id) if suite is not None else None
+    # The ONE datasource credential-health seam for the run path (#1697): everything below
+    # — runner build, batch materialisation, column tags, comparison and stateful-monitor
+    # executors, and the run itself — uses this connection's stored credential.
+    with credential_health.credential_use(session, connection) as credential:
         try:
-            table = run_target.materialize_path(
-                connection.type,
-                connection.config,
-                target,
+            if suite is None or connection is None:
+                raise RuntimeError("suite or connection not found for run")
+            target = run_target.resolve_target(connection.type, suite.target)
+            checks = list(session.scalars(select(Check).where(Check.suite_id == suite.id)))
+            runner = build_check_runner(
+                conn_type=connection.type,
+                config=connection.config,
                 secret_ref=connection.secret_ref,
                 secret_store=get_secret_store(),
+                catalog=target.catalog,
+                # Suite row cap (#595); `resolve_target` already refused it on
+                # pushdown datasources, so it is never silently dropped here.
+                sampling=target.sampling,
             )
-        except BatchNotFoundError:
-            run_service.skip_run(session, run=run, checks=checks, reason="batch_not_found")
-            log.info("run_suite_skipped_no_batch", run_id=str(run_id), suite_id=str(suite.id))
-            return str(run.status)
         except Exception as exc:
+            credential.failed(exc)
             return _terminal_failed(
                 session,
                 run,
-                event="run_suite_materialize_failed",
+                event="run_suite_setup_failed",
                 run_id=run_id,
                 reason=classify_failure_reason(exc),
             )
 
-        # The suite's identifier column (#415) — requested from GX so failing
-        # rows carry a locator; absent policy keeps the scalar-only sample.
-        policy = suite.column_policy or {}
-        identifier = policy.get("identifier_column")
-        index_columns = [str(identifier)] if identifier else None
-
-        # Comparison executor (ADR 0015, #794): bound to this run's resolved target
-        # so the diff validates the exact dataset the GX runner sees.
-        comparison_executor = None
-        if comparison_run.has_comparison_checks(checks):
-            comparison_executor = comparison_run.build_comparison_executor(
+        # Refresh warehouse column classifications (G3/#433) here — the read path must not open a
+        # warehouse connection, and this is the moment we're connected.
+        try:
+            column_tags.refresh_asset_column_tags(
                 session,
-                suite_connection=connection,
-                target_table=table,
-                target_schema=target.schema,
-                target_catalog=target.catalog,
-                secret_store=get_secret_store(),
-            )
-
-        # Stateful monitor executors (#592/#593) own the session + baseline
-        # store, which runners must never see.
-        stateful_monitor_executor = None
-        if any(c.kind in STATEFUL_MONITOR_KINDS for c in checks):
-            stateful_monitor_executor = stateful_monitors.build_stateful_monitor_executor(
-                session,
+                suite=suite,
                 connection=connection,
-                target_table=table,
-                target_schema=target.schema,
-                target_catalog=target.catalog,
+                target=target,
                 secret_store=get_secret_store(),
             )
+        except Exception:  # pragma: no cover - the callee already swallows
+            log.warning("column_tags_refresh_skipped", run_id=str(run_id), exc_info=True)
 
-        run_service.execute_run(
-            session,
-            run=run,
-            checks=checks,
-            runner=runner,
-            table=table,
-            schema=target.schema,
-            index_columns=index_columns,
-            comparison_executor=comparison_executor,
-            stateful_monitor_executor=stateful_monitor_executor,
-        )
-        return str(run.status)
+        # Everything below runs inside `owned_runner`, which releases the shared
+        # engine pool (#427) on every exit.
+        with owned_runner(runner):
+            # Kept separate from setup so a missing batch is a skip, not a setup failure.
+            try:
+                table = run_target.materialize_path(
+                    connection.type,
+                    connection.config,
+                    target,
+                    secret_ref=connection.secret_ref,
+                    secret_store=get_secret_store(),
+                )
+            except BatchNotFoundError:
+                run_service.skip_run(session, run=run, checks=checks, reason="batch_not_found")
+                log.info("run_suite_skipped_no_batch", run_id=str(run_id), suite_id=str(suite.id))
+                return str(run.status)
+            except Exception as exc:
+                credential.failed(exc)
+                return _terminal_failed(
+                    session,
+                    run,
+                    event="run_suite_materialize_failed",
+                    run_id=run_id,
+                    reason=classify_failure_reason(exc),
+                )
+
+            # The suite's identifier column (#415) — requested from GX so failing
+            # rows carry a locator; absent policy keeps the scalar-only sample.
+            policy = suite.column_policy or {}
+            identifier = policy.get("identifier_column")
+            index_columns = [str(identifier)] if identifier else None
+
+            # Comparison executor (ADR 0015, #794): bound to this run's resolved target
+            # so the diff validates the exact dataset the GX runner sees.
+            comparison_executor = None
+            if comparison_run.has_comparison_checks(checks):
+                comparison_executor = comparison_run.build_comparison_executor(
+                    session,
+                    suite_connection=connection,
+                    target_table=table,
+                    target_schema=target.schema,
+                    target_catalog=target.catalog,
+                    secret_store=get_secret_store(),
+                )
+
+            # Stateful monitor executors (#592/#593) own the session + baseline
+            # store, which runners must never see.
+            stateful_monitor_executor = None
+            if any(c.kind in STATEFUL_MONITOR_KINDS for c in checks):
+                stateful_monitor_executor = stateful_monitors.build_stateful_monitor_executor(
+                    session,
+                    connection=connection,
+                    target_table=table,
+                    target_schema=target.schema,
+                    target_catalog=target.catalog,
+                    secret_store=get_secret_store(),
+                )
+
+            run_service.execute_run(
+                session,
+                run=run,
+                checks=checks,
+                runner=runner,
+                table=table,
+                schema=target.schema,
+                index_columns=index_columns,
+                comparison_executor=comparison_executor,
+                stateful_monitor_executor=stateful_monitor_executor,
+            )
+            return str(run.status)
 
 
 @celery_app.task(name="run_suite")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
@@ -277,6 +284,7 @@ def _auto_classify_columns(session: Session, *, suite_id: uuid.UUID) -> str:
     try:
         policy = profile_service.suggest_policy_for_target(
             connection,
+            session=session,
             table=table,
             schema=target.get("schema"),
             catalog=target.get("catalog"),

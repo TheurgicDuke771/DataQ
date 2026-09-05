@@ -14,6 +14,7 @@ from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.db.models import Connection
 from backend.app.lineage.warehouse import get_warehouse_lineage_provider
+from backend.app.services import credential_health
 from backend.app.services.asset_service import upsert_assets
 from backend.app.services.connection_lock import lock_connection
 from backend.app.services.failure_classifier import classify_inventory_sync_error
@@ -47,18 +48,22 @@ def sync_connection_inventory(
     # type); imported lazily exactly like the lineage refresh does (#858).
     from backend.app.services.profile_service import _open_connection
 
-    with _open_connection(connection, secret_store) as conn:
-        try:
-            # cap+1 so overflow is detectable; the enumerator itself stays cap-blind
-            # (ADR 0040 — the caller owns the honesty of any truncation).
-            identities = provider.enumerate_tables(
-                conn,
-                connection_config=dict(connection.config),
-                limit=(cap + 1) if cap > 0 else None,
-            )
-        except Exception as exc:
-            # Phase marker, not a category — see `InventorySyncEnumerationError`.
-            raise InventorySyncEnumerationError() from exc
+    # Credential-health seam (#1697). The enumeration error below re-raises `from` the
+    # driver exception, and `is_auth_failure` walks that chain — so a rejected credential
+    # is still recognised through the wrapper.
+    with credential_health.credential_use(session, connection):
+        with _open_connection(connection, secret_store) as conn:
+            try:
+                # cap+1 so overflow is detectable; the enumerator itself stays cap-blind
+                # (ADR 0040 — the caller owns the honesty of any truncation).
+                identities = provider.enumerate_tables(
+                    conn,
+                    connection_config=dict(connection.config),
+                    limit=(cap + 1) if cap > 0 else None,
+                )
+            except Exception as exc:
+                # Phase marker, not a category — see `InventorySyncEnumerationError`.
+                raise InventorySyncEnumerationError() from exc
 
     truncated = cap > 0 and len(identities) > cap
     if truncated:

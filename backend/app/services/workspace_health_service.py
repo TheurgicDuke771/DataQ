@@ -29,6 +29,7 @@ from backend.app.db.models import (
     TriggerBinding,
     WorkspaceHealth,
 )
+from backend.app.services import credential_health
 from backend.app.services.failure_classifier import classify_broker_reason
 from backend.app.services.suite_service import accessible_suite_ids
 from backend.app.worker.celery_app import POLL_ORCHESTRATION_INTERVAL_S
@@ -472,3 +473,54 @@ def broker_queue_depths(
     except Exception as exc:  # broad: any broker/library failure must read as "unavailable"
         log.warning("admin_health_queue_depth_failed", exc_info=True)
         return None, classify_broker_reason(exc)
+
+
+# ─────────────── datasource credential health, workspace-wide (#1697) ───────────────
+
+
+@dataclass(frozen=True)
+class CredentialHealthRow:
+    """One datasource connection's credential health for the admin Overview feed."""
+
+    connection_id: uuid.UUID
+    name: str
+    type: str
+    env: str
+    status: credential_health.CredentialStatus
+    consecutive_auth_failures: int
+    last_auth_failure_at: datetime | None
+    last_auth_success_at: datetime | None
+    last_error: str | None
+
+
+def list_credential_health(session: Session) -> list[CredentialHealthRow]:
+    """Every DATASOURCE connection's credential health, worst first (#1697).
+
+    Admin-wide and unscoped, like the sibling poll rows: the question this answers is
+    "is anything in the workspace broken", and a connection is workspace-level state.
+    Orchestration providers are excluded — theirs is the poll signal (#828).
+    """
+    rows = session.scalars(
+        select(Connection)
+        .where(Connection.type.not_in(ORCHESTRATION_PROVIDERS))
+        .order_by(Connection.name, Connection.env)
+    ).all()
+    out = [
+        CredentialHealthRow(
+            connection_id=conn.id,
+            name=conn.name,
+            type=conn.type,
+            env=conn.env,
+            status=credential_health.credential_status(conn),
+            consecutive_auth_failures=conn.consecutive_auth_failures or 0,
+            last_auth_failure_at=conn.last_auth_failure_at,
+            last_auth_success_at=conn.last_auth_success_at,
+            last_error=conn.last_auth_error,
+        )
+        for conn in rows
+    ]
+    # Failing first, then unknown, then healthy — an admin page is read top-down, and the
+    # rows that need action must not sit below the ones that do not.
+    order = {"failing": 0, "unknown": 1, "healthy": 2}
+    out.sort(key=lambda r: (order.get(r.status, 3), r.name, r.env))
+    return out

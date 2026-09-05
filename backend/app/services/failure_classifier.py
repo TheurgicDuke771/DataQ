@@ -241,3 +241,75 @@ def classify_secret_store_reason(exc: BaseException) -> str:
     if isinstance(exc, SecretStoreUnavailableError):
         return _SECRET_STORE_MESSAGES[FailureCategory.CONNECTIVITY]
     return _SECRET_STORE_MESSAGES[classify_failure_category(exc)]
+
+
+# ── Datasource credential-health classification (#1697) ──────────────────────
+#
+# Deliberately NARROWER than `FailureCategory.PERMISSION`, which also covers a missing
+# SELECT grant. A missing grant is a fact about an authorization policy; only a rejected
+# CREDENTIAL is a fact about the credential's health, and #1697's signal is the latter.
+# Markers are the driver-emitted vocabulary for "who you are was rejected".
+_AUTH_MARKERS: tuple[str, ...] = (
+    # Snowflake 390100-family: bad password / expired token. Not the bare 250001 prefix,
+    # which also covers a wrong account locator.
+    "390100",
+    "390114",
+    "390195",
+    "incorrect username or password",
+    "authentication token has expired",
+    "jwt token is invalid",
+    "invalid oauth access token",
+    # Databricks / Unity Catalog: an invalid or revoked PAT.
+    "invalid access token",
+    "pat is invalid",
+    # Azure ADLS Gen2 / Blob.
+    "authenticationfailed",
+    "server failed to authenticate the request",
+    "signature did not match",
+    "invalid_client",
+    # AWS S3 (and S3-compatible stores, which reuse the same error codes).
+    "invalidaccesskeyid",
+    "signaturedoesnotmatch",
+    "expiredtoken",
+    "tokenrefreshrequired",
+    "unrecognizedclientexception",
+    # Generic HTTP shape — Iceberg REST catalogs, Databricks SQL, any HTTP driver.
+    "http 401",
+    "401 unauthorized",
+    "invalid credential",
+    "credentials could not be resolved",
+)
+
+#: The one fixed, secret-free reason a credential-health failure is recorded with.
+AUTH_FAILURE_REASON = (
+    "The datasource rejected this connection's credential. It has most likely expired "
+    "or been revoked — rotate it via the connection's Re-authenticate action."
+)
+
+
+#: How far to walk `__cause__`/`__context__`. Bounded so a self-referential chain cannot spin.
+_CAUSE_CHAIN_DEPTH = 5
+
+
+def is_auth_failure(exc: BaseException) -> bool:
+    """Whether ``exc`` is the datasource rejecting the CREDENTIAL itself (#1697).
+
+    A missing grant, a bad table name and an unreachable host are all excluded: none of
+    them says anything about whether the stored credential still works.
+
+    Walks the cause chain, because the driver's own message is routinely the *cause* of
+    what reaches us — `InventorySyncEnumerationError` and GX/SQLAlchemy wrappers all
+    re-raise `from` the original, and matching only the outermost type would see none
+    of the vocabulary the datasource actually emitted.
+    """
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    for _ in range(_CAUSE_CHAIN_DEPTH):
+        if current is None or id(current) in seen:
+            break
+        seen.add(id(current))
+        haystack = f"{type(current).__name__}: {current}".lower()
+        if any(marker in haystack for marker in _AUTH_MARKERS):
+            return True
+        current = current.__cause__ or current.__context__
+    return False

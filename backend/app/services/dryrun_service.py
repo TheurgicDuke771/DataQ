@@ -7,6 +7,8 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, cast
 
+from sqlalchemy.orm import Session
+
 from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.jsonsafe import sanitize_json
@@ -22,7 +24,7 @@ from backend.app.datasources.registry import (
 )
 from backend.app.datasources.sql import strip_statement_echo
 from backend.app.db.models import GX_ENGINE, Connection
-from backend.app.services import run_target
+from backend.app.services import credential_health, run_target
 from backend.app.services.check_service import (
     reject_thresholds_on_unbanded,
     validate_engine,
@@ -69,6 +71,7 @@ class DryRunOutcome:
 def dry_run_check(
     connection: Connection,
     *,
+    session: Session,
     kind: str,
     expectation_type: str,
     config: dict[str, Any],
@@ -80,174 +83,181 @@ def dry_run_check(
     engine: str = GX_ENGINE,
 ) -> DryRunOutcome:
     """Run one check against the suite's run ``target`` and return a preview."""
-    # #568: a preview must never accept a threshold set that a save would reject — same shared
-    # validator create_check/update_check use.
-    validate_threshold_ordering(
-        warn_threshold=warn_threshold,
-        fail_threshold=fail_threshold,
-        critical_threshold=critical_threshold,
-    )
-    # #1530: a save would 422 on an engine the connection doesn't offer or can't evaluate this
-    # kind/type/config with — a preview must reject the same way, not fall through to the GX
-    # runner and 502 blaming the datasource.
-    validate_engine(engine, connection_type=connection.type)
-    validate_engine_compatibility(
-        engine,
-        kind=kind,
-        expectation_type=expectation_type,
-        config=config,
-        warn_threshold=warn_threshold,
-        fail_threshold=fail_threshold,
-        critical_threshold=critical_threshold,
-    )
-    if engine != GX_ENGINE:
-        return _dry_run_native(
-            connection,
-            engine=engine,
+    # Credential-health seam (#1697) — every dry-run branch below (GX, native engine,
+    # schema_drift, anomaly) opens the datasource with this connection's stored credential.
+    with credential_health.credential_use(session, connection):
+        # #568: a preview must never accept a threshold set that a save would reject — same shared
+        # validator create_check/update_check use.
+        validate_threshold_ordering(
+            warn_threshold=warn_threshold,
+            fail_threshold=fail_threshold,
+            critical_threshold=critical_threshold,
+        )
+        # #1530: a save would 422 on an engine the connection doesn't offer or can't evaluate this
+        # kind/type/config with — a preview must reject the same way, not fall through to the GX
+        # runner and 502 blaming the datasource.
+        validate_engine(engine, connection_type=connection.type)
+        validate_engine_compatibility(
+            engine,
             kind=kind,
             expectation_type=expectation_type,
             config=config,
             warn_threshold=warn_threshold,
             fail_threshold=fail_threshold,
             critical_threshold=critical_threshold,
-            target=target,
-            secret_store=secret_store,
         )
-    if kind == SCHEMA_DRIFT:
-        return _dry_run_schema_drift(
-            connection, config=config, target=target, secret_store=secret_store
-        )
-    if kind == ANOMALY:
-        return _dry_run_anomaly(connection, config=config, target=target, secret_store=secret_store)
-    if kind != _EXPECTATION_KIND:
-        raise DryRunUnsupportedError(
-            f"dry-run supports only 'expectation', 'schema_drift' and 'anomaly' checks; "
-            f"got {kind!r}",
-            detail={"kind": kind},
-        )
-    # Resolve the target the same way the run path does.
-    resolved = run_target.resolve_target(connection.type, target)
-    # Dry-run is the one path that *executes* the query before save, so the custom-SQL read-only
-    # guardrail (ADR 0019) must apply here too — outside the try, so a bad query is a clean 422.
-    validate_custom_sql_check(
-        expectation_type=expectation_type,
-        config=config,
-        connection_type=connection.type,
-    )
-    if not is_custom_sql(expectation_type):
-        # #1510, by the same rule as the threshold check above: a preview must not accept what a
-        # save would reject. This is also the one author-time door that EXECUTES the expectation
-        # against live data with the stored credential, so the vetted set has to hold here too.
-        validate_expectation_check(expectation_type, config)
-        reject_thresholds_on_unbanded(
-            expectation_type,
-            warn_threshold=warn_threshold,
-            fail_threshold=fail_threshold,
-            critical_threshold=critical_threshold,
-        )
-
-    try:
-        runner = build_check_runner(
-            conn_type=connection.type,
-            config=connection.config,
-            secret_ref=connection.secret_ref,
-            secret_store=secret_store,
-            catalog=resolved.catalog,
-            # The suite target's row cap (#595).
-            sampling=resolved.sampling,
-        )
-    except UnsupportedConnectionTypeError as exc:
-        # Defensive: resolve_target already rejects non-datasource types, so this
-        # is only reachable if the runner registry drifts from the adapter set.
-        raise DryRunUnsupportedError(
-            f"dry-run is not supported for {connection.type!r} connections",
-            detail={"type": connection.type},
-        ) from exc
-    except Exception as exc:
-        # The builders resolve the secret eagerly — a missing/unreadable credential fails here, and
-        # is a datasource-side 502 (as it was before #532, when build + run shared one guard).
-        log.warning(
-            "dry_run_failed", connection_type=connection.type, error_type=type(exc).__name__
-        )
-        raise DryRunFailedError(
-            "dry run could not connect to the datasource",
-            detail={"reason": safe_failure_reason(exc)},
-        ) from exc
-
-    # The runner exists from here — `owned_runner` releases its shared engine
-    # pool (#427) on every exit path of the dry run.
-    with owned_runner(runner):
-        # Materialize a flat-file batch target to a concrete file (lists the store) — a no-op for
-        # SQL / UC / literal flat-file targets.
-        try:
-            table = run_target.materialize_path(
-                connection.type,
-                connection.config,
-                resolved,
-                secret_ref=connection.secret_ref,
+        if engine != GX_ENGINE:
+            return _dry_run_native(
+                connection,
+                engine=engine,
+                kind=kind,
+                expectation_type=expectation_type,
+                config=config,
+                warn_threshold=warn_threshold,
+                fail_threshold=fail_threshold,
+                critical_threshold=critical_threshold,
+                target=target,
                 secret_store=secret_store,
             )
-        except BatchNotFoundError as exc:
-            raise DryRunNoDataError(
-                "no file has landed for the suite's batch target yet — dry-run needs live data",
-                detail={"connection_type": connection.type},
+        if kind == SCHEMA_DRIFT:
+            return _dry_run_schema_drift(
+                connection, config=config, target=target, secret_store=secret_store
+            )
+        if kind == ANOMALY:
+            return _dry_run_anomaly(
+                connection, config=config, target=target, secret_store=secret_store
+            )
+        if kind != _EXPECTATION_KIND:
+            raise DryRunUnsupportedError(
+                f"dry-run supports only 'expectation', 'schema_drift' and 'anomaly' checks; "
+                f"got {kind!r}",
+                detail={"kind": kind},
+            )
+        # Resolve the target the same way the run path does.
+        resolved = run_target.resolve_target(connection.type, target)
+        # Dry-run is the one path that *executes* the query before save, so the custom-SQL read-only
+        # guardrail (ADR 0019) must apply here too — outside the try, so a bad query is a clean 422.
+        validate_custom_sql_check(
+            expectation_type=expectation_type,
+            config=config,
+            connection_type=connection.type,
+        )
+        if not is_custom_sql(expectation_type):
+            # #1510, by the same rule as the threshold check above: a preview must not accept what a
+            # save would reject. This is also the one author-time door that EXECUTES the expectation
+            # against live data with the stored credential, so the vetted set has to hold here too.
+            validate_expectation_check(expectation_type, config)
+            reject_thresholds_on_unbanded(
+                expectation_type,
+                warn_threshold=warn_threshold,
+                fail_threshold=fail_threshold,
+                critical_threshold=critical_threshold,
+            )
+
+        try:
+            runner = build_check_runner(
+                conn_type=connection.type,
+                config=connection.config,
+                secret_ref=connection.secret_ref,
+                secret_store=secret_store,
+                catalog=resolved.catalog,
+                # The suite target's row cap (#595).
+                sampling=resolved.sampling,
+            )
+        except UnsupportedConnectionTypeError as exc:
+            # Defensive: resolve_target already rejects non-datasource types, so this
+            # is only reachable if the runner registry drifts from the adapter set.
+            raise DryRunUnsupportedError(
+                f"dry-run is not supported for {connection.type!r} connections",
+                detail={"type": connection.type},
             ) from exc
-        except DataQError:
-            raise  # a SuiteTargetInvalidError (422) from a malformed batch spec — keep it
         except Exception as exc:
+            # The builders resolve the secret eagerly — a missing/unreadable credential
+            # fails here, and is a datasource-side 502 (as it was before #532, when
+            # build + run shared one guard).
             log.warning(
                 "dry_run_failed", connection_type=connection.type, error_type=type(exc).__name__
             )
             raise DryRunFailedError(
-                "dry run could not list the datasource store",
+                "dry run could not connect to the datasource",
                 detail={"reason": safe_failure_reason(exc)},
             ) from exc
 
-        try:
-            outcome = runner.run_checks(
-                table=table,
-                schema=resolved.schema,
-                checks=[CheckSpec(expectation_type=expectation_type, kwargs=dict(config))],
-            )
-            # One outcome per spec; index inside the guard so a malformed/empty
-            # runner result is a clean 502, not an uncaught IndexError → 500.
-            check_outcome = outcome.checks[0]
-        except Exception as exc:
-            log.warning(
-                "dry_run_failed", connection_type=connection.type, error_type=type(exc).__name__
-            )
-            raise DryRunFailedError(
-                "dry run could not execute against the datasource",
-                # The SAME policy the persisted run path uses (#595): a DataQ-authored
-                # `SafeMonitorError` — the scan-cap refusal naming the target, the cap and the knob.
-                detail={"table": table, "reason": safe_failure_reason(exc)},
-            ) from exc
-
-        status, metric = resolve_status(
-            check_outcome,
-            warn_threshold=warn_threshold,
-            fail_threshold=fail_threshold,
-            critical_threshold=critical_threshold,
-        )
-        # Preview exactly what a persisted run would record: an unevaluable check (#122) is 'error',
-        # not a misleading 'fail' tag, and surfaces the GX message.
-        if check_outcome.errored:
-            error_message = strip_statement_echo(check_outcome.error_message)
-            observed = {"error": error_message} if error_message else None
-        else:
-            observed = sanitize_json(check_outcome.observed_value)
-            # Zero-sample mode (#1676): a preview must not show a live row-level value the
-            # persisted path would never write, regardless of the suite's column policy.
-            if get_settings().privacy_zero_sample_mode:
-                observed = _strip_row_level_observed_value(
-                    observed, expectation_type=expectation_type
+        # The runner exists from here — `owned_runner` releases its shared engine
+        # pool (#427) on every exit path of the dry run.
+        with owned_runner(runner):
+            # Materialize a flat-file batch target to a concrete file (lists the store)
+            # — a no-op for SQL / UC / literal flat-file targets.
+            try:
+                table = run_target.materialize_path(
+                    connection.type,
+                    connection.config,
+                    resolved,
+                    secret_ref=connection.secret_ref,
+                    secret_store=secret_store,
                 )
-        return DryRunOutcome(
-            status=status,
-            metric_value=metric,
-            observed_value=observed,
-            expected_value=sanitize_json(check_outcome.expected_value),
-        )
+            except BatchNotFoundError as exc:
+                raise DryRunNoDataError(
+                    "no file has landed for the suite's batch target yet — dry-run needs live data",
+                    detail={"connection_type": connection.type},
+                ) from exc
+            except DataQError:
+                raise  # a SuiteTargetInvalidError (422) from a malformed batch spec — keep it
+            except Exception as exc:
+                log.warning(
+                    "dry_run_failed", connection_type=connection.type, error_type=type(exc).__name__
+                )
+                raise DryRunFailedError(
+                    "dry run could not list the datasource store",
+                    detail={"reason": safe_failure_reason(exc)},
+                ) from exc
+
+            try:
+                outcome = runner.run_checks(
+                    table=table,
+                    schema=resolved.schema,
+                    checks=[CheckSpec(expectation_type=expectation_type, kwargs=dict(config))],
+                )
+                # One outcome per spec; index inside the guard so a malformed/empty
+                # runner result is a clean 502, not an uncaught IndexError → 500.
+                check_outcome = outcome.checks[0]
+            except Exception as exc:
+                log.warning(
+                    "dry_run_failed", connection_type=connection.type, error_type=type(exc).__name__
+                )
+                raise DryRunFailedError(
+                    "dry run could not execute against the datasource",
+                    # The SAME policy the persisted run path uses (#595): a DataQ-authored
+                    # `SafeMonitorError` — the scan-cap refusal naming the target,
+                    # the cap and the knob.
+                    detail={"table": table, "reason": safe_failure_reason(exc)},
+                ) from exc
+
+            status, metric = resolve_status(
+                check_outcome,
+                warn_threshold=warn_threshold,
+                fail_threshold=fail_threshold,
+                critical_threshold=critical_threshold,
+            )
+            # Preview exactly what a persisted run would record: an unevaluable check
+            # (#122) is 'error', not a misleading 'fail' tag, and surfaces the GX message.
+            if check_outcome.errored:
+                error_message = strip_statement_echo(check_outcome.error_message)
+                observed = {"error": error_message} if error_message else None
+            else:
+                observed = sanitize_json(check_outcome.observed_value)
+                # Zero-sample mode (#1676): a preview must not show a live row-level value the
+                # persisted path would never write, regardless of the suite's column policy.
+                if get_settings().privacy_zero_sample_mode:
+                    observed = _strip_row_level_observed_value(
+                        observed, expectation_type=expectation_type
+                    )
+            return DryRunOutcome(
+                status=status,
+                metric_value=metric,
+                observed_value=observed,
+                expected_value=sanitize_json(check_outcome.expected_value),
+            )
 
 
 def _dry_run_native(

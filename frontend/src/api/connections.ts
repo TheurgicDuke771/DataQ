@@ -120,6 +120,23 @@ export const ENV_COLORS: Record<ConnectionEnv, string> = {
   prod: 'red',
 };
 
+/**
+ * A datasource connection's stored-credential health.
+ *
+ * `status: 'unknown'` — never `'healthy'` — means the credential has not been used since
+ * the signal shipped, so nothing has been observed about it. `'failing'` means the
+ * datasource rejected it; `last_error` is then the classified, secret-free reason. Only
+ * credential REJECTIONS move this: a missing grant, an unreachable host and a bad table
+ * name all leave it untouched.
+ */
+export interface CredentialHealth {
+  status: 'healthy' | 'failing' | 'unknown';
+  consecutive_auth_failures: number;
+  last_auth_failure_at?: string | null;
+  last_auth_success_at?: string | null;
+  last_error?: string | null;
+}
+
 /** Mirrors the backend `ConnectionRead` schema (secret is never returned). */
 export interface Connection {
   id: string;
@@ -158,6 +175,12 @@ export interface Connection {
    */
   inventory_sync_last_table_count?: number | null;
   inventory_sync_zero_since?: string | null;
+  /**
+   * Datasource credential health, derived from real use — runs, dry-runs, profiles and
+   * connection tests — not a periodic probe. `null`/absent on orchestration connections,
+   * whose health is the poll signal above.
+   */
+  credential_health?: CredentialHealth | null;
   /**
    * Native-engine capability probe (#1867, ADR 0036 §3) — `snowflake` only.
    * `undefined`/`null` until the connection has been tested at least once;
