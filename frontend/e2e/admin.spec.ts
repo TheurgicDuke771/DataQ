@@ -374,38 +374,52 @@ test.describe('Admin offboarding', () => {
       data: { new_owner_user_id: target.id, keep_previous_owner_access: false },
     });
     expect(handover.ok()).toBe(true);
+    // A retry must not inherit this attempt's suite: the delete runs whatever happens below.
+    const cleanup = async () => {
+      await page.request.delete(`/api/v1/admin/suites/${suite.id}`);
+    };
 
-    await page.goto('/admin/members');
-    const row = page.getByRole('main').locator('tr').filter({ hasText: TARGET });
-    await expect(row).toBeVisible();
-    await row.getByRole('button', { name: 'Offboard' }).click();
+    try {
+      await page.goto('/admin/members');
+      // The address appears in more than one table (users, membership, grants) —
+      // the row that offboards is the one carrying the button.
+      const row = page
+        .getByRole('main')
+        .locator('tr')
+        .filter({ has: page.getByRole('button', { name: 'Offboard' }) })
+        .filter({ hasText: TARGET })
+        .first();
+      await expect(row).toBeVisible();
+      await row.getByRole('button', { name: 'Offboard' }).click();
 
-    const dialog = page.getByRole('dialog');
-    await expect(dialog.getByText(suiteName)).toBeVisible();
-    const confirm = dialog.getByRole('button', { name: 'Offboard' });
-    await expect(confirm).toBeDisabled();
+      const dialog = page.getByRole('dialog');
+      await expect(dialog.getByText(suiteName)).toBeVisible();
+      const confirm = dialog.getByRole('button', { name: 'Offboard' });
+      await expect(confirm).toBeDisabled();
 
-    // Keyboard selection: rc-virtual-list parks options off-viewport, so clicking
-    // an option by role is flaky in this lane (see notifications.spec.ts).
-    const picker = dialog.getByRole('combobox');
-    await picker.fill('analyst');
-    await expect(page.getByText(new RegExp(HEIR))).toBeVisible();
-    await picker.press('Enter');
-    await dialog.getByLabel('Confirm email address').fill(TARGET);
-    await expect(confirm).toBeEnabled();
-    await confirm.click();
+      // Keyboard selection: rc-virtual-list parks options off-viewport, so clicking
+      // an option by role is flaky in this lane (see notifications.spec.ts).
+      const picker = dialog.getByRole('combobox');
+      await picker.fill('analyst');
+      await expect(
+        page.locator('.ant-select-item-option', { hasText: HEIR }).first(),
+      ).toBeVisible();
+      await picker.press('Enter');
+      await dialog.getByLabel('Confirm email address').fill(TARGET);
+      await expect(confirm).toBeEnabled();
+      await confirm.click();
 
-    // The receipt states what ran AND what did not — a skipped step must never
-    // be silent.
-    await expect(dialog.getByText(`${TARGET} has been offboarded`)).toBeVisible();
-    await expect(dialog.getByText('Suites transferred')).toBeVisible();
-    await expect(dialog.getByText('Tokens revoked')).toBeVisible();
+      // The receipt states what ran AND what did not — a skipped step must never
+      // be silent.
+      await expect(dialog.getByText(`${TARGET} has been offboarded`)).toBeVisible();
+      await expect(dialog.getByText('Suites transferred')).toBeVisible();
+      await expect(dialog.getByText('Tokens revoked')).toBeVisible();
 
-    const after = await (await page.request.get('/api/v1/admin/suites')).json();
-    const moved = after.find((s: { id: string }) => s.id === suite.id);
-    expect(moved.owner_email).toBe(HEIR);
-
-    // Clean up the suite this spec created.
-    expect((await page.request.delete(`/api/v1/admin/suites/${suite.id}`)).ok()).toBe(true);
+      const after = await (await page.request.get('/api/v1/admin/suites')).json();
+      const moved = after.find((s: { id: string }) => s.id === suite.id);
+      expect(moved.owner_email).toBe(HEIR);
+    } finally {
+      await cleanup();
+    }
   });
 });
