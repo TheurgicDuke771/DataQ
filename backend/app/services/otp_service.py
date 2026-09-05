@@ -57,11 +57,7 @@ def is_signup_eligible(db: Session, email: str, settings: Settings | None = None
     check that stops delivery is the check that stops redemption. The env
     allowlist stays grant-only and remains boot-mandatory (ADR 0032 decision 2).
     """
-    s = settings or get_settings()
-    env_allowed = env_signup_allowed(email, s)
-    return membership_service.is_member(
-        db, email, env_allowed=env_allowed, unmanaged_default=env_allowed, settings=s
-    )
+    return membership_service.is_member(db, email, settings=settings or get_settings())
 
 
 class OtpVerifyError(DataQError):
@@ -381,6 +377,8 @@ def resolve_or_create_user(db: Session, normalized_email: str) -> User:
             user.role = ADMIN_ROLE
         db.commit()
         return user
+    # Held to commit, so a concurrent switch-on's import cannot miss this row.
+    membership_service.lock_signin(db)
     user = User(
         id=uuid.uuid4(),
         aad_object_id=None,

@@ -217,7 +217,9 @@ def _pat_owner(db_session: Any) -> tuple[Any, str]:
     from backend.app.db.models import User
     from backend.app.services import api_key_service
 
-    user = User(id=uuid.uuid4(), aad_object_id=f"oid-{uuid.uuid4().hex[:8]}", email="pat@mcp.io")
+    # On the allowlisted domain the OTP-mode reload configures: a PAT's owner had
+    # to be admitted once to obtain it, and membership is re-checked on use.
+    user = User(id=uuid.uuid4(), aad_object_id=f"oid-{uuid.uuid4().hex[:8]}", email="pat@acme.io")
     db_session.add(user)
     db_session.commit()
     _, token = api_key_service.create_key(db_session, user, name="mcp")

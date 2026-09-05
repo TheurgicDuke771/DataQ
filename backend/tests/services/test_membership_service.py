@@ -8,14 +8,13 @@ import uuid
 from typing import Any
 
 import pytest
-from sqlalchemy import create_engine, select, text
-from sqlalchemy.exc import ProgrammingError
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.config import Settings
-from backend.app.db.models import AuditEvent, Base, User, WorkspaceMember
+from backend.app.db.models import AuditEvent, User, WorkspaceMember
 from backend.app.services import membership_service as svc
-from backend.tests.conftest import TEST_DATABASE_URL
+from backend.tests.support.scratch_db import scratch_engine
 
 # A deployment where dev bypass is NOT the selected mode, so the gate actually runs.
 _ENFORCING = Settings(
@@ -23,6 +22,29 @@ _ENFORCING = Settings(
     auth_dev_bypass=False,
     oidc_issuer="https://issuer.example/",
     oidc_audience="dataq",
+)
+
+
+# A deployment whose env vars name one address outright, so the members list
+# has an env row to show.
+_ENV_LISTED = Settings(
+    environment="prod",
+    auth_dev_bypass=False,
+    oidc_issuer="https://issuer.example/",
+    oidc_audience="dataq",
+    oidc_allowed_emails="on-the-allowlist@acme.io",
+    oidc_allowed_domains="acme.io",
+)
+
+
+# The same deployment WITH an app-side access allowlist, so the env half of the
+# predicate has something to say.
+_GATED = Settings(
+    environment="prod",
+    auth_dev_bypass=False,
+    oidc_issuer="https://issuer.example/",
+    oidc_audience="dataq",
+    oidc_allowed_domains="acme.io",
 )
 
 
@@ -49,13 +71,10 @@ def _addr(prefix: str = "p") -> str:
 def test_an_empty_table_returns_the_door_s_own_verdict(db_session: Any) -> None:
     """The switch itself: while nothing is managed, this module has no opinion."""
     assert svc.enforcement_active(db_session) is False
-    assert svc.is_member(db_session, _addr(), env_allowed=False, settings=_ENFORCING) is True
-    assert (
-        svc.is_member(
-            db_session, _addr(), env_allowed=False, unmanaged_default=False, settings=_ENFORCING
-        )
-        is False
-    )
+    assert svc.is_member(db_session, _addr(), settings=_ENFORCING) is True
+    # A deployment that DOES configure an access allowlist still refuses the
+    # addresses it omits, table or no table.
+    assert svc.is_member(db_session, _addr(), settings=_GATED) is False
 
 
 def test_a_populated_table_admits_only_listed_addresses(db_session: Any) -> None:
@@ -64,10 +83,8 @@ def test_a_populated_table_admits_only_listed_addresses(db_session: Any) -> None
     svc.add_member(db_session, email=listed, initial_role="member", actor=admin)
 
     assert svc.enforcement_active(db_session) is True
-    assert svc.is_member(db_session, listed, env_allowed=False, settings=_ENFORCING) is True
-    assert (
-        svc.is_member(db_session, _addr("other"), env_allowed=False, settings=_ENFORCING) is False
-    )
+    assert svc.is_member(db_session, listed, settings=_ENFORCING) is True
+    assert svc.is_member(db_session, _addr("other"), settings=_ENFORCING) is False
 
 
 def test_the_env_allowlist_is_grant_only(db_session: Any) -> None:
@@ -75,20 +92,15 @@ def test_the_env_allowlist_is_grant_only(db_session: Any) -> None:
     admin = _user(db_session, _addr("admin"), role="admin")
     svc.add_member(db_session, email=_addr("listed"), initial_role="member", actor=admin)
 
-    unlisted = _addr("env")
-    assert svc.is_member(db_session, unlisted, env_allowed=True, settings=_ENFORCING) is True
+    unlisted = "on-the-allowlist@acme.io"
+    assert svc.is_member(db_session, unlisted, settings=_GATED) is True
 
 
 def test_matching_ignores_casing_and_surrounding_space(db_session: Any) -> None:
     admin = _user(db_session, _addr("admin"), role="admin")
     svc.add_member(db_session, email="Ada.Lovelace@Example.COM", initial_role="member", actor=admin)
 
-    assert (
-        svc.is_member(
-            db_session, "  ADA.LOVELACE@example.com ", env_allowed=False, settings=_ENFORCING
-        )
-        is True
-    )
+    assert svc.is_member(db_session, "  ADA.LOVELACE@example.com ", settings=_ENFORCING) is True
 
 
 def test_dev_bypass_is_exempt_so_the_local_stack_stays_bootable(db_session: Any) -> None:
@@ -97,7 +109,7 @@ def test_dev_bypass_is_exempt_so_the_local_stack_stays_bootable(db_session: Any)
     bypass = Settings(environment="dev", auth_dev_bypass=True)
 
     assert bypass.dev_bypass_active is True
-    assert svc.is_member(db_session, _addr("stranger"), env_allowed=False, settings=bypass) is True
+    assert svc.is_member(db_session, _addr("stranger"), settings=bypass) is True
 
 
 def test_dev_bypass_beside_email_otp_is_NOT_exempt() -> None:
@@ -318,7 +330,7 @@ def test_unmanaged_user_count_is_what_the_switch_on_warning_states(db_session: A
     _user(db_session, _addr("b"))
 
     view = svc.list_members(db_session)
-    assert view.enforcement_active is False
+    assert view.status.enforcement_active is False
     assert view.unmanaged_user_count == 2
 
 
@@ -368,30 +380,8 @@ def probe_engine() -> Any:
     reads through its uncommitted transaction and so cannot see whether anything
     committed at all.
     """
-    if not TEST_DATABASE_URL:
-        pytest.skip("needs TEST_DATABASE_URL")
-    admin = create_engine(TEST_DATABASE_URL, isolation_level="AUTOCOMMIT")
-    try:
-        with admin.connect() as conn:
-            try:
-                conn.execute(text(f'DROP DATABASE IF EXISTS "{_PROBE_DB}"'))
-                conn.execute(text(f'CREATE DATABASE "{_PROBE_DB}"'))
-            except ProgrammingError as exc:  # pragma: no cover - permission-dependent
-                pytest.skip(f"cannot create a probe database: {exc}")
-    finally:
-        admin.dispose()
-
-    url = TEST_DATABASE_URL.rsplit("/", 1)[0] + f"/{_PROBE_DB}"
-    engine = create_engine(url)
-    try:
-        Base.metadata.create_all(engine)
+    with scratch_engine(_PROBE_DB) as engine:
         yield engine
-    finally:
-        engine.dispose()
-        admin = create_engine(TEST_DATABASE_URL, isolation_level="AUTOCOMMIT")
-        with admin.connect() as conn:
-            conn.execute(text(f'DROP DATABASE IF EXISTS "{_PROBE_DB}"'))
-        admin.dispose()
 
 
 def test_the_switch_and_the_import_commit_together(probe_engine: Any) -> None:
@@ -512,3 +502,206 @@ def test_the_last_admin_guard_holds_under_interleaved_sessions(probe_engine: Any
         }
     # The workspace still has an admin who can get back in.
     assert len(remaining) == 1
+
+
+# ── the cross-table admin invariant ───────────────────────────────────────────
+
+
+def test_the_two_tables_cannot_be_emptied_of_admins_one_step_at_a_time(db_session: Any) -> None:
+    """The gap a per-table guard leaves: each step is legal on its own table.
+
+    Remove B's membership (A is still a stored admin, so `users` is fine), then
+    demote A (`workspace_members` is not consulted by the role editor) — and
+    nobody who can sign in is an admin any more.
+    """
+    from backend.app.services import admin_service
+
+    admin_a = _user(db_session, _addr("admin-a"), role="admin")
+    admin_b = _user(db_session, _addr("admin-b"), role="admin")
+    # The first add turns enforcement on and imports B as a provisional member.
+    svc.add_member(db_session, email=admin_a.email, initial_role="admin", actor=admin_a)
+    b_member_id = next(
+        m.id for m in svc.list_members(db_session).members if m.email == admin_b.email
+    )
+
+    # Step one is allowed: A remains an admin AND a member.
+    svc.remove_member(db_session, b_member_id, actor=admin_a)
+
+    # Step two must NOT be. B still carries `users.role = admin`, but B can no
+    # longer sign in, so demoting A leaves the workspace with no usable admin.
+    with pytest.raises(admin_service.RoleChangeRejectedError):
+        admin_service.set_user_role(db_session, admin_a.id, new_role="viewer", actor=admin_a)
+
+
+def test_a_non_member_stored_admin_does_not_satisfy_the_invariant(db_session: Any) -> None:
+    """The half that makes the guard cross-table rather than a longer count."""
+    from backend.app.services import admin_service
+
+    admin_a = _user(db_session, _addr("admin-a"), role="admin")
+    svc.add_member(db_session, email=admin_a.email, initial_role="admin", actor=admin_a)
+    # Created AFTER the switch, so the import never saw it: a stored admin who
+    # is not a member and therefore cannot get in to fix anything.
+    _user(db_session, _addr("admin-ghost"), role="admin")
+
+    with pytest.raises(admin_service.RoleChangeRejectedError):
+        admin_service.set_user_role(db_session, admin_a.id, new_role="member", actor=admin_a)
+
+
+# ── env-listed addresses are shown, and cannot be removed here ────────────────
+
+
+def test_env_listed_addresses_are_listed_as_read_only_rows(db_session: Any) -> None:
+    """Leaving them out reads as "not admitted", and removing the managed row of
+    somebody the environment also names would look like a completed removal.
+    """
+    admin = _user(db_session, _addr("admin"), role="admin")
+    svc.add_member(db_session, email=_addr("managed"), initial_role="member", actor=admin)
+
+    view = svc.list_members(db_session, _ENV_LISTED)
+    by_email = {m.email: m for m in view.members}
+    env_row = by_email["on-the-allowlist@acme.io"]
+    assert env_row.source == svc.ENV_MEMBER_SOURCE
+    assert env_row.removable is False
+    assert env_row.env_listed is True
+    assert view.env_allowed_domains == ("acme.io",)
+
+
+def test_removing_an_env_listed_row_names_the_variable_instead_of_404ing(
+    db_session: Any,
+) -> None:
+    admin = _user(db_session, _addr("admin"), role="admin")
+    svc.add_member(db_session, email=_addr("managed"), initial_role="member", actor=admin)
+    env_row = next(
+        m for m in svc.list_members(db_session, _ENV_LISTED).members if m.source == "env"
+    )
+
+    with pytest.raises(svc.MembershipChangeRejectedError) as exc:
+        svc.remove_member(db_session, env_row.id, actor=admin, settings=_ENV_LISTED)
+    assert "OIDC_ALLOWED_EMAILS" in str(exc.value)
+
+
+def test_a_managed_row_the_environment_also_names_is_flagged(db_session: Any) -> None:
+    """Removing this row does NOT revoke access, and the row has to say so."""
+    admin = _user(db_session, _addr("admin"), role="admin")
+    svc.add_member(db_session, email="on-the-allowlist@acme.io", initial_role="member", actor=admin)
+    row = next(
+        m
+        for m in svc.list_members(db_session, _ENV_LISTED).members
+        if m.email == "on-the-allowlist@acme.io"
+    )
+    assert row.source == "admin" and row.env_listed is True and row.removable is True
+
+
+# ── enforcement status is honest about dev bypass ─────────────────────────────
+
+
+def test_a_non_empty_table_under_dev_bypass_reports_enforced_false(db_session: Any) -> None:
+    """`enforcement_active` is about the table; `enforced` is about the doors."""
+    admin = _user(db_session, _addr("admin"), role="admin")
+    svc.add_member(db_session, email=_addr("listed"), initial_role="member", actor=admin)
+    bypass = Settings(environment="dev", auth_dev_bypass=True)
+
+    status = svc.enforcement_status(db_session, bypass)
+    assert status.enforcement_active is True
+    assert status.enforced is False
+    assert status.enforced_reason is not None
+
+
+# ── an image ahead of its migration must not 500 every request ────────────────
+
+
+def test_a_missing_table_reads_as_not_enforced() -> None:
+    """Two-step deploys mean a revision can run before the table exists. The
+    doors must degrade to "not enforced", which is what an empty table means.
+    """
+    from sqlalchemy.orm import sessionmaker
+
+    with scratch_engine("dataq_membership_no_table_probe") as engine:
+        WorkspaceMember.__table__.drop(engine)
+        with sessionmaker(bind=engine)() as session:
+            assert svc.enforcement_active(session) is False
+            assert svc.is_member(session, _addr("anyone"), settings=_ENFORCING) is True
+            # A configured allowlist still decides, exactly as with an empty table.
+            assert svc.is_member(session, _addr("anyone"), settings=_GATED) is False
+
+
+# ── the switch-on cannot miss a concurrent first sign-in ──────────────────────
+
+
+def test_the_switch_on_import_cannot_miss_a_concurrent_first_sign_in(
+    probe_engine: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """READ COMMITTED lets `add_member` read `users`, then a first-ever sign-in
+    commit, then `add_member` commit — leaving that person neither imported nor
+    a member, and 403 on their next request. The two must serialize.
+
+    Driven with genuinely interleaved sessions: run sequentially, the ordering
+    never occurs and this passes against code holding no lock at all.
+    """
+    from backend.app.core import auth as auth_mod
+
+    monkeypatch.setattr(auth_mod, "_settings", Settings(environment="prod", auth_dev_bypass=False))
+    maker = sessionmaker(bind=probe_engine)
+    newcomer = _addr("newcomer")
+    with maker() as setup:
+        actor = _user(setup, _addr("admin"), role="admin")
+        setup.commit()
+        actor_id = actor.id
+
+    reached_import = threading.Event()
+    signin_done = threading.Event()
+    errors: list[str] = []
+
+    def switch_on() -> None:
+        session: Session = maker()
+        try:
+            real = session.commit
+
+            def commit_after_the_signin_tries() -> None:
+                reached_import.set()
+                # The sign-in thread is now inside `_upsert_user`. If it can
+                # commit while we hold nothing, its row is invisible to the
+                # import that already ran.
+                signin_done.wait(timeout=5)
+                real()
+
+            session.commit = commit_after_the_signin_tries  # type: ignore[method-assign]
+            admin = _require(session.get(User, actor_id))
+            svc.add_member(session, email=_addr("seed"), initial_role="member", actor=admin)
+        except Exception as exc:  # pragma: no cover - reported through `errors`
+            errors.append(f"switch_on: {exc}")
+        finally:
+            session.close()
+
+    def first_sign_in() -> None:
+        session: Session = maker()
+        try:
+            reached_import.wait(timeout=5)
+            auth_mod._upsert_user(
+                session,
+                aad_object_id=uuid.uuid4().hex,
+                email=newcomer,
+                display_name=None,
+            )
+        except Exception as exc:  # the honest alternative outcome, see below
+            errors.append(f"sign_in: {type(exc).__name__}")
+        finally:
+            signin_done.set()
+            session.close()
+
+    threads = [threading.Thread(target=switch_on), threading.Thread(target=first_sign_in)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+
+    with maker() as reader:
+        members = {m.email.lower() for m in reader.scalars(select(WorkspaceMember)).all()}
+        signed_in = reader.scalars(select(User).where(func.lower(User.email) == newcomer)).first()
+
+    # Two outcomes are correct, and the wedged third one is what this pins:
+    # either the sign-in landed first and the import admitted it, or it was held
+    # until enforcement was on and refused outright. Never "row exists, not a
+    # member".
+    if signed_in is not None:
+        assert newcomer in members, "a user row exists that the import never admitted"

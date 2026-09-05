@@ -1,7 +1,9 @@
 """Auth seam: DataQ PAT · email-OTP session cookie · Azure AD / generic OIDC token."""
 
 import asyncio
+import functools
 import hashlib
+import inspect
 import json
 import threading
 import time
@@ -24,7 +26,7 @@ from starlette.requests import HTTPConnection
 
 from backend.app.core.config import Settings, dev_bypass_conflicts, get_settings
 from backend.app.core.errors import DataQError
-from backend.app.core.identity import allowlisted, identity_log_fields, normalize_email
+from backend.app.core.identity import allowlisted, normalize_email
 from backend.app.core.logging import get_logger
 from backend.app.core.roles import (
     ADMIN_ROLE,
@@ -44,10 +46,6 @@ log = get_logger(__name__)
 DEV_BYPASS_AAD_OID = "00000000-0000-0000-0000-000000000001"
 DEV_BYPASS_EMAIL = "dev-bypass@dataq.local"
 DEV_BYPASS_DISPLAY_NAME = "Dev Bypass User"
-
-
-def _dev_bypass_allowed(settings: Settings) -> bool:
-    return settings.dev_bypass_allowed
 
 
 class _PatAwareAzureScheme(SingleTenantAzureAuthorizationCodeBearer):
@@ -400,7 +398,7 @@ def _upsert_user(
     display_name: str | None,
     oidc_issuer: str | None = None,
     role: str | None = None,
-    env_allowed: bool = False,
+    settings: Settings | None = None,
     _retrying: bool = False,
 ) -> User:
     """Upsert the user this sign-in identifies, keyed on `aad_object_id`.
@@ -408,10 +406,15 @@ def _upsert_user(
     Choke point 1 of ADR 0043 decision 4: Azure AD and generic OIDC, REST and
     /mcp, plus the dev-bypass mint (exempt inside the check).
     """
-    # `_settings`, not `get_settings()`: the gate must read the same Settings the
-    # auth ladder itself bound, or the two can disagree about the mode.
-    membership_service.require_member(
-        db, email, door="upsert_user", env_allowed=env_allowed, settings=_settings
+    # Held until this transaction commits, so a switch-on cannot read `users` a
+    # moment before a first-ever sign-in lands and leave that person unimported.
+    membership_service.lock_signin(db)
+    # The Settings the CALLER's ladder resolved, defaulting to the ones this
+    # module bound: /mcp selects its mode from a live read, and a gate deciding
+    # from a different Settings object than the ladder that reached it can admit
+    # somebody that ladder would refuse.
+    member = membership_service.require_member(
+        db, email, door="upsert_user", settings=settings or _settings
     )
     now = datetime.now(UTC)
     stmt = (
@@ -429,8 +432,9 @@ def _upsert_user(
                 # A pre-provisioned `initial_role` (ADR 0043 decision 9) seeds the
                 # signup default HERE, in `values()`, and nowhere else: the
                 # `on_conflict_do_update` branch below stays promote-only, so a
-                # later in-app role change is never overwritten by a sign-in.
-                default=membership_service.initial_role_for(db, email)
+                # later in-app role change is never overwritten by a sign-in. The
+                # row comes from the gate above — no second lookup per request.
+                default=(member.initial_role if member is not None else None)
                 or get_settings().auth_oidc_default_role,
             ),
             last_seen_at=now,
@@ -485,7 +489,7 @@ def _upsert_user(
                 display_name=display_name,
                 oidc_issuer=oidc_issuer,
                 role=role,
-                env_allowed=env_allowed,
+                settings=settings,
                 _retrying=True,
             )
         # No email in the message or the log: the message travels in the HTTP error envelope
@@ -579,7 +583,7 @@ async def init_auth() -> None:
     if _otp_enabled:
         _log_otp_mode_ready()
         return
-    if _dev_bypass_allowed(_settings):
+    if _settings.dev_bypass_allowed:
         log.warning(
             "auth_dev_bypass_active",
             environment=_settings.environment,
@@ -692,54 +696,21 @@ def _oidc_access_allowed(email: str, settings: Settings | None = None) -> bool:
     return allowlisted(email, s.oidc_allowed_email_set, s.oidc_allowed_domain_set)
 
 
-def _oidc_allowlist_grants(email: str, settings: Settings | None = None) -> bool:
-    """Whether an EXPLICIT allowlist entry names `email`.
-
-    Distinct from `_oidc_access_allowed`, which is also True when no allowlist is
-    configured at all. An open door is today's behaviour, not a grant — treating
-    it as one would make membership enforcement a no-op on exactly the
-    deployments that have no app-side gate today.
-    """
-    s = settings or _settings
-    return s.oidc_allowlist_configured and _oidc_access_allowed(email, s)
-
-
-def _denied_identity(email: str) -> dict[str, str]:
-    """Log fields naming a REJECTED identity without logging the address."""
-    return identity_log_fields(email)
-
-
 def _resolve_generic_oidc_user(db: Session, oidc_claims: dict[str, Any]) -> User:
     """Claims → allowlist gate → upserted `User` — ONE function for both
     generic-OIDC deps, so a gate added to one cannot be forgotten in the other.
     """
     subject, email, display_name = _extract_oidc_claims(oidc_claims)
     email = normalize_email(email)
-    # The allowlist is grant-only (ADR 0043 decision 7): while `workspace_members`
-    # is empty this is byte for byte the old rule, and once it is populated the
-    # table can admit somebody the allowlist does not name.
-    env_allowed = _oidc_allowlist_grants(email)
-    if not membership_service.is_member(
-        db,
-        email,
-        env_allowed=env_allowed,
-        unmanaged_default=_oidc_access_allowed(email),
-        settings=_settings,
-    ):
-        # 403, not 401: the token is VALID, so re-authenticating would loop the SPA forever.
-        log.warning("auth_oidc_access_denied", mode="generic_oidc", **_denied_identity(email))
-        raise DataQError(
-            code="forbidden",
-            message="This account is not authorized for this DataQ workspace.",
-            status_code=403,
-        )
+    # ONE gate, inside `_upsert_user`: the OIDC allowlist is an input to
+    # `membership_service.env_verdict`, so a second check here could only ever
+    # disagree with the one that actually admits the row.
     user = _upsert_user(
         db,
         aad_object_id=subject,
         email=email,
         display_name=display_name,
         oidc_issuer=_settings.oidc_issuer,
-        env_allowed=env_allowed,
     )
     log.info("auth_user_resolved", mode="generic_oidc", user_id=str(user.id))
     return user
@@ -846,19 +817,50 @@ def _get_current_user_unconfigured() -> User:
     )
 
 
-get_current_user: Callable[..., User]
+def membership_gated(resolver: Callable[..., User]) -> Callable[..., User]:
+    """Re-check membership on whatever principal `resolver` yields.
+
+    Structural rather than per-resolver: a fifth credential kind added later is
+    gated by being bound here at all, instead of by remembering to call the
+    check (ADR 0043's stated mitigation for four gates).
+    """
+    signature = inspect.signature(resolver)
+    parameters = list(signature.parameters.values())
+    if not any(p.name == "db" for p in parameters):
+        parameters.append(
+            inspect.Parameter(
+                "db",
+                inspect.Parameter.KEYWORD_ONLY,
+                annotation=Annotated[Session, Depends(get_db)],
+            )
+        )
+
+    @functools.wraps(resolver)
+    def gated(**kwargs: Any) -> User:
+        db = kwargs["db"] if "db" in signature.parameters else kwargs.pop("db")
+        user = resolver(**kwargs)
+        membership_service.require_member(db, user.email, door="rest", settings=_settings)
+        return user
+
+    gated.__signature__ = signature.replace(parameters=parameters)  # type: ignore[attr-defined]
+    return gated
+
+
+_resolver: Callable[..., User]
 if azure_scheme is not None:
-    get_current_user = _get_current_user_real_or_otp if _otp_enabled else _get_current_user_real
+    _resolver = _get_current_user_real_or_otp if _otp_enabled else _get_current_user_real
 elif oidc_scheme is not None:
-    get_current_user = (
+    _resolver = (
         _get_current_user_generic_oidc_or_otp if _otp_enabled else _get_current_user_generic_oidc
     )
 elif _otp_enabled:
-    get_current_user = _get_current_user_otp
-elif _dev_bypass_allowed(_settings):
-    get_current_user = _get_current_user_dev_bypass
+    _resolver = _get_current_user_otp
+elif _settings.dev_bypass_allowed:
+    _resolver = _get_current_user_dev_bypass
 else:
-    get_current_user = _get_current_user_unconfigured
+    _resolver = _get_current_user_unconfigured
+
+get_current_user: Callable[..., User] = membership_gated(_resolver)
 
 
 def require_workspace_admin(
