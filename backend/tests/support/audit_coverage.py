@@ -62,6 +62,14 @@ AUDITED: Final[dict[tuple[str, str], str]] = {
     ("POST", "/api/v1/me/api-keys"): "api_key.mint",
     ("DELETE", "/api/v1/me/api-keys/{key_id}"): "api_key.revoke",
     ("PATCH", "/api/v1/me"): "user.profile_update",
+    # ── Workspace-admin suite writes (#1698). The revoke is a DIFFERENT action
+    # from `share.revoke`: it is the admin override, not the owner's own panel.
+    (
+        "DELETE",
+        "/api/v1/admin/suites/{suite_id}/access/{grant_id}",
+    ): "suite_access.revoke",
+    ("POST", "/api/v1/admin/suites/{suite_id}/transfer"): "suite.transfer",
+    ("DELETE", "/api/v1/admin/suites/{suite_id}"): "suite.delete",
     # ── The privilege change.
     ("PATCH", "/api/v1/admin/users/{user_id}/role"): "user.role_change",
     # ── Asset metadata (owner/description only — the inventory-sync columns are
