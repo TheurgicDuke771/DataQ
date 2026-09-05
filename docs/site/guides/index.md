@@ -54,6 +54,15 @@ Task-shaped pages: each answers one "how do I…" question. If you are new, star
 
     [:octicons-arrow-right-24: API keys](api-keys.md)
 
+-   :material-shield-account:{ .lg .middle } **Run the workspace**
+
+    ---
+
+    Members and roles, access grants, workspace settings, audit log and inbound
+    integrations — the admin area, tab by tab.
+
+    [:octicons-arrow-right-24: Admin control centre](admin.md)
+
 -   :material-star-check:{ .lg .middle } **Do it well**
 
     ---

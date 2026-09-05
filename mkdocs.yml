@@ -151,6 +151,7 @@ nav:
       - AI assistants (MCP): guides/mcp-setup.md
       - AI features (LLM): guides/ai-features.md
       - API keys (PATs): guides/api-keys.md
+      - Admin control centre: guides/admin.md
       - Recommended usage: guides/recommended-usage.md
       - Best practices: guides/best-practices.md
   - Reference:

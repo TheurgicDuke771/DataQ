@@ -20,7 +20,7 @@ Azure Monitor raises an alert on pipeline events → an **Action Group webhook**
 fired alert triggers an immediate targeted poll — the failed run lands in the pipeline
 feed within seconds. Succeeded runs are picked up by the same poll on its 10-min cadence.
 
-**Getting the webhook URL:** a workspace admin opens **Settings → Webhooks** in the app —
+**Getting the webhook URL:** a workspace admin opens **Admin → Integrations** in the app —
 it shows the ready-to-paste inbound URL per provider (the ADF one embeds the shared
 secret behind a reveal toggle; treat it as a credential). No hand-assembly from Key
 Vault needed. Provisioning details: **One-time provisioning → step 5** in the
@@ -61,7 +61,7 @@ Registering any connection — orchestration providers included — is **Admin-o
   **job-level** (one `pipeline_run` per dbt job build).
 
 Store the HMAC signing key as the `dbt-webhook-secret` in DataQ's secret store; the webhook
-URL is shown in **Settings → Webhooks** like the others.
+URL is shown in **Admin → Integrations** like the others.
 
 ### Lineage from `manifest.json` (ADR 0034)
 

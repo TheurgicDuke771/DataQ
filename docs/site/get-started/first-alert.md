@@ -10,7 +10,7 @@ Workspace-wide defaults (a Slack webhook, an SMTP sender, a Teams webhook) are s
 deployed DataQ through environment configuration; a suite can override the Teams webhook and
 the email recipients.
 
-![The workspace Settings → Notifications tab explains that alert routing lives on each suite](../assets/screenshots/settings-notifications.png){ .screenshot }
+![Admin → Settings → Notification channels explains that alert routing lives on each suite](../assets/screenshots/settings-notifications.png){ .screenshot }
 
 *Workspace settings point you back to the suite: that is where the routing lives.*
 
