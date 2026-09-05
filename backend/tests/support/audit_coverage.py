@@ -64,6 +64,11 @@ AUDITED: Final[dict[tuple[str, str], str]] = {
     ("PATCH", "/api/v1/me"): "user.profile_update",
     # ── The privilege change.
     ("PATCH", "/api/v1/admin/users/{user_id}/role"): "user.role_change",
+    # ── The admission change (ADR 0043). Who is in the workspace at all, which
+    # is the axis beside the role one above.
+    ("POST", "/api/v1/admin/members"): "workspace_member.add",
+    ("DELETE", "/api/v1/admin/members/{member_id}"): "workspace_member.remove",
+    ("POST", "/api/v1/admin/members/{member_id}/confirm"): "workspace_member.confirm",
     # ── Asset metadata (owner/description only — the inventory-sync columns are
     # machine writes and are not audited).
     ("PATCH", "/api/v1/assets/{asset_id}"): "asset.update",
