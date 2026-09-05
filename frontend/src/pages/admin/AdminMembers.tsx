@@ -6,6 +6,7 @@ import { type AdminAccess, type AdminUser, listAdminAccess, listAdminUsers } fro
 import { RoleEditor } from '../../components/admin/RoleEditor';
 import { formatTimestamp } from '../../components/results/resultsFormat';
 import { type AsyncState, useAsyncData } from '../../hooks/useAsyncData';
+import { MembershipPanel } from './MembershipPanel';
 import { DataTable, Identity, Section } from './parts';
 
 /** Workspace membership: stored roles (ADR 0033) + every per-suite grant (ADR 0027). */
@@ -18,6 +19,7 @@ export function AdminMembers() {
 
   return (
     <Flex vertical gap={16}>
+      <MembershipPanel />
       <Section title="Members">
         <DataTable
           state={userState}

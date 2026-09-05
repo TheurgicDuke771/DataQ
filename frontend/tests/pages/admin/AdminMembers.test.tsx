@@ -9,6 +9,15 @@ vi.mock('../../../src/api/admin', () => ({
   listAdminUsers: vi.fn(),
   listAdminAccess: vi.fn(),
   setAdminUserRole: vi.fn(),
+  // The membership panel this page now embeds reads from the same module.
+  listWorkspaceMembers: vi.fn(async () => ({
+    enforcement_active: false,
+    unmanaged_user_count: 0,
+    members: [],
+  })),
+  addWorkspaceMember: vi.fn(),
+  removeWorkspaceMember: vi.fn(),
+  confirmWorkspaceMember: vi.fn(),
   // A VALUE export, not a function — the role editor iterates it to build its options.
   WORKSPACE_ROLES: ['admin', 'member', 'viewer'],
 }));
