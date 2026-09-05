@@ -2378,7 +2378,15 @@ the per-PR history lives in the repo's commit log and pull requests.</p>
 <h2 id="unreleased">Unreleased<a class="headerlink" href="#unreleased" title="Permanent link">¶</a></h2>
 <h3 id="changed">Changed<a class="headerlink" href="#changed" title="Permanent link">¶</a></h3>
 <ul>
-<li><strong>The admin area is now six routed, deep-linkable pages.</strong> <code>/admin</code> splits into
+<li>
+<p>⚠️ <strong>Every DataQ user signs in.</strong> The local stack has one sign-in mode, emailed
+  codes, and a mis-set or empty sign-in configuration now stops the API with a message
+  naming it instead of coming up open. Existing local setups: an <code>.env</code> with an empty
+  <code>DATAQ_SIGNIN_EMAIL=</code> no longer boots — set an address or re-run <code>setup.sh</code>, which
+  now re-asks.</p>
+</li>
+<li>
+<p><strong>The admin area is now six routed, deep-linkable pages.</strong> <code>/admin</code> splits into
   <code>overview</code>, <code>members</code>, <code>suites</code>, <code>settings</code>, <code>compliance</code> and <code>integrations</code> —
   the tab you are on is the URL, so any tab can be bookmarked, shared or
   reloaded in place, and each page loads only its own data instead of one long
@@ -2387,7 +2395,8 @@ the per-PR history lives in the repo's commit log and pull requests.</p>
   single <strong>Admin</strong> entry instead of two links to the same area. Every admin
   route is gated at the route, so a deep link (or a demoted user's bookmark)
   gets the Forbidden page and fetches nothing. See the
-  <a href="../../guides/admin/">admin control centre guide</a>.</li>
+  <a href="../../guides/admin/">admin control centre guide</a>.</p>
+</li>
 </ul>
 <h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">¶</a></h3>
 <ul>

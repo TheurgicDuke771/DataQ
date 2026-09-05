@@ -2602,7 +2602,7 @@ configuration</strong>:</p>
 <tr>
 <td>Auth</td>
 <td>Entra SSO (<code>AZURE_*</code>) · any OIDC issuer via <code>AUTH_OIDC_*</code> (Cognito validated live)</td>
-<td><strong>Email OTP</strong> for humans (<code>AUTH_EMAIL_*</code> + an allowlist — ADR <a href="../../adr/0032-email-otp-signin/">0032</a>); <code>AUTH_DEV_BYPASS=true</code> for local dev; <strong>PATs</strong> (<code>dq_live_…</code>) for headless REST/MCP — see <a href="../../guides/api-keys/">API keys</a>. <code>/mcp</code> is served in every one of these modes; under OTP it accepts <strong>PATs only</strong> (no IdP ⇒ no bearer token to validate)</td>
+<td><strong>Email OTP</strong> for humans (<code>AUTH_EMAIL_*</code> + an allowlist — ADR <a href="../../adr/0032-email-otp-signin/">0032</a>); <strong>PATs</strong> (<code>dq_live_…</code>) for headless REST/MCP — see <a href="../../guides/api-keys/">API keys</a>. <code>/mcp</code> is served in every one of these modes; under OTP it accepts <strong>PATs only</strong> (no IdP ⇒ no bearer token to validate)</td>
 </tr>
 <tr>
 <td>Observability</td>
@@ -2631,7 +2631,7 @@ configuration</strong>:</p>
 docker-compose<span class="w"> </span>up<span class="w">           </span><span class="c1"># postgres + redis + openbao + api + worker + frontend</span>
 </code></pre></div>
 <p><code>.env.app.example</code> ships with the local-first values already selected
-(<code>SECRET_STORE=openbao</code>, <code>AUTH_DEV_BYPASS=true</code>, both telemetry endpoints blank);
+(<code>SECRET_STORE=openbao</code>, email OTP against the bundled catcher as the sign-in, both telemetry endpoints blank);
 every <code>AZURE_*</code> key may stay empty. Nothing in the app reads an Azure SDK unless
 the corresponding seam is explicitly pointed at Azure.</p>
 <p><strong>What is not available locally</strong> is <em>datasources</em>, not the platform: a

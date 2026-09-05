@@ -2494,16 +2494,11 @@ code in the bundled inbox at <strong><code>http://localhost:8025</code></strong>
 <li><strong>Pin a release</strong> instead of the moving stable tags:
   <code>DATAQ_BACKEND_TAG=vX.Y.Z DATAQ_FRONTEND_TAG=vX.Y.Z docker compose -f docker-compose.ghcr.yml up</code>.</li>
 <li><strong>Reset:</strong> <code>docker compose -f docker-compose.ghcr.yml down -v</code> (drops the seeded DB).</li>
-<li><strong>Downgrade to no sign-in at all</strong> — deliberate, not a default:
-  <code>DATAQ_SIGNIN_EMAIL= DATAQ_AUTH_MODE=bypass docker compose -f docker-compose.ghcr.yml up</code>.
-  Every request then resolves to one fixed user and anyone who can reach the port is a
-  workspace admin. Omitting <code>DATAQ_SIGNIN_EMAIL</code> entirely does <strong>not</strong> get you this —
-  compose stops and names both options, because a permissive auth posture should be a
-  decision somebody made rather than the one they got by not reading.</li>
+<li>Omitting <code>DATAQ_SIGNIN_EMAIL</code> stops the stack and says so — there is no no-sign-in
+  default to fall into.</li>
 </ul>
 <h2 id="choosing-an-auth-mode">Choosing an auth mode<a class="headerlink" href="#choosing-an-auth-mode" title="Permanent link">¶</a></h2>
-<p>DataQ ships <strong>three</strong> ways to log a human in. They are a ladder — pick the rung that
-fits, but note where the default sits:</p>
+<p>DataQ ships <strong>two</strong> ways to log a human in:</p>
 <table>
 <thead>
 <tr>
@@ -2526,20 +2521,14 @@ fits, but note where the default sits:</p>
 <td>an <strong>OIDC app registration</strong> (Azure AD, Okta, Keycloak, Cognito, …)</td>
 <td>your normal SSO redirect</td>
 </tr>
-<tr>
-<td><strong><code>bypass</code></strong> ← <em>an explicit downgrade</em></td>
-<td>Throwaway solo work on a machine only you can reach</td>
-<td>nothing</td>
-<td>no sign-in at all — every request resolves to one fixed demo user, who is a workspace admin</td>
-</tr>
 </tbody>
 </table>
-<p><strong><code>otp</code> is what you boot into; <code>bypass</code> is the explicit downgrade.</strong> Both compose stacks
-used to start in <code>bypass</code>, which meant anyone who could reach the port administered a
-tool that stores warehouse credentials — and an eval stack's defaults are the security
-posture people actually run (the same reasoning that moved the default secret store off
-the plaintext one). What made
-<code>otp</code> unusable as a default was the SMTP relay it used to require; the bundled catcher
+<p><strong><code>otp</code> is what you boot into.</strong> Both compose stacks used to start with no sign-in at
+all, which meant anyone who could reach the port administered a tool that stores
+warehouse credentials — and an eval stack's defaults are the security posture people
+actually run (the same reasoning that moved the default secret store off the plaintext
+one). What made <code>otp</code> unusable as a default was the SMTP relay it used to require; the
+bundled catcher
 removes that, so the only thing left to supply is <em>who</em> is allowed in — one variable,
 <code>DATAQ_SIGNIN_EMAIL</code>, which <code>scripts/setup.sh</code> asks for. Setting it empty is the
 downgrade; leaving it unset stops the stack rather than picking for you.</p>
@@ -2620,7 +2609,7 @@ to real SSO with <strong>no rebuild</strong> (ADR 0028):</p>
   SSO, run the same image with <code>DATAQ_AUTH_MODE=oidc</code> + <code>DATAQ_AUTH_AUTHORITY</code>
   (e.g. <code>https://login.microsoftonline.com/&lt;tenant&gt;/v2.0</code>) + <code>DATAQ_AUTH_CLIENT_ID</code> (your
   SPA app registration) + <code>DATAQ_AUTH_API_SCOPE</code> (<code>api://&lt;api-client-id&gt;/&lt;scope&gt;</code>), and run
-  the <strong>backend</strong> with <code>AUTH_DEV_BYPASS</code> off + the matching <code>AZURE_*</code> settings. For a
+  the <strong>backend</strong> with the matching <code>AZURE_*</code> settings. For a
   non-Azure IdP whose scope vocabulary differs, the optional <code>DATAQ_AUTH_SCOPE</code>
   replaces the requested scope string entirely — AWS Cognito rejects the default list's
   <code>offline_access</code>, so a Cognito deployment sets <code>DATAQ_AUTH_SCOPE="openid email profile"</code>
@@ -2648,22 +2637,21 @@ docker-compose<span class="w"> </span>up<span class="w">      </span><span class
 <p><code>setup.sh</code> asks <strong>which address may sign in</strong> and writes the answer to your gitignored
 <code>.env</code> as <code>DATAQ_SIGNIN_EMAIL</code>. That address is allow-listed <em>and</em> made a workspace
 admin, and you sign in by reading the code at <code>http://localhost:8025</code> — no cloud account
-or IdP, no SMTP relay. Answering blank is the explicit downgrade to <strong>dev-bypass</strong> (no sign-in;
-every request is one fixed dev user), which you can flip either way afterwards by editing
-that one variable and re-running <code>docker compose up</code>.</p>
+or IdP, no SMTP relay. You can change the address later by editing that one variable and
+re-running <code>docker compose up</code>.</p>
 <p><strong>Which file wins.</strong> The compose stack sets the whole <code>AUTH_EMAIL_*</code> block in its own
 <code>environment:</code>, which beats <code>env_file:</code> unconditionally — so for the api/worker
 containers <code>.env.app</code> is <strong>ignored for these keys in every state</strong>, including when the
 switch is empty. Putting a real relay in <code>.env.app</code> and clearing the switch does not
-select it; it lands you in dev-bypass. To point the <strong>compose</strong> stack at a real relay,
+select it; the stack refuses to start until you choose a mode. To point the <strong>compose</strong> stack at a real relay,
 keep <code>DATAQ_SIGNIN_EMAIL</code> set and override the same key names in the <strong>root <code>.env</code></strong>:</p>
 <div class="highlight"><pre><span></span><code>DATAQ_SIGNIN_EMAIL=you@example.com
 AUTH_EMAIL_SMTP_HOST=smtp.example.com
 AUTH_EMAIL_TLS_MODE=starttls          # the bundled catcher's default is `none` — plaintext
 </code></pre></div>
 <p><code>.env.app</code> is still the file for <strong>host-side dev</strong> (uvicorn on your own machine, which
-reads it directly), where <code>AUTH_DEV_BYPASS=true</code> applies — point <code>AUTH_EMAIL_SMTP_HOST</code>
-at <code>localhost</code> if you want the catcher there too (Mailpit publishes <code>127.0.0.1:1025</code>).</p>
+reads it directly) — point <code>AUTH_EMAIL_SMTP_HOST</code> at <code>localhost</code> if you want the catcher
+there too (Mailpit publishes <code>127.0.0.1:1025</code>).</p>
 <h2 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">¶</a></h2>
 <p>All runtime config is environment variables read by the backend's <code>Settings</code>. The
 <strong>complete, commented reference</strong> is

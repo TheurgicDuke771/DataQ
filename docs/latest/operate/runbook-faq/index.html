@@ -2431,7 +2431,7 @@
 <li><strong>Single tenant</strong>, suite-level access sharing <strong>plus a stored workspace role</strong> — Admin / Member / Viewer (ADR 0033); connection management is Admin-only. <code>WORKSPACE_ADMIN_EMAILS</code> is a bootstrap seed and lockout break-glass, not the day-to-day mechanism.</li>
 <li>Interactive <strong>datasource browsing</strong> (container browser, 3-level UC catalog picker) is
   deferred — you specify targets explicitly. JSON flat files deferred (CSV/Parquet in v1).</li>
-<li>Auth is one of <strong>OIDC SSO (Azure AD or Cognito), email OTP (ADR 0032, IdP-less), or dev-bypass</strong>,
+<li>Auth is one of <strong>OIDC SSO (Azure AD or Cognito) or email OTP (ADR 0032, IdP-less)</strong>,
   plus <strong>PATs</strong> (<code>dq_live_…</code>, ADR 0026) for headless/API/MCP clients — no
   username/password login, and no separate service-account principal yet (ADR 0026
   phase 2, deferred).</li>
@@ -2442,7 +2442,7 @@ can trigger from. You never write checks against them. See <strong><a href="../.
 <p><strong>Do I need Azure to run it locally?</strong> No. The compose stacks sign you in with an emailed
 one-time code and bundle the mailbox too (a local Mailpit inbox at <code>localhost:8025</code>), so
 there is no IdP <em>and</em> no SMTP relay to bring — <code>scripts/setup.sh</code> just asks which address
-may sign in. Dev-bypass is still there as an explicit downgrade (leave that answer blank).
+may sign in.
 Azure and AWS are both live deployment targets behind the app's seams (ADR 0010/0013), at the same level — neither is primary.</p>
 <p><strong>Where do failed-row samples go?</strong> Stored with the result, <strong>PII-redacted</strong>, and purged
 after a retention window — never written to logs.</p>

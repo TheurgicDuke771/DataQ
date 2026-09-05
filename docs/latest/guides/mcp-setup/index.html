@@ -2428,7 +2428,7 @@
 <code>Authorization</code> header when following redirects — which then surfaces as a
 confusing 401. Always configure clients with the <code>/mcp/</code> form.</p>
 </div>
-<p>The endpoint accepts the <strong>same credentials as the REST API</strong> (ADR <a href="../../adr/0008-mcp-server/">0008</a> / <a href="../../adr/0026-auth-api-keys-and-principal-seam/">0026</a>): an OIDC bearer token (Azure AD or Cognito), or a <strong>DataQ API key</strong> (<code>dq_live_…</code>). Without auth configured, the endpoint is only mounted in local dev-bypass mode — never unauthenticated in a deployed environment.</p>
+<p>The endpoint accepts the <strong>same credentials as the REST API</strong> (ADR <a href="../../adr/0008-mcp-server/">0008</a> / <a href="../../adr/0026-auth-api-keys-and-principal-seam/">0026</a>): an OIDC bearer token (Azure AD or Cognito), or a <strong>DataQ API key</strong> (<code>dq_live_…</code>). Without a working sign-in configuration the endpoint is not mounted at all — it is never unauthenticated.</p>
 <div class="admonition info">
 <p class="admonition-title">Email-OTP deployments: MCP works, with an API key</p>
 <p>A deployment running <strong>email one-time codes instead of SSO</strong> (ADR
@@ -2522,7 +2522,7 @@ drift-checked in CI, so it cannot go stale the way an earlier hand-typed pass of
 </tr>
 <tr>
 <td>Server absent / connection refused locally</td>
-<td>The MCP server is unmounted unless the deployment has a working sign-in configuration — SSO (<code>AZURE_*</code>), email OTP (<code>AUTH_EMAIL_*</code> + an allowlist), or local dev-bypass (fail-closed by design).</td>
+<td>The MCP server is unmounted unless the deployment has a working sign-in configuration — SSO (<code>AZURE_*</code>) or email OTP (<code>AUTH_EMAIL_*</code> + an allowlist); fail-closed by design.</td>
 </tr>
 <tr>
 <td>401 with an API key on an email-OTP deployment</td>

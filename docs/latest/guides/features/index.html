@@ -2765,8 +2765,8 @@ are <strong>not</strong> datasources (<a href="../orchestration/">Orchestration<
 </ul>
 <h2 id="access-auth">Access &amp; auth<a class="headerlink" href="#access-auth" title="Permanent link">¶</a></h2>
 <ul>
-<li><strong>Three sign-in modes</strong> — dev-bypass (local eval only), <strong>email OTP</strong> (a one-time code,
-  no Identity Provider required — the local/eval default, ADR 0032), and <strong>OIDC SSO</strong>
+<li><strong>Two sign-in modes</strong> — <strong>email OTP</strong> (a one-time code, no Identity Provider
+  required — the local/eval default, ADR 0032) and <strong>OIDC SSO</strong>
   (provider-neutral, Azure AD and AWS Cognito both validated in prod). Exactly one is active per deployment.</li>
 <li><strong>Personal access tokens (PATs)</strong> — <code>dq_live_</code> tokens for headless / AI-client use, same
   authz as the user, on REST <strong>and</strong> <code>/mcp</code> (<a href="../api-keys/">API keys</a>, ADR 0026).</li>

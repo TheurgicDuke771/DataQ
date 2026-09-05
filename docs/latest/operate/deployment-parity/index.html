@@ -2496,7 +2496,7 @@ cloud-conditional code paths</strong>, and the same container images run everywh
 <td>Identity — humans</td>
 <td>Entra ID through the generic OIDC contract</td>
 <td>Cognito through the same contract</td>
-<td>Email OTP (bundled Mailpit) by default; dev-bypass opt-in</td>
+<td>Email OTP (bundled Mailpit) by default</td>
 </tr>
 <tr>
 <td>Identity — machines</td>
@@ -2673,7 +2673,7 @@ differences:</p>
 </table>
 <h2 id="configuration-what-actually-differs">Configuration: what actually differs<a class="headerlink" href="#configuration-what-actually-differs" title="Permanent link">¶</a></h2>
 <p>Most backend env is <strong>identical in shape on both clouds</strong> (<code>ENVIRONMENT</code>, <code>DATABASE_URL</code>,
-<code>REDIS_URL</code>, <code>AUTH_DEV_BYPASS=false</code>, <code>WORKSPACE_ADMIN_EMAILS</code>,
+<code>REDIS_URL</code>, <code>WORKSPACE_ADMIN_EMAILS</code>,
 <code>RATE_LIMIT_XFF_TRUSTED_HOPS=3</code>, <code>CORS_ALLOW_ORIGINS=""</code>, <code>PUBLIC_BASE_URL</code>, the
 <code>*_WEBHOOK_SECRET_NAME</code>s, the <code>EMAIL_*</code> block, <code>WAREHOUSE_LINEAGE_ENABLED</code>). The genuine
 differences:</p>

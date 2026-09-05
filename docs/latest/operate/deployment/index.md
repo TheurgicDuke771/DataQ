@@ -131,7 +131,7 @@ configuration**:
 | Seam | Cloud implementation | Local / non-cloud implementation |
 |---|---|---|
 | Secrets | Key Vault (`SECRET_STORE=azure_key_vault`) · AWS Secrets Manager (`SECRET_STORE=aws_secrets_manager`) | `SECRET_STORE=openbao` — OpenBao in compose (the default in `.env.app.example`), or `env` for host-only dev. ADR [0039](../adr/0039-openbao-self-hosted-secret-backend.md); the store speaks the KV v2 API, so the same mode also serves Vault or HCP |
-| Auth | Entra SSO (`AZURE_*`) · any OIDC issuer via `AUTH_OIDC_*` (Cognito validated live) | **Email OTP** for humans (`AUTH_EMAIL_*` + an allowlist — ADR [0032](../adr/0032-email-otp-signin.md)); `AUTH_DEV_BYPASS=true` for local dev; **PATs** (`dq_live_…`) for headless REST/MCP — see [API keys](../guides/api-keys.md). `/mcp` is served in every one of these modes; under OTP it accepts **PATs only** (no IdP ⇒ no bearer token to validate) |
+| Auth | Entra SSO (`AZURE_*`) · any OIDC issuer via `AUTH_OIDC_*` (Cognito validated live) | **Email OTP** for humans (`AUTH_EMAIL_*` + an allowlist — ADR [0032](../adr/0032-email-otp-signin.md)); **PATs** (`dq_live_…`) for headless REST/MCP — see [API keys](../guides/api-keys.md). `/mcp` is served in every one of these modes; under OTP it accepts **PATs only** (no IdP ⇒ no bearer token to validate) |
 | Observability | App Insights connection string | `OTEL_EXPORTER_OTLP_ENDPOINT` → any OTLP consumer; `docker-compose --profile telemetry up` starts a local Jaeger (UI on `:16686`). Unset ⇒ telemetry off, which is a supported posture, not a degraded one |
 | Queue / cache | — | Redis in compose (same image as prod) |
 | Database | Shared Azure Postgres | Postgres in compose |
@@ -144,7 +144,7 @@ docker-compose up           # postgres + redis + openbao + api + worker + fronte
 ```
 
 `.env.app.example` ships with the local-first values already selected
-(`SECRET_STORE=openbao`, `AUTH_DEV_BYPASS=true`, both telemetry endpoints blank);
+(`SECRET_STORE=openbao`, email OTP against the bundled catcher as the sign-in, both telemetry endpoints blank);
 every `AZURE_*` key may stay empty. Nothing in the app reads an Azure SDK unless
 the corresponding seam is explicitly pointed at Azure.
 
