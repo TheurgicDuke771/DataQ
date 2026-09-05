@@ -77,6 +77,9 @@ AUDITED: Final[dict[tuple[str, str], str]] = {
     ("POST", "/api/v1/admin/members"): "workspace_member.add",
     ("DELETE", "/api/v1/admin/members/{member_id}"): "workspace_member.remove",
     ("POST", "/api/v1/admin/members/{member_id}/confirm"): "workspace_member.confirm",
+    # ── The composed offboarding pass (#1699). Its steps each write their own
+    # event; THIS one is the receipt — what ran, what was skipped and why.
+    ("POST", "/api/v1/admin/offboarding/{user_id}"): "user.offboard",
     # ── Asset metadata (owner/description only — the inventory-sync columns are
     # machine writes and are not audited).
     ("PATCH", "/api/v1/assets/{asset_id}"): "asset.update",
