@@ -1,5 +1,6 @@
 """Connection endpoint tests against a real Postgres (db_session) via TestClient."""
 
+import json
 import uuid
 from collections.abc import Iterator
 from typing import Any
@@ -953,3 +954,30 @@ def test_a_passing_connection_test_stamps_success_immediately(
     assert health["status"] == "healthy"
     assert health["consecutive_auth_failures"] == 0
     assert health["last_error"] is None
+
+
+# ── #1909: a custom-validator failure is a 422 with field detail, never a 500 ─────
+
+
+def _no_role() -> dict[str, Any]:
+    cfg = dict(_SF_CONFIG)
+    del cfg["role"]
+    return cfg
+
+
+def test_create_without_role_is_a_422_with_the_field_named(client: Any) -> None:
+    http, _ = client
+    resp = http.post("/api/v1/connections", json=_create_payload(config=_no_role()))
+    assert resp.status_code == 422
+    body = resp.json()["error"]
+    assert body["code"] == "connection_config_invalid"
+    assert "role" in json.dumps(body["detail"]["errors"])
+
+
+def test_update_without_role_is_a_422_with_the_field_named(client: Any) -> None:
+    http, _ = client
+    created = http.post("/api/v1/connections", json=_create_payload())
+    assert created.status_code == 201
+    resp = http.patch(f"/api/v1/connections/{created.json()['id']}", json={"config": _no_role()})
+    assert resp.status_code == 422
+    assert "role" in json.dumps(resp.json()["error"]["detail"]["errors"])
