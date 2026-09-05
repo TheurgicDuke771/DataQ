@@ -34,6 +34,24 @@ credential, because an unredacted export of regulated data is exactly that
 sensitive. There is no MCP tool for either capability, for the same reason MCP
 carries no connection-credential tool at all.
 
+## 1a. Driving it from the app
+
+Both capabilities have a UI: **Admin → Compliance → Data-subject rights**. Enter the
+identifier column and the value, then **Export data** or **Erase subject**. This is the
+normal path — the API below is the same machinery, for scripting a bulk response or for a
+deployment where the operator works from a shell.
+
+The UI adds three things the raw endpoints do not:
+
+- **Erasure is gated on retyping the value exactly.** The endpoint has no confirmation
+  argument, and a mis-pasted value erases a different subject's data.
+- **The receipt is rendered as well as downloadable**, so it is still readable where the
+  browser blocks a script-initiated download. Keep it with the request record.
+- **A partial erasure is shown as a warning**, not as success, with the per-store counts
+  broken out.
+
+The audit events both actions write are visible in the audit log on the same page.
+
 ## 2. Access / export (GDPR Art 15 / 20)
 
 ```

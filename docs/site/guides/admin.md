@@ -16,8 +16,8 @@ without losing your place. `/admin` on its own lands on **Overview**.
 | Members | `/admin/members` | Every user with their workspace role (editable in place) and every per-suite access grant. |
 | Suites | `/admin/suites` | Every suite in the workspace, unscoped by sharing: owner, datasource, environment, check count, share count. |
 | Settings | `/admin/settings` | Workspace facts and the sign-in method, the email pre-flight test, reusable notification channels, the LLM provider, the secret-store notice, and the danger zone. |
-| Compliance | `/admin/compliance` | The audit log with its filters and retention disclosure, and the deployment / data-residency posture. |
-| Integrations | `/admin/integrations` | Ready-to-paste inbound webhook URLs for each configured orchestration provider. |
+| Compliance | `/admin/compliance` | The audit log with its filters and retention disclosure, audit-chain verification, the data-subject-rights tools, and the deployment / data-residency posture. |
+| Integrations | `/admin/integrations` | Ready-to-paste inbound webhook URLs for each configured orchestration provider, with the auth mode each one uses. |
 
 The former standalone **Settings** page has moved here: `/settings` now redirects to
 `/admin/settings`, and the sidebar carries a single **Admin** entry rather than two links
@@ -46,3 +46,73 @@ The Overview's "needs attention" panel deliberately says **not monitored yet** w
 signal exists. Poll staleness, scheduler heartbeat, queue depth and datasource credential
 health have no read API today, so an empty panel means nothing is being watched — not that
 everything is healthy. Rows appear here as those signals ship.
+
+## Compliance
+
+### Audit chain
+
+Every audit event is hashed over the one before it, so an edited or deleted row breaks the
+chain. **Verify now** walks that chain and reports one of four answers:
+
+| Answer | What it means |
+|---|---|
+| Intact | Every hashed row verified against its predecessor. |
+| Broken | A mismatch was found. The card names the first blamed event, when it was recorded, and both hashes; rows after that point cannot be shown to be untampered. |
+| Nothing to verify | No hashed row exists yet. This is **not** a clean bill of health — nothing was checked. |
+| Not verified — the check failed | The verification itself did not complete. It says nothing about whether the chain is intact. |
+
+Verification is never run when the page loads, and the card says so until you ask for it:
+the check reads the whole hashed set into memory, which takes time on a large log.
+
+The card also reports two things a bare pass would hide. **Not covered by the chain** counts
+rows written before hashing shipped — real audit history that the chain simply does not
+cover, never folded into the verified count. **External anchor** reports whether the chain
+head is published outside the database: without one, the chain is only *internally*
+consistent, because anyone able to rewrite the whole table could rewrite the hashes with it.
+
+### Data-subject rights
+
+The access/export and erasure tools answer a GDPR Article 15/20 or Article 17 (CCPA delete)
+request against the sample data DataQ itself has captured. **They never touch your
+warehouse**, which remains your system of record and your responsibility to act on
+separately.
+
+A subject is entered the way your warehouse identifies them — an **identifier column** and
+its **value**, such as `email` and `alice@example.com`. DataQ holds no people-table, so
+there is no user to pick from a list.
+
+- **Export data** searches every suite in the workspace and returns each captured cell
+  naming that pair, with the suite, check and run it came from. The result is deliberately
+  **unredacted**: this is the subject's own access right, and the usual masking exists to
+  protect *other* people from an unrelated viewer. The receipt is rendered on screen and
+  offered as a download, so it is still readable where a browser blocks the download.
+- **Erase subject** removes only the matching row or cell, from results and from stored
+  incident evidence — not the surrounding sample, and not other subjects' rows. It runs
+  synchronously, cannot be undone, and is therefore gated behind retyping the value exactly.
+  The receipt reports matched and erased counts per store, so a partial erasure reads as a
+  warning rather than as done.
+
+An export that finds nothing means DataQ has captured nothing naming that subject. It is
+not a statement about your warehouse, which was neither read nor changed.
+
+Both actions write an audit event — `data_subject_request.export` (recorded with whether
+anything was actually exposed) and `data_subject_request.erase` — visible in the audit log
+on the same page. The erasure's event is written in the same transaction as the scrub, so
+an applied erasure cannot go unrecorded.
+
+## Settings — email pre-flight
+
+**Send test email** sends a real message to *your own* address over the configured sign-in
+mailer. It takes no recipient, so it cannot be used to relay mail. The outcome stays on the
+card rather than passing by in a toast: a failure names the transport stage that broke —
+connect, TLS, auth or send — and carries the request ID to search the server log by. A
+success means the mailer accepted the message; if it then never arrives, the relay is the
+next place to look, not this configuration.
+
+## Integrations — webhook auth
+
+Each inbound webhook row states the auth mode it uses, because that determines how the URL
+must be handled. The Azure Data Factory URL carries a **shared secret in the query string**
+— Azure Monitor supports no other mode — so the URL *is* a credential and is masked behind
+a reveal toggle. Airflow and dbt use an **HMAC signature header** instead, with the signing
+key held in the secret store, so their URLs carry no secret.
