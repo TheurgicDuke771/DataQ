@@ -220,9 +220,8 @@ def classify_broker_reason(exc: BaseException) -> str:
 # CREDENTIAL is a fact about the credential's health, and #1697's signal is the latter.
 # Markers are the driver-emitted vocabulary for "who you are was rejected".
 _AUTH_MARKERS: tuple[str, ...] = (
-    # Snowflake: 250001 = could not connect / auth failed; the 390100-family is the
-    # incorrect-username-or-password / token-expired set.
-    "250001",
+    # Snowflake 390100-family: bad password / expired token. Not the bare 250001 prefix,
+    # which also covers a wrong account locator.
     "390100",
     "390114",
     "390195",

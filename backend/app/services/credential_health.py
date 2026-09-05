@@ -1,20 +1,8 @@
-"""Datasource credential health, recorded at the ONE credential-use seam (#1697).
+"""Datasource credential health, recorded at the ONE credential-use seam.
 
-#828's blindness in a new place: a datasource connection whose credential has expired
-or been revoked has no visible state anywhere until someone reads worker logs (#954 —
-two dead Snowflake PATs cost real time exactly that way). #839 covers orchestration
-connections only; #1100's staleness axis covers lineage-refreshing ones.
-
-The signal piggybacks on outcomes DataQ already produces — runs, dry-runs, connection
-tests, profiles — rather than a periodic live probe: a probe would spend warehouse
-credits on every connection on a schedule and would need its own beat task, for a fact
-the platform can read for free from work it is already doing.
-
-`credential_use` is the seam. It is deliberately a context manager wrapped around
-a whole datasource OPERATION rather than a hook inside each adapter: the
-guard-at-one-door-and-not-its-sibling class is this repo's known failure mode,
-and six adapters times several methods each is six times the surface for a door
-to be missed.
+Piggybacks on runs / dry-runs / profiles / connection tests instead of a periodic probe.
+`credential_use` wraps a whole datasource operation rather than each adapter method, so a
+new adapter cannot miss the door.
 """
 
 from __future__ import annotations

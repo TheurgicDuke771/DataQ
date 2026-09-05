@@ -117,6 +117,13 @@ NON_AUTH_ERRORS = [
         ),
     ),
     ("unreachable", ConnectionError("Could not connect to host: getaddrinfo failed")),
+    (
+        "snowflake_bad_account",
+        RuntimeError(
+            "250001 (08001): Failed to connect to DB: acct.snowflakecomputing.com:443. "
+            "404 Not Found"
+        ),
+    ),
     ("timeout", TimeoutError("Request timed out after 30s")),
     (
         "no_warehouse",
