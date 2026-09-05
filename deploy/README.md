@@ -296,6 +296,19 @@ Without the tag policy a release tag still lets mike commit `docs/vX.Y.Z/` to `g
 but the Pages deploy job is rejected and the live site never picks the version up. Re-add it
 after any environment reset.
 
+### Workspace membership: the next deploy must go through the workflow
+
+The `workspace_members` migration and the code that reads it are on `main` in
+separate steps and neither has rolled yet. The Deploy workflow runs
+`alembic upgrade head` **before** it rolls images, so a normal deploy is safe in
+either order. A hand-rolled image roll — `az containerapp update`, or a revision
+rollback — ahead of the migration is not: the app would find no table.
+
+The app degrades rather than failing (a missing table reads as "membership is not
+enforced", with a `membership_table_missing` WARNING per process), so the
+symptom is a log line, not an outage. Roll through the workflow anyway; the
+fail-safe is a floor, not a plan.
+
 ## Pre-deploy checklist
 
 Confirm the change is *ready and green* before you push it to prod:

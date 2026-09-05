@@ -34,8 +34,8 @@ class MemberRead(ApiModel):
     email: str
     #: Seeds the user row at first sign-in; the Members role editor is authoritative after that.
     initial_role: str
-    #: `auto_import` rows were admitted by the lockout guard and await review.
-    source: Literal["admin", "auto_import"]
+    #: `auto_import` rows await review; `env` rows live only in an env var.
+    source: Literal["admin", "auto_import", "env"]
     invited_by_email: str | None
     created_at: datetime
     #: Set once this address has signed in at least once.
@@ -43,15 +43,28 @@ class MemberRead(ApiModel):
     stored_role: str | None
     #: `pending` means admitted but never signed in — not a failure state.
     status: Literal["active", "pending"]
+    #: An env var also names this address, so removing the row does not revoke it.
+    env_listed: bool
+    #: False for an `env` row: there is nothing here to delete.
+    removable: bool
 
 
-class MembershipRead(ApiModel):
-    #: False while the table is empty, when every door behaves exactly as it did
-    #: before membership existed.
+class EnforcementRead(ApiModel):
+    #: The table has at least one row.
     enforcement_active: bool
+    #: Whether any door is actually gated right now — False under dev bypass,
+    #: where a non-empty table still gates nothing.
+    enforced: bool
+    #: Why not, when `enforced` is False.
+    enforced_reason: str | None
+
+
+class MembershipRead(EnforcementRead):
     #: Existing users the FIRST add would auto-import — the number the switch-on
     #: warning states rather than leaving to be discovered.
     unmanaged_user_count: int
+    #: Domains an env var admits wholesale; no row can stand for one.
+    env_allowed_domains: list[str]
     members: list[MemberRead]
 
 
@@ -60,24 +73,13 @@ class MemberCreate(ApiRequestModel):
     initial_role: Literal["admin", "member", "viewer"] = "member"
 
 
-class MemberAddedRead(ApiModel):
+class MemberAddedRead(EnforcementRead):
     member: MemberRead
     auto_imported_count: int
-    enforcement_active: bool
 
 
 def _read(row: svc.MemberRow) -> MemberRead:
-    return MemberRead(
-        id=row.id,
-        email=row.email,
-        initial_role=row.initial_role,
-        source=row.source,
-        invited_by_email=row.invited_by_email,
-        created_at=row.created_at,
-        user_id=row.user_id,
-        stored_role=row.stored_role,
-        status=row.status,
-    )
+    return MemberRead.model_validate(row)
 
 
 @router.get("/members", response_model=MembershipRead, summary="Workspace members (admin)")
@@ -86,11 +88,16 @@ def list_members(db: Annotated[Session, Depends(get_db)]) -> MembershipRead:
 
     An empty list means enforcement is OFF, not that nobody has access: who may
     sign in is then decided entirely by the deployment's env allowlists.
+    Addresses those allowlists name appear as read-only `env` rows, so a removal
+    that an env var would undo never looks complete.
     """
     view = svc.list_members(db)
     return MembershipRead(
-        enforcement_active=view.enforcement_active,
+        enforcement_active=view.status.enforcement_active,
+        enforced=view.status.enforced,
+        enforced_reason=view.status.enforced_reason,
         unmanaged_user_count=view.unmanaged_user_count,
+        env_allowed_domains=list(view.env_allowed_domains),
         members=[_read(row) for row in view.members],
     )
 
@@ -118,7 +125,9 @@ def add_member(
     return MemberAddedRead(
         member=_read(outcome.member),
         auto_imported_count=outcome.auto_imported_count,
-        enforcement_active=True,
+        enforcement_active=outcome.status.enforcement_active,
+        enforced=outcome.status.enforced,
+        enforced_reason=outcome.status.enforced_reason,
     )
 
 

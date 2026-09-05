@@ -12,7 +12,10 @@ vi.mock('../../../src/api/admin', () => ({
   // The membership panel this page now embeds reads from the same module.
   listWorkspaceMembers: vi.fn(async () => ({
     enforcement_active: false,
+    enforced: false,
+    enforced_reason: 'no members have been added yet',
     unmanaged_user_count: 0,
+    env_allowed_domains: [],
     members: [],
   })),
   addWorkspaceMember: vi.fn(),

@@ -7,7 +7,7 @@ export type OtpSessionState =
   | { status: 'probing' }
   | { status: 'signed_out' }
   | { status: 'signed_in'; me: MeResponse }
-  | { status: 'error'; message: string };
+  | { status: 'error'; message: string; code?: string };
 
 export interface OtpSession {
   state: OtpSessionState;

@@ -8,15 +8,13 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select, text
-from sqlalchemy.exc import ProgrammingError
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.auth import get_current_user
 from backend.app.db.models import (
     COMPARISON_KIND,
     AuditEvent,
-    Base,
     Check,
     Connection,
     Result,
@@ -26,39 +24,17 @@ from backend.app.db.models import (
 )
 from backend.app.db.session import get_db
 from backend.app.main import app
-from backend.tests.conftest import TEST_DATABASE_URL
+from backend.tests.support.scratch_db import scratch_engine
 
 _DB = "dataq_access_persistence_probe"
 
 
 @pytest.fixture
 def probe_engine() -> Iterator[Any]:
-    if not TEST_DATABASE_URL:
-        pytest.skip("needs TEST_DATABASE_URL")
-    admin = create_engine(TEST_DATABASE_URL, isolation_level="AUTOCOMMIT")
-    try:
-        with admin.connect() as conn:
-            try:
-                conn.execute(text(f'DROP DATABASE IF EXISTS "{_DB}"'))
-                conn.execute(text(f'CREATE DATABASE "{_DB}"'))
-            except ProgrammingError as exc:  # pragma: no cover - permission-dependent
-                pytest.skip(f"cannot create a probe database: {exc}")
-    finally:
-        admin.dispose()
-
-    url = TEST_DATABASE_URL.rsplit("/", 1)[0] + f"/{_DB}"
-    engine = create_engine(url)
-    try:
-        # The whole schema, not a hand-picked subset: the read path joins more tables than the ones
-        # this test writes (assets, incidents, …).
-        Base.metadata.create_all(engine)
+    # The whole schema, not a hand-picked subset: the read path joins more tables
+    # than this test writes (assets, incidents, …).
+    with scratch_engine(_DB) as engine:
         yield engine
-    finally:
-        engine.dispose()
-        admin = create_engine(TEST_DATABASE_URL, isolation_level="AUTOCOMMIT")
-        with admin.connect() as conn:
-            conn.execute(text(f'DROP DATABASE IF EXISTS "{_DB}"'))
-        admin.dispose()
 
 
 def test_a_rest_read_commits_its_access_event(probe_engine: Any) -> None:

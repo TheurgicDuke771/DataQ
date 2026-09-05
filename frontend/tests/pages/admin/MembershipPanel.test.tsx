@@ -36,12 +36,22 @@ function member(overrides: Partial<WorkspaceMember> = {}): WorkspaceMember {
     user_id: 'u1',
     stored_role: 'member',
     status: 'active',
+    env_listed: false,
+    removable: true,
     ...overrides,
   };
 }
 
 function view(overrides: Partial<MembershipView> = {}): MembershipView {
-  return { enforcement_active: true, unmanaged_user_count: 0, members: [member()], ...overrides };
+  return {
+    enforcement_active: true,
+    enforced: true,
+    enforced_reason: null,
+    unmanaged_user_count: 0,
+    env_allowed_domains: [],
+    members: [member()],
+    ...overrides,
+  };
 }
 
 beforeEach(() => mockList.mockResolvedValue(view()));
@@ -129,6 +139,8 @@ describe('MembershipPanel', () => {
       member: member({ id: 'm2', email: 'new@x.io' }),
       auto_imported_count: 0,
       enforcement_active: true,
+      enforced: true,
+      enforced_reason: null,
     });
     renderSubPage(<MembershipPanel />);
 
@@ -137,5 +149,45 @@ describe('MembershipPanel', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Add' }));
 
     await waitFor(() => expect(mockAdd).toHaveBeenCalledWith('new@x.io', 'member'));
+  });
+  it('shows an env-listed address as a row that cannot be removed here', async () => {
+    // Omitting it reads as "not admitted"; offering Remove would report a
+    // revocation the env var immediately undoes.
+    mockList.mockResolvedValue(
+      view({
+        members: [
+          member(),
+          member({
+            id: 'm-env',
+            email: 'ops@acme.io',
+            source: 'env',
+            env_listed: true,
+            removable: false,
+          }),
+        ],
+      }),
+    );
+    renderSubPage(<MembershipPanel />);
+
+    expect(await screen.findByText('ops@acme.io')).toBeInTheDocument();
+    expect(screen.getByText('listed in the environment')).toBeInTheDocument();
+    const disabled = screen
+      .getAllByRole('button', { name: 'Remove' })
+      .filter((b) => b.hasAttribute('disabled'));
+    expect(disabled).toHaveLength(1);
+  });
+
+  it('says a domain allowlist admits people no row can represent', async () => {
+    mockList.mockResolvedValue(view({ env_allowed_domains: ['acme.io'] }));
+    renderSubPage(<MembershipPanel />);
+    expect(await screen.findByText(/admitted by domain/i)).toBeInTheDocument();
+  });
+
+  it('says so when a non-empty list is not actually enforced', async () => {
+    mockList.mockResolvedValue(
+      view({ enforced: false, enforced_reason: 'developer bypass is active on this deployment' }),
+    );
+    renderSubPage(<MembershipPanel />);
+    expect(await screen.findByText(/not enforced on this stack/i)).toBeInTheDocument();
   });
 });

@@ -4879,6 +4879,21 @@
             "title": "Auto Imported Count",
             "type": "integer"
           },
+          "enforced": {
+            "title": "Enforced",
+            "type": "boolean"
+          },
+          "enforced_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enforced Reason"
+          },
           "enforcement_active": {
             "title": "Enforcement Active",
             "type": "boolean"
@@ -4888,9 +4903,11 @@
           }
         },
         "required": [
+          "enforcement_active",
+          "enforced",
+          "enforced_reason",
           "member",
-          "auto_imported_count",
-          "enforcement_active"
+          "auto_imported_count"
         ],
         "title": "MemberAddedRead",
         "type": "object"
@@ -4932,6 +4949,10 @@
             "title": "Email",
             "type": "string"
           },
+          "env_listed": {
+            "title": "Env Listed",
+            "type": "boolean"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -4952,10 +4973,15 @@
             ],
             "title": "Invited By Email"
           },
+          "removable": {
+            "title": "Removable",
+            "type": "boolean"
+          },
           "source": {
             "enum": [
               "admin",
-              "auto_import"
+              "auto_import",
+              "env"
             ],
             "title": "Source",
             "type": "string"
@@ -5001,16 +5027,40 @@
           "created_at",
           "user_id",
           "stored_role",
-          "status"
+          "status",
+          "env_listed",
+          "removable"
         ],
         "title": "MemberRead",
         "type": "object"
       },
       "MembershipRead": {
         "properties": {
+          "enforced": {
+            "title": "Enforced",
+            "type": "boolean"
+          },
+          "enforced_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enforced Reason"
+          },
           "enforcement_active": {
             "title": "Enforcement Active",
             "type": "boolean"
+          },
+          "env_allowed_domains": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Env Allowed Domains",
+            "type": "array"
           },
           "members": {
             "items": {
@@ -5026,7 +5076,10 @@
         },
         "required": [
           "enforcement_active",
+          "enforced",
+          "enforced_reason",
           "unmanaged_user_count",
+          "env_allowed_domains",
           "members"
         ],
         "title": "MembershipRead",
@@ -8881,7 +8934,7 @@
     },
     "/api/v1/admin/members": {
       "get": {
-        "description": "Who is admitted to this workspace, and whether membership is being enforced.\n\nAn empty list means enforcement is OFF, not that nobody has access: who may\nsign in is then decided entirely by the deployment's env allowlists.",
+        "description": "Who is admitted to this workspace, and whether membership is being enforced.\n\nAn empty list means enforcement is OFF, not that nobody has access: who may\nsign in is then decided entirely by the deployment's env allowlists.\nAddresses those allowlists name appear as read-only `env` rows, so a removal\nthat an env var would undo never looks complete.",
         "operationId": "list_members_api_v1_admin_members_get",
         "responses": {
           "200": {

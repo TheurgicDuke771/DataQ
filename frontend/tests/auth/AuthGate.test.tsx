@@ -117,6 +117,35 @@ describe('AuthGate — otp mode', () => {
     expect(retry).toHaveBeenCalledOnce();
   });
 
+  it('offers Sign out, not Retry, when the session is a removed member', async () => {
+    // The wedged case: the cookie authenticates and then 403s for ever, so
+    // "Try again" is the one action that provably cannot help.
+    const signOut = vi.fn();
+    const retry = vi.fn();
+    await renderOtpGate(
+      {
+        status: 'error',
+        message: 'This account is not a member of this DataQ workspace.',
+        code: 'not_a_workspace_member',
+      },
+      { signOut, retry },
+    );
+    expect(screen.getByText(/not a member of this workspace/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /try again/i })).not.toBeInTheDocument();
+
+    const { default: userEvent } = await import('@testing-library/user-event');
+    await userEvent.click(screen.getByRole('button', { name: /sign out/i }));
+    expect(signOut).toHaveBeenCalledOnce();
+    expect(retry).not.toHaveBeenCalled();
+  });
+
+  it('still offers Retry for a transport failure, which one can clear', async () => {
+    const signOut = vi.fn();
+    await renderOtpGate({ status: 'error', message: 'Network Error' }, { signOut });
+    expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /sign out/i })).not.toBeInTheDocument();
+  });
+
   it('names otp in the unconfigured banner so an operator knows the mode exists', async () => {
     vi.doMock('../../src/auth/config', () => ({ authMode: 'unconfigured', DEV_USER: {} }));
     await renderAuthGate();

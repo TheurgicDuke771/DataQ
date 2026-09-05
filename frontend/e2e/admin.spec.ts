@@ -240,11 +240,28 @@ test.describe('Admin control centre', () => {
   test('the switch-on import is surfaced for review, not left to be discovered', async ({
     page,
   }) => {
+    // Self-contained: `fullyParallel` is on outside CI, so this must not depend
+    // on the spec above having already turned enforcement on. It performs its
+    // own add, which triggers the import when the table is still empty and is
+    // harmless when it is not, then removes its own row.
     await page.goto('/admin/members');
-    // The first add imported every existing user provisionally; the banner names
-    // them, and the dev-bypass identity is among them.
+    const email = `e2e-import-${Date.now()}@dataq.local`;
+    await page.getByRole('button', { name: 'Add member' }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByPlaceholder('person@example.com').fill(email);
+    await dialog.getByRole('button', { name: 'Add', exact: true }).click();
+
+    // The import admitted every existing user provisionally; the banner counts
+    // them, and the dev-bypass identity is among the rows awaiting review.
     await expect(page.getByText(/Review \d+ imported member/)).toBeVisible();
-    await expect(page.getByText('dev-bypass@dataq.local').first()).toBeVisible();
+    await expect(
+      membershipTable(page).locator('tr').filter({ hasText: 'dev-bypass@dataq.local' }).first(),
+    ).toContainText('imported');
+
+    const own = membershipTable(page).locator('tr').filter({ hasText: email }).first();
+    await own.getByRole('button', { name: 'Remove' }).click();
+    await page.getByRole('button', { name: 'Remove member' }).click();
+    await expect(membershipTable(page).locator('tr').filter({ hasText: email })).toHaveCount(0);
   });
 });
 
