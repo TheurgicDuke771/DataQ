@@ -1416,6 +1416,45 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Integrations — webhook auth">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#regenerating-a-webhook-secret" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Regenerating a webhook secret
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#polling-health" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Polling health
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#warehouse-inventory-sync" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Warehouse inventory sync
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
     </ul>
@@ -2880,6 +2919,45 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Integrations — webhook auth">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#regenerating-a-webhook-secret" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Regenerating a webhook secret
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#polling-health" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Polling health
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#warehouse-inventory-sync" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Warehouse inventory sync
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
     </ul>
@@ -3307,6 +3385,27 @@ must be handled. The Azure Data Factory URL carries a <strong>shared secret in t
 — Azure Monitor supports no other mode — so the URL <em>is</em> a credential and is masked behind
 a reveal toggle. Airflow and dbt use an <strong>HMAC signature header</strong> instead, with the signing
 key held in the secret store, so their URLs carry no secret.</p>
+<h3 id="regenerating-a-webhook-secret">Regenerating a webhook secret<a class="headerlink" href="#regenerating-a-webhook-secret" title="Permanent link">¶</a></h3>
+<p><strong>Regenerate secret</strong> (ADF) or <strong>Regenerate key</strong> (Airflow, dbt) mints a new value and shows
+it <strong>once</strong> — no page or endpoint returns it again, so copy it before closing the dialog. The
+previous value keeps working for a short grace window (15 minutes by default) so you can
+update the provider side without a gap; after that, callbacks using the old value are
+rejected. DataQ cannot see whether the provider side was updated, so the dialog states the
+deadline rather than a confirmation. Each regeneration is audited with the provider and the
+grace deadline, never the value.</p>
+<h3 id="polling-health">Polling health<a class="headerlink" href="#polling-health" title="Permanent link">¶</a></h3>
+<p>The 10-minute poll is the fallback for a provider whose webhook is not firing. The table
+shows each orchestration connection's last poll, status and next expected poll. <em>Unknown</em>
+means the connection has never been polled; <em>stalled</em> means the last successful poll is
+older than the cadence allows; <em>failing</em> means the last poll raised, with the classified
+reason beside it. <strong>Poll all now</strong> queues an immediate sweep for every provider; the table
+refreshes when the sweep has run.</p>
+<h3 id="warehouse-inventory-sync">Warehouse inventory sync<a class="headerlink" href="#warehouse-inventory-sync" title="Permanent link">¶</a></h3>
+<p>A synced connection lists every table the warehouse has, so a table nobody monitors is
+visible as unmonitored rather than absent. The toggle turns sync on or off per connection
+(it goes through the same path as editing the connection, so it is versioned and audited),
+<strong>Run now</strong> queues one sync, and the counts stay blank until a sync has actually run —
+<em>never synced</em> is not zero tables.</p>
 
 
 

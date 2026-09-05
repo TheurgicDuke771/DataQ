@@ -2571,7 +2571,9 @@ then looks in <code>&lt;prefix&gt;/dbt/dbt/latest/</code> and finds nothing).</p
   cadence, so a build is still recorded even if the callback never fires. Grain is
   <strong>job-level</strong> (one <code>pipeline_run</code> per dbt job build).</li>
 </ul>
-<p>Store the HMAC signing key as the <code>dbt-webhook-secret</code> in DataQ's secret store; the webhook
+<p>Rotate any provider's webhook secret or signing key from <strong>Admin → Integrations</strong>: the new
+value is shown once, and the old one keeps working for a short grace window so the provider
+side can be updated first. Store the HMAC signing key as the <code>dbt-webhook-secret</code> in DataQ's secret store; the webhook
 URL is shown in <strong>Admin → Integrations</strong> like the others.</p>
 <h3 id="lineage-from-manifestjson-adr-0034">Lineage from <code>manifest.json</code> (ADR 0034)<a class="headerlink" href="#lineage-from-manifestjson-adr-0034" title="Permanent link">¶</a></h3>
 <p>Alongside <code>run_results.json</code>, DataQ reads each job's <strong><code>manifest.json</code></strong> — the sibling artifact

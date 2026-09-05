@@ -1235,6 +1235,33 @@ must be handled. The Azure Data Factory URL carries a **shared secret in the que
 a reveal toggle. Airflow and dbt use an **HMAC signature header** instead, with the signing
 key held in the secret store, so their URLs carry no secret.
 
+### Regenerating a webhook secret
+
+**Regenerate secret** (ADF) or **Regenerate key** (Airflow, dbt) mints a new value and shows
+it **once** — no page or endpoint returns it again, so copy it before closing the dialog. The
+previous value keeps working for a short grace window (15 minutes by default) so you can
+update the provider side without a gap; after that, callbacks using the old value are
+rejected. DataQ cannot see whether the provider side was updated, so the dialog states the
+deadline rather than a confirmation. Each regeneration is audited with the provider and the
+grace deadline, never the value.
+
+### Polling health
+
+The 10-minute poll is the fallback for a provider whose webhook is not firing. The table
+shows each orchestration connection's last poll, status and next expected poll. *Unknown*
+means the connection has never been polled; *stalled* means the last successful poll is
+older than the cadence allows; *failing* means the last poll raised, with the classified
+reason beside it. **Poll all now** queues an immediate sweep for every provider; the table
+refreshes when the sweep has run.
+
+### Warehouse inventory sync
+
+A synced connection lists every table the warehouse has, so a table nobody monitors is
+visible as unmonitored rather than absent. The toggle turns sync on or off per connection
+(it goes through the same path as editing the connection, so it is versioned and audited),
+**Run now** queues one sync, and the counts stay blank until a sync has actually run —
+*never synced* is not zero tables.
+
 
 ---
 
@@ -2703,7 +2730,9 @@ Registering any connection — orchestration providers included — is **Admin-o
   cadence, so a build is still recorded even if the callback never fires. Grain is
   **job-level** (one `pipeline_run` per dbt job build).
 
-Store the HMAC signing key as the `dbt-webhook-secret` in DataQ's secret store; the webhook
+Rotate any provider's webhook secret or signing key from **Admin → Integrations**: the new
+value is shown once, and the old one keeps working for a short grace window so the provider
+side can be updated first. Store the HMAC signing key as the `dbt-webhook-secret` in DataQ's secret store; the webhook
 URL is shown in **Admin → Integrations** like the others.
 
 ### Lineage from `manifest.json` (ADR 0034)
@@ -3183,6 +3212,10 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Added
 
+- **Admin → Integrations is an operations page.** Regenerate any provider's webhook secret
+  or signing key (shown once; the previous value keeps working for a short grace window),
+  see per-connection polling health with **Poll all now**, and turn warehouse inventory
+  sync on or off per connection with **Run now**.
 - **Admins can now operate the workspace, not just observe it.** **Admin → Members**
   gains **Revoke** on any per-suite access grant — previously only a suite's own owner
   could remove a share, so cleaning up after a departure meant first being granted access
@@ -3978,6 +4011,11 @@ an outbound model request.
 | GET | `/admin/privacy` | Zero-sample mode: effective value, stored toggle, source, whether the environment pins it. |
 | PUT | `/admin/privacy` | Set zero-sample mode (audited); 409 when the environment pins it on and the request turns it off. |
 | GET | `/admin/orchestration/webhooks` | Webhook receiver URLs + auth mode per provider. |
+| POST | `/admin/orchestration/webhooks/{provider}/regenerate` | Mint a new webhook secret / signing key; the value is returned once, the previous one is accepted until `grace_until` (audited). |
+| POST | `/admin/orchestration/poll-now` | Queue an immediate orchestration poll for every connection, or one with `?connection_id=`. |
+| GET | `/admin/inventory-sync` | Per-connection inventory-sync state; counts are `null` until a sync has run. |
+| PATCH | `/admin/inventory-sync/{connection_id}` | Turn inventory sync on or off (through the connection-update path: versioned, audited). |
+| POST | `/admin/inventory-sync/{connection_id}/run` | Queue one inventory sync now. |
 | GET | `/admin/secret-sweep` | Last orphan-secret sweep report — `never_run` if the sweep hasn't recorded one. |
 | POST | `/admin/secret-sweep/run` | Run the orphan-secret sweep now, always report-only (audited). |
 

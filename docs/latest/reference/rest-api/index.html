@@ -3127,6 +3127,31 @@ an outbound model request.</p>
 <td>Webhook receiver URLs + auth mode per provider.</td>
 </tr>
 <tr>
+<td>POST</td>
+<td><code>/admin/orchestration/webhooks/{provider}/regenerate</code></td>
+<td>Mint a new webhook secret / signing key; the value is returned once, the previous one is accepted until <code>grace_until</code> (audited).</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/admin/orchestration/poll-now</code></td>
+<td>Queue an immediate orchestration poll for every connection, or one with <code>?connection_id=</code>.</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/admin/inventory-sync</code></td>
+<td>Per-connection inventory-sync state; counts are <code>null</code> until a sync has run.</td>
+</tr>
+<tr>
+<td>PATCH</td>
+<td><code>/admin/inventory-sync/{connection_id}</code></td>
+<td>Turn inventory sync on or off (through the connection-update path: versioned, audited).</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/admin/inventory-sync/{connection_id}/run</code></td>
+<td>Queue one inventory sync now.</td>
+</tr>
+<tr>
 <td>GET</td>
 <td><code>/admin/secret-sweep</code></td>
 <td>Last orphan-secret sweep report — <code>never_run</code> if the sweep hasn't recorded one.</td>
