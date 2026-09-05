@@ -38,6 +38,10 @@ const mockRole = vi.mocked(useWorkspaceRole);
 const mockIsAdmin = vi.mocked(useIsWorkspaceAdmin);
 const mockUser = vi.mocked(useCurrentUser);
 
+// Lazy route chunks resolve before content appears; RTL's findBy default is 1s
+// regardless of testTimeout, which is tight on a slow CI runner.
+const LAZY = { timeout: 10_000 };
+
 const devUser = {
   name: 'Dev Bypass User',
   username: 'dev-bypass@dataq.local',
@@ -96,7 +100,7 @@ describe('App shell', () => {
     mockRole.mockReturnValue('member');
     mockUser.mockReturnValue(devUser);
     renderAt('/admin/members');
-    expect(await screen.findByText(/403 . Forbidden/)).toBeInTheDocument();
+    expect(await screen.findByText(/403 . Forbidden/, undefined, LAZY)).toBeInTheDocument();
     expect(vi.mocked(api.get)).not.toHaveBeenCalled();
   });
 
@@ -105,7 +109,7 @@ describe('App shell', () => {
     mockRole.mockReturnValue('admin');
     mockUser.mockReturnValue(devUser);
     renderAt('/settings');
-    expect(await screen.findByRole('tab', { name: 'Settings' })).toHaveAttribute(
+    expect(await screen.findByRole('tab', { name: 'Settings' }, LAZY)).toHaveAttribute(
       'aria-selected',
       'true',
     );

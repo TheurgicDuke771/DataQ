@@ -18,6 +18,13 @@ import { MeContext } from '../../../src/auth/meContext';
 import type { AsyncState } from '../../../src/hooks/useAsyncData';
 import { ADMIN_ROUTES, SETTINGS_REDIRECT_ROUTE } from '../../../src/pages/admin/routes';
 
+/**
+ * Route tests resolve TWO lazy chunks (the layout, then the sub-page) before any content
+ * appears, and RTL's `findBy` default is 1s regardless of vitest's testTimeout — tight enough
+ * on a slow shared CI runner to fail while the app is merely still loading.
+ */
+export const LAZY = { timeout: 10_000 };
+
 export function meAt(role: WorkspaceRole): AsyncState<MeResponse> {
   return {
     status: 'ok',

@@ -13,6 +13,7 @@ import {
   ACCESS,
   AUDIT_PAGE_1,
   DEPLOYMENT_POSTURE,
+  LAZY,
   SUITE,
   USER,
   renderAdminAt,
@@ -62,13 +63,13 @@ afterEach(() => vi.clearAllMocks());
 describe('admin routing', () => {
   it('redirects /admin to the overview sub-page', async () => {
     renderAdminAt('/admin');
-    expect(await screen.findByText('Access grants')).toBeInTheDocument();
+    expect(await screen.findByText('Access grants', undefined, LAZY)).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
   });
 
   it('deep-links straight into a sub-page with its tab selected', async () => {
     renderAdminAt('/admin/compliance');
-    expect(await screen.findByText('Audit log')).toBeInTheDocument();
+    expect(await screen.findByText('Audit log', undefined, LAZY)).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Compliance' })).toHaveAttribute(
       'aria-selected',
       'true',
@@ -77,7 +78,7 @@ describe('admin routing', () => {
 
   it('loads only the sub-page you are on — compliance fetches no member or suite data', async () => {
     renderAdminAt('/admin/compliance');
-    await screen.findByText('check.update');
+    await screen.findByText('check.update', undefined, LAZY);
     expect(mockSuites).not.toHaveBeenCalled();
     expect(mockUsers).not.toHaveBeenCalled();
     expect(mockAccess).not.toHaveBeenCalled();
@@ -86,11 +87,11 @@ describe('admin routing', () => {
   it('switching tabs navigates and loads the newly-shown page', async () => {
     const user = userEvent.setup();
     renderAdminAt('/admin/compliance');
-    await screen.findByText('check.update');
+    await screen.findByText('check.update', undefined, LAZY);
 
     await user.click(screen.getByRole('tab', { name: 'Members' }));
 
-    expect(await screen.findByText('bob@x.io')).toBeInTheDocument();
+    expect(await screen.findByText('bob@x.io', undefined, LAZY)).toBeInTheDocument();
     await waitFor(() => expect(mockUsers).toHaveBeenCalled());
     // The compliance page unmounts with its tab; nothing re-fetches it.
     expect(mockSuites).not.toHaveBeenCalled();
@@ -98,12 +99,12 @@ describe('admin routing', () => {
 
   it('renders an in-brand 404 for an unknown admin sub-page', async () => {
     renderAdminAt('/admin/nope');
-    expect(await screen.findByText(/404/)).toBeInTheDocument();
+    expect(await screen.findByText(/404/, undefined, LAZY)).toBeInTheDocument();
   });
 
   it('gates every sub-page at the route, fetching nothing for a non-admin', async () => {
     renderAdminAt('/admin/compliance', 'member');
-    expect(await screen.findByText('403 — Forbidden')).toBeInTheDocument();
+    expect(await screen.findByText('403 — Forbidden', undefined, LAZY)).toBeInTheDocument();
     expect(screen.getByText(/restricted to workspace admins/i)).toBeInTheDocument();
     expect(mockAudit).not.toHaveBeenCalled();
     expect(mockPosture).not.toHaveBeenCalled();
@@ -113,13 +114,13 @@ describe('admin routing', () => {
 
   it('a viewer is refused the members sub-page too', async () => {
     renderAdminAt('/admin/members', 'viewer');
-    expect(await screen.findByText('403 — Forbidden')).toBeInTheDocument();
+    expect(await screen.findByText('403 — Forbidden', undefined, LAZY)).toBeInTheDocument();
     expect(mockUsers).not.toHaveBeenCalled();
   });
 
   it('redirects the retired /settings URL into the admin settings tab', async () => {
     renderAdminAt('/settings');
-    expect(await screen.findByRole('tab', { name: 'Settings' })).toHaveAttribute(
+    expect(await screen.findByRole('tab', { name: 'Settings' }, LAZY)).toHaveAttribute(
       'aria-selected',
       'true',
     );
@@ -127,7 +128,7 @@ describe('admin routing', () => {
 
   it('refuses /settings for a non-admin rather than bouncing them into /admin', async () => {
     renderAdminAt('/settings', 'member');
-    expect(await screen.findByText('403 — Forbidden')).toBeInTheDocument();
+    expect(await screen.findByText('403 — Forbidden', undefined, LAZY)).toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: 'Settings' })).not.toBeInTheDocument();
   });
 });
