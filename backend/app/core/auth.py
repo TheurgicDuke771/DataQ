@@ -581,7 +581,8 @@ async def init_auth() -> None:
         "or configure email OTP sign-in (AUTH_EMAIL_SMTP_HOST + AUTH_EMAIL_USERNAME "
         "+ AUTH_EMAIL_FROM + AUTH_EMAIL_PASSWORD_SECRET_NAME, plus "
         "AUTH_OTP_ALLOWED_EMAILS and/or AUTH_OTP_ALLOWED_DOMAINS), "
-        "or set ENVIRONMENT=dev with AUTH_DEV_BYPASS=true for local dev."
+        "or — developers only — ENVIRONMENT=dev with AUTH_DEV_BYPASS=true "
+        "(on the compose stacks: DATAQ_DEV_BYPASS=true in the root .env)."
     )
 
 

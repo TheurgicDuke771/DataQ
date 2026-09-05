@@ -38,8 +38,8 @@ code in the bundled inbox at **`http://localhost:8025`**. API + Swagger at
 - **Pin a release** instead of the moving stable tags:
   `DATAQ_BACKEND_TAG=vX.Y.Z DATAQ_FRONTEND_TAG=vX.Y.Z docker compose -f docker-compose.ghcr.yml up`.
 - **Reset:** `docker compose -f docker-compose.ghcr.yml down -v` (drops the seeded DB).
-- **Downgrade to no sign-in at all** — deliberate, not a default:
-  `DATAQ_SIGNIN_EMAIL= DATAQ_AUTH_MODE=bypass docker compose -f docker-compose.ghcr.yml up`.
+- **Developers only — run with no sign-in at all** (off by default, never a fallback):
+  `DATAQ_SIGNIN_EMAIL= DATAQ_DEV_BYPASS=true DATAQ_AUTH_MODE=bypass docker compose -f docker-compose.ghcr.yml up`.
   Every request then resolves to one fixed user and anyone who can reach the port is a
   workspace admin. Omitting `DATAQ_SIGNIN_EMAIL` entirely does **not** get you this —
   compose stops and names both options, because a permissive auth posture should be a

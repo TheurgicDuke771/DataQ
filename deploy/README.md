@@ -28,8 +28,9 @@ below is the how.
 The prebuilt-image quickstart ([docs/getting-started](../docs/site/get-started/install.md)) boots
 into **email-OTP sign-in by default** (#1150) — a bundled Mailpit catcher stands in for
 an SMTP relay, uses a passwordless DB, and binds to loopback. Dev-bypass (no
-authentication at all) is an **explicit two-variable downgrade**
-(`DATAQ_SIGNIN_EMAIL= DATAQ_AUTH_MODE=bypass`), not the default — and leaving
+authentication at all) is a **developer-only, explicit opt-in**
+(`DATAQ_SIGNIN_EMAIL= DATAQ_DEV_BYPASS=true DATAQ_AUTH_MODE=bypass`), never a
+default or a fallback — the api refuses to boot with it beside a real mode — and leaving
 `DATAQ_SIGNIN_EMAIL` unset entirely refuses to start rather than silently picking a
 mode for you. A production deployment must flip all of the following. Values live in
 [`deploy/.env.app.prod.example`](.env.app.prod.example) (app settings) +
@@ -37,7 +38,7 @@ mode for you. A production deployment must flip all of the following. Values liv
 
 | Setting | Eval default | Production |
 |---|---|---|
-| `AUTH_DEV_BYPASS` | `true` in the compose file, but **inert by default** — email OTP (`DATAQ_SIGNIN_EMAIL`) wins over it in `auth.py` whenever OTP is configured, which it is out of the box (#1150). It only takes effect once you explicitly clear `DATAQ_SIGNIN_EMAIL` (the documented downgrade). | **`false`** — this is the master auth switch; leaving it on means **no authentication at all**. |
+| `AUTH_DEV_BYPASS` | `false` — the compose files render it from `DATAQ_DEV_BYPASS` (default `false`); it is only honoured with `ENVIRONMENT=dev` and no other sign-in mode configured (#1901). | **`false`** — this is the master auth switch; leaving it on means **no authentication at all**, and the api refuses to boot with it outside `ENVIRONMENT=dev`. |
 | `AZURE_TENANT_ID` / `AZURE_API_CLIENT_ID` / `AZURE_SPA_CLIENT_ID` | empty | your Azure AD tenant + the two app registrations (API + SPA). |
 | **Frontend auth config** | `DATAQ_AUTH_MODE=otp` (eval default — compose sets `${DATAQ_AUTH_MODE:-otp}`) | the **same generic image**, reconfigured at **runtime** — `DATAQ_AUTH_MODE=oidc` + `DATAQ_AUTH_AUTHORITY` / `DATAQ_AUTH_CLIENT_ID` / `DATAQ_AUTH_API_SCOPE` (ADR 0028). **No rebuild** — nginx injects `/config.js` from env. See [frontend/Dockerfile](../frontend/Dockerfile). Optional `DATAQ_AUTH_SCOPE` (#1347) **replaces** the requested OAuth scope string entirely for IdPs with a different scope vocabulary — AWS Cognito rejects the default list's `offline_access` (`invalid_scope`), so a Cognito deployment sets `openid email profile`; leave unset for Azure AD. Optional `DATAQ_AUTH_LOGOUT_STYLE` (#1364) selects the sign-out dialect: unset = standard OIDC RP-Initiated Logout (Azure AD); `cognito` = AWS Cognito's non-conformant `/logout`, which requires `client_id` + `logout_uri` and 400s on the standard parameters. Optional `DATAQ_ORIGIN_SECRET` (#1355) arms the origin-secret guard: nginx 403s any request not carrying the matching `X-DataQ-Origin-Secret` header (a fronting CDN stamps it on origin fetches — on AWS, CloudFront's custom origin header; any CDN that can set a static origin header works). **Alphanumeric values only** (the nginx map uses `:` as its delimiter); empty = guard fully open, the compose/BYOL/Azure default. The load-balancer health check must probe the guard-exempt `/_alb-health`. |
 | `SECRET_STORE` | `openbao` (local/eval — ADR 0039) | **`azure_key_vault`** + `AZURE_KEY_VAULT_URL` + the managed identity's `AZURE_CLIENT_ID` (#408). On AWS: **`aws_secrets_manager`** + `AWS_SECRETS_MANAGER_PREFIX` (#1337/#1338) — the app reads/writes Secrets Manager under `<prefix>/…` via the ECS task role (boto3's ambient credential chain; no stored bootstrap credential). See [AWS deployment](#aws-deployment). |

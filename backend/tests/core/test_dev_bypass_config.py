@@ -60,6 +60,15 @@ async def test_init_auth_refuses_bypass_beside_otp(monkeypatch: pytest.MonkeyPat
         await auth_mod.init_auth()
 
 
+async def test_unconfigured_error_names_the_compose_switch(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(auth_mod, "azure_scheme", None)
+    monkeypatch.setattr(auth_mod, "oidc_scheme", None)
+    monkeypatch.setattr(auth_mod, "_otp_enabled", False)
+    monkeypatch.setattr(auth_mod, "_settings", Settings(auth_dev_bypass=False, environment="prod"))
+    with pytest.raises(RuntimeError, match="DATAQ_DEV_BYPASS=true"):
+        await auth_mod.init_auth()
+
+
 async def test_init_auth_refuses_bypass_in_prod(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(auth_mod, "_settings", Settings(auth_dev_bypass=True, environment="prod"))
     with pytest.raises(RuntimeError, match="only honoured with ENVIRONMENT=dev"):
