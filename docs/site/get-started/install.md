@@ -38,30 +38,24 @@ code in the bundled inbox at **`http://localhost:8025`**. API + Swagger at
 - **Pin a release** instead of the moving stable tags:
   `DATAQ_BACKEND_TAG=vX.Y.Z DATAQ_FRONTEND_TAG=vX.Y.Z docker compose -f docker-compose.ghcr.yml up`.
 - **Reset:** `docker compose -f docker-compose.ghcr.yml down -v` (drops the seeded DB).
-- **Developers only — run with no sign-in at all** (off by default, never a fallback):
-  `DATAQ_SIGNIN_EMAIL= DATAQ_DEV_BYPASS=true DATAQ_AUTH_MODE=bypass docker compose -f docker-compose.ghcr.yml up`.
-  Every request then resolves to one fixed user and anyone who can reach the port is a
-  workspace admin. Omitting `DATAQ_SIGNIN_EMAIL` entirely does **not** get you this —
-  compose stops and names both options, because a permissive auth posture should be a
-  decision somebody made rather than the one they got by not reading.
+- Omitting `DATAQ_SIGNIN_EMAIL` stops the stack and says so — there is no no-sign-in
+  default to fall into.
 
 ## Choosing an auth mode
 
-DataQ ships **three** ways to log a human in. They are a ladder — pick the rung that
-fits, but note where the default sits:
+DataQ ships **two** ways to log a human in:
 
 | Mode | For | You must bring | Sign-in looks like |
 |---|---|---|---|
 | **`otp`** ← *the default* | A small team, or anyone evaluating locally | an **SMTP relay** in production — **nothing locally**, the compose stacks bundle a mailbox | you type your address, DataQ emails a 6-digit code, you type it back |
 | **`oidc`** | An organisation that already has an IdP | an **OIDC app registration** (Azure AD, Okta, Keycloak, Cognito, …) | your normal SSO redirect |
-| **`bypass`** ← *an explicit downgrade* | Throwaway solo work on a machine only you can reach | nothing | no sign-in at all — every request resolves to one fixed demo user, who is a workspace admin |
 
-**`otp` is what you boot into; `bypass` is the explicit downgrade.** Both compose stacks
-used to start in `bypass`, which meant anyone who could reach the port administered a
-tool that stores warehouse credentials — and an eval stack's defaults are the security
-posture people actually run (the same reasoning that moved the default secret store off
-the plaintext one). What made
-`otp` unusable as a default was the SMTP relay it used to require; the bundled catcher
+**`otp` is what you boot into.** Both compose stacks used to start with no sign-in at
+all, which meant anyone who could reach the port administered a tool that stores
+warehouse credentials — and an eval stack's defaults are the security posture people
+actually run (the same reasoning that moved the default secret store off the plaintext
+one). What made `otp` unusable as a default was the SMTP relay it used to require; the
+bundled catcher
 removes that, so the only thing left to supply is *who* is allowed in — one variable,
 `DATAQ_SIGNIN_EMAIL`, which `scripts/setup.sh` asks for. Setting it empty is the
 downgrade; leaving it unset stops the stack rather than picking for you.
@@ -197,14 +191,6 @@ admin, and you sign in by reading the code at `http://localhost:8025` — no clo
 or IdP, no SMTP relay. You can change the address later by editing that one variable and
 re-running `docker compose up`.
 
-**Developers only — the bypass.** DataQ also has a no-sign-in mode for people working on
-DataQ itself: every request is one fixed dev user and anyone who can reach the port is a
-workspace admin. It is off by default and is never a fallback. To use it, answer the
-address question with a blank line and then say yes to the bypass prompt, or set both
-`DATAQ_SIGNIN_EMAIL=` (empty) and `DATAQ_DEV_BYPASS=true` in `.env`. The API refuses to
-start if the bypass is set beside a real sign-in mode or outside `ENVIRONMENT=dev`, so a
-typo in the sign-in config can never silently turn sign-in off.
-
 **Which file wins.** The compose stack sets the whole `AUTH_EMAIL_*` block in its own
 `environment:`, which beats `env_file:` unconditionally — so for the api/worker
 containers `.env.app` is **ignored for these keys in every state**, including when the
@@ -219,8 +205,8 @@ AUTH_EMAIL_TLS_MODE=starttls          # the bundled catcher's default is `none` 
 ```
 
 `.env.app` is still the file for **host-side dev** (uvicorn on your own machine, which
-reads it directly), where `AUTH_DEV_BYPASS=true` applies — point `AUTH_EMAIL_SMTP_HOST`
-at `localhost` if you want the catcher there too (Mailpit publishes `127.0.0.1:1025`).
+reads it directly) — point `AUTH_EMAIL_SMTP_HOST` at `localhost` if you want the catcher
+there too (Mailpit publishes `127.0.0.1:1025`).
 
 ## Configuration
 

@@ -113,32 +113,22 @@ if ! grep -qE '^DATAQ_SIGNIN_EMAIL=..*$' .env && ! grep -qE '^DATAQ_DEV_BYPASS=t
     dev_bypass=""
     echo "  Using DATAQ_SIGNIN_EMAIL from the environment."
   elif [ "${dev_bypass}" = "true" ]; then
-    echo "  DATAQ_DEV_BYPASS=true in the environment — developer bypass."
+    echo "  DATAQ_DEV_BYPASS=true in the environment — contributor bypass, no sign-in."
   elif [ -t 0 ]; then
-    while [ -z "${signin_email}" ] && [ "${dev_bypass}" != "true" ]; do
+    while [ -z "${signin_email}" ]; do
       printf '  Your email address: '
       read -r signin_email || true
       signin_email="$(printf '%s' "${signin_email}" | tr -d '[:space:]')"
-      if [ -z "${signin_email}" ]; then
-        echo ""
-        echo "  Developers only: the bypass disables sign-in entirely — every request"
-        echo "  is one fixed user and anyone who can reach the port is a workspace admin."
-        printf '  Enable the developer bypass instead? [y/N] '
-        read -r answer || true
-        case "${answer}" in
-          y|Y|yes|YES) dev_bypass="true" ;;
-          *) echo "  OK — an email address is needed for sign-in." ;;
-        esac
-      fi
+      [ -z "${signin_email}" ] && echo "  An email address is needed to sign in."
     done
   else
-    die "No TTY and no sign-in mode chosen. Set DATAQ_SIGNIN_EMAIL=you@example.com (or, developers only, DATAQ_DEV_BYPASS=true) and re-run."
+    die "No TTY and no DATAQ_SIGNIN_EMAIL. Set DATAQ_SIGNIN_EMAIL=you@example.com and re-run."
   fi
   force_env_kv .env DATAQ_SIGNIN_EMAIL "${signin_email}"
   if [ "${dev_bypass}" = "true" ]; then
     force_env_kv .env DATAQ_DEV_BYPASS true
     force_env_kv .env.app AUTH_DEV_BYPASS true
-    ok "Developer bypass enabled (no sign-in) — set DATAQ_SIGNIN_EMAIL and remove DATAQ_DEV_BYPASS in .env to change"
+    ok "Contributor bypass enabled (no sign-in) — set DATAQ_SIGNIN_EMAIL and DATAQ_DEV_BYPASS=false in .env to change"
   else
     force_env_kv .env DATAQ_DEV_BYPASS false
     force_env_kv .env.app AUTH_DEV_BYPASS false

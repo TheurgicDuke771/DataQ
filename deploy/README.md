@@ -27,10 +27,9 @@ below is the how.
 
 The prebuilt-image quickstart ([docs/getting-started](../docs/site/get-started/install.md)) boots
 into **email-OTP sign-in by default** (#1150) — a bundled Mailpit catcher stands in for
-an SMTP relay, uses a passwordless DB, and binds to loopback. Dev-bypass (no
-authentication at all) is a **developer-only, explicit opt-in**
-(`DATAQ_SIGNIN_EMAIL= DATAQ_DEV_BYPASS=true DATAQ_AUTH_MODE=bypass`), never a
-default or a fallback — the api refuses to boot with it beside a real mode — and leaving
+an SMTP relay, uses a passwordless DB, and binds to loopback. There is no no-sign-in
+default to fall into (the developer-only bypass in the table below is off, and the api
+refuses to boot with it beside a real mode) — and leaving
 `DATAQ_SIGNIN_EMAIL` unset entirely refuses to start rather than silently picking a
 mode for you. A production deployment must flip all of the following. Values live in
 [`deploy/.env.app.prod.example`](.env.app.prod.example) (app settings) +

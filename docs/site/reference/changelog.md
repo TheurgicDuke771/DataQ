@@ -7,15 +7,13 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Changed
 
-- ⚠️ **The developer bypass is now an explicit opt-in.** `AUTH_DEV_BYPASS` ships `false`
-  in every template and compose file; the local stacks enable it only from
-  `DATAQ_DEV_BYPASS=true` in the root `.env`, and the API refuses to start when the
-  bypass is set beside a real sign-in mode or outside `ENVIRONMENT=dev`. Existing
-  local setups: an `.env` that opted into the bypass the old way (`DATAQ_SIGNIN_EMAIL=`
-  empty, nothing else) no longer boots — add `DATAQ_DEV_BYPASS=true` or re-run
-  `setup.sh`, which now re-asks; an `.env.app` carrying `AUTH_DEV_BYPASS=true` beside an
-  email sign-in block stops host-side runs with a message naming it — set it to `false`.
-  `setup.sh` no longer defaults to the bypass on a blank answer or without a TTY.
+- ⚠️ **The local stack has one sign-in mode: email codes.** `AUTH_DEV_BYPASS` ships
+  `false` in every template and compose file, and the API refuses to start when it is
+  set beside a real sign-in mode or outside `ENVIRONMENT=dev`. Existing local setups:
+  an `.env` with an empty `DATAQ_SIGNIN_EMAIL=` and nothing else no longer boots —
+  set an address or re-run `setup.sh`, which now re-asks; an `.env.app` carrying
+  `AUTH_DEV_BYPASS=true` beside an email sign-in block stops host-side runs with a
+  message naming it — set it to `false`.
 
 - **The admin area is now six routed, deep-linkable pages.** `/admin` splits into
   `overview`, `members`, `suites`, `settings`, `compliance` and `integrations` —

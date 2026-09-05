@@ -5,8 +5,7 @@ x-database-url: &database-url "postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES
 # ── Sign-in mode: ONE switch, DATAQ_SIGNIN_EMAIL (#1150) ────────────────────── This stack boots
 # into **email one-time codes** (ADR 0032), not dev-bypass.
 x-otp-auth-env: &otp-auth-env
-  # The developer bypass is an explicit opt-in (DATAQ_DEV_BYPASS=true in the root .env), never a
-  # fallback: the api refuses to boot with it beside a real sign-in mode (#1901).
+  # Contributors only (CONTRIBUTING.md "Developer bypass"); the api refuses it beside a real mode.
   AUTH_DEV_BYPASS: ${DATAQ_DEV_BYPASS:-false}
   # Defaults to the bundled catcher; the ROOT `.env` overrides any of these while the switch is set.
   AUTH_EMAIL_SMTP_HOST: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_SMTP_HOST:-mailpit}}
@@ -22,7 +21,7 @@ x-otp-auth-env: &otp-auth-env
   AUTH_EMAIL_USERNAME: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_USERNAME:-dataq-local}}
   AUTH_EMAIL_FROM: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_FROM:-dataq@dataq.local}}
   # Signup allowlist — mandatory, there is no open registration (ADR 0032 decision 5).
-  AUTH_OTP_ALLOWED_EMAILS: ${DATAQ_SIGNIN_EMAIL?set DATAQ_SIGNIN_EMAIL=you@example.com to sign in with an emailed code (read it at http://localhost:8025). Developers only — set it EMPTY and DATAQ_DEV_BYPASS=true for the no-sign-in bypass}
+  AUTH_OTP_ALLOWED_EMAILS: ${DATAQ_SIGNIN_EMAIL?set DATAQ_SIGNIN_EMAIL=you@example.com to sign in with an emailed code (read it at http://localhost:8025). it must be set}
   # Shadowed too, and blank by default — otherwise a lone `AUTH_OTP_ALLOWED_DOMAINS` left in
   # `.env.app` would survive the downgrade.
   AUTH_OTP_ALLOWED_DOMAINS: ${DATAQ_SIGNIN_EMAIL:+${AUTH_OTP_ALLOWED_DOMAINS:-}}

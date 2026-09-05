@@ -5,9 +5,7 @@
 #   docker compose -f docker-compose.ghcr.yml up
 #
 # Signs you in with an emailed one-time code (ADR 0032); read the code at the
-# bundled inbox http://localhost:8025. Developers only: DATAQ_SIGNIN_EMAIL= (set,
-# empty) + DATAQ_DEV_BYPASS=true + DATAQ_AUTH_MODE=bypass is the no-sign-in bypass;
-# it is never a default and never a fallback (#1901).
+# bundled inbox http://localhost:8025. Omitting DATAQ_SIGNIN_EMAIL stops the stack.
 
 x-backend-image: &backend-image "ghcr.io/theurgicduke771/dataq-backend:${DATAQ_BACKEND_TAG:-latest}"
 
@@ -18,7 +16,7 @@ x-app-env: &app-env
   SECRET_STORE: "openbao"
   OPENBAO_ADDR: "http://openbao:8200"
   OPENBAO_TOKEN: ${OPENBAO_TOKEN:?required — see the header of this file (ADR 0039)}
-  # Explicit developer opt-in; the api refuses to boot with it beside a real sign-in mode.
+  # Contributors only (CONTRIBUTING.md "Developer bypass"); the api refuses it beside a real mode.
   AUTH_DEV_BYPASS: ${DATAQ_DEV_BYPASS:-false}
   # Email OTP sign-in against the bundled catcher.
   AUTH_EMAIL_SMTP_HOST: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_SMTP_HOST:-mailpit}}
@@ -33,7 +31,7 @@ x-app-env: &app-env
   AUTH_EMAIL_USERNAME: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_USERNAME:-dataq-local}}
   AUTH_EMAIL_FROM: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_FROM:-dataq@dataq.local}}
   # Mandatory signup allowlist — there is no open registration (ADR 0032 decision 5).
-  AUTH_OTP_ALLOWED_EMAILS: ${DATAQ_SIGNIN_EMAIL?set DATAQ_SIGNIN_EMAIL=you@example.com to sign in with an emailed code (read it at http://localhost:8025). Developers only — set it EMPTY and DATAQ_DEV_BYPASS=true for the no-sign-in bypass}
+  AUTH_OTP_ALLOWED_EMAILS: ${DATAQ_SIGNIN_EMAIL?set DATAQ_SIGNIN_EMAIL=you@example.com to sign in with an emailed code (read it at http://localhost:8025). it must be set}
   # Whoever booted the stack administers it; the dev-bypass identity is listed only when opted in.
   WORKSPACE_ADMIN_EMAILS: ${DATAQ_DEV_BYPASS:+dev-bypass@dataq.local,}${DATAQ_SIGNIN_EMAIL:-}
 
