@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, status
 from pydantic import ConfigDict, Field, field_validator
@@ -18,6 +18,7 @@ from backend.app.core.uri_credentials import redact_config_uris
 from backend.app.db.models import Connection, User
 from backend.app.db.session import get_db
 from backend.app.services import connection_service as svc
+from backend.app.services import credential_health
 
 router = APIRouter(tags=["connections"])
 
@@ -53,6 +54,39 @@ class ConnectionUpdate(ApiRequestModel):
         description="Rotate the second (catalog) credential; write-only",
         min_length=1,
     )
+
+
+class CredentialHealthRead(ApiModel):
+    """A datasource connection's stored-credential health, derived from real use (#1697).
+
+    `status="unknown"` — never `healthy` — means the credential has not been used since
+    the signal shipped: nothing has run, dry-run, profiled or tested against it, so DataQ
+    has observed nothing. `failing` means the datasource rejected the credential on its
+    last use; `last_error` is then the classified, secret-free reason.
+
+    Only credential REJECTIONS move this. A missing grant, an unreachable host and a bad
+    table name leave it untouched, because none of them says the credential is dead.
+
+    Orchestration connections carry `null` here — their health is the poll signal above.
+    """
+
+    status: Literal["healthy", "failing", "unknown"]
+    consecutive_auth_failures: int
+    last_auth_failure_at: datetime | None
+    last_auth_success_at: datetime | None
+    last_error: str | None
+
+    @classmethod
+    def of(cls, conn: Connection) -> CredentialHealthRead | None:
+        if not credential_health.is_datasource(conn.type):
+            return None
+        return cls(
+            status=credential_health.credential_status(conn),
+            consecutive_auth_failures=conn.consecutive_auth_failures or 0,
+            last_auth_failure_at=conn.last_auth_failure_at,
+            last_auth_success_at=conn.last_auth_success_at,
+            last_error=conn.last_auth_error,
+        )
 
 
 class ConnectionRead(ApiModel):
@@ -96,6 +130,10 @@ class ConnectionRead(ApiModel):
     inventory_sync_last_table_count: int | None = None
     inventory_sync_zero_since: datetime | None = None
 
+    # Datasource credential health (#1697) — `None` on orchestration connections, whose health
+    # is the poll signal above.
+    credential_health: CredentialHealthRead | None = None
+
     # Native-engine capability probe (#1867, ADR 0036 §3) — `snowflake` only; `None` until the
     # connection has been tested at least once (never probed), not "unavailable".
     engine_capabilities: dict[str, Any] | None = None
@@ -129,6 +167,7 @@ class ConnectionRead(ApiModel):
             inventory_sync_last_table_count=conn.inventory_sync_last_table_count,
             inventory_sync_zero_since=conn.inventory_sync_zero_since,
             engine_capabilities=conn.engine_capabilities,
+            credential_health=CredentialHealthRead.of(conn),
         )
 
 

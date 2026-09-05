@@ -190,17 +190,47 @@ class QueueDepthRead(ApiModel):
     depth: int
 
 
+class CredentialHealthRead(ApiModel):
+    """One datasource connection's stored-credential health (#1697).
+
+    `status="unknown"` — never `healthy` — means the credential has not been used
+    since the signal shipped, so nothing has been observed about it. `failing` means
+    the datasource rejected it on its last use, and `last_error` is then the
+    classified, secret-free reason. Only credential REJECTIONS move this: a missing
+    grant, an unreachable host and a bad table name leave it untouched.
+
+    Derived from real work (runs, dry-runs, profiles, connection tests), not from a
+    periodic probe — so a connection nothing uses stays `unknown` indefinitely, which
+    is the honest answer rather than a reassuring one.
+    """
+
+    connection_id: UUID
+    name: str
+    type: str
+    env: str
+    status: Literal["healthy", "failing", "unknown"]
+    consecutive_auth_failures: int
+    last_auth_failure_at: datetime | None
+    last_auth_success_at: datetime | None
+    last_error: str | None
+
+
 class AdminHealthRead(ApiModel):
-    """Poll staleness + beat heartbeat + broker queue depth, in one page (#1885).
+    """Poll staleness + beat heartbeat + broker queue depth + datasource credential
+    health, in one page (#1885/#1697).
 
     `queues` is `null` — never a fake `0` — when the broker could not be reached;
     `queues_error` then carries the classified, secret-free reason.
+
+    `credentials` lists every DATASOURCE connection (orchestration providers are in
+    `polling` instead), worst status first.
     """
 
     polling: list[PollHealthRead]
     beat: BeatHealthRead
     queues: list[QueueDepthRead] | None
     queues_error: str | None
+    credentials: list[CredentialHealthRead]
     generated_at: datetime
 
 
@@ -250,8 +280,28 @@ def get_workspace_health(db: Annotated[Session, Depends(get_db)]) -> AdminHealth
         else None
     )
 
+    credentials = [
+        CredentialHealthRead(
+            connection_id=row.connection_id,
+            name=row.name,
+            type=row.type,
+            env=row.env,
+            status=row.status,
+            consecutive_auth_failures=row.consecutive_auth_failures,
+            last_auth_failure_at=row.last_auth_failure_at,
+            last_auth_success_at=row.last_auth_success_at,
+            last_error=row.last_error,
+        )
+        for row in workspace_health_service.list_credential_health(db)
+    ]
+
     return AdminHealthRead(
-        polling=polling, beat=beat, queues=queues, queues_error=queues_error, generated_at=now
+        polling=polling,
+        beat=beat,
+        queues=queues,
+        queues_error=queues_error,
+        credentials=credentials,
+        generated_at=now,
     )
 
 

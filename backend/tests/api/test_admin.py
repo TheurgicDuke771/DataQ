@@ -5,6 +5,7 @@ import ssl
 import time
 import uuid
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from email.message import EmailMessage
 from typing import Any, ClassVar
 
@@ -19,6 +20,7 @@ from backend.app.db.models import ORCHESTRATION_PROVIDERS, Check, Connection, Sh
 from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.app.services import admin_service, otp_service
+from backend.app.services.failure_classifier import AUTH_FAILURE_REASON
 from backend.tests.support.fake_secret_store import FakeSecretStore, override_secret_store
 
 
@@ -835,3 +837,113 @@ def test_admin_health_queue_depth_is_null_with_a_reason_when_broker_unreachable_
     body = resp.json()
     assert body["queues"] is None
     assert body["queues_error"] is not None and "redis" in body["queues_error"].lower()
+
+
+# ── datasource credential health (#1697) ─────────────────────────────────────
+
+
+def _health_datasource_connection(
+    db_session: Any,
+    owner: User,
+    *,
+    name: str,
+    consecutive_auth_failures: int = 0,
+    last_auth_success_at: datetime | None = None,
+    last_auth_failure_at: datetime | None = None,
+    last_auth_error: str | None = None,
+) -> Connection:
+    conn = Connection(
+        name=name,
+        type="snowflake",
+        env="dev",
+        config={},
+        secret_ref="ref",
+        created_by=owner.id,
+        consecutive_auth_failures=consecutive_auth_failures,
+        last_auth_success_at=last_auth_success_at,
+        last_auth_failure_at=last_auth_failure_at,
+        last_auth_error=last_auth_error,
+    )
+    db_session.add(conn)
+    db_session.commit()
+    return conn
+
+
+def test_admin_health_never_used_credential_reads_unknown_not_healthy(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The #828 rule at the route level: silence is not a clean bill of health."""
+    owner = _user(db_session, f"cred-unknown-{uuid.uuid4().hex[:6]}@x.io")
+    conn = _health_datasource_connection(db_session, owner, name=f"cu-{uuid.uuid4().hex[:6]}")
+    _grant_admin(monkeypatch)
+
+    resp = client.get("/api/v1/admin/health")
+
+    assert resp.status_code == 200
+    [row] = [r for r in resp.json()["credentials"] if r["connection_id"] == str(conn.id)]
+    assert row["status"] == "unknown"
+    assert row["last_auth_success_at"] is None
+    assert row["last_auth_failure_at"] is None
+    assert row["last_error"] is None
+
+
+def test_admin_health_rejected_credential_reads_failing_with_a_classified_reason(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    owner = _user(db_session, f"cred-fail-{uuid.uuid4().hex[:6]}@x.io")
+    moment = datetime.now(UTC)
+    conn = _health_datasource_connection(
+        db_session,
+        owner,
+        name=f"cf-{uuid.uuid4().hex[:6]}",
+        consecutive_auth_failures=3,
+        last_auth_failure_at=moment,
+        last_auth_error=AUTH_FAILURE_REASON,
+    )
+    _grant_admin(monkeypatch)
+
+    resp = client.get("/api/v1/admin/health")
+
+    assert resp.status_code == 200
+    [row] = [r for r in resp.json()["credentials"] if r["connection_id"] == str(conn.id)]
+    assert row["status"] == "failing"
+    assert row["consecutive_auth_failures"] == 3
+    assert row["last_error"] == AUTH_FAILURE_REASON
+
+
+def test_admin_health_orchestration_connections_are_not_in_credentials(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Their health is the poll signal; listing them twice would let two surfaces
+    disagree about one connection."""
+    owner = _user(db_session, f"cred-orch-{uuid.uuid4().hex[:6]}@x.io")
+    orch = _health_orch_connection(db_session, owner, last_polled_at=None)
+    _grant_admin(monkeypatch)
+
+    resp = client.get("/api/v1/admin/health")
+
+    ids = {r["connection_id"] for r in resp.json()["credentials"]}
+    assert str(orch.id) not in ids
+    assert str(orch.id) in {r["connection_id"] for r in resp.json()["polling"]}
+
+
+def test_admin_health_credentials_are_sorted_failing_first(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    owner = _user(db_session, f"cred-sort-{uuid.uuid4().hex[:6]}@x.io")
+    tag = uuid.uuid4().hex[:6]
+    healthy = _health_datasource_connection(
+        db_session, owner, name=f"aaa-{tag}", last_auth_success_at=datetime.now(UTC)
+    )
+    failing = _health_datasource_connection(
+        db_session, owner, name=f"zzz-{tag}", consecutive_auth_failures=1
+    )
+    _grant_admin(monkeypatch)
+
+    rows = client.get("/api/v1/admin/health").json()["credentials"]
+    ours = [r for r in rows if r["connection_id"] in {str(healthy.id), str(failing.id)}]
+
+    # Alphabetically `aaa` sorts first; the failing row must still lead, because an
+    # admin page is read top-down and the row needing action must not sit below one
+    # that does not.
+    assert [r["connection_id"] for r in ours] == [str(failing.id), str(healthy.id)]

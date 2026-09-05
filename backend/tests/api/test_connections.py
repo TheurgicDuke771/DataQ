@@ -16,6 +16,8 @@ from backend.app.db.models import Connection
 from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.app.services import connection_service as svc
+from backend.app.services import credential_health
+from backend.app.services.failure_classifier import AUTH_FAILURE_REASON
 from backend.tests.support.fake_secret_store import FakeSecretStore, override_secret_store
 
 _SF_CONFIG = {
@@ -868,3 +870,86 @@ def test_a_credential_with_no_stated_expiry_serves_null_not_a_guess(
     resp = api.post("/api/v1/connections", json=_create_payload())
     assert resp.status_code == 201
     assert resp.json()["credential_expires_at"] is None
+
+
+# ───────────── datasource credential health (#1697) ─────────────
+
+
+def test_list_reports_a_never_used_credential_as_unknown_never_healthy(
+    client: tuple[TestClient, FakeSecretStore],
+) -> None:
+    """A connection nothing has run against has been observed not at all — and the whole
+    point of the signal is that silence must not read as a clean bill of health (#828)."""
+    api, _ = client
+    api.post("/api/v1/connections", json=_create_payload(name="fresh"))
+
+    [row] = api.get("/api/v1/connections").json()
+
+    health = row["credential_health"]
+    assert health["status"] == "unknown"
+    assert health["consecutive_auth_failures"] == 0
+    assert health["last_auth_success_at"] is None
+    assert health["last_auth_failure_at"] is None
+    assert health["last_error"] is None
+
+
+def test_list_reports_a_rejected_credential_as_failing(
+    client: tuple[TestClient, FakeSecretStore], db_session: Any
+) -> None:
+    api, _ = client
+    created = api.post("/api/v1/connections", json=_create_payload(name="rotten")).json()
+    conn = db_session.get(Connection, uuid.UUID(created["id"]))
+    credential_health.record_credential_failure(
+        db_session,
+        connection_id=conn.id,
+        exc=RuntimeError("390100 (08004): Incorrect username or password was specified."),
+    )
+
+    [row] = api.get("/api/v1/connections").json()
+
+    health = row["credential_health"]
+    assert health["status"] == "failing"
+    assert health["consecutive_auth_failures"] == 1
+    # Classified, never the driver text — that can carry a DSN or token fragment.
+    assert health["last_error"] == AUTH_FAILURE_REASON
+    assert "390100" not in health["last_error"]
+
+
+def test_orchestration_connections_carry_no_credential_health(
+    client: tuple[TestClient, FakeSecretStore],
+) -> None:
+    """Null, not "healthy": their health is the poll signal, and inventing a second
+    reassuring one for them would let two surfaces disagree about one connection."""
+    api, _ = client
+    api.post("/api/v1/connections", json=_adf_payload())
+
+    [row] = api.get("/api/v1/connections").json()
+
+    assert row["type"] == "adf"
+    assert row["credential_health"] is None
+
+
+def test_a_passing_connection_test_stamps_success_immediately(
+    client: tuple[TestClient, FakeSecretStore],
+    db_session: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An admin who has just re-authenticated must see the badge clear on the same
+    request, not wait for the next scheduled run."""
+    api, _ = client
+    created = api.post("/api/v1/connections", json=_create_payload(name="rotated")).json()
+    conn = db_session.get(Connection, uuid.UUID(created["id"]))
+    credential_health.record_credential_failure(
+        db_session, connection_id=conn.id, exc=RuntimeError("http 401 unauthorized")
+    )
+    before = api.get("/api/v1/connections").json()[0]["credential_health"]
+    assert before["status"] == "failing"
+
+    monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _PassAdapter())
+    resp = api.post(f"/api/v1/connections/{conn.id}/test")
+
+    assert resp.status_code == 200
+    health = api.get("/api/v1/connections").json()[0]["credential_health"]
+    assert health["status"] == "healthy"
+    assert health["consecutive_auth_failures"] == 0
+    assert health["last_error"] is None
