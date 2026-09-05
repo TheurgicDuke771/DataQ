@@ -1,0 +1,197 @@
+ADR 43 - it still says proposed, what is pending?
+
+---
+
+continue with #1696 Overview page, #1698 write pass, #1888 guide growth
+
+---
+
+And #1693
+
+---
+
+`dev_bypass_allowed is still true` - it should not be, it should be off/disabled by default, should only be available in local *development* mode and no where else. 
+It should never surface for regular user [only for developers who is interested and explicitly opted for it.
+
+---
+
+<task-notification>
+<task-id>af79a85b37e9bbe7e</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/af79a85b37e9bbe7e.output</output-file>
+<status>completed</status>
+<summary>Agent "#1698 admin write pass" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>PR is open with CI running. Summary of what shipped and what I verified:
+
+**PR: https://github.com/TheurgicDuke771/DataQ/pull/1900** — `feat(admin): write pass — revoke any share, transfer ownership, admin delete with blast radius (#1698)`, milestone `v1.2 Week 7 — feature burn-down`, body carries `Fixes #1698` + `Refs #1888`. Not merged, `/code-review` not run (per instruction). 4 commits.
+
+**What it does** — three admin-scoped mutations in a new `backend/app/api/v1/admin_suites.py` (mounted next to the admin router), service logic in a new `backend/app/services/admin_suite_service.py`, UI in three new components under `frontend/src/pages/admin/`. `admin.py` took a one-field edit (`grant_id` on `AdminAccessRead`) and `AdminMembers.tsx` a two-line edit, to stay out of the parallel agents' way.
+
+- `DELETE /admin/suites/{id}/access/{grant_id}` — audited `suite_access.revoke` with `admin_override`; a real grant id under the wrong suite id is a 404, not a revoke of whatever the id names.
+- `POST /admin/suites/{id}/transfer` — viewer-as-owner 422, self-transfer 409, previous owner keeps `edit` (or `view` if they are a viewer — writing `edit` there would be a grant the ladder immediately clamps), the new owner's redundant share row is dropped, and `keep_previous_owner_access=false` also removes a pre-existing share. Suite and target-user rows read `FOR UPDATE`. Audited `suite.transfer` with both owners.
+- `DELETE /admin/suites/{id}` — reuses `suite_service.delete_suite` (one optional `audit_extra` kwarg, cascade untouched) and `deletion_impact`; audit carries `admin_override` + the counts. Modal states them and requires the suite name typed.
+
+**Verification** — full backend suite **6009 passed, 10 skipped, coverage 97.10%**; frontend **1311 passed**, coverage gate met (lines 90.48%); black/ruff/mypy/bandit(project config)/prettier/eslint/tsc clean; `mkdocs build --strict` clean; `openapi.json` regenerated. All three gates mutation-verified: removed, the six per-role probes go red on `assert 204 == 403` — the write actually executed — and the probes use real suites and real grants. Audit commit proven on a second connection (`backend/tests/db/test_admin_suite_write_persistence.py`).
+
+**Two things worth flagging.** A first full-suite run showed 93 failures; that was cross-agent contention on the shared `dataq_test` (teardown `DROP TABLE users` dependency errors) — re-running on a private database gave the clean result above. But one failure in it *was* mine and is fixed in its own commit: the repo's assert-hygiene guard caught `assert client.delete(...).status_code == 404`, where `python -O` would delete the assert and the request with it.
+
+**Skipped:** the two new Playwright specs in `frontend/e2e/admin.spec.ts` are unverified locally — this machine's stack runs email-OTP and the browser lane needs dev-bypass; the *pre-existing* admin specs fail identically here, so it's the environment, not the specs. They run in CI's `frontend-e2e` job. Both are self-contained (create their own suite and grant over the API, clean up after), so the delete only ever runs on a suite the spec made. `docs/progress.md` and `CLAUDE.md` left untouched as instructed.
+
+result: PR #1900 opened — admin can now revoke any per-suite share, transfer suite ownership and delete any suite, each audited with an override flag and guarded in the UI; full backend (6009 tests, 97.1% cov) and frontend (1311 tests) suites green.</result>
+<usage><subagent_tokens>363604</subagent_tokens><tool_uses>191</tool_uses><duration_ms>1580018</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-af79a85b37e9bbe7e</worktreePath><worktreeBranch>worktree-agent-af79a85b37e9bbe7e</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>af79a85b37e9bbe7e</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/af79a85b37e9bbe7e.output</output-file>
+<status>completed</status>
+<summary>Agent "#1698 admin write pass" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>That's a stale wait-loop notification from before the isolated-DB run finished — nothing new in it. The work is complete and already reported; PR #1900 is open with CI running.</result>
+<usage><subagent_tokens>361144</subagent_tokens><tool_uses>191</tool_uses><duration_ms>1618913</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-af79a85b37e9bbe7e</worktreePath><worktreeBranch>worktree-agent-af79a85b37e9bbe7e</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>af79a85b37e9bbe7e</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/af79a85b37e9bbe7e.output</output-file>
+<status>completed</status>
+<summary>Agent "#1698 admin write pass" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Waiting on CI for PR #1900 — I'll report the outcome, especially the Playwright job that covers the specs I couldn't run locally.</result>
+<usage><subagent_tokens>362506</subagent_tokens><tool_uses>193</tool_uses><duration_ms>1716616</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-af79a85b37e9bbe7e</worktreePath><worktreeBranch>worktree-agent-af79a85b37e9bbe7e</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>af79a85b37e9bbe7e</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/af79a85b37e9bbe7e.output</output-file>
+<status>completed</status>
+<summary>Agent "#1698 admin write pass" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Another stale wait-loop notification from the finished test run. Still waiting on the CI watcher for PR #1900.</result>
+<usage><subagent_tokens>362902</subagent_tokens><tool_uses>193</tool_uses><duration_ms>1720415</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-af79a85b37e9bbe7e</worktreePath><worktreeBranch>worktree-agent-af79a85b37e9bbe7e</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a69b9c6bfb5194766</task-id>
+<tool-use-id>toolu_018RU6WtPKJrmqLThwRTXGTh</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a69b9c6bfb5194766.output</output-file>
+<status>completed</status>
+<summary>Agent "#1696 admin Overview health page" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Sanity check done: 15 files, no CLAUDE.md or progress.md touched, all four commits conventional with the co-author trailer, and every CI check on the PR is green — including the Playwright lane I could not run locally.
+
+**PR:** https://github.com/TheurgicDuke771/DataQ/pull/1899 — `feat(admin): Overview — workspace health page (#1696)`, milestone "v1.2 Week 7 — feature burn-down", body carries `Fixes #1696` + `Refs #1888`. Not merged, no `/code-review` run (as instructed).
+
+What shipped, in four commits:
+- **`GET /admin/overview`** in `backend/app/api/v1/admin.py` (own section, router-gated admin-only): members, suites + distinct connections targeted, unresolved incidents with the acknowledged subset, runs since the UTC day start by status. `pending_first_signin` is `null` with `pending_source: "not_available"`, so the card renders an em dash rather than a fake 0. Plus the `rest-api.md` row, regenerated `openapi.json`, and a changelog Unreleased entry.
+- **The page** (`AdminOverview.tsx` + a pure `overviewSignals.ts`, a bounded `sweepPolling.ts`, and `useAuditChainVerify.ts` extracted from the compliance card so both share one state machine). Every signal row links to the fix; anything errored/`unknown`/`not_monitored`/`never_run` renders as unknown or not monitored with the classified reason, never healthy and never omitted. "Run sweep" POSTs then re-polls (10 × 3s) and falls back to an honest "queued, refresh later".
+- **Tests**: 16 new vitest cases (per-card healthy/degraded/not-monitored, error ≠ healthy, the re-poll *and* its queued fallback, no verify on mount, and that Overview calls only `/admin/overview` — not the member/suite listings); extended `e2e/admin.spec.ts`.
+- **Docs**: a full "Overview" section in `docs/site/guides/admin.md` explaining each card, each signal, and the difference between *unknown* (couldn't be read) and *not monitored* (observed nothing) — no `#NNNN` refs.
+
+Verification: backend full suite **5988 passed / 10 skipped, 97.1% coverage** (Black/Ruff/mypy/Bandit clean); frontend **1317 tests, 88.8% coverage**, lint/format/typecheck clean; `mkdocs build --strict` clean. All four count derivations were mutation-checked and each mutation killed exactly the test naming it.
+
+Two things worth flagging:
+- I could not run Playwright locally — the machine's `:3000` stack is the OTP local mirror on an older image without this page or the endpoint, so asserting against it would have proved nothing. CI's seeded dev-bypass lane ran the spec and passed.
+- The shared `dataq_test` database is in use by another agent right now; my first full backend run failed 37 tests on Postgres deadlocks (`DROP TABLE incidents` vs row locks). I re-ran on a private `dataq_test_1696` database — that's where the clean 5988 came from. Nothing to do with this branch, but worth knowing if another session sees the same.
+
+result: PR #1899 opened and fully CI-green — admin Overview workspace-health page (#1696): new admin-only `GET /admin/overview` counts endpoint plus the stat cards, needs-attention feed and health checklist, where every unreadable or never-observed signal renders as unknown/not monitored rather than healthy.</result>
+<usage><subagent_tokens>297051</subagent_tokens><tool_uses>97</tool_uses><duration_ms>1863761</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a69b9c6bfb5194766</worktreePath><worktreeBranch>worktree-agent-a69b9c6bfb5194766</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>af79a85b37e9bbe7e</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/af79a85b37e9bbe7e.output</output-file>
+<status>completed</status>
+<summary>Agent "#1698 admin write pass" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Stale notification again (leftover wait loops from the finished suite). Nothing to act on — the only live task is the CI watcher on PR #1900.</result>
+<usage><subagent_tokens>363328</subagent_tokens><tool_uses>193</tool_uses><duration_ms>1844874</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-af79a85b37e9bbe7e</worktreePath><worktreeBranch>worktree-agent-af79a85b37e9bbe7e</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>af79a85b37e9bbe7e</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/af79a85b37e9bbe7e.output</output-file>
+<status>completed</status>
+<summary>Agent "#1698 admin write pass" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Waiting on the final check.</result>
+<usage><subagent_tokens>364886</subagent_tokens><tool_uses>197</tool_uses><duration_ms>1890291</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-af79a85b37e9bbe7e</worktreePath><worktreeBranch>worktree-agent-af79a85b37e9bbe7e</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>af79a85b37e9bbe7e</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/af79a85b37e9bbe7e.output</output-file>
+<status>completed</status>
+<summary>Agent "#1698 admin write pass" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Full CI is green on PR #1900: 15/15 checks pass**, with only `deploy` skipping (expected — it's `workflow_dispatch`-gated, not a PR job).
+
+That closes the loop on the one gap I reported: the Playwright specs I couldn't run locally (this machine's stack is email-OTP, the browser lane needs dev-bypass) passed in CI against a real dev-bypass stack, and CI's backend job independently confirms the isolated-DB result I got here.
+
+Final state, unchanged otherwise: PR open, not merged, `/code-review` not run per instruction; `docs/progress.md` and `CLAUDE.md` untouched.
+
+result: PR #1900 open and fully green (15/15 CI checks) — admin can revoke any per-suite share, transfer suite ownership, and delete any suite, each audited with an override flag and each gate mutation-verified.</result>
+<usage><subagent_tokens>365650</subagent_tokens><tool_uses>198</tool_uses><duration_ms>1900251</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-af79a85b37e9bbe7e</worktreePath><worktreeBranch>worktree-agent-af79a85b37e9bbe7e</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>af79a85b37e9bbe7e</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/af79a85b37e9bbe7e.output</output-file>
+<status>completed</status>
+<summary>Agent "#1698 admin write pass" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>This is the earlier CI watcher completing — same result already reported (15/15 pass, `deploy` skipping). No further action; the task is finished and PR #1900 is green and awaiting review.</result>
+<usage><subagent_tokens>366164</subagent_tokens><tool_uses>198</tool_uses><duration_ms>1904282</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-af79a85b37e9bbe7e</worktreePath><worktreeBranch>worktree-agent-af79a85b37e9bbe7e</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>af79a85b37e9bbe7e</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/af79a85b37e9bbe7e.output</output-file>
+<status>completed</status>
+<summary>Agent "#1698 admin write pass" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Last stale wait-loop from the finished test suite draining. Nothing outstanding — PR #1900 is open, CI 15/15 green, work complete as reported.</result>
+<usage><subagent_tokens>366595</subagent_tokens><tool_uses>198</tool_uses><duration_ms>1932245</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-af79a85b37e9bbe7e</worktreePath><worktreeBranch>worktree-agent-af79a85b37e9bbe7e</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>af79a85b37e9bbe7e</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/af79a85b37e9bbe7e.output</output-file>
+<status>completed</status>
+<summary>Agent "#1698 admin write pass" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Another leftover wait loop draining. No action needed — the task is complete: PR #1900 open, CI 15/15 green, not merged, awaiting review.</result>
+<usage><subagent_tokens>367028</subagent_tokens><tool_uses>198</tool_uses><duration_ms>1954826</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-af79a85b37e9bbe7e</worktreePath><worktreeBranch>worktree-agent-af79a85b37e9bbe7e</worktreeBranch></worktree>
+</task-notification>
