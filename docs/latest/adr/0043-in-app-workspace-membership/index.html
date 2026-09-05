@@ -2310,6 +2310,43 @@
 <li><strong>Amends:</strong> ADR <a href="../0032-email-otp-signin/">0032</a> — the env sign-up allowlist stops being the whole member list and becomes a starting seed plus an emergency way back in. ADR <a href="../0033-workspace-roles-rbac/">0033</a> — the Admin page can now also decide <em>who is in</em>, not only what each person can do; no capability in its matrix changes.</li>
 <li><strong>Related:</strong> ADR <a href="../0026-auth-api-keys-and-principal-seam/">0026</a> (a PAT acts as its owner, so membership must be checked when the PAT is used, not only when it is created), <a href="../0027-suite-permission-model-workspace-admin/">0027</a> (per-suite sharing, unchanged), <a href="../0041-history-audit-strategy/">0041</a> (every change here is audited), <a href="../0010-provider-agnostic-infrastructure-seams/">0010</a> (we never read anything provider-specific).</li>
 </ul>
+<blockquote>
+<p><strong>Amended 2026-09-05, after the post-merge review of the build.</strong> Four decisions
+below were written before the code existed and the code disagreed with them in
+ways that mattered:</p>
+<ul>
+<li><strong>Decision 1</strong> — the one normalization rule now lives in <code>core/identity.py</code>,
+  not <code>otp_service.normalize_email</code>. It is shared by the auth seam, the OTP
+  service and the membership service, and a rule that lives inside one of its
+  callers cannot be shared without an import cycle.</li>
+<li><strong>Decision 3</strong> — the env grant is derived <em>inside</em> the predicate rather than
+  passed in by each door. Passing it made the grant-only rule a per-caller
+  decision, and two of the four callers passed <code>False</code>: an env-listed address
+  could sign in and then be refused on every following request. The predicate
+  now computes one tri-state — granted / denied / no allowlist — over the OTP
+  allowlist, the OIDC allowlist and <code>WORKSPACE_ADMIN_EMAILS</code>. Only allowlists
+  belonging to a mode the deployment actually runs can <em>deny</em>; an Azure-AD
+  workspace, which has no app-side allowlist, keeps exactly today's behaviour.</li>
+<li><strong>Decision 5</strong> — the exemption keys on <code>Settings.dev_bypass_active</code>, not
+  <code>dev_bypass_allowed</code>. The latter stays true beside email OTP, where the ladder
+  selects OTP and the bypass identity is never minted, so exempting on it would
+  switch the gate off on a real OTP deployment. This is why the narrowing
+  exists and belongs here rather than in a comment in the module.</li>
+<li><strong>Decision 8</strong> — the last-admin guard is <strong>cross-table</strong>. Guarding each table
+  on its own left a two-step gap: remove B's membership (A is still a stored
+  admin), then demote A (<code>users</code> still shows two), and nobody who can sign in is
+  an admin. One <code>admin_service.assert_admin_remains</code> counts admins who are
+  stored-role admins <strong>and</strong> still members, locking <code>users</code> before
+  <code>workspace_members</code>. The switch-on import additionally takes a transaction
+  advisory lock that concurrent sign-ins take shared, so it cannot read <code>users</code>
+  a moment before a first sign-in commits and leave that person unimported.</li>
+</ul>
+<p>One consequence to state plainly: <code>enforcement_active</code> (the table is non-empty)
+and <code>enforced</code> (a door is actually checking) are different questions, and under
+developer bypass the second is false. A missing <code>workspace_members</code> table — an
+image rolled ahead of its migration — reads as "not enforced" with a WARNING
+rather than raising, because an empty table means the same thing.</p>
+</blockquote>
 <h2 id="context">Context<a class="headerlink" href="#context" title="Permanent link">¶</a></h2>
 <p><strong>An admin cannot add a member today.</strong> A <code>users</code> row appears only when someone signs in for the first time, and who is allowed to sign in is set outside the app: <code>OIDC_ALLOWED_EMAILS</code>/<code>_DOMAINS</code> for generic OIDC, <code>AUTH_OTP_ALLOWED_EMAILS</code>/<code>_DOMAINS</code> for email OTP (there, the allowlist <em>is</em> the member list), and plain tenant membership for Azure AD, which has no app-side check at all. "Add Priya" means: edit env vars, restart, then wait until she signs in before you can even give her a role. ADR 0033 let admins manage the people already inside; nobody controls the door.</p>
 <p><strong>Removing someone works differently at each door, and you cannot see that.</strong> Checked against the code:</p>
@@ -2349,13 +2386,13 @@
 <h2 id="decision">Decision<a class="headerlink" href="#decision" title="Permanent link">¶</a></h2>
 <ol>
 <li>
-<p><strong>One new table, <code>workspace_members</code></strong>: <code>id</code>, <code>email</code> (normalized, unique on <code>lower(email)</code> like <code>uq_users_email_lower</code>; the one normalization rule is <code>otp_service.normalize_email</code>), <code>initial_role</code>, <code>source</code> (<code>admin</code> or <code>auto_import</code>, CHECK-constrained — see decision 8), <code>invited_by</code> (FK to <code>users.id</code>, null for imported rows), <code>created_at</code>. No FK to <code>users</code>: a member is admitted <strong>before</strong> a user row exists, and the row must survive the user leaving. Additive migration; <code>users</code> is untouched.</p>
+<p><strong>One new table, <code>workspace_members</code></strong>: <code>id</code>, <code>email</code> (normalized, unique on <code>lower(email)</code> like <code>uq_users_email_lower</code>; the one normalization rule is <code>core.identity.normalize_email</code>), <code>initial_role</code>, <code>source</code> (<code>admin</code> or <code>auto_import</code>, CHECK-constrained — see decision 8), <code>invited_by</code> (FK to <code>users.id</code>, null for imported rows), <code>created_at</code>. No FK to <code>users</code>: a member is admitted <strong>before</strong> a user row exists, and the row must survive the user leaving. Additive migration; <code>users</code> is untouched.</p>
 </li>
 <li>
 <p><strong>Admin add/remove at <code>/admin/members</code></strong>, behind the existing admin role gate, audited (<code>workspace_member.add</code> / <code>.remove</code> with actor and before/after). Logs carry counts, domains and digests, never a bare email address — the same rule the OTP code already follows.</p>
 </li>
 <li>
-<p><strong>The switch is whether the table is empty. There is no flag.</strong> <strong>Empty table ⇒ exactly today's behaviour</strong> for every auth mode, so an upgrade changes nothing and locks nobody out. <strong>Non-empty table ⇒ a person is a member if they are in the env allowlist OR in the table</strong>, checked on every request. A separate flag was rejected because a flag and the data can disagree, and nobody notices when they do.</p>
+<p><strong>The switch is whether the table is empty. There is no flag.</strong> <strong>Empty table ⇒ exactly today's behaviour</strong> for every auth mode, so an upgrade changes nothing and locks nobody out. <strong>Non-empty table ⇒ a person is a member if they are in the env allowlist OR in the table</strong>, checked on every request. The env half is computed by the predicate itself, never handed to it by a door — see the amendment above. A separate flag was rejected because a flag and the data can disagree, and nobody notices when they do.</p>
 </li>
 <li>
 <p><strong>Four places to enforce it, one per credential kind:</strong></p>
@@ -2368,7 +2405,7 @@
 <p><strong>The HTTP status differs by door, and pretending otherwise would be wrong.</strong> On REST it is <strong>403 with a membership reason</strong>, as the OIDC sign-up gate already does: the credential itself is valid, and a 401 would send the SPA round the sign-in loop for ever. At <code>/mcp</code> it is <strong>401</strong>, because <code>_PatOrJwtVerifier.verify_token</code> swallows the resolver's error and returns nothing, which FastMCP reports as "not authenticated". Changing that verifier is <strong>out of scope</strong>; this is recorded so it is not a surprise. On both doors the <em>reason</em> goes in the audit log, which is where an operator answers "why did their PAT stop working?".</p>
 <ol>
 <li>
-<p><strong>Dev-bypass is exempt, and the exemption lives inside the check.</strong> <code>_upsert_user</code> is also how the dev-bypass user is created, on REST and on MCP. A blanket gate there would make the local and eval stacks unbootable. The exemption keys on <code>_dev_bypass_allowed(settings)</code> — the same test the auth-mode ladder uses — not on comparing against <code>DEV_BYPASS_EMAIL</code>, which an attacker on a real deployment could send.</p>
+<p><strong>Dev-bypass is exempt, and the exemption lives inside the check.</strong> <code>_upsert_user</code> is also how the dev-bypass user is created, on REST and on MCP. A blanket gate there would make the local and eval stacks unbootable. The exemption keys on <code>Settings.dev_bypass_active</code> — the mode the auth ladder actually selected — not on comparing against <code>DEV_BYPASS_EMAIL</code>, which an attacker on a real deployment could send, and not on <code>dev_bypass_allowed</code>, which stays true beside email OTP.</p>
 </li>
 <li>
 <p><strong>The check normalizes the email itself.</strong> The generic-OIDC path normalizes before calling <code>_upsert_user</code>; the Azure REST and MCP paths pass <code>preferred_username</code> / <code>upn</code> / <code>email</code> through as-is. A lookup on a <code>lower(email)</code> index that trusts its caller would admit or refuse people based on letter case. Normalize at the check.</p>
@@ -2381,7 +2418,7 @@
 <ol>
 <li><strong>Three guards against locking the workspace out of itself.</strong></li>
 <li><strong>The first row written imports every existing <code>users</code> row as a member, in the same transaction, marked as provisional.</strong> Turning enforcement on can never throw out a current user. It is part of the first insert, not a migration or a background job, otherwise it is a race. But <strong>the import is a safety net, not proof that those people belong</strong>: nothing deletes <code>users</code> rows today, so it re-admits everyone who ever signed in, including someone who left and still holds a PAT. So imported rows get <code>source = 'auto_import'</code> (a deliberate add gets <code>'admin'</code>), the Members page shows them under a <strong>"review imported members"</strong> banner until an admin confirms or removes each one, and the count is shown at switch-on. Filtering the import by <code>last_seen_at</code> was rejected: a quiet current member and a departed one look the same by that signal, and a safety net that guesses is not a safety net. <strong>Importing everyone and flagging them is safe in the direction that matters</strong> — too many <em>provisional</em> members is visible and one click from correct; too few silently locks a real member out.</li>
-<li><strong>Removing the last admin-role member is refused</strong>, like the existing last-admin guard on role changes: decide from a <code>SELECT … FOR UPDATE</code> lock, count <strong>stored-role</strong> admins only (an allowlist admin can disappear on the next deploy, so it cannot be what keeps the workspace recoverable).</li>
+<li><strong>Removing the last admin-role member is refused</strong> by the SAME guard the role editor uses, over both tables: decide from a <code>SELECT … FOR UPDATE</code> lock on <code>users</code> then <code>workspace_members</code>, count <strong>stored-role</strong> admins who are still members (an allowlist admin can disappear on the next deploy, so it cannot be what keeps the workspace recoverable). Two guards, one per table, leave a two-step gap.</li>
 <li>
 <p><strong>Removing yourself needs an explicit confirmation</strong> — allowed, since an admin may be leaving after a handover, but never as a quiet click.</p>
 </li>
