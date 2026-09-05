@@ -740,3 +740,164 @@ class TestNearMissWriteReadRoundTrip:
         actual = {(r.provider, r.pipeline_or_dag_id, r.run_env, r.binding_env) for r in records}
         assert actual == expected
         assert actual.isdisjoint(forbidden)
+
+
+# ── #1885: admin health read API — poll staleness, beat heartbeat, queue depth ──
+
+
+class TestPollHealthStatus:
+    """Pure-function derivation — mirrors `evaluate_poll_staleness`'s #828 honesty rule."""
+
+    def test_never_polled_is_unknown_not_healthy(self) -> None:
+        assert (
+            svc.poll_health_status(last_success_at=None, now=NOW, threshold_seconds=1800)
+            == "unknown"
+        )
+
+    def test_recent_poll_is_on_cadence(self) -> None:
+        assert (
+            svc.poll_health_status(
+                last_success_at=NOW - timedelta(minutes=5), now=NOW, threshold_seconds=1800
+            )
+            == "on_cadence"
+        )
+
+    def test_poll_older_than_threshold_is_stalled(self) -> None:
+        assert (
+            svc.poll_health_status(
+                last_success_at=NOW - timedelta(hours=2), now=NOW, threshold_seconds=1800
+            )
+            == "stalled"
+        )
+
+    def test_disabled_threshold_never_stalls(self) -> None:
+        assert (
+            svc.poll_health_status(
+                last_success_at=NOW - timedelta(days=30), now=NOW, threshold_seconds=0
+            )
+            == "on_cadence"
+        )
+
+
+class TestBeatHealthStatus:
+    def test_never_ticked_is_not_monitored_not_healthy(self) -> None:
+        assert svc.beat_health_status(None, now=NOW, stale_after_s=600) == "not_monitored"
+
+    def test_recent_tick_is_alive(self) -> None:
+        assert (
+            svc.beat_health_status(NOW - timedelta(seconds=30), now=NOW, stale_after_s=600)
+            == "alive"
+        )
+
+    def test_old_tick_is_stale(self) -> None:
+        assert (
+            svc.beat_health_status(NOW - timedelta(hours=1), now=NOW, stale_after_s=600) == "stale"
+        )
+
+
+class TestListPollHealth:
+    def test_never_polled_connection_reads_unknown(self, db_session: Any) -> None:
+        _orch_connection(db_session, last_polled_at=None)
+        rows = svc.list_poll_health(db_session, now=NOW)
+        assert len(rows) == 1
+        assert rows[0].status == "unknown"
+        assert rows[0].last_success_at is None
+        assert rows[0].next_expected_at is None
+        assert rows[0].cadence_seconds > 0
+
+    def test_recently_polled_connection_reads_on_cadence_with_next_expected(
+        self, db_session: Any
+    ) -> None:
+        conn = _orch_connection(db_session, last_polled_at=NOW - timedelta(minutes=1))
+        rows = svc.list_poll_health(db_session, now=NOW)
+        assert rows[0].connection_id == conn.id
+        assert rows[0].status == "on_cadence"
+        last_success_at = rows[0].last_success_at
+        assert last_success_at is not None
+        assert rows[0].next_expected_at == last_success_at + timedelta(
+            seconds=rows[0].cadence_seconds
+        )
+
+    def test_stalled_connection_reads_stalled(self, db_session: Any) -> None:
+        _orch_connection(db_session, last_polled_at=NOW - timedelta(hours=3))
+        rows = svc.list_poll_health(db_session, now=NOW)
+        assert rows[0].status == "stalled"
+
+    def test_a_datasource_connection_is_not_included(self, db_session: Any) -> None:
+        conn = Connection(
+            name=f"snowflake-{uuid.uuid4().hex[:8]}",
+            type="snowflake",
+            env="dev",
+            config={"account": "ACCT"},
+            secret_ref="ref",
+            created_by=_user(db_session).id,
+        )
+        db_session.add(conn)
+        db_session.commit()
+        assert svc.list_poll_health(db_session, now=NOW) == []
+
+
+class TestBeatHeartbeatRecordRead:
+    def test_never_recorded_reads_none(self, db_session: Any) -> None:
+        assert svc.read_beat_heartbeat(db_session) is None
+
+    def test_record_then_read_round_trips(self, db_session: Any) -> None:
+        svc.record_beat_heartbeat(db_session)
+        tick = svc.read_beat_heartbeat(db_session)
+        assert tick is not None
+
+    def test_recording_twice_upserts_one_row_not_two(self, db_session: Any) -> None:
+        svc.record_beat_heartbeat(db_session)
+        svc.record_beat_heartbeat(db_session)
+        rows = db_session.scalars(
+            select(WorkspaceHealth).where(WorkspaceHealth.key == svc.BEAT_HEARTBEAT_KEY)
+        ).all()
+        assert len(rows) == 1
+
+    def test_recording_again_moves_the_timestamp_forward(self, db_session: Any) -> None:
+        svc.record_beat_heartbeat(db_session)
+        first = svc.read_beat_heartbeat(db_session)
+        assert first is not None
+        row = db_session.get(WorkspaceHealth, svc.BEAT_HEARTBEAT_KEY)
+        assert row is not None
+        row.updated_at = NOW - timedelta(hours=1)
+        db_session.commit()
+        svc.record_beat_heartbeat(db_session)
+        second = svc.read_beat_heartbeat(db_session)
+        assert second is not None and second > NOW - timedelta(hours=1)
+
+
+class _FakeRedisClient:
+    def __init__(self, depths: dict[str, int]) -> None:
+        self._depths = depths
+
+    def llen(self, name: str) -> int:
+        return self._depths[name]
+
+
+class _BrokenRedisClient:
+    def llen(self, name: str) -> int:
+        raise ConnectionError("Error 111 connecting to redis:6379. Connection refused.")
+
+
+class TestBrokerQueueDepths:
+    def test_reads_depth_per_queue(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import redis
+
+        monkeypatch.setattr(
+            redis, "from_url", lambda *a, **kw: _FakeRedisClient({"celery": 3, "llm": 0})
+        )
+        depths, error = svc.broker_queue_depths("redis://x", ("celery", "llm"))
+        assert error is None
+        assert depths is not None
+        assert {(d.name, d.depth) for d in depths} == {("celery", 3), ("llm", 0)}
+
+    def test_unreachable_broker_returns_none_and_a_classified_reason_never_a_500(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import redis
+
+        monkeypatch.setattr(redis, "from_url", lambda *a, **kw: _BrokenRedisClient())
+        depths, error = svc.broker_queue_depths("redis://x", ("celery", "llm"))
+        assert depths is None
+        assert error is not None and "redis" in error.lower()

@@ -27,8 +27,10 @@ from backend.app.services import (
     audit_service,
     data_subject_requests,
     llm_service,
+    workspace_health_service,
 )
 from backend.app.services.otp_mailer import OtpMailer
+from backend.app.worker.celery_app import MONITORED_QUEUE_NAMES
 
 router = APIRouter(
     prefix="/admin",
@@ -149,6 +151,101 @@ def orchestration_webhooks(
     # and never logged. Base URL: the configured public host, else the request's.
     base_url = get_settings().public_base_url or str(request.base_url)
     return svc.webhook_configs(db, base_url=base_url, secret_store=secret_store)
+
+
+# ──────────────────── workspace health (#1885) ────────────────────
+
+
+class PollHealthRead(ApiModel):
+    """One orchestration connection's poll staleness. `status="unknown"` — never
+    healthy — means the connection has no recorded successful poll at all (#828).
+    """
+
+    connection_id: UUID
+    name: str
+    provider: str
+    last_success_at: datetime | None
+    cadence_seconds: int
+    next_expected_at: datetime | None
+    status: Literal["on_cadence", "stalled", "unknown"]
+
+
+class BeatHealthRead(ApiModel):
+    """The beat→broker→worker heartbeat. `status="not_monitored"` means the heartbeat
+    task has never recorded a tick — not the same as `alive`.
+    """
+
+    last_tick_at: datetime | None
+    status: Literal["alive", "stale", "not_monitored"]
+
+
+class QueueDepthRead(ApiModel):
+    name: str
+    depth: int
+
+
+class AdminHealthRead(ApiModel):
+    """Poll staleness + beat heartbeat + broker queue depth, in one page (#1885).
+
+    `queues` is `null` — never a fake `0` — when the broker could not be reached;
+    `queues_error` then carries the classified, secret-free reason.
+    """
+
+    polling: list[PollHealthRead]
+    beat: BeatHealthRead
+    queues: list[QueueDepthRead] | None
+    queues_error: str | None
+    generated_at: datetime
+
+
+@router.get(
+    "/health",
+    response_model=AdminHealthRead,
+    summary="Workspace health — poll staleness, beat heartbeat, queue depth (admin)",
+)
+def get_workspace_health(db: Annotated[Session, Depends(get_db)]) -> AdminHealthRead:
+    """The signal behind the Overview 'Needs attention' feed and the Integrations
+    'Polling health' table (#1696/#1701, epic #1702) — nothing here is derived from a
+    per-connection setting DataQ doesn't have: cadence is the fixed workspace-wide
+    poll schedule, and every status honestly distinguishes "never observed" from
+    "healthy".
+    """
+    now = datetime.now(UTC)
+    settings = get_settings()
+
+    polling = [
+        PollHealthRead(
+            connection_id=row.connection_id,
+            name=row.name,
+            provider=row.provider,
+            last_success_at=row.last_success_at,
+            cadence_seconds=row.cadence_seconds,
+            next_expected_at=row.next_expected_at,
+            status=row.status,
+        )
+        for row in workspace_health_service.list_poll_health(db, now=now)
+    ]
+
+    last_tick = workspace_health_service.read_beat_heartbeat(db)
+    beat = BeatHealthRead(
+        last_tick_at=last_tick,
+        status=workspace_health_service.beat_health_status(
+            last_tick, now=now, stale_after_s=settings.beat_watchdog_stale_after_s
+        ),
+    )
+
+    queue_rows, queues_error = workspace_health_service.broker_queue_depths(
+        settings.redis_url, MONITORED_QUEUE_NAMES
+    )
+    queues = (
+        [QueueDepthRead(name=q.name, depth=q.depth) for q in queue_rows]
+        if queue_rows is not None
+        else None
+    )
+
+    return AdminHealthRead(
+        polling=polling, beat=beat, queues=queues, queues_error=queues_error, generated_at=now
+    )
 
 
 class AuthEmailTestResponse(ApiModel):
