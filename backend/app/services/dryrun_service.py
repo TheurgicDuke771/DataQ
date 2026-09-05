@@ -9,7 +9,6 @@ from typing import Any, cast
 
 from sqlalchemy.orm import Session
 
-from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.jsonsafe import sanitize_json
 from backend.app.core.logging import get_logger
@@ -24,7 +23,7 @@ from backend.app.datasources.registry import (
 )
 from backend.app.datasources.sql import strip_statement_echo
 from backend.app.db.models import GX_ENGINE, Connection
-from backend.app.services import credential_health, run_target
+from backend.app.services import credential_health, privacy_settings_service, run_target
 from backend.app.services.check_service import (
     reject_thresholds_on_unbanded,
     validate_engine,
@@ -85,6 +84,9 @@ def dry_run_check(
     """Run one check against the suite's run ``target`` and return a preview."""
     # Credential-health seam (#1697) — every dry-run branch below (GX, native engine,
     # schema_drift, anomaly) opens the datasource with this connection's stored credential.
+    # The EFFECTIVE zero-sample state (#1887) — a preview must hide exactly what the
+    # persisted path would refuse to write, so both read the one resolver.
+    zero_sample = privacy_settings_service.zero_sample_mode(session)
     with credential_health.credential_use(session, connection):
         # #568: a preview must never accept a threshold set that a save would reject — same shared
         # validator create_check/update_check use.
@@ -248,7 +250,7 @@ def dry_run_check(
                 observed = sanitize_json(check_outcome.observed_value)
                 # Zero-sample mode (#1676): a preview must not show a live row-level value the
                 # persisted path would never write, regardless of the suite's column policy.
-                if get_settings().privacy_zero_sample_mode:
+                if zero_sample:
                     observed = _strip_row_level_observed_value(
                         observed, expectation_type=expectation_type
                     )

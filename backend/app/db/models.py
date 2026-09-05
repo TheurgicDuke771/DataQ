@@ -1188,6 +1188,29 @@ class AuditChainState(Base):
     updated_at: Mapped[datetime] = _updated_at()
 
 
+class PrivacySetting(Base):
+    """The workspace's zero-sample privacy switch (#1887). One row, the
+    `AuditChainState` idiom.
+
+    `PRIVACY_ZERO_SAMPLE_MODE` stays the fail-safe floor: the effective value is
+    the env OR this row, resolved by `privacy_settings_service.zero_sample_mode`,
+    so an env `true` can never be turned off from the UI.
+    """
+
+    __tablename__ = "privacy_settings"
+
+    #: Always 1 — singleton, checked at query time like `AuditChainState.id`.
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    zero_sample_mode: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    #: SET NULL: the setting outlives the admin who changed it (the #1319 rule).
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    updated_at: Mapped[datetime] = _updated_at()
+
+
 class AuditChainCheckpoint(Base):
     """One row per retention-sweep purge (#1460) — the documented explanation for
     the chain discontinuity a purge necessarily creates at its tail. Verification

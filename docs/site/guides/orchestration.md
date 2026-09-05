@@ -60,7 +60,9 @@ Registering any connection — orchestration providers included — is **Admin-o
   cadence, so a build is still recorded even if the callback never fires. Grain is
   **job-level** (one `pipeline_run` per dbt job build).
 
-Store the HMAC signing key as the `dbt-webhook-secret` in DataQ's secret store; the webhook
+Rotate any provider's webhook secret or signing key from **Admin → Integrations**: the new
+value is shown once, and the old one keeps working for a short grace window so the provider
+side can be updated first. Store the HMAC signing key as the `dbt-webhook-secret` in DataQ's secret store; the webhook
 URL is shown in **Admin → Integrations** like the others.
 
 ### Lineage from `manifest.json` (ADR 0034)

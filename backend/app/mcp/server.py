@@ -76,6 +76,7 @@ from backend.app.services import (
     live_probe,
     notification_service,
     orchestration_service,
+    privacy_settings_service,
     profile_service,
     rollup,
     run_dispatch,
@@ -390,6 +391,8 @@ def _run_results_payload(
     # needs both as of THIS result.
     engine_by_result = run_service.historical_check_engine(session, results, checks)
     kind_by_result = run_service.historical_check_kind(session, results, checks)
+    # Resolved once per tool call (#1887), not per result.
+    zero_sample_mode = privacy_settings_service.zero_sample_mode(session)
 
     def _tested_column(result_id: uuid.UUID) -> str | None:
         return context.get(result_id, (None, None))[0]
@@ -407,6 +410,7 @@ def _run_results_payload(
                 tags,
                 check_kind=kind_by_result.get(r.id),
                 engine=engine_by_result.get(r.id, GX_ENGINE),
+                zero_sample_mode=zero_sample_mode,
             ),
             "observed_value": run_service.redact_observed_value(
                 r.observed_value,
@@ -529,6 +533,7 @@ def _redacted_sample(
     *,
     check_kind: str | None = None,
     engine: str = GX_ENGINE,
+    zero_sample_mode: bool,
 ) -> dict[str, Any]:
     """The failing-row sample plus **how much of it was masked** (#424/#1115).
 
@@ -545,7 +550,10 @@ def _redacted_sample(
     nothing true to claim either way.
     """
     zero_sample = run_service.zero_sample_suppressed(
-        status=result.status, check_kind=check_kind, engine=engine
+        status=result.status,
+        check_kind=check_kind,
+        engine=engine,
+        zero_sample_mode=zero_sample_mode,
     )
     sample, state, redacted_columns = run_service.redact_sample_failures_with_state(
         result.sample_failures,

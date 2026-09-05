@@ -207,48 +207,68 @@ def sync_asset_inventory(session: Session, *, secret_store: SecretStore) -> int:
     )
     total = 0
     for connection_id, connection_type in targets:
-        connection = session.get(Connection, connection_id)
-        if connection is None:  # deleted since the snapshot — nothing to sync or stamp
-            log.info("inventory_sync_connection_vanished", connection_id=str(connection_id))
-            continue
-        now = datetime.now(UTC)
-        try:
-            synced = sync_connection_inventory(
-                session, connection=connection, secret_store=secret_store
-            )
-        except Exception as exc:
-            _safe_rollback(session)
-            # Classify the ROOT cause; the enumeration wrapper is a phase marker
-            # that carries no message of its own.
-            during_enumeration = isinstance(exc, InventorySyncEnumerationError)
-            root = exc.__cause__ if during_enumeration and exc.__cause__ is not None else exc
-            reason = classify_inventory_sync_error(
-                root, connection_type, during_enumeration=during_enumeration
-            )
-            log.warning(
-                "inventory_sync_connection_failed",
-                connection_id=str(connection_id),
-                connection_type=connection_type,
-                reason=reason,
-                during_enumeration=during_enumeration,
-                exc_info=True,
-            )
-            _record_sync_outcome(
-                session,
-                connection_id=connection_id,
-                connection_type=connection_type,
-                attempted_at=now,
-                reason=reason,
-                table_count=None,  # the attempt never produced a count — leave it be
-            )
-        else:
-            total += synced
-            _record_sync_outcome(
-                session,
-                connection_id=connection_id,
-                connection_type=connection_type,
-                attempted_at=now,
-                reason=None,
-                table_count=synced,
-            )
+        total += sync_and_record(
+            session,
+            connection_id=connection_id,
+            connection_type=connection_type,
+            secret_store=secret_store,
+        )
     return total
+
+
+def sync_and_record(
+    session: Session,
+    *,
+    connection_id: uuid.UUID,
+    connection_type: str,
+    secret_store: SecretStore,
+) -> int:
+    """Sync ONE connection and stamp its outcome; the tables synced, 0 on failure.
+
+    The sweep's per-connection body, so the admin "Run now" (#1701) records the same
+    bookkeeping the nightly beat does rather than a second, divergent copy.
+    """
+    connection = session.get(Connection, connection_id)
+    if connection is None:  # deleted since the snapshot — nothing to sync or stamp
+        log.info("inventory_sync_connection_vanished", connection_id=str(connection_id))
+        return 0
+    now = datetime.now(UTC)
+    try:
+        synced = sync_connection_inventory(
+            session, connection=connection, secret_store=secret_store
+        )
+    except Exception as exc:
+        _safe_rollback(session)
+        # Classify the ROOT cause; the enumeration wrapper is a phase marker
+        # that carries no message of its own.
+        during_enumeration = isinstance(exc, InventorySyncEnumerationError)
+        root = exc.__cause__ if during_enumeration and exc.__cause__ is not None else exc
+        reason = classify_inventory_sync_error(
+            root, connection_type, during_enumeration=during_enumeration
+        )
+        log.warning(
+            "inventory_sync_connection_failed",
+            connection_id=str(connection_id),
+            connection_type=connection_type,
+            reason=reason,
+            during_enumeration=during_enumeration,
+            exc_info=True,
+        )
+        _record_sync_outcome(
+            session,
+            connection_id=connection_id,
+            connection_type=connection_type,
+            attempted_at=now,
+            reason=reason,
+            table_count=None,  # the attempt never produced a count — leave it be
+        )
+        return 0
+    _record_sync_outcome(
+        session,
+        connection_id=connection_id,
+        connection_type=connection_type,
+        attempted_at=now,
+        reason=None,
+        table_count=synced,
+    )
+    return synced

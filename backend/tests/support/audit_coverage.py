@@ -92,10 +92,21 @@ AUDITED: Final[dict[tuple[str, str], str]] = {
     # ── The outbound-LLM provider config (ADR 0042) — what model the workspace's
     # data-adjacent context is sent to is among the highest-value config events.
     ("PUT", "/api/v1/admin/llm"): "llm_setting.update",
+    ("PUT", "/api/v1/admin/privacy"): "privacy_setting.update",
     # ── The orphan-secret sweep "run now" (#1886) — an admin-triggered ops action
     # over the secret store, worth a trail even though it enqueues rather than
     # configures anything.
     ("POST", "/api/v1/admin/secret-sweep/run"): "secret_sweep.run",
+    # ── Integrations (#1701). The regeneration replaces a live inbound credential;
+    # poll-now and the inventory run are admin-triggered ops actions over stored
+    # connections, and the toggle rides the ordinary connection-update audit.
+    (
+        "POST",
+        "/api/v1/admin/orchestration/webhooks/{provider}/regenerate",
+    ): "orchestration_webhook.regenerate",
+    ("POST", "/api/v1/admin/orchestration/poll-now"): "orchestration_poll.request",
+    ("PATCH", "/api/v1/admin/inventory-sync/{connection_id}"): "connection.update",
+    ("POST", "/api/v1/admin/inventory-sync/{connection_id}/run"): "inventory_sync.run",
 }
 
 #: Routes that must NOT record a config event, each with the reason.

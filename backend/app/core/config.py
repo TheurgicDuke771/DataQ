@@ -106,6 +106,12 @@ class Settings(BaseSettings):
     # monitor "provoking cell" (`unparsed_value`, #989) at write time, so every
     # downstream reader (results API, alerts, MCP) inherits the suppression for
     # free rather than needing its own gate.
+    #
+    # This is the FAIL-SAFE FLOOR, not the whole answer (#1887): the effective
+    # state is this OR the `privacy_settings` row, so a deployment can pin the
+    # mode on here and an admin can additionally turn it on from the app, but
+    # never off. Read it through `privacy_settings_service.zero_sample_mode`,
+    # never directly — a test enforces that.
     privacy_zero_sample_mode: bool = False
 
     # Audit-log retention (ADR 0041 §2.7).
@@ -271,6 +277,9 @@ class Settings(BaseSettings):
     adf_webhook_secret_name: str = "adf-webhook-secret"  # noqa: S105 — KV key name, not a secret
     airflow_webhook_secret_name: str = "airflow-webhook-secret"  # noqa: S105 — KV key name
     dbt_webhook_secret_name: str = "dbt-webhook-secret"  # noqa: S105 — KV key name
+    # How long a REGENERATED webhook secret's previous value keeps working (#1701), so the
+    # provider-side update is not a race. 0 revokes the old value immediately.
+    webhook_secret_grace_minutes: int = 15
 
     # SecretStore key for the workspace Teams webhook URL (token-bearing, so it lives in the
     # SecretStore).

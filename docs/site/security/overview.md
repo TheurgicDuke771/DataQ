@@ -257,11 +257,14 @@ DataQ runs checks *against* your data; it is **not** a copy of your data. What i
   step past redaction: no failing-row sample is ever **persisted** at all — not full, not
   redacted — only aggregates (`metric_value`, unexpected counts/percents). It gates the one
   write-path choke point every check kind funnels through, so results, alerts and MCP all
-  inherit the suppression from what's actually in the database. `GET /admin/deployment`
-  reports whether it's on. **Both the api and the worker process must be restarted** after
-  changing this setting — each process caches its own config, so a rolling restart that
-  updates only one can leave the reported posture and the worker's actual behavior
-  disagreeing until the second process comes back up.
+  inherit the suppression from what's actually in the database. It is also a workspace
+  setting: an admin can turn it on from **Admin → Settings → Privacy & failing samples**,
+  and the change applies on the next run with no restart, because every sample writer reads
+  one resolver per request. The environment variable is the floor, not the whole answer —
+  the effective state is the env value OR the stored toggle, so a deployment that pins it
+  on in the environment cannot be turned off from the app (the toggle is shown pinned).
+  `GET /admin/deployment` reports the effective value and which of the two turned it on.
+  Turning it on does not delete samples already stored; the retention sweep does.
 - **Logs & traces** are PII-redacted at the logger level, and secret values never enter them.
 
 ## Retention

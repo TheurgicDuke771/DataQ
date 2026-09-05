@@ -14,7 +14,7 @@ from backend.app.api.v1._base import ApiModel
 from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
-from backend.app.core.secrets import SecretNotFoundError, SecretStore, get_secret_store
+from backend.app.core.secrets import SecretStore, get_secret_store
 from backend.app.db.session import get_db
 from backend.app.orchestration.base import (
     AlertPing,
@@ -23,6 +23,7 @@ from backend.app.orchestration.base import (
     WebhookAuthDescriptor,
 )
 from backend.app.orchestration.registry import get_orchestration_provider
+from backend.app.services import webhook_secret_service
 from backend.app.services.orchestration_service import ingest_event, request_immediate_poll
 
 log = get_logger(__name__)
@@ -77,24 +78,35 @@ async def _ack_event(
     )
 
 
-def _resolve_webhook_secret(descriptor: WebhookAuthDescriptor, secret_store: SecretStore) -> str:
+def _resolve_webhook_secrets(
+    descriptor: WebhookAuthDescriptor, secret_store: SecretStore
+) -> list[str]:
+    """Every secret this receiver accepts: the current one, plus a regenerated
+    secret's predecessor while it is inside its grace window (#1701).
+    """
     secret_name = descriptor.secret_name(get_settings())
-    try:
-        return secret_store.get(secret_name)
-    except SecretNotFoundError as exc:
+    secrets_ = webhook_secret_service.acceptable_secrets(secret_store, secret_name)
+    if not secrets_:
         # Receiver secret not provisioned — operator error, not a caller error.
         log.error("orchestration_webhook_secret_missing", secret_name=secret_name)
-        raise WebhookNotConfiguredError("webhook receiver is not configured") from exc
+        raise WebhookNotConfiguredError("webhook receiver is not configured")
+    return secrets_
 
 
 def _authenticate_url_token(
     token: str | None, descriptor: WebhookAuthDescriptor, secret_store: SecretStore
 ) -> None:
     """Constant-time shared-secret check (ADR 0006). The token is never logged."""
-    secret = _resolve_webhook_secret(descriptor, secret_store)
+    candidates = _resolve_webhook_secrets(descriptor, secret_store)
     # Compare on UTF-8 bytes: hmac.compare_digest rejects non-ASCII str inputs
     # with a TypeError, so a caller-supplied non-ASCII token must not reach it.
-    if not token or not hmac.compare_digest(token.encode("utf-8"), secret.encode("utf-8")):
+    supplied = (token or "").encode("utf-8")
+    # Every candidate is compared, with no early exit, so the answer costs the same
+    # whether the current secret or the grace-window one matched.
+    matched = False
+    for secret in candidates:
+        matched |= hmac.compare_digest(supplied, secret.encode("utf-8"))
+    if not token or not matched:
         log.warning("orchestration_webhook_auth_failed", token_present=bool(token))
         raise WebhookAuthError("invalid or missing webhook token")
 
@@ -133,13 +145,15 @@ def _authenticate_hmac(
     secret_store: SecretStore,
 ) -> None:
     """Verify the HMAC-SHA256 over the raw body against the signature header."""
-    key = _resolve_webhook_secret(descriptor, secret_store)
-    expected = hmac.new(key.encode("utf-8"), body, hashlib.sha256).hexdigest()
+    keys = _resolve_webhook_secrets(descriptor, secret_store)
     # Compare on UTF-8 bytes: hmac.compare_digest raises TypeError on non-ASCII str, so a caller-
     # supplied non-ASCII signature must not reach it as str (else 500 instead of 401).
-    if not signature or not hmac.compare_digest(
-        signature.encode("utf-8"), expected.encode("utf-8")
-    ):
+    supplied = (signature or "").encode("utf-8")
+    matched = False
+    for key in keys:
+        expected = hmac.new(key.encode("utf-8"), body, hashlib.sha256).hexdigest()
+        matched |= hmac.compare_digest(supplied, expected.encode("utf-8"))
+    if not signature or not matched:
         log.warning("orchestration_webhook_auth_failed", signature_present=bool(signature))
         raise WebhookAuthError("invalid or missing webhook signature")
 

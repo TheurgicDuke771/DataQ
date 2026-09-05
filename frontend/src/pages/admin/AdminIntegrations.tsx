@@ -5,12 +5,27 @@ import { useState } from 'react';
 import { type AdminWebhook, listAdminWebhooks } from '../../api/admin';
 import { PROVIDER_CALLBACK_NOUNS, PROVIDER_LABELS } from '../../api/triggerBindings';
 import { useAsyncData } from '../../hooks/useAsyncData';
+import {
+  InventorySyncSection,
+  PollingHealthSection,
+  RegenerateSecretButton,
+} from './IntegrationsPanels';
 
 /**
  * Inbound orchestration-webhook URLs (#490) — one copy-paste target per orchestration provider
  * (ADF / Airflow / dbt) to notify DataQ on pipeline completion.
  */
 export function AdminIntegrations() {
+  return (
+    <Flex vertical gap={16}>
+      <WebhooksCard />
+      <PollingHealthSection />
+      <InventorySyncSection />
+    </Flex>
+  );
+}
+
+function WebhooksCard() {
   const { state } = useAsyncData(listAdminWebhooks);
   return (
     <Card title="Inbound webhooks (orchestration)" size="small">
@@ -65,6 +80,7 @@ function WebhookRow({ webhook }: { webhook: AdminWebhook }) {
           {!webhook.token_configured && <Tag color="error">webhook secret not set</Tag>}
         </Flex>
       }
+      extra={<RegenerateSecretButton webhook={webhook} />}
     >
       <Flex vertical gap={8}>
         <Flex align="center" gap={8}>

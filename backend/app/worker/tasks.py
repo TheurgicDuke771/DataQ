@@ -869,6 +869,33 @@ def sync_asset_inventory() -> int:
         session.close()
 
 
+@celery_app.task(name="sync_connection_asset_inventory")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
+def sync_connection_asset_inventory(connection_id: str) -> int:
+    """One connection's inventory sync, on demand (#1701 admin "Run now").
+
+    Runs whether or not the connection is opted in — the admin asked for THIS
+    connection, and the opt-in gate governs the unattended sweep.
+    """
+    import uuid as _uuid
+
+    from backend.app.services import inventory_service
+
+    session = get_session()
+    try:
+        connection = session.get(Connection, _uuid.UUID(connection_id))
+        if connection is None:
+            log.info("inventory_sync_connection_vanished", connection_id=connection_id)
+            return 0
+        return inventory_service.sync_and_record(
+            session,
+            connection_id=connection.id,
+            connection_type=connection.type,
+            secret_store=get_secret_store(),
+        )
+    finally:
+        session.close()
+
+
 @celery_app.task(name="sweep_orphan_assets")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
 def sweep_orphan_assets() -> int:
     """Delete unreferenced, stale `assets` rows (#770, ADR 0034). Returns the count."""

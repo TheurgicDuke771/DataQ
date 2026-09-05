@@ -5,6 +5,12 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ## Unreleased
 
+### Added
+
+- **Zero-sample mode is a workspace setting.** Admin → Settings → Privacy & failing samples
+  turns it on without a restart; the environment variable stays the floor and cannot be
+  turned off from the app. `GET /admin/deployment` now says which of the two is in force.
+
 ### Changed
 
 - ⚠️ **Every DataQ user signs in.** The local stack has one sign-in mode, emailed
@@ -26,6 +32,10 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Added
 
+- **Admin → Integrations is an operations page.** Regenerate any provider's webhook secret
+  or signing key (shown once; the previous value keeps working for a short grace window),
+  see per-connection polling health with **Poll all now**, and turn warehouse inventory
+  sync on or off per connection with **Run now**.
 - **Admins can now operate the workspace, not just observe it.** **Admin → Members**
   gains **Revoke** on any per-suite access grant — previously only a suite's own owner
   could remove a share, so cleaning up after a departure meant first being granted access

@@ -337,19 +337,26 @@ class IngestResult:
     triggered_runs: list[Run] = field(default_factory=list)
 
 
-def request_immediate_poll(provider: str, resource_name: str | None) -> bool:
-    """Poll-now for run-anonymous alert webhooks (`AlertPing`, #492)."""
+def dispatch_immediate_poll(provider: str, resource_name: str | None) -> str | None:
+    """Enqueue one poll-now sweep; returns the Celery task id, or `None` when the
+    broker refused it — a caller must not report a poll that was never queued.
+    """
     from backend.app.worker.celery_app import celery_app
 
     try:
-        celery_app.send_task(
+        result = celery_app.send_task(
             "poll_orchestration_runs",
             kwargs={"provider": provider, "resource_name": resource_name},
         )
     except Exception:
         log.exception("orchestration_immediate_poll_dispatch_failed", provider=provider)
-        return False
-    return True
+        return None
+    return str(getattr(result, "id", None) or "")
+
+
+def request_immediate_poll(provider: str, resource_name: str | None) -> bool:
+    """Poll-now for run-anonymous alert webhooks (`AlertPing`, #492)."""
+    return dispatch_immediate_poll(provider, resource_name) is not None
 
 
 def ingest_event(
