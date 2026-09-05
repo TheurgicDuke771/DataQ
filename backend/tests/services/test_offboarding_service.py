@@ -27,7 +27,7 @@ from backend.app.db.models import (
     UserSession,
     WorkspaceMember,
 )
-from backend.app.services import offboarding_service
+from backend.app.services import membership_service, offboarding_service
 
 
 def _user(session: Any, role: str = "member") -> User:
@@ -166,10 +166,14 @@ class _Fixture:
         own `drop_all` — then wait on forever.
         """
         with SASession(bind=self.engine) as other:
+            suite = other.get(Suite, self.suite_id)
+            key = other.get(ApiKey, self.key_id)
+            row = other.get(UserSession, self.session_id)
+            assert suite is not None and key is not None and row is not None
             snapshot = {
-                "suite_owner": other.get(Suite, self.suite_id).created_by,
-                "key_revoked": other.get(ApiKey, self.key_id).revoked_at is not None,
-                "session_revoked": other.get(UserSession, self.session_id).revoked_at is not None,
+                "suite_owner": suite.created_by,
+                "key_revoked": key.revoked_at is not None,
+                "session_revoked": row.revoked_at is not None,
                 "member_present": other.get(WorkspaceMember, self.member_id) is not None,
                 "offboard_events": len(
                     other.scalars(
@@ -273,7 +277,7 @@ def test_a_failure_after_the_transfers_takes_them_back_too(
     def _boom(*_args: Any, **_kwargs: Any) -> None:
         raise RuntimeError("membership backend is down")
 
-    monkeypatch.setattr(offboarding_service.membership_service, "remove_member", _boom)
+    monkeypatch.setattr(membership_service, "remove_member", _boom)
 
     with pytest.raises(RuntimeError, match="membership backend is down"):
         offboarding_service.offboard(
