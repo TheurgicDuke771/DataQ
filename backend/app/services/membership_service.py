@@ -12,7 +12,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import exists, func, inspect, select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError, ProgrammingError
 from sqlalchemy.orm import Session
 
@@ -29,6 +29,12 @@ from backend.app.db.models import (
     WorkspaceMember,
 )
 from backend.app.services import audit_service
+from backend.app.services.membership_guard import (
+    RoleChangeRejectedError,
+    _table_missing,
+    assert_admin_remains,
+)
+from backend.app.services.membership_guard import enforcement_active as enforcement_active
 
 log = get_logger(__name__)
 
@@ -126,31 +132,6 @@ def env_allowed_domains(settings: Settings | None = None) -> tuple[str, ...]:
 
 
 # ── The predicate every door reads ────────────────────────────────────────────
-
-
-def _table_missing(db: Session, exc: ProgrammingError) -> bool:
-    """Whether the failure was `workspace_members` not existing yet."""
-    db.rollback()
-    bind = db.get_bind()
-    try:
-        return not inspect(bind).has_table(WorkspaceMember.__tablename__)
-    except Exception:  # pragma: no cover — the catalog read itself failed
-        return False
-
-
-def enforcement_active(db: Session, /) -> bool:
-    """Whether any managed member exists — the switch itself (decision 3).
-
-    A missing table reads as "not enforced" — what an empty one means — so an
-    image rolled ahead of its migration does not 500 every request.
-    """
-    try:
-        return bool(db.execute(select(exists().select_from(WorkspaceMember))).scalar())
-    except ProgrammingError as exc:
-        if not _table_missing(db, exc):
-            raise
-        log.warning("membership_table_missing", effect="membership is not enforced")
-        return False
 
 
 def _row_for(db: Session, normalized: str) -> WorkspaceMember | None:
@@ -518,9 +499,6 @@ def remove_member(
             "resend with confirm_self=true if you mean it",
             detail={"member_id": str(member_id)},
         )
-
-    # Local import: `admin_service` reaches `core.auth`, which imports this module.
-    from backend.app.services.admin_service import RoleChangeRejectedError, assert_admin_remains
 
     # Only an admin's membership can breach the invariant; only it pays the locks.
     if _stored_role(db, normalized) == ADMIN_ROLE:

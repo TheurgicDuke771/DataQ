@@ -8,6 +8,7 @@ a sweep built on one passes with the gate deleted.
 from __future__ import annotations
 
 import inspect
+import operator
 import uuid
 from typing import Annotated, Any
 
@@ -270,7 +271,7 @@ async def test_the_same_pat_is_refused_at_the_mcp_verifier(
     resolver's DataQError and returns None, which fastmcp renders as an auth
     failure. ADR 0043 decision 4 records that asymmetry rather than hiding it.
     """
-    import backend.app.db.session as db_session_mod
+    from backend.app.db import session as db_session_mod
 
     monkeypatch.setattr(auth_mod, "_settings", _OIDC)
     monkeypatch.setattr(db_session_mod, "SessionLocal", lambda: db_session)
@@ -436,7 +437,7 @@ def test_an_env_listed_address_keeps_a_working_PAT_on_rest_and_mcp(
     """Under OTP a PAT is the ONLY /mcp credential, so refusing it here removed
     that deployment's whole AI surface for an admitted address.
     """
-    import backend.app.db.session as db_session_mod
+    from backend.app.db import session as db_session_mod
 
     monkeypatch.setattr(auth_mod, "_settings", _OTP)
     monkeypatch.setattr(db_session_mod, "SessionLocal", lambda: db_session)
@@ -456,7 +457,7 @@ def test_an_env_listed_address_keeps_a_working_PAT_on_rest_and_mcp(
 async def test_the_env_listed_PAT_also_passes_the_mcp_verifier(
     db_session: Any, monkeypatch: pytest.MonkeyPatch, otp_env: None
 ) -> None:
-    import backend.app.db.session as db_session_mod
+    from backend.app.db import session as db_session_mod
 
     monkeypatch.setattr(auth_mod, "_settings", _OTP)
     monkeypatch.setattr(db_session_mod, "SessionLocal", lambda: db_session)
@@ -564,7 +565,7 @@ def test_every_credential_kind_and_surface_has_a_declared_door() -> None:
     assert surfaces_covered(doors) == set(SURFACES)
 
 
-@pytest.mark.parametrize("door", _doors(), ids=lambda d: d.name)
+@pytest.mark.parametrize("door", _doors(), ids=operator.attrgetter("name"))
 def test_every_declared_door_refuses_a_removed_member(
     door: Door, db_session: Any, monkeypatch: pytest.MonkeyPatch, enforcing_env: None
 ) -> None:
