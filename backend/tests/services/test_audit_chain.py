@@ -8,13 +8,12 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 import pytest
-from sqlalchemy import Table, create_engine, text
-from sqlalchemy.exc import ProgrammingError
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy import Table
+from sqlalchemy.orm import Session
 
-from backend.app.db.models import AuditChainCheckpoint, AuditChainState, AuditEvent, Base, User
+from backend.app.db.models import AuditChainCheckpoint, AuditChainState, AuditEvent, User
 from backend.app.services import audit_chain, audit_service
-from backend.tests.conftest import TEST_DATABASE_URL
+from backend.tests.support.scratch_db import scratch_session as _scratch_session
 
 _SCRATCH_DB = "dataq_audit_chain_scratch"
 
@@ -29,40 +28,14 @@ def scratch_session() -> Iterator[Session]:
     isolated from what these tests assert about a dangling pointer, rather
     than compounding it.
     """
-    if not TEST_DATABASE_URL:
-        pytest.skip("needs TEST_DATABASE_URL")
-    admin = create_engine(TEST_DATABASE_URL, isolation_level="AUTOCOMMIT")
-    try:
-        with admin.connect() as conn:
-            try:
-                conn.execute(text(f'DROP DATABASE IF EXISTS "{_SCRATCH_DB}"'))
-                conn.execute(text(f'CREATE DATABASE "{_SCRATCH_DB}"'))
-            except ProgrammingError as exc:  # pragma: no cover - permission-dependent
-                pytest.skip(f"cannot create a scratch database: {exc}")
-    finally:
-        admin.dispose()
-
-    url = TEST_DATABASE_URL.rsplit("/", 1)[0]
-    engine = create_engine(f"{url}/{_SCRATCH_DB}")
-    try:
-        tables = [
-            cast(Table, User.__table__),
-            cast(Table, AuditEvent.__table__),
-            cast(Table, AuditChainState.__table__),
-            cast(Table, AuditChainCheckpoint.__table__),
-        ]
-        Base.metadata.create_all(engine, tables=tables)
-        session = sessionmaker(bind=engine)()
-        try:
-            yield session
-        finally:
-            session.close()
-    finally:
-        engine.dispose()
-        admin = create_engine(TEST_DATABASE_URL, isolation_level="AUTOCOMMIT")
-        with admin.connect() as conn:
-            conn.execute(text(f'DROP DATABASE IF EXISTS "{_SCRATCH_DB}"'))
-        admin.dispose()
+    tables = [
+        cast(Table, User.__table__),
+        cast(Table, AuditEvent.__table__),
+        cast(Table, AuditChainState.__table__),
+        cast(Table, AuditChainCheckpoint.__table__),
+    ]
+    with _scratch_session(_SCRATCH_DB, tables=tables) as session:
+        yield session
 
 
 def _record(session: Any, *, suffix: str = "") -> AuditEvent:

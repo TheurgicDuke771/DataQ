@@ -33,6 +33,14 @@ export async function probeSession(): Promise<MeResponse | null> {
   }
 }
 
+/** The backend error-envelope `code`, when the response carried one. */
+export function codeOf(err: unknown): string | undefined {
+  const data = (err as { response?: { data?: { error?: { code?: unknown } } } } | undefined)
+    ?.response?.data;
+  const code = data?.error?.code;
+  return typeof code === 'string' ? code : undefined;
+}
+
 /** The HTTP status of an axios-shaped error, or undefined if it has none. */
 export function statusOf(err: unknown): number | undefined {
   const response = (err as { response?: { status?: number } } | undefined)?.response;

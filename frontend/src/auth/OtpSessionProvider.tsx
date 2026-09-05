@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import type { MeResponse } from '../api/me';
-import { endSession, probeSession } from './otpClient';
+import { codeOf, endSession, probeSession } from './otpClient';
 import { authMode } from './config';
 import { OtpSessionContext, type OtpSession, type OtpSessionState } from './otpSessionContext';
 import { onSessionInvalidated } from './sessionEvents';
@@ -27,7 +27,7 @@ function ActiveOtpSessionProvider({ children }: { children: ReactNode }) {
       .catch((err: unknown) => {
         if (cancelled) return;
         // Deliberately NOT collapsed into signed_out — see probeSession().
-        setState({ status: 'error', message: messageOf(err) });
+        setState({ status: 'error', message: messageOf(err), code: codeOf(err) });
       });
     return () => {
       cancelled = true;
