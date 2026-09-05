@@ -291,19 +291,27 @@ def deletion_impact(session: Session, suite_id: uuid.UUID) -> dict[str, int]:
 
 
 def delete_suite(
-    session: Session, suite_id: uuid.UUID, *, actor_id: uuid.UUID | None = None
+    session: Session,
+    suite_id: uuid.UUID,
+    *,
+    actor_id: uuid.UUID | None = None,
+    audit_extra: dict[str, Any] | None = None,
 ) -> None:
-    """Delete a suite; its checks cascade (Suite.checks delete-orphan + FK)."""
+    """Delete a suite; its checks cascade (Suite.checks delete-orphan + FK).
+    `audit_extra` becomes the event's `after` payload (the admin path records the
+    override flag and the blast radius the cascade destroyed).
+    """
     suite = get_suite(session, suite_id)
     audit_before = audit_service.snapshot("suite", suite)
     session.delete(suite)
-    audit_service.record_entity_change(
+    audit_service.record(
         session,
         action="suite.delete",
         entity_type="suite",
-        entity=None,
+        entity_id=suite_id,
         actor=actor_id,
         before=audit_before,
+        after=audit_extra,
     )
     session.commit()
     log.info("suite_deleted", suite_id=str(suite_id))

@@ -6,6 +6,7 @@ import { type AdminAccess, type AdminUser, listAdminAccess, listAdminUsers } fro
 import { RoleEditor } from '../../components/admin/RoleEditor';
 import { formatTimestamp } from '../../components/results/resultsFormat';
 import { type AsyncState, useAsyncData } from '../../hooks/useAsyncData';
+import { AccessGrantActions } from './AccessGrantActions';
 import { MembershipPanel } from './MembershipPanel';
 import { DataTable, Identity, Section } from './parts';
 
@@ -33,7 +34,7 @@ export function AdminMembers() {
       <Section title="Access grants">
         <DataTable
           state={access.state}
-          columns={ACCESS_COLUMNS}
+          columns={accessColumns(access.reload)}
           // A user appears once per suite (owner or a single share row).
           rowKey={(a) => `${a.suite_id}:${a.user_id}`}
           errorMessage="Failed to load access overview"
@@ -80,7 +81,7 @@ const PERMISSION_COLORS: Record<string, string> = {
   view: 'default',
 };
 
-const ACCESS_COLUMNS: ColumnsType<AdminAccess> = [
+const accessColumns = (onRevoked: () => void): ColumnsType<AdminAccess> => [
   { title: 'Suite', dataIndex: 'suite_name' },
   {
     title: 'User',
@@ -91,5 +92,10 @@ const ACCESS_COLUMNS: ColumnsType<AdminAccess> = [
     title: 'Permission',
     dataIndex: 'permission',
     render: (p: string) => <Tag color={PERMISSION_COLORS[p] ?? 'default'}>{p}</Tag>,
+  },
+  {
+    title: 'Actions',
+    key: 'actions',
+    render: (_, a) => <AccessGrantActions grant={a} onRevoked={onRevoked} />,
   },
 ];

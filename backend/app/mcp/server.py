@@ -177,7 +177,7 @@ def _require_role(user: User, minimum: str) -> None:
     *resource*; this gates *a capability the workspace grants at all*, and the
     two compose rather than substitute. Most MCP tools need only the resource
     gate — `require_permission` already caps a Viewer at `view`
-    (`_cap_for_viewer`), so every `minimum="edit"` tool refuses a Viewer without
+    (`cap_for_viewer`), so every `minimum="edit"` tool refuses a Viewer without
     a role check. This function is for the capabilities that are **not**
     suite-scoped and therefore have no resource ladder to ride: probing a
     connection, and creating a suite from an imported document.
