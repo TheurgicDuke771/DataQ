@@ -84,6 +84,7 @@ AUDITED: Final[dict[tuple[str, str], str]] = {
     # ── The outbound-LLM provider config (ADR 0042) — what model the workspace's
     # data-adjacent context is sent to is among the highest-value config events.
     ("PUT", "/api/v1/admin/llm"): "llm_setting.update",
+    ("PUT", "/api/v1/admin/privacy"): "privacy_setting.update",
     # ── The orphan-secret sweep "run now" (#1886) — an admin-triggered ops action
     # over the secret store, worth a trail even though it enqueues rather than
     # configures anything.

@@ -34,6 +34,7 @@ from backend.app.services import (
     audit_service,
     data_subject_requests,
     llm_service,
+    privacy_settings_service,
     run_dispatch,
     secret_sweep_service,
     workspace_health_service,
@@ -827,8 +828,14 @@ class DeploymentPostureRead(ApiModel):
     region: str | None
     #: Zero-sample privacy mode (#1676): when True, no failing-row sample is ever
     #: persisted anywhere in this deployment — aggregates/metric_value/unexpected-counts
-    #: only, across results, alerts and MCP.
+    #: only, across results, alerts and MCP. This is the EFFECTIVE value (#1887):
+    #: the environment floor OR the workspace setting.
     zero_sample_mode: bool
+    #: Which of the two turned it on — `env` (pinned by PRIVACY_ZERO_SAMPLE_MODE and
+    #: not switchable in the app), `db` (the admin toggle) or `off`. An auditor
+    #: reading `zero_sample_mode` alone cannot tell a pinned deployment from one
+    #: an admin can flip back at any moment.
+    zero_sample_source: Literal["env", "db", "off"]
     #: Ways data can leave that jurisdiction, each with whether it is live here.
     external_transfers: list[ExternalTransfer]
 
@@ -924,7 +931,7 @@ def get_deployment_posture(db: Annotated[Session, Depends(get_db)]) -> Deploymen
             )
         )
     )
-    zero_sample = settings.privacy_zero_sample_mode
+    zero_sample = privacy_settings_service.zero_sample_mode(db)
     transfers = [
         ExternalTransfer(
             name="alert_delivery",
@@ -1011,6 +1018,7 @@ def get_deployment_posture(db: Annotated[Session, Depends(get_db)]) -> Deploymen
     return DeploymentPostureRead(
         region=settings.deployment_region or None,
         zero_sample_mode=zero_sample,
+        zero_sample_source=privacy_settings_service.source(db),
         external_transfers=transfers,
     )
 

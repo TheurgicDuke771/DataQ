@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.v1 import admin as admin_router
 from backend.app.api.v1 import admin_members as admin_members_router
+from backend.app.api.v1 import admin_privacy as admin_privacy_router
 from backend.app.api.v1 import api_keys as api_keys_router
 from backend.app.api.v1 import assets as assets_router
 from backend.app.api.v1 import auth_otp as auth_otp_router
@@ -230,6 +231,7 @@ app.include_router(orchestration_router.router, prefix="/api/v1")
 app.include_router(trigger_bindings_router.router, prefix="/api/v1")
 app.include_router(admin_router.router, prefix="/api/v1")
 app.include_router(admin_members_router.router, prefix="/api/v1")
+app.include_router(admin_privacy_router.router, prefix="/api/v1")
 app.include_router(assets_router.router, prefix="/api/v1")
 app.include_router(incidents_router.router, prefix="/api/v1")
 app.include_router(llm_router.router, prefix="/api/v1")
