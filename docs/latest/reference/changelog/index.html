@@ -2401,7 +2401,23 @@ the per-PR history lives in the repo's commit log and pull requests.</p>
 <h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">¶</a></h3>
 <ul>
 <li>
-<p><strong>Admin → Overview is now a workspace-health page.</strong> Four counts — members, suites
+<p><strong>Workspace membership is managed in the app.</strong> <strong>Admin → Members</strong> gains an
+  <strong>Add member</strong> dialog (email plus an optional initial role) and per-row removal,
+  so admitting or removing somebody no longer means editing deployment config and
+  restarting. Removal takes effect on that person's <strong>next request</strong> for every
+  credential kind — an identity-provider sign-in, a live browser session, and every
+  API key they hold — which closes a gap where a departed member's API key kept
+  working indefinitely. Adding a member does not create an account at your identity
+  provider; that stays a prerequisite, and the dialog says so.</p>
+<p>⚠️ <strong>Adding the first member turns enforcement on for the whole workspace.</strong>
+Until then nothing changes: who may sign in is decided entirely by your existing
+allowlist settings. The first add also admits every existing user in the same
+transaction, so nobody signed in is evicted — those rows are flagged under a
+<strong>review imported members</strong> banner to confirm or remove, because a user record
+proves somebody signed in once, not that they still belong. The allowlist
+settings stay available as grant-only break-glass. See the
+<a href="../../guides/admin/">admin control centre guide</a>.
+- <strong>Admin → Overview is now a workspace-health page.</strong> Four counts — members, suites
   (and the distinct connections they target), open incidents with the acknowledged
   subset, and today's runs by status over the UTC day — above a <strong>needs-attention</strong>
   feed and a <strong>workspace-health</strong> checklist covering the audit chain, the scheduler

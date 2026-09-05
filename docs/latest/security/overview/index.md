@@ -125,6 +125,14 @@ are the reason this mode is opt-in rather than the default:
 - **Per-suite authorization.** Access is granted per suite (**view / edit**); a caller only
   ever sees suites they own or are shared on. There are no ambient "see everything" reads
   except the Admin role below.
+- **Workspace membership decides who is in at all.** An Admin admits and removes addresses
+  in **Admin → Members**. While that list is empty nothing changes: who may sign in is
+  decided entirely by the allowlist settings below, exactly as before. Once it is
+  non-empty, a person is admitted if the list names them **or** an allowlist does — the
+  allowlists are grant-only and can never remove somebody the list admits. Removing a
+  member takes effect on their **next request** for every credential kind: an identity
+  provider sign-in, a live browser session, and **every API key they hold**. Membership
+  does not create accounts at your identity provider; that stays a prerequisite.
 - **Workspace roles — Admin / Member / Viewer.** A stored `users.role` (ADR 0033), not just
   an env allowlist. **Admin** has workspace-wide visibility over every suite, its results,
   and schedules, and is the *only* role that can create, edit, delete or re-auth a

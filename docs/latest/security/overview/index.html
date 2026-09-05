@@ -3077,6 +3077,14 @@ are the reason this mode is opt-in rather than the default:</p>
   ever sees suites they own or are shared on. There are no ambient "see everything" reads
   except the Admin role below.</p>
 </li>
+<li><strong>Workspace membership decides who is in at all.</strong> An Admin admits and removes addresses
+  in <strong>Admin → Members</strong>. While that list is empty nothing changes: who may sign in is
+  decided entirely by the allowlist settings below, exactly as before. Once it is
+  non-empty, a person is admitted if the list names them <strong>or</strong> an allowlist does — the
+  allowlists are grant-only and can never remove somebody the list admits. Removing a
+  member takes effect on their <strong>next request</strong> for every credential kind: an identity
+  provider sign-in, a live browser session, and <strong>every API key they hold</strong>. Membership
+  does not create accounts at your identity provider; that stays a prerequisite.</li>
 <li><strong>Workspace roles — Admin / Member / Viewer.</strong> A stored <code>users.role</code> (ADR 0033), not just
   an env allowlist. <strong>Admin</strong> has workspace-wide visibility over every suite, its results,
   and schedules, and is the <em>only</em> role that can create, edit, delete or re-auth a

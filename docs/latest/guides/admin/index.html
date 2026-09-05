@@ -1197,6 +1197,78 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#members" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Members
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Members">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#adding-a-member" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding a member
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-enforcement-switch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The enforcement switch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#review-imported-members" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Review imported members
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#removing-a-member" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Removing a member
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#seed-and-emergency-access" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Seed and emergency access
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#compliance" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2500,6 +2572,78 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#members" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Members
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Members">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#adding-a-member" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding a member
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-enforcement-switch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The enforcement switch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#review-imported-members" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Review imported members
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#removing-a-member" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Removing a member
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#seed-and-emergency-access" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Seed and emergency access
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#compliance" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2773,6 +2917,86 @@ Anything not in that checklist is unmonitored, not clear.</p>
 <p>Either way the row is <strong>still shown</strong>. A signal that cannot answer is listed with its
 reason rather than dropped, so the page never answers "is anything wrong?" with silence it
 has not earned.</p>
+<h2 id="members">Members<a class="headerlink" href="#members" title="Permanent link">¶</a></h2>
+<p>The Members tab manages two different things, and it helps to keep them apart:</p>
+<ul>
+<li><strong>Workspace membership</strong> — <em>who is allowed into this workspace at all.</em></li>
+<li><strong>Roles and access grants</strong> — <em>what someone who is already in can do.</em></li>
+</ul>
+<h3 id="adding-a-member">Adding a member<a class="headerlink" href="#adding-a-member" title="Permanent link">¶</a></h3>
+<p><strong>Add member</strong> admits an email address. It does <strong>not</strong> create an account anywhere. If
+your deployment signs people in through an identity provider, that account is still a
+prerequisite: create it there first, or the person will have nothing to sign in with. The
+add dialog says so in those modes.</p>
+<p>You can also set an <strong>initial role</strong> at the same time, so somebody arrives as a Viewer or
+an Admin instead of the default. That role is applied <strong>once</strong>, when their user record is
+first created at their first sign-in. After that the role editor in the members table is
+authoritative, and signing in again never overwrites a role you changed in the app.</p>
+<p>A member who has been added but has never signed in shows as <strong>pending first sign-in</strong>.
+That is a normal state, not a failure.</p>
+<h3 id="the-enforcement-switch">The enforcement switch<a class="headerlink" href="#the-enforcement-switch" title="Permanent link">¶</a></h3>
+<p>Membership enforcement is <strong>off</strong> while the member list is empty, and turning it on is an
+explicit act: <strong>adding the first member turns it on.</strong> Until then, who may sign in is
+decided entirely by your deployment's allowlist settings, exactly as it was before this
+feature existed. An empty members list therefore means <em>enforcement is off</em>, not <em>nobody
+has access</em> — the page says which.</p>
+<p>Once the list is non-empty, a person may sign in if they are <strong>either</strong> on the member list
+<strong>or</strong> named by the deployment allowlist. Those settings are grant-only: they can admit
+somebody the list does not name, and they can never remove somebody the list does. The
+practical consequence is that <strong>removing an address your deployment config lists still
+takes a config edit and a restart</strong> — so seed the minimum there and add the rest in the
+app.</p>
+<h3 id="review-imported-members">Review imported members<a class="headerlink" href="#review-imported-members" title="Permanent link">¶</a></h3>
+<p>Turning enforcement on can never evict somebody who is signed in right now. The first add
+therefore admits <strong>every existing user</strong> in the same transaction, and the dialog states the
+count before you commit to it.</p>
+<p>Those rows are marked as imported and gathered under a <strong>review imported members</strong> banner,
+because a user record proves somebody signed in once — not that they still belong here.
+Nothing deletes user records, so the import re-admits everyone who ever signed in,
+including people who left. Work through the banner and <strong>Confirm</strong> or <strong>Remove</strong> each row.
+Confirming grants nothing new; it records that an admin looked at the row and meant to keep
+it.</p>
+<h3 id="removing-a-member">Removing a member<a class="headerlink" href="#removing-a-member" title="Permanent link">¶</a></h3>
+<p>Removal takes effect on that person's <strong>next request</strong>, whatever credential they are
+holding:</p>
+<ul>
+<li>their browser session stops resolving, even though it has not expired;</li>
+<li><strong>every API key they own stops working</strong>, without anyone revoking a token;</li>
+<li>a sign-in attempt is refused rather than re-provisioning them.</li>
+</ul>
+<p>Two guards apply. You cannot remove the <strong>last Admin</strong> — promote somebody else first, or
+the workspace would have nobody who can manage it. And removing <strong>your own</strong> membership
+asks for an extra confirmation, because it signs you out and only another admin can add you
+back.</p>
+<h3 id="seed-and-emergency-access">Seed and emergency access<a class="headerlink" href="#seed-and-emergency-access" title="Permanent link">¶</a></h3>
+<p>Two deployment settings stay available and are deliberately grant-only, as break-glass:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>OIDC_ALLOWED_EMAILS</code> / <code>OIDC_ALLOWED_DOMAINS</code></td>
+<td>Admits addresses on an identity-provider deployment, whether or not the member list names them.</td>
+</tr>
+<tr>
+<td><code>AUTH_OTP_ALLOWED_EMAILS</code> / <code>AUTH_OTP_ALLOWED_DOMAINS</code></td>
+<td>The same for email-code sign-in. Still required at boot in that mode, since the first admin has to come from somewhere.</td>
+</tr>
+<tr>
+<td><code>WORKSPACE_ADMIN_EMAILS</code></td>
+<td>Grants the Admin role regardless of the stored one (see roles, below).</td>
+</tr>
+</tbody>
+</table>
+<p>If a membership change locks the workspace out, add the address to the matching setting and
+restart. That path exists precisely so a mistake in the app is recoverable outside it.</p>
+<p>Local and evaluation stacks that run without any identity provider are exempt from
+membership enforcement entirely, so adding a member there cannot lock you out of your own
+laptop.</p>
 <h2 id="compliance">Compliance<a class="headerlink" href="#compliance" title="Permanent link">¶</a></h2>
 <h3 id="audit-chain">Audit chain<a class="headerlink" href="#audit-chain" title="Permanent link">¶</a></h3>
 <p>Every audit event is hashed over the one before it, so an edited or deleted row breaks the

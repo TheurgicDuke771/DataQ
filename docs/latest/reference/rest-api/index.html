@@ -3068,6 +3068,26 @@ an outbound model request.</p>
 </tr>
 <tr>
 <td>GET</td>
+<td><code>/admin/members</code></td>
+<td>Workspace membership, with whether enforcement is on and how many users a first add would import.</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/admin/members</code></td>
+<td>Admit an address, with an optional initial role. The first add turns enforcement on and imports existing users for review (audited).</td>
+</tr>
+<tr>
+<td>DELETE</td>
+<td><code>/admin/members/{id}</code></td>
+<td>Withdraw a membership — bites on the next request for every credential kind. Last-admin guarded; <code>confirm_self=true</code> to remove your own (audited).</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/admin/members/{id}/confirm</code></td>
+<td>Clear the provisional flag on an imported member. Grants nothing new (audited).</td>
+</tr>
+<tr>
+<td>GET</td>
 <td><code>/admin/audit-events</code></td>
 <td>The append-only audit log (config + data-access events, ADR 0041).</td>
 </tr>
