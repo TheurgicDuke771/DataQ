@@ -14,6 +14,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1 import admin as admin_router
+from backend.app.api.v1 import admin_integrations as admin_integrations_router
 from backend.app.api.v1 import admin_members as admin_members_router
 from backend.app.api.v1 import admin_privacy as admin_privacy_router
 from backend.app.api.v1 import admin_suites as admin_suites_router
@@ -233,6 +234,7 @@ app.include_router(trigger_bindings_router.router, prefix="/api/v1")
 app.include_router(admin_router.router, prefix="/api/v1")
 app.include_router(admin_suites_router.router, prefix="/api/v1")
 app.include_router(admin_members_router.router, prefix="/api/v1")
+app.include_router(admin_integrations_router.router, prefix="/api/v1")
 app.include_router(admin_privacy_router.router, prefix="/api/v1")
 app.include_router(assets_router.router, prefix="/api/v1")
 app.include_router(incidents_router.router, prefix="/api/v1")

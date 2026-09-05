@@ -73,12 +73,22 @@ test.describe('Admin control centre', () => {
 
   test('integrations exposes the inbound orchestration webhook config', async ({ page }) => {
     await page.goto('/admin/integrations');
-    await expect(page.getByText('Inbound webhooks (orchestration)')).toBeVisible();
+    const webhooks = page
+      .locator('.ant-card', { hasText: 'Inbound webhooks (orchestration)' })
+      .first();
+    await expect(webhooks).toBeVisible();
     // One row per seeded orchestration provider; the ready-to-paste URL lives in a readonly input
-    // (getByText can't see input values), ADF's token masked behind the reveal toggle.
-    await expect(page.getByText('Azure Data Factory', { exact: true })).toBeVisible();
-    await expect(page.getByText('Apache Airflow', { exact: true })).toBeVisible();
-    await expect(page.locator('input[readonly]').first()).toHaveValue(/orchestration\/events\//);
+    // (getByText can't see input values), ADF's token masked behind the reveal toggle. Scoped to
+    // the card: the polling table below names the same providers.
+    await expect(webhooks.getByText('Azure Data Factory', { exact: true })).toBeVisible();
+    await expect(webhooks.getByText('Apache Airflow', { exact: true })).toBeVisible();
+    await expect(webhooks.locator('input[readonly]').first()).toHaveValue(
+      /orchestration\/events\//,
+    );
+    await expect(webhooks.getByRole('button', { name: /Regenerate/ }).first()).toBeVisible();
+    await expect(page.getByText('Polling health (10-min fallback)')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Poll all now' })).toBeVisible();
+    await expect(page.getByText('Warehouse inventory sync')).toBeVisible();
   });
 
   test('compliance exposes the audit log and the deployment posture', async ({ page }) => {

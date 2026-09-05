@@ -576,6 +576,40 @@ def _monitored_ids(session: Session, ids: list[uuid.UUID]) -> set[uuid.UUID]:
     }
 
 
+@dataclass(frozen=True)
+class AssetCoverage:
+    """How many of a connection's known assets any suite targets (#1701)."""
+
+    total: int
+    unmonitored: int
+
+
+def coverage_by_connection(
+    session: Session, connection_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, AssetCoverage]:
+    """Per connection: assets DataQ knows of, and how many no suite targets.
+
+    Counted over the whole workspace, not the caller's grants — the same
+    workspace-true rollup ADR 0037 defines for assets. Connections with no known
+    assets are absent from the mapping rather than present with a zero.
+    """
+    if not connection_ids:
+        return {}
+    rows = session.execute(
+        select(Asset.connection_id, Asset.id).where(Asset.connection_id.in_(connection_ids))
+    ).all()
+    if not rows:
+        return {}
+    monitored = _monitored_ids(session, [asset_id for _, asset_id in rows])
+    totals: dict[uuid.UUID, list[int]] = defaultdict(lambda: [0, 0])
+    for connection_id, asset_id in rows:
+        entry = totals[connection_id]
+        entry[0] += 1
+        if asset_id not in monitored:
+            entry[1] += 1
+    return {cid: AssetCoverage(total=t, unmonitored=u) for cid, (t, u) in totals.items()}
+
+
 def _lineage_edge_refs(
     session: Session,
     edges: list[tuple[uuid.UUID, uuid.UUID]],
