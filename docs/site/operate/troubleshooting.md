@@ -101,7 +101,7 @@ trigger** a run — by design. See [Orchestration](../guides/orchestration.md).
   every run. A red suite that's "quiet" is usually dedup working — the **Results** page is the
   ground truth.
 - Check the channel isn't **snoozed** for that check.
-- Confirm the channel secret/webhook is set (Settings → Webhooks / per-suite config).
+- Confirm the channel secret/webhook is set (Admin → Integrations / per-suite config).
 
 ## Sign-in & API
 

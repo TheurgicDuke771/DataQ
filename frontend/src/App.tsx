@@ -9,7 +9,6 @@ import {
   MenuOutlined,
   ReadOutlined,
   SafetyOutlined,
-  SettingOutlined,
   UserOutlined,
 } from '@ant-design/icons';
 import { Avatar, Button, Drawer, Dropdown, Flex, Layout, Menu, Spin, Tag, Typography } from 'antd';
@@ -27,6 +26,7 @@ import { useOtpSession } from './auth/otpSessionContext';
 import { BrandMark } from './components/BrandMark';
 import { ThemeToggle } from './components/ThemeToggle';
 import { ProfileCompletionPrompt } from './components/profile/ProfileCompletionPrompt';
+import { ADMIN_ROUTES, SETTINGS_REDIRECT_ROUTE } from './pages/admin/routes';
 import { SHELL } from './theme';
 
 // Route components are code-split so the initial bundle doesn't ship every page
@@ -53,8 +53,6 @@ const AssetDetail = lazy(() =>
 const Results = lazy(() => import('./pages/Results').then((m) => ({ default: m.Results })));
 const RunDetail = lazy(() => import('./pages/RunDetail').then((m) => ({ default: m.RunDetail })));
 const Profile = lazy(() => import('./pages/Profile').then((m) => ({ default: m.Profile })));
-const Admin = lazy(() => import('./pages/Admin').then((m) => ({ default: m.Admin })));
-const Settings = lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })));
 const NotFound = lazy(() => import('./pages/NotFound').then((m) => ({ default: m.NotFound })));
 
 const { Header, Sider, Content } = Layout;
@@ -69,9 +67,9 @@ const NAV_ITEMS = [
   { key: '/profile', icon: <UserOutlined />, label: <Link to="/profile">Profile</Link> },
 ];
 // Footer nav (pinned to the bottom).
+// One entry, not two: /settings now redirects into /admin/settings (#1694).
 const ADMIN_FOOTER_ITEMS = [
   { key: '/admin', icon: <SafetyOutlined />, label: <Link to="/admin">Admin</Link> },
-  { key: '/settings', icon: <SettingOutlined />, label: <Link to="/settings">Settings</Link> },
 ];
 // Published docs site (MkDocs Material → GitHub Pages). External link, opens in
 // a new tab; never a "selected" nav key since it leaves the app.
@@ -262,8 +260,8 @@ export function App() {
                   <Route path="/results" element={<Results />} />
                   <Route path="/results/:runId" element={<RunDetail />} />
                   <Route path="/profile" element={<Profile />} />
-                  <Route path="/admin" element={<Admin />} />
-                  <Route path="/settings" element={<Settings />} />
+                  {ADMIN_ROUTES}
+                  {SETTINGS_REDIRECT_ROUTE}
                   {/* Unknown route → in-brand 404 (not a silent redirect). */}
                   <Route path="*" element={<NotFound />} />
                 </Routes>

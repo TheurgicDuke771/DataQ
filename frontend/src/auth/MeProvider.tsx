@@ -47,8 +47,8 @@ export function MeProvider({ children }: { children: ReactNode }) {
             // Bounded, so a persistent 429 still lands on a real error rather than spinning forever
             // — an infinite spinner is the one outcome worse than an error page.
 
-            // Classify like every other page fetch (#910/#930): Admin, Profile and Settings render
-            // PageError straight off this state.
+            // Classify like every other page fetch (#910/#930): Profile renders PageError straight
+            // off this state, and RequireRole does the same for every role-gated route.
             const failure = fetchFailure(err, String(err));
             setState({
               status: 'error',

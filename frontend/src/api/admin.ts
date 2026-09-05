@@ -162,3 +162,95 @@ export async function getDeploymentPosture(): Promise<DeploymentPosture> {
   const { data } = await api.get<DeploymentPosture>('/admin/deployment');
   return data;
 }
+
+/** Audit hash-chain verification (ADR 0041 §9 / #1460). */
+export interface AuditChainBreak {
+  event_id: string;
+  occurred_at: string | null;
+  expected_prev_hash: string | null;
+  actual_prev_hash: string | null;
+}
+
+export interface AuditChainStatus {
+  /** `empty` (no hashed rows yet) is deliberately distinct from `ok`. */
+  status: 'ok' | 'broken' | 'empty';
+  verified_count: number;
+  /** Rows written before the chain shipped — real history, just not covered by it. */
+  unverifiable_legacy_count: number;
+  chain_head_hash: string | null;
+  /** `none` = internally consistent, but not independently verifiable (ADR 0041 §9). */
+  anchor_mode: 'none' | 'webhook';
+  first_break: AuditChainBreak | null;
+}
+
+export async function verifyAuditChain(): Promise<AuditChainStatus> {
+  const { data } = await api.get<AuditChainStatus>('/admin/audit-events/verify');
+  return data;
+}
+
+/** A data subject is identified the way the warehouse identifies them — a
+ *  `(column, value)` pair. DataQ has no people-table (G2 / #432). */
+export interface DataSubjectRequest {
+  column: string;
+  value: string;
+}
+
+export interface DataSubjectMatch {
+  result_id: string;
+  run_id: string;
+  suite_id: string;
+  suite_name: string;
+  check_id: string;
+  check_name: string;
+  created_at: string;
+  matched_in: string[];
+  /** Unredacted by design — this endpoint IS the subject's own access right. */
+  sample_failures: Record<string, unknown> | null;
+  observed_value: Record<string, unknown> | null;
+}
+
+export interface DataSubjectIncidentMatch {
+  incident_id: string;
+  suite_id: string;
+  suite_name: string;
+  check_id: string;
+  check_name: string;
+  status: string;
+  created_at: string;
+  observed_value: Record<string, unknown> | null;
+}
+
+export interface DataSubjectExport extends DataSubjectRequest {
+  /** Results + incident snapshots together; the two lists below say where. */
+  match_count: number;
+  matches: DataSubjectMatch[];
+  incident_match_count: number;
+  incident_matches: DataSubjectIncidentMatch[];
+}
+
+export interface DataSubjectErasure extends DataSubjectRequest {
+  matched_count: number;
+  erased_count: number;
+  matched_result_count: number;
+  erased_result_count: number;
+  matched_incident_count: number;
+  erased_incident_count: number;
+}
+
+export async function exportDataSubject(column: string, value: string): Promise<DataSubjectExport> {
+  const { data } = await api.post<DataSubjectExport>('/admin/data-subject-requests/export', {
+    column,
+    value,
+  });
+  return data;
+}
+
+/** Erasure is surgical (only the matching row/cell) and irreversible. The typed
+ *  confirmation is a UI guard — the endpoint takes no confirmation argument. */
+export async function eraseDataSubject(column: string, value: string): Promise<DataSubjectErasure> {
+  const { data } = await api.post<DataSubjectErasure>('/admin/data-subject-requests/erase', {
+    column,
+    value,
+  });
+  return data;
+}

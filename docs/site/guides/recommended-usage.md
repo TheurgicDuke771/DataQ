@@ -68,7 +68,7 @@ automatically; it logs `suite_policy_possibly_stale`). See
 ## 5. Automate runs — triggers first, schedules second
 
 **Do (trigger):** register the orchestrator connection → add the provider's webhook
-(**Settings → Webhooks** shows the URL) or the callback snippet
+(**Admin → Integrations** shows the URL) or the callback snippet
 ([`integrations/`](https://github.com/TheurgicDuke771/DataQ/tree/main/integrations)) → on the
 suite, **Triggers** → bind `(provider, pipeline/DAG/job, env)`.
 
@@ -82,7 +82,7 @@ to be safe". See [Prefer triggers over schedules](best-practices.md#prefer-trigg
 ## 6. Configure alerting
 
 **Do:** Suite → **Notifications** → pick channels (Teams / Slack / email), the threshold, and
-recipients. Store channel webhooks/keys as secrets (**Settings → Webhooks** for the inbound
+recipients. Store channel webhooks/keys as secrets (**Admin → Integrations** for the inbound
 ones).
 
 **Recommended:**

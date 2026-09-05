@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from backend.app.core.secrets import SecretNotFoundError
+from backend.app.core.secrets import SecretInfo, SecretNotFoundError
 
 
 class FakeSecretStore:
@@ -59,3 +59,50 @@ def override_secret_store(app: Any, store: FakeSecretStore) -> None:
     from backend.app.core.secrets import get_secret_store
 
     app.dependency_overrides[get_secret_store] = lambda: store
+
+
+# ── Orphan-secret sweep (#1059) doubles ─────────────────────────────────────── Shared between
+# `test_secret_sweep_service.py` and `test_secret_sweep_task.py` (#1886 review) so the two
+# suites can't quietly diverge on what "a store that can/can't enumerate itself" means.
+
+
+class EnumerableSecretStore(FakeSecretStore):
+    """A store that can enumerate itself via `list_secrets()` — only OpenBao/AKV implement
+    this for real; the sweep duck-types via `getattr` since `EnvSecretStore` and every other
+    test double lack it. `get`/`set` deliberately raise: the sweep must never read or write a
+    secret VALUE, only enumerate and (optionally) delete by name.
+    """
+
+    def __init__(self, secrets: list[SecretInfo]) -> None:
+        super().__init__()
+        self._secrets = secrets
+
+    def get(self, name: str) -> str:  # pragma: no cover - not exercised
+        raise AssertionError("the sweep must never read a secret VALUE")
+
+    def set(self, name: str, value: str) -> None:  # pragma: no cover
+        raise AssertionError("the sweep must never write")
+
+    def list_secrets(self) -> list[SecretInfo]:
+        return list(self._secrets)
+
+
+class UnlistableSecretStore(EnumerableSecretStore):
+    """Mirrors `EnvSecretStore` and every test double: no `list_secrets` at all — the sweep
+    must treat this as "cannot enumerate", never as "an empty vault".
+    """
+
+    list_secrets = None  # type: ignore[assignment]
+
+
+class BrokenSecretStore(EnumerableSecretStore):
+    """A store whose `list_secrets()` always raises — an outage, never a clean/empty vault."""
+
+    def __init__(
+        self, secrets: list[SecretInfo] | None = None, *, error: Exception | None = None
+    ) -> None:
+        super().__init__(secrets or [])
+        self._error = error or RuntimeError("vault sealed")
+
+    def list_secrets(self) -> list[SecretInfo]:
+        raise self._error

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -55,10 +56,18 @@ from backend.app.services import (
     suite_service,
     workspace_health_service,
 )
-from backend.app.services.failure_classifier import classify_failure_reason
+from backend.app.services.failure_classifier import (
+    classify_failure_reason,
+    classify_secret_store_reason,
+)
 from backend.app.services.otp_mailer import OtpMailer
 from backend.app.worker import beat_watchdog
-from backend.app.worker.celery_app import LLM_INVOKE_TASK_NAME, OTP_SEND_TASK_NAME, celery_app
+from backend.app.worker.celery_app import (
+    LLM_INVOKE_TASK_NAME,
+    OTP_SEND_TASK_NAME,
+    SWEEP_ORPHAN_SECRETS_TASK_NAME,
+    celery_app,
+)
 
 # Poll lookback exceeds the 10-min beat interval so runs can't slip the gap (#171).
 _POLL_LOOKBACK = timedelta(minutes=15)
@@ -878,24 +887,76 @@ def sweep_orphan_assets() -> int:
 # ─────────────────────── orphan-secret sweep (#1059) ─────────────────────────
 
 
-@celery_app.task(name="sweep_orphan_secrets")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
-def sweep_orphan_secrets() -> int:
+@celery_app.task(name=SWEEP_ORPHAN_SECRETS_TASK_NAME)  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
+def sweep_orphan_secrets(force_report_only: bool = False) -> int:
     """Reconcile the secret store against its owners (#1059) — reports by default,
-    purges only under `SECRET_ORPHAN_PURGE` (what it deletes is a live credential).
+    purges only under `SECRET_ORPHAN_PURGE` (never when `force_report_only`, the
+    UI-triggered "run now" shape, #1886). Every run — beat or manual — persists one
+    `secret_sweep_report` row (`secret_sweep_service.record_sweep_report`) so
+    `GET /admin/secret-sweep` has a source: `orphan_count=None` + a classified
+    `error` on a store outage, NEVER a fake `0` (the #954 masquerade, applied
+    here).
     """
     session = get_session()
+    settings = get_settings()
+    store_name = settings.secret_store
+    purge = settings.secret_orphan_purge and not force_report_only
+    mode: Literal["report", "purge"] = "purge" if purge else "report"
     try:
-        settings = get_settings()
-        result = secret_sweep_service.sweep_orphan_secrets(
+        try:
+            result = secret_sweep_service.sweep_orphan_secrets(
+                session,
+                store=get_secret_store(),
+                grace_days=settings.secret_orphan_grace_days,
+                purge=purge,
+            )
+        except Exception as exc:
+            session.rollback()
+            log.warning("orphan_secret_sweep_failed", exc_info=True)
+            secret_sweep_service.record_sweep_report(
+                session,
+                mode=mode,
+                orphan_count=None,
+                orphan_names=[],
+                scanned=None,
+                unknown_age_count=None,
+                too_young_count=None,
+                store=store_name,
+                error=classify_secret_store_reason(exc),
+            )
+            session.commit()
+            return 0
+        if result.skipped_reason is not None:
+            secret_sweep_service.record_sweep_report(
+                session,
+                mode=mode,
+                status="skipped",
+                orphan_count=None,
+                orphan_names=[],
+                scanned=None,
+                unknown_age_count=None,
+                too_young_count=None,
+                store=store_name,
+                error=result.skipped_reason,
+            )
+            session.commit()
+            return 0
+        secret_sweep_service.record_sweep_report(
             session,
-            store=get_secret_store(),
-            grace_days=settings.secret_orphan_grace_days,
-            purge=settings.secret_orphan_purge,
+            mode=mode,
+            orphan_count=len(result.orphans),
+            orphan_names=result.orphans,
+            scanned=result.scanned,
+            unknown_age_count=len(result.unknown_age),
+            too_young_count=len(result.too_young),
+            store=store_name,
+            error=None,
         )
+        session.commit()
         return len(result.orphans)
     except Exception:
         session.rollback()
-        log.warning("orphan_secret_sweep_failed", exc_info=True)
+        log.warning("orphan_secret_sweep_report_persist_failed", exc_info=True)
         return 0
     finally:
         session.close()

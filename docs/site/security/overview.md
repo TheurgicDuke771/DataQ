@@ -225,6 +225,12 @@ are the reason this mode is opt-in rather than the default:
   **read** one.
 - Inbound webhooks are authenticated: ADF by a shared secret, Airflow and dbt by an
   **HMAC-SHA256** signature keyed on a stored signing key.
+- A daily **orphan-secret sweep** reconciles the store against every row that should own a
+  secret, reporting (never purging, unless `SECRET_ORPHAN_PURGE` is explicitly set) any entry
+  no row references. The last run — beat or an admin's on-demand `GET`/`POST
+  /admin/secret-sweep(/run)` — is recorded with secret **names** only, never values; a store
+  outage records a classified error rather than a fake "0 orphans found", and the on-demand
+  run always stays report-only regardless of the purge setting.
 
 ## The data DataQ sees, stores, and redacts
 

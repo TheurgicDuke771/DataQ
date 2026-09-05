@@ -74,6 +74,19 @@ test.describe('Role perspectives', () => {
       // too, but a deep link must not leak the page.
       await expect(page.getByText(/restricted to workspace admins/i)).toBeVisible();
     });
+
+    test('deep-linking to an admin sub-page is refused at the route', async ({ page }) => {
+      // Every sub-page is gated on its own: a bookmark to /admin/members must not
+      // render the members table, let alone fire its fetch.
+      await page.goto('/admin/members');
+      await expect(page.getByText(/restricted to workspace admins/i)).toBeVisible();
+      await expect(page.getByRole('tab', { name: 'Members' })).toHaveCount(0);
+    });
+
+    test('the retired /settings URL is refused too, not bounced into /admin', async ({ page }) => {
+      await page.goto('/settings');
+      await expect(page.getByText(/restricted to workspace admins/i)).toBeVisible();
+    });
   });
 
   // ── Viewer: a read-only shell ─────────────────────────────────────────────

@@ -10,19 +10,19 @@ comes back, and what the model is never shown.
   <source src="../../assets/videos/configure-llm.mp4" type="video/mp4">
 </video>
 
-*Admin → LLM provider: point DataQ at a model, press **Test**, save. Here it is a local
+*Admin → Settings → LLM provider: point DataQ at a model, press **Test**, save. Here it is a local
 Ollama server; the same form takes Anthropic, Azure OpenAI, Bedrock or any
 OpenAI-compatible endpoint.*
 
 ## Turn it on
 
-**Admin → LLM provider.** Pick a provider, enter the model name and (for OpenAI-compatible
+**Admin → Settings → LLM provider.** Pick a provider, enter the model name and (for OpenAI-compatible
 endpoints) the base URL, paste the API key, and press **Test** — it makes one tiny call
 with the values in the form and reports the model and latency. Nothing is saved by Test,
 but the probe itself is recorded like any other call, and it runs whether or not the
 enable switch is on. Then **Save** and switch on *Enable outbound LLM calls*.
 
-![The LLM provider panel on the Admin page: provider, model, base URL, API key, structured-output mode and the enable switch](../assets/screenshots/admin-llm-settings.png){ .screenshot }
+![The LLM provider panel on Admin → Settings: provider, model, base URL, API key, structured-output mode and the enable switch](../assets/screenshots/admin-llm-settings.png){ .screenshot }
 
 *The key is write-only: it is stored in your secret store, never shown again, and never
 forwarded if you later change the provider or endpoint — you re-enter it on purpose.*
@@ -55,7 +55,8 @@ reliability, never safety.
 
     The full transfer-vector accounting is in
     [Security & data handling](../security/overview.md#what-can-move-data-out), and the live
-    list for *your* deployment is on the Admin page above the panel.
+    list for *your* deployment is on **Admin → Compliance**, and the provider itself is
+    configured on **Admin → Settings**.
 
 ## Explain a failed check
 
