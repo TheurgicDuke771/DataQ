@@ -1,0 +1,159 @@
+<task-notification>
+<task-id>a061e088351938dda</task-id>
+<tool-use-id>toolu_01BRouWdLHfsB27mgpU6Xc6f</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a061e088351938dda.output</output-file>
+<status>completed</status>
+<summary>Agent "#1886 orphan-secret sweep API" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>PR #1893 is open with the correct milestone.
+
+## Summary
+
+Implemented GitHub issue #1886 — persisting the orphan-secret sweep report and exposing `GET`/`POST` endpoints for it.
+
+**Branch:** `feature/issue-1886-secret-sweep-api` (from `origin/main`, which included #1890's `GET /admin/health`)
+**PR:** https://github.com/TheurgicDuke771/DataQ/pull/1893 (not merged, milestone "v1.2 Backlog")
+
+**Changes (4 commits):**
+1. `backend/alembic/versions/21d739b1d293_workspace_health_payload.py` + `backend/app/db/models.py` — additive nullable `workspace_health.payload` JSONB column
+2. `backend/app/services/secret_sweep_service.py` (`record_sweep_report`/`read_sweep_report`/`dispatch_secret_sweep`) + `backend/app/services/failure_classifier.py` (`classify_secret_store_reason`) + `backend/app/worker/tasks.py` (`sweep_orphan_secrets` now takes `force_report_only`, persists a report on every run — report/purge/store-outage paths, never a fake `0`)
+3. `backend/app/api/v1/admin.py` — `GET /api/v1/admin/secret-sweep` (`never_run` vs `recorded`) and `POST /api/v1/admin/secret-sweep/run` (202 + task id, always report-only, audited as `secret_sweep.run` in `backend/tests/support/audit_coverage.py`)
+4. Docs: `docs/site/reference/rest-api.md`, `docs/site/reference/changelog.md`, `docs/site/security/overview.md`, regenerated `docs/site/reference/openapi.json`
+
+**Tests added:** `backend/tests/services/test_secret_sweep_service.py` (report persistence/read/truncation/outage), `backend/tests/worker/test_secret_sweep_task.py` (new file — names-only, purge-vs-report mode, force-report-only override, store-outage), `backend/tests/api/test_admin.py` (GET never_run/recorded, POST 202+audit, 403 member/viewer). Mutation-checked both the never_run test and the force-report-only test — confirmed each fails when its guarding logic is removed, then restored.
+
+**Verification:** migration applied up+down against `dataq_test`; `black --check .`, `ruff check .`, `mypy app tests`, `bandit -r app` all clean repo-wide; all touched/new test files pass individually and combined; `test_audit_coverage.py` guard passes. A full-suite `pytest` run showed a cluster of unrelated failures ("relation users does not exist") traced to another concurrent pytest process (confirmed via `pgrep -af pytest`) racing against the same shared local Postgres `dataq_test` database — not related to this change, and every file this PR touches is green in isolation.
+
+Nothing skipped from the ask except the full-suite run, which isn't reliable right now due to that shared-infra contention.
+
+result: PR #1893 opened for issue #1886 (orphan-secret sweep report persistence + `GET`/`POST /api/v1/admin/secret-sweep`), 4 commits, all targeted tests/lint/type/bandit green, migration verified up/down, not merged.</result>
+<usage><subagent_tokens>344430</subagent_tokens><tool_uses>227</tool_uses><duration_ms>1352752</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a061e088351938dda</worktreePath><worktreeBranch>worktree-agent-a061e088351938dda</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>abf3c2df07fac0b7b</task-id>
+<tool-use-id>toolu_01ASc8h3sscUa31GEz9a4Cun</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/abf3c2df07fac0b7b.output</output-file>
+<status>completed</status>
+<summary>Agent "#1697 credential health signal" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Working tree clean, scratch databases dropped. PR #1895 is open.
+
+**PR:** https://github.com/TheurgicDuke771/DataQ/pull/1895 — `feature/issue-1697-credential-health`, 5 commits, milestone "v1.2 Backlog", `Fixes #1697`. Not merged, `/code-review` not run (per instruction).
+
+**What shipped.** Four additive columns on `connections`, an `auth` predicate deliberately *narrower* than the existing `PERMISSION` category (a missing SELECT grant is not a dead credential), a `credential_use` seam, and the read path on `GET /connections` + `GET /admin/health` + MCP `list_connections`. `unknown` is never rounded up to `healthy`. The no-live-probe choice is argued in the PR body: a probe spends warehouse credits on a schedule and needs its own beat task, for a fact runs already produce.
+
+**Caller enumeration** (full table in the PR): 27 call sites over 5 primitive doors, found by a dedicated search agent sweeping `secret_store.get`, `secret=` kwargs, `create_engine`, `boto3`, `BlobServiceClient`, `load_catalog`. All funnel through the run path, dry-run, profile, list-columns, connection test (covering `/reauth` for free), inventory sync, lineage refresh, or batch preview. Deliberate non-participants each have a recorded reason — `test_draft_connection` has no row to attribute health to; expiry refresh is an offline parse; orchestration has #828's signal already.
+
+The enumeration is enforced rather than documented: `session` is now a **required** kwarg on the four service functions that took none, so mypy located all 11 production callers and will fail the build on a new one that bypasses the seam.
+
+**Verification.** Migration tested up→down→up against the real compose Postgres with a populated table (columns gone on downgrade, row survived). Full suite 5959 passed. New module 94% covered. The two tests you singled out were mutation-checked by agent — plus two more — all four proven red against mutated code on the right assertion, and each mutation left the others green, confirming non-redundancy. Classifier cases use real driver output, not invented strings.
+
+**Two findings from making test doubles faithful rather than working around them:** the worker `FakeSession` didn't accept `with_for_update`, so the seam raised and the rollback *silently discarded the run's results*; and the repo's own `test_assert_hygiene` guard caught one of my new tests performing the request inside its own assert.
+
+**Skipped, stated plainly in the PR:** no live-warehouse rejection was observed. Per the #953 rule that's the one thing that would be real evidence for marker strings crossing a driver boundary — worth exercising on the harness before the next deploy. No UI (out of scope; TS type kept in sync). The repo-wide `--cov` total reads 0.00% in this worktree because there's no `.env` for the coverage source path — a local artifact, so I measured the module explicitly instead.
+
+result: PR #1895 opens the datasource credential-health signal for #1697 — additive migration, narrow auth classifier, one mypy-enforced credential-use seam covering all 27 datasource-credential callers, exposed on connections/admin-health/MCP with `unknown` never reported as healthy; 5959 tests pass, migration tested up+down on real Postgres, four key tests mutation-verified.</result>
+<usage><subagent_tokens>349241</subagent_tokens><tool_uses>224</tool_uses><duration_ms>2325950</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-abf3c2df07fac0b7b</worktreePath><worktreeBranch>worktree-agent-abf3c2df07fac0b7b</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a061e088351938dda</task-id>
+<tool-use-id>toolu_01EvVAJLybtqfCSvh1ovcs4t</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a061e088351938dda.output</output-file>
+<status>failed</status>
+<summary>Agent "#1886 orphan-secret sweep API" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message · your session limit resets 11pm (America/Vancouver) (error type rate_limit, HTTP 429, request id req_011CejVnN8pGCA32erEEuviC, model sent to the API: claude-sonnet-5)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Bandit clean. Now let's run the full targeted test set for everything touched.</result>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a061e088351938dda</worktreePath><worktreeBranch>worktree-agent-a061e088351938dda</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aaf8beda33544f261</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/aaf8beda33544f261.output</output-file>
+<status>completed</status>
+<summary>Agent "#1695 admin parity pass UI" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>PR is open and CI is running; I'll report when it lands.
+
+**PR:** https://github.com/TheurgicDuke771/DataQ/pull/1894 — 7 commits, milestone "v1.2 Week 7 — feature burn-down", `Fixes #1695`. Not merged, no `/code-review` run (as instructed).
+
+**What shipped:** chain-verify card (explicit "Verify now", never on mount), DSR export/erase with a typed-value gate and on-screen receipts, SMTP pre-flight outcome persisted with the request ID, webhook auth mode promoted into the row header.
+
+**One contract correction:** the issue and mockup describe DSR as a *subject email*. The endpoints take `{column, value}` — DataQ has no people-table, so a subject *is* that pair. I built to the real contract (two inputs) rather than the mockup, and there's no server-side confirmation argument, so the typed-address gate is a UI guard, documented as one.
+
+**Verification:** lint / format / typecheck / `test:coverage` (90.42% lines, gate 80) and `mkdocs build --strict` all clean. Playwright **was** run: the dev compose stack is in OTP mode where the dev-bypass lane can't sign in — pre-existing admin specs fail there identically — so I stood up the repo's own scratch dev-bypass stack, ran the **full e2e suite (44 passed / 0 failed)** including both new specs, then destroyed the scratch stack and confirmed the user's compose stack still healthy.
+
+**Three things running it caught that reasoning didn't:** my new card's "audit log" prose made a *neighbouring* spec's loose locator a strict-mode violation; antd's modal dismiss also carries `aria-label="Close"`; and `beforeEach(() =&gt; mock.mockResolvedValue(x))` returns the mock, which vitest then runs as a teardown hook — an extra call plus an unhandled rejection. I also mutation-checked the two load-bearing assertions (auto-verify → red; relaxed confirm gate → red) and replaced a hand-rolled downloader with the repo's existing `utils/download` helpers.
+
+result: PR #1894 opened — admin parity pass (audit-chain verify, data-subject export/erase, SMTP pre-flight result, webhook auth mode) with unit + live-verified Playwright coverage and docs; CI still running.</result>
+<usage><subagent_tokens>321118</subagent_tokens><tool_uses>167</tool_uses><duration_ms>1995988</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-aaf8beda33544f261</worktreePath><worktreeBranch>worktree-agent-aaf8beda33544f261</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aaf8beda33544f261</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/aaf8beda33544f261.output</output-file>
+<status>failed</status>
+<summary>Agent "#1695 admin parity pass UI" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message · your session limit resets 11pm (America/Vancouver) (error type rate_limit, HTTP 429, request id REDACTED, model sent to the API: claude-opus-5)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-aaf8beda33544f261</worktreePath><worktreeBranch>worktree-agent-aaf8beda33544f261</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+continue
+
+---
+
+<task-notification>
+<task-id>b43gh2o9h</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/b43gh2o9h.output</output-file>
+<status>completed</status>
+<summary>Background command "Run gate + targeted tests in #1893 worktree" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+CI failed for #1893
+
+---
+
+<task-notification>
+<task-id>b9g22z0nm</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/b9g22z0nm.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for PR 1893 to merge" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bspld37wf</task-id>
+<tool-use-id>toolu_01LKai938x95wgKME1aLJAor</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/bspld37wf.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for PR 1895 to merge or fail" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+`ADR 0032 — its "mandatory signup allowlist" becomes a bootstrap seed + break-glass` - what is break-glass?
+
+---
+
+okay I'm aligned with the core-ideas of ADR 43, just use plain english, not fancy words. 
+And for #1887 go with DB backed settings
