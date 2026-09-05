@@ -24,7 +24,7 @@ from starlette.requests import HTTPConnection
 
 from backend.app.core.config import Settings, dev_bypass_conflicts, get_settings
 from backend.app.core.errors import DataQError
-from backend.app.core.identity import identity_log_fields, normalize_email
+from backend.app.core.identity import allowlisted, identity_log_fields, normalize_email
 from backend.app.core.logging import get_logger
 from backend.app.core.roles import (
     ADMIN_ROLE,
@@ -689,10 +689,7 @@ def _oidc_access_allowed(email: str, settings: Settings | None = None) -> bool:
     s = settings or _settings
     if not s.oidc_allowlist_configured:
         return True
-    if email in s.oidc_allowed_email_set:
-        return True
-    _, _, domain = email.partition("@")
-    return bool(domain) and domain in s.oidc_allowed_domain_set
+    return allowlisted(email, s.oidc_allowed_email_set, s.oidc_allowed_domain_set)
 
 
 def _oidc_allowlist_grants(email: str, settings: Settings | None = None) -> bool:

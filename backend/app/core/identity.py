@@ -23,3 +23,16 @@ def identity_log_fields(email: str) -> dict[str, str]:
         "email_domain": domain or "(none)",
         "email_digest": hashlib.sha256(normalized.encode()).hexdigest()[:12],
     }
+
+
+def allowlisted(email: str, emails: frozenset[str], domains: frozenset[str]) -> bool:
+    """Whether an EXPLICIT allowlist entry names `email`.
+
+    Exact address or exact domain, never a suffix: `acme.io` must not admit
+    `evil-acme.io` or `acme.io.evil.net`.
+    """
+    normalized = normalize_email(email)
+    if normalized in emails:
+        return True
+    _, _, domain = normalized.partition("@")
+    return bool(domain) and domain in domains

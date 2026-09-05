@@ -22,7 +22,7 @@ from backend.app.core.circuit_breaker import (
 )
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.errors import DataQError
-from backend.app.core.identity import normalize_email
+from backend.app.core.identity import allowlisted, normalize_email
 from backend.app.core.logging import get_logger
 from backend.app.core.roles import bootstrap_role, should_promote_to_admin
 from backend.app.db.models import ADMIN_ROLE, OtpCode, User
@@ -47,10 +47,7 @@ class CodeMailer(Protocol):
 def env_signup_allowed(email: str, settings: Settings | None = None) -> bool:
     """The env-allowlist half of OTP eligibility, on its own. Grant-only."""
     s = settings or get_settings()
-    _, _, domain = email.partition("@")
-    return email in s.auth_otp_allowed_email_set or (
-        bool(domain) and domain in s.auth_otp_allowed_domain_set
-    )
+    return allowlisted(email, s.auth_otp_allowed_email_set, s.auth_otp_allowed_domain_set)
 
 
 def is_signup_eligible(db: Session, email: str, settings: Settings | None = None) -> bool:
