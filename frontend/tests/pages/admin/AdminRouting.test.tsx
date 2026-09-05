@@ -40,6 +40,8 @@ vi.mock('../../../src/api/admin', () => ({
   getAdminOverview: vi.fn(() => new Promise(() => {})),
   getAdminHealth: vi.fn(() => new Promise(() => {})),
   getSecretSweep: vi.fn(() => new Promise(() => {})),
+  getPrivacySettings: vi.fn(() => new Promise(() => {})),
+  putPrivacySettings: vi.fn(),
   runSecretSweep: vi.fn(),
   verifyAuditChain: vi.fn(),
   WORKSPACE_ROLES: ['admin', 'member', 'viewer'],

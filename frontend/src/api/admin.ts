@@ -420,3 +420,26 @@ export async function runSecretSweep(): Promise<{ status: string; task_id: strin
   const { data } = await api.post<{ status: string; task_id: string }>('/admin/secret-sweep/run');
   return data;
 }
+
+/** Zero-sample privacy mode. `effective` is what every sample writer obeys — the env floor OR the
+ *  stored toggle; `env_forced` means the toggle can turn it on but never off. */
+export interface PrivacySettings {
+  effective: boolean;
+  stored: boolean;
+  source: 'env' | 'db' | 'off';
+  env_forced: boolean;
+  updated_by: string | null;
+  updated_at: string | null;
+}
+
+export async function getPrivacySettings(): Promise<PrivacySettings> {
+  const { data } = await api.get<PrivacySettings>('/admin/privacy');
+  return data;
+}
+
+export async function putPrivacySettings(zeroSampleMode: boolean): Promise<PrivacySettings> {
+  const { data } = await api.put<PrivacySettings>('/admin/privacy', {
+    zero_sample_mode: zeroSampleMode,
+  });
+  return data;
+}
