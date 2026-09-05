@@ -26,7 +26,13 @@ from backend.app.db.models import (
 )
 from backend.app.db.session import get_db
 from backend.app.orchestration import markers
-from backend.app.services import audit_service, orchestration_service, run_dispatch, suite_service
+from backend.app.services import (
+    audit_service,
+    orchestration_service,
+    privacy_settings_service,
+    run_dispatch,
+    suite_service,
+)
 from backend.app.services import run_service as svc
 from backend.app.services.comparison_report import ComparisonReportInvalidError, build_report
 from backend.app.services.suite_authz import require_permission
@@ -240,10 +246,14 @@ def _result_read(
     engine: str = GX_ENGINE,
     policy: dict[str, Any] | None = None,
     tags: dict[str, str] | None = None,
+    zero_sample_mode: bool,
 ) -> ResultRead:
     """Map a `Result` ORM row to `ResultRead`, redacting `sample_failures`."""
     zero_sample = svc.zero_sample_suppressed(
-        status=result.status, check_kind=check_kind, engine=engine
+        status=result.status,
+        check_kind=check_kind,
+        engine=engine,
+        zero_sample_mode=zero_sample_mode,
     )
     sample, redaction, redacted_columns = svc.redact_sample_failures_with_state(
         result.sample_failures,
@@ -339,6 +349,8 @@ def get_run(
     # check never had a row-level sample regardless of the privacy setting.
     kind_by_result = svc.historical_check_kind(db, results, checks)
     engine_by_result = svc.historical_check_engine(db, results, checks)
+    # Resolved once per request (#1887), not per result.
+    zero_sample_mode = privacy_settings_service.zero_sample_mode(db)
     # `Run` has no `results` relationship to validate a RunDetailRead from directly, so validate
     # the run fields (as RunRead), graft the data-quality outcome (#571 — else checks_total/passed
     # stay at the 0/0 default here), and attach the separately-fetched, redaction-gated results.
@@ -353,6 +365,7 @@ def get_run(
             engine=engine_by_result.get(r.id, GX_ENGINE),
             policy=policy,
             tags=tags,
+            zero_sample_mode=zero_sample_mode,
         )
         for r in results
     ]

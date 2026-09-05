@@ -316,6 +316,16 @@ connect, TLS, auth or send — and carries the request ID to search the server l
 success means the mailer accepted the message; if it then never arrives, the relay is the
 next place to look, not this configuration.
 
+## Settings — privacy & failing samples
+
+**Zero-sample mode** stops failing-row samples from being stored at all: results, dry-runs,
+incident evidence and alerts carry aggregates and metric values only. The toggle takes
+effect on the next run — nothing has to restart. If the deployment pins the mode on in its
+environment the toggle is shown pinned and can only be turned *on* from here, never off;
+that is deliberate, so an operator's floor cannot be undone by a click. Every change is
+audited with who made it and when. Samples stored before the switch are not deleted by it;
+the retention sweep removes them on its schedule.
+
 ## Integrations — webhook auth
 
 Each inbound webhook row states the auth mode it uses, because that determines how the URL

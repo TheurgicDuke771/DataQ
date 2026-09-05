@@ -3504,11 +3504,21 @@
           "zero_sample_mode": {
             "title": "Zero Sample Mode",
             "type": "boolean"
+          },
+          "zero_sample_source": {
+            "enum": [
+              "env",
+              "db",
+              "off"
+            ],
+            "title": "Zero Sample Source",
+            "type": "string"
           }
         },
         "required": [
           "region",
           "zero_sample_mode",
+          "zero_sample_source",
           "external_transfers"
         ],
         "title": "DeploymentPostureRead",
@@ -5455,6 +5465,78 @@
           "requested_at"
         ],
         "title": "PollNowResponse",
+        "type": "object"
+      },
+      "PrivacySettingsRead": {
+        "description": "`effective` is what every sample writer obeys (env floor OR the stored value);\n`stored` is only what the toggle last wrote. `env_forced` means the toggle can\nturn the mode on but not off.",
+        "properties": {
+          "effective": {
+            "title": "Effective",
+            "type": "boolean"
+          },
+          "env_forced": {
+            "title": "Env Forced",
+            "type": "boolean"
+          },
+          "source": {
+            "enum": [
+              "env",
+              "db",
+              "off"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "stored": {
+            "title": "Stored",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          }
+        },
+        "required": [
+          "effective",
+          "stored",
+          "source",
+          "env_forced",
+          "updated_by",
+          "updated_at"
+        ],
+        "title": "PrivacySettingsRead",
+        "type": "object"
+      },
+      "PrivacySettingsWrite": {
+        "properties": {
+          "zero_sample_mode": {
+            "title": "Zero Sample Mode",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "zero_sample_mode"
+        ],
+        "title": "PrivacySettingsWrite",
         "type": "object"
       },
       "ProbeRunResponse": {
@@ -8856,6 +8938,66 @@
           }
         },
         "summary": "Overview stat cards \u2014 members, suites, incidents, runs today (admin)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/privacy": {
+      "get": {
+        "operationId": "get_privacy_settings_api_v1_admin_privacy_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrivacySettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Zero-sample mode (admin)",
+        "tags": [
+          "admin"
+        ]
+      },
+      "put": {
+        "operationId": "put_privacy_settings_api_v1_admin_privacy_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PrivacySettingsWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrivacySettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set zero-sample mode (admin)",
         "tags": [
           "admin"
         ]

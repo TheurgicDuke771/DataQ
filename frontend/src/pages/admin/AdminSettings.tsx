@@ -6,6 +6,7 @@ import { testAuthEmail } from '../../api/admin';
 import { authMethodLabel } from '../../auth/config';
 import { LlmSettingsPanel } from '../../components/admin/LlmSettingsPanel';
 import { NotificationChannelsPanel } from '../../components/admin/NotificationChannelsPanel';
+import { PrivacyPanel } from './PrivacyPanel';
 import { type FetchFailure, fetchFailure } from '../../utils/errors';
 
 /** Workspace settings: general facts + SMTP pre-flight, notification channels, LLM provider,
@@ -16,6 +17,7 @@ export function AdminSettings() {
       <GeneralCard />
       <NotificationsCard />
       <LlmSettingsPanel />
+      <PrivacyPanel />
       <SecretsCard />
       <DangerCard />
     </Flex>
