@@ -190,8 +190,8 @@ Delivered when a run breaches its threshold ([Notifications & alerting](notifica
 
 ## Access & auth
 
-- **Three sign-in modes** — dev-bypass (local eval only), **email OTP** (a one-time code,
-  no Identity Provider required — the local/eval default, ADR 0032), and **OIDC SSO**
+- **Two sign-in modes** — **email OTP** (a one-time code, no Identity Provider
+  required — the local/eval default, ADR 0032) and **OIDC SSO**
   (provider-neutral, Azure AD and AWS Cognito both validated in prod). Exactly one is active per deployment.
 - **Personal access tokens (PATs)** — `dq_live_` tokens for headless / AI-client use, same
   authz as the user, on REST **and** `/mcp` ([API keys](api-keys.md), ADR 0026).

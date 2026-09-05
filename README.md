@@ -60,7 +60,7 @@ docker compose -f docker-compose.ghcr.yml up
 
 Open **<http://localhost:3000>**, enter that address, and read the 6-digit code in the bundled inbox at **<http://localhost:8025>** — the stack ships its own mail catcher ([Mailpit](https://mailpit.axllent.org), MIT), so **email sign-in works with no SMTP relay and nothing leaves your machine**. It comes up migrated and seeded with demo data. API + Swagger at `http://localhost:8000/docs`. Images are pulled from GHCR and are **multi-arch** (amd64 + arm64), so Apple-Silicon runs native. Ports bind to `127.0.0.1` only. Connection credentials go into a bundled **OpenBao** vault (ADR 0039) rather than the plaintext store it replaced, which is the one value you supply — it runs in dev mode (in-memory), so restarting the stack means re-entering connection credentials. To pin a release instead of the moving tags: `DATAQ_BACKEND_TAG=vX.Y.Z DATAQ_FRONTEND_TAG=vX.Y.Z docker compose -f docker-compose.ghcr.yml up`.
 
-> Self-hosting with **your own** IdP — Azure AD, AWS Cognito, or any standards-compliant OIDC provider? The published frontend is **one generic image** — the compose eval runs it with `DATAQ_AUTH_MODE=otp`. For real SSO, **no rebuild**: run that same image with `DATAQ_AUTH_MODE=oidc` + `DATAQ_AUTH_AUTHORITY` / `DATAQ_AUTH_CLIENT_ID` / `DATAQ_AUTH_API_SCOPE` (auth config is injected at runtime, ADR 0028), and run the backend with `AUTH_DEV_BYPASS` off. See [Getting started](https://theurgicduke771.github.io/DataQ/docs/latest/get-started/install/).
+> Self-hosting with **your own** IdP — Azure AD, AWS Cognito, or any standards-compliant OIDC provider? The published frontend is **one generic image** — the compose eval runs it with `DATAQ_AUTH_MODE=otp`. For real SSO, **no rebuild**: run that same image with `DATAQ_AUTH_MODE=oidc` + `DATAQ_AUTH_AUTHORITY` / `DATAQ_AUTH_CLIENT_ID` / `DATAQ_AUTH_API_SCOPE` (auth config is injected at runtime, ADR 0028),. See [Getting started](https://theurgicduke771.github.io/DataQ/docs/latest/get-started/install/).
 
 ### Develop DataQ — from source
 
@@ -72,7 +72,7 @@ conda activate dataq
 docker-compose up
 ```
 
-Backend at `http://localhost:8000` (Swagger at `/docs`), frontend at `http://localhost:3000`. `setup.sh` asks which address may sign in and writes it to your gitignored `.env`; codes land in the bundled inbox at `http://localhost:8025`. Answering blank is the explicit downgrade to dev-bypass.
+Backend at `http://localhost:8000` (Swagger at `/docs`), frontend at `http://localhost:3000`. `setup.sh` asks which address may sign in and writes it to your gitignored `.env`; codes land in the bundled inbox at `http://localhost:8025`.
 
 ## MCP (AI assistant access)
 
