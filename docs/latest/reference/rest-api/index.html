@@ -3109,7 +3109,17 @@ an outbound model request.</p>
 <tr>
 <td>GET</td>
 <td><code>/admin/deployment</code></td>
-<td>Declared residency / deployment posture (<code>DEPLOYMENT_REGION</code>).</td>
+<td>Declared residency / deployment posture (<code>DEPLOYMENT_REGION</code>); <code>zero_sample_mode</code> is the effective value and <code>zero_sample_source</code> says which of env / setting turned it on.</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/admin/privacy</code></td>
+<td>Zero-sample mode: effective value, stored toggle, source, whether the environment pins it.</td>
+</tr>
+<tr>
+<td>PUT</td>
+<td><code>/admin/privacy</code></td>
+<td>Set zero-sample mode (audited); 409 when the environment pins it on and the request turns it off.</td>
 </tr>
 <tr>
 <td>GET</td>

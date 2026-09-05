@@ -1217,6 +1217,16 @@ connect, TLS, auth or send — and carries the request ID to search the server l
 success means the mailer accepted the message; if it then never arrives, the relay is the
 next place to look, not this configuration.
 
+## Settings — privacy & failing samples
+
+**Zero-sample mode** stops failing-row samples from being stored at all: results, dry-runs,
+incident evidence and alerts carry aggregates and metric values only. The toggle takes
+effect on the next run — nothing has to restart. If the deployment pins the mode on in its
+environment the toggle is shown pinned and can only be turned *on* from here, never off;
+that is deliberate, so an operator's floor cannot be undone by a click. Every change is
+audited with who made it and when. Samples stored before the switch are not deleted by it;
+the retention sweep removes them on its schedule.
+
 ## Integrations — webhook auth
 
 Each inbound webhook row states the auth mode it uses, because that determines how the URL
@@ -3146,6 +3156,12 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ## Unreleased
 
+### Added
+
+- **Zero-sample mode is a workspace setting.** Admin → Settings → Privacy & failing samples
+  turns it on without a restart; the environment variable stays the floor and cannot be
+  turned off from the app. `GET /admin/deployment` now says which of the two is in force.
+
 ### Changed
 
 - ⚠️ **Every DataQ user signs in.** The local stack has one sign-in mode, emailed
@@ -3958,7 +3974,9 @@ an outbound model request.
 | DELETE | `/admin/members/{id}` | Withdraw a membership — bites on the next request for every credential kind. Last-admin guarded; `confirm_self=true` to remove your own (audited). |
 | POST | `/admin/members/{id}/confirm` | Clear the provisional flag on an imported member. Grants nothing new (audited). |
 | GET | `/admin/audit-events` | The append-only audit log (config + data-access events, ADR 0041). |
-| GET | `/admin/deployment` | Declared residency / deployment posture (`DEPLOYMENT_REGION`). |
+| GET | `/admin/deployment` | Declared residency / deployment posture (`DEPLOYMENT_REGION`); `zero_sample_mode` is the effective value and `zero_sample_source` says which of env / setting turned it on. |
+| GET | `/admin/privacy` | Zero-sample mode: effective value, stored toggle, source, whether the environment pins it. |
+| PUT | `/admin/privacy` | Set zero-sample mode (audited); 409 when the environment pins it on and the request turns it off. |
 | GET | `/admin/orchestration/webhooks` | Webhook receiver URLs + auth mode per provider. |
 | GET | `/admin/secret-sweep` | Last orphan-secret sweep report — `never_run` if the sweep hasn't recorded one. |
 | POST | `/admin/secret-sweep/run` | Run the orphan-secret sweep now, always report-only (audited). |
@@ -4635,6 +4653,11 @@ erDiagram
     workspace_health {
         string key PK "signal name, e.g. orchestration_poll_staleness"
         timestamptz alerted_at "delivered-first flag - set only after a publish succeeded"
+    }
+    privacy_settings {
+        int id PK "always 1 - singleton zero-sample privacy switch"
+        bool zero_sample_mode "default false - effective state is the env floor OR this"
+        uuid updated_by FK "the admin who last changed it; SET NULL on erasure"
     }
     llm_settings {
         int id PK "always 1 - singleton provider config (ADR 0042)"
@@ -5646,11 +5669,14 @@ DataQ runs checks *against* your data; it is **not** a copy of your data. What i
   step past redaction: no failing-row sample is ever **persisted** at all — not full, not
   redacted — only aggregates (`metric_value`, unexpected counts/percents). It gates the one
   write-path choke point every check kind funnels through, so results, alerts and MCP all
-  inherit the suppression from what's actually in the database. `GET /admin/deployment`
-  reports whether it's on. **Both the api and the worker process must be restarted** after
-  changing this setting — each process caches its own config, so a rolling restart that
-  updates only one can leave the reported posture and the worker's actual behavior
-  disagreeing until the second process comes back up.
+  inherit the suppression from what's actually in the database. It is also a workspace
+  setting: an admin can turn it on from **Admin → Settings → Privacy & failing samples**,
+  and the change applies on the next run with no restart, because every sample writer reads
+  one resolver per request. The environment variable is the floor, not the whole answer —
+  the effective state is the env value OR the stored toggle, so a deployment that pins it
+  on in the environment cannot be turned off from the app (the toggle is shown pinned).
+  `GET /admin/deployment` reports the effective value and which of the two turned it on.
+  Turning it on does not delete samples already stored; the retention sweep does.
 - **Logs & traces** are PII-redacted at the logger level, and secret values never enter them.
 
 ## Retention

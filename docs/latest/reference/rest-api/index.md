@@ -224,7 +224,9 @@ an outbound model request.
 | DELETE | `/admin/members/{id}` | Withdraw a membership — bites on the next request for every credential kind. Last-admin guarded; `confirm_self=true` to remove your own (audited). |
 | POST | `/admin/members/{id}/confirm` | Clear the provisional flag on an imported member. Grants nothing new (audited). |
 | GET | `/admin/audit-events` | The append-only audit log (config + data-access events, ADR 0041). |
-| GET | `/admin/deployment` | Declared residency / deployment posture (`DEPLOYMENT_REGION`). |
+| GET | `/admin/deployment` | Declared residency / deployment posture (`DEPLOYMENT_REGION`); `zero_sample_mode` is the effective value and `zero_sample_source` says which of env / setting turned it on. |
+| GET | `/admin/privacy` | Zero-sample mode: effective value, stored toggle, source, whether the environment pins it. |
+| PUT | `/admin/privacy` | Set zero-sample mode (audited); 409 when the environment pins it on and the request turns it off. |
 | GET | `/admin/orchestration/webhooks` | Webhook receiver URLs + auth mode per provider. |
 | GET | `/admin/secret-sweep` | Last orphan-secret sweep report — `never_run` if the sweep hasn't recorded one. |
 | POST | `/admin/secret-sweep/run` | Run the orphan-secret sweep now, always report-only (audited). |

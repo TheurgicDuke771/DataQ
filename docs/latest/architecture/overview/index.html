@@ -2923,6 +2923,11 @@ flowchart LR
         string key PK "signal name, e.g. orchestration_poll_staleness"
         timestamptz alerted_at "delivered-first flag - set only after a publish succeeded"
     }
+    privacy_settings {
+        int id PK "always 1 - singleton zero-sample privacy switch"
+        bool zero_sample_mode "default false - effective state is the env floor OR this"
+        uuid updated_by FK "the admin who last changed it; SET NULL on erasure"
+    }
     llm_settings {
         int id PK "always 1 - singleton provider config (ADR 0042)"
         string provider "anthropic / openai_compatible"

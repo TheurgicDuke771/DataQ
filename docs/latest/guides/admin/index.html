@@ -1397,6 +1397,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#settings-privacy-failing-samples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings — privacy &amp; failing samples
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#integrations-webhook-auth" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2850,6 +2861,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#settings-privacy-failing-samples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings — privacy &amp; failing samples
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#integrations-webhook-auth" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3271,6 +3293,14 @@ card rather than passing by in a toast: a failure names the transport stage that
 connect, TLS, auth or send — and carries the request ID to search the server log by. A
 success means the mailer accepted the message; if it then never arrives, the relay is the
 next place to look, not this configuration.</p>
+<h2 id="settings-privacy-failing-samples">Settings — privacy &amp; failing samples<a class="headerlink" href="#settings-privacy-failing-samples" title="Permanent link">¶</a></h2>
+<p><strong>Zero-sample mode</strong> stops failing-row samples from being stored at all: results, dry-runs,
+incident evidence and alerts carry aggregates and metric values only. The toggle takes
+effect on the next run — nothing has to restart. If the deployment pins the mode on in its
+environment the toggle is shown pinned and can only be turned <em>on</em> from here, never off;
+that is deliberate, so an operator's floor cannot be undone by a click. Every change is
+audited with who made it and when. Samples stored before the switch are not deleted by it;
+the retention sweep removes them on its schedule.</p>
 <h2 id="integrations-webhook-auth">Integrations — webhook auth<a class="headerlink" href="#integrations-webhook-auth" title="Permanent link">¶</a></h2>
 <p>Each inbound webhook row states the auth mode it uses, because that determines how the URL
 must be handled. The Azure Data Factory URL carries a <strong>shared secret in the query string</strong>
