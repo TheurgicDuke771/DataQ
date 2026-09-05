@@ -463,6 +463,7 @@ def dry_run_check(
     assert connection is not None
     outcome = dryrun.dry_run_check(
         connection,
+        session=db,
         kind=payload.kind,
         expectation_type=payload.expectation_type,
         config=payload.config,

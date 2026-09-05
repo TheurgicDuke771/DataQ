@@ -20,6 +20,7 @@ from backend.app.datasources.sampling import MAX_SAMPLE_ROWS
 from backend.app.db.models import Connection, Suite, User
 from backend.app.db.session import get_db
 from backend.app.services import (
+    credential_health,
     live_probe,
     orchestration_service,
     run_dispatch,
@@ -498,6 +499,7 @@ def profile_columns(
     assert connection is not None
     result = profile.profile_connection(
         connection,
+        session=db,
         columns=payload.columns,
         top_n=payload.top_n,
         table=payload.table,
@@ -642,6 +644,7 @@ def list_columns(
     assert connection is not None
     columns = profile.list_columns(
         connection,
+        session=db,
         table=table,
         schema=schema_,
         catalog=catalog,
@@ -688,16 +691,20 @@ def preview_batch_target(
     assert connection is not None
     # Every failure mode is already a typed `DataQError` from `run_target` (batch_preview_no_data /
     # _invalid / _failed, or suite_target_invalid), so the router stays a pass-through.
-    path = run_target.preview_batch(
-        connection.type,
-        connection.config,
-        prefix=prefix,
-        pattern=pattern,
-        strategy=strategy,
-        batch=batch,
-        secret_ref=connection.secret_ref,
-        secret_store=secret_store,
-    )
+    # Credential-health seam (#1697) — `preview_batch` takes primitives, not the ORM row,
+    # so the seam sits here where the row is in scope. The only door in this file that
+    # does not reach the signal through a service-layer `session=` argument.
+    with credential_health.credential_use(db, connection):
+        path = run_target.preview_batch(
+            connection.type,
+            connection.config,
+            prefix=prefix,
+            pattern=pattern,
+            strategy=strategy,
+            batch=batch,
+            secret_ref=connection.secret_ref,
+            secret_store=secret_store,
+        )
     return BatchPreviewRead(path=path)
 
 
@@ -810,6 +817,7 @@ def suggest_column_policy(
     assert connection is not None
     policy = profile.suggest_policy_for_target(
         connection,
+        session=db,
         table=payload.table,
         schema=payload.schema_,
         catalog=payload.catalog,

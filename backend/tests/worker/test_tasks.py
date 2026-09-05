@@ -32,7 +32,11 @@ class FakeSession:
         self.executed: list[Any] = []
         self.closed = False
 
-    def get(self, model: type, pk: Any) -> Any:
+    def get(self, model: type, pk: Any, with_for_update: bool = False) -> Any:
+        # `with_for_update` is how the credential-health seam row-locks a connection
+        # for its bookkeeping write (#1697). Accepting it keeps this double faithful:
+        # without it the seam raises, and the resulting rollback silently discarded the
+        # run's results — a green-looking double hiding a real behaviour change.
         return self._objs.get(model)
 
     def scalars(self, _stmt: Any) -> Any:

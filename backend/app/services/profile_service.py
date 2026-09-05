@@ -15,6 +15,8 @@ from sqlalchemy.sql import Select
 if TYPE_CHECKING:
     from sqlalchemy.engine.interfaces import Dialect
 
+from sqlalchemy.orm import Session
+
 from backend.app.core.errors import DataQError
 from backend.app.core.jsonsafe import sanitize_json
 from backend.app.core.logging import get_logger
@@ -42,6 +44,7 @@ from backend.app.datasources.snowflake import (
 from backend.app.datasources.sql import core_table, folding_identifier, is_sql_identifier
 from backend.app.datasources.unity_catalog import UnityCatalogConfig, build_databricks_url
 from backend.app.db.models import Connection
+from backend.app.services import credential_health
 from backend.app.services.column_classification import ColumnClass, classify_column
 
 log = get_logger(__name__)
@@ -872,6 +875,7 @@ def derive_column_policy(columns: list[ColumnProfile]) -> dict[str, Any]:
 def profile_connection(
     connection: Connection,
     *,
+    session: Session,
     columns: list[str],
     top_n: int,
     table: str | None = None,
@@ -883,45 +887,47 @@ def profile_connection(
     secret_store: SecretStore,
 ) -> ProfileResult:
     """Dispatch to the SQL, flat-file, or Iceberg profiler based on the type."""
-    profiler = resolve_profiler(connection, table=table, catalog=catalog, path=path)
-    if isinstance(profiler, _IcebergProfiler):
-        assert table is not None  # resolve_profiler enforced this for Iceberg
-        return profile_iceberg(
+    # Credential-health seam (#1697) — every profiler branch reads live data with this
+    # connection's stored credential.
+    with credential_health.credential_use(session, connection):
+        profiler = resolve_profiler(connection, table=table, catalog=catalog, path=path)
+        if isinstance(profiler, _IcebergProfiler):
+            assert table is not None  # resolve_profiler enforced this for Iceberg
+            return profile_iceberg(
+                connection,
+                table=table,
+                namespace=namespace,
+                columns=columns,
+                top_n=top_n,
+                secret_store=secret_store,
+            )
+        if isinstance(profiler, _SqlProfiler):
+            assert table is not None  # resolve_profiler enforced this for SQL types
+            return profile_table(
+                connection,
+                table=table,
+                schema=schema,
+                catalog=catalog,
+                columns=columns,
+                top_n=top_n,
+                secret_store=secret_store,
+            )
+        assert path is not None  # resolve_profiler enforced this for flat-file types
+        return profile_file(
             connection,
-            table=table,
-            namespace=namespace,
+            path=path,
+            file_format=file_format,
             columns=columns,
             top_n=top_n,
             secret_store=secret_store,
         )
-    if isinstance(profiler, _SqlProfiler):
-        assert table is not None  # resolve_profiler enforced this for SQL types
-        return profile_table(
-            connection,
-            table=table,
-            schema=schema,
-            catalog=catalog,
-            columns=columns,
-            top_n=top_n,
-            secret_store=secret_store,
-        )
-    assert path is not None  # resolve_profiler enforced this for flat-file types
-    return profile_file(
-        connection,
-        path=path,
-        file_format=file_format,
-        columns=columns,
-        top_n=top_n,
-        secret_store=secret_store,
-    )
 
-
-# ───────────────────────── column listing (introspection) ──────────
-#
-# A read-only "what columns does this target have?" lookup, so the check editor
-# can offer a column *dropdown* instead of free-text (#474). Reuses the same
-# connection plumbing, target dispatch, and identifier validation as the
-# profiler — it's the same target, just names instead of stats.
+    # ───────────────────────── column listing (introspection) ──────────
+    #
+    # A read-only "what columns does this target have?" lookup, so the check editor
+    # can offer a column *dropdown* instead of free-text (#474). Reuses the same
+    # connection plumbing, target dispatch, and identifier validation as the
+    # profiler — it's the same target, just names instead of stats.
 
 
 def list_table_columns(
@@ -990,6 +996,7 @@ def list_file_columns(
 def list_columns(
     connection: Connection,
     *,
+    session: Session,
     table: str | None = None,
     schema: str | None = None,
     catalog: str | None = None,
@@ -999,26 +1006,30 @@ def list_columns(
     secret_store: SecretStore,
 ) -> list[str]:
     """List a target's column names, dispatching on the connection type."""
-    profiler = resolve_profiler(connection, table=table, catalog=catalog, path=path)
-    if isinstance(profiler, _IcebergProfiler):
-        assert table is not None  # resolve_profiler enforced this for Iceberg
-        return list_iceberg_columns(
-            connection, table=table, namespace=namespace, secret_store=secret_store
+    # Credential-health seam (#1697) — introspection opens the datasource with this
+    # connection's stored credential, on every type (SQL, flat-file, Iceberg).
+    with credential_health.credential_use(session, connection):
+        profiler = resolve_profiler(connection, table=table, catalog=catalog, path=path)
+        if isinstance(profiler, _IcebergProfiler):
+            assert table is not None  # resolve_profiler enforced this for Iceberg
+            return list_iceberg_columns(
+                connection, table=table, namespace=namespace, secret_store=secret_store
+            )
+        if isinstance(profiler, _SqlProfiler):
+            assert table is not None  # resolve_profiler enforced this for SQL types
+            return list_table_columns(
+                connection, table=table, schema=schema, catalog=catalog, secret_store=secret_store
+            )
+        assert path is not None  # resolve_profiler enforced this for flat-file types
+        return list_file_columns(
+            connection, path=path, file_format=file_format, secret_store=secret_store
         )
-    if isinstance(profiler, _SqlProfiler):
-        assert table is not None  # resolve_profiler enforced this for SQL types
-        return list_table_columns(
-            connection, table=table, schema=schema, catalog=catalog, secret_store=secret_store
-        )
-    assert path is not None  # resolve_profiler enforced this for flat-file types
-    return list_file_columns(
-        connection, path=path, file_format=file_format, secret_store=secret_store
-    )
 
 
 def suggest_policy_for_target(
     connection: Connection,
     *,
+    session: Session,
     table: str | None = None,
     schema: str | None = None,
     catalog: str | None = None,
@@ -1031,6 +1042,7 @@ def suggest_policy_for_target(
     """List → profile → classify a target's columns into a redaction-policy suggestion."""
     columns = list_columns(
         connection,
+        session=session,
         table=table,
         schema=schema,
         catalog=catalog,
@@ -1041,6 +1053,7 @@ def suggest_policy_for_target(
     )
     result = profile_connection(
         connection,
+        session=session,
         columns=columns,
         top_n=top_n,
         table=table,

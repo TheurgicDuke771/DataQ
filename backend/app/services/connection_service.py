@@ -33,7 +33,7 @@ from backend.app.db.models import (
     Run,
     Suite,
 )
-from backend.app.services import audit_service
+from backend.app.services import audit_service, credential_health
 from backend.app.services.asset_service import resolve_and_upsert_asset
 from backend.app.services.suite_service import accessible_suite_ids
 
@@ -949,13 +949,17 @@ def test_connection(
         )
 
     capabilities: dict[str, Any] = {}
+    # Credential-health seam (#1697). An admin who has just re-authenticated must see the
+    # signal clear on the same request, so a passing test stamps success here — this is the
+    # one door that both `/test` and `/reauth` (which calls this function) go through.
     try:
-        adapter.test(
-            dict(conn.config),
-            secret,
-            **_capability_probe_kwargs(adapter, capabilities),
-            **_extra_secrets(conn.config, secret_store),
-        )
+        with credential_health.credential_use(session, conn):
+            adapter.test(
+                dict(conn.config),
+                secret,
+                **_capability_probe_kwargs(adapter, capabilities),
+                **_extra_secrets(conn.config, secret_store),
+            )
     except Exception as exc:
         log.warning(
             "connection_test_failed",
