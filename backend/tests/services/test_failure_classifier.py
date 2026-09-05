@@ -2,14 +2,17 @@
 
 import pytest
 
+from backend.app.core.secrets import SecretStoreUnavailableError
 from backend.app.services.failure_classifier import (
     _MESSAGES,
     _ORCHESTRATION_MESSAGES,
+    _SECRET_STORE_MESSAGES,
     FailureCategory,
     classify_failure_category,
     classify_failure_reason,
     classify_inventory_sync_error,
     classify_orchestration_poll_reason,
+    classify_secret_store_reason,
 )
 
 
@@ -296,3 +299,51 @@ class TestOrchestrationPollReason:
         reason = classify_orchestration_poll_reason(RuntimeError(f"401 unauthorized: {secret}"))
         assert secret not in reason
         assert "SUPERSECRET" not in reason
+
+
+class TestSecretStoreClassification:
+    """#1886 — the orphan-secret sweep report: an outage must never read as "0
+    orphans found" (ADR 0039), which starts with classifying the outage correctly.
+    """
+
+    # The exact message `OpenBaoSecretStore.list_secrets` raises on a sealed/standby vault
+    # (`app/core/secrets.py`'s `_explain_status(503)`) — a real string, not a paraphrase.
+    SEALED_OR_STANDBY = SecretStoreUnavailableError(
+        "OpenBao at http://openbao:8200 could not be listed: "
+        "503 — vault sealed or standby — unseal it, or point OPENBAO_ADDR at the active node"
+    )
+
+    def test_sealed_or_standby_classifies_connectivity_not_unknown(self) -> None:
+        """Before this fix: none of the marker phrases match "sealed"/"standby", so
+        the generic marker scan alone fell through to UNKNOWN — "check the worker
+        logs" for the one outage ADR 0039 calls out by name. The type-based
+        short-circuit in `classify_secret_store_reason` is what fixes it; the
+        generic `classify_failure_category` this message would otherwise scan
+        through is asserted UNKNOWN below to pin exactly what the short-circuit is
+        rescuing.
+        """
+        assert classify_failure_category(self.SEALED_OR_STANDBY) == FailureCategory.UNKNOWN
+        reason = classify_secret_store_reason(self.SEALED_OR_STANDBY)
+        assert reason == _SECRET_STORE_MESSAGES[FailureCategory.CONNECTIVITY]
+        assert "unknown" not in reason.lower()
+        assert "could not classify" not in reason.lower()
+
+    def test_a_secret_store_unavailable_error_is_connectivity_regardless_of_message(self) -> None:
+        """The type alone is the classification (per the class's own docstring) — a
+        message with none of the usual markers must still land CONNECTIVITY.
+        """
+        reason = classify_secret_store_reason(SecretStoreUnavailableError("unstructured"))
+        assert reason == _SECRET_STORE_MESSAGES[FailureCategory.CONNECTIVITY]
+
+    def test_a_non_unavailable_exception_still_falls_through_to_the_generic_classifier(
+        self,
+    ) -> None:
+        """A plain permission-shaped error (not `SecretStoreUnavailableError`) must still
+        classify PERMISSION via the ordinary marker scan — the short-circuit is additive.
+        """
+        reason = classify_secret_store_reason(PermissionError("access denied"))
+        assert reason == _SECRET_STORE_MESSAGES[FailureCategory.PERMISSION]
+
+    def test_every_category_has_a_secret_store_message(self) -> None:
+        for category in FailureCategory:
+            assert category in _SECRET_STORE_MESSAGES

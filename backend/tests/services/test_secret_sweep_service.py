@@ -24,38 +24,21 @@ from backend.app.services.secret_sweep_service import (
     find_orphan_secrets,
     sweep_orphan_secrets,
 )
-from backend.tests.support.fake_secret_store import FakeSecretStore
+from backend.tests.support.fake_secret_store import (
+    BrokenSecretStore,
+    EnumerableSecretStore,
+    UnlistableSecretStore,
+)
 
 NOW = datetime(2026, 7, 27, 12, 0, tzinfo=UTC)
 OLD = NOW - timedelta(days=90)
 RECENT = NOW - timedelta(days=1)
 GRACE = timedelta(days=30)
 
-
-class _EnumerableStore(FakeSecretStore):
-    """A store that can enumerate itself via `list_secrets()` — only OpenBao/AKV implement this for
-    real; the sweep duck-types via `getattr` since `EnvSecretStore` and every other test double
-    lack it.
-    """
-
-    def __init__(self, secrets: list[SecretInfo]) -> None:
-        super().__init__()
-        self._secrets = secrets
-
-    def get(self, name: str) -> str:  # pragma: no cover - not exercised
-        raise AssertionError("the sweep must never read a secret VALUE")
-
-    def set(self, name: str, value: str) -> None:  # pragma: no cover
-        raise AssertionError("the sweep must never write")
-
-    def list_secrets(self) -> list[SecretInfo]:
-        return list(self._secrets)
-
-
-class _UnlistableStore(_EnumerableStore):
-    """Mirrors EnvSecretStore and every test double: no `list_secrets`."""
-
-    list_secrets = None  # type: ignore[assignment]
+# Local aliases: the shared doubles moved to tests/support/fake_secret_store.py (#1886 review)
+# so test_secret_sweep_task.py can use the exact same behaviour rather than a laxer re-declaration.
+_EnumerableStore = EnumerableSecretStore
+_UnlistableStore = UnlistableSecretStore
 
 
 def _user(session: Session) -> User:
@@ -358,7 +341,8 @@ def test_purge_attempted_records_the_attempt_not_the_outcome(db_session: Session
 def test_sweep_disabled_by_non_positive_grace(db_session: Session) -> None:
     store = _EnumerableStore([SecretInfo("conn-dead-dev-abc123", OLD)])
     result = sweep_orphan_secrets(db_session, store=store, grace_days=0, purge=True, now=NOW)
-    assert result == secret_sweep_service.OrphanSweepResult(0, [], [], [], [])
+    assert result.orphans == []
+    assert result.skipped_reason is not None
     assert store.deleted == []
 
 
@@ -369,6 +353,7 @@ def test_sweep_skips_a_store_that_cannot_enumerate(db_session: Session) -> None:
     store = _UnlistableStore([SecretInfo("conn-dead-dev-abc123", OLD)])
     result = sweep_orphan_secrets(db_session, store=store, grace_days=30, purge=True, now=NOW)
     assert result.orphans == []
+    assert result.skipped_reason is not None
     assert store.deleted == []
 
 
@@ -376,10 +361,184 @@ def test_sweep_propagates_a_store_outage_instead_of_reporting_zero(db_session: S
     """A vault that cannot be listed must fail the task, never look like a clean
     vault — the #954 masquerade applied to a destructive path.
     """
-
-    class _BrokenStore(_EnumerableStore):
-        def list_secrets(self) -> list[SecretInfo]:
-            raise RuntimeError("vault sealed")
-
+    store = BrokenSecretStore(error=RuntimeError("vault sealed"))
     with pytest.raises(RuntimeError, match="vault sealed"):
-        sweep_orphan_secrets(db_session, store=_BrokenStore([]), grace_days=30, purge=True, now=NOW)
+        sweep_orphan_secrets(db_session, store=store, grace_days=30, purge=True, now=NOW)
+
+
+# ── The persisted report (#1886) ─────────────────────────────────────────────
+
+
+def test_read_sweep_report_is_none_when_never_run(db_session: Session) -> None:
+    assert secret_sweep_service.read_sweep_report(db_session) is None
+
+
+def test_record_sweep_report_round_trips(db_session: Session) -> None:
+    secret_sweep_service.record_sweep_report(
+        db_session,
+        mode="report",
+        orphan_count=2,
+        orphan_names=["conn-dead-dev-abc123", "conn-dead-qa-def456"],
+        scanned=5,
+        unknown_age_count=1,
+        too_young_count=2,
+        store="openbao",
+        error=None,
+        now=NOW,
+    )
+    db_session.commit()
+
+    report = secret_sweep_service.read_sweep_report(db_session)
+    assert report is not None
+    assert report.ran_at == NOW
+    assert report.mode == "report"
+    assert report.status == "recorded"
+    assert report.orphan_count == 2
+    assert report.orphan_names == ["conn-dead-dev-abc123", "conn-dead-qa-def456"]
+    assert report.truncated is False
+    assert report.scanned == 5
+    assert report.unknown_age_count == 1
+    assert report.too_young_count == 2
+    assert report.store == "openbao"
+    assert report.error is None
+
+
+def test_record_sweep_report_is_idempotent_across_runs(db_session: Session) -> None:
+    """A second run overwrites the one row rather than accumulating rows."""
+    from sqlalchemy import select
+
+    from backend.app.db.models import WorkspaceHealth
+
+    secret_sweep_service.record_sweep_report(
+        db_session,
+        mode="report",
+        orphan_count=1,
+        orphan_names=["conn-a"],
+        scanned=1,
+        unknown_age_count=0,
+        too_young_count=0,
+        store="env",
+        error=None,
+    )
+    db_session.commit()
+    secret_sweep_service.record_sweep_report(
+        db_session,
+        mode="purge",
+        orphan_count=0,
+        orphan_names=[],
+        scanned=3,
+        unknown_age_count=0,
+        too_young_count=0,
+        store="env",
+        error=None,
+    )
+    db_session.commit()
+
+    rows = db_session.scalars(
+        select(WorkspaceHealth).where(WorkspaceHealth.key == secret_sweep_service.SWEEP_REPORT_KEY)
+    ).all()
+    assert len(rows) == 1
+    report = secret_sweep_service.read_sweep_report(db_session)
+    assert report is not None
+    assert report.mode == "purge"
+    assert report.orphan_count == 0
+
+
+def test_record_sweep_report_caps_names_and_flags_truncated(db_session: Session) -> None:
+    names = [f"conn-orphan-{i}" for i in range(secret_sweep_service.MAX_REPORTED_ORPHAN_NAMES + 5)]
+    secret_sweep_service.record_sweep_report(
+        db_session,
+        mode="report",
+        orphan_count=len(names),
+        orphan_names=names,
+        scanned=len(names),
+        unknown_age_count=0,
+        too_young_count=0,
+        store="env",
+        error=None,
+    )
+    db_session.commit()
+
+    report = secret_sweep_service.read_sweep_report(db_session)
+    assert report is not None
+    assert len(report.orphan_names) == secret_sweep_service.MAX_REPORTED_ORPHAN_NAMES
+    assert report.truncated is True
+    # The count still reflects the true total, not the capped list length.
+    assert report.orphan_count == len(names)
+
+
+def test_record_sweep_report_persists_scanned_and_undatable_buckets(db_session: Session) -> None:
+    """#1886 review: N secrets the store could not date (`unknown_age`) or that are
+    still inside the grace period (`too_young`) must be visible beside `orphan_count`
+    — an OpenBao token missing `read` on `<mount>/metadata/*` usually shows up as a
+    nonzero `unknown_age_count`, and `orphan_count=0` alone would hide it.
+    """
+    secret_sweep_service.record_sweep_report(
+        db_session,
+        mode="report",
+        orphan_count=0,
+        orphan_names=[],
+        scanned=9,
+        unknown_age_count=4,
+        too_young_count=2,
+        store="openbao",
+        error=None,
+    )
+    db_session.commit()
+
+    report = secret_sweep_service.read_sweep_report(db_session)
+    assert report is not None
+    assert report.scanned == 9
+    assert report.unknown_age_count == 4
+    assert report.too_young_count == 2
+
+
+def test_record_sweep_report_a_store_outage_is_null_count_not_zero(db_session: Session) -> None:
+    """An unreachable store must read `orphan_count=None` + an `error` — never a
+    fake `0`, the #954 masquerade applied to this signal (ADR 0039).
+    """
+    secret_sweep_service.record_sweep_report(
+        db_session,
+        mode="report",
+        orphan_count=None,
+        orphan_names=[],
+        scanned=None,
+        unknown_age_count=None,
+        too_young_count=None,
+        store="openbao",
+        error="The secret store could not be reached (network, DNS, TLS, or a timeout).",
+    )
+    db_session.commit()
+
+    report = secret_sweep_service.read_sweep_report(db_session)
+    assert report is not None
+    assert report.status == "recorded"
+    assert report.orphan_count is None
+    assert report.scanned is None
+    assert report.error is not None
+
+
+def test_record_sweep_report_skipped_is_null_count_not_zero(db_session: Session) -> None:
+    """A skipped sweep (grace disabled, or the store cannot enumerate) is a config
+    state, distinct from a completed-but-failed run: `status="skipped"`, never a fake
+    `0` orphans (#1886 review).
+    """
+    secret_sweep_service.record_sweep_report(
+        db_session,
+        mode="report",
+        status="skipped",
+        orphan_count=None,
+        orphan_names=[],
+        scanned=None,
+        unknown_age_count=None,
+        too_young_count=None,
+        store="env",
+        error="the secret store cannot enumerate its own secrets (no list_secrets)",
+    )
+    db_session.commit()
+
+    report = secret_sweep_service.read_sweep_report(db_session)
+    assert report is not None
+    assert report.status == "skipped"
+    assert report.orphan_count is None
+    assert report.error is not None

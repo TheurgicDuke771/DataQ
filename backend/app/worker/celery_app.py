@@ -36,6 +36,8 @@ LLM_QUEUE_NAME = "llm"
 #: default one: behind a top-of-the-hour run_suite fan-out a sign-in code would wait its whole
 #: TTL and be discarded, and a NEW queue would need the coordinated worker `-Q` change (#1777).
 OTP_SEND_TASK_NAME = "send_otp_code"
+#: Shared by the task registration, the beat entry and `dispatch_secret_sweep`.
+SWEEP_ORPHAN_SECRETS_TASK_NAME = "sweep_orphan_secrets"
 #: Celery's own default (unrouted) queue name, named here for clarity at read sites (#1885).
 DEFAULT_QUEUE_NAME = "celery"
 #: Queues the admin health API (#1885) reports `LLEN` depth for.
@@ -140,7 +142,7 @@ def create_celery_app() -> Celery:
             # Orphan-secret sweep (#1059): REPORTING-ONLY unless SECRET_ORPHAN_PURGE
             # is set — what it would delete is a live warehouse credential.
             "sweep-orphan-secrets": {
-                "task": "sweep_orphan_secrets",
+                "task": SWEEP_ORPHAN_SECRETS_TASK_NAME,
                 "schedule": crontab(hour="1", minute="57"),  # daily, 01:57 UTC
             },
             # Catalog lineage pull (#762, ADR 0034): dark by default — no-ops

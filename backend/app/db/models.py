@@ -1036,6 +1036,9 @@ class WorkspaceHealth(Base):
 
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     alerted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    #: Structured signal detail (#1886) — `None` for signals that carry nothing beyond
+    #: the key/timestamp (poll-staleness flag, near-miss markers, beat heartbeat).
+    payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     updated_at: Mapped[datetime] = _updated_at()
 
 
