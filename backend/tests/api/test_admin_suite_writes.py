@@ -379,7 +379,8 @@ def test_the_delete_audit_carries_the_blast_radius(client: TestClient, db_sessio
 
 
 def test_an_unknown_suite_delete_is_404(client: TestClient) -> None:
-    assert client.delete(f"/api/v1/admin/suites/{uuid.uuid4()}").status_code == 404
+    resp = client.delete(f"/api/v1/admin/suites/{uuid.uuid4()}")
+    assert resp.status_code == 404
 
 
 @pytest.mark.parametrize("role", ["member", "viewer"])
