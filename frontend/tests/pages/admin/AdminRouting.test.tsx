@@ -28,6 +28,14 @@ vi.mock('../../../src/api/admin', () => ({
   listAuditEvents: vi.fn(),
   getDeploymentPosture: vi.fn(),
   testAuthEmail: vi.fn(),
+  listWorkspaceMembers: vi.fn(async () => ({
+    enforcement_active: false,
+    unmanaged_user_count: 0,
+    members: [],
+  })),
+  addWorkspaceMember: vi.fn(),
+  removeWorkspaceMember: vi.fn(),
+  confirmWorkspaceMember: vi.fn(),
   WORKSPACE_ROLES: ['admin', 'member', 'viewer'],
 }));
 

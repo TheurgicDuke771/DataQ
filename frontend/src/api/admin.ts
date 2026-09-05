@@ -64,6 +64,68 @@ export async function setAdminUserRole(userId: string, role: WorkspaceRole): Pro
   return data;
 }
 
+/** ── Workspace membership (ADR 0043) ─────────────────────────────────────────
+ *  Who is admitted to the workspace, as opposed to what they can do once in.
+ *  Adding a member does NOT create an account at the identity provider. */
+
+/** How the row got there: a deliberate add, or the switch-on import awaiting review. */
+export type MemberSource = 'admin' | 'auto_import';
+
+export interface WorkspaceMember {
+  id: string;
+  email: string;
+  initial_role: WorkspaceRole;
+  source: MemberSource;
+  invited_by_email: string | null;
+  created_at: string;
+  /** Set once this address has signed in at least once. */
+  user_id: string | null;
+  stored_role: WorkspaceRole | null;
+  /** `pending` means admitted but never signed in — not a failure state. */
+  status: 'active' | 'pending';
+}
+
+export interface MembershipView {
+  /** False while the list is empty: who may sign in is then env config alone. */
+  enforcement_active: boolean;
+  /** Existing users the FIRST add would import as provisional members. */
+  unmanaged_user_count: number;
+  members: WorkspaceMember[];
+}
+
+export interface MemberAdded {
+  member: WorkspaceMember;
+  auto_imported_count: number;
+  enforcement_active: boolean;
+}
+
+export async function listWorkspaceMembers(signal?: AbortSignal): Promise<MembershipView> {
+  const { data } = await api.get<MembershipView>('/admin/members', { signal });
+  return data;
+}
+
+export async function addWorkspaceMember(
+  email: string,
+  initialRole: WorkspaceRole,
+): Promise<MemberAdded> {
+  const { data } = await api.post<MemberAdded>('/admin/members', {
+    email,
+    initial_role: initialRole,
+  });
+  return data;
+}
+
+/** `confirmSelf` is required by the backend to remove your OWN membership. */
+export async function removeWorkspaceMember(id: string, confirmSelf = false): Promise<void> {
+  await api.delete(`/admin/members/${id}`, { params: { confirm_self: confirmSelf } });
+}
+
+/** Clear the provisional flag on an auto-imported row. Grants nothing new. */
+export async function confirmWorkspaceMember(id: string): Promise<WorkspaceMember> {
+  const { data } = await api.post<WorkspaceMember>(`/admin/members/${id}/confirm`);
+  return data;
+}
+
 export async function listAdminAccess(): Promise<AdminAccess[]> {
   const { data } = await api.get<AdminAccess[]>('/admin/access');
   return data;
