@@ -377,6 +377,63 @@ class UserNotFoundError(DataQError):
     code = "user_not_found"
 
 
+def assert_admin_remains(
+    session: Session,
+    *,
+    exclude_user_id: UUID | None = None,
+    exclude_member_id: UUID | None = None,
+) -> None:
+    """Refuse a change that would leave nobody who can both sign in and administer.
+
+    The two axes are separate tables and were guarded separately, so removing
+    B's membership and then demoting A each looked safe while together they
+    emptied the workspace. One predicate over both, locking `users` before
+    `workspace_members` so concurrent callers queue instead of deadlocking.
+
+    Stored-role admins only: an allowlist-resolved admin can vanish with the
+    next deploy, so it cannot be what keeps the workspace recoverable.
+    """
+    from backend.app.db.models import WorkspaceMember
+    from backend.app.services import membership_service
+
+    admins = session.execute(
+        select(User.id, func.lower(User.email))
+        .where(User.role == ADMIN_ROLE)
+        .order_by(User.id)
+        .with_for_update()
+    ).all()
+    enforced = membership_service.enforcement_active(session)
+    member_ids: dict[str, UUID] = {}
+    if enforced and admins:
+        member_ids = {
+            email: member_id
+            for member_id, email in session.execute(
+                select(WorkspaceMember.id, func.lower(WorkspaceMember.email))
+                .where(func.lower(WorkspaceMember.email).in_([email for _, email in admins]))
+                .order_by(WorkspaceMember.id)
+                .with_for_update()
+            ).all()
+        }
+    remaining = 0
+    for user_id, email in admins:
+        if user_id == exclude_user_id:
+            continue
+        if not enforced:
+            remaining += 1
+            continue
+        member_id = member_ids.get(email)
+        if member_id is None or member_id == exclude_member_id:
+            continue
+        remaining += 1
+    if remaining == 0:
+        raise RoleChangeRejectedError(
+            "cannot remove the last workspace admin — promote another user to "
+            "admin first. (Admins granted only by WORKSPACE_ADMIN_EMAILS do not "
+            "count: that allowlist is a recovery path, not the invariant.)",
+            detail={"stored_admin_count": len(admins)},
+        )
+
+
 def set_user_role(
     session: Session,
     user_id: UUID,
@@ -402,9 +459,6 @@ def set_user_role(
     ).scalar_one_or_none()
     if target is None:  # pragma: no cover — deleted between the check and the lock
         raise UserNotFoundError("user not found", detail={"user_id": str(user_id)})
-    admin_ids = set(
-        session.scalars(select(User.id).where(User.role == ADMIN_ROLE).with_for_update()).all()
-    )
     previous = target.role
 
     if previous == new_role:
@@ -419,15 +473,11 @@ def set_user_role(
             detail={"user_id": str(user_id)},
         )
 
-    # `target.id in admin_ids`, not `previous == ADMIN_ROLE`: both now come from the same locked
-    # snapshot.
-    if target.id in admin_ids and admin_ids <= {target.id}:
-        raise RoleChangeRejectedError(
-            "cannot remove the last workspace admin — promote another user to "
-            "admin first. (Admins granted only by WORKSPACE_ADMIN_EMAILS do not "
-            "count: that allowlist is a recovery path, not the invariant.)",
-            detail={"user_id": str(user_id), "stored_admin_count": len(admin_ids)},
-        )
+    # Keyed on the REQUESTED role, never on `previous`: `target` may be an
+    # identity-mapped object this session loaded before the lock, so its `role`
+    # can be stale. Excluding a non-admin costs nothing.
+    if new_role != ADMIN_ROLE:
+        assert_admin_remains(session, exclude_user_id=target.id)
 
     target.role = new_role
     # The durable record (ADR 0041 phase 1, #1318).
