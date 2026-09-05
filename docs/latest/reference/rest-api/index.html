@@ -1747,6 +1747,16 @@ an outbound model request.</p>
 <td>Poll staleness per orchestration connection, beat heartbeat, broker queue depth.</td>
 </tr>
 <tr>
+<td>GET</td>
+<td><code>/admin/secret-sweep</code></td>
+<td>Last orphan-secret sweep report — <code>never_run</code> if the sweep hasn't recorded one.</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/admin/secret-sweep/run</code></td>
+<td>Run the orphan-secret sweep now, always report-only (audited).</td>
+</tr>
+<tr>
 <td>POST</td>
 <td><code>/admin/auth-email/test</code></td>
 <td>SMTP pre-flight for the OTP mailer (per-admin throttled).</td>

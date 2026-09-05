@@ -3177,6 +3177,12 @@ are the reason this mode is opt-in rather than the default:</p>
   <strong>read</strong> one.</li>
 <li>Inbound webhooks are authenticated: ADF by a shared secret, Airflow and dbt by an
   <strong>HMAC-SHA256</strong> signature keyed on a stored signing key.</li>
+<li>A daily <strong>orphan-secret sweep</strong> reconciles the store against every row that should own a
+  secret, reporting (never purging, unless <code>SECRET_ORPHAN_PURGE</code> is explicitly set) any entry
+  no row references. The last run — beat or an admin's on-demand <code>GET</code>/<code>POST
+  /admin/secret-sweep(/run)</code> — is recorded with secret <strong>names</strong> only, never values; a store
+  outage records a classified error rather than a fake "0 orphans found", and the on-demand
+  run always stays report-only regardless of the purge setting.</li>
 </ul>
 <h2 id="the-data-dataq-sees-stores-and-redacts">The data DataQ sees, stores, and redacts<a class="headerlink" href="#the-data-dataq-sees-stores-and-redacts" title="Permanent link">¶</a></h2>
 <p>DataQ runs checks <em>against</em> your data; it is <strong>not</strong> a copy of your data. What it persists:</p>

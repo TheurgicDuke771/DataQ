@@ -2583,6 +2583,15 @@ the per-PR history lives in the repo's commit log and pull requests.</p>
   a fake <code>0</code>.</p>
 </li>
 <li>
+<p><strong>Orphan-secret sweep report.</strong> Every daily sweep run now persists a report —
+  <code>ran_at</code>, mode (<code>report</code>/<code>purge</code>), the orphan count, secret <strong>names</strong> only
+  (capped, never values), which secret-store backend, and a classified error
+  when the store couldn't be reached (never a fake <code>0</code> orphans). <code>GET
+  /api/v1/admin/secret-sweep</code> reads it back (<code>never_run</code> when the sweep hasn't
+  recorded one yet); <code>POST /api/v1/admin/secret-sweep/run</code> runs it on demand,
+  always report-only regardless of <code>SECRET_ORPHAN_PURGE</code>, and is audited.</p>
+</li>
+<li>
 <p><strong>Zero-sample privacy mode.</strong> A deployment-level switch
   (<code>PRIVACY_ZERO_SAMPLE_MODE=true</code>) that stops any failing-row sample from
   ever being persisted — aggregates (<code>metric_value</code>, unexpected
