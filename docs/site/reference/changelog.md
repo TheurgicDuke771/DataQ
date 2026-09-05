@@ -20,6 +20,17 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Added
 
+- **Admin → Overview is now a workspace-health page.** Four counts — members, suites
+  (and the distinct connections they target), open incidents with the acknowledged
+  subset, and today's runs by status over the UTC day — above a **needs-attention**
+  feed and a **workspace-health** checklist covering the audit chain, the scheduler
+  heartbeat and queue depth, the orphan-secret sweep (with a report-only **Run sweep**),
+  and orchestration polling. Every row links to the thing that fixes it. A signal that
+  could not be read, or that has genuinely observed nothing — a connection never polled,
+  a heartbeat that has never ticked, an unreachable broker, a sweep that has never run —
+  renders as **unknown** or **not monitored** with the reason, never as a zero, a green
+  tick, or a missing row. See the [admin control centre guide](../guides/admin.md).
+
 - **Four admin capabilities that had no UI now have one.** On **Admin → Compliance**:
   audit-chain verification behind an explicit **Verify now** (it reads the whole hashed
   set, so it never runs on page load) reporting intact / broken-at-an-event / nothing-to-
