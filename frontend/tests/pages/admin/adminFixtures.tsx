@@ -104,6 +104,7 @@ export const ACCESS: AdminAccess[] = [
     user_email: 'olive@x.io',
     user_name: 'Olive Owner',
     permission: 'owner',
+    grant_id: null,
   },
   {
     suite_id: 's1',
@@ -112,6 +113,7 @@ export const ACCESS: AdminAccess[] = [
     user_email: 'ed@x.io',
     user_name: null,
     permission: 'edit',
+    grant_id: 'g1',
   },
 ];
 

@@ -225,7 +225,10 @@ def delete_suite(
     db: Annotated[Session, Depends(get_db)],
 ) -> None:
     require_permission(db, suite_id, current_user.id, minimum="admin")
-    svc.delete_suite(db, suite_id, actor_id=current_user.id)
+    impact = svc.deletion_impact(db, suite_id)
+    svc.delete_suite(
+        db, suite_id, actor_id=current_user.id, audit_extra={"deleted": True, "impact": impact}
+    )
 
 
 class SuiteDeletionImpactRead(ApiModel):

@@ -30,7 +30,7 @@ def _workspace_role(session: Session, user_id: uuid.UUID) -> str:
     return resolve_role(user) if user is not None else DEFAULT_WORKSPACE_ROLE
 
 
-def _cap_for_viewer(level: str | None, role: str) -> str | None:
+def cap_for_viewer(level: str | None, role: str) -> str | None:
     """Clamp a resolved suite level to `view` for a workspace **Viewer**."""
     if level is None or role != VIEWER:
         return level
@@ -50,11 +50,11 @@ def effective_permission(session: Session, suite: Suite, user_id: uuid.UUID) -> 
         # and putting it first keeps the one role lookup doing double duty for the cap below.
         return OWNER if suite.created_by == user_id else ADMIN
     if suite.created_by == user_id:
-        return _cap_for_viewer(OWNER, role)
+        return cap_for_viewer(OWNER, role)
     share = session.scalars(
         select(Share).where(Share.suite_id == suite.id, Share.user_id == user_id)
     ).first()
-    return _cap_for_viewer(share.permission if share is not None else None, role)
+    return cap_for_viewer(share.permission if share is not None else None, role)
 
 
 def effective_permissions(
@@ -73,7 +73,7 @@ def effective_permissions(
         )
         levels = {row.suite_id: row.permission for row in rows}
     return {
-        s.id: _cap_for_viewer(OWNER if s.id in owned else levels.get(s.id), role) for s in suites
+        s.id: cap_for_viewer(OWNER if s.id in owned else levels.get(s.id), role) for s in suites
     }
 
 

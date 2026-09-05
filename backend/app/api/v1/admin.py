@@ -93,6 +93,8 @@ class AdminAccessRead(ApiModel):
     user_email: str
     user_name: str | None
     permission: str
+    #: `shares.id` — `None` on an implicit owner row (#1698).
+    grant_id: UUID | None
 
 
 @router.get("/suites", response_model=list[AdminSuiteRead], summary="All suites (admin)")
