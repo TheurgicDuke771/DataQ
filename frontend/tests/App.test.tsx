@@ -4,18 +4,21 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../src/App';
-import { useIsWorkspaceAdmin } from '../src/auth/useMe';
+import { api } from '../src/api/client';
+import { useIsWorkspaceAdmin, useWorkspaceRole } from '../src/auth/useMe';
 import { useCurrentUser } from '../src/auth/useCurrentUser';
 import { ThemeModeProvider } from '../src/themeMode/ThemeModeProvider';
 
 // The shell composes AuthGate + nav + lazy routes; the hooks are its inputs.
 // dev_bypass keeps AuthGate a passthrough so the Layout itself is under test.
-vi.mock('../src/auth/config', () => ({ authMode: 'dev_bypass' }));
+vi.mock('../src/auth/config', () => ({ authMode: 'dev_bypass', authMethodLabel: 'Dev bypass' }));
 vi.mock('../src/auth/authClient', () => ({ login: vi.fn(), logout: vi.fn() }));
 // ProfileCompletionPrompt (#1139) also reads useMe() (via itself) and useUpdateMe() (via
 // useSaveDisplayName).
 vi.mock('../src/auth/useMe', () => ({
   useIsWorkspaceAdmin: vi.fn(),
+  // RequireRole (the /admin/* + /settings route gate) reads this.
+  useWorkspaceRole: vi.fn(() => 'viewer'),
   useMe: vi.fn(() => ({ status: 'loading' })),
   useUpdateMe: vi.fn(() => vi.fn()),
 }));
@@ -31,6 +34,7 @@ vi.mock('../src/api/client', () => ({
   },
 }));
 
+const mockRole = vi.mocked(useWorkspaceRole);
 const mockIsAdmin = vi.mocked(useIsWorkspaceAdmin);
 const mockUser = vi.mocked(useCurrentUser);
 
@@ -54,7 +58,7 @@ function renderAt(path: string) {
 afterEach(() => vi.clearAllMocks());
 
 describe('App shell', () => {
-  it('renders the primary nav and hides Admin/Settings for non-admins', () => {
+  it('renders the primary nav and hides Admin for non-admins', () => {
     mockIsAdmin.mockReturnValue(false);
     mockUser.mockReturnValue(devUser);
     renderAt('/no-such-page');
@@ -63,7 +67,6 @@ describe('App shell', () => {
     }
     expect(screen.getByRole('link', { name: 'Documentation' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Admin' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Settings' })).not.toBeInTheDocument();
   });
 
   it('leads the primary nav with Assets, right after Dashboard (nav inversion, #773)', () => {
@@ -80,12 +83,32 @@ describe('App shell', () => {
     expect(assetsIdx).toBeLessThan(suitesIdx);
   });
 
-  it('shows the Admin/Settings footer nav to workspace admins', () => {
+  it('shows the admin footer nav to workspace admins — one entry, since Settings is a tab', () => {
     mockIsAdmin.mockReturnValue(true);
     mockUser.mockReturnValue(devUser);
     renderAt('/no-such-page');
     expect(screen.getByRole('link', { name: 'Admin' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Settings' })).not.toBeInTheDocument();
+  });
+
+  it('gates an /admin deep link at the route and fetches nothing for a non-admin', async () => {
+    mockIsAdmin.mockReturnValue(false);
+    mockRole.mockReturnValue('member');
+    mockUser.mockReturnValue(devUser);
+    renderAt('/admin/members');
+    expect(await screen.findByText(/403 . Forbidden/)).toBeInTheDocument();
+    expect(vi.mocked(api.get)).not.toHaveBeenCalled();
+  });
+
+  it('sends the retired /settings URL to the admin settings tab', async () => {
+    mockIsAdmin.mockReturnValue(true);
+    mockRole.mockReturnValue('admin');
+    mockUser.mockReturnValue(devUser);
+    renderAt('/settings');
+    expect(await screen.findByRole('tab', { name: 'Settings' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
   });
 
   it('routes an unknown path to the in-brand 404 page (no silent redirect)', async () => {
