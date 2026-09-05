@@ -97,9 +97,10 @@ describe('admin routing', () => {
     expect(mockSuites).not.toHaveBeenCalled();
   });
 
-  it('renders an in-brand 404 for an unknown admin sub-page', async () => {
+  it('sends an unknown admin sub-page back to overview, not a tabless 404', async () => {
     renderAdminAt('/admin/nope');
-    expect(await screen.findByText(/404/, undefined, LAZY)).toBeInTheDocument();
+    expect(await screen.findByText('Access grants', undefined, LAZY)).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
   });
 
   it('gates every sub-page at the route, fetching nothing for a non-admin', async () => {

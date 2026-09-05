@@ -22,7 +22,6 @@ const AdminCompliance = lazy(() =>
 const AdminIntegrations = lazy(() =>
   import('./AdminIntegrations').then((m) => ({ default: m.AdminIntegrations })),
 );
-const NotFound = lazy(() => import('../NotFound').then((m) => ({ default: m.NotFound })));
 
 /** `/admin/:tab` (#1694). The gate sits on the parent route, so a deep link to any
  *  sub-page is refused before that page's hooks mount (ADR 0033, #743). */
@@ -45,7 +44,8 @@ export const ADMIN_ROUTES = (
     <Route path="settings" element={<AdminSettings />} />
     <Route path="compliance" element={<AdminCompliance />} />
     <Route path="integrations" element={<AdminIntegrations />} />
-    <Route path="*" element={<NotFound />} />
+    {/* Unknown sub-page → Overview, not a 404 under a tab bar with nothing selected. */}
+    <Route path="*" element={<Navigate to="/admin/overview" replace />} />
   </Route>
 );
 
