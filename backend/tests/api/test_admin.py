@@ -15,7 +15,15 @@ from structlog.testing import capture_logs
 
 from backend.app.core.auth import DEV_BYPASS_EMAIL
 from backend.app.core.config import Settings, get_settings
-from backend.app.db.models import ORCHESTRATION_PROVIDERS, Check, Connection, Share, Suite, User
+from backend.app.db.models import (
+    ORCHESTRATION_PROVIDERS,
+    AuditEvent,
+    Check,
+    Connection,
+    Share,
+    Suite,
+    User,
+)
 from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.app.services import admin_service, otp_service
@@ -835,3 +843,109 @@ def test_admin_health_queue_depth_is_null_with_a_reason_when_broker_unreachable_
     body = resp.json()
     assert body["queues"] is None
     assert body["queues_error"] is not None and "redis" in body["queues_error"].lower()
+
+
+# ─────────────────────── orphan-secret sweep report (#1886) ───────────────────
+
+
+def test_secret_sweep_get_never_run_reads_never_run_not_zero(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No sweep has ever recorded a report — this must read `never_run`, never a
+    zero-orphan report (the #954 masquerade, applied to this signal).
+    """
+    _grant_admin(monkeypatch)
+
+    resp = client.get("/api/v1/admin/secret-sweep")
+
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "status": "never_run",
+        "ran_at": None,
+        "mode": None,
+        "orphan_count": None,
+        "orphan_names": [],
+        "truncated": False,
+        "store": None,
+        "error": None,
+    }
+
+
+def test_secret_sweep_get_returns_the_last_recorded_report(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.app.services import secret_sweep_service
+
+    secret_sweep_service.record_sweep_report(
+        db_session,
+        mode="report",
+        orphan_count=1,
+        orphan_names=["conn-dead-dev-abc123"],
+        store="openbao",
+        error=None,
+    )
+    db_session.commit()
+    _grant_admin(monkeypatch)
+
+    resp = client.get("/api/v1/admin/secret-sweep")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "recorded"
+    assert body["mode"] == "report"
+    assert body["orphan_count"] == 1
+    assert body["orphan_names"] == ["conn-dead-dev-abc123"]
+    assert body["store"] == "openbao"
+    assert body["error"] is None
+
+
+def test_secret_sweep_run_enqueues_report_only_and_returns_202_with_task_id(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The route must never let a caller force purge mode — it always dispatches
+    report-only, regardless of `SECRET_ORPHAN_PURGE` (#1886).
+    """
+    from backend.app.services import secret_sweep_service
+
+    calls: list[str] = []
+
+    def _fake_dispatch() -> str:
+        calls.append("dispatched")
+        return "task-abc123"
+
+    monkeypatch.setattr(secret_sweep_service, "dispatch_secret_sweep", _fake_dispatch)
+    _grant_admin(monkeypatch)
+
+    resp = client.post("/api/v1/admin/secret-sweep/run")
+
+    assert resp.status_code == 202
+    assert resp.json() == {"status": "queued", "task_id": "task-abc123"}
+    assert calls == ["dispatched"]
+
+
+def test_secret_sweep_run_is_audited(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.app.services import secret_sweep_service
+
+    monkeypatch.setattr(secret_sweep_service, "dispatch_secret_sweep", lambda: "task-xyz789")
+    _grant_admin(monkeypatch)
+
+    resp = client.post("/api/v1/admin/secret-sweep/run")
+
+    assert resp.status_code == 202
+    event = db_session.query(AuditEvent).filter(AuditEvent.action == "secret_sweep.run").one()
+    assert event.after is not None
+    assert event.after["task_id"] == "task-xyz789"
+    assert event.after["mode"] == "report"
+
+
+@pytest.mark.parametrize("role", ["member", "viewer"])
+def test_secret_sweep_endpoints_403_for_non_admin(
+    client: TestClient, as_role: Any, role: str
+) -> None:
+    get_settings.cache_clear()
+    _, headers = as_role(role)
+
+    assert client.get("/api/v1/admin/secret-sweep", headers=headers).status_code == 403
+    assert client.post("/api/v1/admin/secret-sweep/run", headers=headers).status_code == 403

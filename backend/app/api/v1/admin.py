@@ -8,8 +8,8 @@ from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request
-from pydantic import ConfigDict
+from fastapi import APIRouter, Depends, Request, status
+from pydantic import ConfigDict, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -27,6 +27,7 @@ from backend.app.services import (
     audit_service,
     data_subject_requests,
     llm_service,
+    secret_sweep_service,
     workspace_health_service,
 )
 from backend.app.services.otp_mailer import OtpMailer
@@ -253,6 +254,81 @@ def get_workspace_health(db: Annotated[Session, Depends(get_db)]) -> AdminHealth
     return AdminHealthRead(
         polling=polling, beat=beat, queues=queues, queues_error=queues_error, generated_at=now
     )
+
+
+# ──────────────────── orphan-secret sweep report (#1886) ────────────────────
+
+
+class SecretSweepReportRead(ApiModel):
+    """The last orphan-secret sweep run, beat OR manual. `status="never_run"` means
+    the sweep has never recorded a report — never read that as `orphan_count=0`.
+    `orphan_count` is `None` (never `0`) when the run could not reach the secret
+    store at all; `error` then carries the classified, secret-free reason.
+    `orphan_names` are secret NAMES only, capped at 200 — see `truncated`.
+    """
+
+    status: Literal["never_run", "recorded"]
+    ran_at: datetime | None = None
+    mode: Literal["report", "purge"] | None = None
+    orphan_count: int | None = None
+    orphan_names: list[str] = Field(default_factory=list)
+    truncated: bool = False
+    store: str | None = None
+    error: str | None = None
+
+
+@router.get(
+    "/secret-sweep",
+    response_model=SecretSweepReportRead,
+    summary="Last orphan-secret sweep report (admin)",
+)
+def get_secret_sweep_report(db: Annotated[Session, Depends(get_db)]) -> SecretSweepReportRead:
+    report = secret_sweep_service.read_sweep_report(db)
+    if report is None:
+        return SecretSweepReportRead(status="never_run")
+    return SecretSweepReportRead(
+        status="recorded",
+        ran_at=report.ran_at,
+        mode=report.mode,
+        orphan_count=report.orphan_count,
+        orphan_names=report.orphan_names,
+        truncated=report.truncated,
+        store=report.store,
+        error=report.error,
+    )
+
+
+class SecretSweepRunResponse(ApiModel):
+    status: str = "queued"
+    task_id: str
+
+
+@router.post(
+    "/secret-sweep/run",
+    response_model=SecretSweepRunResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Run the orphan-secret sweep now — report-only (admin)",
+)
+def run_secret_sweep(
+    current_user: Annotated[User, Depends(require_workspace_admin)],
+    db: Annotated[Session, Depends(get_db)],
+) -> SecretSweepRunResponse:
+    """Enqueues the existing beat task in report-only mode, REGARDLESS of
+    `SECRET_ORPHAN_PURGE` — a UI-triggered run must never purge a live warehouse
+    credential. Returns immediately with the Celery task id; the result lands in
+    `GET /admin/secret-sweep` once the worker picks it up.
+    """
+    task_id = secret_sweep_service.dispatch_secret_sweep()
+    audit_service.record(
+        db,
+        action="secret_sweep.run",
+        entity_type="secret_sweep",
+        entity_id=None,
+        actor=current_user,
+        after={"task_id": task_id, "mode": "report"},
+    )
+    db.commit()
+    return SecretSweepRunResponse(task_id=task_id)
 
 
 class AuthEmailTestResponse(ApiModel):
