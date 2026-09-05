@@ -4211,6 +4211,14 @@ erDiagram
         string role "admin | member | viewer — CHECK-constrained, ADR 0033"
         timestamptz last_seen_at
     }
+    workspace_members {
+        uuid id PK
+        string email UK "unique on lower(email) - who is admitted to the workspace"
+        string initial_role "seeds the users row on first sign-in only - ADR 0043"
+        string source "admin | auto_import - auto_import rows await review"
+        uuid invited_by FK "SET NULL - the membership outlives the inviter"
+        timestamptz created_at
+    }
     api_keys {
         uuid id PK
         uuid user_id FK "CASCADE"
@@ -4487,6 +4495,7 @@ erDiagram
     }
 
     users ||--o{ api_keys : "PATs (CASCADE — keys die with the user)"
+    users |o--o{ workspace_members : "invited_by (SET NULL)"
     users ||--o{ sessions : "OTP browser sessions (CASCADE)"
     users ||--o{ connections : "created_by"
     users ||--o{ suites : "created_by"
