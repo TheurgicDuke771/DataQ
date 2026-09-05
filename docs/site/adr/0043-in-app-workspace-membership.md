@@ -1,6 +1,6 @@
 # ADR 0043 — In-app workspace membership (`workspace_members`)
 
-- **Status:** Proposed
+- **Status:** Accepted (2026-09-05)
 - **Date:** 2026-09-04
 - **Deciders:** @TheurgicDuke771
 - **Amends:** ADR [0032](0032-email-otp-signin.md) — the env sign-up allowlist stops being the whole member list and becomes a starting seed plus an emergency way back in. ADR [0033](0033-workspace-roles-rbac.md) — the Admin page can now also decide *who is in*, not only what each person can do; no capability in its matrix changes.
