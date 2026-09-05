@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../src/App';
 import { api } from '../src/api/client';
-import { useIsWorkspaceAdmin, useWorkspaceRole } from '../src/auth/useMe';
+import { useIsWorkspaceAdmin, useMe } from '../src/auth/useMe';
 import { useCurrentUser } from '../src/auth/useCurrentUser';
 import { ThemeModeProvider } from '../src/themeMode/ThemeModeProvider';
 
@@ -17,8 +17,7 @@ vi.mock('../src/auth/authClient', () => ({ login: vi.fn(), logout: vi.fn() }));
 // useSaveDisplayName).
 vi.mock('../src/auth/useMe', () => ({
   useIsWorkspaceAdmin: vi.fn(),
-  // RequireRole (the /admin/* + /settings route gate) reads this.
-  useWorkspaceRole: vi.fn(() => 'viewer'),
+  // RequireRole (the /admin/* + /settings route gate) reads the whole /me state.
   useMe: vi.fn(() => ({ status: 'loading' })),
   useUpdateMe: vi.fn(() => vi.fn()),
 }));
@@ -34,7 +33,15 @@ vi.mock('../src/api/client', () => ({
   },
 }));
 
-const mockRole = vi.mocked(useWorkspaceRole);
+const mockMe = vi.mocked(useMe);
+
+/** A resolved `/me` at `role` — what RequireRole reads to gate a route. */
+function meAt(role: string) {
+  return {
+    status: 'ok' as const,
+    data: { id: 'u-1', email: `${role}@dataq.io`, role, is_workspace_admin: role === 'admin' },
+  };
+}
 const mockIsAdmin = vi.mocked(useIsWorkspaceAdmin);
 const mockUser = vi.mocked(useCurrentUser);
 
@@ -97,7 +104,7 @@ describe('App shell', () => {
 
   it('gates an /admin deep link at the route and fetches nothing for a non-admin', async () => {
     mockIsAdmin.mockReturnValue(false);
-    mockRole.mockReturnValue('member');
+    mockMe.mockReturnValue(meAt('member') as ReturnType<typeof useMe>);
     mockUser.mockReturnValue(devUser);
     renderAt('/admin/members');
     expect(await screen.findByText(/403 . Forbidden/, undefined, LAZY)).toBeInTheDocument();
@@ -106,7 +113,7 @@ describe('App shell', () => {
 
   it('sends the retired /settings URL to the admin settings tab', async () => {
     mockIsAdmin.mockReturnValue(true);
-    mockRole.mockReturnValue('admin');
+    mockMe.mockReturnValue(meAt('admin') as ReturnType<typeof useMe>);
     mockUser.mockReturnValue(devUser);
     renderAt('/settings');
     expect(await screen.findByRole('tab', { name: 'Settings' }, LAZY)).toHaveAttribute(
