@@ -20,6 +20,7 @@ from backend.app.core.auth import (
     _dev_bypass_allowed,
     _merge_userinfo,
     _oidc_access_allowed,
+    _oidc_allowlist_grants,
     _upsert_user,
     discover_jwks_uri,
     fetch_userinfo,
@@ -28,7 +29,7 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.db.models import User
-from backend.app.services import api_key_service, session_service
+from backend.app.services import api_key_service, membership_service, session_service
 from backend.app.services.otp_service import normalize_email
 
 log = get_logger(__name__)
@@ -171,8 +172,16 @@ def resolve_current_user(session: Session) -> User:
                             raise McpAuthError("userinfo subject does not match the token")
                         claims = merged
                 email = normalize_email(str(claims.get("email") or ""))
-                # Same allowlist the REST resolver applies (#1386).
-                if not _oidc_access_allowed(email, settings):
+                # Same allowlist the REST resolver applies (#1386), and the same
+                # grant-only membership union on top of it (ADR 0043).
+                env_allowed = _oidc_allowlist_grants(email, settings)
+                if not membership_service.is_member(
+                    session,
+                    email,
+                    env_allowed=env_allowed,
+                    unmanaged_default=_oidc_access_allowed(email, settings),
+                    settings=settings,
+                ):
                     log.warning("mcp_oidc_access_denied", **_denied_identity(email))
                     raise McpAuthError("this account is not authorized for this DataQ workspace")
                 name = claims.get("name")
@@ -182,6 +191,7 @@ def resolve_current_user(session: Session) -> User:
                     email=email,
                     display_name=str(name) if name is not None else None,
                     oidc_issuer=settings.oidc_issuer,
+                    env_allowed=env_allowed,
                 )
         else:
             # Mirror the REST validator's guest policy — /mcp must not accept an

@@ -14,6 +14,7 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.db.models import User, UserSession
+from backend.app.services import membership_service
 
 log = get_logger(__name__)
 
@@ -85,6 +86,9 @@ def resolve_token(db: Session, token: str) -> User:
     if user is None:  # the CASCADE should make this unreachable; fail closed anyway
         log.warning("session_orphaned", session_id=str(row.id))
         raise SessionAuthError()
+    # Choke point 2 of ADR 0043 decision 4. Re-checked per request, not at mint:
+    # without this a removed member keeps a working browser session until its TTL.
+    membership_service.require_member(db, user.email, door="session")
     log.info("auth_user_resolved", mode="session", session_id=str(row.id), user_id=str(user.id))
     return user
 

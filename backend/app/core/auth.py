@@ -24,6 +24,7 @@ from starlette.requests import HTTPConnection
 
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.errors import DataQError
+from backend.app.core.identity import identity_log_fields, normalize_email
 from backend.app.core.logging import get_logger
 from backend.app.core.roles import (
     ADMIN_ROLE,
@@ -36,8 +37,7 @@ from backend.app.core.roles import (
 )
 from backend.app.db.models import User
 from backend.app.db.session import get_db
-from backend.app.services import api_key_service, session_service
-from backend.app.services.otp_service import normalize_email
+from backend.app.services import api_key_service, membership_service, session_service
 
 log = get_logger(__name__)
 
@@ -47,12 +47,7 @@ DEV_BYPASS_DISPLAY_NAME = "Dev Bypass User"
 
 
 def _dev_bypass_allowed(settings: Settings) -> bool:
-    return (
-        settings.environment == "dev"
-        and settings.auth_dev_bypass
-        and not settings.azure_auth_configured
-        and not settings.generic_oidc_configured
-    )
+    return settings.dev_bypass_allowed
 
 
 class _PatAwareAzureScheme(SingleTenantAzureAuthorizationCodeBearer):
@@ -405,9 +400,19 @@ def _upsert_user(
     display_name: str | None,
     oidc_issuer: str | None = None,
     role: str | None = None,
+    env_allowed: bool = False,
     _retrying: bool = False,
 ) -> User:
-    """Upsert the user this sign-in identifies, keyed on `aad_object_id`."""
+    """Upsert the user this sign-in identifies, keyed on `aad_object_id`.
+
+    Choke point 1 of ADR 0043 decision 4: Azure AD and generic OIDC, REST and
+    /mcp, plus the dev-bypass mint (exempt inside the check).
+    """
+    # `_settings`, not `get_settings()`: the gate must read the same Settings the
+    # auth ladder itself bound, or the two can disagree about the mode.
+    membership_service.require_member(
+        db, email, door="upsert_user", env_allowed=env_allowed, settings=_settings
+    )
     now = datetime.now(UTC)
     stmt = (
         insert(User)
@@ -418,7 +423,16 @@ def _upsert_user(
             display_name=display_name,
             # Seeds a NEW row only (the conflict branch is promote-only); the
             # allowlist write-through still wins inside `bootstrap_role`.
-            role=role or bootstrap_role(email, default=get_settings().auth_oidc_default_role),
+            role=role
+            or bootstrap_role(
+                email,
+                # A pre-provisioned `initial_role` (ADR 0043 decision 9) seeds the
+                # signup default HERE, in `values()`, and nowhere else: the
+                # `on_conflict_do_update` branch below stays promote-only, so a
+                # later in-app role change is never overwritten by a sign-in.
+                default=membership_service.initial_role_for(db, email)
+                or get_settings().auth_oidc_default_role,
+            ),
             last_seen_at=now,
         )
         .on_conflict_do_update(
@@ -471,6 +485,7 @@ def _upsert_user(
                 display_name=display_name,
                 oidc_issuer=oidc_issuer,
                 role=role,
+                env_allowed=env_allowed,
                 _retrying=True,
             )
         # No email in the message or the log: the message travels in the HTTP error envelope
@@ -676,15 +691,21 @@ def _oidc_access_allowed(email: str, settings: Settings | None = None) -> bool:
     return bool(domain) and domain in s.oidc_allowed_domain_set
 
 
+def _oidc_allowlist_grants(email: str, settings: Settings | None = None) -> bool:
+    """Whether an EXPLICIT allowlist entry names `email`.
+
+    Distinct from `_oidc_access_allowed`, which is also True when no allowlist is
+    configured at all. An open door is today's behaviour, not a grant — treating
+    it as one would make membership enforcement a no-op on exactly the
+    deployments that have no app-side gate today.
+    """
+    s = settings or _settings
+    return s.oidc_allowlist_configured and _oidc_access_allowed(email, s)
+
+
 def _denied_identity(email: str) -> dict[str, str]:
     """Log fields naming a REJECTED identity without logging the address."""
-    # Normalized here so any casing of the address reproduces the same digest.
-    normalized = normalize_email(email)
-    _, _, domain = normalized.partition("@")
-    return {
-        "email_domain": domain or "(none)",
-        "email_digest": hashlib.sha256(normalized.encode()).hexdigest()[:12],
-    }
+    return identity_log_fields(email)
 
 
 def _resolve_generic_oidc_user(db: Session, oidc_claims: dict[str, Any]) -> User:
@@ -693,7 +714,17 @@ def _resolve_generic_oidc_user(db: Session, oidc_claims: dict[str, Any]) -> User
     """
     subject, email, display_name = _extract_oidc_claims(oidc_claims)
     email = normalize_email(email)
-    if not _oidc_access_allowed(email):
+    # The allowlist is grant-only (ADR 0043 decision 7): while `workspace_members`
+    # is empty this is byte for byte the old rule, and once it is populated the
+    # table can admit somebody the allowlist does not name.
+    env_allowed = _oidc_allowlist_grants(email)
+    if not membership_service.is_member(
+        db,
+        email,
+        env_allowed=env_allowed,
+        unmanaged_default=_oidc_access_allowed(email),
+        settings=_settings,
+    ):
         # 403, not 401: the token is VALID, so re-authenticating would loop the SPA forever.
         log.warning("auth_oidc_access_denied", mode="generic_oidc", **_denied_identity(email))
         raise DataQError(
@@ -707,6 +738,7 @@ def _resolve_generic_oidc_user(db: Session, oidc_claims: dict[str, Any]) -> User
         email=email,
         display_name=display_name,
         oidc_issuer=_settings.oidc_issuer,
+        env_allowed=env_allowed,
     )
     log.info("auth_user_resolved", mode="generic_oidc", user_id=str(user.id))
     return user

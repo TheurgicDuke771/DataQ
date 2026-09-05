@@ -465,6 +465,29 @@ class Settings(BaseSettings):
     def generic_oidc_configured(self) -> bool:
         return bool(self.oidc_issuer and self.oidc_audience)
 
+    @property
+    def dev_bypass_allowed(self) -> bool:
+        """Whether the dev-bypass identity may be minted at all — the predicate the
+        auth mode ladder binds on, and the membership exemption (ADR 0043 decision 5).
+        """
+        return (
+            self.environment == "dev"
+            and self.auth_dev_bypass
+            and not self.azure_auth_configured
+            and not self.generic_oidc_configured
+        )
+
+    @property
+    def dev_bypass_active(self) -> bool:
+        """Whether dev bypass is the mode the ladder actually SELECTS.
+
+        `dev_bypass_allowed` stays true on a stack that also configures email
+        OTP — the ladder picks OTP there and never mints the bypass identity, so
+        a check that exempted on `dev_bypass_allowed` alone would be off on the
+        default local stack while looking enforced.
+        """
+        return self.dev_bypass_allowed and not self.otp_auth_configured
+
     @model_validator(mode="after")
     def _validate_generic_oidc(self) -> "Settings":
         """Reject a half-configured or ambiguous generic-OIDC setup at startup —

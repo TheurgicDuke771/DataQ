@@ -94,21 +94,21 @@ def test_normalization_matches_the_admin_allowlist_rule() -> None:
     ],
 )
 def test_domain_allowlist(email: str, eligible: bool) -> None:
-    assert svc.is_signup_eligible(email, _settings()) is eligible
+    assert svc.env_signup_allowed(email, _settings()) is eligible
 
 
 def test_explicit_email_allowlist_admits_an_off_domain_address() -> None:
     s = _settings(auth_otp_allowed_emails="Grace@Other.ORG", auth_otp_allowed_domains="")
-    assert svc.is_signup_eligible("grace@other.org", s)
-    assert not svc.is_signup_eligible("ada@other.org", s)
+    assert svc.env_signup_allowed("grace@other.org", s)
+    assert not svc.env_signup_allowed("ada@other.org", s)
 
 
 def test_a_domain_suffix_is_not_a_domain_match() -> None:
     """`evil-acme.io` must not pass an `acme.io` allowlist — a substring/`endswith`
     implementation would admit an attacker-registered lookalike domain.
     """
-    assert not svc.is_signup_eligible("ada@evil-acme.io", _settings())
-    assert not svc.is_signup_eligible("ada@acme.io.evil.net", _settings())
+    assert not svc.env_signup_allowed("ada@evil-acme.io", _settings())
+    assert not svc.env_signup_allowed("ada@acme.io.evil.net", _settings())
 
 
 # ── request: eligibility gating + anti-enumeration ───────────────────────────
