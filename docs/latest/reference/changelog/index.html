@@ -2493,6 +2493,16 @@ the per-PR history lives in the repo's commit log and pull requests.</p>
 <h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">¶</a></h3>
 <ul>
 <li>
+<p><strong>Admin workspace health API.</strong> <code>GET /api/v1/admin/health</code> reports per-connection
+  orchestration poll staleness (<code>on_cadence</code> / <code>stalled</code> / <code>failing</code> / <code>unknown</code> — a
+  connection never polled never reads healthy, and one erroring on every attempt
+  reads <code>failing</code> with its classified error rather than <code>on_cadence</code> off a
+  freshly-stamped attempt timestamp), the Celery beat heartbeat (<code>alive</code> / <code>stale</code> /
+  <code>not_monitored</code>), and broker queue depth for the <code>celery</code> and <code>llm</code> queues. Queue
+  depth is <code>null</code> with a classified reason when the broker can't be reached — never
+  a fake <code>0</code>.</p>
+</li>
+<li>
 <p><strong>Zero-sample privacy mode.</strong> A deployment-level switch
   (<code>PRIVACY_ZERO_SAMPLE_MODE=true</code>) that stops any failing-row sample from
   ever being persisted — aggregates (<code>metric_value</code>, unexpected

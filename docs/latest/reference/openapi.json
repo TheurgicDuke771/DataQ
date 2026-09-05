@@ -89,6 +89,60 @@
         "title": "AdminAccessRead",
         "type": "object"
       },
+      "AdminHealthRead": {
+        "description": "Poll staleness + beat heartbeat + broker queue depth, in one page (#1885).\n\n`queues` is `null` \u2014 never a fake `0` \u2014 when the broker could not be reached;\n`queues_error` then carries the classified, secret-free reason.",
+        "properties": {
+          "beat": {
+            "$ref": "#/components/schemas/BeatHealthRead"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "polling": {
+            "items": {
+              "$ref": "#/components/schemas/PollHealthRead"
+            },
+            "title": "Polling",
+            "type": "array"
+          },
+          "queues": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/QueueDepthRead"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queues"
+          },
+          "queues_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queues Error"
+          }
+        },
+        "required": [
+          "polling",
+          "beat",
+          "queues",
+          "queues_error",
+          "generated_at"
+        ],
+        "title": "AdminHealthRead",
+        "type": "object"
+      },
       "AdminSuiteRead": {
         "properties": {
           "check_count": {
@@ -958,6 +1012,38 @@
           "path"
         ],
         "title": "BatchPreviewRead",
+        "type": "object"
+      },
+      "BeatHealthRead": {
+        "description": "The beat\u2192broker\u2192worker heartbeat. `status=\"not_monitored\"` means the heartbeat\ntask has never recorded a tick \u2014 not the same as `alive`.",
+        "properties": {
+          "last_tick_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Tick At"
+          },
+          "status": {
+            "enum": [
+              "alive",
+              "stale",
+              "not_monitored"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "last_tick_at",
+          "status"
+        ],
+        "title": "BeatHealthRead",
         "type": "object"
       },
       "ChannelCreate": {
@@ -4763,6 +4849,85 @@
         "title": "PipelineRunRead",
         "type": "object"
       },
+      "PollHealthRead": {
+        "description": "One orchestration connection's poll staleness. `status=\"unknown\"` \u2014 never\nhealthy \u2014 means the connection has never been polled at all (#828).\n`last_polled_at` is the last ATTEMPT (success or failure), not the last\nsuccess \u2014 the model tracks no separate success timestamp, so none is\nfabricated here. `status=\"failing\"` means the connection is being polled on\nschedule but every recent attempt has errored; `last_error` then carries the\nclassified, secret-free reason.",
+        "properties": {
+          "cadence_seconds": {
+            "title": "Cadence Seconds",
+            "type": "integer"
+          },
+          "connection_id": {
+            "format": "uuid",
+            "title": "Connection Id",
+            "type": "string"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "last_polled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Polled At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "next_expected_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Expected At"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "on_cadence",
+              "stalled",
+              "failing",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection_id",
+          "name",
+          "provider",
+          "last_polled_at",
+          "cadence_seconds",
+          "next_expected_at",
+          "status",
+          "last_error"
+        ],
+        "title": "PollHealthRead",
+        "type": "object"
+      },
       "ProbeRunResponse": {
         "properties": {
           "run_id": {
@@ -4857,6 +5022,24 @@
           "columns"
         ],
         "title": "ProfileRead",
+        "type": "object"
+      },
+      "QueueDepthRead": {
+        "properties": {
+          "depth": {
+            "title": "Depth",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "depth"
+        ],
+        "title": "QueueDepthRead",
         "type": "object"
       },
       "RcaNarrativeRequest": {
@@ -7188,6 +7371,28 @@
           }
         },
         "summary": "Declared data residency and external-transfer vectors (workspace-admin only)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/health": {
+      "get": {
+        "description": "The signal behind the Overview 'Needs attention' feed and the Integrations\n'Polling health' table (#1696/#1701, epic #1702) \u2014 nothing here is derived from a\nper-connection setting DataQ doesn't have: cadence is the fixed workspace-wide\npoll schedule, and every status honestly distinguishes \"never observed\" from\n\"healthy\".",
+        "operationId": "get_workspace_health_api_v1_admin_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminHealthRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Workspace health \u2014 poll staleness, beat heartbeat, queue depth (admin)",
         "tags": [
           "admin"
         ]

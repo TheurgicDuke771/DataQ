@@ -207,6 +207,7 @@ an outbound model request.
 | GET | `/admin/audit-events` | The append-only audit log (config + data-access events, ADR 0041). |
 | GET | `/admin/deployment` | Declared residency / deployment posture (`DEPLOYMENT_REGION`). |
 | GET | `/admin/orchestration/webhooks` | Webhook receiver URLs + auth mode per provider. |
+| GET | `/admin/health` | Poll staleness per orchestration connection, beat heartbeat, broker queue depth. |
 | POST | `/admin/auth-email/test` | SMTP pre-flight for the OTP mailer (per-admin throttled). |
 
 ## Example: trigger a suite and poll it
