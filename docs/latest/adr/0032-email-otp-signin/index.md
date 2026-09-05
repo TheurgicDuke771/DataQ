@@ -7,6 +7,13 @@
 - **Related:** ADR 0026 (PATs — the verifier-secret and seam pattern this copies; Basic auth rejected there stays rejected), [0010](0010-provider-agnostic-infrastructure-seams.md)/[0013](0013-marketplace-distribution-and-anti-lock-in.md) (portability guardrails)
 - **Note:** built across four slices (backend, identity, frontend, SMTP pre-flight), with rate limiting as a hard prerequisite. Ratified 2026-07-09 — slices unblocked.
 
+> **Amendment (2026-09-04, [ADR 0043](0043-in-app-workspace-membership.md)):**
+> once `workspace_members` is populated, the signup allowlist of decisions 2 and
+> 5 becomes a **bootstrap seed + break-glass** — grant-only, one input to a union
+> with the table, no longer the whole member list. **Decision 2's fail-closed boot
+> check is unchanged**: OTP mode still refuses to start on an empty allowlist,
+> because the first admin has to be able to sign in before any row exists.
+
 > **Amendment (2026-07-09, [ADR 0033](0033-workspace-roles-rbac.md)):** the OTP
 > signup contract gains **`AUTH_OTP_DEFAULT_ROLE`** (default `member`) — the
 > workspace role assigned at self-signup; the `WORKSPACE_ADMIN_EMAILS`

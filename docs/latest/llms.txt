@@ -117,6 +117,7 @@ lists which).
 - [ADR 0040 — Warehouse inventory sync + the table-enumeration seam](https://theurgicduke771.github.io/DataQ/docs/latest/adr/0040-warehouse-inventory-sync-table-enumeration-seam/index.md): Assets materialize from exactly three signals — a suite targets the table, a run
 - [ADR 0041 — History & audit posture for v1.x+: one append-only audit log; no soft-delete; cascade stands](https://theurgicduke771.github.io/DataQ/docs/latest/adr/0041-history-audit-strategy/index.md): ADR 0020 (2026-06-20) settled the v1 posture: per-entity **Type-4 snapshot tables** where config history has a concrete need (`check_versions`, then `connection
 - [ADR 0042 — `LLMProvider` seam: outbound LLM, BYO credential, default-off](https://theurgicduke771.github.io/DataQ/docs/latest/adr/0042-llm-provider-seam/index.md): Adds a new infrastructure seam in the ADR [0010](0010-provider-agnostic-infrastructure-seams.md) family (`ConnectionAdapter`, `SecretStore`, `OrchestrationProvi
+- [ADR 0043 — In-app workspace membership (`workspace_members`)](https://theurgicduke771.github.io/DataQ/docs/latest/adr/0043-in-app-workspace-membership/index.md): So removing an address from `AUTH_OTP_ALLOWED_EMAILS` stops new codes (`otp_service.is_signup_eligible`, at both the request and the verify call site) and stops
 
 ## Optional
 
