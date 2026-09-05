@@ -7,6 +7,15 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Changed
 
+- ⚠️ **The developer bypass is now an explicit opt-in.** `AUTH_DEV_BYPASS` ships `false`
+  in every template and compose file; the local stacks enable it only from
+  `DATAQ_DEV_BYPASS=true` in the root `.env`, and the API refuses to start when the
+  bypass is set beside a real sign-in mode or outside `ENVIRONMENT=dev`. If your
+  existing local `.env.app` still carries `AUTH_DEV_BYPASS=true` next to an email
+  sign-in block, host-side runs will now stop with a message naming it — set it to
+  `false` (compose stacks are unaffected; they no longer read that key). `setup.sh`
+  no longer defaults to the bypass on a blank answer or without a TTY.
+
 - **The admin area is now six routed, deep-linkable pages.** `/admin` splits into
   `overview`, `members`, `suites`, `settings`, `compliance` and `integrations` —
   the tab you are on is the URL, so any tab can be bookmarked, shared or

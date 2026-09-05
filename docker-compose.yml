@@ -5,6 +5,9 @@ x-database-url: &database-url "postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES
 # ── Sign-in mode: ONE switch, DATAQ_SIGNIN_EMAIL (#1150) ────────────────────── This stack boots
 # into **email one-time codes** (ADR 0032), not dev-bypass.
 x-otp-auth-env: &otp-auth-env
+  # The developer bypass is an explicit opt-in (DATAQ_DEV_BYPASS=true in the root .env), never a
+  # fallback: the api refuses to boot with it beside a real sign-in mode (#1901).
+  AUTH_DEV_BYPASS: ${DATAQ_DEV_BYPASS:-false}
   # Defaults to the bundled catcher; the ROOT `.env` overrides any of these while the switch is set.
   AUTH_EMAIL_SMTP_HOST: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_SMTP_HOST:-mailpit}}
   AUTH_EMAIL_SMTP_PORT: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_SMTP_PORT:-1025}}
@@ -19,13 +22,12 @@ x-otp-auth-env: &otp-auth-env
   AUTH_EMAIL_USERNAME: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_USERNAME:-dataq-local}}
   AUTH_EMAIL_FROM: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_FROM:-dataq@dataq.local}}
   # Signup allowlist — mandatory, there is no open registration (ADR 0032 decision 5).
-  AUTH_OTP_ALLOWED_EMAILS: ${DATAQ_SIGNIN_EMAIL?set DATAQ_SIGNIN_EMAIL=you@example.com to sign in with an emailed code (read it at http://localhost:8025) — or set it EMPTY to opt into dev-bypass, which disables sign-in entirely}
+  AUTH_OTP_ALLOWED_EMAILS: ${DATAQ_SIGNIN_EMAIL?set DATAQ_SIGNIN_EMAIL=you@example.com to sign in with an emailed code (read it at http://localhost:8025). Developers only — set it EMPTY and DATAQ_DEV_BYPASS=true for the no-sign-in bypass}
   # Shadowed too, and blank by default — otherwise a lone `AUTH_OTP_ALLOWED_DOMAINS` left in
   # `.env.app` would survive the downgrade.
   AUTH_OTP_ALLOWED_DOMAINS: ${DATAQ_SIGNIN_EMAIL:+${AUTH_OTP_ALLOWED_DOMAINS:-}}
-  # Whoever booted the stack is its admin. The dev-bypass identity stays listed so
-  # the downgrade path (and the Playwright bypass lane) keeps /admin drivable.
-  WORKSPACE_ADMIN_EMAILS: ${WORKSPACE_ADMIN_EMAILS-dev-bypass@dataq.local,${DATAQ_SIGNIN_EMAIL:-}}
+  # Whoever booted the stack is its admin; the dev-bypass identity is listed only when opted in.
+  WORKSPACE_ADMIN_EMAILS: ${WORKSPACE_ADMIN_EMAILS-${DATAQ_DEV_BYPASS:+dev-bypass@dataq.local,}${DATAQ_SIGNIN_EMAIL:-}}
 
 services:
   postgres:
@@ -243,7 +245,7 @@ services:
       VITE_API_PROXY_TARGET: http://api:8000
       # Pass the client-side auth vars into the Vite dev server.
       VITE_AUTH_MODE: ${DATAQ_SIGNIN_EMAIL:+otp}
-      VITE_AUTH_DEV_BYPASS: ${VITE_AUTH_DEV_BYPASS:-true}
+      VITE_AUTH_DEV_BYPASS: ${DATAQ_DEV_BYPASS:-false}
       VITE_AZURE_TENANT_ID: ${VITE_AZURE_TENANT_ID:-}
       VITE_AZURE_SPA_CLIENT_ID: ${VITE_AZURE_SPA_CLIENT_ID:-}
       VITE_AZURE_API_CLIENT_ID: ${VITE_AZURE_API_CLIENT_ID:-}

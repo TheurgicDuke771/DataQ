@@ -73,6 +73,16 @@ lawful basis) and is the deploying organization's responsibility.
   cap is a plain `429`; the cap fails **open** if the counter store is unavailable, and `0`
   disables it.
 
+### The developer bypass is never on by default
+
+There is a fourth, developer-only mode: `AUTH_DEV_BYPASS=true` makes every request
+resolve to one fixed dev user with no sign-in at all. It is **off by default**, it is only
+honoured with `ENVIRONMENT=dev`, and the API **refuses to start** when it is set beside
+Azure AD, generic OIDC or email OTP configuration — so it can never be a silent fallback
+when a real sign-in mode is mis-configured. The local compose stacks read it from one
+explicit switch, `DATAQ_DEV_BYPASS=true`, and never enable it on their own; the production
+Terraform pins it to `false`. A regular user never sees it.
+
 ### Email as the root of trust (read this before enabling OTP)
 
 Under email OTP, **the mailbox is the credential**. The consequences are not subtle, and they

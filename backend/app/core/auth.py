@@ -22,7 +22,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from starlette.requests import HTTPConnection
 
-from backend.app.core.config import Settings, get_settings
+from backend.app.core.config import Settings, dev_bypass_conflicts, get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.core.roles import (
@@ -523,6 +523,9 @@ async def init_auth() -> None:
     a deployment must never come up healthy while unable to log anybody in.
     Partial OTP configs are already rejected by `Settings._validate_otp_auth`.
     """
+    conflicts = dev_bypass_conflicts(_settings)
+    if conflicts:
+        raise RuntimeError("; ".join(conflicts))
     if azure_scheme is not None:
         await azure_scheme.openid_config.load_config()
         log.info(

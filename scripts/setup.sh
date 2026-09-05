@@ -95,31 +95,40 @@ if ! grep -qE '^DATAQ_SIGNIN_EMAIL=' .env; then
   echo "  (http://localhost:8025) — nothing leaves this machine, and no real"
   echo "  mailbox is needed. Which address should be allowed to sign in?"
   echo ""
-  echo "  Leave BLANK to opt out into dev-bypass instead: no sign-in at all,"
-  echo "  every request resolves to one fixed user, and anyone who can reach"
-  echo "  the port is a workspace admin."
-  echo ""
   signin_email=""
-  # `|| true` so a non-interactive run (CI, a piped installer) takes the blank answer instead of
-  # dying on a closed stdin.
+  dev_bypass="${DATAQ_DEV_BYPASS:-}"
   if [ -n "${DATAQ_SIGNIN_EMAIL-}" ]; then
     signin_email="${DATAQ_SIGNIN_EMAIL}"
     echo "  Using DATAQ_SIGNIN_EMAIL from the environment."
+  elif [ "${dev_bypass}" = "true" ]; then
+    echo "  DATAQ_DEV_BYPASS=true in the environment — developer bypass."
   elif [ -t 0 ]; then
-    printf '  Your email address (blank = dev-bypass): '
-    read -r signin_email || true
+    while [ -z "${signin_email}" ] && [ "${dev_bypass}" != "true" ]; do
+      printf '  Your email address: '
+      read -r signin_email || true
+      signin_email="$(printf '%s' "${signin_email}" | tr -d '[:space:]')"
+      if [ -z "${signin_email}" ]; then
+        echo ""
+        echo "  Developers only: the bypass disables sign-in entirely — every request"
+        echo "  is one fixed user and anyone who can reach the port is a workspace admin."
+        printf '  Enable the developer bypass instead? [y/N] '
+        read -r answer || true
+        case "${answer}" in
+          y|Y|yes|YES) dev_bypass="true" ;;
+          *) echo "  OK — an email address is needed for sign-in." ;;
+        esac
+      fi
+    done
   else
-    echo "  No TTY — defaulting to dev-bypass. Set DATAQ_SIGNIN_EMAIL and re-run"
-    echo "  (or edit .env) to switch to email sign-in."
+    die "No TTY and no sign-in mode chosen. Set DATAQ_SIGNIN_EMAIL=you@example.com (or, developers only, DATAQ_DEV_BYPASS=true) and re-run."
   fi
-  # Trim: a stray space would land in the allowlist and never match the address
-  # the user then types into the sign-in form.
-  signin_email="$(printf '%s' "${signin_email}" | tr -d '[:space:]')"
   set_env_kv .env DATAQ_SIGNIN_EMAIL "${signin_email}"
-  if [ -n "${signin_email}" ]; then
-    ok "Email sign-in enabled for ${signin_email}"
+  if [ "${dev_bypass}" = "true" ]; then
+    set_env_kv .env DATAQ_DEV_BYPASS true
+    set_env_kv .env.app AUTH_DEV_BYPASS true
+    ok "Developer bypass enabled (no sign-in) — set DATAQ_SIGNIN_EMAIL and remove DATAQ_DEV_BYPASS in .env to change"
   else
-    ok "Dev-bypass selected (no sign-in) — set DATAQ_SIGNIN_EMAIL in .env to change"
+    ok "Email sign-in enabled for ${signin_email}"
   fi
 fi
 

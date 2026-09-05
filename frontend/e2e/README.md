@@ -34,6 +34,7 @@ currently rendered value (see `notifications.spec.ts`).
 1. Bring up the stack and seed the demo data:
 
    ```bash
+   # dev-bypass is an explicit opt-in: DATAQ_SIGNIN_EMAIL= (empty) + DATAQ_DEV_BYPASS=true in .env
    docker compose up -d            # postgres + redis + api + worker + frontend
    conda run -n dataq python -m backend.scripts.seed_dev
    ```

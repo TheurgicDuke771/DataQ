@@ -194,15 +194,22 @@ docker-compose up      # Postgres + Redis + FastAPI (:8000) + React (:3000) + Ce
 `setup.sh` asks **which address may sign in** and writes the answer to your gitignored
 `.env` as `DATAQ_SIGNIN_EMAIL`. That address is allow-listed *and* made a workspace
 admin, and you sign in by reading the code at `http://localhost:8025` — no cloud account
-or IdP, no SMTP relay. Answering blank is the explicit downgrade to **dev-bypass** (no sign-in;
-every request is one fixed dev user), which you can flip either way afterwards by editing
-that one variable and re-running `docker compose up`.
+or IdP, no SMTP relay. You can change the address later by editing that one variable and
+re-running `docker compose up`.
+
+**Developers only — the bypass.** DataQ also has a no-sign-in mode for people working on
+DataQ itself: every request is one fixed dev user and anyone who can reach the port is a
+workspace admin. It is off by default and is never a fallback. To use it, answer the
+address question with a blank line and then say yes to the bypass prompt, or set both
+`DATAQ_SIGNIN_EMAIL=` (empty) and `DATAQ_DEV_BYPASS=true` in `.env`. The API refuses to
+start if the bypass is set beside a real sign-in mode or outside `ENVIRONMENT=dev`, so a
+typo in the sign-in config can never silently turn sign-in off.
 
 **Which file wins.** The compose stack sets the whole `AUTH_EMAIL_*` block in its own
 `environment:`, which beats `env_file:` unconditionally — so for the api/worker
 containers `.env.app` is **ignored for these keys in every state**, including when the
 switch is empty. Putting a real relay in `.env.app` and clearing the switch does not
-select it; it lands you in dev-bypass. To point the **compose** stack at a real relay,
+select it; the stack refuses to start until you choose a mode. To point the **compose** stack at a real relay,
 keep `DATAQ_SIGNIN_EMAIL` set and override the same key names in the **root `.env`**:
 
 ```
