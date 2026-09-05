@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "fb6b4168b1ab",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1901-dev-bypass-opt-in",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/fb/6b4168b1ab/0/metadata.json",
+      "transcript": "/fb/6b4168b1ab/0/full.jsonl",
+      "compact_transcript": "/fb/6b4168b1ab/0/transcript.jsonl",
+      "content_hash": "/fb/6b4168b1ab/0/content_hash.txt",
+      "prompt": "/fb/6b4168b1ab/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 4294,
+    "cache_creation_tokens": 728611,
+    "cache_read_tokens": 53858247,
+    "output_tokens": 137521,
+    "api_call_count": 173
+  }
+}
