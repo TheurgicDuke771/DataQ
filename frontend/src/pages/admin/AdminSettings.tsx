@@ -1,11 +1,12 @@
-import { Alert, App, Button, Card, Descriptions, Flex, Tag, Typography } from 'antd';
+import { Alert, Button, Card, Descriptions, Flex, Tag, Typography } from 'antd';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { testAuthEmail } from '../../api/admin';
 import { authMethodLabel } from '../../auth/config';
 import { LlmSettingsPanel } from '../../components/admin/LlmSettingsPanel';
 import { NotificationChannelsPanel } from '../../components/admin/NotificationChannelsPanel';
-import { useAsyncAction } from '../../hooks/useAsyncAction';
+import { type FetchFailure, fetchFailure } from '../../utils/errors';
 
 /** Workspace settings: general facts + SMTP pre-flight, notification channels, LLM provider,
  *  the secret-store notice and the danger zone (folded in from `/settings`, #1694). */
@@ -26,14 +27,26 @@ export function AdminSettings() {
  * mail" so a misconfigured email OTP mailer is caught at install time.
  */
 function GeneralCard() {
-  const { message } = App.useApp();
-  const { run, loading } = useAsyncAction('SMTP pre-flight test failed');
+  // The outcome stays on the card rather than only in a toast: a failing
+  // pre-flight is something an admin acts on, and the request ID is what the
+  // server log is searched by.
+  const [outcome, setOutcome] = useState<
+    { ok: true; to: string } | { ok: false; failure: FetchFailure } | null
+  >(null);
+  const [loading, setLoading] = useState(false);
 
-  const onTestAuthEmail = () =>
-    run(async () => {
+  const onTestAuthEmail = async () => {
+    setLoading(true);
+    setOutcome(null);
+    try {
       const { to } = await testAuthEmail();
-      message.success(`Test email sent to ${to} — check your inbox.`);
-    });
+      setOutcome({ ok: true, to });
+    } catch (err) {
+      setOutcome({ ok: false, failure: fetchFailure(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <Card title="General" size="small">
@@ -45,7 +58,11 @@ function GeneralCard() {
         <Descriptions.Item label="Authentication">{authMethodLabel}</Descriptions.Item>
       </Descriptions>
       <Flex vertical gap={4} style={{ marginTop: 16 }}>
-        <Button onClick={onTestAuthEmail} loading={loading} style={{ alignSelf: 'flex-start' }}>
+        <Button
+          onClick={() => void onTestAuthEmail()}
+          loading={loading}
+          style={{ alignSelf: 'flex-start' }}
+        >
           Send test email
         </Button>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -53,6 +70,31 @@ function GeneralCard() {
           <Typography.Text code>AUTH_EMAIL_*</Typography.Text>). If it doesn&apos;t arrive, the
           error names the transport stage that failed — connect, TLS, auth, or send.
         </Typography.Text>
+        {outcome?.ok && (
+          <Alert
+            type="success"
+            showIcon
+            title={`Test email sent to ${outcome.to} — check your inbox.`}
+            description="The mailer accepted the message. Delivery to the inbox is the relay's business from here, so an accepted send that never arrives points at the relay, not at this configuration."
+          />
+        )}
+        {outcome && !outcome.ok && (
+          <Alert
+            type="error"
+            showIcon
+            title="SMTP pre-flight test failed"
+            description={
+              <Flex vertical gap={4}>
+                <span>{outcome.failure.message}</span>
+                {outcome.failure.requestId && (
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    Request ID: <Typography.Text code>{outcome.failure.requestId}</Typography.Text>
+                  </Typography.Text>
+                )}
+              </Flex>
+            }
+          />
+        )}
       </Flex>
     </Card>
   );
