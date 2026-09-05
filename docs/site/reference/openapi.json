@@ -90,10 +90,17 @@
         "type": "object"
       },
       "AdminHealthRead": {
-        "description": "Poll staleness + beat heartbeat + broker queue depth, in one page (#1885).\n\n`queues` is `null` \u2014 never a fake `0` \u2014 when the broker could not be reached;\n`queues_error` then carries the classified, secret-free reason.",
+        "description": "Poll staleness + beat heartbeat + broker queue depth + datasource credential\nhealth, in one page (#1885/#1697).\n\n`queues` is `null` \u2014 never a fake `0` \u2014 when the broker could not be reached;\n`queues_error` then carries the classified, secret-free reason.\n\n`credentials` lists every DATASOURCE connection (orchestration providers are in\n`polling` instead), worst status first.",
         "properties": {
           "beat": {
             "$ref": "#/components/schemas/BeatHealthRead"
+          },
+          "credentials": {
+            "items": {
+              "$ref": "#/components/schemas/backend__app__api__v1__admin__CredentialHealthRead"
+            },
+            "title": "Credentials",
+            "type": "array"
           },
           "generated_at": {
             "format": "date-time",
@@ -138,6 +145,7 @@
           "beat",
           "queues",
           "queues_error",
+          "credentials",
           "generated_at"
         ],
         "title": "AdminHealthRead",
@@ -2826,6 +2834,16 @@
               }
             ],
             "title": "Credential Expiry Checked At"
+          },
+          "credential_health": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/backend__app__api__v1__connections__CredentialHealthRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "engine_capabilities": {
             "anyOf": [
@@ -6995,6 +7013,151 @@
           "type"
         ],
         "title": "WarehouseLineageStatusRead",
+        "type": "object"
+      },
+      "backend__app__api__v1__admin__CredentialHealthRead": {
+        "description": "One datasource connection's stored-credential health (#1697).\n\n`status=\"unknown\"` \u2014 never `healthy` \u2014 means the credential has not been used\nsince the signal shipped, so nothing has been observed about it. `failing` means\nthe datasource rejected it on its last use, and `last_error` is then the\nclassified, secret-free reason. Only credential REJECTIONS move this: a missing\ngrant, an unreachable host and a bad table name leave it untouched.\n\nDerived from real work (runs, dry-runs, profiles, connection tests), not from a\nperiodic probe \u2014 so a connection nothing uses stays `unknown` indefinitely, which\nis the honest answer rather than a reassuring one.",
+        "properties": {
+          "connection_id": {
+            "format": "uuid",
+            "title": "Connection Id",
+            "type": "string"
+          },
+          "consecutive_auth_failures": {
+            "title": "Consecutive Auth Failures",
+            "type": "integer"
+          },
+          "env": {
+            "title": "Env",
+            "type": "string"
+          },
+          "last_auth_failure_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Auth Failure At"
+          },
+          "last_auth_success_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Auth Success At"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "healthy",
+              "failing",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection_id",
+          "name",
+          "type",
+          "env",
+          "status",
+          "consecutive_auth_failures",
+          "last_auth_failure_at",
+          "last_auth_success_at",
+          "last_error"
+        ],
+        "title": "CredentialHealthRead",
+        "type": "object"
+      },
+      "backend__app__api__v1__connections__CredentialHealthRead": {
+        "description": "A datasource connection's stored-credential health, derived from real use (#1697).\n\n`status=\"unknown\"` \u2014 never `healthy` \u2014 means the credential has not been used since\nthe signal shipped: nothing has run, dry-run, profiled or tested against it, so DataQ\nhas observed nothing. `failing` means the datasource rejected the credential on its\nlast use; `last_error` is then the classified, secret-free reason.\n\nOnly credential REJECTIONS move this. A missing grant, an unreachable host and a bad\ntable name leave it untouched, because none of them says the credential is dead.\n\nOrchestration connections carry `null` here \u2014 their health is the poll signal above.",
+        "properties": {
+          "consecutive_auth_failures": {
+            "title": "Consecutive Auth Failures",
+            "type": "integer"
+          },
+          "last_auth_failure_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Auth Failure At"
+          },
+          "last_auth_success_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Auth Success At"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "status": {
+            "enum": [
+              "healthy",
+              "failing",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "consecutive_auth_failures",
+          "last_auth_failure_at",
+          "last_auth_success_at",
+          "last_error"
+        ],
+        "title": "CredentialHealthRead",
         "type": "object"
       }
     }

@@ -7,6 +7,19 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Added
 
+- **Datasource credential health.** A connection whose stored credential has expired or
+  been revoked is now visibly degraded instead of silently failing every run. Each
+  datasource connection reports `credential_health` on `GET /connections` and on the MCP
+  `list_connections` tool — `healthy` / `failing` / `unknown`, with the consecutive
+  rejection count, both timestamps, and a classified reason (never raw driver text).
+  `GET /admin/health` returns the same shape for every datasource connection at once,
+  worst status first. The signal is derived from work DataQ already does — runs,
+  dry-runs, profiles and connection tests — rather than a periodic probe, so it spends no
+  warehouse credits; a connection nothing has used stays `unknown` and is never reported
+  as healthy. Only a credential **rejection** moves it: a missing grant, an unreachable
+  host and a bad table name leave it untouched. Re-authenticating, or a passing Test
+  connection, clears it on the same request.
+
 - **Admin workspace health API.** `GET /api/v1/admin/health` reports per-connection
   orchestration poll staleness (`on_cadence` / `stalled` / `failing` / `unknown` — a
   connection never polled never reads healthy, and one erroring on every attempt
