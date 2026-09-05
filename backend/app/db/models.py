@@ -328,6 +328,19 @@ class Connection(Base):
     # looked, genuinely no expiry.
     credential_expiry_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # ── Datasource credential health (#1697) ───────────────────────────────── Written at the ONE
+    # credential-use seam (`services.credential_health`), never per adapter. Both timestamps NULL =
+    # the credential has not been used since the signal shipped → "unknown", never healthy.
+    last_auth_failure_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_auth_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Consecutive credential rejections, reset by any successful use; a counter, not a bool, so the
+    # UI can age the failure the way `consecutive_poll_failures` does.
+    consecutive_auth_failures: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    # Classified, redaction-safe (mirrors `last_poll_error`) — never raw driver text.
+    last_auth_error: Mapped[str | None] = mapped_column(String(512))
+
     # ── Warehouse-native lineage refresh state (#858) ──────────────────────────── All NULL on a
     # connection never refreshed and on non-warehouse types.
     lineage_watermark: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
