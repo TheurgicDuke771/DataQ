@@ -201,7 +201,8 @@ def test_a_domain_allowlist_counts_as_env_listed_too(
 
 
 def test_previewing_an_unknown_user_is_404(client: TestClient) -> None:
-    assert client.get(f"/api/v1/admin/offboarding/{uuid.uuid4()}/preview").status_code == 404
+    resp = client.get(f"/api/v1/admin/offboarding/{uuid.uuid4()}/preview")
+    assert resp.status_code == 404
 
 
 # ── The gate ─────────────────────────────────────────────────────────────────
@@ -218,18 +219,15 @@ def test_a_non_admin_cannot_preview_or_offboard(
     leaver = _user(db_session, "member")
     db_session.commit()
 
-    assert (
-        client.get(f"/api/v1/admin/offboarding/{leaver.id}/preview", headers=headers).status_code
-        == 403
+    preview_resp = client.get(f"/api/v1/admin/offboarding/{leaver.id}/preview", headers=headers)
+    offboard_resp = client.post(
+        f"/api/v1/admin/offboarding/{leaver.id}",
+        json={"confirm_email": leaver.email},
+        headers=headers,
     )
-    assert (
-        client.post(
-            f"/api/v1/admin/offboarding/{leaver.id}",
-            json={"confirm_email": leaver.email},
-            headers=headers,
-        ).status_code
-        == 403
-    )
+
+    assert preview_resp.status_code == 403
+    assert offboard_resp.status_code == 403
 
 
 def test_an_admin_gets_through(client: TestClient, db_session: Any) -> None:
@@ -237,7 +235,8 @@ def test_an_admin_gets_through(client: TestClient, db_session: Any) -> None:
     leaver = _user(db_session, "member")
     db_session.commit()
 
-    assert _offboard(client, leaver).status_code == 200
+    resp = _offboard(client, leaver)
+    assert resp.status_code == 200
 
 
 # ── The guards ───────────────────────────────────────────────────────────────
@@ -262,7 +261,8 @@ def test_the_confirmation_is_case_insensitive_like_every_other_address_check(
     leaver = _user(db_session, "member", email=f"Mixed-{uuid.uuid4().hex[:6]}@Example.com")
     db_session.commit()
 
-    assert _offboard(client, leaver, confirm_email=leaver.email.upper()).status_code == 200
+    resp = _offboard(client, leaver, confirm_email=leaver.email.upper())
+    assert resp.status_code == 200
 
 
 def test_owning_suites_with_nobody_named_to_inherit_them_is_refused(
@@ -453,7 +453,8 @@ def test_authored_history_survives_the_offboarding(client: TestClient, db_sessio
     db_session.add(result)
     db_session.commit()
 
-    assert _offboard(client, leaver, new_owner_user_id=str(heir.id)).status_code == 200
+    resp = _offboard(client, leaver, new_owner_user_id=str(heir.id))
+    assert resp.status_code == 200
 
     db_session.expire_all()
     # The user row itself survives — erasure is a different, deliberate act.
