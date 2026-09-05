@@ -550,7 +550,7 @@ def _doors() -> list[Door]:
             credential="pat",
             surface="mcp",
             setup=lambda db, user: user,
-            exercise=lambda db, user: mcp_auth.membership_service.require_member(
+            exercise=lambda db, user: membership_service.require_member(
                 db, user.email, door="mcp", settings=get_settings()
             ),
         ),

@@ -1,9 +1,8 @@
 """In-app workspace membership — ADR 0043.
 
-The table's own emptiness is the enforcement switch. While `workspace_members`
-has no rows, `is_member` returns the deployment's env-allowlist verdict, so every
-door behaves exactly as it did before this module existed. Once the table has a
-row, membership is `union(env allowlists, workspace_members)`.
+The table's emptiness is the switch: with no rows `is_member` returns the
+deployment's env-allowlist verdict, which is what every door did before this
+module existed; with rows it is `union(env allowlists, the table)`.
 """
 
 from __future__ import annotations
@@ -42,9 +41,8 @@ ENV_MEMBER_SOURCE = "env"
 #: Namespace for the stable synthetic id of an env-listed row.
 _ENV_ROW_NAMESPACE = uuid.UUID("6f9f5d2e-9a4c-4e5a-9a1f-0043004d4249")
 
-#: `pg_advisory_xact_lock` key shared by the switch-on write and every sign-in
-#: that may create a user row, so the import cannot miss a concurrent first
-#: sign-in. Sign-ins take it SHARED (they do not block each other).
+#: Shared by the switch-on write (exclusive) and every sign-in that may create a
+#: user row (shared), so the import cannot miss a concurrent first sign-in.
 SIGNIN_LOCK_KEY = 4300431
 
 
@@ -56,8 +54,7 @@ class MembershipDeniedError(DataQError):
             "This account is not a member of this DataQ workspace.",
             code="not_a_workspace_member",
             # 403, not 401: the credential IS valid, so re-authenticating would
-            # loop the SPA forever. At /mcp the verifier turns this into a 401
-            # (ADR 0043 decision 4).
+            # loop the SPA forever. /mcp turns this into a 401 (decision 4).
             status_code=403,
         )
 
@@ -86,11 +83,10 @@ class EnvVerdict(enum.Enum):
 
 
 def _access_allowlists(s: Settings) -> list[tuple[frozenset[str], frozenset[str]]]:
-    """The allowlists that actually gate a door on THIS deployment.
+    """The allowlists that gate a door on THIS deployment.
 
-    A mode that is not configured contributes nothing: an Azure-AD workspace has
-    no app-side allowlist, and reading one from an unrelated env var would deny
-    the whole tenant.
+    An unconfigured mode contributes nothing: reading an unrelated mode's env var
+    would deny an entire Azure-AD tenant, which has no app-side allowlist at all.
     """
     gates = []
     if s.generic_oidc_configured and s.oidc_allowlist_configured:
@@ -101,10 +97,8 @@ def _access_allowlists(s: Settings) -> list[tuple[frozenset[str], frozenset[str]
 
 
 def env_verdict(email: str, settings: Settings | None = None) -> EnvVerdict:
-    """The env allowlists' verdict on `email` — the union, computed once.
-
-    `WORKSPACE_ADMIN_EMAILS` joins the grant side only (ADR 0033 decision 6): it
-    is the break-glass way back in, never a reason to refuse anybody.
+    """The env allowlists' verdict on `email`. `WORKSPACE_ADMIN_EMAILS` grants
+    only (ADR 0033 decision 6): the way back into a locked-out workspace.
     """
     s = settings or get_settings()
     gates = _access_allowlists(s)
@@ -147,8 +141,8 @@ def _table_missing(db: Session, exc: ProgrammingError) -> bool:
 def enforcement_active(db: Session, /) -> bool:
     """Whether any managed member exists — the switch itself (decision 3).
 
-    An image rolled ahead of its migration must not 500 every request, so a
-    missing table reads as "not enforced", which is what an empty one means.
+    A missing table reads as "not enforced" — what an empty one means — so an
+    image rolled ahead of its migration does not 500 every request.
     """
     try:
         return bool(db.execute(select(exists().select_from(WorkspaceMember))).scalar())
@@ -166,9 +160,8 @@ def _row_for(db: Session, normalized: str) -> WorkspaceMember | None:
 
 
 def _decide(db: Session, email: str, s: Settings) -> tuple[bool, WorkspaceMember | None]:
-    """`(admitted, the row that admitted them)` — one indexed lookup in the
-    common case, and the row is handed back so a caller needing `initial_role`
-    does not repeat it.
+    """`(admitted, the row that admitted them)`. The row is handed back so a
+    caller needing `initial_role` does not repeat the lookup.
     """
     if s.dev_bypass_active:
         return True, None
@@ -188,10 +181,8 @@ def _decide(db: Session, email: str, s: Settings) -> tuple[bool, WorkspaceMember
 
 
 def is_member(db: Session, email: str, *, settings: Settings | None = None) -> bool:
-    """Whether `email` may hold or keep access to this workspace.
-
-    Every door asks the same question; the env grant is derived here rather than
-    passed in, so no door can be handed a different answer than its siblings.
+    """Whether `email` may hold or keep access. The env grant is derived here,
+    not passed in: a door cannot be handed a different answer than its siblings.
     """
     return _decide(db, email, settings or get_settings())[0]
 
@@ -208,11 +199,8 @@ def require_member(
 
 
 def initial_role_for(db: Session, email: str) -> str | None:
-    """The pre-provisioned role for `email`, or None when it is not listed.
-
-    Seeds a user row on the NEW-row branch only (decision 9) — never route it
-    through an upsert's conflict branch, which would overwrite an in-app role
-    change on every request.
+    """The pre-provisioned role for `email`, or None. New-row branch only
+    (decision 9): a conflict branch would overwrite an in-app role change.
     """
     row = _row_for(db, normalize_email(email))
     return row.initial_role if row is not None else None
@@ -226,10 +214,8 @@ def _advisory_lock(db: Session, *, shared: bool) -> None:
 
 
 def lock_signin(db: Session) -> None:
-    """Hold off a switch-on until this sign-in's user row has committed.
-
-    Without it the import can read `users`, miss a first sign-in that commits a
-    moment later, and leave that person neither imported nor a member.
+    """Hold off a switch-on until this sign-in's user row has committed, so the
+    import cannot miss it and leave that person neither imported nor a member.
     """
     _advisory_lock(db, shared=True)
 
@@ -264,9 +250,8 @@ class MemberRow:
 class EnforcementStatus:
     #: The table has at least one row.
     enforcement_active: bool
-    #: Whether any door is actually gated right now.
+    #: Whether any door is actually gated right now, and why not when it is not.
     enforced: bool
-    #: Why not, when `enforced` is False.
     enforced_reason: str | None
 
 
@@ -348,10 +333,8 @@ def _env_member_row(normalized: str, users: dict[str, User], now: datetime) -> M
 
 
 def list_members(db: Session, settings: Settings | None = None) -> MembershipView:
-    """Every admitted address, table-managed and env-listed alike.
-
-    An env-listed address is shown even though no row exists for it: leaving it
-    out makes the list read as "not admitted", and removing the managed row of
+    """Every admitted address, table-managed and env-listed alike: omitting an
+    env-listed one reads as "not admitted", and removing the managed row of
     somebody the environment also names would look like a completed removal.
     """
     s = settings or get_settings()
@@ -376,9 +359,8 @@ def list_members(db: Session, settings: Settings | None = None) -> MembershipVie
 def _auto_import(db: Session, *, exclude: str) -> int:
     """Admit every existing user row, provisionally, in the caller's transaction.
 
-    Turning enforcement on can never evict a current user. These rows are marked
-    `auto_import` because a `users` row proves somebody once signed in, not that
-    they are still meant to be here — the Members page shows them for review.
+    Enforcement can never evict a current user, but a `users` row proves somebody
+    once signed in, not that they still belong — hence `auto_import`.
     """
     count = 0
     seen: set[str] = {exclude}
@@ -423,16 +405,15 @@ def add_member(
             detail={"role": initial_role, "allowed": list(WORKSPACE_ROLES)},
         )
     normalized = _validate_email(email)
-    # Exclusive against every in-flight sign-in that may create a user row, so
-    # the import below cannot read `users` a moment before one commits.
+    # Exclusive: the import below must not read `users` just before a sign-in
+    # commits one.
     _advisory_lock(db, shared=False)
     if _row_for(db, normalized) is not None:
         raise MembershipChangeRejectedError(
             "that address is already a workspace member",
             detail={"email": normalized},
         )
-    # Same transaction as the insert below: the switch and the import commit
-    # together or not at all.
+    # Same transaction as the insert: switch and import commit together, or not.
     imported = 0 if enforcement_active(db) else _auto_import(db, exclude=normalized)
     row = WorkspaceMember(
         id=uuid.uuid4(),
@@ -476,8 +457,8 @@ def add_member(
 
 
 def _reread(db: Session, member_id: uuid.UUID, settings: Settings | None = None) -> MemberRow:
-    """One row through the SAME builder the list uses, so a response cannot carry
-    a different computed shape than the table it lands in.
+    """One row through the SAME builder the list uses, so a response cannot
+    disagree with the table it lands in.
     """
     row = db.get(WorkspaceMember, member_id)
     if row is None:
@@ -502,7 +483,7 @@ def _locked_member(db: Session, member_id: uuid.UUID) -> WorkspaceMember:
 
 
 def _refuse_env_removal(db: Session, member_id: uuid.UUID, s: Settings) -> None:
-    """An env-listed address has no row to delete; say so instead of 404ing."""
+    """No row to delete; name the variable instead of 404ing."""
     for address in env_listed_addresses(s):
         if _env_row_id(address) == member_id:
             raise MembershipChangeRejectedError(
@@ -521,7 +502,7 @@ def remove_member(
     confirm_self: bool = False,
     settings: Settings | None = None,
 ) -> None:
-    """Withdraw a membership. Bites on the removed user's next request."""
+    """Withdraw a membership. Bites on that person's next request."""
     s = settings or get_settings()
     row = db.get(WorkspaceMember, member_id)
     if row is None:
@@ -541,8 +522,7 @@ def remove_member(
     # Local import: `admin_service` reaches `core.auth`, which imports this module.
     from backend.app.services.admin_service import RoleChangeRejectedError, assert_admin_remains
 
-    # Only an admin's membership can breach the invariant, so only that case pays
-    # for the locks.
+    # Only an admin's membership can breach the invariant; only it pays the locks.
     if _stored_role(db, normalized) == ADMIN_ROLE:
         try:
             assert_admin_remains(db, exclude_member_id=member_id)

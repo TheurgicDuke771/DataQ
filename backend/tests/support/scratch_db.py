@@ -22,6 +22,7 @@ from backend.tests.conftest import TEST_DATABASE_URL
 
 
 def _admin_engine() -> Any:
+    assert TEST_DATABASE_URL is not None  # guarded by the skip in `scratch_engine`
     return create_engine(TEST_DATABASE_URL, isolation_level="AUTOCOMMIT")
 
 
@@ -44,7 +45,8 @@ def scratch_engine(name: str, *, tables: list[Table] | None = None) -> Iterator[
     finally:
         admin.dispose()
 
-    engine = create_engine(TEST_DATABASE_URL.rsplit("/", 1)[0] + f"/{name}")
+    base = TEST_DATABASE_URL.rsplit("/", 1)[0]
+    engine = create_engine(f"{base}/{name}")
     try:
         Base.metadata.create_all(engine, tables=tables)
         yield engine

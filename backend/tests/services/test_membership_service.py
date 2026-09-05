@@ -5,10 +5,10 @@ from __future__ import annotations
 import threading
 import time
 import uuid
-from typing import Any
+from typing import Any, cast
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import Table, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.core.config import Settings
@@ -617,7 +617,7 @@ def test_a_missing_table_reads_as_not_enforced() -> None:
     from sqlalchemy.orm import sessionmaker
 
     with scratch_engine("dataq_membership_no_table_probe") as engine:
-        WorkspaceMember.__table__.drop(engine)
+        cast(Table, WorkspaceMember.__table__).drop(engine)
         with sessionmaker(bind=engine)() as session:
             assert svc.enforcement_active(session) is False
             assert svc.is_member(session, _addr("anyone"), settings=_ENFORCING) is True
