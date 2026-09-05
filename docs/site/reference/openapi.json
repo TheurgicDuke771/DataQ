@@ -4035,6 +4035,146 @@
         "title": "IncidentRead",
         "type": "object"
       },
+      "InventorySyncRead": {
+        "description": "One warehouse connection's inventory-sync state.\n\n`tables_discovered` and `unmonitored` are `null` \u2014 never `0` \u2014 until the connection\nhas been synced at least once: DataQ has not enumerated it, so \"no tables\" is not\nsomething it can claim. `unmonitored` counts assets from this connection that no\nsuite targets, over the whole workspace (ADR 0037), not the caller's grants.\n\n`last_error` is the classified, secret-free reason for the last attempt and is\npresent only while the connection is failing; `last_attempted_at` is an ATTEMPT, so\na timestamp with an error beside it is a failure, not a successful sync.",
+        "properties": {
+          "connection_id": {
+            "format": "uuid",
+            "title": "Connection Id",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "env": {
+            "title": "Env",
+            "type": "string"
+          },
+          "failing_since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failing Since"
+          },
+          "last_attempted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Attempted At"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "never_synced",
+              "synced",
+              "failing"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tables_discovered": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tables Discovered"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          },
+          "unmonitored": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unmonitored"
+          }
+        },
+        "required": [
+          "connection_id",
+          "name",
+          "type",
+          "env",
+          "enabled",
+          "last_attempted_at",
+          "failing_since",
+          "last_error",
+          "tables_discovered",
+          "unmonitored",
+          "status"
+        ],
+        "title": "InventorySyncRead",
+        "type": "object"
+      },
+      "InventorySyncRunResponse": {
+        "description": "The enqueued run. `status=\"queued\"` means the worker has been asked, not that\ntables have been read \u2014 poll `GET /admin/inventory-sync` for the outcome.",
+        "properties": {
+          "status": {
+            "default": "queued",
+            "title": "Status",
+            "type": "string"
+          },
+          "task_id": {
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "title": "InventorySyncRunResponse",
+        "type": "object"
+      },
+      "InventorySyncUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "InventorySyncUpdate",
+        "type": "object"
+      },
       "KpisRead": {
         "properties": {
           "active_connections": {
@@ -5161,6 +5301,47 @@
         "title": "PipelineRunRead",
         "type": "object"
       },
+      "PollDispatchRead": {
+        "description": "One enqueued poll. `scope=\"provider\"` means the sweep covers EVERY connection\nof that provider, not only `connection_id` \u2014 which is what happens when the named\nconnection has no resource identifier configured to narrow on.",
+        "properties": {
+          "connection_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection Id"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "provider",
+              "connection"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "task_id": {
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "connection_id",
+          "scope",
+          "task_id"
+        ],
+        "title": "PollDispatchRead",
+        "type": "object"
+      },
       "PollHealthRead": {
         "description": "One orchestration connection's poll staleness. `status=\"unknown\"` \u2014 never\nhealthy \u2014 means the connection has never been polled at all (#828).\n`last_polled_at` is the last ATTEMPT (success or failure), not the last\nsuccess \u2014 the model tracks no separate success timestamp, so none is\nfabricated here. `status=\"failing\"` means the connection is being polled on\nschedule but every recent attempt has errored; `last_error` then carries the\nclassified, secret-free reason.",
         "properties": {
@@ -5238,6 +5419,29 @@
           "last_error"
         ],
         "title": "PollHealthRead",
+        "type": "object"
+      },
+      "PollNowResponse": {
+        "description": "Poll-now dispatch (#1701). `dispatched` lists what actually reached the broker;\nan empty list with no error means there were no orchestration connections to poll.\n\nEnqueued is not polled: the worker runs these afterwards, so `GET /admin/health`\nstill shows the previous poll timestamps until it does.",
+        "properties": {
+          "dispatched": {
+            "items": {
+              "$ref": "#/components/schemas/PollDispatchRead"
+            },
+            "title": "Dispatched",
+            "type": "array"
+          },
+          "requested_at": {
+            "format": "date-time",
+            "title": "Requested At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dispatched",
+          "requested_at"
+        ],
+        "title": "PollNowResponse",
         "type": "object"
       },
       "ProbeRunResponse": {
@@ -7451,6 +7655,64 @@
         "title": "WarehouseLineageStatusRead",
         "type": "object"
       },
+      "WebhookRegenerateResponse": {
+        "description": "A regenerated inbound-webhook credential.\n\n`value` is returned HERE AND NOWHERE ELSE \u2014 DataQ stores it in the secret store\nand no read endpoint returns it again, so an operator who does not copy it now\nmust regenerate again. `grace_until` is the moment the PREVIOUS value stops being\naccepted; it is `null` when nothing was carried over, which means the old value\nis already dead (there was none, or the grace window is configured to zero).",
+        "properties": {
+          "auth_mode": {
+            "enum": [
+              "url_token",
+              "hmac"
+            ],
+            "title": "Auth Mode",
+            "type": "string"
+          },
+          "grace_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grace Until"
+          },
+          "inbound_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inbound Url"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "secret_name": {
+            "title": "Secret Name",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "secret_name",
+          "auth_mode",
+          "value",
+          "grace_until",
+          "inbound_url"
+        ],
+        "title": "WebhookRegenerateResponse",
+        "type": "object"
+      },
       "backend__app__api__v1__admin__CredentialHealthRead": {
         "description": "One datasource connection's stored-credential health (#1697).\n\n`status=\"unknown\"` \u2014 never `healthy` \u2014 means the credential has not been used\nsince the signal shipped, so nothing has been observed about it. `failing` means\nthe datasource rejected it on its last use, and `last_error` is then the\nclassified, secret-free reason. Only credential REJECTIONS move this: a missing\ngrant, an unreachable host and a bad table name leave it untouched.\n\nDerived from real work (runs, dry-runs, profiles, connection tests), not from a\nperiodic probe \u2014 so a connection nothing uses stays `unknown` indefinitely, which\nis the honest answer rather than a reassuring one.",
         "properties": {
@@ -7997,6 +8259,130 @@
         ]
       }
     },
+    "/api/v1/admin/inventory-sync": {
+      "get": {
+        "description": "Every connection the inventory sync can enumerate (ADR 0040 \u2014 the warehouse\ntypes; flat-file and Iceberg connections are a recorded non-goal and are absent\nfrom this list rather than shown as disabled).",
+        "operationId": "list_inventory_sync_api_v1_admin_inventory_sync_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InventorySyncRead"
+                  },
+                  "title": "Response List Inventory Sync Api V1 Admin Inventory Sync Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Warehouse inventory-sync state per connection (admin)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/inventory-sync/{connection_id}": {
+      "patch": {
+        "description": "Flip the ADR 0040 opt-in on the connection's config, through the ordinary\nconnection-update path \u2014 so the change is audited and snapshotted into\n`connection_versions` exactly like an edit made in the connection editor.\n\nTurning it ON schedules nothing: the sweep is a daily beat task, so use \"Run now\"\nto see tables before then. Turning it OFF clears the sync bookkeeping and leaves\nalready-discovered assets in place.",
+        "operationId": "set_inventory_sync_api_v1_admin_inventory_sync__connection_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InventorySyncUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InventorySyncRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Turn a connection's inventory sync on or off (admin)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/inventory-sync/{connection_id}/run": {
+      "post": {
+        "description": "Enqueue the existing sync for this connection. It runs whether or not the\nconnection is opted in \u2014 the opt-in gates the unattended nightly sweep, and an\nadmin asking for this connection has asked for it explicitly. 503 with a classified\nbroker reason if nothing could be enqueued; no audit row in that case.",
+        "operationId": "run_inventory_sync_api_v1_admin_inventory_sync__connection_id__run_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InventorySyncRunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run one connection's inventory sync now (admin)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/v1/admin/llm": {
       "get": {
         "operationId": "get_llm_settings_api_v1_admin_llm_get",
@@ -8253,6 +8639,59 @@
         ]
       }
     },
+    "/api/v1/admin/orchestration/poll-now": {
+      "post": {
+        "description": "Enqueue the same 10-minute fallback poll the beat schedule runs (#492's\nimmediate-poll path), for every orchestration connection or just one.\n\nA poll only ingests runs the provider reports; it does not re-run anything, and a\ndispatch failure at the broker is a 503 with nothing enqueued and no audit row.",
+        "operationId": "poll_now_api_v1_admin_orchestration_poll_now_post",
+        "parameters": [
+          {
+            "description": "Narrow to one orchestration connection",
+            "in": "query",
+            "name": "connection_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Narrow to one orchestration connection",
+              "title": "Connection Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PollNowResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run the orchestration poll now, for one connection or all (admin)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/v1/admin/orchestration/webhooks": {
       "get": {
         "operationId": "orchestration_webhooks_api_v1_admin_orchestration_webhooks_get",
@@ -8273,6 +8712,49 @@
           }
         },
         "summary": "Inbound orchestration webhook config (admin)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/orchestration/webhooks/{provider}/regenerate": {
+      "post": {
+        "description": "Mint a new secret for one orchestration provider's inbound webhook.\n\nThe previous value keeps working until `grace_until` (`WEBHOOK_SECRET_GRACE_MINUTES`,\n15 by default), so updating the provider side is not a race \u2014 but DataQ cannot tell\nwhether that update happened, so nothing here confirms the provider is still able to\ndeliver. Once the window closes, callbacks signed with the old value are rejected.\n\nThe audit row records the provider and the grace window, never the value.",
+        "operationId": "regenerate_webhook_secret_api_v1_admin_orchestration_webhooks__provider__regenerate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "title": "Provider",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookRegenerateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Regenerate a provider's inbound-webhook secret/key (admin)",
         "tags": [
           "admin"
         ]

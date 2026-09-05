@@ -271,6 +271,9 @@ class Settings(BaseSettings):
     adf_webhook_secret_name: str = "adf-webhook-secret"  # noqa: S105 — KV key name, not a secret
     airflow_webhook_secret_name: str = "airflow-webhook-secret"  # noqa: S105 — KV key name
     dbt_webhook_secret_name: str = "dbt-webhook-secret"  # noqa: S105 — KV key name
+    # How long a REGENERATED webhook secret's previous value keeps working (#1701), so the
+    # provider-side update is not a race. 0 revokes the old value immediately.
+    webhook_secret_grace_minutes: int = 15
 
     # SecretStore key for the workspace Teams webhook URL (token-bearing, so it lives in the
     # SecretStore).
