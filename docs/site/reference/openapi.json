@@ -4850,7 +4850,7 @@
         "type": "object"
       },
       "PollHealthRead": {
-        "description": "One orchestration connection's poll staleness. `status=\"unknown\"` \u2014 never\nhealthy \u2014 means the connection has no recorded successful poll at all (#828).",
+        "description": "One orchestration connection's poll staleness. `status=\"unknown\"` \u2014 never\nhealthy \u2014 means the connection has never been polled at all (#828).\n`last_polled_at` is the last ATTEMPT (success or failure), not the last\nsuccess \u2014 the model tracks no separate success timestamp, so none is\nfabricated here. `status=\"failing\"` means the connection is being polled on\nschedule but every recent attempt has errored; `last_error` then carries the\nclassified, secret-free reason.",
         "properties": {
           "cadence_seconds": {
             "title": "Cadence Seconds",
@@ -4861,7 +4861,18 @@
             "title": "Connection Id",
             "type": "string"
           },
-          "last_success_at": {
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "last_polled_at": {
             "anyOf": [
               {
                 "format": "date-time",
@@ -4871,7 +4882,7 @@
                 "type": "null"
               }
             ],
-            "title": "Last Success At"
+            "title": "Last Polled At"
           },
           "name": {
             "title": "Name",
@@ -4897,6 +4908,7 @@
             "enum": [
               "on_cadence",
               "stalled",
+              "failing",
               "unknown"
             ],
             "title": "Status",
@@ -4907,10 +4919,11 @@
           "connection_id",
           "name",
           "provider",
-          "last_success_at",
+          "last_polled_at",
           "cadence_seconds",
           "next_expected_at",
-          "status"
+          "status",
+          "last_error"
         ],
         "title": "PollHealthRead",
         "type": "object"

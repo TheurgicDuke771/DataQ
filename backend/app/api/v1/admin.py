@@ -158,16 +158,22 @@ def orchestration_webhooks(
 
 class PollHealthRead(ApiModel):
     """One orchestration connection's poll staleness. `status="unknown"` — never
-    healthy — means the connection has no recorded successful poll at all (#828).
+    healthy — means the connection has never been polled at all (#828).
+    `last_polled_at` is the last ATTEMPT (success or failure), not the last
+    success — the model tracks no separate success timestamp, so none is
+    fabricated here. `status="failing"` means the connection is being polled on
+    schedule but every recent attempt has errored; `last_error` then carries the
+    classified, secret-free reason.
     """
 
     connection_id: UUID
     name: str
     provider: str
-    last_success_at: datetime | None
+    last_polled_at: datetime | None
     cadence_seconds: int
     next_expected_at: datetime | None
-    status: Literal["on_cadence", "stalled", "unknown"]
+    status: Literal["on_cadence", "stalled", "failing", "unknown"]
+    last_error: str | None
 
 
 class BeatHealthRead(ApiModel):
@@ -218,10 +224,11 @@ def get_workspace_health(db: Annotated[Session, Depends(get_db)]) -> AdminHealth
             connection_id=row.connection_id,
             name=row.name,
             provider=row.provider,
-            last_success_at=row.last_success_at,
+            last_polled_at=row.last_polled_at,
             cadence_seconds=row.cadence_seconds,
             next_expected_at=row.next_expected_at,
             status=row.status,
+            last_error=row.last_error,
         )
         for row in workspace_health_service.list_poll_health(db, now=now)
     ]

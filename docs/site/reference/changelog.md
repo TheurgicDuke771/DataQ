@@ -8,8 +8,10 @@ the per-PR history lives in the repo's commit log and pull requests.
 ### Added
 
 - **Admin workspace health API.** `GET /api/v1/admin/health` reports per-connection
-  orchestration poll staleness (`on_cadence` / `stalled` / `unknown` — a connection
-  never polled never reads healthy), the Celery beat heartbeat (`alive` / `stale` /
+  orchestration poll staleness (`on_cadence` / `stalled` / `failing` / `unknown` — a
+  connection never polled never reads healthy, and one erroring on every attempt
+  reads `failing` with its classified error rather than `on_cadence` off a
+  freshly-stamped attempt timestamp), the Celery beat heartbeat (`alive` / `stale` /
   `not_monitored`), and broker queue depth for the `celery` and `llm` queues. Queue
   depth is `null` with a classified reason when the broker can't be reached — never
   a fake `0`.

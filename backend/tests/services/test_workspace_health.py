@@ -750,14 +750,22 @@ class TestPollHealthStatus:
 
     def test_never_polled_is_unknown_not_healthy(self) -> None:
         assert (
-            svc.poll_health_status(last_success_at=None, now=NOW, threshold_seconds=1800)
+            svc.poll_health_status(
+                last_polled_at=None,
+                consecutive_poll_failures=0,
+                now=NOW,
+                threshold_seconds=1800,
+            )
             == "unknown"
         )
 
     def test_recent_poll_is_on_cadence(self) -> None:
         assert (
             svc.poll_health_status(
-                last_success_at=NOW - timedelta(minutes=5), now=NOW, threshold_seconds=1800
+                last_polled_at=NOW - timedelta(minutes=5),
+                consecutive_poll_failures=0,
+                now=NOW,
+                threshold_seconds=1800,
             )
             == "on_cadence"
         )
@@ -765,7 +773,10 @@ class TestPollHealthStatus:
     def test_poll_older_than_threshold_is_stalled(self) -> None:
         assert (
             svc.poll_health_status(
-                last_success_at=NOW - timedelta(hours=2), now=NOW, threshold_seconds=1800
+                last_polled_at=NOW - timedelta(hours=2),
+                consecutive_poll_failures=0,
+                now=NOW,
+                threshold_seconds=1800,
             )
             == "stalled"
         )
@@ -773,9 +784,53 @@ class TestPollHealthStatus:
     def test_disabled_threshold_never_stalls(self) -> None:
         assert (
             svc.poll_health_status(
-                last_success_at=NOW - timedelta(days=30), now=NOW, threshold_seconds=0
+                last_polled_at=NOW - timedelta(days=30),
+                consecutive_poll_failures=0,
+                now=NOW,
+                threshold_seconds=0,
             )
             == "on_cadence"
+        )
+
+    def test_a_recent_but_failing_poll_is_failing_not_on_cadence(self) -> None:
+        """The regression case review found: `last_polled_at` is stamped by BOTH
+        `record_poll_success` and `record_poll_failure` (#828 poll-health bookkeeping), so a
+        connection failing every attempt still has a fresh timestamp — `on_cadence` would be a
+        confident wrong answer for a connection that is actually broken.
+        """
+        assert (
+            svc.poll_health_status(
+                last_polled_at=NOW - timedelta(minutes=1),
+                consecutive_poll_failures=3,
+                now=NOW,
+                threshold_seconds=1800,
+            )
+            != "on_cadence"
+        )
+
+    def test_a_recent_but_failing_poll_reads_failing_specifically(self) -> None:
+        assert (
+            svc.poll_health_status(
+                last_polled_at=NOW - timedelta(minutes=1),
+                consecutive_poll_failures=3,
+                now=NOW,
+                threshold_seconds=1800,
+            )
+            == "failing"
+        )
+
+    def test_failing_takes_priority_over_a_stale_timestamp(self) -> None:
+        """A connection that stopped polling altogether WHILE failing must still read
+        `failing` — the more specific, more actionable diagnosis — not `stalled`.
+        """
+        assert (
+            svc.poll_health_status(
+                last_polled_at=NOW - timedelta(hours=2),
+                consecutive_poll_failures=3,
+                now=NOW,
+                threshold_seconds=1800,
+            )
+            == "failing"
         )
 
 
@@ -801,9 +856,10 @@ class TestListPollHealth:
         rows = svc.list_poll_health(db_session, now=NOW)
         assert len(rows) == 1
         assert rows[0].status == "unknown"
-        assert rows[0].last_success_at is None
+        assert rows[0].last_polled_at is None
         assert rows[0].next_expected_at is None
         assert rows[0].cadence_seconds > 0
+        assert rows[0].last_error is None
 
     def test_recently_polled_connection_reads_on_cadence_with_next_expected(
         self, db_session: Any
@@ -812,16 +868,51 @@ class TestListPollHealth:
         rows = svc.list_poll_health(db_session, now=NOW)
         assert rows[0].connection_id == conn.id
         assert rows[0].status == "on_cadence"
-        last_success_at = rows[0].last_success_at
-        assert last_success_at is not None
-        assert rows[0].next_expected_at == last_success_at + timedelta(
+        last_polled_at = rows[0].last_polled_at
+        assert last_polled_at is not None
+        assert rows[0].next_expected_at == last_polled_at + timedelta(
             seconds=rows[0].cadence_seconds
         )
+        assert rows[0].last_error is None
 
     def test_stalled_connection_reads_stalled(self, db_session: Any) -> None:
         _orch_connection(db_session, last_polled_at=NOW - timedelta(hours=3))
         rows = svc.list_poll_health(db_session, now=NOW)
         assert rows[0].status == "stalled"
+
+    def test_a_connection_failing_every_poll_reads_failing_with_a_classified_error(
+        self, db_session: Any
+    ) -> None:
+        """The review's exact regression case, at the DB-read level: a fresh
+        `last_polled_at` (the connection IS being polled on schedule) plus
+        `consecutive_poll_failures > 0` must never read as `on_cadence`.
+        """
+        conn = _orch_connection(db_session, last_polled_at=NOW - timedelta(minutes=1))
+        conn.consecutive_poll_failures = 3
+        conn.last_poll_error = "The orchestration provider could not be reached."
+        db_session.commit()
+
+        rows = svc.list_poll_health(db_session, now=NOW)
+
+        assert rows[0].status == "failing"
+        assert rows[0].last_error == "The orchestration provider could not be reached."
+
+    def test_a_healthy_connection_never_carries_a_stale_leftover_error(
+        self, db_session: Any
+    ) -> None:
+        """`last_poll_error` is cleared on success by `record_poll_success`, but this asserts
+        the READ side too: `last_error` must be `None` unless `status="failing"`, even if the
+        column somehow still held a stale value.
+        """
+        conn = _orch_connection(db_session, last_polled_at=NOW - timedelta(minutes=1))
+        conn.consecutive_poll_failures = 0
+        conn.last_poll_error = None
+        db_session.commit()
+
+        rows = svc.list_poll_health(db_session, now=NOW)
+
+        assert rows[0].status == "on_cadence"
+        assert rows[0].last_error is None
 
     def test_a_datasource_connection_is_not_included(self, db_session: Any) -> None:
         conn = Connection(
@@ -874,10 +965,22 @@ class _FakeRedisClient:
     def llen(self, name: str) -> int:
         return self._depths[name]
 
+    def __enter__(self) -> _FakeRedisClient:
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        return None
+
 
 class _BrokenRedisClient:
     def llen(self, name: str) -> int:
         raise ConnectionError("Error 111 connecting to redis:6379. Connection refused.")
+
+    def __enter__(self) -> _BrokenRedisClient:
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        return None
 
 
 class TestBrokerQueueDepths:

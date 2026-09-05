@@ -727,8 +727,37 @@ def test_admin_health_never_polled_connection_reads_unknown(
     body = resp.json()
     [row] = [r for r in body["polling"] if r["connection_id"] == str(conn.id)]
     assert row["status"] == "unknown"
-    assert row["last_success_at"] is None
+    assert row["last_polled_at"] is None
     assert row["next_expected_at"] is None
+    assert row["last_error"] is None
+
+
+def test_admin_health_a_connection_failing_every_poll_reads_failing_not_on_cadence(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The review's regression case, at the route level: a fresh `last_polled_at` (the
+    connection IS being polled on schedule) plus a failure streak must never surface as
+    `on_cadence` — the field that told the truth was `consecutive_poll_failures`, and this
+    route previously ignored it.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    owner = _user(db_session, "owner3@x.io")
+    conn = _health_orch_connection(
+        db_session, owner, last_polled_at=datetime.now(UTC) - timedelta(minutes=1)
+    )
+    conn.consecutive_poll_failures = 3
+    conn.last_poll_error = "The orchestration provider could not be reached."
+    db_session.commit()
+    _grant_admin(monkeypatch)
+
+    resp = client.get("/api/v1/admin/health")
+
+    assert resp.status_code == 200
+    [row] = [r for r in resp.json()["polling"] if r["connection_id"] == str(conn.id)]
+    assert row["status"] == "failing"
+    assert row["status"] != "on_cadence"
+    assert row["last_error"] == "The orchestration provider could not be reached."
 
 
 def test_admin_health_beat_not_monitored_with_no_heartbeat_row(
@@ -765,6 +794,12 @@ def test_admin_health_reports_queue_depths_when_broker_reachable(
         def llen(self, name: str) -> int:
             return {"celery": 2, "llm": 0}[name]
 
+        def __enter__(self) -> "_FakeClient":
+            return self
+
+        def __exit__(self, *exc_info: object) -> None:
+            return None
+
     monkeypatch.setattr(redis, "from_url", lambda *a, **kw: _FakeClient())
     _grant_admin(monkeypatch)
 
@@ -784,6 +819,12 @@ def test_admin_health_queue_depth_is_null_with_a_reason_when_broker_unreachable_
     class _BrokenClient:
         def llen(self, name: str) -> int:
             raise ConnectionError("Error 111 connecting to redis:6379. Connection refused.")
+
+        def __enter__(self) -> "_BrokenClient":
+            return self
+
+        def __exit__(self, *exc_info: object) -> None:
+            return None
 
     monkeypatch.setattr(redis, "from_url", lambda *a, **kw: _BrokenClient())
     _grant_admin(monkeypatch)
