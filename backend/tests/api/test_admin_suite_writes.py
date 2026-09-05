@@ -265,6 +265,27 @@ def test_a_previous_owner_who_is_a_viewer_keeps_view_not_edit(
     assert resp.json()["previous_owner_permission"] == "view"
 
 
+def test_a_stale_edit_share_on_a_viewer_previous_owner_is_clamped_and_reported_as_view(
+    client: TestClient, db_session: Any
+) -> None:
+    owner = _user(db_session, "viewer")
+    new_owner = _user(db_session, "member")
+    suite = _suite(db_session, owner)
+    _share(db_session, suite, owner, permission="edit")
+    db_session.commit()
+
+    resp = client.post(
+        f"/api/v1/admin/suites/{suite.id}/transfer",
+        json={"new_owner_user_id": str(new_owner.id)},
+    )
+
+    assert resp.json()["previous_owner_permission"] == "view"
+    kept = db_session.scalars(
+        select(Share).where(Share.suite_id == suite.id, Share.user_id == owner.id)
+    ).one()
+    assert kept.permission == "view"
+
+
 def test_a_transfer_to_the_current_owner_is_409(client: TestClient, db_session: Any) -> None:
     owner = _user(db_session, "member")
     suite = _suite(db_session, owner)

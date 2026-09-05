@@ -17,6 +17,8 @@ from backend.app.core.roles import VIEWER_ROLE, resolve_role
 from backend.app.db.models import Share, Suite, User
 from backend.app.services import audit_service, suite_service
 from backend.app.services.admin_service import UserNotFoundError
+from backend.app.services.share_service import ShareNotFoundError
+from backend.app.services.suite_authz import cap_for_viewer
 from backend.app.services.suite_service import SuiteNotFoundError
 
 log = get_logger(__name__)
@@ -30,11 +32,6 @@ class TransferResult:
     previous_owner_id: uuid.UUID | None
     #: The level the previous owner keeps, `None` when they keep nothing.
     previous_owner_permission: str | None
-
-
-class GrantNotFoundError(DataQError):
-    status_code = 404
-    code = "grant_not_found"
 
 
 class SuiteTransferRejectedError(DataQError):
@@ -56,7 +53,7 @@ def revoke_grant(
         select(Share).where(Share.id == grant_id, Share.suite_id == suite_id).with_for_update()
     ).scalar_one_or_none()
     if share is None:
-        raise GrantNotFoundError(
+        raise ShareNotFoundError(
             "no such access grant on this suite",
             detail={"suite_id": str(suite_id), "grant_id": str(grant_id)},
         )
@@ -104,18 +101,18 @@ def transfer_ownership(
     ).scalar_one_or_none()
     if target is None:
         raise UserNotFoundError("user not found", detail={"user_id": str(new_owner_user_id)})
+    previous_owner_id = suite.created_by
+    if previous_owner_id == new_owner_user_id:
+        raise SuiteTransferNoOpError(
+            "this user already owns the suite",
+            detail={"suite_id": str(suite_id), "user_id": str(new_owner_user_id)},
+        )
     target_role = resolve_role(target)
     if target_role == VIEWER_ROLE:
         raise SuiteTransferRejectedError(
             "a workspace viewer cannot own a suite — viewers are read-only; "
             "change their workspace role to member first",
             detail={"user_id": str(new_owner_user_id), "role": target_role},
-        )
-    previous_owner_id = suite.created_by
-    if previous_owner_id == new_owner_user_id:
-        raise SuiteTransferNoOpError(
-            "this user already owns the suite",
-            detail={"suite_id": str(suite_id), "user_id": str(new_owner_user_id)},
         )
 
     # An owner outranks any grant, and `grant_share` refuses to share a suite with its
@@ -131,19 +128,15 @@ def transfer_ownership(
             select(Share).where(Share.suite_id == suite_id, Share.user_id == previous_owner_id)
         ).first()
         if keep_previous_owner_access:
-            previous_owner = session.get(User, previous_owner_id)
-            # A Viewer cannot hold `edit` (ADR 0033) — keeping them at `view` is the
-            # honest outcome, and the alternative writes a grant the ladder then clamps.
-            level = (
-                "view"
-                if previous_owner is not None and resolve_role(previous_owner) == VIEWER_ROLE
-                else "edit"
-            )
+            previous_owner = session.get(User, previous_owner_id, with_for_update=True)
+            role = resolve_role(previous_owner) if previous_owner is not None else VIEWER_ROLE
             if existing is None:
-                session.add(Share(suite_id=suite_id, user_id=previous_owner_id, permission=level))
-                kept = level
+                kept = cap_for_viewer("edit", role)
+                session.add(Share(suite_id=suite_id, user_id=previous_owner_id, permission=kept))
             else:
-                kept = existing.permission
+                # A stale `edit` on a since-demoted Viewer must not be reported as kept.
+                kept = cap_for_viewer(existing.permission, role) or existing.permission
+                existing.permission = kept
         elif existing is not None:
             session.delete(existing)
 
