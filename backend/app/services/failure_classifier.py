@@ -211,3 +211,27 @@ _BROKER_MESSAGES: dict[FailureCategory, str] = {
 def classify_broker_reason(exc: BaseException) -> str:
     """The fixed, secret-free reason the broker (Redis) could not be reached (#1885)."""
     return _BROKER_MESSAGES[classify_failure_category(exc)]
+
+
+# ── Secret-store classification (#1886) ─────────────────────────────────────── The orphan-secret
+# sweep report: an outage must never read as "0 orphans found" (ADR 0039 rule).
+_SECRET_STORE_MESSAGES: dict[FailureCategory, str] = {
+    FailureCategory.CONNECTIVITY: (
+        "The secret store could not be reached (network, DNS, TLS, or a timeout). "
+        "Check that it is running and reachable from the worker."
+    ),
+    FailureCategory.PERMISSION: (
+        "The secret store rejected the credentials, or the identity is missing a "
+        "permission it needs to list secrets."
+    ),
+    FailureCategory.CONFIG: "The secret store looks misconfigured.",
+    FailureCategory.UNKNOWN: (
+        "The orphan-secret sweep failed for a reason DataQ could not classify. Check "
+        "the worker logs for the underlying error."
+    ),
+}
+
+
+def classify_secret_store_reason(exc: BaseException) -> str:
+    """The fixed, secret-free reason the orphan-secret sweep could not reach the store (#1886)."""
+    return _SECRET_STORE_MESSAGES[classify_failure_category(exc)]

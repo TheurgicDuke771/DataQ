@@ -383,3 +383,98 @@ def test_sweep_propagates_a_store_outage_instead_of_reporting_zero(db_session: S
 
     with pytest.raises(RuntimeError, match="vault sealed"):
         sweep_orphan_secrets(db_session, store=_BrokenStore([]), grace_days=30, purge=True, now=NOW)
+
+
+# ── The persisted report (#1886) ─────────────────────────────────────────────
+
+
+def test_read_sweep_report_is_none_when_never_run(db_session: Session) -> None:
+    assert secret_sweep_service.read_sweep_report(db_session) is None
+
+
+def test_record_sweep_report_round_trips(db_session: Session) -> None:
+    secret_sweep_service.record_sweep_report(
+        db_session,
+        mode="report",
+        orphan_count=2,
+        orphan_names=["conn-dead-dev-abc123", "conn-dead-qa-def456"],
+        store="openbao",
+        error=None,
+        now=NOW,
+    )
+    db_session.commit()
+
+    report = secret_sweep_service.read_sweep_report(db_session)
+    assert report is not None
+    assert report.ran_at == NOW
+    assert report.mode == "report"
+    assert report.orphan_count == 2
+    assert report.orphan_names == ["conn-dead-dev-abc123", "conn-dead-qa-def456"]
+    assert report.truncated is False
+    assert report.store == "openbao"
+    assert report.error is None
+
+
+def test_record_sweep_report_is_idempotent_across_runs(db_session: Session) -> None:
+    """A second run overwrites the one row rather than accumulating rows."""
+    from sqlalchemy import select
+
+    from backend.app.db.models import WorkspaceHealth
+
+    secret_sweep_service.record_sweep_report(
+        db_session, mode="report", orphan_count=1, orphan_names=["conn-a"], store="env", error=None
+    )
+    db_session.commit()
+    secret_sweep_service.record_sweep_report(
+        db_session, mode="purge", orphan_count=0, orphan_names=[], store="env", error=None
+    )
+    db_session.commit()
+
+    rows = db_session.scalars(
+        select(WorkspaceHealth).where(WorkspaceHealth.key == secret_sweep_service.SWEEP_REPORT_KEY)
+    ).all()
+    assert len(rows) == 1
+    report = secret_sweep_service.read_sweep_report(db_session)
+    assert report is not None
+    assert report.mode == "purge"
+    assert report.orphan_count == 0
+
+
+def test_record_sweep_report_caps_names_and_flags_truncated(db_session: Session) -> None:
+    names = [f"conn-orphan-{i}" for i in range(secret_sweep_service.MAX_REPORTED_ORPHAN_NAMES + 5)]
+    secret_sweep_service.record_sweep_report(
+        db_session,
+        mode="report",
+        orphan_count=len(names),
+        orphan_names=names,
+        store="env",
+        error=None,
+    )
+    db_session.commit()
+
+    report = secret_sweep_service.read_sweep_report(db_session)
+    assert report is not None
+    assert len(report.orphan_names) == secret_sweep_service.MAX_REPORTED_ORPHAN_NAMES
+    assert report.truncated is True
+    # The count still reflects the true total, not the capped list length.
+    assert report.orphan_count == len(names)
+
+
+def test_record_sweep_report_a_store_outage_is_null_count_not_zero(db_session: Session) -> None:
+    """An unreachable store must read `orphan_count=None` + an `error` — never a
+    fake `0`, the #954 masquerade applied to this signal (ADR 0039).
+    """
+    secret_sweep_service.record_sweep_report(
+        db_session,
+        mode="report",
+        orphan_count=None,
+        orphan_names=[],
+        store="openbao",
+        error="The secret store could not be reached (network, DNS, TLS, or a timeout).",
+    )
+    db_session.commit()
+
+    report = secret_sweep_service.read_sweep_report(db_session)
+    assert report is not None
+    assert report.orphan_count is None
+    assert report.error is not None

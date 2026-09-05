@@ -5,18 +5,37 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import cast
+from typing import Literal, cast
 
 from sqlalchemy import func, select, true
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import get_settings
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretInfo, SecretStore
 from backend.app.core.timeutil import as_utc
-from backend.app.db.models import Connection, LlmSetting, NotificationChannel, SuiteNotification
+from backend.app.db.models import (
+    Connection,
+    LlmSetting,
+    NotificationChannel,
+    SuiteNotification,
+    WorkspaceHealth,
+)
+from backend.app.worker.celery_app import celery_app
 
 log = get_logger(__name__)
+
+#: The `workspace_health.key` the last sweep report (beat OR manual) is upserted under (#1886).
+SWEEP_REPORT_KEY = "secret_sweep_report"
+
+#: Names beyond this count are dropped from the persisted report — `truncated` says so. A count
+#: this large is itself a signal worth acting on; the full list is already in the sweep's own
+#: log line (`secret_orphan_sweep`).
+MAX_REPORTED_ORPHAN_NAMES = 200
+
+#: The task `dispatch_secret_sweep` publishes — shared with `worker/tasks.py`'s registration.
+SWEEP_TASK_NAME = "sweep_orphan_secrets"
 
 # Only names DataQ mints are ever candidates.
 _DATAQ_PREFIXES: tuple[str, ...] = ("conn-", "suite-notif-", "channel-")
@@ -193,3 +212,83 @@ def sweep_orphan_secrets(
         too_young=too_young,
         unknown_age=unknown_age,
     )
+
+
+# ── The persisted report (#1886) ─────────────────────────────────────────────── Every sweep run —
+# beat or manual — writes exactly one row here, so `GET /admin/secret-sweep` has a source at all
+# (previously: logs only). `error` is set instead of `orphan_count` on a store-unreachable run — the
+# #954 masquerade, applied to this signal: an outage must never render as "0 orphans found".
+
+
+@dataclass(frozen=True)
+class SecretSweepReport:
+    """The last sweep run, as `GET /admin/secret-sweep` reads it back."""
+
+    ran_at: datetime
+    mode: Literal["report", "purge"]
+    #: `None` — never `0` — when the sweep could not enumerate the store at all.
+    orphan_count: int | None
+    #: Secret NAMES only, capped at `MAX_REPORTED_ORPHAN_NAMES` — never a value.
+    orphan_names: list[str]
+    truncated: bool
+    store: str
+    error: str | None
+
+
+def record_sweep_report(
+    session: Session,
+    *,
+    mode: Literal["report", "purge"],
+    orphan_count: int | None,
+    orphan_names: Sequence[str],
+    store: str,
+    error: str | None,
+    now: datetime | None = None,
+) -> None:
+    """Upsert the one `workspace_health` row every sweep run (beat or manual) writes."""
+    names = list(orphan_names)
+    truncated = len(names) > MAX_REPORTED_ORPHAN_NAMES
+    payload = {
+        "ran_at": (now or datetime.now(UTC)).isoformat(),
+        "mode": mode,
+        "orphan_count": orphan_count,
+        "orphan_names": sorted(names)[:MAX_REPORTED_ORPHAN_NAMES],
+        "truncated": truncated,
+        "store": store,
+        "error": error,
+    }
+    session.execute(
+        pg_insert(WorkspaceHealth)
+        .values(key=SWEEP_REPORT_KEY, payload=payload)
+        .on_conflict_do_update(
+            index_elements=[WorkspaceHealth.key],
+            set_={"payload": payload, "updated_at": func.now()},
+        )
+    )
+
+
+def read_sweep_report(session: Session) -> SecretSweepReport | None:
+    """The last recorded sweep report, or `None` if the sweep has never run."""
+    payload = session.execute(
+        select(WorkspaceHealth.payload).where(WorkspaceHealth.key == SWEEP_REPORT_KEY)
+    ).scalar_one_or_none()
+    if not payload:
+        return None
+    return SecretSweepReport(
+        ran_at=as_utc(datetime.fromisoformat(payload["ran_at"])),
+        mode=payload["mode"],
+        orphan_count=payload["orphan_count"],
+        orphan_names=list(payload["orphan_names"]),
+        truncated=payload["truncated"],
+        store=payload["store"],
+        error=payload["error"],
+    )
+
+
+def dispatch_secret_sweep() -> str:
+    """Enqueue the orphan-secret sweep task in report-only mode — a UI-triggered run must
+    never purge a live warehouse credential regardless of `SECRET_ORPHAN_PURGE` (#1886).
+    Returns the Celery task id.
+    """
+    result = celery_app.send_task(SWEEP_TASK_NAME, kwargs={"force_report_only": True})
+    return str(result.id)
