@@ -8,6 +8,17 @@ step() { echo -e "${CYAN}▶ $1${NC}"; }
 ok()   { echo -e "${GREEN}✓ $1${NC}"; }
 die()  { echo -e "${RED}✗ $1${NC}" >&2; exit 1; }
 
+# force_env_kv <file> <key> <value> — set KEY=value, overwriting any existing value.
+force_env_kv() {
+  local file="$1" key="$2" value="$3"
+  if grep -qE "^${key}=" "${file}"; then
+    sed -i.bak -e "s|^${key}=.*|${key}=${value}|" "${file}" && rm -f "${file}.bak"
+  else
+    [ -s "${file}" ] && [ "$(tail -c1 "${file}" | wc -l)" -eq 0 ] && printf '\n' >> "${file}"
+    printf '%s=%s\n' "${key}" "${value}" >> "${file}"
+  fi
+}
+
 # set_env_kv <file> <key> <value> — set KEY=value, leaving an already-non-blank value alone.
 set_env_kv() {
   local file="$1" key="$2" value="$3"
@@ -89,37 +100,39 @@ set_env_kv .env.app OPENBAO_MOUNT "secret"
 
 # ── Sign-in mode (#1150) ────────────────────────────────────────────────────── The local stack
 # boots into email one-time codes (ADR 0032) against the bundled `mailpit` catcher.
-if ! grep -qE '^DATAQ_SIGNIN_EMAIL=' .env; then
+if ! grep -qE '^DATAQ_SIGNIN_EMAIL=..*$' .env && ! grep -qE '^DATAQ_DEV_BYPASS=true$' .env; then
   step "Choosing a sign-in mode"
   echo "  DataQ signs you in with a 6-digit code emailed to a local inbox"
   echo "  (http://localhost:8025) — nothing leaves this machine, and no real"
   echo "  mailbox is needed. Which address should be allowed to sign in?"
   echo ""
-  echo "  Leave BLANK to opt out into dev-bypass instead: no sign-in at all,"
-  echo "  every request resolves to one fixed user, and anyone who can reach"
-  echo "  the port is a workspace admin."
-  echo ""
   signin_email=""
-  # `|| true` so a non-interactive run (CI, a piped installer) takes the blank answer instead of
-  # dying on a closed stdin.
+  dev_bypass="${DATAQ_DEV_BYPASS:-}"
   if [ -n "${DATAQ_SIGNIN_EMAIL-}" ]; then
     signin_email="${DATAQ_SIGNIN_EMAIL}"
+    dev_bypass=""
     echo "  Using DATAQ_SIGNIN_EMAIL from the environment."
+  elif [ "${dev_bypass}" = "true" ]; then
+    echo "  DATAQ_DEV_BYPASS=true in the environment — contributor bypass, no sign-in."
   elif [ -t 0 ]; then
-    printf '  Your email address (blank = dev-bypass): '
-    read -r signin_email || true
+    while [ -z "${signin_email}" ]; do
+      printf '  Your email address: '
+      read -r signin_email || true
+      signin_email="$(printf '%s' "${signin_email}" | tr -d '[:space:]')"
+      [ -z "${signin_email}" ] && echo "  An email address is needed to sign in."
+    done
   else
-    echo "  No TTY — defaulting to dev-bypass. Set DATAQ_SIGNIN_EMAIL and re-run"
-    echo "  (or edit .env) to switch to email sign-in."
+    die "No TTY and no DATAQ_SIGNIN_EMAIL. Set DATAQ_SIGNIN_EMAIL=you@example.com and re-run."
   fi
-  # Trim: a stray space would land in the allowlist and never match the address
-  # the user then types into the sign-in form.
-  signin_email="$(printf '%s' "${signin_email}" | tr -d '[:space:]')"
-  set_env_kv .env DATAQ_SIGNIN_EMAIL "${signin_email}"
-  if [ -n "${signin_email}" ]; then
-    ok "Email sign-in enabled for ${signin_email}"
+  force_env_kv .env DATAQ_SIGNIN_EMAIL "${signin_email}"
+  if [ "${dev_bypass}" = "true" ]; then
+    force_env_kv .env DATAQ_DEV_BYPASS true
+    force_env_kv .env.app AUTH_DEV_BYPASS true
+    ok "Contributor bypass enabled (no sign-in) — set DATAQ_SIGNIN_EMAIL and DATAQ_DEV_BYPASS=false in .env to change"
   else
-    ok "Dev-bypass selected (no sign-in) — set DATAQ_SIGNIN_EMAIL in .env to change"
+    force_env_kv .env DATAQ_DEV_BYPASS false
+    force_env_kv .env.app AUTH_DEV_BYPASS false
+    ok "Email sign-in enabled for ${signin_email}"
   fi
 fi
 

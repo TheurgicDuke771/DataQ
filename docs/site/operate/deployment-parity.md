@@ -17,7 +17,7 @@ cloud-conditional code paths**, and the same container images run everywhere.
 | Database | PostgreSQL (dedicated database + least-privilege app role) | RDS PostgreSQL | Postgres container |
 | Queue / cache | Redis (password auth) | ElastiCache Redis (TLS `rediss://`) | Redis container |
 | Secret store | Key Vault (`SECRET_STORE=azure_key_vault`, managed identity) | Secrets Manager (`SECRET_STORE=aws_secrets_manager`, task IAM role) | OpenBao (`openbao`), or `env` for host-only dev |
-| Identity — humans | Entra ID through the generic OIDC contract | Cognito through the same contract | Email OTP (bundled Mailpit) by default; dev-bypass opt-in |
+| Identity — humans | Entra ID through the generic OIDC contract | Cognito through the same contract | Email OTP (bundled Mailpit) by default |
 | Identity — machines | PATs (`dq_live_`) — identical everywhere | ← same | ← same |
 | Observability | App Insights via OTel | ADOT collector sidecar → X-Ray + CloudWatch | Off by default; Jaeger via `--profile telemetry` |
 | Email transport | Any SMTP relay | SES (note: a sandboxed SES account can only mail verified addresses) | Mailpit catcher |
@@ -74,7 +74,7 @@ differences:
 ## Configuration: what actually differs
 
 Most backend env is **identical in shape on both clouds** (`ENVIRONMENT`, `DATABASE_URL`,
-`REDIS_URL`, `AUTH_DEV_BYPASS=false`, `WORKSPACE_ADMIN_EMAILS`,
+`REDIS_URL`, `WORKSPACE_ADMIN_EMAILS`,
 `RATE_LIMIT_XFF_TRUSTED_HOPS=3`, `CORS_ALLOW_ORIGINS=""`, `PUBLIC_BASE_URL`, the
 `*_WEBHOOK_SECRET_NAME`s, the `EMAIL_*` block, `WAREHOUSE_LINEAGE_ENABLED`). The genuine
 differences:

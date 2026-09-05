@@ -7,6 +7,12 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Changed
 
+- ⚠️ **Every DataQ user signs in.** The local stack has one sign-in mode, emailed
+  codes, and a mis-set or empty sign-in configuration now stops the API with a message
+  naming it instead of coming up open. Existing local setups: an `.env` with an empty
+  `DATAQ_SIGNIN_EMAIL=` no longer boots — set an address or re-run `setup.sh`, which
+  now re-asks.
+
 - **The admin area is now six routed, deep-linkable pages.** `/admin` splits into
   `overview`, `members`, `suites`, `settings`, `compliance` and `integrations` —
   the tab you are on is the URL, so any tab can be bookmarked, shared or
