@@ -15,7 +15,7 @@ https://<your-dataq-host>/mcp/
     `Authorization` header when following redirects — which then surfaces as a
     confusing 401. Always configure clients with the `/mcp/` form.
 
-The endpoint accepts the **same credentials as the REST API** (ADR [0008](../adr/0008-mcp-server.md) / [0026](../adr/0026-auth-api-keys-and-principal-seam.md)): an OIDC bearer token (Azure AD or Cognito), or a **DataQ API key** (`dq_live_…`). Without auth configured, the endpoint is only mounted in local dev-bypass mode — never unauthenticated in a deployed environment.
+The endpoint accepts the **same credentials as the REST API** (ADR [0008](../adr/0008-mcp-server.md) / [0026](../adr/0026-auth-api-keys-and-principal-seam.md)): an OIDC bearer token (Azure AD or Cognito), or a **DataQ API key** (`dq_live_…`). Without a working sign-in configuration the endpoint is not mounted at all — it is never unauthenticated.
 
 !!! info "Email-OTP deployments: MCP works, with an API key"
     A deployment running **email one-time codes instead of SSO** (ADR
@@ -108,6 +108,6 @@ The tools split three ways, not two:
 |---|---|
 | 401 on every request | Token expired (~1 h) → paste a fresh one. Or the client followed the `/mcp` → `/mcp/` redirect and dropped the header → use `/mcp/` directly. |
 | 307 responses | Missing trailing slash — configure `/mcp/`. |
-| Server absent / connection refused locally | The MCP server is unmounted unless the deployment has a working sign-in configuration — SSO (`AZURE_*`), email OTP (`AUTH_EMAIL_*` + an allowlist), or local dev-bypass (fail-closed by design). |
+| Server absent / connection refused locally | The MCP server is unmounted unless the deployment has a working sign-in configuration — SSO (`AZURE_*`) or email OTP (`AUTH_EMAIL_*` + an allowlist); fail-closed by design. |
 | 401 with an API key on an email-OTP deployment | Check you sent the **API key**, not your session cookie/token: in OTP mode a `dq_live_…` key is the only credential `/mcp` accepts. |
 | Tool call returns "not found" for a suite you can see in the UI as someone else | MCP calls run as the token's user — suite access is per-user, same as the web app. |
