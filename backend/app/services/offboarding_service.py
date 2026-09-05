@@ -23,6 +23,7 @@ from backend.app.core.logging import get_logger
 from backend.app.db.models import ADMIN_ROLE, ApiKey, Suite, User, UserSession, WorkspaceMember
 from backend.app.services import admin_suite_service, audit_service, membership_service
 from backend.app.services.admin_service import UserNotFoundError
+from backend.app.services.membership_guard import RoleChangeRejectedError, assert_admin_remains
 from backend.app.services.suite_service import deletion_impact
 
 log = get_logger(__name__)
@@ -144,15 +145,14 @@ def _load_user(db: Session, user_id: uuid.UUID, *, lock: bool = False) -> User:
 
 
 def _is_last_admin(db: Session, user: User, *, lock: bool = False) -> bool:
-    """Stored-role admins only — an allowlist-resolved admin can vanish with the
-    next deploy, so it cannot satisfy the invariant it is the recovery path for.
-    """
+    """The shared cross-table guard: stored-role admins who are still members."""
     if user.role != ADMIN_ROLE:
         return False
-    stmt = select(User.id).where(User.role == ADMIN_ROLE).order_by(User.id)
-    if lock:
-        stmt = stmt.with_for_update()
-    return set(db.scalars(stmt).all()) <= {user.id}
+    try:
+        assert_admin_remains(db, exclude_user_id=user.id)
+    except RoleChangeRejectedError:
+        return True
+    return False
 
 
 def _owned_suites(db: Session, user_id: uuid.UUID) -> list[Suite]:
