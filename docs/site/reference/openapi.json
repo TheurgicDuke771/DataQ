@@ -5756,6 +5756,114 @@
         "title": "ScorecardRead",
         "type": "object"
       },
+      "SecretSweepReportRead": {
+        "description": "The last orphan-secret sweep run, beat OR manual. `status=\"never_run\"` means\nthe sweep has never recorded a report \u2014 never read that as `orphan_count=0`.\n`orphan_count` is `None` (never `0`) when the run could not reach the secret\nstore at all; `error` then carries the classified, secret-free reason.\n`orphan_names` are secret NAMES only, capped at 200 \u2014 see `truncated`.",
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "report",
+                  "purge"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
+          },
+          "orphan_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Orphan Count"
+          },
+          "orphan_names": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Orphan Names",
+            "type": "array"
+          },
+          "ran_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ran At"
+          },
+          "status": {
+            "enum": [
+              "never_run",
+              "recorded"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "store": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Store"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "SecretSweepReportRead",
+        "type": "object"
+      },
+      "SecretSweepRunResponse": {
+        "properties": {
+          "status": {
+            "default": "queued",
+            "title": "Status",
+            "type": "string"
+          },
+          "task_id": {
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "title": "SecretSweepRunResponse",
+        "type": "object"
+      },
       "ShareCreate": {
         "additionalProperties": false,
         "properties": {
@@ -7519,6 +7627,49 @@
           }
         },
         "summary": "Inbound orchestration webhook config (admin)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/secret-sweep": {
+      "get": {
+        "operationId": "get_secret_sweep_report_api_v1_admin_secret_sweep_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecretSweepReportRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Last orphan-secret sweep report (admin)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/secret-sweep/run": {
+      "post": {
+        "description": "Enqueues the existing beat task in report-only mode, REGARDLESS of\n`SECRET_ORPHAN_PURGE` \u2014 a UI-triggered run must never purge a live warehouse\ncredential. Returns immediately with the Celery task id; the result lands in\n`GET /admin/secret-sweep` once the worker picks it up.",
+        "operationId": "run_secret_sweep_api_v1_admin_secret_sweep_run_post",
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecretSweepRunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Run the orphan-secret sweep now \u2014 report-only (admin)",
         "tags": [
           "admin"
         ]

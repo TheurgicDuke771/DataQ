@@ -208,6 +208,8 @@ an outbound model request.
 | GET | `/admin/deployment` | Declared residency / deployment posture (`DEPLOYMENT_REGION`). |
 | GET | `/admin/orchestration/webhooks` | Webhook receiver URLs + auth mode per provider. |
 | GET | `/admin/health` | Poll staleness per orchestration connection, beat heartbeat, broker queue depth. |
+| GET | `/admin/secret-sweep` | Last orphan-secret sweep report — `never_run` if the sweep hasn't recorded one. |
+| POST | `/admin/secret-sweep/run` | Run the orphan-secret sweep now, always report-only (audited). |
 | POST | `/admin/auth-email/test` | SMTP pre-flight for the OTP mailer (per-admin throttled). |
 
 ## Example: trigger a suite and poll it
