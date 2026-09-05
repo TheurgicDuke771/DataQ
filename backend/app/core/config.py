@@ -106,6 +106,12 @@ class Settings(BaseSettings):
     # monitor "provoking cell" (`unparsed_value`, #989) at write time, so every
     # downstream reader (results API, alerts, MCP) inherits the suppression for
     # free rather than needing its own gate.
+    #
+    # This is the FAIL-SAFE FLOOR, not the whole answer (#1887): the effective
+    # state is this OR the `privacy_settings` row, so a deployment can pin the
+    # mode on here and an admin can additionally turn it on from the app, but
+    # never off. Read it through `privacy_settings_service.zero_sample_mode`,
+    # never directly — a test enforces that.
     privacy_zero_sample_mode: bool = False
 
     # Audit-log retention (ADR 0041 §2.7).
