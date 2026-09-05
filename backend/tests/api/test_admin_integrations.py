@@ -444,17 +444,12 @@ def test_the_inventory_routes_are_admin_only(
     conn = _warehouse_connection(db_session)
     _, headers = as_role(role)
 
-    assert client.get("/api/v1/admin/inventory-sync", headers=headers).status_code == 403
-    assert (
-        client.patch(
-            f"/api/v1/admin/inventory-sync/{conn.id}", json={"enabled": True}, headers=headers
-        ).status_code
-        == 403
+    listed = client.get("/api/v1/admin/inventory-sync", headers=headers)
+    patched = client.patch(
+        f"/api/v1/admin/inventory-sync/{conn.id}", json={"enabled": True}, headers=headers
     )
-    assert (
-        client.post(f"/api/v1/admin/inventory-sync/{conn.id}/run", headers=headers).status_code
-        == 403
-    )
+    ran = client.post(f"/api/v1/admin/inventory-sync/{conn.id}/run", headers=headers)
+    assert [r.status_code for r in (listed, patched, ran)] == [403, 403, 403]
     db_session.refresh(conn)
     assert conn.config["inventory_sync"] is False, "a 403 must not have written anything"
     assert sent == []
