@@ -7,6 +7,7 @@ import {
   eraseDataSubject,
   exportDataSubject,
 } from '../../api/admin';
+import { downloadJson, toFilenameStem } from '../../utils/download';
 import { type FetchFailure, fetchFailure } from '../../utils/errors';
 import { Filter } from '../../components/shared/Filter';
 import { Section } from './parts';
@@ -196,7 +197,8 @@ function EraseConfirmModal({
 function ReceiptModal({ receipt, onClose }: { receipt: Receipt | null; onClose: () => void }) {
   if (!receipt) return null;
   const json = JSON.stringify(receipt.data, null, 2);
-  const filename = () => `dataq-${receipt.kind}-${receipt.data.column}-${Date.now()}.json`;
+  const filename = () =>
+    `dataq-${receipt.kind}-${toFilenameStem(receipt.data.column, 'subject')}-${Date.now()}.json`;
 
   return (
     <Modal
@@ -204,7 +206,7 @@ function ReceiptModal({ receipt, onClose }: { receipt: Receipt | null; onClose: 
       open
       onCancel={onClose}
       footer={[
-        <Button key="download" onClick={() => downloadJson(filename(), json)}>
+        <Button key="download" onClick={() => downloadJson(filename(), receipt.data)}>
           Download JSON
         </Button>,
         <Button key="close" type="primary" onClick={onClose}>
@@ -267,16 +269,4 @@ function ReceiptSummary({ receipt }: { receipt: Receipt }) {
       }`}
     />
   );
-}
-
-/** Best-effort: some embedding contexts block script-initiated downloads, which
- *  is why the receipt is on screen regardless. */
-function downloadJson(filename: string, json: string) {
-  if (typeof URL.createObjectURL !== 'function') return;
-  const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
 }
