@@ -1,0 +1,457 @@
+Hey, 
+Check the Admin UI #1702 
+research and plan the details [web and internal docs]. 
+Check filled issues, create additional if required. 
+rank them based on priority and dependencies. 
+Create a TODO list, start the execution. 
+you can assign task to other models [haiku/sonnet/opus] as required.
+
+note: keep the comments at minimum [~ 0.2 prose to code ratio]
+
+---
+
+<task-notification>
+<task-id>aa47fcfbe085c6901</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/aa47fcfbe085c6901.output</output-file>
+<status>completed</status>
+<summary>Agent "Survey admin UI + API code" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Survey complete. Findings below.
+
+## 1. Frontend Admin page
+
+**Route &amp; gating**
+- `frontend/src/App.tsx:56` lazy-imports `Admin`; `frontend/src/App.tsx:265` — `&lt;Route path="/admin" element={&lt;Admin /&gt;} /&gt;`. Flat, single route, **no nested routes/tabs today**.
+- Nav item at `frontend/src/App.tsx:73` (`ADMIN_FOOTER_ITEMS`), shown only when `useIsWorkspaceAdmin()` is true (`App.tsx:93,98`) — a *nav* gate, not a route guard.
+- Real gate is in-component: `frontend/src/pages/Admin.tsx:46-66` — `useMe()`, loading→`Spin`, error→`PageError`, `!me.data.is_workspace_admin`→`&lt;Forbidden&gt;`; only then renders `AdminOverview` (hooks deliberately live in the child so they never fire for a non-admin).
+- `frontend/src/auth/useMe.ts` exports `useMe`, `useUpdateMe`, `useIsWorkspaceAdmin`, `useWorkspaceRole`, `useCanMutateConnections`, `useCanAuthor`. Context in `frontend/src/auth/meContext.ts`, provider `frontend/src/auth/MeProvider.tsx`. There is also `frontend/src/auth/RequireRole.tsx` (used for connection/suite routes at `App.tsx:222-255`) but it is **not** applied to `/admin`.
+
+**Sections rendered** (`Admin.tsx`, 533 lines, one long scroll — the vitest name literally says "no tabs"):
+1. Three `MetricCard`s: Suites / Members / Access grants (`Admin.tsx:81-107`)
+2. "All suites" table (`:112`)
+3. "Members &amp; access" — users table with inline `RoleEditor`, plus a second access-grants table (`:120-138`)
+4. `&lt;AuditLogSection /&gt;` (`:137`, impl `:176+`) — filters (action class, entity type, actor UUID with client-side UUID validation, date window), 25/page pager, honesty fields (retention_days / retained_since)
+5. `&lt;DeploymentPostureSection /&gt;` (`:139`, impl ~`:338`)
+6. `&lt;LlmSettingsPanel /&gt;` (`:140`)
+
+**API calls on mount** (all via `useAsyncData`): `listAdminSuites`, `listAdminUsers`, `listAdminAccess` (`Admin.tsx:70-72`), `listAuditEvents` (`:189`), `getDeploymentPosture` (`:338`), plus the LLM panel's own `getLlmConfig`.
+
+**Write controls today**: only two — role change (`components/admin/RoleEditor.tsx:32` → `setAdminUserRole`) and LLM settings save/test (`components/admin/LlmSettingsPanel.tsx` → `api/llm.ts:57,62`). Audit log and deployment posture are read-only.
+
+**Related modules**: `frontend/src/api/admin.ts` (164 lines — suites/users/access/role/webhooks/auth-email-test/audit-events/deployment), `frontend/src/api/llm.ts` (the `/admin/llm*` calls live here, *not* in admin.ts), `frontend/src/api/me.ts:24`, `frontend/src/api/notificationChannels.ts`. Components dir: `frontend/src/components/admin/{LlmSettingsPanel,NotificationChannelsPanel,RoleEditor}.tsx`.
+
+**Tests**: `frontend/tests/pages/Admin.test.tsx` (10 cases incl. forbidden-path "fetches nothing", pager-refetch, filter-submission semantics), `frontend/tests/api/adminMe.test.ts`, e2e `frontend/e2e/admin.spec.ts` (4 tests) and `frontend/e2e/roles.spec.ts:71` ("member is not offered the admin page"). Backend: `backend/tests/api/test_admin.py`, `test_admin_llm.py`, `test_admin_role_management.py`, `test_admin_data_subject_requests.py`.
+
+## 2. Backend admin API
+
+`backend/app/api/v1/admin.py` — one router, `prefix="/admin"`, **router-level `dependencies=[Depends(require_workspace_admin)]`** (`admin.py:33-37`); mounted at `backend/app/main.py:230` under `/api/v1`. Write routes additionally take `current_user: Depends(require_workspace_admin)` as a *parameter* (they need the actor identity for auditing, not extra gating).
+
+| # | Method | Path | Line | Service |
+|---|---|---|---|---|
+| 1 | GET | `/admin/suites` | `:86` | `admin_service.all_suites` |
+| 2 | GET | `/admin/users` | `:91` | `admin_service` users |
+| 3 | GET | `/admin/access` | `:96` | `admin_service` access |
+| 4 | PATCH | `/admin/users/{user_id}/role` | `:109` | role mgmt (ADR 0033, #742) |
+| 5 | GET | `/admin/orchestration/webhooks` | `:138` | + `SecretStore` (#490) |
+| 6 | POST | `/admin/auth-email/test` | `:159` | `OtpMailer` (ADR 0032, #737) |
+| 7 | GET | `/admin/llm` | `:238` | llm settings |
+| 8 | PUT | `/admin/llm` | `:243` | llm settings + SecretStore |
+| 9 | POST | `/admin/llm/test` | `:269` | live probe, audited (#1773) |
+| 10 | GET | `/admin/audit-events` | `:337` | audit query (ADR 0041, #1318) |
+| 11 | GET | `/admin/audit-events/verify` | `:401` | `verify_audit_chain` |
+| 12 | GET | `/admin/deployment` | `:534` | posture, incl. `zero_sample_mode` |
+| 13 | POST | `/admin/data-subject-requests/export` | `:701` | GDPR Art 15/20 |
+| 14 | POST | `/admin/data-subject-requests/erase` | `:784` | GDPR Art 17 |
+
+## 3. Backend admin endpoints with NO frontend caller
+
+Grepped all of `frontend/src` per path. **Four orphans** — which matches the already-filed issue #1695 "parity pass (4 backend-only admin endpoints)":
+
+- `GET /admin/audit-events/verify` — zero hits anywhere in `frontend/`. The chain-verify button does not exist.
+- `POST /admin/data-subject-requests/export` — zero hits (documented as a curl runbook only, `docs/site/security/compliance/data-subject-rights-runbook.md:40`)
+- `POST /admin/data-subject-requests/erase` — zero hits (`…runbook.md:60`)
+- `GET /api/v1/orchestration/near-misses` — not admin-prefixed but admin-scoped (`backend/app/api/v1/runs.py:525-556`, `include_all=is_workspace_admin(...)`); no frontend caller found.
+
+Also worth noting for the redesign: two admin endpoints are called from **Settings**, not Admin — `listAdminWebhooks` (`frontend/src/pages/Settings.tsx:155`) and `testAuthEmail` (`Settings.tsx:79`). So the admin surface is currently split across `/admin` and `/settings` with no clear rule.
+
+## 4. Notification channels (#1761) + zero-sample mode (#1676/#1873)
+
+- Channel UI lives at **`/settings` → "Notifications" tab**, not `/admin`: `frontend/src/pages/Settings.tsx:22,134` mounts `components/admin/NotificationChannelsPanel.tsx` (note the file is in `components/admin/` while rendering under Settings). Effectively admin-only because the whole Settings page is gated (`Settings.tsx:46`).
+- Backend `backend/app/api/v1/notification_channels.py:25` — router has **no** `/admin` prefix and uses `get_current_user`, with admin enforcement inside `channel_service` for the mutating routes (panel comment at `NotificationChannelsPanel.tsx:41-43` says "Channel CRUD is Admin-only server-side"). Routes: GET/POST `/notification-channels`, GET/PATCH/DELETE `/notification-channels/{id}`, and the per-suite link set GET/PUT/DELETE `/suites/{id}/notification-channels[/{channelId}]`.
+- **Zero-sample mode is env-only**: `backend/app/core/config.py:109` `privacy_zero_sample_mode: bool = False` (`PRIVACY_ZERO_SAMPLE_MODE`). No write API. It is only *readable* via `GET /admin/deployment` → `zero_sample_mode`, surfaced read-only in `DeploymentPostureSection`. Docs note both api and worker processes must restart to flip it (`get_settings()` is a per-process `lru_cache`) — so an admin-UI toggle would need that constraint designed around.
+
+## 5. workspace_health (#1100) / orphan-secret sweep (#1070)
+
+- Table `workspace_health` at `backend/app/db/models.py:1030-1035`; service `backend/app/services/workspace_health_service.py` (keys: `POLL_STALENESS_KEY` at `:34`, `trigger_env_near_miss:*`). Poll-staleness check wired at `backend/app/main.py:62`.
+- **Only partial read API**: `GET /api/v1/orchestration/near-misses` (`backend/app/api/v1/runs.py:525`) exposes the `trigger_env_near_miss:*` rows. The **poll-staleness signal has no read endpoint at all** — a natural fit for the #1696 Overview health page.
+- **Orphan-secret sweep has no API whatsoever**: `backend/app/services/secret_sweep_service.py` (`find_orphan_secrets:112`, `sweep_orphan_secrets:139`) is invoked only from the Celery beat schedule `sweep-orphan-secrets` (`backend/app/worker/celery_app.py:130-133`), reporting-only unless `SECRET_ORPHAN_PURGE`. Findings are log-only; nothing is persisted to `workspace_health` and nothing is queryable.
+
+## 6. Routing / tabs conventions to follow
+
+- Tabs are **antd `&lt;Tabs&gt;` with `defaultActiveKey` + `items[]`, state-local, not URL-backed**. Two precedents: `frontend/src/pages/Results.tsx:103-119` (runs / pipelines) and `frontend/src/pages/Settings.tsx:55-64` (general / secrets / webhooks / notifications / danger). Neither syncs to the URL, so a tab is not linkable or reload-stable today.
+- Nested *routes* are done as flat sibling paths, not `&lt;Outlet&gt;` children — e.g. `/suites/:suiteId`, `/suites/:suiteId/edit`, `/suites/:suiteId/checks/new` (`App.tsx:256-259`). Suite "detail" reuses the `Suites` page component with a param rather than a child route.
+- So for #1694's six routed sub-pages there is **no existing routed-tab pattern to copy** — you would be establishing it. Closest existing gate pattern to reuse: `frontend/src/auth/RequireRole.tsx` as used at `App.tsx:222-255`, which would let `/admin/*` be guarded at the route level instead of the current in-component check.
+- Standard page scaffolding: `components/layout/Page`, `components/feedback/PageError`, `components/Forbidden`, `components/AsyncBody`, and the `useAsyncData` / `useAsyncAction` hook pair (`useAsyncData` does **not** auto-refetch on dep change — it exposes `reload()`, which `AuditLogSection` has to bump manually; a known sharp edge for a filter-heavy redesign).
+
+## 7. Docs
+
+- `docs/post-v1-admin-ui-notes.md` — **does not exist**. Nearest sibling is `docs/post-v1-dq-intelligence-notes.md`.
+- `docs/site/guides/` — **no admin guide**. Files: ai-features, api-keys, best-practices, datasources-checks, features, index, mcp-setup, notifications, orchestration, recommended-usage, scheduling.
+- `docs/site/security/overview.md` admin sections: SMTP pre-flight (`:51-71`), env-allowlist admin escalation warning (`:151-157`), audit-events (`:161`), zero-sample mode (`:240-244`), deployment posture / residency (`:447-465`).
+- ADRs: **0033** `docs/site/adr/0033-workspace-roles-rbac.md` and **0041** `docs/site/adr/0041-history-audit-strategy.md` both exist. **0043 does not exist** — 0042 (`llm-provider-seam`) is the highest. `context/roadmap-v1.2-v1.3.md:95-103` records that ADR 0043 is *to be written* for #1693 (in-app membership), with IdP as a stated prerequisite.
+- Also relevant: `docs/site/adr/0027-suite-permission-model-workspace-admin.md`, `docs/site/security/compliance/data-subject-rights-runbook.md` (the manual curl workflow the missing DSR UI would replace).
+
+**Prior planning already on file** (`docs/progress.md:30`, `context/roadmap-v1.2-v1.3.md:36,95-103`): epic **#1702** admin control-centre with six routed sub-pages and a published mockup (2026-08-29), over #1693 membership, #1694 IA restructure, #1695 parity pass (the 4 orphan endpoints above), #1696 Overview health page, #1697 credential health, #1698 write pass, #1699 offboarding, #1700 admin lens, #1701 Integrations. Worth reading before designing, since the sequencing is already user-directed.</result>
+<usage><subagent_tokens>56476</subagent_tokens><tool_uses>28</tool_uses><duration_ms>120732</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a31324a52d9a51bc0</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a31324a52d9a51bc0.output</output-file>
+<status>completed</status>
+<summary>Agent "ADR 0043 draft for #1693" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Sanity check:** `mkdocs build --strict` green with zero warnings, pre-commit clean on both files, PR open with exactly the two intended files and milestone "v1.2 Backlog", not merged. Re-read the ask: ADR at the required path with Status Proposed, all requested sections present (Context / Decision / Consequences / Alternatives rejected / Verification bar / Migration &amp; rollout), index row added, nav verified as needing no change.
+
+**PR:** https://github.com/TheurgicDuke771/DataQ/pull/1889
+
+**Four places the code contradicted the issue text** (all corrected in the ADR and listed in the PR body):
+
+1. **`_upsert_user` is not today's OIDC gate.** The allowlist check is `_oidc_access_allowed`, called one level up by `_resolve_generic_oidc_user` and separately by `mcp.auth.resolve_current_user`; `_upsert_user` itself is gate-free. It's still the right *new* choke point — it's the only shared point that also covers the Azure AD path, which has **no app-side gate at all** — but the ADR says the check is added there, not joining an existing one.
+2. **`_upsert_user` is also the dev-bypass mint** (REST `_get_current_user_dev_bypass` and MCP's fallback), so "dev-bypass exempt" can't mean skipping the choke point; the exemption must live inside the check, keyed on `_dev_bypass_allowed`, not on `DEV_BYPASS_EMAIL`.
+3. **Normalization isn't uniform at that choke point.** The generic-OIDC path normalizes before calling it; the Azure REST and MCP paths pass `preferred_username`/`upn` through raw — so a lookup against a `lower(email)` index that trusts its caller would admit or deny by claim casing.
+4. **`initial_role` cannot ride the existing `role=` parameter.** That parameter is written into both `values()` and the `on_conflict_do_update` `set_`, so using it would silently overwrite an in-app role change on every subsequent request — it needs its own new-row-only path.
+
+Verified-correct as written: all three revocation claims (session and PAT resolvers check only hash/revoked/expiry, never membership), `is_signup_eligible`'s two call sites, and `api_key_service.resolve_token` being the single PAT choke point for REST and `/mcp`.
+
+One process note: the first commit was rejected by the docs hook — CONTRIBUTING rule 41 forbids `#NNNN` citations in published `docs/site/` pages, so every ticket reference was rewritten to state the behaviour instead.
+
+result: ADR 0043 (in-app workspace membership, Proposed) written and opened as PR #1889 with four code-vs-issue contradictions found and corrected.</result>
+<usage><subagent_tokens>212109</subagent_tokens><tool_uses>24</tool_uses><duration_ms>266159</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a31324a52d9a51bc0</worktreePath><worktreeBranch>worktree-agent-a31324a52d9a51bc0</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a31324a52d9a51bc0</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a31324a52d9a51bc0.output</output-file>
+<status>completed</status>
+<summary>Agent "ADR 0043 draft for #1693" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Sanity check:** each of the four `resolveReviewThread` mutations returned `isResolved: true` directly; `mkdocs build --strict` green with zero warnings; all pre-commit hooks passed including the rule-41 docs-reference gate; branch has exactly two commits (`01a0c2e6` original + `fe5e553f` fixup) — plain push, no amend or force-push.
+
+**What changed in the ADR, per your four decisions:**
+
+1. **OTP boot check kept and now stated explicitly.** Decision 7 gains a paragraph recording that `Settings._validate_otp_auth` is *unchanged* — not relaxed to "allowlist OR table" — because the first admin has to be able to sign in before any row exists. Framed as **authority, not presence**: env-listed addresses become grant-only, and the accepted cost (removing one still needs an env edit + restart, as with `WORKSPACE_ADMIN_EMAILS`) is written down. Added a minimal amendment blockquote at the top of ADR 0032 pointing here, saying both halves.
+2. **Auto-import kept but provisional.** `workspace_members` gains `source` (`admin | auto_import`, CHECK-constrained; `invited_by` null for imports); the Members page shows imported rows under a "review imported members" banner until confirmed or removed; decision 8 states plainly it is a lockout guard, not evidence of intended membership. I recorded *why* I declined the reviewer's `last_seen_at` alternative — a quiet-but-current member is indistinguishable from a departed one by that signal, and a guard that guesses isn't a guard. The alternatives entry now rejects a **silent** migration backfill specifically, not the flagged import: same rows, opposite epistemics.
+3. **401/403 stated per door.** REST is 403 with a membership reason; `/mcp` is 401 by construction (`_PatOrJwtVerifier.verify_token` swallows the `DataQError` into `None`), recorded as a known asymmetry explicitly out of scope for this ADR — plus the point that the audit log, not the HTTP status, is where the reason is carried for both doors.
+4. **Duplicated superuser clause dropped.**
+
+The ADR index row was also updated to carry the provisional-import and door-specific-status facts, so the index doesn't drift from the body.
+
+result: ADR 0043 revised per all four review threads and pushed as fixup fe5e553f on PR #1889; every thread replied to and resolved, mkdocs --strict and pre-commit green.</result>
+<usage><subagent_tokens>237812</subagent_tokens><tool_uses>27</tool_uses><duration_ms>189248</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a31324a52d9a51bc0</worktreePath><worktreeBranch>worktree-agent-a31324a52d9a51bc0</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a22a8e28acb1559b6</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a22a8e28acb1559b6.output</output-file>
+<status>completed</status>
+<summary>Agent "#1885 admin health read API" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>PR #1890 is created with the correct milestone. Task complete.
+
+**Summary of what was built for issue #1885:**
+
+- `backend/app/worker/celery_app.py` — new named constants (`DEFAULT_QUEUE_NAME`, `MONITORED_QUEUE_NAMES`, `POLL_ORCHESTRATION_INTERVAL_S`, `BEAT_HEARTBEAT_INTERVAL_S`), beat schedule now references them instead of magic literals.
+- `backend/app/worker/tasks.py` — the existing `beat_heartbeat` task (#904) now also upserts a `workspace_health` row (via the new `record_beat_heartbeat`), in addition to its existing Redis tick for the in-process watchdog. Either write failing doesn't skip the other.
+- `backend/app/services/workspace_health_service.py` — new pure functions `poll_health_status`/`beat_health_status` (mutation-testable derivations), `list_poll_health`, `record_beat_heartbeat`/`read_beat_heartbeat`, and `broker_queue_depths` (bounded-timeout Redis `LLEN`, returns `(None, reason)` on any failure).
+- `backend/app/services/failure_classifier.py` — new `classify_broker_reason` mirroring the existing classifier pattern for Redis-broker failures.
+- `backend/app/api/v1/admin.py` — new `GET /admin/health` route + `PollHealthRead`/`BeatHealthRead`/`QueueDepthRead`/`AdminHealthRead` Pydantic models.
+- Tests: `backend/tests/services/test_workspace_health.py`, `backend/tests/api/test_admin.py`, `backend/tests/worker/test_celery_app.py`, and a new `backend/tests/worker/test_beat_heartbeat_task.py`.
+- Docs: `docs/site/reference/rest-api.md` (new row), `docs/site/reference/changelog.md` (Unreleased entry, no ticket refs per the publish-docs rule), `docs/site/reference/openapi.json` regenerated via `backend/scripts/export_docs_reference.py`.
+
+No migration needed — reuses `workspace_health`'s existing `key`/`updated_at` columns.
+
+**Verification:** `black`, `ruff`, `mypy`, `bandit` all clean; full backend suite green (5913 passed, 9 skipped, 97.07% coverage); `test_audit_coverage.py` confirms the new GET is correctly out of scope for the mutating-route audit guard; docs-reference/publication/assets checks all clean after fixing two ticket-citation violations the linter caught in the first draft.
+
+**Skipped per your instructions:** `/code-review` was not run, and `docs/progress.md`/`CLAUDE.md` were left untouched. The PR was not merged.
+
+result: Opened PR #1890 (`feature/issue-1885-admin-health-api` → main) implementing `GET /api/v1/admin/health` for issue #1885, with the beat-heartbeat task now also writing to `workspace_health`, full test coverage, and docs updated — all local verification (lint/type/security/tests/docs-checks) green.</result>
+<usage><subagent_tokens>303416</subagent_tokens><tool_uses>102</tool_uses><duration_ms>860016</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a22a8e28acb1559b6</worktreePath><worktreeBranch>worktree-agent-a22a8e28acb1559b6</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aa6c3d3821e7201d6</task-id>
+<tool-use-id>toolu_01VuBCyL7Hg1rWGEFQo1jPg5</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/aa6c3d3821e7201d6.output</output-file>
+<status>completed</status>
+<summary>Agent "#1694 admin routed sub-pages" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>PR is open and CI is running. Summary while it settles:
+
+**PR:** https://github.com/TheurgicDuke771/DataQ/pull/1891 — `feat(admin): routed admin sub-pages + fold /settings in (#1694)`, milestone `v1.2 Week 7 — feature burn-down`, body contains `Fixes #1694`. Not merged; no `/code-review` run (left to you).
+
+**What landed** (4 commits on `feature/issue-1694-admin-routed-subpages`):
+- `frontend/src/pages/admin/` — `AdminLayout` (URL-backed antd Tabs + `Outlet`), six sub-pages, shared `parts.tsx`/`asyncHelpers.ts`, and `routes.tsx` exporting `ADMIN_ROUTES` + `SETTINGS_REDIRECT_ROUTE`. `App.tsx` mounts those exact constants, so tests exercise the real route tree rather than a copy. `pages/Admin.tsx` and `pages/Settings.tsx` deleted; the duplicate **Settings** footer nav item removed.
+- Gate is now `RequireRole minimum="admin"` on the parent `/admin` route and on the `/settings` redirect. I verified the swap is safe rather than assuming: `GET /me` sets `role` from `core.roles.resolve_role`, and `is_workspace_admin` is *defined* as `resolve_role(...) == "admin"`, so an allowlist-only admin keeps access.
+- Tests: one file per sub-page under `tests/pages/admin/` plus `AdminRouting.test.tsx` (redirect, deep link, tab switch, 404, both gate directions, and the asked-for "compliance fetches no member/suite data"). `tests/App.test.tsx` additionally proves a member deep-linking to `/admin/members` through the real `&lt;App/&gt;` gets Forbidden with zero `api.get` calls.
+- Docs: new `docs/site/guides/admin.md` + nav entry, guides-index card, `features.md` link fix, changelog Unreleased entry.
+
+**Commands run:** `pnpm lint`, `format:check`, `typecheck` all clean; `pnpm test:coverage` → **113 files / 1288 tests passed, lines 90.69%** (gate 80); `conda run -n dataq mkdocs build --strict` built with no warnings.
+
+**Skipped:** the Playwright specs — they need `docker compose up` + `seed_dev` per `frontend/e2e/README.md`, which I couldn't start here. They're updated (`admin.spec.ts` rewritten, `roles.spec.ts` extended, docs-capture lane re-pointed) but unexercised locally; this is stated in the PR body. CI's `Frontend — browser E2E (Playwright)` job does run them, and I'm watching it.
+
+One harness finding worth carrying: a persistent `mockRejectedValue` on a **single-fetch** page surfaces as an unhandled rejection, because RTL cleanup re-invokes the fetcher after the test body. Error-path tests use `mockRejectedValueOnce` over a resolving base, noted inline.</result>
+<usage><subagent_tokens>323626</subagent_tokens><tool_uses>146</tool_uses><duration_ms>1357702</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-aa6c3d3821e7201d6</worktreePath><worktreeBranch>worktree-agent-aa6c3d3821e7201d6</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aa6c3d3821e7201d6</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/aa6c3d3821e7201d6.output</output-file>
+<status>completed</status>
+<summary>Agent "#1694 admin routed sub-pages" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Three checks green so far (Bandit, pnpm audit, GitGuardian). Still waiting on the frontend lanes, backend suite, CodeQL and the build.</result>
+<usage><subagent_tokens>322519</subagent_tokens><tool_uses>146</tool_uses><duration_ms>1361448</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-aa6c3d3821e7201d6</worktreePath><worktreeBranch>worktree-agent-aa6c3d3821e7201d6</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aa6c3d3821e7201d6</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/aa6c3d3821e7201d6.output</output-file>
+<status>completed</status>
+<summary>Agent "#1694 admin routed sub-pages" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>More green: pip-audit, backend lint/format, backend type check, frontend lint/format, and the build. Remaining: backend tests, frontend tests, the Playwright E2E lane, and both CodeQL analyses.</result>
+<usage><subagent_tokens>322898</subagent_tokens><tool_uses>146</tool_uses><duration_ms>1378071</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-aa6c3d3821e7201d6</worktreePath><worktreeBranch>worktree-agent-aa6c3d3821e7201d6</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aa6c3d3821e7201d6</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/aa6c3d3821e7201d6.output</output-file>
+<status>completed</status>
+<summary>Agent "#1694 admin routed sub-pages" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>CodeQL (JS/TS) and betterleaks pass. Waiting on backend tests, frontend tests, the Playwright lane, and CodeQL (python).</result>
+<usage><subagent_tokens>323234</subagent_tokens><tool_uses>146</tool_uses><duration_ms>1407852</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-aa6c3d3821e7201d6</worktreePath><worktreeBranch>worktree-agent-aa6c3d3821e7201d6</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aa6c3d3821e7201d6</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/aa6c3d3821e7201d6.output</output-file>
+<status>completed</status>
+<summary>Agent "#1694 admin routed sub-pages" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>CodeQL (python) passes. Only backend tests, frontend tests, and the Playwright E2E lane are still running — the last is the one that matters most here, since it's the first real execution of the updated specs.</result>
+<usage><subagent_tokens>323570</subagent_tokens><tool_uses>146</tool_uses><duration_ms>1470520</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-aa6c3d3821e7201d6</worktreePath><worktreeBranch>worktree-agent-aa6c3d3821e7201d6</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a22a8e28acb1559b6</task-id>
+<tool-use-id>toolu_01JYNXT7pomywguedp1ZLp9D</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a22a8e28acb1559b6.output</output-file>
+<status>completed</status>
+<summary>Agent "#1885 admin health read API" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Both review comments are addressed, replied to, and resolved on PR #1890.
+
+**Summary of the follow-up work:**
+
+1. **Finding 1 (confirmed honesty bug):** `Connection.last_polled_at` is stamped by both `record_poll_success` and `record_poll_failure`, so a connection failing every poll reported a fresh timestamp with `status="on_cadence"`. Fixed by having `list_poll_health` also read `consecutive_poll_failures`/`last_poll_error`, adding a new `status="failing"` (priority over the time-based `stalled` check) with a `last_error` field carrying the already-classified reason, and renaming the response field `last_success_at` → `last_polled_at` (no fabricated success timestamp, since the model tracks none).
+
+2. **Finding 2:** `broker_queue_depths` now opens the Redis client via `with redis.from_url(...) as client:` so the connection pool closes per request instead of relying on GC.
+
+**Verification:**
+- Added the exact regression case specified (`consecutive_poll_failures=3, last_polled_at=now-1min` ⇒ not `on_cadence`) at both the pure-function level and the DB-read/API level, plus a priority test (`failing` beats `stalled`) and a "no stale leftover error" test.
+- Mutation-checked: reverted the `failing` branch, confirmed all 5 new tests failed for the right reason, then restored the fix and confirmed green.
+- `black`, `ruff`, `mypy`, `bandit` all clean.
+- Full backend suite: 5919 passed, 9 skipped, 97.07% coverage.
+- `openapi.json` regenerated, `changelog.md` wording updated for the field rename/new status.
+
+Pushed as a plain follow-up commit `ed7b4740` (no amend/force). Both review threads (`r3938985254`, `r3938985276`) replied to and resolved via `resolveReviewThread`.
+
+result: PR #1890 follow-up pushed (commit ed7b4740) fixing both review findings — honest `failing` poll status (renamed `last_polled_at`, added `last_error`) and a context-managed Redis client in `broker_queue_depths` — with mutation-checked regression tests, full lint/type/security/test suite green, and both review threads replied-to and resolved.</result>
+<usage><subagent_tokens>409845</subagent_tokens><tool_uses>56</tool_uses><duration_ms>512084</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a22a8e28acb1559b6</worktreePath><worktreeBranch>worktree-agent-a22a8e28acb1559b6</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aa6c3d3821e7201d6</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/aa6c3d3821e7201d6.output</output-file>
+<status>completed</status>
+<summary>Agent "#1694 admin routed sub-pages" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The Playwright lane **passed** — that discharges the one thing I'd flagged as unverified. The rewritten `admin.spec.ts` (redirect, deep link, tab switch, `/settings` → `/admin/settings`, integrations, compliance, role editing) and the extended `roles.spec.ts` all ran green against CI's real seeded stack. Backend and frontend unit tests are the last two outstanding.</result>
+<usage><subagent_tokens>324038</subagent_tokens><tool_uses>146</tool_uses><duration_ms>1626789</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-aa6c3d3821e7201d6</worktreePath><worktreeBranch>worktree-agent-aa6c3d3821e7201d6</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aa6c3d3821e7201d6</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/aa6c3d3821e7201d6.output</output-file>
+<status>completed</status>
+<summary>Agent "#1694 admin routed sub-pages" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All three review findings are fixed, replied to, and the threads resolved. Four follow-up commits pushed (plain push, no amend/force) — CI re-running.
+
+**1. `RequireRole` error branch** (`8b80815e`) — the guard now reads `useMe()` rather than `useWorkspaceRole()`, so `error` is distinguishable from `loading`, and renders `PageError` with kind/status/requestId. Fixed once in the guard, so all four gated routes inherit it — not just the two this PR added. `MeProvider.tsx:50`'s comment updated (it named Admin and Settings as PageError consumers; neither exists as a page now). Two tests added, **both mutation-checked** against the old `me.status !== 'ok'` fall-through: they fail there, pass here — one for the classified page + request id, one asserting no `.ant-spin` survives a failed `/me`.
+
+**2. Stale published docs** (`8631fb84`) — all six listed references fixed to **Admin → Integrations** / **Compliance** / **Settings**. The sweep found two the list didn't name: `guides/ai-features.md:13` and `:19` said "Admin → LLM provider", plus the `:25` screenshot caption "on the Admin page". One left deliberately: `adr/0022:37` still records `Settings | /settings` — it's an accepted ADR recording a Week-6 decision, and retconning a decision record makes it a worse record; I flagged that on the thread rather than deciding silently. `mkdocs build --strict` clean, docs hooks pass, no ticket numbers added.
+
+**3. Unknown sub-page** (`dadccbc1`) — `/admin/*` now redirects to `/admin/overview` instead of rendering the in-layout 404 under a tab bar with nothing selected; the lazy `NotFound` import is gone from `routes.tsx` and the app-level `*` route still owns real 404s. Test renamed and re-pointed.
+
+**Also fixed — the CI failure, which was mine, not a flake** (`f1c474a9`): `redirects /admin to the overview sub-page` timed out on `Access grants`. The route tests resolve **two** nested lazy chunks before content appears, and RTL's `findBy` default is 1s regardless of vitest's `testTimeout` — tight on a slow shared runner. Added an explicit 10s timeout on the lazy route assertions. Worth noting the class: my local pass was luck of a fast machine, and the tab bar rendering while the sub-page hadn't is exactly the shape that looks like a broken assertion.
+
+Local gate green after all four: lint, format:check, typecheck clean; **1290 tests / 113 files passed, lines 90.69%**.
+
+result: PR #1891 (routed `/admin` sub-pages + `/settings` fold-in, Fixes #1694) updated with all three review findings fixed, threads replied to and resolved, plus the CI-only lazy-route test failure fixed; local gate green at 1290 tests / 90.69% lines — CI re-run in progress.</result>
+<usage><subagent_tokens>375952</subagent_tokens><tool_uses>203</tool_uses><duration_ms>2190062</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-aa6c3d3821e7201d6</worktreePath><worktreeBranch>worktree-agent-aa6c3d3821e7201d6</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aa6c3d3821e7201d6</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/aa6c3d3821e7201d6.output</output-file>
+<status>completed</status>
+<summary>Agent "#1694 admin routed sub-pages" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Nine checks green on the re-run (both audits, backend lint/type/SAST, frontend lint, secret scanning, GitGuardian, build). Waiting on the three that matter for these changes: frontend tests, Playwright, and CodeQL.</result>
+<usage><subagent_tokens>375448</subagent_tokens><tool_uses>203</tool_uses><duration_ms>2198345</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-aa6c3d3821e7201d6</worktreePath><worktreeBranch>worktree-agent-aa6c3d3821e7201d6</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aa6c3d3821e7201d6</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/aa6c3d3821e7201d6.output</output-file>
+<status>completed</status>
+<summary>Agent "#1694 admin routed sub-pages" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>CodeQL (JS/TS) passes. Frontend tests, Playwright, backend tests and CodeQL (python) still running.</result>
+<usage><subagent_tokens>375774</subagent_tokens><tool_uses>203</tool_uses><duration_ms>2209136</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-aa6c3d3821e7201d6</worktreePath><worktreeBranch>worktree-agent-aa6c3d3821e7201d6</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aa6c3d3821e7201d6</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/aa6c3d3821e7201d6.output</output-file>
+<status>completed</status>
+<summary>Agent "#1694 admin routed sub-pages" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>CodeQL fully green. Down to frontend tests, backend tests, and the Playwright lane — the frontend-tests job is the one that failed last run, so it's the real signal on the timeout fix.</result>
+<usage><subagent_tokens>376093</subagent_tokens><tool_uses>203</tool_uses><duration_ms>2240783</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-aa6c3d3821e7201d6</worktreePath><worktreeBranch>worktree-agent-aa6c3d3821e7201d6</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aa6c3d3821e7201d6</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/aa6c3d3821e7201d6.output</output-file>
+<status>completed</status>
+<summary>Agent "#1694 admin routed sub-pages" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>CodeQL (python) confirmed. Remaining: frontend tests, backend tests, Playwright.</result>
+<usage><subagent_tokens>376390</subagent_tokens><tool_uses>203</tool_uses><duration_ms>2270807</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-aa6c3d3821e7201d6</worktreePath><worktreeBranch>worktree-agent-aa6c3d3821e7201d6</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aa6c3d3821e7201d6</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/aa6c3d3821e7201d6.output</output-file>
+<status>completed</status>
+<summary>Agent "#1694 admin routed sub-pages" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Frontend tests pass** — the lazy-route timeout fix holds on the CI runner that failed it last time, and the new `RequireRole` error-branch tests came along green. Backend tests and Playwright are the last two.</result>
+<usage><subagent_tokens>376712</subagent_tokens><tool_uses>203</tool_uses><duration_ms>2394962</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-aa6c3d3821e7201d6</worktreePath><worktreeBranch>worktree-agent-aa6c3d3821e7201d6</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aa6c3d3821e7201d6</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/aa6c3d3821e7201d6.output</output-file>
+<status>completed</status>
+<summary>Agent "#1694 admin routed sub-pages" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Playwright passes again — including the redirect change, since `admin.spec.ts` exercises `/admin` → overview against the real stack. Only backend tests outstanding.</result>
+<usage><subagent_tokens>377041</subagent_tokens><tool_uses>203</tool_uses><duration_ms>2456816</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-aa6c3d3821e7201d6</worktreePath><worktreeBranch>worktree-agent-aa6c3d3821e7201d6</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b4vrw0aje</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/b4vrw0aje.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for PR 1891 to merge" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aa6c3d3821e7201d6</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/aa6c3d3821e7201d6.output</output-file>
+<status>completed</status>
+<summary>Agent "#1694 admin routed sub-pages" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>CI is fully green: **15 checks pass, 1 skipped (deploy), zero failures.** All three review threads are replied to and resolved. PR is not merged, per instructions.
+
+**PR:** https://github.com/TheurgicDuke771/DataQ/pull/1891 — `feat(admin): routed admin sub-pages + fold /settings in (#1694)`, milestone `v1.2 Week 7 — feature burn-down`, body carries `Fixes #1694`. Eight commits.
+
+**Review fixes this round (4 commits, plain push):**
+- `8b80815e` — `RequireRole` renders `PageError` (kind/status/requestId) on a failed `/me` instead of spinning forever. Fixed in the guard, so all four gated routes inherit it. Both new tests mutation-verified against the old fall-through.
+- `8631fb84` — all six listed stale docs references re-pointed, **plus two the list didn't name** (`ai-features.md:13,19` "Admin → LLM provider", and the `:25` caption). `adr/0022` left as-is with the reasoning stated on the thread — it's a decision record, not a description of today.
+- `dadccbc1` — unknown `/admin/&lt;segment&gt;` redirects to Overview; no dead tab state.
+- `f1c474a9` — the CI-only test failure, which was mine: RTL's `findBy` default is 1s regardless of `testTimeout`, and these route tests resolve two nested lazy chunks first.
+
+Both things I'd flagged as unverified are now discharged by CI: the Playwright specs I couldn't run locally passed twice, and the frontend-tests job that failed the first run passes on the same runner class.
+
+Two judgement calls I did **not** make unilaterally, both surfaced on their threads rather than decided quietly: leaving the ADR 0022 mention intact, and the `useWorkspaceRole` → `useMe` swap inside the guard (same rank check, wider state).
+
+result: PR #1891 green on all 15 CI checks with all three review findings fixed, replied to, and threads resolved — routed `/admin` sub-pages + `/settings` fold-in, ready for merge review.</result>
+<usage><subagent_tokens>378430</subagent_tokens><tool_uses>204</tool_uses><duration_ms>2566898</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-aa6c3d3821e7201d6</worktreePath><worktreeBranch>worktree-agent-aa6c3d3821e7201d6</worktreeBranch></worktree>
+</task-notification>
