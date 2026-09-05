@@ -90,7 +90,7 @@ test('wire-alert', async ({ page }) => {
 });
 
 test('configure-llm', async ({ page }) => {
-  await page.goto('/admin');
+  await page.goto('/admin/settings');
   await expect(page.getByRole('heading', { name: /Admin/ })).toBeVisible();
   await beat(1000);
   await scrollCard(page, 'LLM provider');

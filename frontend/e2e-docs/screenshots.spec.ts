@@ -116,15 +116,15 @@ test('admin', async ({ page }) => {
 });
 
 test('settings', async ({ page }) => {
-  await page.goto('/settings');
-  await heading(page, /Settings/);
+  await page.goto('/admin/settings');
+  await heading(page, /Admin/);
   await shot(page, 'settings');
 });
 
 test('settings — notification channels', async ({ page }) => {
-  await page.goto('/settings');
-  await heading(page, /Settings/);
-  await page.getByRole('tab', { name: 'Notifications' }).click();
+  await page.goto('/admin/settings');
+  await heading(page, /Admin/);
+  await scrollCard(page, 'Notification channels');
   await page.waitForLoadState('networkidle');
   await shot(page, 'settings-notifications');
 });
@@ -148,7 +148,7 @@ test('suite — schedules panel', async ({ page }) => {
 });
 
 test('admin — LLM provider settings', async ({ page }) => {
-  await page.goto('/admin');
+  await page.goto('/admin/settings');
   await heading(page, /Admin/);
   await scrollCard(page, 'LLM provider');
   await expect(page.getByRole('button', { name: 'Test' })).toBeVisible();
