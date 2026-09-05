@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "5d943c3add1c",
+  "strategy": "manual-commit",
+  "branch": "docs/adr-0043-plain-english",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/5d/943c3add1c/0/metadata.json",
+      "transcript": "/5d/943c3add1c/0/full.jsonl",
+      "compact_transcript": "/5d/943c3add1c/0/transcript.jsonl",
+      "content_hash": "/5d/943c3add1c/0/content_hash.txt",
+      "prompt": "/5d/943c3add1c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 34,
+    "cache_creation_tokens": 989,
+    "cache_read_tokens": 768691,
+    "output_tokens": 1211,
+    "api_call_count": 2
+  }
+}
