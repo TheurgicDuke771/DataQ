@@ -223,5 +223,10 @@ an outbound model request.
 | GET | `/admin/audit-events` | The append-only audit log (config + data-access events, ADR 0041). |
 | GET | `/admin/deployment` | Declared residency / deployment posture (`DEPLOYMENT_REGION`). |
 | GET | `/admin/orchestration/webhooks` | Webhook receiver URLs + auth mode per provider. |
+| POST | `/admin/orchestration/webhooks/{provider}/regenerate` | Mint a new webhook secret / signing key; the value is returned once, the previous one is accepted until `grace_until` (audited). |
+| POST | `/admin/orchestration/poll-now` | Queue an immediate orchestration poll for every connection, or one with `?connection_id=`. |
+| GET | `/admin/inventory-sync` | Per-connection inventory-sync state; counts are `null` until a sync has run. |
+| PATCH | `/admin/inventory-sync/{connection_id}` | Turn inventory sync on or off (through the connection-update path: versioned, audited). |
+| POST | `/admin/inventory-sync/{connection_id}/run` | Queue one inventory sync now. |
 | GET | `/admin/secret-sweep` | Last orphan-secret sweep report — `never_run` if the sweep hasn't recorded one. |
 | POST | `/admin/secret-sweep/run` | Run the orphan-secret sweep now, always report-only (audited). |

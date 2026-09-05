@@ -260,3 +260,30 @@ must be handled. The Azure Data Factory URL carries a **shared secret in the que
 — Azure Monitor supports no other mode — so the URL *is* a credential and is masked behind
 a reveal toggle. Airflow and dbt use an **HMAC signature header** instead, with the signing
 key held in the secret store, so their URLs carry no secret.
+
+### Regenerating a webhook secret
+
+**Regenerate secret** (ADF) or **Regenerate key** (Airflow, dbt) mints a new value and shows
+it **once** — no page or endpoint returns it again, so copy it before closing the dialog. The
+previous value keeps working for a short grace window (15 minutes by default) so you can
+update the provider side without a gap; after that, callbacks using the old value are
+rejected. DataQ cannot see whether the provider side was updated, so the dialog states the
+deadline rather than a confirmation. Each regeneration is audited with the provider and the
+grace deadline, never the value.
+
+### Polling health
+
+The 10-minute poll is the fallback for a provider whose webhook is not firing. The table
+shows each orchestration connection's last poll, status and next expected poll. *Unknown*
+means the connection has never been polled; *stalled* means the last successful poll is
+older than the cadence allows; *failing* means the last poll raised, with the classified
+reason beside it. **Poll all now** queues an immediate sweep for every provider; the table
+refreshes when the sweep has run.
+
+### Warehouse inventory sync
+
+A synced connection lists every table the warehouse has, so a table nobody monitors is
+visible as unmonitored rather than absent. The toggle turns sync on or off per connection
+(it goes through the same path as editing the connection, so it is versioned and audited),
+**Run now** queues one sync, and the counts stay blank until a sync has actually run —
+*never synced* is not zero tables.
