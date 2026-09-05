@@ -164,6 +164,78 @@ export async function deleteAdminSuite(suiteId: string): Promise<void> {
   await api.delete(`/admin/suites/${suiteId}`);
 }
 
+/** ── Offboarding ─────────────────────────────────────────────────────────────
+ *  One guided pass for a departing user: hand over their suites, revoke their
+ *  credentials, withdraw their membership. It runs as one transaction. */
+
+/** Where withdrawing membership stands. Only `member` can be withdrawn here:
+ *  `env_listed` means an env allowlist admits the address on its own. */
+export type MembershipState = 'member' | 'not_a_member' | 'env_listed';
+
+export interface OffboardOwnedSuite {
+  id: string;
+  name: string;
+  check_count: number;
+  run_count: number;
+  result_count: number;
+}
+
+export interface OffboardPreview {
+  user_id: string;
+  email: string;
+  display_name: string | null;
+  role: WorkspaceRole;
+  is_self: boolean;
+  /** The pass is refused while true — the workspace would lose its last admin. */
+  is_last_admin: boolean;
+  membership_state: MembershipState;
+  membership_id: string | null;
+  membership_note: string | null;
+  owned_suites: OffboardOwnedSuite[];
+  /** Unrevoked and unexpired only. */
+  open_api_key_count: number;
+  live_session_count: number;
+}
+
+export interface OffboardStep {
+  step: string;
+  reason: string;
+}
+
+export interface OffboardReceipt {
+  user_id: string;
+  email: string;
+  new_owner_user_id: string | null;
+  transferred_suite_ids: string[];
+  api_keys_revoked: number;
+  sessions_revoked: number;
+  membership_removed: boolean;
+  /** Steps that did not run, with why. Empty means every step ran. */
+  skipped: OffboardStep[];
+}
+
+export async function previewOffboarding(
+  userId: string,
+  signal?: AbortSignal,
+): Promise<OffboardPreview> {
+  const { data } = await api.get<OffboardPreview>(`/admin/offboarding/${userId}/preview`, {
+    signal,
+  });
+  return data;
+}
+
+export async function offboardUser(
+  userId: string,
+  payload: {
+    new_owner_user_id: string | null;
+    keep_previous_owner_access: boolean;
+    confirm_email: string;
+  },
+): Promise<OffboardReceipt> {
+  const { data } = await api.post<OffboardReceipt>(`/admin/offboarding/${userId}`, payload);
+  return data;
+}
+
 /** One orchestration provider's inbound-webhook config (#490). */
 export interface AdminWebhook {
   provider: OrchestrationProvider;

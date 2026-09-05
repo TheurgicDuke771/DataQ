@@ -7,6 +7,16 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Added
 
+- **Offboarding is one guided pass.** Admin → Members → **Offboard** hands a departing
+  member's suites to somebody else, revokes every API key and browser session they hold,
+  and withdraws their membership — in a single transaction, so a half-finished departure
+  is not a state the workspace can end up in. A preview says what will be touched before
+  anything is typed, the last Admin is refused, and the confirmation is the member's own
+  address typed out. Their authored history is kept. Where an environment allowlist would
+  still admit the address, the step is skipped and the variable named rather than a
+  withdrawal being reported that did not happen. See the
+  [admin control centre guide](../guides/admin.md).
+
 - **Zero-sample mode is a workspace setting.** Admin → Settings → Privacy & failing samples
   turns it on without a restart; the environment variable stays the floor and cannot be
   turned off from the app. `GET /admin/deployment` now says which of the two is in force.

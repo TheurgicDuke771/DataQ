@@ -8,6 +8,7 @@ import { formatTimestamp } from '../../components/results/resultsFormat';
 import { type AsyncState, useAsyncData } from '../../hooks/useAsyncData';
 import { AccessGrantActions } from './AccessGrantActions';
 import { MembershipPanel } from './MembershipPanel';
+import { OffboardAction } from './OffboardModal';
 import { DataTable, Identity, Section } from './parts';
 
 /** Workspace membership: stored roles (ADR 0033) + every per-suite grant (ADR 0027). */
@@ -24,8 +25,12 @@ export function AdminMembers() {
       <Section title="Members">
         <DataTable
           state={userState}
-          columns={userColumns((updated) =>
-            setRerolled((prev) => ({ ...prev, [updated.id]: updated })),
+          columns={userColumns(
+            (updated) => setRerolled((prev) => ({ ...prev, [updated.id]: updated })),
+            () => {
+              users.reload();
+              access.reload();
+            },
           )}
           rowKey={(u) => u.id}
           errorMessage="Failed to load members"
@@ -54,7 +59,10 @@ function overlayUsers(
 }
 
 /** A factory, not a constant, because the role cell needs the update callback. */
-const userColumns = (onChanged: (u: AdminUser) => void): ColumnsType<AdminUser> => [
+const userColumns = (
+  onChanged: (u: AdminUser) => void,
+  onOffboarded: () => void,
+): ColumnsType<AdminUser> => [
   {
     title: 'Member',
     key: 'user',
@@ -71,6 +79,11 @@ const userColumns = (onChanged: (u: AdminUser) => void): ColumnsType<AdminUser> 
     title: 'Last seen',
     dataIndex: 'last_seen_at',
     render: (v: string | null) => formatTimestamp(v),
+  },
+  {
+    title: 'Actions',
+    key: 'actions',
+    render: (_, u) => <OffboardAction user={u} onOffboarded={onOffboarded} />,
   },
 ];
 

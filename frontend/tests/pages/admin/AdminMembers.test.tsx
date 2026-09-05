@@ -18,6 +18,9 @@ vi.mock('../../../src/api/admin', () => ({
   addWorkspaceMember: vi.fn(),
   removeWorkspaceMember: vi.fn(),
   confirmWorkspaceMember: vi.fn(),
+  // The row action this page now renders reads from the same module.
+  previewOffboarding: vi.fn(),
+  offboardUser: vi.fn(),
   // A VALUE export, not a function — the role editor iterates it to build its options.
   WORKSPACE_ROLES: ['admin', 'member', 'viewer'],
 }));

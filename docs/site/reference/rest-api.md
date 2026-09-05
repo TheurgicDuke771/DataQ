@@ -223,6 +223,8 @@ an outbound model request.
 | POST | `/admin/members` | Admit an address, with an optional initial role. The first add turns enforcement on and imports existing users for review (audited). |
 | DELETE | `/admin/members/{id}` | Withdraw a membership — bites on the next request for every credential kind. Last-admin guarded; `confirm_self=true` to remove your own (audited). |
 | POST | `/admin/members/{id}/confirm` | Clear the provisional flag on an imported member. Grants nothing new (audited). |
+| GET | `/admin/offboarding/{user_id}/preview` | What offboarding this user would do: suites they own with counts, live tokens and sessions, whether membership can be withdrawn here, and whether they are the last admin. Reserves nothing. |
+| POST | `/admin/offboarding/{user_id}` | Transfer every suite they own, revoke every token and session, withdraw their membership — one transaction. Last-admin guarded; `confirm_email` must match. A step that cannot run is reported in `skipped` with its reason. Authored history is kept (audited). |
 | GET | `/admin/audit-events` | The append-only audit log (config + data-access events, ADR 0041). |
 | GET | `/admin/deployment` | Declared residency / deployment posture (`DEPLOYMENT_REGION`); `zero_sample_mode` is the effective value and `zero_sample_source` says which of env / setting turned it on. |
 | GET | `/admin/privacy` | Zero-sample mode: effective value, stored toggle, source, whether the environment pins it. |

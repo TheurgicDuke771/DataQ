@@ -343,3 +343,69 @@ test.describe('Admin suite writes', () => {
     expect((await page.request.get(`/api/v1/suites/${suiteId}`)).status()).toBe(404);
   });
 });
+
+// The offboarding pass (#1699). The target is the seed's dedicated offboarding
+// fixture — never a role fixture, whose PAT the per-role specs depend on — and
+// the suite it owns is one this spec creates and hands to it.
+test.describe('Admin offboarding', () => {
+  const TARGET = 'offboard-target@dataq.local';
+  const HEIR = 'analyst@dataq.local';
+
+  test('hands over the suites, revokes the credentials, and says what it skipped', async ({
+    page,
+  }) => {
+    const users = await (await page.request.get('/api/v1/admin/users')).json();
+    const target = users.find((u: { email: string }) => u.email === TARGET);
+    expect(target, 'the seed provisions the offboarding fixture').toBeTruthy();
+
+    // Give the target a suite to hand over: created here, then transferred to
+    // them, so nothing the rest of the lane relies on is touched.
+    const suiteName = `e2e-offboard-${Date.now()}`;
+    const connections = await (await page.request.get('/api/v1/connections')).json();
+    const datasource = connections.find(
+      (c: { type: string }) => !['adf', 'airflow', 'dbt'].includes(c.type),
+    );
+    const created = await page.request.post('/api/v1/suites', {
+      data: { name: suiteName, connection_id: datasource.id },
+    });
+    expect(created.ok()).toBe(true);
+    const suite = await created.json();
+    const handover = await page.request.post(`/api/v1/admin/suites/${suite.id}/transfer`, {
+      data: { new_owner_user_id: target.id, keep_previous_owner_access: false },
+    });
+    expect(handover.ok()).toBe(true);
+
+    await page.goto('/admin/members');
+    const row = page.getByRole('main').locator('tr').filter({ hasText: TARGET });
+    await expect(row).toBeVisible();
+    await row.getByRole('button', { name: 'Offboard' }).click();
+
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByText(suiteName)).toBeVisible();
+    const confirm = dialog.getByRole('button', { name: 'Offboard' });
+    await expect(confirm).toBeDisabled();
+
+    // Keyboard selection: rc-virtual-list parks options off-viewport, so clicking
+    // an option by role is flaky in this lane (see notifications.spec.ts).
+    const picker = dialog.getByRole('combobox');
+    await picker.fill('analyst');
+    await expect(page.getByText(new RegExp(HEIR))).toBeVisible();
+    await picker.press('Enter');
+    await dialog.getByLabel('Confirm email address').fill(TARGET);
+    await expect(confirm).toBeEnabled();
+    await confirm.click();
+
+    // The receipt states what ran AND what did not — a skipped step must never
+    // be silent.
+    await expect(dialog.getByText(`${TARGET} has been offboarded`)).toBeVisible();
+    await expect(dialog.getByText('Suites transferred')).toBeVisible();
+    await expect(dialog.getByText('Tokens revoked')).toBeVisible();
+
+    const after = await (await page.request.get('/api/v1/admin/suites')).json();
+    const moved = after.find((s: { id: string }) => s.id === suite.id);
+    expect(moved.owner_email).toBe(HEIR);
+
+    // Clean up the suite this spec created.
+    expect((await page.request.delete(`/api/v1/admin/suites/${suite.id}`)).ok()).toBe(true);
+  });
+});
