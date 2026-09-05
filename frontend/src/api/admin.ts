@@ -420,3 +420,83 @@ export async function runSecretSweep(): Promise<{ status: string; task_id: strin
   const { data } = await api.post<{ status: string; task_id: string }>('/admin/secret-sweep/run');
   return data;
 }
+
+/** Webhook secret regeneration (#1701). `value` is shown once — no read returns it again;
+ *  `grace_until` is when the previous value stops being accepted (`null` = already dead). */
+export interface WebhookRegeneration {
+  provider: OrchestrationProvider;
+  secret_name: string;
+  auth_mode: 'url_token' | 'hmac';
+  value: string;
+  grace_until: string | null;
+  inbound_url: string | null;
+}
+
+export async function regenerateWebhookSecret(
+  provider: OrchestrationProvider,
+): Promise<WebhookRegeneration> {
+  const { data } = await api.post<WebhookRegeneration>(
+    `/admin/orchestration/webhooks/${provider}/regenerate`,
+  );
+  return data;
+}
+
+export interface PollDispatch {
+  provider: OrchestrationProvider;
+  connection_id: string | null;
+  /** `provider` = the sweep covered every connection of that provider, not one. */
+  scope: 'provider' | 'connection';
+  task_id: string;
+}
+
+export interface PollNowResult {
+  /** Empty with no error = there were no orchestration connections to poll. */
+  dispatched: PollDispatch[];
+  requested_at: string;
+}
+
+export async function pollNow(connectionId?: string): Promise<PollNowResult> {
+  const { data } = await api.post<PollNowResult>('/admin/orchestration/poll-now', undefined, {
+    params: connectionId ? { connection_id: connectionId } : undefined,
+  });
+  return data;
+}
+
+/** `never_synced` is not `0 tables` — the counts are `null` until a sync has run. */
+export interface InventorySyncRow {
+  connection_id: string;
+  name: string;
+  type: string;
+  env: string;
+  enabled: boolean;
+  last_attempted_at: string | null;
+  failing_since: string | null;
+  last_error: string | null;
+  tables_discovered: number | null;
+  unmonitored: number | null;
+  status: 'never_synced' | 'synced' | 'failing';
+}
+
+export async function listInventorySync(): Promise<InventorySyncRow[]> {
+  const { data } = await api.get<InventorySyncRow[]>('/admin/inventory-sync');
+  return data;
+}
+
+export async function setInventorySync(
+  connectionId: string,
+  enabled: boolean,
+): Promise<InventorySyncRow> {
+  const { data } = await api.patch<InventorySyncRow>(`/admin/inventory-sync/${connectionId}`, {
+    enabled,
+  });
+  return data;
+}
+
+export async function runInventorySync(
+  connectionId: string,
+): Promise<{ status: string; task_id: string }> {
+  const { data } = await api.post<{ status: string; task_id: string }>(
+    `/admin/inventory-sync/${connectionId}/run`,
+  );
+  return data;
+}

@@ -5,7 +5,15 @@ import { listAdminWebhooks } from '../../../src/api/admin';
 import { AdminIntegrations } from '../../../src/pages/admin/AdminIntegrations';
 import { WEBHOOKS, renderSubPage } from './adminFixtures';
 
-vi.mock('../../../src/api/admin', () => ({ listAdminWebhooks: vi.fn() }));
+vi.mock('../../../src/api/admin', () => ({
+  listAdminWebhooks: vi.fn(),
+  getAdminHealth: vi.fn(() => new Promise(() => {})),
+  listInventorySync: vi.fn(() => new Promise(() => {})),
+  regenerateWebhookSecret: vi.fn(),
+  pollNow: vi.fn(),
+  setInventorySync: vi.fn(),
+  runInventorySync: vi.fn(),
+}));
 const mockWebhooks = vi.mocked(listAdminWebhooks);
 
 beforeEach(() => mockWebhooks.mockResolvedValue(WEBHOOKS));
