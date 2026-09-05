@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "58b17e4b206c",
+  "strategy": "manual-commit",
+  "branch": "docs/progress-admin-batch5",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/58/b17e4b206c/0/metadata.json",
+      "transcript": "/58/b17e4b206c/0/full.jsonl",
+      "compact_transcript": "/58/b17e4b206c/0/transcript.jsonl",
+      "content_hash": "/58/b17e4b206c/0/content_hash.txt",
+      "prompt": "/58/b17e4b206c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 8456,
+    "cache_creation_tokens": 3178003,
+    "cache_read_tokens": 150668757,
+    "output_tokens": 272731,
+    "api_call_count": 335
+  }
+}
