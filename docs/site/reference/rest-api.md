@@ -214,6 +214,7 @@ an outbound model request.
 | Method | Path | What |
 |---|---|---|
 | GET | `/admin/suites` · `/admin/users` · `/admin/access` | Unscoped workspace-wide views. |
+| GET | `/admin/overview` | The four Overview stat cards — members, suites, open incidents, runs today (UTC day). |
 | PATCH | `/admin/users/{id}/role` | Change a workspace role (last-admin guarded; audit-tabled). |
 | DELETE | `/admin/suites/{id}/access/{grant_id}` | Revoke any per-suite share, on any suite (audited as an admin override). |
 | POST | `/admin/suites/{id}/transfer` | Transfer suite ownership. A viewer cannot own (422); transferring to the current owner is a 409. The previous owner keeps an `edit` grant unless `keep_previous_owner_access` is false. |

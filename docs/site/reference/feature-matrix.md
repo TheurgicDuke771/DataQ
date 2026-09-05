@@ -234,4 +234,4 @@ risk that carries.
 |---|---|
 | Web UI | Dashboard · Assets · Connections · Suites · Results · Profile · Admin · Settings (Assets lead as the primary lens — ADR 0034 nav inversion; the Dashboard opens with an asset-health strip, and suites/runs link back to their asset) |
 | REST API | Versioned `/api/v1` (Swagger in non-prod) |
-| MCP | 48 curated tools at `/mcp` for AI assistants (ADR 0008). Served in every auth mode — SSO, email OTP, dev-bypass; under OTP the credential is a **PAT only** ([MCP setup](../guides/mcp-setup.md)) |
+| MCP | 48 curated tools at `/mcp` for AI assistants (ADR 0008). Served in both auth modes — SSO and email OTP; under OTP the credential is a **PAT only** ([MCP setup](../guides/mcp-setup.md)) |

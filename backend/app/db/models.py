@@ -84,6 +84,11 @@ ADMIN_ROLE = "admin"
 DEFAULT_WORKSPACE_ROLE = "member"
 VIEWER_ROLE = "viewer"
 WORKSPACE_ROLES = (ADMIN_ROLE, DEFAULT_WORKSPACE_ROLE, VIEWER_ROLE)
+# How a `workspace_members` row got there (ADR 0043 decision 8): a deliberate admin add, or the
+# provisional first-write import of existing users, which stays flagged until an admin confirms it.
+WORKSPACE_MEMBER_SOURCES = ("admin", "auto_import")
+ADMIN_MEMBER_SOURCE = "admin"
+AUTO_IMPORT_MEMBER_SOURCE = "auto_import"
 ENVS = ("dev", "qa", "uat", "prod")
 # Per-suite alert threshold: 'fail' = fail/critical only, 'warn' = warn+, 'always' = all.
 ALERT_ON_POLICIES = ("fail", "warn", "always")
@@ -157,6 +162,38 @@ class User(Base):
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
+
+
+class WorkspaceMember(Base):
+    """An address admitted to this workspace — ADR 0043.
+
+    Deliberately has no FK to `users`: a member is admitted before any user row
+    exists, and the row must outlive an offboarded user. The table's own
+    emptiness is the enforcement switch — empty means every door behaves exactly
+    as it did before this table existed.
+    """
+
+    __tablename__ = "workspace_members"
+    __table_args__ = (
+        Index("uq_workspace_members_email_lower", text("lower(email)"), unique=True),
+        _in_check("initial_role", WORKSPACE_ROLES, "workspace_member_initial_role_valid"),
+        _in_check("source", WORKSPACE_MEMBER_SOURCES, "workspace_member_source_valid"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    email: Mapped[str] = mapped_column(String(320), nullable=False)
+    #: Seeds the `users` row on first sign-in, new-row branch only (ADR 0043 decision 9).
+    initial_role: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default=text(f"'{DEFAULT_WORKSPACE_ROLE}'")
+    )
+    source: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default=text(f"'{ADMIN_MEMBER_SOURCE}'")
+    )
+    #: NULL for an auto-imported row, and for an inviter whose own account was erased.
+    invited_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = _created_at()
 
 
 class ApiKey(Base):
@@ -1287,4 +1324,5 @@ __all__ = [
     "TriggerBinding",
     "User",
     "WorkspaceHealth",
+    "WorkspaceMember",
 ]

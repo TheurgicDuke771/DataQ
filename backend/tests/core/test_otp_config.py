@@ -22,6 +22,7 @@ _COMPLETE_EMAIL: dict[str, Any] = {
 def _otp_settings(**overrides: Any) -> Settings:
     base = dict(_COMPLETE_EMAIL)
     base["auth_otp_allowed_domains"] = "acme.io"
+    base["auth_dev_bypass"] = False  # #1901: the bypass never sits beside a real mode
     base.update(overrides)
     return Settings(**base)
 

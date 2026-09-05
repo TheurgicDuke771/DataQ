@@ -89,6 +89,14 @@ erDiagram
         string role "admin | member | viewer — CHECK-constrained, ADR 0033"
         timestamptz last_seen_at
     }
+    workspace_members {
+        uuid id PK
+        string email UK "unique on lower(email) - who is admitted to the workspace"
+        string initial_role "seeds the users row on first sign-in only - ADR 0043"
+        string source "admin | auto_import - auto_import rows await review"
+        uuid invited_by FK "SET NULL - the membership outlives the inviter"
+        timestamptz created_at
+    }
     api_keys {
         uuid id PK
         uuid user_id FK "CASCADE"
@@ -365,6 +373,7 @@ erDiagram
     }
 
     users ||--o{ api_keys : "PATs (CASCADE — keys die with the user)"
+    users |o--o{ workspace_members : "invited_by (SET NULL)"
     users ||--o{ sessions : "OTP browser sessions (CASCADE)"
     users ||--o{ connections : "created_by"
     users ||--o{ suites : "created_by"
@@ -639,5 +648,5 @@ Boundary notes:
 - **The worker consumes two Celery queues.** `run_suite` and the periodic beat tasks stay on the default `celery` queue; the three LLM intelligence tasks (`sql_generation` · `check_suggestion` · `rca_narrative`) route to a dedicated `llm` queue, so a backlog of long-running suite runs never starves an LLM request behind it. Both queues are consumed by the same worker process (`-Q celery,llm`) — this is queue separation for fair scheduling, not a second worker deployment.
 - **The outbound LLM intelligence layer is live, off by default.** An admin must configure a provider (Anthropic or an OpenAI-compatible endpoint) and credential before any call leaves the deployment. SQL generation and check suggestions send masked aggregate profiler statistics only; RCA narratives additionally send the triggering check's own `observed_value`, routed through the same column-policy/warehouse-tag redaction floor every other results surface applies, plus its `expected_value` (a check-authored threshold, never masked). Raw sample rows are never sent on any path. See [Security & data handling](../security/overview.md).
 - **All connection secrets via the deployment's secret store in production / staging** — Key Vault on Azure, Secrets Manager on AWS. Local dev may resolve secrets via `KV_SECRET_*` env vars through the `EnvSecretStore` backend (see `backend/app/core/secrets.py`). No credentials are ever hardcoded.
-- **The `/mcp` endpoint exposes the same service layer to AI clients.** The 48 FastMCP tools (25 read-only, 18 that change state, 5 live-probe tools gated like writes) are thin wrappers reusing the same services + per-suite authz + sample redaction as the REST API — no logic duplication. It mounts under **any** of the three sign-in modes (SSO, email OTP, dev-bypass) and stays unmounted, **fail-closed**, only when none is configured. Under SSO it validates the same OIDC bearer (Azure AD or Cognito — a `JWTVerifier` on the same tenant/audience/scope) or a PAT; **under email OTP a PAT is the only accepted credential** — a raw JWT and a session cookie are both rejected there, since there is no IdP-issued bearer to validate and a session is a browser-only credential. See [ADR 0008](../adr/0008-mcp-server.md) / [ADR 0032](../adr/0032-email-otp-signin.md).
+- **The `/mcp` endpoint exposes the same service layer to AI clients.** The 48 FastMCP tools (25 read-only, 18 that change state, 5 live-probe tools gated like writes) are thin wrappers reusing the same services + per-suite authz + sample redaction as the REST API — no logic duplication. It mounts under **either** sign-in mode (SSO, email OTP) and stays unmounted, **fail-closed**, only when none is configured. Under SSO it validates the same OIDC bearer (Azure AD or Cognito — a `JWTVerifier` on the same tenant/audience/scope) or a PAT; **under email OTP a PAT is the only accepted credential** — a raw JWT and a session cookie are both rejected there, since there is no IdP-issued bearer to validate and a session is a browser-only credential. See [ADR 0008](../adr/0008-mcp-server.md) / [ADR 0032](../adr/0032-email-otp-signin.md).
 - **Interactive API docs are off in production.** `/docs`, `/redoc`, and `/openapi.json` are disabled when `ENVIRONMENT=prod` (the prod-docs gate); available in dev/staging.

@@ -287,3 +287,107 @@ export async function eraseDataSubject(column: string, value: string): Promise<D
   });
   return data;
 }
+
+/** The four Overview stat cards — workspace-wide counts, not the caller's grants. */
+export interface AdminOverview {
+  members: {
+    total: number;
+    /** `null` (never `0`) while DataQ has no invite record: a user row is created BY the
+     *  first sign-in, so an admitted-but-never-signed-in person leaves no trace. */
+    pending_first_signin: number | null;
+    pending_source: 'not_available';
+  };
+  /** `connections` counts the DISTINCT connections suites target, not those configured. */
+  suites: { total: number; connections: number };
+  /** `acknowledged` is a SUBSET of `open` — acknowledging silences nothing. */
+  incidents: { open: number; acknowledged: number };
+  /** Since the start of the current UTC day (`since`); `total` also counts queued and
+   *  cancelled runs, so the three named states need not sum to it. */
+  runs_today: { total: number; succeeded: number; failed: number; running: number; since: string };
+  generated_at: string;
+}
+
+export async function getAdminOverview(): Promise<AdminOverview> {
+  const { data } = await api.get<AdminOverview>('/admin/overview');
+  return data;
+}
+
+/** One orchestration connection's poll staleness. `unknown` = never polled at all, which
+ *  is not healthy; `last_polled_at` is the last ATTEMPT, not the last success. */
+export interface PollHealth {
+  connection_id: string;
+  name: string;
+  provider: OrchestrationProvider;
+  last_polled_at: string | null;
+  cadence_seconds: number;
+  next_expected_at: string | null;
+  status: 'on_cadence' | 'stalled' | 'failing' | 'unknown';
+  last_error: string | null;
+}
+
+/** `not_monitored` = the heartbeat has never recorded a tick, which is not `alive`. */
+export interface BeatHealth {
+  last_tick_at: string | null;
+  status: 'alive' | 'stale' | 'not_monitored';
+}
+
+export interface QueueDepth {
+  name: string;
+  depth: number;
+}
+
+/** One datasource connection's stored-credential health. `unknown` = nothing observed since
+ *  the signal shipped; only credential REJECTIONS move it off that. */
+export interface CredentialHealth {
+  connection_id: string;
+  name: string;
+  type: string;
+  env: string;
+  status: 'healthy' | 'failing' | 'unknown';
+  consecutive_auth_failures: number;
+  last_auth_failure_at: string | null;
+  last_auth_success_at: string | null;
+  last_error: string | null;
+}
+
+export interface AdminHealth {
+  polling: PollHealth[];
+  beat: BeatHealth;
+  /** `null` (never a fake `0`) when the broker was unreachable — `queues_error` says why. */
+  queues: QueueDepth[] | null;
+  queues_error: string | null;
+  credentials: CredentialHealth[];
+  generated_at: string;
+}
+
+export async function getAdminHealth(): Promise<AdminHealth> {
+  const { data } = await api.get<AdminHealth>('/admin/health');
+  return data;
+}
+
+/** The last orphan-secret sweep. `never_run`/`skipped` must never read as `orphan_count: 0`;
+ *  the counts are `null` on a skip or a store outage, and `error` then classifies it. */
+export interface SecretSweepReport {
+  status: 'never_run' | 'recorded' | 'skipped';
+  ran_at: string | null;
+  mode: 'report' | 'purge' | null;
+  orphan_count: number | null;
+  orphan_names: string[];
+  truncated: boolean;
+  scanned: number | null;
+  unknown_age_count: number | null;
+  too_young_count: number | null;
+  store: string | null;
+  error: string | null;
+}
+
+export async function getSecretSweep(): Promise<SecretSweepReport> {
+  const { data } = await api.get<SecretSweepReport>('/admin/secret-sweep');
+  return data;
+}
+
+/** Enqueues the sweep in report-only mode; its result lands in `getSecretSweep` later. */
+export async function runSecretSweep(): Promise<{ status: string; task_id: string }> {
+  const { data } = await api.post<{ status: string; task_id: string }>('/admin/secret-sweep/run');
+  return data;
+}

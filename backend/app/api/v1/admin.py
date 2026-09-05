@@ -10,14 +10,21 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import ConfigDict, Field
-from sqlalchemy import func, or_, select
+from sqlalchemy import distinct, func, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import ApiModel, ApiRequestModel
 from backend.app.core.auth import require_workspace_admin
 from backend.app.core.config import get_settings
 from backend.app.core.secrets import SecretStore, get_secret_store
-from backend.app.db.models import SuiteNotification, User
+from backend.app.db.models import (
+    INCIDENT_ACTIVE_STATUSES,
+    Incident,
+    Run,
+    Suite,
+    SuiteNotification,
+    User,
+)
 from backend.app.db.session import get_db
 from backend.app.mcp.auth import mcp_enabled
 from backend.app.services import admin_service as svc
@@ -156,6 +163,118 @@ def orchestration_webhooks(
     # and never logged. Base URL: the configured public host, else the request's.
     base_url = get_settings().public_base_url or str(request.base_url)
     return svc.webhook_configs(db, base_url=base_url, secret_store=secret_store)
+
+
+# ──────────────────── overview stat cards (#1696) ────────────────────
+
+
+class OverviewMembersRead(ApiModel):
+    """Workspace membership. `pending_first_signin` is `null` — never `0` — while
+    DataQ has no invite record to count: a user row is created BY the first
+    successful sign-in, so an admitted-but-never-signed-in person leaves no trace
+    here. `pending_source` says which it is.
+    """
+
+    total: int
+    pending_first_signin: int | None = None
+    pending_source: Literal["not_available"] = "not_available"
+
+
+class OverviewSuitesRead(ApiModel):
+    """`connections` is the number of DISTINCT connections the suites target, not
+    the number of connections configured — a connection no suite runs against is
+    not counted.
+    """
+
+    total: int
+    connections: int
+
+
+class OverviewIncidentsRead(ApiModel):
+    """`open` counts every UNRESOLVED incident, and `acknowledged` is the subset of
+    those someone has picked up — so `acknowledged` is never larger than `open`, and
+    an acknowledged incident is still open (acknowledging silences nothing).
+    """
+
+    open: int
+    acknowledged: int
+
+
+class OverviewRunsTodayRead(ApiModel):
+    """Runs created since `since` (the start of the current UTC day, not the
+    viewer's local day). `total` also counts queued and cancelled runs, so the three
+    named states do not necessarily sum to it.
+    """
+
+    total: int
+    succeeded: int
+    failed: int
+    running: int
+    since: datetime
+
+
+class AdminOverviewRead(ApiModel):
+    """The four Overview stat cards, workspace-wide (#1696) — counted over every
+    suite/run/incident in the workspace, not the caller's grants.
+    """
+
+    members: OverviewMembersRead
+    suites: OverviewSuitesRead
+    incidents: OverviewIncidentsRead
+    runs_today: OverviewRunsTodayRead
+    generated_at: datetime
+
+
+@router.get(
+    "/overview",
+    response_model=AdminOverviewRead,
+    summary="Overview stat cards — members, suites, incidents, runs today (admin)",
+)
+def get_admin_overview(db: Annotated[Session, Depends(get_db)]) -> AdminOverviewRead:
+    """Counts only. The health signals beside these cards come from
+    `GET /admin/health` and `GET /admin/secret-sweep`, which classify their own
+    blind spots; nothing here is inferred from them.
+    """
+    now = datetime.now(UTC)
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    members_total = db.scalar(select(func.count()).select_from(User)) or 0
+
+    suite_total, suite_connections = db.execute(
+        select(func.count(Suite.id), func.count(distinct(Suite.connection_id)))
+    ).one()
+
+    incidents_open, incidents_acknowledged = db.execute(
+        select(
+            func.count().filter(Incident.status.in_(INCIDENT_ACTIVE_STATUSES)),
+            func.count().filter(Incident.status == "acknowledged"),
+        ).select_from(Incident)
+    ).one()
+
+    runs_total, runs_succeeded, runs_failed, runs_running = db.execute(
+        select(
+            func.count(),
+            func.count().filter(Run.status == "succeeded"),
+            func.count().filter(Run.status == "failed"),
+            func.count().filter(Run.status == "running"),
+        )
+        .select_from(Run)
+        .where(Run.created_at >= day_start)
+    ).one()
+
+    return AdminOverviewRead(
+        members=OverviewMembersRead(total=members_total),
+        suites=OverviewSuitesRead(total=suite_total, connections=suite_connections),
+        incidents=OverviewIncidentsRead(open=incidents_open, acknowledged=incidents_acknowledged),
+        runs_today=OverviewRunsTodayRead(
+            total=runs_total,
+            succeeded=runs_succeeded,
+            failed=runs_failed,
+            running=runs_running,
+            since=day_start,
+        ),
+        generated_at=now,
+    )
 
 
 # ──────────────────── workspace health (#1885) ────────────────────

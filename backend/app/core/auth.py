@@ -22,7 +22,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from starlette.requests import HTTPConnection
 
-from backend.app.core.config import Settings, get_settings
+from backend.app.core.config import Settings, dev_bypass_conflicts, get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.core.roles import (
@@ -523,6 +523,9 @@ async def init_auth() -> None:
     a deployment must never come up healthy while unable to log anybody in.
     Partial OTP configs are already rejected by `Settings._validate_otp_auth`.
     """
+    conflicts = dev_bypass_conflicts(_settings)
+    if conflicts:
+        raise RuntimeError("; ".join(conflicts))
     if azure_scheme is not None:
         await azure_scheme.openid_config.load_config()
         log.info(
@@ -578,7 +581,8 @@ async def init_auth() -> None:
         "or configure email OTP sign-in (AUTH_EMAIL_SMTP_HOST + AUTH_EMAIL_USERNAME "
         "+ AUTH_EMAIL_FROM + AUTH_EMAIL_PASSWORD_SECRET_NAME, plus "
         "AUTH_OTP_ALLOWED_EMAILS and/or AUTH_OTP_ALLOWED_DOMAINS), "
-        "or set ENVIRONMENT=dev with AUTH_DEV_BYPASS=true for local dev."
+        "or — developers only — ENVIRONMENT=dev with AUTH_DEV_BYPASS=true "
+        "(on the compose stacks: DATAQ_DEV_BYPASS=true in the root .env)."
     )
 
 
