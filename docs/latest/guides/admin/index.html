@@ -1136,13 +1136,63 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#overview-and-honest-signals" class="md-nav__link">
+  <a href="#overview" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Overview and honest signals
+        Overview
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Overview">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-stat-cards" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The stat cards
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#needs-attention" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Needs attention
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workspace-health" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workspace health
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-unknown-and-not-monitored-mean" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What "unknown" and "not monitored" mean
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -2389,13 +2439,63 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#overview-and-honest-signals" class="md-nav__link">
+  <a href="#overview" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Overview and honest signals
+        Overview
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Overview">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-stat-cards" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The stat cards
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#needs-attention" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Needs attention
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workspace-health" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workspace health
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-unknown-and-not-monitored-mean" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What "unknown" and "not monitored" mean
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -2524,7 +2624,7 @@ without losing your place. <code>/admin</code> on its own lands on <strong>Overv
 <tr>
 <td>Overview</td>
 <td><code>/admin/overview</code></td>
-<td>Workspace counts — suites, members, access grants — plus a "needs attention" panel that links onward.</td>
+<td>Workspace counts — members, suites, open incidents, runs today — plus a "needs attention" feed and a workspace-health checklist, each row linking to the thing that needs fixing.</td>
 </tr>
 <tr>
 <td>Members</td>
@@ -2568,11 +2668,111 @@ No admin data is fetched for them at all.</p>
 posture and nothing else; the members and suites tables are not read until you open their
 tab. Switching tabs is a navigation, so the page you leave stops holding data you are no
 longer looking at.</p>
-<h2 id="overview-and-honest-signals">Overview and honest signals<a class="headerlink" href="#overview-and-honest-signals" title="Permanent link">¶</a></h2>
-<p>The Overview's "needs attention" panel deliberately says <strong>not monitored yet</strong> where no
-signal exists. Poll staleness, scheduler heartbeat, queue depth and datasource credential
-health have no read API today, so an empty panel means nothing is being watched — not that
-everything is healthy. Rows appear here as those signals ship.</p>
+<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">¶</a></h2>
+<p><code>/admin/overview</code> is the workspace's morning page: four counts, everything that currently
+needs attention, and a checklist of the health signals themselves.</p>
+<h3 id="the-stat-cards">The stat cards<a class="headerlink" href="#the-stat-cards" title="Permanent link">¶</a></h3>
+<table>
+<thead>
+<tr>
+<th>Card</th>
+<th>The number</th>
+<th>The line under it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Members</td>
+<td>Every user row in the workspace.</td>
+<td>How many were admitted but have not signed in yet — see below.</td>
+</tr>
+<tr>
+<td>Suites</td>
+<td>Every suite, unscoped by sharing.</td>
+<td>How many <strong>distinct connections</strong> those suites target; a connection no suite uses is not counted.</td>
+</tr>
+<tr>
+<td>Open incidents</td>
+<td>Every unresolved incident.</td>
+<td>How many of those have been acknowledged. Acknowledging silences nothing, so an acknowledged incident is still open and still counted.</td>
+</tr>
+<tr>
+<td>Runs today</td>
+<td>Runs created since the start of the current <strong>UTC</strong> day (not your local day).</td>
+<td>Succeeded, failed and running. Queued and cancelled runs are in the total but not in those three, so they need not add up.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Members: "pending first sign-in is not tracked yet."</strong> A user row is created <em>by</em> a first
+successful sign-in, so someone admitted at the identity provider who has never signed in
+leaves no trace in DataQ at all. The card says the number is untracked rather than showing
+a <code>0</code> that would claim everybody admitted has arrived.</p>
+<p>If a card cannot be loaded it shows an em dash and the failure, never a zero.</p>
+<h3 id="needs-attention">Needs attention<a class="headerlink" href="#needs-attention" title="Permanent link">¶</a></h3>
+<p>One row per thing that is wrong or unknown, each with a verb that takes you to where it is
+fixed — the connection, the suites list, or the health item further down the page.</p>
+<table>
+<thead>
+<tr>
+<th>Row</th>
+<th>What raised it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Polling stalled / failing</td>
+<td>An orchestration connection is overdue for a poll, or is being polled on schedule and erroring. Pipeline completions may not be reaching DataQ.</td>
+</tr>
+<tr>
+<td>Stored credential rejected</td>
+<td>A datasource rejected the stored credential the last time real work used it.</td>
+</tr>
+<tr>
+<td>Trigger env mismatch</td>
+<td>A pipeline keeps succeeding in one environment while the only enabled binding targets another, so no suite is triggered. Only mismatches on suites you can see are listed.</td>
+</tr>
+<tr>
+<td>Orphan secrets found</td>
+<td>The last sweep found stored credentials that no connection references any more.</td>
+</tr>
+<tr>
+<td>Anything marked <strong>not monitored</strong></td>
+<td>See below.</td>
+</tr>
+</tbody>
+</table>
+<p>An empty feed means nothing is wrong <strong>among the signals listed in the health checklist</strong>.
+Anything not in that checklist is unmonitored, not clear.</p>
+<h3 id="workspace-health">Workspace health<a class="headerlink" href="#workspace-health" title="Permanent link">¶</a></h3>
+<p>Four items, each with its own verb:</p>
+<ul>
+<li><strong>Audit chain</strong> — <em>Verify now</em>. Never runs on page load, for the same reason as the
+  Compliance card: it reads the whole hashed set. Until you ask, the chain state is
+  unknown, and the item says so.</li>
+<li><strong>Scheduler &amp; worker</strong> — the beat heartbeat and the broker queue depths.</li>
+<li><strong>Secret store</strong> — the last orphan-secret sweep, and <em>Run sweep</em> to start a new one. A
+  manually started sweep is always <strong>report-only</strong>: it never deletes a credential. After
+  starting it, the page re-reads the report for a short while; if the worker has not
+  recorded one by then it says the run is still queued rather than showing the previous
+  run's numbers as if they were the new ones.</li>
+<li><strong>Orchestration polling</strong> — how many connections are unhealthy and how many have never
+  been polled, with <em>Details</em> through to Integrations.</li>
+</ul>
+<h3 id="what-unknown-and-not-monitored-mean">What "unknown" and "not monitored" mean<a class="headerlink" href="#what-unknown-and-not-monitored-mean" title="Permanent link">¶</a></h3>
+<p>These are the two answers that must never be read as good news:</p>
+<ul>
+<li><strong>Unknown</strong> — the signal exists but could not be read this time. The queue depth when
+  the broker is unreachable is unknown; it is <strong>not</strong> zero. A health request that failed
+  makes poll staleness unknown; it does <strong>not</strong> mean everything is on cadence.</li>
+<li><strong>Not monitored</strong> — the signal exists and has genuinely observed nothing. An
+  orchestration connection that has never been polled, a scheduler that has never recorded
+  a heartbeat tick, a datasource credential that no run, dry-run, profile or connection
+  test has ever used, or a sweep that has never run. Nothing has been shown to work, which
+  is not the same as being shown to be healthy.</li>
+</ul>
+<p>Either way the row is <strong>still shown</strong>. A signal that cannot answer is listed with its
+reason rather than dropped, so the page never answers "is anything wrong?" with silence it
+has not earned.</p>
 <h2 id="compliance">Compliance<a class="headerlink" href="#compliance" title="Permanent link">¶</a></h2>
 <h3 id="audit-chain">Audit chain<a class="headerlink" href="#audit-chain" title="Permanent link">¶</a></h3>
 <p>Every audit event is hashed over the one before it, so an edited or deleted row breaks the

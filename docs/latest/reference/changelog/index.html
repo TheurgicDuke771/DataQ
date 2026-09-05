@@ -2391,7 +2391,20 @@ the per-PR history lives in the repo's commit log and pull requests.</p>
 </ul>
 <h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">¶</a></h3>
 <ul>
-<li><strong>Four admin capabilities that had no UI now have one.</strong> On <strong>Admin → Compliance</strong>:
+<li>
+<p><strong>Admin → Overview is now a workspace-health page.</strong> Four counts — members, suites
+  (and the distinct connections they target), open incidents with the acknowledged
+  subset, and today's runs by status over the UTC day — above a <strong>needs-attention</strong>
+  feed and a <strong>workspace-health</strong> checklist covering the audit chain, the scheduler
+  heartbeat and queue depth, the orphan-secret sweep (with a report-only <strong>Run sweep</strong>),
+  and orchestration polling. Every row links to the thing that fixes it. A signal that
+  could not be read, or that has genuinely observed nothing — a connection never polled,
+  a heartbeat that has never ticked, an unreachable broker, a sweep that has never run —
+  renders as <strong>unknown</strong> or <strong>not monitored</strong> with the reason, never as a zero, a green
+  tick, or a missing row. See the <a href="../../guides/admin/">admin control centre guide</a>.</p>
+</li>
+<li>
+<p><strong>Four admin capabilities that had no UI now have one.</strong> On <strong>Admin → Compliance</strong>:
   audit-chain verification behind an explicit <strong>Verify now</strong> (it reads the whole hashed
   set, so it never runs on page load) reporting intact / broken-at-an-event / nothing-to-
   verify / not-verified as four distinct answers, plus the legacy-row count and whether an
@@ -2403,7 +2416,8 @@ the per-PR history lives in the repo's commit log and pull requests.</p>
   <strong>Admin → Integrations</strong>, each webhook row states its auth mode, so it is obvious which
   URLs are themselves credentials. See the
   <a href="../../guides/admin/">admin control centre guide</a> and the
-  <a href="../../security/compliance/data-subject-rights-runbook/">data-subject-rights runbook</a>.</li>
+  <a href="../../security/compliance/data-subject-rights-runbook/">data-subject-rights runbook</a>.</p>
+</li>
 </ul>
 
 

@@ -920,7 +920,7 @@ without losing your place. `/admin` on its own lands on **Overview**.
 
 | Tab | URL | What it does |
 |---|---|---|
-| Overview | `/admin/overview` | Workspace counts — suites, members, access grants — plus a "needs attention" panel that links onward. |
+| Overview | `/admin/overview` | Workspace counts — members, suites, open incidents, runs today — plus a "needs attention" feed and a workspace-health checklist, each row linking to the thing that needs fixing. |
 | Members | `/admin/members` | Every user with their workspace role (editable in place) and every per-suite access grant. |
 | Suites | `/admin/suites` | Every suite in the workspace, unscoped by sharing: owner, datasource, environment, check count, share count. |
 | Settings | `/admin/settings` | Workspace facts and the sign-in method, the email pre-flight test, reusable notification channels, the LLM provider, the secret-store notice, and the danger zone. |
@@ -948,12 +948,75 @@ posture and nothing else; the members and suites tables are not read until you o
 tab. Switching tabs is a navigation, so the page you leave stops holding data you are no
 longer looking at.
 
-## Overview and honest signals
+## Overview
 
-The Overview's "needs attention" panel deliberately says **not monitored yet** where no
-signal exists. Poll staleness, scheduler heartbeat, queue depth and datasource credential
-health have no read API today, so an empty panel means nothing is being watched — not that
-everything is healthy. Rows appear here as those signals ship.
+`/admin/overview` is the workspace's morning page: four counts, everything that currently
+needs attention, and a checklist of the health signals themselves.
+
+### The stat cards
+
+| Card | The number | The line under it |
+|---|---|---|
+| Members | Every user row in the workspace. | How many were admitted but have not signed in yet — see below. |
+| Suites | Every suite, unscoped by sharing. | How many **distinct connections** those suites target; a connection no suite uses is not counted. |
+| Open incidents | Every unresolved incident. | How many of those have been acknowledged. Acknowledging silences nothing, so an acknowledged incident is still open and still counted. |
+| Runs today | Runs created since the start of the current **UTC** day (not your local day). | Succeeded, failed and running. Queued and cancelled runs are in the total but not in those three, so they need not add up. |
+
+**Members: "pending first sign-in is not tracked yet."** A user row is created *by* a first
+successful sign-in, so someone admitted at the identity provider who has never signed in
+leaves no trace in DataQ at all. The card says the number is untracked rather than showing
+a `0` that would claim everybody admitted has arrived.
+
+If a card cannot be loaded it shows an em dash and the failure, never a zero.
+
+### Needs attention
+
+One row per thing that is wrong or unknown, each with a verb that takes you to where it is
+fixed — the connection, the suites list, or the health item further down the page.
+
+| Row | What raised it |
+|---|---|
+| Polling stalled / failing | An orchestration connection is overdue for a poll, or is being polled on schedule and erroring. Pipeline completions may not be reaching DataQ. |
+| Stored credential rejected | A datasource rejected the stored credential the last time real work used it. |
+| Trigger env mismatch | A pipeline keeps succeeding in one environment while the only enabled binding targets another, so no suite is triggered. Only mismatches on suites you can see are listed. |
+| Orphan secrets found | The last sweep found stored credentials that no connection references any more. |
+| Anything marked **not monitored** | See below. |
+
+An empty feed means nothing is wrong **among the signals listed in the health checklist**.
+Anything not in that checklist is unmonitored, not clear.
+
+### Workspace health
+
+Four items, each with its own verb:
+
+- **Audit chain** — *Verify now*. Never runs on page load, for the same reason as the
+  Compliance card: it reads the whole hashed set. Until you ask, the chain state is
+  unknown, and the item says so.
+- **Scheduler & worker** — the beat heartbeat and the broker queue depths.
+- **Secret store** — the last orphan-secret sweep, and *Run sweep* to start a new one. A
+  manually started sweep is always **report-only**: it never deletes a credential. After
+  starting it, the page re-reads the report for a short while; if the worker has not
+  recorded one by then it says the run is still queued rather than showing the previous
+  run's numbers as if they were the new ones.
+- **Orchestration polling** — how many connections are unhealthy and how many have never
+  been polled, with *Details* through to Integrations.
+
+### What "unknown" and "not monitored" mean
+
+These are the two answers that must never be read as good news:
+
+- **Unknown** — the signal exists but could not be read this time. The queue depth when
+  the broker is unreachable is unknown; it is **not** zero. A health request that failed
+  makes poll staleness unknown; it does **not** mean everything is on cadence.
+- **Not monitored** — the signal exists and has genuinely observed nothing. An
+  orchestration connection that has never been polled, a scheduler that has never recorded
+  a heartbeat tick, a datasource credential that no run, dry-run, profile or connection
+  test has ever used, or a sweep that has never run. Nothing has been shown to work, which
+  is not the same as being shown to be healthy.
+
+Either way the row is **still shown**. A signal that cannot answer is listed with its
+reason rather than dropped, so the page never answers "is anything wrong?" with silence it
+has not earned.
 
 ## Compliance
 
@@ -2961,6 +3024,17 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Added
 
+- **Admin → Overview is now a workspace-health page.** Four counts — members, suites
+  (and the distinct connections they target), open incidents with the acknowledged
+  subset, and today's runs by status over the UTC day — above a **needs-attention**
+  feed and a **workspace-health** checklist covering the audit chain, the scheduler
+  heartbeat and queue depth, the orphan-secret sweep (with a report-only **Run sweep**),
+  and orchestration polling. Every row links to the thing that fixes it. A signal that
+  could not be read, or that has genuinely observed nothing — a connection never polled,
+  a heartbeat that has never ticked, an unreachable broker, a sweep that has never run —
+  renders as **unknown** or **not monitored** with the reason, never as a zero, a green
+  tick, or a missing row. See the [admin control centre guide](../guides/admin.md).
+
 - **Four admin capabilities that had no UI now have one.** On **Admin → Compliance**:
   audit-chain verification behind an explicit **Verify now** (it reads the whole hashed
   set, so it never runs on page load) reporting intact / broken-at-an-event / nothing-to-
@@ -3702,6 +3776,7 @@ an outbound model request.
 | Method | Path | What |
 |---|---|---|
 | GET | `/admin/suites` · `/admin/users` · `/admin/access` | Unscoped workspace-wide views. |
+| GET | `/admin/overview` | The four Overview stat cards — members, suites, open incidents, runs today (UTC day). |
 | PATCH | `/admin/users/{id}/role` | Change a workspace role (last-admin guarded; audit-tabled). |
 | GET | `/admin/audit-events` | The append-only audit log (config + data-access events, ADR 0041). |
 | GET | `/admin/deployment` | Declared residency / deployment posture (`DEPLOYMENT_REGION`). |
