@@ -5,6 +5,7 @@ from __future__ import annotations
 from enum import StrEnum
 
 from backend.app.core.errors import SafeMonitorError
+from backend.app.core.secrets import SecretStoreUnavailableError
 
 
 class FailureCategory(StrEnum):
@@ -217,8 +218,10 @@ def classify_broker_reason(exc: BaseException) -> str:
 # sweep report: an outage must never read as "0 orphans found" (ADR 0039 rule).
 _SECRET_STORE_MESSAGES: dict[FailureCategory, str] = {
     FailureCategory.CONNECTIVITY: (
-        "The secret store could not be reached (network, DNS, TLS, or a timeout). "
-        "Check that it is running and reachable from the worker."
+        "The secret store could not be reached, or is sealed / in standby (network, "
+        "DNS, TLS, a timeout — or, for OpenBao/Vault, the vault is sealed or the "
+        "configured address points at a standby node). Unseal it or point the "
+        "configured address at the active node, then re-run the sweep."
     ),
     FailureCategory.PERMISSION: (
         "The secret store rejected the credentials, or the identity is missing a "
@@ -233,5 +236,8 @@ _SECRET_STORE_MESSAGES: dict[FailureCategory, str] = {
 
 
 def classify_secret_store_reason(exc: BaseException) -> str:
-    """The fixed, secret-free reason the orphan-secret sweep could not reach the store (#1886)."""
+    """Secret-free reason the sweep could not reach the store; the exception TYPE is the
+    classification (a sealed OpenBao 503 matches no marker)."""
+    if isinstance(exc, SecretStoreUnavailableError):
+        return _SECRET_STORE_MESSAGES[FailureCategory.CONNECTIVITY]
     return _SECRET_STORE_MESSAGES[classify_failure_category(exc)]

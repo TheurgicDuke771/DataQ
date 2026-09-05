@@ -12,26 +12,14 @@ from backend.app.core.config import get_settings
 from backend.app.core.secrets import SecretInfo
 from backend.app.services import secret_sweep_service
 from backend.app.worker import tasks
-from backend.tests.support.fake_secret_store import FakeSecretStore
+from backend.tests.support.fake_secret_store import BrokenSecretStore, EnumerableSecretStore
 
-_SECRET_VALUE = "sk-super-secret-do-not-persist-me"  # pragma: allowlist secret
-
-
-class _EnumerableStore(FakeSecretStore):
-    def __init__(self, secrets: list[SecretInfo]) -> None:
-        super().__init__()
-        self._secrets = secrets
-
-    def get(self, name: str) -> str:
-        return _SECRET_VALUE
-
-    def list_secrets(self) -> list[SecretInfo]:
-        return list(self._secrets)
-
-
-class _BrokenStore(_EnumerableStore):
-    def list_secrets(self) -> list[SecretInfo]:
-        raise RuntimeError("connection refused")
+# Shared doubles (#1886 review): `EnumerableSecretStore.get`/`set` raise by contract, so a
+# store that ever leaked a secret VALUE into the persisted report would fail the test loudly
+# (an AssertionError from the double itself) rather than needing a separate value to assert
+# against.
+_EnumerableStore = EnumerableSecretStore
+_BrokenStore = BrokenSecretStore
 
 
 @pytest.fixture(autouse=True)
@@ -59,13 +47,16 @@ def test_report_mode_persists_names_only_and_a_true_count(
     assert count == 1
     report = secret_sweep_service.read_sweep_report(db_session)
     assert report is not None
+    assert report.status == "recorded"
     assert report.mode == "report"
     assert report.orphan_count == 1
     assert report.orphan_names == ["conn-dead-dev-abc123"]
+    # Scanned/unknown_age/too_young are visible beside the orphan count (#1886 review) —
+    # one scanned secret, correctly bucketed as an orphan rather than undatable.
+    assert report.scanned == 1
+    assert report.unknown_age_count == 0
+    assert report.too_young_count == 0
     assert report.error is None
-    # The secret VALUE must never reach the persisted row, even though the fake
-    # store could return one.
-    assert _SECRET_VALUE not in str(report)
 
 
 def test_purge_setting_is_recorded_as_purge_mode(
@@ -111,7 +102,7 @@ def test_a_store_outage_persists_null_count_and_a_classified_error(
     """An unreachable store must read `orphan_count=None` + `error` — never `0`
     (the #954 masquerade, applied here per ADR 0039).
     """
-    store = _BrokenStore([])
+    store = _BrokenStore(error=RuntimeError("connection refused"))
     monkeypatch.setattr(tasks, "get_session", lambda: db_session)
     monkeypatch.setattr(tasks, "get_secret_store", lambda: store)
 
@@ -120,7 +111,34 @@ def test_a_store_outage_persists_null_count_and_a_classified_error(
     assert result == 0  # the task's own return value stays the existing int contract
     report = secret_sweep_service.read_sweep_report(db_session)
     assert report is not None
+    assert report.status == "recorded"
     assert report.orphan_count is None
+    assert report.scanned is None
     assert report.orphan_names == []
     assert report.error is not None
     assert "reach" in report.error.lower() or "connect" in report.error.lower()
+
+
+def test_a_store_that_cannot_enumerate_persists_status_skipped_not_zero_orphans(
+    monkeypatch: pytest.MonkeyPatch, db_session: Any
+) -> None:
+    """#1886 review: a store with no `list_secrets` (the real shape of `EnvSecretStore`,
+    and of `SECRET_ORPHAN_GRACE_DAYS<=0`) was persisted as `orphan_count=0, error=None`
+    — the exact fake "0 orphans" this report exists to rule out. It must read
+    `status="skipped"` with a reason instead.
+    """
+    from backend.tests.support.fake_secret_store import UnlistableSecretStore
+
+    store = UnlistableSecretStore([_orphan("conn-dead-dev-abc123")])
+    monkeypatch.setattr(tasks, "get_session", lambda: db_session)
+    monkeypatch.setattr(tasks, "get_secret_store", lambda: store)
+
+    result = tasks.sweep_orphan_secrets()
+
+    assert result == 0
+    report = secret_sweep_service.read_sweep_report(db_session)
+    assert report is not None
+    assert report.status == "skipped"
+    assert report.orphan_count is None
+    assert report.scanned is None
+    assert report.error is not None

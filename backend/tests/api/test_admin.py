@@ -866,6 +866,9 @@ def test_secret_sweep_get_never_run_reads_never_run_not_zero(
         "orphan_count": None,
         "orphan_names": [],
         "truncated": False,
+        "scanned": None,
+        "unknown_age_count": None,
+        "too_young_count": None,
         "store": None,
         "error": None,
     }
@@ -881,6 +884,9 @@ def test_secret_sweep_get_returns_the_last_recorded_report(
         mode="report",
         orphan_count=1,
         orphan_names=["conn-dead-dev-abc123"],
+        scanned=6,
+        unknown_age_count=2,
+        too_young_count=3,
         store="openbao",
         error=None,
     )
@@ -895,8 +901,45 @@ def test_secret_sweep_get_returns_the_last_recorded_report(
     assert body["mode"] == "report"
     assert body["orphan_count"] == 1
     assert body["orphan_names"] == ["conn-dead-dev-abc123"]
+    # Scanned + the two undatable buckets, so an OpenBao token missing metadata
+    # `read` doesn't hide behind `orphan_count` alone (#1886 review).
+    assert body["scanned"] == 6
+    assert body["unknown_age_count"] == 2
+    assert body["too_young_count"] == 3
     assert body["store"] == "openbao"
     assert body["error"] is None
+
+
+def test_secret_sweep_get_returns_a_skipped_report(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run that never actually enumerated the store (grace disabled, or it cannot
+    `list_secrets`) reads `status="skipped"` — not `recorded` with `orphan_count=0`.
+    """
+    from backend.app.services import secret_sweep_service
+
+    secret_sweep_service.record_sweep_report(
+        db_session,
+        mode="report",
+        status="skipped",
+        orphan_count=None,
+        orphan_names=[],
+        scanned=None,
+        unknown_age_count=None,
+        too_young_count=None,
+        store="env",
+        error="the secret store cannot enumerate its own secrets (no list_secrets)",
+    )
+    db_session.commit()
+    _grant_admin(monkeypatch)
+
+    resp = client.get("/api/v1/admin/secret-sweep")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "skipped"
+    assert body["orphan_count"] is None
+    assert body["error"] is not None
 
 
 def test_secret_sweep_run_enqueues_report_only_and_returns_202_with_task_id(
@@ -905,7 +948,7 @@ def test_secret_sweep_run_enqueues_report_only_and_returns_202_with_task_id(
     """The route must never let a caller force purge mode — it always dispatches
     report-only, regardless of `SECRET_ORPHAN_PURGE` (#1886).
     """
-    from backend.app.services import secret_sweep_service
+    from backend.app.services import run_dispatch
 
     calls: list[str] = []
 
@@ -913,7 +956,7 @@ def test_secret_sweep_run_enqueues_report_only_and_returns_202_with_task_id(
         calls.append("dispatched")
         return "task-abc123"
 
-    monkeypatch.setattr(secret_sweep_service, "dispatch_secret_sweep", _fake_dispatch)
+    monkeypatch.setattr(run_dispatch, "dispatch_secret_sweep", _fake_dispatch)
     _grant_admin(monkeypatch)
 
     resp = client.post("/api/v1/admin/secret-sweep/run")
@@ -926,9 +969,9 @@ def test_secret_sweep_run_enqueues_report_only_and_returns_202_with_task_id(
 def test_secret_sweep_run_is_audited(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from backend.app.services import secret_sweep_service
+    from backend.app.services import run_dispatch
 
-    monkeypatch.setattr(secret_sweep_service, "dispatch_secret_sweep", lambda: "task-xyz789")
+    monkeypatch.setattr(run_dispatch, "dispatch_secret_sweep", lambda: "task-xyz789")
     _grant_admin(monkeypatch)
 
     resp = client.post("/api/v1/admin/secret-sweep/run")
@@ -940,6 +983,29 @@ def test_secret_sweep_run_is_audited(
     assert event.after["mode"] == "report"
 
 
+def test_secret_sweep_run_503s_on_a_broker_outage_not_a_bare_500(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A broker outage is the one failure this endpoint can actually have (nothing
+    else it does can fail) — `GET /admin/health`'s `queues_error` already classifies
+    the identical failure, so this must too, not surface an opaque 500 (#1886 review).
+    Nothing was enqueued, so no audit row is written either.
+    """
+    from backend.app.services import run_dispatch
+
+    def _broken_dispatch() -> str:
+        raise ConnectionError("Error 111 connecting to redis:6379. Connection refused.")
+
+    monkeypatch.setattr(run_dispatch, "dispatch_secret_sweep", _broken_dispatch)
+    _grant_admin(monkeypatch)
+
+    resp = client.post("/api/v1/admin/secret-sweep/run")
+
+    assert resp.status_code == 503
+    assert "redis" in resp.json()["error"]["message"].lower()
+    assert db_session.query(AuditEvent).filter(AuditEvent.action == "secret_sweep.run").count() == 0
+
+
 @pytest.mark.parametrize("role", ["member", "viewer"])
 def test_secret_sweep_endpoints_403_for_non_admin(
     client: TestClient, as_role: Any, role: str
@@ -947,5 +1013,7 @@ def test_secret_sweep_endpoints_403_for_non_admin(
     get_settings.cache_clear()
     _, headers = as_role(role)
 
-    assert client.get("/api/v1/admin/secret-sweep", headers=headers).status_code == 403
-    assert client.post("/api/v1/admin/secret-sweep/run", headers=headers).status_code == 403
+    got = client.get("/api/v1/admin/secret-sweep", headers=headers)
+    ran = client.post("/api/v1/admin/secret-sweep/run", headers=headers)
+    assert got.status_code == 403
+    assert ran.status_code == 403

@@ -22,7 +22,6 @@ from backend.app.db.models import (
     SuiteNotification,
     WorkspaceHealth,
 )
-from backend.app.worker.celery_app import celery_app
 
 log = get_logger(__name__)
 
@@ -33,9 +32,6 @@ SWEEP_REPORT_KEY = "secret_sweep_report"
 #: this large is itself a signal worth acting on; the full list is already in the sweep's own
 #: log line (`secret_orphan_sweep`).
 MAX_REPORTED_ORPHAN_NAMES = 200
-
-#: The task `dispatch_secret_sweep` publishes — shared with `worker/tasks.py`'s registration.
-SWEEP_TASK_NAME = "sweep_orphan_secrets"
 
 # Only names DataQ mints are ever candidates.
 _DATAQ_PREFIXES: tuple[str, ...] = ("conn-", "suite-notif-", "channel-")
@@ -60,6 +56,8 @@ class OrphanSweepResult:
     too_young: list[str]
     # Unowned, and the store could not date them.
     unknown_age: list[str]
+    #: Store never enumerated (grace disabled / no list_secrets) — persist as skipped, not 0.
+    skipped_reason: str | None = None
 
 
 # ── The reference registry ──────────────────────────────────────────────────── Every place in the
@@ -164,15 +162,29 @@ def sweep_orphan_secrets(
     now: datetime | None = None,
 ) -> OrphanSweepResult:
     """Find (and optionally purge) store entries no row references."""
-    empty = OrphanSweepResult(
-        scanned=0, orphans=[], purge_attempted=[], too_young=[], unknown_age=[]
-    )
     if grace_days <= 0:
-        return empty
+        reason = "the sweep is disabled (SECRET_ORPHAN_GRACE_DAYS <= 0)"
+        log.info("secret_orphan_sweep_skipped", reason=reason)
+        return OrphanSweepResult(
+            scanned=0,
+            orphans=[],
+            purge_attempted=[],
+            too_young=[],
+            unknown_age=[],
+            skipped_reason=reason,
+        )
     lister = getattr(store, "list_secrets", None)
     if not callable(lister):
-        log.info("secret_orphan_sweep_skipped", reason="store cannot enumerate secrets")
-        return empty
+        reason = "the secret store cannot enumerate its own secrets (no list_secrets)"
+        log.info("secret_orphan_sweep_skipped", reason=reason)
+        return OrphanSweepResult(
+            scanned=0,
+            orphans=[],
+            purge_attempted=[],
+            too_young=[],
+            unknown_age=[],
+            skipped_reason=reason,
+        )
 
     # Deliberately NOT caught: `SecretStoreUnavailableError` propagates and fails the task rather
     # than reporting "no orphans found" — the #954 masquerade, applied to a destructive path.
@@ -226,11 +238,18 @@ class SecretSweepReport:
 
     ran_at: datetime
     mode: Literal["report", "purge"]
-    #: `None` — never `0` — when the sweep could not enumerate the store at all.
+    #: skipped = never enumerated; an outage stays recorded with `error` set.
+    status: Literal["recorded", "skipped"]
+    #: `None` — never `0` — when the sweep did not (or could not) enumerate the store.
     orphan_count: int | None
     #: Secret NAMES only, capped at `MAX_REPORTED_ORPHAN_NAMES` — never a value.
     orphan_names: list[str]
     truncated: bool
+    #: None together with orphan_count on skip/outage; unknown_age on OpenBao usually
+    #: means the token lacks metadata read.
+    scanned: int | None
+    unknown_age_count: int | None
+    too_young_count: int | None
     store: str
     error: str | None
 
@@ -239,8 +258,12 @@ def record_sweep_report(
     session: Session,
     *,
     mode: Literal["report", "purge"],
+    status: Literal["recorded", "skipped"] = "recorded",
     orphan_count: int | None,
     orphan_names: Sequence[str],
+    scanned: int | None,
+    unknown_age_count: int | None,
+    too_young_count: int | None,
     store: str,
     error: str | None,
     now: datetime | None = None,
@@ -251,9 +274,13 @@ def record_sweep_report(
     payload = {
         "ran_at": (now or datetime.now(UTC)).isoformat(),
         "mode": mode,
+        "status": status,
         "orphan_count": orphan_count,
         "orphan_names": sorted(names)[:MAX_REPORTED_ORPHAN_NAMES],
         "truncated": truncated,
+        "scanned": scanned,
+        "unknown_age_count": unknown_age_count,
+        "too_young_count": too_young_count,
         "store": store,
         "error": error,
     }
@@ -277,18 +304,13 @@ def read_sweep_report(session: Session) -> SecretSweepReport | None:
     return SecretSweepReport(
         ran_at=as_utc(datetime.fromisoformat(payload["ran_at"])),
         mode=payload["mode"],
+        status=payload.get("status", "recorded"),
         orphan_count=payload["orphan_count"],
         orphan_names=list(payload["orphan_names"]),
         truncated=payload["truncated"],
+        scanned=payload.get("scanned"),
+        unknown_age_count=payload.get("unknown_age_count"),
+        too_young_count=payload.get("too_young_count"),
         store=payload["store"],
         error=payload["error"],
     )
-
-
-def dispatch_secret_sweep() -> str:
-    """Enqueue the orphan-secret sweep task in report-only mode — a UI-triggered run must
-    never purge a live warehouse credential regardless of `SECRET_ORPHAN_PURGE` (#1886).
-    Returns the Celery task id.
-    """
-    result = celery_app.send_task(SWEEP_TASK_NAME, kwargs={"force_report_only": True})
-    return str(result.id)

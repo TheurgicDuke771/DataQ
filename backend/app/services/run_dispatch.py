@@ -9,7 +9,12 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_logger
 from backend.app.db.models import Run, Suite
-from backend.app.worker.celery_app import LLM_INVOKE_TASK_NAME, OTP_SEND_TASK_NAME, celery_app
+from backend.app.worker.celery_app import (
+    LLM_INVOKE_TASK_NAME,
+    OTP_SEND_TASK_NAME,
+    SWEEP_ORPHAN_SECRETS_TASK_NAME,
+    celery_app,
+)
 
 log = get_logger(__name__)
 
@@ -17,6 +22,7 @@ _RUN_SUITE_TASK = "run_suite"
 _AUTO_CLASSIFY_TASK = "auto_classify_columns"
 _LLM_INVOKE_TASK = LLM_INVOKE_TASK_NAME
 _OTP_SEND_TASK = OTP_SEND_TASK_NAME
+_SWEEP_ORPHAN_SECRETS_TASK = SWEEP_ORPHAN_SECRETS_TASK_NAME
 #: What the broker's task-received / task-failed log lines show instead of the real kwargs.
 _OTP_SEND_KWARGS_REPR = "{to: <redacted>, code: <redacted>}"
 
@@ -69,6 +75,12 @@ def dispatch_otp_code(*, to: str, code: str, expires_in_minutes: int) -> None:
 def dispatch_run(run_id: uuid.UUID) -> str:
     """Publish the ``run_suite`` task for ``run_id`` and return its Celery task id."""
     result = celery_app.send_task(_RUN_SUITE_TASK, args=[str(run_id)])
+    return str(result.id)
+
+
+def dispatch_secret_sweep() -> str:
+    """Enqueue the sweep report-only (a UI run never purges); raises on broker failure."""
+    result = celery_app.send_task(_SWEEP_ORPHAN_SECRETS_TASK, kwargs={"force_report_only": True})
     return str(result.id)
 
 

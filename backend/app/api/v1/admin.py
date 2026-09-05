@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import ConfigDict, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -27,9 +27,11 @@ from backend.app.services import (
     audit_service,
     data_subject_requests,
     llm_service,
+    run_dispatch,
     secret_sweep_service,
     workspace_health_service,
 )
+from backend.app.services.failure_classifier import classify_broker_reason
 from backend.app.services.otp_mailer import OtpMailer
 from backend.app.worker.celery_app import MONITORED_QUEUE_NAMES
 
@@ -261,18 +263,27 @@ def get_workspace_health(db: Annotated[Session, Depends(get_db)]) -> AdminHealth
 
 class SecretSweepReportRead(ApiModel):
     """The last orphan-secret sweep run, beat OR manual. `status="never_run"` means
-    the sweep has never recorded a report — never read that as `orphan_count=0`.
-    `orphan_count` is `None` (never `0`) when the run could not reach the secret
-    store at all; `error` then carries the classified, secret-free reason.
-    `orphan_names` are secret NAMES only, capped at 200 — see `truncated`.
+    the sweep has never recorded a report — never read that as `orphan_count=0`;
+    `status="skipped"` means a run happened but never actually enumerated the store
+    (grace disabled, or the store cannot list its own secrets) — also never `0`.
+    `orphan_count` is `None` (never `0`) on either a skip or a store outage; `error`
+    then carries the classified, secret-free reason. `scanned`/`unknown_age_count`/
+    `too_young_count` are the store-side total and the two other unowned buckets a
+    completed run split secrets into — also `None` on a skip/outage, so N secrets the
+    store couldn't date (often an OpenBao token missing metadata `read`) doesn't read
+    as a clean vault. `orphan_names` are secret NAMES only, capped at 200 — see
+    `truncated`.
     """
 
-    status: Literal["never_run", "recorded"]
+    status: Literal["never_run", "recorded", "skipped"]
     ran_at: datetime | None = None
     mode: Literal["report", "purge"] | None = None
     orphan_count: int | None = None
     orphan_names: list[str] = Field(default_factory=list)
     truncated: bool = False
+    scanned: int | None = None
+    unknown_age_count: int | None = None
+    too_young_count: int | None = None
     store: str | None = None
     error: str | None = None
 
@@ -287,12 +298,15 @@ def get_secret_sweep_report(db: Annotated[Session, Depends(get_db)]) -> SecretSw
     if report is None:
         return SecretSweepReportRead(status="never_run")
     return SecretSweepReportRead(
-        status="recorded",
+        status=report.status,
         ran_at=report.ran_at,
         mode=report.mode,
         orphan_count=report.orphan_count,
         orphan_names=report.orphan_names,
         truncated=report.truncated,
+        scanned=report.scanned,
+        unknown_age_count=report.unknown_age_count,
+        too_young_count=report.too_young_count,
         store=report.store,
         error=report.error,
     )
@@ -317,8 +331,15 @@ def run_secret_sweep(
     `SECRET_ORPHAN_PURGE` — a UI-triggered run must never purge a live warehouse
     credential. Returns immediately with the Celery task id; the result lands in
     `GET /admin/secret-sweep` once the worker picks it up.
+    503 with a classified broker reason when the broker is down; nothing enqueued, no audit row.
     """
-    task_id = secret_sweep_service.dispatch_secret_sweep()
+    try:
+        task_id = run_dispatch.dispatch_secret_sweep()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=classify_broker_reason(exc),
+        ) from exc
     audit_service.record(
         db,
         action="secret_sweep.run",

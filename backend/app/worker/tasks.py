@@ -61,7 +61,12 @@ from backend.app.services.failure_classifier import (
 )
 from backend.app.services.otp_mailer import OtpMailer
 from backend.app.worker import beat_watchdog
-from backend.app.worker.celery_app import LLM_INVOKE_TASK_NAME, OTP_SEND_TASK_NAME, celery_app
+from backend.app.worker.celery_app import (
+    LLM_INVOKE_TASK_NAME,
+    OTP_SEND_TASK_NAME,
+    SWEEP_ORPHAN_SECRETS_TASK_NAME,
+    celery_app,
+)
 
 # Poll lookback exceeds the 10-min beat interval so runs can't slip the gap (#171).
 _POLL_LOOKBACK = timedelta(minutes=15)
@@ -874,7 +879,7 @@ def sweep_orphan_assets() -> int:
 # ─────────────────────── orphan-secret sweep (#1059) ─────────────────────────
 
 
-@celery_app.task(name="sweep_orphan_secrets")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
+@celery_app.task(name=SWEEP_ORPHAN_SECRETS_TASK_NAME)  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
 def sweep_orphan_secrets(force_report_only: bool = False) -> int:
     """Reconcile the secret store against its owners (#1059) — reports by default,
     purges only under `SECRET_ORPHAN_PURGE` (never when `force_report_only`, the
@@ -905,8 +910,26 @@ def sweep_orphan_secrets(force_report_only: bool = False) -> int:
                 mode=mode,
                 orphan_count=None,
                 orphan_names=[],
+                scanned=None,
+                unknown_age_count=None,
+                too_young_count=None,
                 store=store_name,
                 error=classify_secret_store_reason(exc),
+            )
+            session.commit()
+            return 0
+        if result.skipped_reason is not None:
+            secret_sweep_service.record_sweep_report(
+                session,
+                mode=mode,
+                status="skipped",
+                orphan_count=None,
+                orphan_names=[],
+                scanned=None,
+                unknown_age_count=None,
+                too_young_count=None,
+                store=store_name,
+                error=result.skipped_reason,
             )
             session.commit()
             return 0
@@ -915,6 +938,9 @@ def sweep_orphan_secrets(force_report_only: bool = False) -> int:
             mode=mode,
             orphan_count=len(result.orphans),
             orphan_names=result.orphans,
+            scanned=result.scanned,
+            unknown_age_count=len(result.unknown_age),
+            too_young_count=len(result.too_young),
             store=store_name,
             error=None,
         )
