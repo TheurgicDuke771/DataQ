@@ -7,6 +7,12 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Changed
 
+- ⚠️ **Every DataQ user signs in.** The local stack has one sign-in mode, emailed
+  codes, and a mis-set or empty sign-in configuration now stops the API with a message
+  naming it instead of coming up open. Existing local setups: an `.env` with an empty
+  `DATAQ_SIGNIN_EMAIL=` no longer boots — set an address or re-run `setup.sh`, which
+  now re-asks.
+
 - **The admin area is now six routed, deep-linkable pages.** `/admin` splits into
   `overview`, `members`, `suites`, `settings`, `compliance` and `integrations` —
   the tab you are on is the URL, so any tab can be bookmarked, shared or
@@ -37,6 +43,16 @@ the per-PR history lives in the repo's commit log and pull requests.
     proves somebody signed in once, not that they still belong. The allowlist
     settings stay available as grant-only break-glass. See the
     [admin control centre guide](../guides/admin.md).
+- **Admin → Overview is now a workspace-health page.** Four counts — members, suites
+  (and the distinct connections they target), open incidents with the acknowledged
+  subset, and today's runs by status over the UTC day — above a **needs-attention**
+  feed and a **workspace-health** checklist covering the audit chain, the scheduler
+  heartbeat and queue depth, the orphan-secret sweep (with a report-only **Run sweep**),
+  and orchestration polling. Every row links to the thing that fixes it. A signal that
+  could not be read, or that has genuinely observed nothing — a connection never polled,
+  a heartbeat that has never ticked, an unreachable broker, a sweep that has never run —
+  renders as **unknown** or **not monitored** with the reason, never as a zero, a green
+  tick, or a missing row. See the [admin control centre guide](../guides/admin.md).
 
 - **Four admin capabilities that had no UI now have one.** On **Admin → Compliance**:
   audit-chain verification behind an explicit **Verify now** (it reads the whole hashed

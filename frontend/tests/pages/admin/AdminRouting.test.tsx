@@ -36,7 +36,18 @@ vi.mock('../../../src/api/admin', () => ({
   addWorkspaceMember: vi.fn(),
   removeWorkspaceMember: vi.fn(),
   confirmWorkspaceMember: vi.fn(),
+  // Overview's own sources stay pending: this file asserts routing, not their content.
+  getAdminOverview: vi.fn(() => new Promise(() => {})),
+  getAdminHealth: vi.fn(() => new Promise(() => {})),
+  getSecretSweep: vi.fn(() => new Promise(() => {})),
+  runSecretSweep: vi.fn(),
+  verifyAuditChain: vi.fn(),
   WORKSPACE_ROLES: ['admin', 'member', 'viewer'],
+}));
+
+vi.mock('../../../src/api/triggerBindings', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/api/triggerBindings')>()),
+  listEnvNearMisses: vi.fn(() => new Promise(() => {})),
 }));
 
 vi.mock('../../../src/api/llm', () => ({
@@ -71,7 +82,7 @@ afterEach(() => vi.clearAllMocks());
 describe('admin routing', () => {
   it('redirects /admin to the overview sub-page', async () => {
     renderAdminAt('/admin');
-    expect(await screen.findByText('Access grants', undefined, LAZY)).toBeInTheDocument();
+    expect(await screen.findByText('Needs attention', undefined, LAZY)).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
   });
 
@@ -107,7 +118,7 @@ describe('admin routing', () => {
 
   it('sends an unknown admin sub-page back to overview, not a tabless 404', async () => {
     renderAdminAt('/admin/nope');
-    expect(await screen.findByText('Access grants', undefined, LAZY)).toBeInTheDocument();
+    expect(await screen.findByText('Needs attention', undefined, LAZY)).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
   });
 

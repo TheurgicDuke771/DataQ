@@ -214,6 +214,7 @@ an outbound model request.
 | Method | Path | What |
 |---|---|---|
 | GET | `/admin/suites` · `/admin/users` · `/admin/access` | Unscoped workspace-wide views. |
+| GET | `/admin/overview` | The four Overview stat cards — members, suites, open incidents, runs today (UTC day). |
 | PATCH | `/admin/users/{id}/role` | Change a workspace role (last-admin guarded; audit-tabled). |
 | GET | `/admin/members` | Workspace membership, with whether enforcement is on and how many users a first add would import. |
 | POST | `/admin/members` | Admit an address, with an optional initial role. The first add turns enforcement on and imports existing users for review (audited). |

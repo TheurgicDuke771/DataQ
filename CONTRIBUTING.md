@@ -250,6 +250,27 @@ cd frontend && pnpm test
 
 > Commands above assume Week 1 scaffolding (`environment.yml`, `docker-compose.yml`, `scripts/setup.sh`) is committed.
 
+### Developer bypass (contributors only)
+
+The local stack signs you in with an emailed code by default. For working on DataQ itself
+there is a no-sign-in mode: every request resolves to one fixed user (`dev-bypass@dataq.local`,
+a workspace admin). It is deliberately absent from the published docs and from `setup.sh`'s
+prompts — it is off by default, never a fallback, and the api refuses to boot with it beside
+a real sign-in mode or outside `ENVIRONMENT=dev`.
+
+```bash
+# compose stack — root .env
+DATAQ_SIGNIN_EMAIL=
+DATAQ_DEV_BYPASS=true
+# prebuilt-image stack — the frontend needs the matching mode too
+DATAQ_SIGNIN_EMAIL= DATAQ_DEV_BYPASS=true DATAQ_AUTH_MODE=bypass docker compose -f docker-compose.ghcr.yml up
+# host-side uvicorn — .env.app
+AUTH_DEV_BYPASS=true
+```
+
+`setup.sh` honours `DATAQ_DEV_BYPASS=true` from the environment and writes both files. The CI
+browser E2E lane runs in this mode with the variables set explicitly in the workflow.
+
 ### Mermaid diagrams in published docs
 
 Syntactically *valid* ≠ *renders correctly*. In **sequence-diagram** text, `#` starts

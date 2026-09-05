@@ -151,6 +151,37 @@
         "title": "AdminHealthRead",
         "type": "object"
       },
+      "AdminOverviewRead": {
+        "description": "The four Overview stat cards, workspace-wide (#1696) \u2014 counted over every\nsuite/run/incident in the workspace, not the caller's grants.",
+        "properties": {
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "incidents": {
+            "$ref": "#/components/schemas/OverviewIncidentsRead"
+          },
+          "members": {
+            "$ref": "#/components/schemas/OverviewMembersRead"
+          },
+          "runs_today": {
+            "$ref": "#/components/schemas/OverviewRunsTodayRead"
+          },
+          "suites": {
+            "$ref": "#/components/schemas/OverviewSuitesRead"
+          }
+        },
+        "required": [
+          "members",
+          "suites",
+          "incidents",
+          "runs_today",
+          "generated_at"
+        ],
+        "title": "AdminOverviewRead",
+        "type": "object"
+      },
       "AdminSuiteRead": {
         "properties": {
           "check_count": {
@@ -4928,6 +4959,110 @@
         "title": "OtpVerify",
         "type": "object"
       },
+      "OverviewIncidentsRead": {
+        "description": "`open` counts every UNRESOLVED incident, and `acknowledged` is the subset of\nthose someone has picked up \u2014 so `acknowledged` is never larger than `open`, and\nan acknowledged incident is still open (acknowledging silences nothing).",
+        "properties": {
+          "acknowledged": {
+            "title": "Acknowledged",
+            "type": "integer"
+          },
+          "open": {
+            "title": "Open",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "open",
+          "acknowledged"
+        ],
+        "title": "OverviewIncidentsRead",
+        "type": "object"
+      },
+      "OverviewMembersRead": {
+        "description": "Workspace membership. `pending_first_signin` is `null` \u2014 never `0` \u2014 while\nDataQ has no invite record to count: a user row is created BY the first\nsuccessful sign-in, so an admitted-but-never-signed-in person leaves no trace\nhere. `pending_source` says which it is.",
+        "properties": {
+          "pending_first_signin": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pending First Signin"
+          },
+          "pending_source": {
+            "const": "not_available",
+            "default": "not_available",
+            "title": "Pending Source",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total"
+        ],
+        "title": "OverviewMembersRead",
+        "type": "object"
+      },
+      "OverviewRunsTodayRead": {
+        "description": "Runs created since `since` (the start of the current UTC day, not the\nviewer's local day). `total` also counts queued and cancelled runs, so the three\nnamed states do not necessarily sum to it.",
+        "properties": {
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "running": {
+            "title": "Running",
+            "type": "integer"
+          },
+          "since": {
+            "format": "date-time",
+            "title": "Since",
+            "type": "string"
+          },
+          "succeeded": {
+            "title": "Succeeded",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "succeeded",
+          "failed",
+          "running",
+          "since"
+        ],
+        "title": "OverviewRunsTodayRead",
+        "type": "object"
+      },
+      "OverviewSuitesRead": {
+        "description": "`connections` is the number of DISTINCT connections the suites target, not\nthe number of connections configured \u2014 a connection no suite runs against is\nnot counted.",
+        "properties": {
+          "connections": {
+            "title": "Connections",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "connections"
+        ],
+        "title": "OverviewSuitesRead",
+        "type": "object"
+      },
       "PipelineRunRead": {
         "description": "A monitored orchestrator pipeline/DAG run (`pipeline_runs` \u2260 `runs`).",
         "properties": {
@@ -8138,6 +8273,28 @@
           }
         },
         "summary": "Inbound orchestration webhook config (admin)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/overview": {
+      "get": {
+        "description": "Counts only. The health signals beside these cards come from\n`GET /admin/health` and `GET /admin/secret-sweep`, which classify their own\nblind spots; nothing here is inferred from them.",
+        "operationId": "get_admin_overview_api_v1_admin_overview_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOverviewRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Overview stat cards \u2014 members, suites, incidents, runs today (admin)",
         "tags": [
           "admin"
         ]

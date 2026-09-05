@@ -10,9 +10,45 @@ test.describe('Admin control centre', () => {
     await expect(page).toHaveURL(/\/admin\/overview$/);
 
     const main = page.getByRole('main');
-    for (const card of ['Suites', 'Members', 'Access grants']) {
+    for (const card of ['Members', 'Suites', 'Open incidents', 'Runs today']) {
       await expect(main.getByText(card, { exact: true }).first()).toBeVisible();
     }
+    // The seed has no invite record, so this must read as untracked, not as zero.
+    await expect(main.getByText('Pending first sign-in is not tracked yet')).toBeVisible();
+    await expect(main.getByText(/across \d+ connection\(s\)/)).toBeVisible();
+  });
+
+  test('overview states every health signal, including the ones nothing watches', async ({
+    page,
+  }) => {
+    await page.goto('/admin/overview');
+    const main = page.getByRole('main');
+
+    await expect(main.getByText('Needs attention')).toBeVisible();
+    await expect(main.getByText('Workspace health')).toBeVisible();
+    for (const item of [
+      'Audit chain',
+      'Scheduler & worker',
+      'Secret store',
+      'Orchestration polling',
+    ]) {
+      await expect(main.getByText(item, { exact: true })).toBeVisible();
+    }
+    // Never verified on load — the same rule the compliance card follows.
+    await expect(main.getByText('Not verified this session')).toBeVisible();
+
+    // The seeded stack never polls its orchestration connections, so at least one row must
+    // be present and it must say "not monitored" rather than being quietly absent.
+    const feedRow = main
+      .getByText(/polling not monitored|never observed|never run|Queue depth unknown/)
+      .first();
+    await expect(feedRow).toBeVisible();
+    // Every signal carries a verb that goes somewhere.
+    await expect(
+      main
+        .getByRole('link', { name: /View connection|View connections|Details|View suites/ })
+        .first(),
+    ).toBeVisible();
   });
 
   test('deep-links straight into a sub-page and switches tabs by URL', async ({ page }) => {

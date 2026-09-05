@@ -26,7 +26,9 @@ def test_env_template_selects_local_implementations() -> None:
     """
     values = _template()
     assert values["SECRET_STORE"] == "openbao"  # local vault in compose, not azure_key_vault
-    assert values["AUTH_DEV_BYPASS"] == "true"
+    # Local != no-auth: the stack boots into email OTP against the bundled catcher; the
+    # developer bypass is an explicit opt-in (#1901).
+    assert values["AUTH_DEV_BYPASS"] == "false"
     # Every cloud-specific knob ships blank — present for discoverability, unset
     # so nothing reaches for a cloud SDK by default.
     for key in (
@@ -78,4 +80,4 @@ def test_deployment_guide_documents_the_azure_free_path() -> None:
     guide = (_ROOT / "docs" / "site" / "operate" / "deployment.md").read_text()
     assert "## Running DataQ without Azure" in guide
     assert "SECRET_STORE=openbao" in guide
-    assert "AUTH_DEV_BYPASS" in guide
+    assert "AUTH_DEV_BYPASS" not in guide  # contributor-only; documented in CONTRIBUTING.md

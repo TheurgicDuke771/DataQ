@@ -658,3 +658,32 @@ def _missing_auth_email_vars(settings: "Settings") -> list[str]:
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings()
+
+
+def dev_bypass_conflicts(settings: Settings) -> list[str]:
+    """Why AUTH_DEV_BYPASS=true must not boot: it is an explicit developer opt-in, never a
+    fallback, so it is refused outside ENVIRONMENT=dev and beside any real sign-in mode."""
+    if not settings.auth_dev_bypass:
+        return []
+    problems: list[str] = []
+    if settings.environment != "dev":
+        problems.append(
+            f"AUTH_DEV_BYPASS=true is only honoured with ENVIRONMENT=dev (got "
+            f"{settings.environment!r}) — set AUTH_DEV_BYPASS=false on this deployment"
+        )
+    others = [
+        name
+        for name, on in (
+            ("Azure AD", settings.azure_auth_configured),
+            ("generic OIDC", settings.generic_oidc_configured),
+            ("email OTP", settings.otp_auth_configured),
+        )
+        if on
+    ]
+    if others:
+        problems.append(
+            "AUTH_DEV_BYPASS=true cannot be combined with a real sign-in mode ("
+            + ", ".join(others)
+            + ") — pick one; the bypass is never a fallback"
+        )
+    return problems

@@ -1,41 +1,13 @@
 import { Alert, Button, Descriptions, Flex, Tag, Typography } from 'antd';
-import { useState } from 'react';
 
-import { type AuditChainStatus, verifyAuditChain } from '../../api/admin';
+import type { AuditChainStatus } from '../../api/admin';
 import { formatTimestamp } from '../../components/results/resultsFormat';
-import { type FetchFailure, fetchFailure } from '../../utils/errors';
 import { Section } from './parts';
-
-/** Verification walks the whole hashed set, so it is never run on mount — the
- *  card opens in this state and stays here until the admin asks for it. */
-type VerifyState =
-  | { status: 'idle' }
-  | { status: 'running' }
-  | { status: 'done'; result: AuditChainStatus; checkedAt: string }
-  | { status: 'failed'; failure: FetchFailure };
-
-const STATUS_TAG: Record<AuditChainStatus['status'], { color: string; label: string }> = {
-  ok: { color: 'green', label: 'Intact' },
-  broken: { color: 'red', label: 'Broken' },
-  // Not "intact": no hashed row has been written yet, so nothing was checked.
-  empty: { color: 'default', label: 'Nothing to verify' },
-};
+import { STATUS_TAG, useAuditChainVerify } from './useAuditChainVerify';
 
 /** Tamper-evidence status for the append-only audit log (ADR 0041 §9). */
 export function AuditChainCard() {
-  const [state, setState] = useState<VerifyState>({ status: 'idle' });
-
-  const verify = async () => {
-    setState({ status: 'running' });
-    try {
-      const result = await verifyAuditChain();
-      setState({ status: 'done', result, checkedAt: new Date().toISOString() });
-    } catch (err) {
-      // A failed verification is never rendered as an intact chain — the one
-      // question this card answers is the one where a wrong answer is worst.
-      setState({ status: 'failed', failure: fetchFailure(err) });
-    }
-  };
+  const { state, verify } = useAuditChainVerify();
 
   return (
     <Section title="Audit chain">

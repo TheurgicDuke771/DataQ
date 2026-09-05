@@ -5,7 +5,7 @@ import ssl
 import time
 import uuid
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from email.message import EmailMessage
 from typing import Any, ClassVar
 
@@ -18,9 +18,12 @@ from backend.app.core.auth import DEV_BYPASS_EMAIL
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.models import (
     ORCHESTRATION_PROVIDERS,
+    Asset,
     AuditEvent,
     Check,
     Connection,
+    Incident,
+    Run,
     Share,
     Suite,
     User,
@@ -89,6 +92,7 @@ def test_non_admin_gets_403(client: TestClient, as_role: Any) -> None:
         "/api/v1/admin/access",
         "/api/v1/admin/orchestration/webhooks",
         "/api/v1/admin/health",
+        "/api/v1/admin/overview",
     ):
         resp = client.get(path, headers=headers)
         assert resp.status_code == 403, path
@@ -1129,3 +1133,112 @@ def test_admin_health_credentials_are_sorted_failing_first(
     # admin page is read top-down and the row needing action must not sit below one
     # that does not.
     assert [r["connection_id"] for r in ours] == [str(failing.id), str(healthy.id)]
+
+
+# ── overview stat cards (#1696) ─────────────────────────────────────────────────
+
+
+def _overview(client: TestClient) -> Any:
+    resp = client.get("/api/v1/admin/overview")
+    assert resp.status_code == 200
+    return resp.json()
+
+
+def _incident(db_session: Any, suite: Suite, status: str) -> Incident:
+    asset = Asset(namespace="probe://overview", name=f"a_{uuid.uuid4().hex[:8]}")
+    check = Check(
+        suite_id=suite.id,
+        name=f"c_{uuid.uuid4().hex[:8]}",
+        expectation_type="expect_column_values_to_not_be_null",
+        config={"column": "EMAIL"},
+    )
+    db_session.add_all([asset, check])
+    db_session.flush()
+    incident = Incident(asset_id=asset.id, check_id=check.id, suite_id=suite.id, status=status)
+    db_session.add(incident)
+    db_session.flush()
+    return incident
+
+
+def test_overview_counts_suites_and_the_connections_they_target(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _grant_admin(monkeypatch)
+    before = _overview(client)
+    owner = _user(db_session, f"ov-{uuid.uuid4().hex[:8]}@x.io")
+    conn_a = _connection(db_session, owner)
+    conn_b = _connection(db_session, owner)
+    # Two suites on ONE connection + one on another: three suites, two connections —
+    # so a `count(connection_id)` that forgot DISTINCT would read 3.
+    _suite(db_session, owner, conn_a, "ov-1")
+    _suite(db_session, owner, conn_a, "ov-2")
+    _suite(db_session, owner, conn_b, "ov-3")
+    db_session.commit()
+
+    after = _overview(client)
+
+    assert after["suites"]["total"] - before["suites"]["total"] == 3
+    assert after["suites"]["connections"] - before["suites"]["connections"] == 2
+    assert after["members"]["total"] - before["members"]["total"] == 1
+
+
+def test_overview_members_pending_first_signin_is_null_not_zero(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A `0` would claim everyone admitted has signed in; DataQ has no invite record
+    to count, so the honest answer is "not available" and the UI renders an em dash.
+    """
+    _grant_admin(monkeypatch)
+
+    body = _overview(client)
+
+    assert body["members"]["pending_first_signin"] is None
+    assert body["members"]["pending_source"] == "not_available"
+
+
+def test_overview_open_incidents_include_acknowledged_and_exclude_resolved(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _grant_admin(monkeypatch)
+    before = _overview(client)
+    owner = _user(db_session, f"ov-{uuid.uuid4().hex[:8]}@x.io")
+    suite = _suite(db_session, owner, _connection(db_session, owner), "ov-inc")
+    _incident(db_session, suite, "open")
+    _incident(db_session, suite, "acknowledged")
+    _incident(db_session, suite, "resolved")
+    db_session.commit()
+
+    after = _overview(client)
+
+    # Acknowledging silences nothing, so an acknowledged incident is still open —
+    # `acknowledged` is a SUBSET of `open`, not a sibling bucket.
+    assert after["incidents"]["open"] - before["incidents"]["open"] == 2
+    assert after["incidents"]["acknowledged"] - before["incidents"]["acknowledged"] == 1
+
+
+def test_overview_runs_today_breaks_down_by_status_and_stops_at_the_utc_day(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _grant_admin(monkeypatch)
+    before = _overview(client)
+    owner = _user(db_session, f"ov-{uuid.uuid4().hex[:8]}@x.io")
+    suite = _suite(db_session, owner, _connection(db_session, owner), "ov-runs")
+    now = datetime.now(UTC)
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    for status_ in ("succeeded", "succeeded", "failed", "running", "queued"):
+        db_session.add(Run(suite_id=suite.id, status=status_, created_at=now))
+    # Yesterday, one second before the window opens.
+    db_session.add(
+        Run(suite_id=suite.id, status="succeeded", created_at=day_start - timedelta(seconds=1))
+    )
+    db_session.commit()
+
+    after = _overview(client)
+    today = after["runs_today"]
+
+    assert today["succeeded"] - before["runs_today"]["succeeded"] == 2
+    assert today["failed"] - before["runs_today"]["failed"] == 1
+    assert today["running"] - before["runs_today"]["running"] == 1
+    # `total` counts the queued run too, which is why the three named states need not sum to it.
+    assert today["total"] - before["runs_today"]["total"] == 5
+    assert today["since"].startswith(day_start.strftime("%Y-%m-%dT00:00:00"))
