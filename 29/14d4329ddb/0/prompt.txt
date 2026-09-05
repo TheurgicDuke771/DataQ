@@ -1,0 +1,10 @@
+<task-notification>
+<task-id>af79a85b37e9bbe7e</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/af79a85b37e9bbe7e.output</output-file>
+<status>completed</status>
+<summary>Agent "#1698 admin write pass" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Stale wait loop draining again — no action. Task complete: PR #1900, CI 15/15 green, not merged.</result>
+<usage><subagent_tokens>367450</subagent_tokens><tool_uses>198</tool_uses><duration_ms>2051414</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-af79a85b37e9bbe7e</worktreePath><worktreeBranch>worktree-agent-af79a85b37e9bbe7e</worktreeBranch></worktree>
+</task-notification>
