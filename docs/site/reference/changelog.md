@@ -5,6 +5,19 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ## Unreleased
 
+### Changed
+
+- **The admin area is now six routed, deep-linkable pages.** `/admin` splits into
+  `overview`, `members`, `suites`, `settings`, `compliance` and `integrations` —
+  the tab you are on is the URL, so any tab can be bookmarked, shared or
+  reloaded in place, and each page loads only its own data instead of one long
+  scroll fetching everything. The standalone workspace **Settings** page folds
+  in: `/settings` redirects to `/admin/settings`, and the sidebar carries a
+  single **Admin** entry instead of two links to the same area. Every admin
+  route is gated at the route, so a deep link (or a demoted user's bookmark)
+  gets the Forbidden page and fetches nothing. See the
+  [admin control centre guide](../guides/admin.md).
+
 ### Added
 
 - **Zero-sample privacy mode.** A deployment-level switch

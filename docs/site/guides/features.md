@@ -202,7 +202,7 @@ Delivered when a run breaches its threshold ([Notifications & alerting](notifica
   test a **connection** — connections are shared infrastructure holding credentials, so
   Members consume them but don't manage them. Member can create/own suites and receive
   `edit` shares; Viewer is capped at `view` everywhere, including on any share. Roles are
-  managed under `/admin` by an existing Admin; `WORKSPACE_ADMIN_EMAILS` still works as a
+  managed under [`/admin/members`](admin.md) by an existing Admin; `WORKSPACE_ADMIN_EMAILS` still works as a
   bootstrap/break-glass allowlist for a fresh or locked-out workspace.
 
 ## AI-assisted authoring and root-cause analysis
