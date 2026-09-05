@@ -20,6 +20,24 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Added
 
+- **Workspace membership is managed in the app.** **Admin → Members** gains an
+  **Add member** dialog (email plus an optional initial role) and per-row removal,
+  so admitting or removing somebody no longer means editing deployment config and
+  restarting. Removal takes effect on that person's **next request** for every
+  credential kind — an identity-provider sign-in, a live browser session, and every
+  API key they hold — which closes a gap where a departed member's API key kept
+  working indefinitely. Adding a member does not create an account at your identity
+  provider; that stays a prerequisite, and the dialog says so.
+
+    ⚠️ **Adding the first member turns enforcement on for the whole workspace.**
+    Until then nothing changes: who may sign in is decided entirely by your existing
+    allowlist settings. The first add also admits every existing user in the same
+    transaction, so nobody signed in is evicted — those rows are flagged under a
+    **review imported members** banner to confirm or remove, because a user record
+    proves somebody signed in once, not that they still belong. The allowlist
+    settings stay available as grant-only break-glass. See the
+    [admin control centre guide](../guides/admin.md).
+
 - **Four admin capabilities that had no UI now have one.** On **Admin → Compliance**:
   audit-chain verification behind an explicit **Verify now** (it reads the whole hashed
   set, so it never runs on page load) reporting intact / broken-at-an-event / nothing-to-

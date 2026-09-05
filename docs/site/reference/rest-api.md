@@ -215,6 +215,10 @@ an outbound model request.
 |---|---|---|
 | GET | `/admin/suites` · `/admin/users` · `/admin/access` | Unscoped workspace-wide views. |
 | PATCH | `/admin/users/{id}/role` | Change a workspace role (last-admin guarded; audit-tabled). |
+| GET | `/admin/members` | Workspace membership, with whether enforcement is on and how many users a first add would import. |
+| POST | `/admin/members` | Admit an address, with an optional initial role. The first add turns enforcement on and imports existing users for review (audited). |
+| DELETE | `/admin/members/{id}` | Withdraw a membership — bites on the next request for every credential kind. Last-admin guarded; `confirm_self=true` to remove your own (audited). |
+| POST | `/admin/members/{id}/confirm` | Clear the provisional flag on an imported member. Grants nothing new (audited). |
 | GET | `/admin/audit-events` | The append-only audit log (config + data-access events, ADR 0041). |
 | GET | `/admin/deployment` | Declared residency / deployment posture (`DEPLOYMENT_REGION`). |
 | GET | `/admin/orchestration/webhooks` | Webhook receiver URLs + auth mode per provider. |

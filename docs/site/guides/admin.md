@@ -47,6 +47,87 @@ signal exists. Poll staleness, scheduler heartbeat, queue depth and datasource c
 health have no read API today, so an empty panel means nothing is being watched — not that
 everything is healthy. Rows appear here as those signals ship.
 
+## Members
+
+The Members tab manages two different things, and it helps to keep them apart:
+
+- **Workspace membership** — *who is allowed into this workspace at all.*
+- **Roles and access grants** — *what someone who is already in can do.*
+
+### Adding a member
+
+**Add member** admits an email address. It does **not** create an account anywhere. If
+your deployment signs people in through an identity provider, that account is still a
+prerequisite: create it there first, or the person will have nothing to sign in with. The
+add dialog says so in those modes.
+
+You can also set an **initial role** at the same time, so somebody arrives as a Viewer or
+an Admin instead of the default. That role is applied **once**, when their user record is
+first created at their first sign-in. After that the role editor in the members table is
+authoritative, and signing in again never overwrites a role you changed in the app.
+
+A member who has been added but has never signed in shows as **pending first sign-in**.
+That is a normal state, not a failure.
+
+### The enforcement switch
+
+Membership enforcement is **off** while the member list is empty, and turning it on is an
+explicit act: **adding the first member turns it on.** Until then, who may sign in is
+decided entirely by your deployment's allowlist settings, exactly as it was before this
+feature existed. An empty members list therefore means *enforcement is off*, not *nobody
+has access* — the page says which.
+
+Once the list is non-empty, a person may sign in if they are **either** on the member list
+**or** named by the deployment allowlist. Those settings are grant-only: they can admit
+somebody the list does not name, and they can never remove somebody the list does. The
+practical consequence is that **removing an address your deployment config lists still
+takes a config edit and a restart** — so seed the minimum there and add the rest in the
+app.
+
+### Review imported members
+
+Turning enforcement on can never evict somebody who is signed in right now. The first add
+therefore admits **every existing user** in the same transaction, and the dialog states the
+count before you commit to it.
+
+Those rows are marked as imported and gathered under a **review imported members** banner,
+because a user record proves somebody signed in once — not that they still belong here.
+Nothing deletes user records, so the import re-admits everyone who ever signed in,
+including people who left. Work through the banner and **Confirm** or **Remove** each row.
+Confirming grants nothing new; it records that an admin looked at the row and meant to keep
+it.
+
+### Removing a member
+
+Removal takes effect on that person's **next request**, whatever credential they are
+holding:
+
+- their browser session stops resolving, even though it has not expired;
+- **every API key they own stops working**, without anyone revoking a token;
+- a sign-in attempt is refused rather than re-provisioning them.
+
+Two guards apply. You cannot remove the **last Admin** — promote somebody else first, or
+the workspace would have nobody who can manage it. And removing **your own** membership
+asks for an extra confirmation, because it signs you out and only another admin can add you
+back.
+
+### Seed and emergency access
+
+Two deployment settings stay available and are deliberately grant-only, as break-glass:
+
+| Setting | What it does |
+|---|---|
+| `OIDC_ALLOWED_EMAILS` / `OIDC_ALLOWED_DOMAINS` | Admits addresses on an identity-provider deployment, whether or not the member list names them. |
+| `AUTH_OTP_ALLOWED_EMAILS` / `AUTH_OTP_ALLOWED_DOMAINS` | The same for email-code sign-in. Still required at boot in that mode, since the first admin has to come from somewhere. |
+| `WORKSPACE_ADMIN_EMAILS` | Grants the Admin role regardless of the stored one (see roles, below). |
+
+If a membership change locks the workspace out, add the address to the matching setting and
+restart. That path exists precisely so a mistake in the app is recoverable outside it.
+
+Local and evaluation stacks that run without any identity provider are exempt from
+membership enforcement entirely, so adding a member there cannot lock you out of your own
+laptop.
+
 ## Compliance
 
 ### Audit chain
