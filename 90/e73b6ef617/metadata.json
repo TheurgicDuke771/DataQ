@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "90e73b6ef617",
+  "strategy": "manual-commit",
+  "branch": "chore/issue-1903-write-pass-followups",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/90/e73b6ef617/0/metadata.json",
+      "transcript": "/90/e73b6ef617/0/full.jsonl",
+      "compact_transcript": "/90/e73b6ef617/0/transcript.jsonl",
+      "content_hash": "/90/e73b6ef617/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 10242,
+    "cache_creation_tokens": 4007311,
+    "cache_read_tokens": 199971843,
+    "output_tokens": 324835,
+    "api_call_count": 401
+  }
+}
