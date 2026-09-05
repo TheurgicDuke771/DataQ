@@ -1,0 +1,395 @@
+#1905 is bocked due to conflict
+
+---
+
+<task-notification>
+<task-id>a0ba63f5239993281</task-id>
+<tool-use-id>toolu_019amySfygQFbbpvu9BBHuSt</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a0ba63f5239993281.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle: simplification" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>[
+  {
+    "file": "backend/app/api/v1/admin_members.py",
+    "line": 69,
+    "summary": "`_read` hand-copies all nine `MemberRow` fields into `MemberRead` even though `MemberRead` already declares `from_attributes=True` (never used) — `MemberRead.model_validate(row)` does the same job, `status` included since `from_attributes` reads properties.",
+    "failure_scenario": "The next field added to `MemberRow` (or the next rename) has to be mirrored in the dataclass, the Pydantic model AND `_read`; forgetting the third silently drops the field from every response while the `from_attributes` config sits there implying the copy is automatic."
+  },
+  {
+    "file": "backend/app/api/v1/admin_members.py",
+    "line": 121,
+    "summary": "`MemberAddedRead.enforcement_active` is the literal constant `True` (a successful add always turns enforcement on) and nothing on the frontend reads `MemberAdded.enforcement_active` — drop the field from both the response model and `frontend/src/api/admin.ts`.",
+    "failure_scenario": "A reader of the API/TS types assumes the value can vary and writes a branch on it (or a test asserting it) that can never exercise the other arm; the field is an inert knob in the contract that has to be carried through every future change to the add response."
+  },
+  {
+    "file": "backend/app/services/membership_service.py",
+    "line": 205,
+    "summary": "`list_members` looks up `users[normalize_email(row.email)]` twice per row (four `normalize_email` calls) and `_reread` (line 314) then rebuilds the ENTIRE member list to return one row after every add/confirm — a single `_member_row(row, users)` builder called from both `list_members` and a direct fetch of the one row keeps the 'same shape' guarantee without the O(n) rescan.",
+    "failure_scenario": "Every add/confirm costs a full `users` + `workspace_members` scan plus per-row dict lookups; on a workspace with a few thousand users the admin write path becomes noticeably slower than the read it wraps, and the duplicated lookup expression is the kind that drifts when `stored_role` gains a sibling field."
+  },
+  {
+    "file": "backend/app/core/auth.py",
+    "line": 725,
+    "summary": "The generic-OIDC resolvers (here and `mcp/auth.py:178`) evaluate `membership_service.is_member` and then `_upsert_user` (line 414) runs `require_member` again for the same email in the same request with a DIFFERENT `unmanaged_default` (the caller's `_oidc_access_allowed` vs the hard-coded `True`) — thread `unmanaged_default` into `_upsert_user` and gate once there, or skip the pre-check when `_upsert_user` is about to gate anyway.",
+    "failure_scenario": "Two gates with subtly different inputs on one path means a future semantic change (e.g. an allowlist that can also DENY) gets applied to one and not the other, and each OIDC request pays up to four extra membership queries (`enforcement_active` + `_row_for`, twice) before the user row is even touched."
+  },
+  {
+    "file": "backend/app/core/auth.py",
+    "line": 49,
+    "summary": "`_dev_bypass_allowed(settings)` is now a one-line alias for the new `settings.dev_bypass_allowed` property and `_denied_identity` (line 710) a one-line alias for `identity_log_fields`, yet both are still exported to `mcp/auth.py` (which also keeps importing `normalize_email` via the `otp_service` re-export instead of `core.identity`) — delete the aliases and import the canonical names directly.",
+    "failure_scenario": "Three names for the same predicate (`_dev_bypass_allowed`, `dev_bypass_allowed`, `dev_bypass_active`) and two for the same log helper invite the exact confusion the PR's own comment warns about — the next reader picks `_dev_bypass_allowed` for a membership exemption because it's what `mcp/auth.py` already imports, re-opening the OTP-beside-bypass hole `dev_bypass_active` exists to close."
+  },
+  {
+    "file": "frontend/src/pages/admin/MembershipPanel.tsx",
+    "line": 91,
+    "summary": "The 'Review imported members' alert re-lists rows that are already in the table below, duplicating the same Remove `Popconfirm` (title/description/okText copied verbatim from the column at line 180) and adding a Confirm button only there — put a Confirm action in the table's action column for `auto_import` rows and reduce the alert to the count + explanation.",
+    "failure_scenario": "Two independent copies of the destructive-action UI drift on the next wording or safety change (one already differs: the column says '...including any API keys they hold', the alert omits 'they hold'), and removing yourself from the alert path stacks a `Popconfirm` on top of the `Modal.confirm` self-removal dialog — two confirmations for one action that the table path handles once."
+  }
+]</result>
+<usage><subagent_tokens>130158</subagent_tokens><tool_uses>8</tool_uses><duration_ms>114717</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a9f0c797ad727429c</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a9f0c797ad727429c.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle: efficiency" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>[
+  {
+    "file": "backend/app/core/auth.py",
+    "line": 725,
+    "summary": "The generic-OIDC resolver (REST here, and the same shape in mcp/auth.py:178) calls `membership_service.is_member` and then `_upsert_user` re-runs `require_member` on the same email plus `initial_role_for` a third time — fetch the `WorkspaceMember` row once (a single `_row_for`) and hand the row/verdict into `_upsert_user` instead of re-deriving it.",
+    "failure_scenario": "Every authenticated generic-OIDC request (REST and /mcp) with enforcement on and no explicit env allowlist entry pays `exists()` + lookup in the resolver, then `exists()` + lookup again inside `_upsert_user`, then a third lookup for `initial_role_for` — five extra round-trips on workspace_members before the existing user upsert even starts, for a decision that one query answers."
+  },
+  {
+    "file": "backend/app/services/membership_service.py",
+    "line": 110,
+    "summary": "`is_member` issues a separate `SELECT EXISTS(workspace_members)` before the per-email lookup — do the email lookup first and only fall back to the emptiness probe on a miss (or fold both into one `SELECT` with two scalar subqueries), halving the per-request cost.",
+    "failure_scenario": "PAT (`api_key_service.resolve_token`), OTP session (`session_service.resolve_token`) and Azure AD (`_upsert_user`) are per-request choke points, so with enforcement on every request to /api and /mcp now carries two extra DB round-trips where one suffices; a member hit (the overwhelmingly common case) never needed the emptiness probe at all."
+  },
+  {
+    "file": "backend/app/core/auth.py",
+    "line": 433,
+    "summary": "`initial_role_for(db, email)` is evaluated eagerly inside `values()` on every `_upsert_user` call, even though the seeded role is only used on the new-row branch — gate it on `enforcement_active` / an actual insert (or reuse the row already fetched by `require_member` two lines up) so the extra lookup disappears on the steady-state path.",
+    "failure_scenario": "Azure AD is the primary production door and upserts the user on EVERY request; the conflict branch is promote-only and ignores `role`, so this lookup by `lower(email)` is wasted on ~100% of requests — and it runs even while `workspace_members` is empty, where `require_member` already short-circuited on `enforcement_active`, meaning a deployment that never enabled membership still pays one extra query per authenticated request."
+  },
+  {
+    "file": "backend/app/services/membership_service.py",
+    "line": 194,
+    "summary": "`list_members` pulls every `users` row into Python (`_users_by_email`) to join on email and count unmanaged users, and `_reread` re-runs that whole listing to return ONE row after add/confirm — replace with a single `LEFT OUTER JOIN users ON lower(users.email) = lower(workspace_members.email)` plus a `COUNT(*) WHERE NOT EXISTS(...)` for the unmanaged count, and a one-row variant of the same join for `_reread`.",
+    "failure_scenario": "`GET /admin/members` materialises the entire users table (and `normalize_email` is recomputed per member three times in the comprehension); `POST /admin/members` and `/confirm` then re-materialise both tables a second time just to build the response row — on a workspace with thousands of users that is two full-table loads per admin click, plus `_auto_import` (line 235) inserting one `WorkspaceMember` per user on the first add instead of a single `INSERT ... SELECT FROM users`."
+  },
+  {
+    "file": "backend/app/services/membership_service.py",
+    "line": 359,
+    "summary": "`remove_member` takes `FOR UPDATE` locks on every admin `users` row AND every admin membership row on every removal, even when the target is a plain member — check (from the unlocked read) whether the target's email is an admin at all and only take the admin-invariant locks in that case, otherwise lock just the target row.",
+    "failure_scenario": "Each removal of an ordinary member serialises behind every other removal and behind any concurrent `set_user_role`/admin edit that touches an admin's `users` row (three locking queries instead of one); with N admins that is N+N rows locked per DELETE for an invariant that cannot be violated unless the target is itself an admin membership."
+  },
+  {
+    "file": "frontend/src/pages/admin/MembershipPanel.tsx",
+    "line": 37,
+    "summary": "`act` calls `reload()` after every confirm/remove, refetching the entire membership view although `confirmWorkspaceMember` already returns the updated row and a remove only needs the id dropped — patch the local list (or `useAsyncData` state) with the returned row and reserve the full refetch for `onAdded`, where the auto-import can change many rows.",
+    "failure_scenario": "Reviewing K imported members costs K full `GET /admin/members` round-trips, each of which server-side re-materialises the whole users table (finding above); the panel also rebuilds the `columns(busyId, remove)` array on every render, and `AdminMembers` separately fetches `listAdminUsers` on the same page, so one admin page load scans `users` twice."
+  }
+]</result>
+<usage><subagent_tokens>128808</subagent_tokens><tool_uses>10</tool_uses><duration_ms>132258</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ac7feb68c037d7857</task-id>
+<tool-use-id>toolu_01PSvYzoGAdDwv7NcawtjXdp</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/ac7feb68c037d7857.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle B: removed-behavior audit" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>[
+  {
+    "file": "backend/app/services/session_service.py",
+    "line": 91,
+    "summary": "The session door re-checks membership with env_allowed=False, so the OTP env allowlist (DATAQ_SIGNIN_EMAIL / OTP_ALLOWED_EMAILS/_DOMAINS) that is 'grant-only' at request_code/verify_code is dropped at the very next request — an env-listed address that was never auto-imported can sign in and is then 403'd on every call.",
+    "failure_scenario": "OTP-mode stack, admin has added the first workspace_members row (enforcement on). A new colleague whose address is on AUTH_OTP_ALLOWED_DOMAINS (or DATAQ_SIGNIN_EMAIL) but who has never signed in (no users row, so not auto-imported) requests a code -&gt; is_signup_eligible True via env_allowed -&gt; verifies -&gt; resolve_or_create_user creates the users row -&gt; create_session mints dq_sess_ cookie -&gt; GET /api/v1/me -&gt; session_service.resolve_token -&gt; require_member(env_allowed=False) -&gt; enforcement_active and no row -&gt; MembershipDeniedError 403 'not_a_workspace_member'. Sign-in succeeds, workspace is unusable; the ADR's 'allowlist can admit' claim holds only for the OTP endpoints, not for the session those endpoints mint."
+  },
+  {
+    "file": "backend/app/services/api_key_service.py",
+    "line": 165,
+    "summary": "PAT resolution re-checks membership with env_allowed=False for every credential kind, so an identity admitted only by the OIDC or OTP env allowlist (_oidc_allowlist_grants / env_signup_allowed) has a working browser sign-in but every PAT it mints is refused on REST (403) and at /mcp (401) — and in OTP mode the PAT is the ONLY /mcp credential.",
+    "failure_scenario": "Generic-OIDC deployment with OIDC_ALLOWED_EMAILS=grace@corp.com, enforcement already on, grace has no workspace_members row (first sign-in after the switch, or removed by an admin). Browser: _resolve_generic_oidc_user -&gt; is_member(env_allowed=True) -&gt; admitted, users row upserted. She creates a PAT in the UI, then `curl -H 'Authorization: Bearer dq_live_…' /api/v1/suites` -&gt; api_key_service.resolve_token -&gt; require_member(door='api_key', env_allowed=False) -&gt; 403; same token at /mcp -&gt; _PatOrJwtVerifier swallows the DataQError -&gt; 401. Same shape for an OTP-allowlisted user whose only /mcp path is a PAT."
+  },
+  {
+    "file": "backend/app/core/auth.py",
+    "line": 413,
+    "summary": "The Azure AD / generic-OIDC upsert door passes env_allowed=False and ignores WORKSPACE_ADMIN_EMAILS, so the ADR 0033 'bootstrap seed + lockout break-glass' allowlist can no longer get an operator into a workspace once workspace_members is populated — the break-glass is behind the door it was meant to open.",
+    "failure_scenario": "Azure-AD prod, enforcement on. Every stored-role admin has left (their members rows removed/auto-imported as member, or the only admin account is disabled at the IdP). Ops sets WORKSPACE_ADMIN_EMAILS=oncall@corp.com and redeploys; oncall (never signed in, no members row) authenticates with a valid Azure token -&gt; _get_current_user_real -&gt; _upsert_user -&gt; membership_service.require_member(env_allowed=False) -&gt; enforcement_active and no row -&gt; 403 before bootstrap_role ever runs. No in-app path exists to add the row (only admins can POST /admin/members), so the documented recovery path is dead."
+  },
+  {
+    "file": "backend/app/services/membership_service.py",
+    "line": 316,
+    "summary": "remove_member's contract 'Bites on the removed user's next request' is only true for the session and PAT doors; for an env-allowlisted identity the OIDC/OTP sign-in doors re-admit it (grant-only), so removal produces a half-revoked account (browser works, PAT/session dead) and the Members page reports the address as simply absent.",
+    "failure_scenario": "Generic-OIDC deployment, OIDC_ALLOWED_DOMAINS=corp.com, enforcement on. Admin removes bob@corp.com via DELETE /admin/members/{id} (audited as workspace_member.remove). Bob's existing dq_sess_/PAT credentials now 403, but his next SPA reload with a fresh IdP token -&gt; _oidc_allowlist_grants True -&gt; is_member True -&gt; _upsert_user succeeds -&gt; full access restored, with no members row and no 'pending/auto_import' indicator. Admin believes bob is out; bob is in via the browser."
+  },
+  {
+    "file": "backend/tests/core/test_membership_gates.py",
+    "line": 270,
+    "summary": "test_removing_an_ENV_LISTED_address_does_not_revoke_it asserts the grant-only rule only at otp_service.is_signup_eligible and never follows that identity through create_session/resolve_token or create_key/resolve_token, so the suite is green while the env-listed identity is denied at the doors it reaches one request later (findings 1 and 2 are untested by construction).",
+    "failure_scenario": "Extend the test: after remove_member, run verify_code -&gt; create_session(user) -&gt; session_service.resolve_token(token) under enforcing_env — it raises MembershipDeniedError (403), contradicting the test's own docstring that the address 'is re-admitted' by the env allowlist. The choke-point-2/3 tests only ever exercise addresses at _addr('…@example.com'), which no env allowlist names, so the env_allowed=False hardcoding at those doors is never observed."
+  },
+  {
+    "file": "backend/tests/services/test_otp_service.py",
+    "line": 96,
+    "summary": "The domain-allowlist tests (parametrised domain cases, off-domain explicit email, and the evil-acme.io / acme.io.evil.net lookalike-suffix attack) were retargeted from is_signup_eligible to the new env_signup_allowed helper, so the function request_code/verify_code actually call is no longer directly asserted to reject a lookalike domain.",
+    "failure_scenario": "A future edit to is_signup_eligible (e.g. passing unmanaged_default=True 'to match the other doors', or computing env_allowed from the raw rather than normalized address) would let ada@evil-acme.io through request_code while every renamed test in this file stays green, because they now assert only the helper; the composed gate's rejection of the suffix attack is covered only indirectly via the request/verify tests that use plain ineligible addresses, not the lookalike ones."
+  }
+]</result>
+<usage><subagent_tokens>139866</subagent_tokens><tool_uses>12</tool_uses><duration_ms>206782</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aafbdb854210f47c8</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/aafbdb854210f47c8.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle: reuse" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>[
+  {
+    "file": "backend/app/services/membership_service.py",
+    "line": 359,
+    "summary": "`remove_member` re-implements the locked stored-admin snapshot + `x in admin_ids and admin_ids &lt;= {x}` last-admin predicate that `admin_service.set_user_role` (backend/app/services/admin_service.py:396-430) already has under FOR UPDATE; hoist a shared `locked_stored_admins(session)` helper (admin_service or core.roles) and have both call it.",
+    "failure_scenario": "Two hand-written copies of the 'stored-role admins only, decided from locked state' invariant now live in two services. The role-editor copy also excludes the dev-bypass identity and carries the WORKSPACE_ADMIN_EMAILS-does-not-count message; the membership copy has neither. The next change to what counts as a stored admin (e.g. a deactivated/disabled user flag, or the #310 durable-audit rework) lands in one guard and not its sibling, and the admin-count invariant silently diverges between 'change role' and 'remove membership' — exactly the guard-at-one-door-not-its-sibling shape the RBAC track recorded."
+  },
+  {
+    "file": "backend/app/api/v1/admin_members.py",
+    "line": 69,
+    "summary": "`_read` hand-copies all nine `MemberRow` attributes into `MemberRead`, but `MemberRead` already declares `ConfigDict(from_attributes=True)` — `MemberRead.model_validate(row)` performs the same mapping (the `status` property is read like any attribute).",
+    "failure_scenario": "The dataclass `MemberRow` and the Pydantic `MemberRead` are now the same nine-field shape maintained in three places (dataclass, schema, mapper). Adding a field to `MemberRow` (e.g. `last_seen_at` or `confirmed_at`) and to the schema without touching `_read` raises a Pydantic missing-field error at request time, or — if defaulted — silently returns the default instead of the row's value; `from_attributes` was declared precisely so this mapping did not have to be written by hand."
+  },
+  {
+    "file": "backend/tests/services/test_membership_service.py",
+    "line": 366,
+    "summary": "`probe_engine` is a near-verbatim fourth copy of the scratch-database fixture already in `backend/tests/db/test_access_event_persistence.py:35` (`probe_engine`), `backend/tests/services/test_audit_chain.py:23` (`scratch_session`) and `backend/tests/db/test_audit_retention_privileges.py:45` (`owner_session`); hoist one parametrised fixture into `backend/tests/support/` (or `conftest.py`) and reuse it.",
+    "failure_scenario": "The DROP/CREATE DATABASE + AUTOCOMMIT engine + `Base.metadata.create_all` + teardown dance is copy-pasted per file with only the DB name changed. When the harness needs a fix (CI Postgres privileges change, a `connect_timeout`, a leaked-engine teardown bug, or the `TEST_DATABASE_URL.rsplit('/')` URL surgery breaking on a query-string URL), it has to be applied four times and will be missed in at least one, leaving that file's real-commit tests silently skipping (`pytest.skip` on the ProgrammingError branch) rather than failing."
+  },
+  {
+    "file": "frontend/src/pages/admin/MembershipPanel.tsx",
+    "line": 50,
+    "summary": "Uses antd's static `Modal.confirm` and a hand-rolled `act` + `fetchFailure(err, String(err)).message` + local `error` Alert, whereas the sibling components on this same admin page already use the App-context pattern — `const { message, modal } = App.useApp()` with `modal.confirm` (frontend/src/components/profile/ApiKeysPanel.tsx:108-114, frontend/src/components/suites/SchedulesPanel.tsx:91-114) and `message.error(errorMessage(err))` (frontend/src/components/admin/RoleEditor.tsx:23-44, frontend/src/components/assets/IncidentsPanel.tsx:88-105, whose `act` helper is the same shape).",
+    "failure_scenario": "RoleEditor's own comment records the rule ('`App.useApp()`, not antd's static' API): the static `Modal.confirm` is rendered outside the `&lt;App&gt;`/ConfigProvider tree, so it ignores the app theme/locale and any future App-level config, while the confirm dialog two rows up (in the imported-members banner, and in ApiKeysPanel) honours it. `fetchFailure(err, String(err)).message` reduces to exactly `errorMessage(err, String(err))`, so the classifier is invoked only to throw away its `kind`/`status`; and the same page now surfaces one mutation failure as a toast (role change) and the adjacent one as an inline Alert (membership), a split that every later error-UX change (request-id display, retry affordance) has to be made twice."
+  },
+  {
+    "file": "backend/app/core/auth.py",
+    "line": 49,
+    "summary": "`_dev_bypass_allowed` (line 49) and `_denied_identity` (line 710) are now one-line passthroughs to `Settings.dev_bypass_allowed` and `core.identity.identity_log_fields`, kept alive only so `backend/app/mcp/auth.py:19-20` can keep importing them; `mcp/auth.py:33` likewise still imports `normalize_email` through `otp_service`'s `__all__` re-export instead of its new home `backend/app/core/identity.normalize_email`.",
+    "failure_scenario": "The PR introduces `core/identity.py` and `Settings.dev_bypass_allowed`/`dev_bypass_active` as the single sources of truth but leaves three private aliases pointing at them, so the same rule is reachable under two names in two modules. A later reader of `mcp/auth.py` sees `_dev_bypass_allowed(s)` and `settings.dev_bypass_active` as different predicates (they already differ by the OTP clause) and picks the wrong one for the /mcp exemption; and the `otp_service.normalize_email` re-export means a future 'tighten OTP normalization' edit in otp_service can shadow the shared rule for the MCP door only."
+  },
+  {
+    "file": "backend/app/services/otp_service.py",
+    "line": 47,
+    "summary": "`env_signup_allowed` duplicates the `email in &lt;email_set&gt; or domain in &lt;domain_set&gt;` matching rule that `_oidc_access_allowed` (backend/app/core/auth.py:~693-700) already implements over the OIDC sets; factor one `allowlisted(email, emails, domains)` into `backend/app/core/identity.py` and call it from both (and from the new `_oidc_allowlist_grants`).",
+    "failure_scenario": "The exact-domain (not suffix) matching that `test_a_domain_suffix_is_not_a_domain_match` pins is now implemented twice, but the regression test covers only the OTP copy; a well-meaning 'support subdomains' edit to the OIDC copy would admit `evil-acme.io` on OIDC while OTP still refuses it, and the ADR 0043 'grant-only env allowlist' semantics that this PR builds on top of both would mean different things per door."
+  }
+]</result>
+<usage><subagent_tokens>174463</subagent_tokens><tool_uses>13</tool_uses><duration_ms>203288</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>af65c58d86de085d5</task-id>
+<tool-use-id>toolu_01CkxmP3oGtZZJr6P277qvmF</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/af65c58d86de085d5.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle: CLAUDE.md conventions" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>[
+  {
+    "file": "docs/site/adr/0043-in-app-workspace-membership.md",
+    "line": 42,
+    "summary": "CLAUDE.md §6 step 3: \"Docs updated if required (CLAUDE.md / ADR / CONTRIBUTING / user docs — whichever the change touches)\" — the ADR this PR implements now misdescribes two things the code does.",
+    "failure_scenario": "/Users/arijit/Coding/Python/DataQ/CLAUDE.md §6 'Commit &amp; change discipline' rule 3 and §9 (the ADR index is 'the single source of truth'). ADR 0043 decision 5 (line 42) says 'The exemption keys on `_dev_bypass_allowed(settings)` — the same test the auth-mode ladder uses', but `membership_service.is_member` (line 106) keys on the NEW `Settings.dev_bypass_active` (config.py:481), and the code comment at membership_service.py:100-105 explains precisely why the ADR's stated predicate would be wrong (it stays true beside email OTP, so the gate would be silently off on the default local stack). Line 28 likewise says 'the one normalization rule is `otp_service.normalize_email`', which this PR moved to `core/identity.py`. The PR's diff against main touches no file under docs/site/adr/, so the Accepted ADR records a predicate the shipped code deliberately rejected — the next person reading the ADR to reason about the dev-bypass exemption gets the wrong answer."
+  },
+  {
+    "file": "backend/app/services/membership_service.py",
+    "line": 70,
+    "summary": "CLAUDE.md §10: \"Backward-compatible migrations only. Code that depends on a new column ships in a separate PR *after* the migration is deployed\" — the migration (#1898) is merged but not deployed, and this code makes `workspace_members` a hard dependency of every authenticated request.",
+    "failure_scenario": "/Users/arijit/Coding/Python/DataQ/CLAUDE.md §10 'Critical pointers' (and §6 'Database: Backward-compatible migrations only… Two-step deploys'). `git merge-base --is-ancestor 79407514 6c9588e2` says #1898 is NOT in the last deployed SHA (both clouds on 6c9588e2, 2026-09-02). `enforcement_active` (line 70) is called from `require_member` on every session resolve (session_service.py:91), every PAT resolve incl. /mcp (api_key_service.py:165), every OIDC/Azure sign-in (auth.py:412) and OTP eligibility. If the api/worker image is rolled ahead of `alembic upgrade head` — which this repo does do outside the workflow (`az containerapp update`, `image_tag` rolls, revision rollbacks) — every one of those raises `UndefinedTable`, i.e. a total 500 lockout including admins, with the request-side symptom indistinguishable from an auth outage. The Deploy workflow's migrate-then-roll ordering mitigates this only when that path is used; the rule as written asks for the migration to be deployed first, and ADR 0043 §'Two steps per CLAUDE.md §6' commits to exactly that."
+  },
+  {
+    "file": "backend/app/services/membership_service.py",
+    "line": 100,
+    "summary": "User's standing rule \"keep it code, not prose — minimal comments; rationale goes in the PR, not the file\" with the recorded &lt;0.2 prose-to-code bar; this new module measures 0.24 (29 comment lines + 41 docstring lines over 295 code lines).",
+    "failure_scenario": "Not a repo CLAUDE.md sentence — it is the user's standing feedback in ~/.claude/projects/-Users-arijit-Coding-Python-DataQ/memory/feedback_code_not_prose_comments.md and feedback_prose_trim_lessons.md ('&lt;0.2 prose-to-code standing bar'). Offending blocks: the 6-line comment at membership_service.py:100-105 explaining `dev_bypass_active` vs `dev_bypass_allowed`, the 3-line blocks at 339-341 / 356-358 / 367-369 narrating the lock order, and in auth.py:429-432 a 4-line comment attached to a single `default=` keyword argument explaining the promote-only conflict branch (which the sibling comment at 421-422 already states). This rationale belongs in the PR body/ADR; in the file it is exactly the kind of prose the user has asked to be trimmed, and part of it (the dev_bypass_active justification) is already the correction the ADR should carry instead."
+  }
+]</result>
+<usage><subagent_tokens>139794</subagent_tokens><tool_uses>11</tool_uses><duration_ms>209314</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aa160b5f3f42184ba</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/aa160b5f3f42184ba.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle: altitude" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+[
+  {
+    "file": "backend/app/services/session_service.py",
+    "line": 91,
+    "summary": "The env-allowlist grant is computed at each door and handed in as `env_allowed` (defaulting to False), instead of `is_member` deriving it from Settings itself — so the session and PAT resolvers silently drop the grant and the ADR's own recovery path breaks.",
+    "failure_scenario": "Enforcement on, OTP mode: an address on AUTH_OTP_ALLOWED_* but not in `workspace_members` (exactly decision 7's 'find a gap, an env entry restores access') passes `is_signup_eligible` via the env grant, gets a code, mints a session — and `session_service.resolve_token` calls `require_member(db, user.email, door=\"session\")` with no env grant, so every subsequent request 403s. Same for `api_key_service.resolve_token` (line 165): a PAT owned by an env-admitted generic-OIDC user who is not in the table dies while their bearer keeps working. Deeper fix: delete the `env_allowed` parameter and have `is_member` OR-in `env_signup_allowed` / `_oidc_allowlist_grants` from settings, so no door can forget the grant. No test covers an env-listed, non-table user on the session/PAT doors."
+  },
+  {
+    "file": "backend/app/services/membership_service.py",
+    "line": 79,
+    "summary": "`env_allowed` + `unmanaged_default` are two caller-supplied bools encoding one tri-state (allowlist grants / allowlist denies / no allowlist configured); make it one value computed inside the predicate so the empty-table verdict is derived, not re-stated per door.",
+    "failure_scenario": "Today `_upsert_user` (core/auth.py:413) passes `env_allowed` but leaves `unmanaged_default=True`, so 'choke point 1' does not enforce the OIDC allowlist pre-enforcement at all — the caller does, which is why the generic-OIDC door runs `is_member` twice (in `_resolve_generic_oidc_user` / mcp `resolve_current_user`, then again inside `_upsert_user`): two DB lookups and two verdict sites for one door. Any new caller of `_upsert_user` that computes `env_allowed` but not `unmanaged_default` opens the pre-enforcement door on a deployment that configured an allowlist. One `env_verdict: bool | None` (None = no allowlist) removes the inconsistent-pair state entirely."
+  },
+  {
+    "file": "backend/app/core/auth.py",
+    "line": 852,
+    "summary": "Membership is re-checked inside four resolvers rather than once where a `User` is handed to the app — the `get_current_user` binding (REST) and `mcp.auth.resolve_current_user` (MCP) — with the pre-insert gate kept only at the two row-creation sites; the ADR's stated mitigation (gates declared as data and swept) is also not implemented.",
+    "failure_scenario": "A fifth credential kind (service token, signed-URL share, a new `_get_current_user_*` ladder branch) returns a `User` and passes membership by default, because the absence of `require_member` is silent and `tests/core/test_membership_gates.py` is four hand-written tests, not a GATES table a sweep iterates. A wrapper dependency `get_current_user = _require_member(_resolver)` plus the same line at the top of `resolve_current_user` makes the check structural: any resolver that yields a principal is gated whether or not its author knew membership exists."
+  },
+  {
+    "file": "backend/app/services/membership_service.py",
+    "line": 106,
+    "summary": "The dev-bypass exemption is a mode predicate inside the check (`dev_bypass_active`) that blanket-exempts every credential kind on the stack, rather than exempting the one bypass principal at the two places it is minted.",
+    "failure_scenario": "On the local/eval stacks and the Playwright E2E lane (all dev-bypass) membership enforcement is a no-op for PATs and OTP sessions too — `_get_current_user_dev_bypass` resolves both — so the feature can never be exercised end-to-end outside prod-shaped settings, and it forced a second config property (`dev_bypass_active` vs `dev_bypass_allowed`, config.py:481) whose only purpose is this exemption. Passing an explicit skip from the two `DEV_BYPASS_AAD_OID` mint sites (core/auth.py `_get_current_user_dev_bypass`, mcp/auth.py fallback) exempts the identity, not the mode, and lets a local admin turn enforcement on and watch a removed PAT die."
+  },
+  {
+    "file": "backend/app/core/auth.py",
+    "line": 433,
+    "summary": "`initial_role_for` is composed into `bootstrap_role(..., default=...)` at two separate user-creation sites and runs on every authenticated request; the seed belongs inside `core/roles.bootstrap_role` (which already defines 'the role a NEW row is seeded with'), or in membership as a `seed_role_for(db, email)` the insert branch alone calls.",
+    "failure_scenario": "`membership_service.initial_role_for(db, email)` is evaluated in Python before the upsert statement is built, so every Azure/OIDC request pays an extra `workspace_members` lookup whose result is discarded on the conflict branch — the per-request cost decision 9 tried to avoid. And the composition is duplicated (`otp_service.resolve_or_create_user` line 396); a third creation path (seed script, a future SCIM import) inherits neither. Folding the lookup into `bootstrap_role` gives one precedence rule (admin allowlist &gt; initial_role &gt; mode default) with one owner."
+  },
+  {
+    "file": "backend/app/services/membership_service.py",
+    "line": 359,
+    "summary": "The last-admin guard is re-implemented in `remove_member` beside `admin_service.change_role`'s, each locking its own tables and counting a different population, so the two invariants do not compose; one shared `assert_admin_remains(db, exclude_user=..., exclude_member=...)` that locks both tables in a fixed order and counts 'stored admin AND still a member' is the mechanism.",
+    "failure_scenario": "Two stored-role admins A and B. Remove B's membership — allowed, A remains. Demote A via `PATCH /admin/users/{A}` — `admin_service.change_role` (line 400) counts `users.role == 'admin'` only, sees {A, B}, allows it. The workspace now has no admin who can sign in: B is refused at every door, A is a member. Each guard is individually correct and the pair leaves the exact state both exist to prevent; a shared guard that knows about membership is the only place the cross-table invariant can hold."
+  }
+]
+```</result>
+<usage><subagent_tokens>150297</subagent_tokens><tool_uses>25</tool_uses><duration_ms>220583</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bkw6vo3tj</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/bkw6vo3tj.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for #1904, #1905 and #1906 to merge or fail" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ae13b1191def7a403</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/ae13b1191def7a403.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle A: line-by-line scan" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>[
+  {
+    "file": "backend/app/services/membership_service.py",
+    "line": 108,
+    "summary": "The session and PAT doors call require_member with env_allowed=False, so an address admitted only by the env allowlist (grant-only per ADR 0043 decision 7) can sign in but every subsequent request is 403.",
+    "failure_scenario": "OTP mode, AUTH_OTP_ALLOWED_DOMAINS=acme.io, enforcement on (table non-empty), someone@acme.io has no workspace_members row (never signed in before switch-on, or removed as in test_removing_an_ENV_LISTED_address_does_not_revoke_it). otp_service.is_signup_eligible -&gt; True (env_allowed), verify_code mints a dq_sess_ cookie, then session_service.resolve_token (line 91) -&gt; require_member(env_allowed=False) -&gt; enforcement_active -&gt; _row_for None -&gt; MembershipDeniedError 403 on /me and everything else. Same for generic OIDC: a user on OIDC_ALLOWED_EMAILS without a row signs in fine via the token (env_allowed=True at _upsert_user) but any PAT they mint fails at api_key_service.resolve_token line 165 (403 REST / 401 MCP). Contradicts ADR 0043 decision 3 ('member if in env allowlist OR in the table, checked on every request')."
+  },
+  {
+    "file": "backend/app/services/membership_service.py",
+    "line": 383,
+    "summary": "The membership last-admin guard and admin_service's role last-admin guard (admin_service.py:405/424) each count a different population, so the two together do not preserve 'at least one admin who can actually sign in'.",
+    "failure_scenario": "Enforcement on; A and B are stored-role admins, both members. Remove B's membership: admin_member_ids={A,B}, target B, not the last -&gt; allowed. Now demote A to member via the role editor: admin_service counts stored admins {A,B} (B still role=admin in users) -&gt; 'not the last' -&gt; allowed. Result: no admin holds a membership; B is 403'd at every door and A is a member. Only WORKSPACE_ADMIN_EMAILS or an env edit recovers the workspace. Conversely, if B is a stored admin who signed in after switch-on via the env allowlist (users row, no member row), removing A's row is refused with 'promote another admin first' although B is already an admin and promotion cannot fix it."
+  },
+  {
+    "file": "frontend/e2e/admin.spec.ts",
+    "line": 229,
+    "summary": "The 'switch-on import is surfaced for review' spec depends on state left behind by the preceding spec and on run order, but playwright.config has fullyParallel: true (multiple workers outside CI).",
+    "failure_scenario": "Run frontend/e2e/admin.spec.ts locally (workers undefined, fullyParallel true) or against a fresh stack where the 'admits a member' spec has not yet executed: workspace_members is empty, no auto_import rows exist, getByText(/Review \\d+ imported member/) never appears -&gt; test fails/flakes. The first spec also leaves the auto-imported dev-bypass row and enforcement ON permanently, so 'put it back, re-runnable' is only half true."
+  },
+  {
+    "file": "backend/app/services/membership_service.py",
+    "line": 274,
+    "summary": "The switch-on import reads the users table under READ COMMITTED before its own commit, so a user whose first sign-in commits concurrently is neither imported nor a member and is evicted on their next request.",
+    "failure_scenario": "Azure AD deployment (no env allowlist, so env_allowed is always False). Admin POSTs the first member; add_member runs enforcement_active() then _auto_import() -&gt; SELECT users. In the window before add_member's commit, a brand-new user's _upsert_user INSERT commits. add_member commits with that user absent from workspace_members. That user's very next request: require_member -&gt; enforcement active -&gt; no row -&gt; 403. ADR 0043 says 'turning enforcement on can never evict a current user'; here it does. No unique-index conflict fires because the two transactions touch different rows."
+  },
+  {
+    "file": "backend/app/core/auth.py",
+    "line": 433,
+    "summary": "initial_role_for(db, email) is evaluated unconditionally inside .values() on every Azure/OIDC request, adding a workspace_members lookup (plus require_member's EXISTS + row query) to every authenticated request, not only first sign-ins.",
+    "failure_scenario": "Any deployed Azure AD or generic-OIDC stack after enforcement is on: each REST/MCP request now performs up to three extra round trips (exists(), _row_for in is_member, _row_for again in initial_role_for) before the upsert even though the on_conflict branch ignores the role value for existing users; the same row is fetched twice per request. Latency/DB-load regression on the hottest path, with no functional need for the second lookup on the conflict branch."
+  },
+  {
+    "file": "backend/app/api/v1/admin_members.py",
+    "line": 127,
+    "summary": "add_member hardcodes enforcement_active=True in the response instead of reading it back, which is only true if the commit succeeded and dev-bypass mode does not exempt every door.",
+    "failure_scenario": "Dev-bypass stack (dev_bypass_active True): after the first add the API says enforcement_active: true and the panel/warning copy tells the operator 'only people on this list may sign in', while is_member short-circuits to True for every identity at every door, so nothing is enforced. The list endpoint computes the flag from the table, the add endpoint asserts it, and neither reflects the dev-bypass exemption; a verifier should check whether the field is meant to mean 'table non-empty' or 'doors are gated'."
+  }
+]</result>
+<usage><subagent_tokens>171962</subagent_tokens><tool_uses>15</tool_uses><duration_ms>350359</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a31403d4c5c1787ec</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a31403d4c5c1787ec.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle C: cross-file tracer" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>[
+  {
+    "file": "backend/app/services/session_service.py",
+    "line": 91,
+    "summary": "The session choke point passes env_allowed=False, so the grant-only env allowlist that admits an OTP user at request/verify time is ignored on every subsequent request once enforcement is on.",
+    "failure_scenario": "OTP deployment with AUTH_OTP_ALLOWED_DOMAINS=acme.io; an admin adds one member (enforcement on). A new user bob@acme.io (not in workspace_members) requests a code -&gt; is_signup_eligible True via env_allowed -&gt; verify succeeds -&gt; session cookie minted. The very next request (/me) hits session_service.resolve_token -&gt; require_member(env_allowed=False) -&gt; enforcement active, no row -&gt; 403 not_a_workspace_member. Same for test_removing_an_ENV_LISTED_address_does_not_revoke_it's subject: eligibility says True but their session is dead; decision 7 (allowlist can admit) is violated at this door."
+  },
+  {
+    "file": "backend/app/services/api_key_service.py",
+    "line": 165,
+    "summary": "PAT resolution also passes env_allowed=False, so a user admitted only by OIDC_ALLOWED_EMAILS/_DOMAINS (or the OTP allowlist) keeps a working JWT/OTP sign-in but every PAT they hold stops resolving as soon as the first member is added.",
+    "failure_scenario": "Generic-OIDC deployment, OIDC_ALLOWED_EMAILS=carol@x.io, carol not in workspace_members; admin adds some other member. Carol's bearer JWT still works (_resolve_generic_oidc_user computes env_allowed=True) and she can even mint a PAT via POST /api-keys, but api_key_service.resolve_token -&gt; require_member(door='api_key', env_allowed=False) -&gt; 403 on REST and 401 at /mcp. Membership is inconsistent across credential kinds for the same identity."
+  },
+  {
+    "file": "backend/app/core/auth.py",
+    "line": 413,
+    "summary": "_upsert_user gates on membership without consulting WORKSPACE_ADMIN_EMAILS, so the ADR 0033 lockout break-glass (an allowlisted admin address that has never signed in) can no longer get in once enforcement is on — and the Azure AD door has no env_allowed at all.",
+    "failure_scenario": "Azure AD prod: WORKSPACE_ADMIN_EMAILS=breakglass@corp.com (never signed in, so not auto-imported). Enforcement is on; the only admin membership row belongs to a user later demoted to member via the role editor (remove_member's guard counts stored-role admins only, and the role editor does not consult memberships). Now no admin member exists; breakglass@corp.com signs in -&gt; _upsert_user -&gt; require_member(env_allowed=False) -&gt; 403 before bootstrap_role could seed admin. The documented recovery path is closed and the workspace has no admin able to add one."
+  },
+  {
+    "file": "backend/app/services/membership_service.py",
+    "line": 383,
+    "summary": "The last-admin guard only protects stored-role admins that HAVE a membership row, so removing the sole admin member is allowed whenever the other admins' users rows exist without membership rows (env-allowlisted admins who signed in after enforcement started).",
+    "failure_scenario": "Enforcement on; admin A (member row) and admin B (users.role=admin, admitted via OIDC_ALLOWED_EMAILS after the switch, so no workspace_members row). admin_emails={a,b}, admin_member_ids={A.id}. A removes herself with confirm_self=true -&gt; row.id in admin_member_ids and admin_member_ids &lt;= {A.id} is True -&gt; 409, correct. But swap: B has the only member row and A's row was auto-imported then removed earlier... the guard passes for A because A.id not in admin_member_ids; the set then contains only B — fine. Half-believed: verify whether an admin whose membership row does not exist counts, since removing B leaves zero admin member rows while `admin_member_ids &lt;= {B.id}` still refuses — but confirming B (source auto_import) then deleting B's users row via a different path bypasses it."
+  },
+  {
+    "file": "frontend/src/auth/AuthGate.tsx",
+    "line": 31,
+    "summary": "A removed OTP member's cookie now makes /me return 403; the OTP AuthGate renders that as a generic 'Could not check your sign-in status' error with only a Retry button and no sign-out, so the browser is wedged with a session cookie that will 403 forever.",
+    "failure_scenario": "OTP stack, enforcement on, admin removes bob's membership. Bob reloads: MeProvider -&gt; GET /me -&gt; 403 not_a_workspace_member -&gt; state 'error' -&gt; AuthGate shows the Alert with Try again; retry 403s again. POST /auth/logout needs no auth and would clear the cookie, but nothing in the UI reaches it, so bob cannot sign in as another (admitted) address without manually deleting the dq_sess_ cookie."
+  },
+  {
+    "file": "backend/app/mcp/auth.py",
+    "line": 219,
+    "summary": "The MCP dev-bypass fallback mints the bypass identity under _dev_bypass_allowed (allowed, not active) while is_member exempts only on dev_bypass_active, so on a dev stack with OTP configured the two predicates disagree and the bypass upsert is membership-gated.",
+    "failure_scenario": "ENVIRONMENT=dev, AUTH_DEV_BYPASS=true, email OTP configured (the default local stack), enforcement on (an admin added one member; dev-bypass@dataq.local was auto-imported only if it already had a users row). If mcp_auth_mode is 'pat_only' and a request reaches resolve_current_user with no access token (misconfigured provider path the code explicitly guards for), _upsert_user(DEV_BYPASS_EMAIL) -&gt; require_member with dev_bypass_active False -&gt; 403 MembershipDeniedError instead of the intended McpAuthError/bypass user. Low likelihood; depends on the fallback being reachable."
+  }
+]</result>
+<usage><subagent_tokens>176181</subagent_tokens><tool_uses>14</tool_uses><duration_ms>382216</duration_ms></usage>
+</task-notification>
