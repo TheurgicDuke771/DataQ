@@ -214,6 +214,7 @@ an outbound model request.
 | Method | Path | What |
 |---|---|---|
 | GET | `/admin/suites` · `/admin/users` · `/admin/access` | Unscoped workspace-wide views. |
+| GET | `/admin/overview` | The four Overview stat cards — members, suites, open incidents, runs today (UTC day). |
 | PATCH | `/admin/users/{id}/role` | Change a workspace role (last-admin guarded; audit-tabled). |
 | GET | `/admin/audit-events` | The append-only audit log (config + data-access events, ADR 0041). |
 | GET | `/admin/deployment` | Declared residency / deployment posture (`DEPLOYMENT_REGION`). |
