@@ -5067,6 +5067,206 @@
         "title": "NearMissRead",
         "type": "object"
       },
+      "OffboardPreviewRead": {
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "is_last_admin": {
+            "title": "Is Last Admin",
+            "type": "boolean"
+          },
+          "is_self": {
+            "title": "Is Self",
+            "type": "boolean"
+          },
+          "live_session_count": {
+            "title": "Live Session Count",
+            "type": "integer"
+          },
+          "membership_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Membership Id"
+          },
+          "membership_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Membership Note"
+          },
+          "membership_state": {
+            "enum": [
+              "member",
+              "not_a_member",
+              "env_listed"
+            ],
+            "title": "Membership State",
+            "type": "string"
+          },
+          "open_api_key_count": {
+            "title": "Open Api Key Count",
+            "type": "integer"
+          },
+          "owned_suites": {
+            "items": {
+              "$ref": "#/components/schemas/OwnedSuiteRead"
+            },
+            "title": "Owned Suites",
+            "type": "array"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "email",
+          "display_name",
+          "role",
+          "is_self",
+          "is_last_admin",
+          "membership_state",
+          "membership_id",
+          "membership_note",
+          "owned_suites",
+          "open_api_key_count",
+          "live_session_count"
+        ],
+        "title": "OffboardPreviewRead",
+        "type": "object"
+      },
+      "OffboardReceiptRead": {
+        "properties": {
+          "api_keys_revoked": {
+            "title": "Api Keys Revoked",
+            "type": "integer"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "membership_removed": {
+            "title": "Membership Removed",
+            "type": "boolean"
+          },
+          "new_owner_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New Owner User Id"
+          },
+          "sessions_revoked": {
+            "title": "Sessions Revoked",
+            "type": "integer"
+          },
+          "skipped": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "title": "Skipped",
+            "type": "array"
+          },
+          "transferred_suite_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Transferred Suite Ids",
+            "type": "array"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "email",
+          "new_owner_user_id",
+          "transferred_suite_ids",
+          "api_keys_revoked",
+          "sessions_revoked",
+          "membership_removed",
+          "skipped"
+        ],
+        "title": "OffboardReceiptRead",
+        "type": "object"
+      },
+      "OffboardRequest": {
+        "additionalProperties": false,
+        "description": "`POST /admin/offboarding/{user_id}` body.",
+        "properties": {
+          "confirm_email": {
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Confirm Email",
+            "type": "string"
+          },
+          "keep_previous_owner_access": {
+            "default": false,
+            "title": "Keep Previous Owner Access",
+            "type": "boolean"
+          },
+          "new_owner_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New Owner User Id"
+          }
+        },
+        "required": [
+          "confirm_email"
+        ],
+        "title": "OffboardRequest",
+        "type": "object"
+      },
       "OtpRequest": {
         "additionalProperties": false,
         "properties": {
@@ -5224,6 +5424,40 @@
           "connections"
         ],
         "title": "OverviewSuitesRead",
+        "type": "object"
+      },
+      "OwnedSuiteRead": {
+        "properties": {
+          "check_count": {
+            "title": "Check Count",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "result_count": {
+            "title": "Result Count",
+            "type": "integer"
+          },
+          "run_count": {
+            "title": "Run Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "check_count",
+          "run_count",
+          "result_count"
+        ],
+        "title": "OwnedSuiteRead",
         "type": "object"
       },
       "PipelineRunRead": {
@@ -8795,6 +9029,104 @@
           }
         },
         "summary": "Confirm an auto-imported member (admin)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/offboarding/{user_id}": {
+      "post": {
+        "description": "Transfer every suite this user owns, revoke every PAT and browser session\nthey hold, then withdraw their workspace membership \u2014 in one transaction.\n\nTheir authored history stays: runs, results and checks keep pointing at them,\nand the user row itself is not deleted (erasure is the data-subject-rights\nendpoint, which is a different act). A step that cannot run is reported in\n`skipped` with its reason rather than silently passing.",
+        "operationId": "offboard_user_api_v1_admin_offboarding__user_id__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OffboardRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OffboardReceiptRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Offboard a user in one audited pass (admin)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/offboarding/{user_id}/preview": {
+      "get": {
+        "description": "Read-only. Nothing here is reserved or locked \u2014 a suite can change owner\nbetween this call and the pass, so treat the counts as of now.",
+        "operationId": "preview_offboarding_api_v1_admin_offboarding__user_id__preview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OffboardPreviewRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "What offboarding this user would do (admin)",
         "tags": [
           "admin"
         ]
