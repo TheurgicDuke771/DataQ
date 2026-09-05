@@ -190,3 +190,24 @@ def classify_inventory_sync_error(
                 "re-check the connection's role and credentials."
             )
     return _INVENTORY_MESSAGES.get(category) or classify_failure_reason(exc)
+
+
+# ── Broker (Redis) classification (#1885) ──────────────────────────────────── The admin health
+# API's queue-depth read: never a fake `0` on a broker it could not reach.
+_BROKER_MESSAGES: dict[FailureCategory, str] = {
+    FailureCategory.CONNECTIVITY: (
+        "The message broker (Redis) could not be reached (network, DNS, TLS, or a "
+        "timeout). Check that it is running and reachable from the API."
+    ),
+    FailureCategory.PERMISSION: "The message broker (Redis) rejected the credentials.",
+    FailureCategory.CONFIG: "The message broker (Redis) looks misconfigured.",
+    FailureCategory.UNKNOWN: (
+        "Queue depth could not be read for a reason DataQ could not classify. Check the "
+        "server logs for the underlying error."
+    ),
+}
+
+
+def classify_broker_reason(exc: BaseException) -> str:
+    """The fixed, secret-free reason the broker (Redis) could not be reached (#1885)."""
+    return _BROKER_MESSAGES[classify_failure_category(exc)]

@@ -52,6 +52,7 @@ from backend.app.services import (
     secret_sweep_service,
     stateful_monitors,
     suite_service,
+    workspace_health_service,
 )
 from backend.app.services.failure_classifier import classify_failure_reason
 from backend.app.services.otp_mailer import OtpMailer
@@ -961,13 +962,25 @@ def _heartbeat_store() -> beat_watchdog._TickStore:
 
 @celery_app.task(name="beat_heartbeat")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
 def beat_heartbeat() -> bool:
-    """Stamp 'the beat→broker→worker loop is actually executing tasks' (#904)."""
+    """Stamp 'the beat→broker→worker loop is actually executing tasks' (#904), in Redis (the
+    in-process watchdog) AND `workspace_health` (the admin health read API, #1885). Either
+    write failing does not skip the other.
+    """
+    ok = True
     try:
         beat_watchdog.record_beat_tick(_heartbeat_store())
-        return True
     except Exception:
         log.warning("beat_heartbeat_write_failed", exc_info=True)
-        return False
+        ok = False
+    session = get_session()
+    try:
+        workspace_health_service.record_beat_heartbeat(session)
+    except Exception:
+        log.warning("beat_heartbeat_db_write_failed", exc_info=True)
+        ok = False
+    finally:
+        session.close()
+    return ok
 
 
 # ─────────────────── credential-expiry refresh (#838) ────────────────────────

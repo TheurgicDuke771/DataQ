@@ -78,6 +78,7 @@ def test_non_admin_gets_403(client: TestClient, as_role: Any) -> None:
         "/api/v1/admin/users",
         "/api/v1/admin/access",
         "/api/v1/admin/orchestration/webhooks",
+        "/api/v1/admin/health",
     ):
         resp = client.get(path, headers=headers)
         assert resp.status_code == 403, path
@@ -691,3 +692,146 @@ def test_the_shipped_preflight_cap_default_is_three_per_ten_minutes() -> None:
     """The value that protects a deployment is the DEFAULT — every test above overrides it."""
     assert Settings().admin_email_preflight_per_10min == 3
     assert admin_service.PREFLIGHT_WINDOW_SECONDS == 600
+
+
+# ── health (#1885) ──────────────────────────────────────────────────────────────
+
+
+def _health_orch_connection(
+    db_session: Any, owner: User, *, last_polled_at: Any = None
+) -> Connection:
+    conn = Connection(
+        name=f"airflow-{uuid.uuid4().hex[:8]}",
+        type="airflow",
+        env="dev",
+        config={"base_url": "http://x", "project_name": "p", "factory_name": "f"},
+        secret_ref="ref",
+        created_by=owner.id,
+        last_polled_at=last_polled_at,
+    )
+    db_session.add(conn)
+    db_session.commit()
+    return conn
+
+
+def test_admin_health_never_polled_connection_reads_unknown(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    owner = _user(db_session, "owner2@x.io")
+    conn = _health_orch_connection(db_session, owner, last_polled_at=None)
+    _grant_admin(monkeypatch)
+
+    resp = client.get("/api/v1/admin/health")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    [row] = [r for r in body["polling"] if r["connection_id"] == str(conn.id)]
+    assert row["status"] == "unknown"
+    assert row["last_polled_at"] is None
+    assert row["next_expected_at"] is None
+    assert row["last_error"] is None
+
+
+def test_admin_health_a_connection_failing_every_poll_reads_failing_not_on_cadence(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The review's regression case, at the route level: a fresh `last_polled_at` (the
+    connection IS being polled on schedule) plus a failure streak must never surface as
+    `on_cadence` — the field that told the truth was `consecutive_poll_failures`, and this
+    route previously ignored it.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    owner = _user(db_session, "owner3@x.io")
+    conn = _health_orch_connection(
+        db_session, owner, last_polled_at=datetime.now(UTC) - timedelta(minutes=1)
+    )
+    conn.consecutive_poll_failures = 3
+    conn.last_poll_error = "The orchestration provider could not be reached."
+    db_session.commit()
+    _grant_admin(monkeypatch)
+
+    resp = client.get("/api/v1/admin/health")
+
+    assert resp.status_code == 200
+    [row] = [r for r in resp.json()["polling"] if r["connection_id"] == str(conn.id)]
+    assert row["status"] == "failing"
+    assert row["status"] != "on_cadence"
+    assert row["last_error"] == "The orchestration provider could not be reached."
+
+
+def test_admin_health_beat_not_monitored_with_no_heartbeat_row(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _grant_admin(monkeypatch)
+    resp = client.get("/api/v1/admin/health")
+    assert resp.status_code == 200
+    assert resp.json()["beat"] == {"last_tick_at": None, "status": "not_monitored"}
+
+
+def test_admin_health_beat_alive_after_a_recorded_heartbeat(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.app.services import workspace_health_service
+
+    workspace_health_service.record_beat_heartbeat(db_session)
+    _grant_admin(monkeypatch)
+
+    resp = client.get("/api/v1/admin/health")
+
+    assert resp.status_code == 200
+    beat = resp.json()["beat"]
+    assert beat["status"] == "alive"
+    assert beat["last_tick_at"] is not None
+
+
+def test_admin_health_reports_queue_depths_when_broker_reachable(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import redis
+
+    class _FakeClient:
+        def llen(self, name: str) -> int:
+            return {"celery": 2, "llm": 0}[name]
+
+        def __enter__(self) -> "_FakeClient":
+            return self
+
+        def __exit__(self, *exc_info: object) -> None:
+            return None
+
+    monkeypatch.setattr(redis, "from_url", lambda *a, **kw: _FakeClient())
+    _grant_admin(monkeypatch)
+
+    resp = client.get("/api/v1/admin/health")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["queues_error"] is None
+    assert {(q["name"], q["depth"]) for q in body["queues"]} == {("celery", 2), ("llm", 0)}
+
+
+def test_admin_health_queue_depth_is_null_with_a_reason_when_broker_unreachable_never_500(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import redis
+
+    class _BrokenClient:
+        def llen(self, name: str) -> int:
+            raise ConnectionError("Error 111 connecting to redis:6379. Connection refused.")
+
+        def __enter__(self) -> "_BrokenClient":
+            return self
+
+        def __exit__(self, *exc_info: object) -> None:
+            return None
+
+    monkeypatch.setattr(redis, "from_url", lambda *a, **kw: _BrokenClient())
+    _grant_admin(monkeypatch)
+
+    resp = client.get("/api/v1/admin/health")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["queues"] is None
+    assert body["queues_error"] is not None and "redis" in body["queues_error"].lower()

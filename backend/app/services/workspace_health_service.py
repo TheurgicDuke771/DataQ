@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -27,7 +29,9 @@ from backend.app.db.models import (
     TriggerBinding,
     WorkspaceHealth,
 )
+from backend.app.services.failure_classifier import classify_broker_reason
 from backend.app.services.suite_service import accessible_suite_ids
+from backend.app.worker.celery_app import POLL_ORCHESTRATION_INTERVAL_S
 
 log = get_logger(__name__)
 
@@ -302,3 +306,169 @@ def list_current_env_near_misses(
         )
     )
     return records
+
+
+# ─────────────── admin health read API (#1885) ───────────────
+#
+# `GET /admin/health` reads three independent signals: per-connection poll staleness (below,
+# from the same `last_polled_at` #828 already maintains), the beat heartbeat (a second,
+# DB-visible echo of the Redis tick `beat_watchdog` records for the in-process watchdog, #904),
+# and broker (Redis) queue depth. Honesty rule throughout: a connection/beat never observed
+# reads `unknown`/`not_monitored`, never healthy.
+
+#: The `workspace_health.key` the beat-heartbeat task upserts.
+BEAT_HEARTBEAT_KEY = "beat_heartbeat"
+
+
+def record_beat_heartbeat(session: Session) -> None:
+    """Upsert the `workspace_health` row the admin health API reads as the beat tick."""
+    session.execute(
+        pg_insert(WorkspaceHealth)
+        .values(key=BEAT_HEARTBEAT_KEY)
+        .on_conflict_do_update(
+            index_elements=[WorkspaceHealth.key],
+            set_={"updated_at": func.now()},
+        )
+    )
+    session.commit()
+
+
+def read_beat_heartbeat(session: Session) -> datetime | None:
+    """The last time the beat-heartbeat task ran, or `None` if it never has."""
+    return session.execute(
+        select(WorkspaceHealth.updated_at).where(WorkspaceHealth.key == BEAT_HEARTBEAT_KEY)
+    ).scalar_one_or_none()
+
+
+def beat_health_status(
+    last_tick_at: datetime | None, *, now: datetime, stale_after_s: int
+) -> Literal["alive", "stale", "not_monitored"]:
+    """Pure decision: `not_monitored` when the heartbeat has never run, never `alive`."""
+    if last_tick_at is None:
+        return "not_monitored"
+    if stale_after_s > 0 and last_tick_at < now - timedelta(seconds=stale_after_s):
+        return "stale"
+    return "alive"
+
+
+def poll_health_status(
+    *,
+    last_polled_at: datetime | None,
+    consecutive_poll_failures: int,
+    now: datetime,
+    threshold_seconds: int,
+) -> Literal["on_cadence", "stalled", "failing", "unknown"]:
+    """Pure decision, mirroring `evaluate_poll_staleness`'s honesty rule (#828): a connection
+    never polled reads `unknown`, never healthy. `last_polled_at` is stamped by BOTH
+    `record_poll_success` and `record_poll_failure` — it is the last ATTEMPT, not the last
+    success — so a connection failing every attempt would otherwise read `on_cadence` with a
+    fresh timestamp; `consecutive_poll_failures` is what actually says the polling loop is
+    unhealthy, and it takes priority over the time-based `stalled` check.
+    """
+    if last_polled_at is None:
+        return "unknown"
+    if consecutive_poll_failures > 0:
+        return "failing"
+    if threshold_seconds > 0 and last_polled_at < now - timedelta(seconds=threshold_seconds):
+        return "stalled"
+    return "on_cadence"
+
+
+@dataclass(frozen=True)
+class PollHealthRow:
+    """One orchestration connection's poll staleness, for the admin health read API.
+
+    `last_polled_at` is the last ATTEMPT (success or failure) — the model has no separate
+    last-success timestamp, so none is fabricated here. `last_error` is the already-classified,
+    secret-free reason (`Connection.last_poll_error`), present only while `status="failing"`.
+    """
+
+    connection_id: uuid.UUID
+    name: str
+    provider: str
+    last_polled_at: datetime | None
+    cadence_seconds: int
+    next_expected_at: datetime | None
+    status: Literal["on_cadence", "stalled", "failing", "unknown"]
+    last_error: str | None
+
+
+def list_poll_health(session: Session, *, now: datetime | None = None) -> list[PollHealthRow]:
+    """Per-connection poll staleness, at the fixed workspace-wide poll cadence
+    (`POLL_ORCHESTRATION_INTERVAL_S`) — every orchestration connection is polled on the same
+    beat schedule, so there is no per-connection cadence to read.
+    """
+    moment = now or datetime.now(UTC)
+    threshold = get_settings().poll_staleness_alert_after_s
+    cadence = int(POLL_ORCHESTRATION_INTERVAL_S)
+    rows = session.execute(
+        select(
+            Connection.id,
+            Connection.name,
+            Connection.type,
+            Connection.last_polled_at,
+            Connection.consecutive_poll_failures,
+            Connection.last_poll_error,
+        )
+        .where(Connection.type.in_(ORCHESTRATION_PROVIDERS))
+        .order_by(Connection.name)
+    ).all()
+    result: list[PollHealthRow] = []
+    for connection_id, name, provider, last_polled_at, failures, last_poll_error in rows:
+        failures = failures or 0
+        next_expected = (
+            last_polled_at + timedelta(seconds=cadence) if last_polled_at is not None else None
+        )
+        status = poll_health_status(
+            last_polled_at=last_polled_at,
+            consecutive_poll_failures=failures,
+            now=moment,
+            threshold_seconds=threshold,
+        )
+        result.append(
+            PollHealthRow(
+                connection_id=connection_id,
+                name=name,
+                provider=provider,
+                last_polled_at=last_polled_at,
+                cadence_seconds=cadence,
+                next_expected_at=next_expected,
+                status=status,
+                last_error=last_poll_error if status == "failing" else None,
+            )
+        )
+    return result
+
+
+@dataclass(frozen=True)
+class QueueDepthRow:
+    """One broker queue's current length."""
+
+    name: str
+    depth: int
+
+
+#: Bounded so an unreachable broker fails fast into the "unavailable" branch rather than
+#: hanging the request (same rationale as `beat_watchdog.build_store`, #854).
+_BROKER_TIMEOUT_S = 2.0
+
+
+def broker_queue_depths(
+    redis_url: str, queue_names: Sequence[str]
+) -> tuple[list[QueueDepthRow] | None, str | None]:
+    """`LLEN` per queue — `None` + a classified reason on ANY broker failure, never a fake `0`."""
+    try:
+        import redis
+
+        # Context manager: closes the pool's connection(s) back to the OS on exit rather than
+        # relying on GC, since this is a fresh client built per request.
+        with redis.from_url(
+            redis_url,
+            socket_connect_timeout=_BROKER_TIMEOUT_S,
+            socket_timeout=_BROKER_TIMEOUT_S,
+        ) as client:
+            depths = [QueueDepthRow(name=q, depth=int(client.llen(q))) for q in queue_names]
+        return depths, None
+    except Exception as exc:  # broad: any broker/library failure must read as "unavailable"
+        log.warning("admin_health_queue_depth_failed", exc_info=True)
+        return None, classify_broker_reason(exc)

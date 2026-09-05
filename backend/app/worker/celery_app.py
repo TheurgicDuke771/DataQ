@@ -36,6 +36,16 @@ LLM_QUEUE_NAME = "llm"
 #: default one: behind a top-of-the-hour run_suite fan-out a sign-in code would wait its whole
 #: TTL and be discarded, and a NEW queue would need the coordinated worker `-Q` change (#1777).
 OTP_SEND_TASK_NAME = "send_otp_code"
+#: Celery's own default (unrouted) queue name, named here for clarity at read sites (#1885).
+DEFAULT_QUEUE_NAME = "celery"
+#: Queues the admin health API (#1885) reports `LLEN` depth for.
+MONITORED_QUEUE_NAMES: tuple[str, ...] = (DEFAULT_QUEUE_NAME, LLM_QUEUE_NAME)
+#: Poll-orchestration-runs cadence — the single source of truth for "how often DataQ polls
+#: ADF/Airflow", read back by the admin health API's per-connection `cadence_seconds` (#1885)
+#: so it cannot drift from the actual beat schedule below.
+POLL_ORCHESTRATION_INTERVAL_S = 600.0
+#: Beat-heartbeat cadence (#904).
+BEAT_HEARTBEAT_INTERVAL_S = 60.0
 # Where prerun stashes the ContextVar reset handle for postrun. Deliberately
 # avoids the word "token" so Bandit/Ruff (B105/S105) don't flag it as a secret.
 _REQUEST_ID_RESET_ATTR = "_dataq_request_id_reset"
@@ -93,7 +103,7 @@ def create_celery_app() -> Celery:
         beat_schedule={
             "poll-orchestration-runs": {
                 "task": "poll_orchestration_runs",
-                "schedule": 600.0,  # 10 minutes
+                "schedule": POLL_ORCHESTRATION_INTERVAL_S,  # 10 minutes
             },
             "recover-orchestration-gaps": {
                 "task": "recover_orchestration_gaps",
@@ -143,7 +153,7 @@ def create_celery_app() -> Celery:
             # still EXECUTES; the watchdog thread reads its stamp.
             "beat-heartbeat": {
                 "task": "beat_heartbeat",
-                "schedule": 60.0,  # 1 minute
+                "schedule": BEAT_HEARTBEAT_INTERVAL_S,  # 1 minute
             },
             # Warehouse-native lineage refresh (#858, ADR 0034): dark by default —
             # no-ops unless WAREHOUSE_LINEAGE_ENABLED.

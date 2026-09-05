@@ -135,6 +135,22 @@ def test_beat_schedule_registers_llm_invocation_reaper() -> None:
     assert schedule["reap-stuck-llm-invocations"]["schedule"] == 300.0
 
 
+def test_monitored_queue_names_covers_the_default_and_llm_queues() -> None:
+    """#1885: the admin health API's `LLEN` targets — a dropped/renamed entry here
+    would silently stop reporting depth for a real queue.
+    """
+    assert celery_app.MONITORED_QUEUE_NAMES == (celery_app.DEFAULT_QUEUE_NAME, LLM_QUEUE_NAME)
+
+
+def test_beat_schedule_registers_beat_heartbeat_at_its_named_interval() -> None:
+    """#1885 reads `BEAT_HEARTBEAT_INTERVAL_S` back for the admin health API's
+    staleness math — pin it against the actual schedule entry.
+    """
+    schedule = create_celery_app().conf.beat_schedule
+    assert schedule["beat-heartbeat"]["task"] == "beat_heartbeat"
+    assert schedule["beat-heartbeat"]["schedule"] == celery_app.BEAT_HEARTBEAT_INTERVAL_S
+
+
 def test_beat_schedule_registers_orphan_asset_sweep() -> None:
     """The orphan-asset sweep (#770) is wired daily, same cadence as the
     sample-failures retention sweep — guards against a dropped entry silently
