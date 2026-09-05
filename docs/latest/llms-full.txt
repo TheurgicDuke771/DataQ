@@ -349,7 +349,7 @@ Workspace-wide defaults (a Slack webhook, an SMTP sender, a Teams webhook) are s
 deployed DataQ through environment configuration; a suite can override the Teams webhook and
 the email recipients.
 
-![The workspace Settings → Notifications tab explains that alert routing lives on each suite](../assets/screenshots/settings-notifications.png){ .screenshot }
+![Admin → Settings → Notification channels explains that alert routing lives on each suite](../assets/screenshots/settings-notifications.png){ .screenshot }
 
 *Workspace settings point you back to the suite: that is where the routing lives.*
 
@@ -881,6 +881,15 @@ Task-shaped pages: each answers one "how do I…" question. If you are new, star
 
     [:octicons-arrow-right-24: API keys](api-keys.md)
 
+-   :material-shield-account:{ .lg .middle } **Run the workspace**
+
+    ---
+
+    Members and roles, access grants, workspace settings, audit log and inbound
+    integrations — the admin area, tab by tab.
+
+    [:octicons-arrow-right-24: Admin control centre](admin.md)
+
 -   :material-star-check:{ .lg .middle } **Do it well**
 
     ---
@@ -891,6 +900,60 @@ Task-shaped pages: each answers one "how do I…" question. If you are new, star
 </div>
 
 Looking for the full capability list? See the [features overview](features.md).
+
+
+---
+
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/guides/admin/ -->
+
+# Admin control centre
+
+The admin area is where a **workspace Admin** sees the whole workspace and manages the
+things that are shared rather than owned: membership, roles, access grants, workspace
+settings, compliance evidence, and inbound integrations.
+
+It lives at `/admin` and is split into six deep-linkable sub-pages. The tab you are on
+**is** the URL, so any tab can be bookmarked, shared with another admin, or reloaded
+without losing your place. `/admin` on its own lands on **Overview**.
+
+## Page map
+
+| Tab | URL | What it does |
+|---|---|---|
+| Overview | `/admin/overview` | Workspace counts — suites, members, access grants — plus a "needs attention" panel that links onward. |
+| Members | `/admin/members` | Every user with their workspace role (editable in place) and every per-suite access grant. |
+| Suites | `/admin/suites` | Every suite in the workspace, unscoped by sharing: owner, datasource, environment, check count, share count. |
+| Settings | `/admin/settings` | Workspace facts and the sign-in method, the email pre-flight test, reusable notification channels, the LLM provider, the secret-store notice, and the danger zone. |
+| Compliance | `/admin/compliance` | The audit log with its filters and retention disclosure, and the deployment / data-residency posture. |
+| Integrations | `/admin/integrations` | Ready-to-paste inbound webhook URLs for each configured orchestration provider. |
+
+The former standalone **Settings** page has moved here: `/settings` now redirects to
+`/admin/settings`, and the sidebar carries a single **Admin** entry rather than two links
+to the same area.
+
+## Who can open it
+
+Every admin route is gated **at the route**, not by hiding a button. A user who is not a
+workspace Admin gets the Forbidden page — including on a direct deep link to a sub-page or
+to `/settings`, and including after a demotion, since the role is resolved per request.
+No admin data is fetched for them at all.
+
+Admin is one of two authorization axes; see the
+[features overview](features.md) for how workspace roles compose with per-suite sharing.
+
+## What loads when
+
+Each sub-page owns its own data. Opening **Compliance** fetches the audit log and the
+posture and nothing else; the members and suites tables are not read until you open their
+tab. Switching tabs is a navigation, so the page you leave stops holding data you are no
+longer looking at.
+
+## Overview and honest signals
+
+The Overview's "needs attention" panel deliberately says **not monitored yet** where no
+signal exists. Poll staleness, scheduler heartbeat, queue depth and datasource credential
+health have no read API today, so an empty panel means nothing is being watched — not that
+everything is healthy. Rows appear here as those signals ship.
 
 
 ---
@@ -909,19 +972,19 @@ comes back, and what the model is never shown.
   <source src="../../assets/videos/configure-llm.mp4" type="video/mp4">
 </video>
 
-*Admin → LLM provider: point DataQ at a model, press **Test**, save. Here it is a local
+*Admin → Settings → LLM provider: point DataQ at a model, press **Test**, save. Here it is a local
 Ollama server; the same form takes Anthropic, Azure OpenAI, Bedrock or any
 OpenAI-compatible endpoint.*
 
 ## Turn it on
 
-**Admin → LLM provider.** Pick a provider, enter the model name and (for OpenAI-compatible
+**Admin → Settings → LLM provider.** Pick a provider, enter the model name and (for OpenAI-compatible
 endpoints) the base URL, paste the API key, and press **Test** — it makes one tiny call
 with the values in the form and reports the model and latency. Nothing is saved by Test,
 but the probe itself is recorded like any other call, and it runs whether or not the
 enable switch is on. Then **Save** and switch on *Enable outbound LLM calls*.
 
-![The LLM provider panel on the Admin page: provider, model, base URL, API key, structured-output mode and the enable switch](../assets/screenshots/admin-llm-settings.png){ .screenshot }
+![The LLM provider panel on Admin → Settings: provider, model, base URL, API key, structured-output mode and the enable switch](../assets/screenshots/admin-llm-settings.png){ .screenshot }
 
 *The key is write-only: it is stored in your secret store, never shown again, and never
 forwarded if you later change the provider or endpoint — you re-enter it on purpose.*
@@ -954,7 +1017,8 @@ reliability, never safety.
 
     The full transfer-vector accounting is in
     [Security & data handling](../security/overview.md#what-can-move-data-out), and the live
-    list for *your* deployment is on the Admin page above the panel.
+    list for *your* deployment is on **Admin → Compliance**, and the provider itself is
+    configured on **Admin → Settings**.
 
 ## Explain a failed check
 
@@ -1989,7 +2053,7 @@ Delivered when a run breaches its threshold ([Notifications & alerting](notifica
   test a **connection** — connections are shared infrastructure holding credentials, so
   Members consume them but don't manage them. Member can create/own suites and receive
   `edit` shares; Viewer is capped at `view` everywhere, including on any share. Roles are
-  managed under `/admin` by an existing Admin; `WORKSPACE_ADMIN_EMAILS` still works as a
+  managed under [`/admin/members`](admin.md) by an existing Admin; `WORKSPACE_ADMIN_EMAILS` still works as a
   bootstrap/break-glass allowlist for a fresh or locked-out workspace.
 
 ## AI-assisted authoring and root-cause analysis
@@ -2291,7 +2355,7 @@ Azure Monitor raises an alert on pipeline events → an **Action Group webhook**
 fired alert triggers an immediate targeted poll — the failed run lands in the pipeline
 feed within seconds. Succeeded runs are picked up by the same poll on its 10-min cadence.
 
-**Getting the webhook URL:** a workspace admin opens **Settings → Webhooks** in the app —
+**Getting the webhook URL:** a workspace admin opens **Admin → Integrations** in the app —
 it shows the ready-to-paste inbound URL per provider (the ADF one embeds the shared
 secret behind a reveal toggle; treat it as a credential). No hand-assembly from Key
 Vault needed. Provisioning details: **One-time provisioning → step 5** in the
@@ -2332,7 +2396,7 @@ Registering any connection — orchestration providers included — is **Admin-o
   **job-level** (one `pipeline_run` per dbt job build).
 
 Store the HMAC signing key as the `dbt-webhook-secret` in DataQ's secret store; the webhook
-URL is shown in **Settings → Webhooks** like the others.
+URL is shown in **Admin → Integrations** like the others.
 
 ### Lineage from `manifest.json` (ADR 0034)
 
@@ -2636,7 +2700,7 @@ automatically; it logs `suite_policy_possibly_stale`). See
 ## 5. Automate runs — triggers first, schedules second
 
 **Do (trigger):** register the orchestrator connection → add the provider's webhook
-(**Settings → Webhooks** shows the URL) or the callback snippet
+(**Admin → Integrations** shows the URL) or the callback snippet
 ([`integrations/`](https://github.com/TheurgicDuke771/DataQ/tree/main/integrations)) → on the
 suite, **Triggers** → bind `(provider, pipeline/DAG/job, env)`.
 
@@ -2650,7 +2714,7 @@ to be safe". See [Prefer triggers over schedules](best-practices.md#prefer-trigg
 ## 6. Configure alerting
 
 **Do:** Suite → **Notifications** → pick channels (Teams / Slack / email), the threshold, and
-recipients. Store channel webhooks/keys as secrets (**Settings → Webhooks** for the inbound
+recipients. Store channel webhooks/keys as secrets (**Admin → Integrations** for the inbound
 ones).
 
 **Recommended:**
@@ -2783,6 +2847,19 @@ Notable, user-facing changes. Dates are the release/merge date. This is a curate
 the per-PR history lives in the repo's commit log and pull requests.
 
 ## Unreleased
+
+### Changed
+
+- **The admin area is now six routed, deep-linkable pages.** `/admin` splits into
+  `overview`, `members`, `suites`, `settings`, `compliance` and `integrations` —
+  the tab you are on is the URL, so any tab can be bookmarked, shared or
+  reloaded in place, and each page loads only its own data instead of one long
+  scroll fetching everything. The standalone workspace **Settings** page folds
+  in: `/settings` redirects to `/admin/settings`, and the sidebar carries a
+  single **Admin** entry instead of two links to the same area. Every admin
+  route is gated at the route, so a deep link (or a demoted user's bookmark)
+  gets the Forbidden page and fetches nothing. See the
+  [admin control centre guide](../guides/admin.md).
 
 ### Added
 
@@ -7020,7 +7097,7 @@ the checklists — see the repository's `deploy/README.md`.
 | Connection **Test** fails | Bad/expired credential or network egress — re-authenticate the connection; check the secret store. |
 | Pipeline didn't trigger a suite | Only **successful** runs trigger; confirm an **enabled trigger binding** matches `(provider, pipeline/DAG, env)` exactly (the DAG/pipeline id is case-sensitive). |
 | Checks all `skip` on a flat-file suite | The batch hasn't landed yet (no matching file) — expected; the run succeeds with skips. |
-| Orchestration events not arriving | Webhook secret/HMAC mismatch — the 10-min poll is the fallback; verify the connection's secret, and copy the URL from **Settings → Webhooks** instead of assembling it. |
+| Orchestration events not arriving | Webhook secret/HMAC mismatch — the 10-min poll is the fallback; verify the connection's secret, and copy the URL from **Admin → Integrations** instead of assembling it. |
 | A check reports `error`, not `fail` | Its evaluation threw (cast failure, missing column, SQL error) — an operational problem with the check/target, not a data breach. Fix the check config or the schema drift. |
 | Scheduled run didn't happen at 9:00 | Check the schedule's **timezone** (9:00 in which zone?), whether it's **paused**, and whether the platform was down over the tick — missed ticks are [not backfilled](../guides/scheduling.md). |
 | No alert for a red run | See the [notifications troubleshooting table](../guides/notifications.md#troubleshooting) — threshold, dedup, and snooze all gate delivery. |
@@ -7230,7 +7307,7 @@ trigger** a run — by design. See [Orchestration](../guides/orchestration.md).
   every run. A red suite that's "quiet" is usually dedup working — the **Results** page is the
   ground truth.
 - Check the channel isn't **snoozed** for that check.
-- Confirm the channel secret/webhook is set (Settings → Webhooks / per-suite config).
+- Confirm the channel secret/webhook is set (Admin → Integrations / per-suite config).
 
 ## Sign-in & API
 

@@ -753,6 +753,8 @@
       
         
       
+        
+      
     
     
     
@@ -1123,6 +1125,34 @@
     
   
     API keys (PATs)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../admin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Admin control centre
   
 
     
@@ -2384,16 +2414,16 @@ comes back, and what the model is never shown.</p>
   <source src="../../assets/videos/configure-llm.mp4" type="video/mp4">
 </video>
 
-<p><em>Admin → LLM provider: point DataQ at a model, press </em><em>Test</em><em>, save. Here it is a local
+<p><em>Admin → Settings → LLM provider: point DataQ at a model, press </em><em>Test</em><em>, save. Here it is a local
 Ollama server; the same form takes Anthropic, Azure OpenAI, Bedrock or any
 OpenAI-compatible endpoint.</em></p>
 <h2 id="turn-it-on">Turn it on<a class="headerlink" href="#turn-it-on" title="Permanent link">¶</a></h2>
-<p><strong>Admin → LLM provider.</strong> Pick a provider, enter the model name and (for OpenAI-compatible
+<p><strong>Admin → Settings → LLM provider.</strong> Pick a provider, enter the model name and (for OpenAI-compatible
 endpoints) the base URL, paste the API key, and press <strong>Test</strong> — it makes one tiny call
 with the values in the form and reports the model and latency. Nothing is saved by Test,
 but the probe itself is recorded like any other call, and it runs whether or not the
 enable switch is on. Then <strong>Save</strong> and switch on <em>Enable outbound LLM calls</em>.</p>
-<p><a class="glightbox" data-type="image" data-width="auto" data-height="auto" href="../../assets/screenshots/admin-llm-settings.png" data-desc-position="bottom"><img alt="The LLM provider panel on the Admin page: provider, model, base URL, API key, structured-output mode and the enable switch" class="screenshot" src="../../assets/screenshots/admin-llm-settings.png"></a></p>
+<p><a class="glightbox" data-type="image" data-width="auto" data-height="auto" href="../../assets/screenshots/admin-llm-settings.png" data-desc-position="bottom"><img alt="The LLM provider panel on Admin → Settings: provider, model, base URL, API key, structured-output mode and the enable switch" class="screenshot" src="../../assets/screenshots/admin-llm-settings.png"></a></p>
 <p><em>The key is write-only: it is stored in your secret store, never shown again, and never
 forwarded if you later change the provider or endpoint — you re-enter it on purpose.</em></p>
 <table>
@@ -2440,7 +2470,8 @@ reliability, never safety.</p>
 </ul>
 <p>The full transfer-vector accounting is in
 <a href="../../security/overview/#what-can-move-data-out">Security &amp; data handling</a>, and the live
-list for <em>your</em> deployment is on the Admin page above the panel.</p>
+list for <em>your</em> deployment is on <strong>Admin → Compliance</strong>, and the provider itself is
+configured on <strong>Admin → Settings</strong>.</p>
 </div>
 <h2 id="explain-a-failed-check">Explain a failed check<a class="headerlink" href="#explain-a-failed-check" title="Permanent link">¶</a></h2>
 <p>When a check fails, DataQ opens an <strong>incident</strong> and captures an <strong>evidence card</strong> at that

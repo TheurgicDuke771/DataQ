@@ -29,7 +29,7 @@
 | Connection **Test** fails | Bad/expired credential or network egress — re-authenticate the connection; check the secret store. |
 | Pipeline didn't trigger a suite | Only **successful** runs trigger; confirm an **enabled trigger binding** matches `(provider, pipeline/DAG, env)` exactly (the DAG/pipeline id is case-sensitive). |
 | Checks all `skip` on a flat-file suite | The batch hasn't landed yet (no matching file) — expected; the run succeeds with skips. |
-| Orchestration events not arriving | Webhook secret/HMAC mismatch — the 10-min poll is the fallback; verify the connection's secret, and copy the URL from **Settings → Webhooks** instead of assembling it. |
+| Orchestration events not arriving | Webhook secret/HMAC mismatch — the 10-min poll is the fallback; verify the connection's secret, and copy the URL from **Admin → Integrations** instead of assembling it. |
 | A check reports `error`, not `fail` | Its evaluation threw (cast failure, missing column, SQL error) — an operational problem with the check/target, not a data breach. Fix the check config or the schema drift. |
 | Scheduled run didn't happen at 9:00 | Check the schedule's **timezone** (9:00 in which zone?), whether it's **paused**, and whether the platform was down over the tick — missed ticks are [not backfilled](../guides/scheduling.md). |
 | No alert for a red run | See the [notifications troubleshooting table](../guides/notifications.md#troubleshooting) — threshold, dedup, and snooze all gate delivery. |

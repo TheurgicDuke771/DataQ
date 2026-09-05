@@ -10,7 +10,7 @@
         <link rel="canonical" href="https://theurgicduke771.github.io/DataQ/docs/latest/guides/recommended-usage/">
       
       
-        <link rel="prev" href="../api-keys/">
+        <link rel="prev" href="../admin/">
       
       
         <link rel="next" href="../best-practices/">
@@ -753,6 +753,8 @@
       
         
       
+        
+      
     
     
     
@@ -1021,6 +1023,34 @@
     
   
     API keys (PATs)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../admin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Admin control centre
   
 
     
@@ -2495,7 +2525,7 @@ automatically; it logs <code>suite_policy_possibly_stale</code>). See
 <a href="../best-practices/#protect-the-samples">Protect the samples</a>.</p>
 <h2 id="5-automate-runs-triggers-first-schedules-second">5. Automate runs — triggers first, schedules second<a class="headerlink" href="#5-automate-runs-triggers-first-schedules-second" title="Permanent link">¶</a></h2>
 <p><strong>Do (trigger):</strong> register the orchestrator connection → add the provider's webhook
-(<strong>Settings → Webhooks</strong> shows the URL) or the callback snippet
+(<strong>Admin → Integrations</strong> shows the URL) or the callback snippet
 (<a href="https://github.com/TheurgicDuke771/DataQ/tree/main/integrations"><code>integrations/</code></a>) → on the
 suite, <strong>Triggers</strong> → bind <code>(provider, pipeline/DAG/job, env)</code>.</p>
 <p><strong>Do (schedule):</strong> suite → <strong>Schedules</strong> → a 5-field cron + timezone.</p>
@@ -2505,7 +2535,7 @@ no orchestrator (e.g. flat-file drops), at a cadence matched to arrival, not "ev
 to be safe". See <a href="../best-practices/#prefer-triggers-over-schedules-where-an-orchestrator-exists">Prefer triggers over schedules</a>.</p>
 <h2 id="6-configure-alerting">6. Configure alerting<a class="headerlink" href="#6-configure-alerting" title="Permanent link">¶</a></h2>
 <p><strong>Do:</strong> Suite → <strong>Notifications</strong> → pick channels (Teams / Slack / email), the threshold, and
-recipients. Store channel webhooks/keys as secrets (<strong>Settings → Webhooks</strong> for the inbound
+recipients. Store channel webhooks/keys as secrets (<strong>Admin → Integrations</strong> for the inbound
 ones).</p>
 <p><strong>Recommended:</strong></p>
 <ul>
@@ -2603,7 +2633,7 @@ operating discipline that keeps the alerts meaningful.</p>
       <nav class="md-footer__inner md-grid" aria-label="Footer">
         
           
-          <a href="../api-keys/" class="md-footer__link md-footer__link--prev" aria-label="Previous: API keys (PATs)">
+          <a href="../admin/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Admin control centre">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"></path></svg>
@@ -2613,7 +2643,7 @@ operating discipline that keeps the alerts meaningful.</p>
                 Previous
               </span>
               <div class="md-ellipsis">
-                API keys (PATs)
+                Admin control centre
               </div>
             </div>
           </a>

@@ -753,6 +753,8 @@
       
         
       
+        
+      
     
     
     
@@ -1179,6 +1181,34 @@
     
   
     API keys (PATs)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../admin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Admin control centre
   
 
     
@@ -2504,7 +2534,7 @@ not run the pipelines. Azure Data Factory, Apache Airflow, and dbt all sit behin
 (shared-secret authenticated). The alert names the factory/pipeline but no run id, so a
 fired alert triggers an immediate targeted poll — the failed run lands in the pipeline
 feed within seconds. Succeeded runs are picked up by the same poll on its 10-min cadence.</p>
-<p><strong>Getting the webhook URL:</strong> a workspace admin opens <strong>Settings → Webhooks</strong> in the app —
+<p><strong>Getting the webhook URL:</strong> a workspace admin opens <strong>Admin → Integrations</strong> in the app —
 it shows the ready-to-paste inbound URL per provider (the ADF one embeds the shared
 secret behind a reveal toggle; treat it as a credential). No hand-assembly from Key
 Vault needed. Provisioning details: <strong>One-time provisioning → step 5</strong> in the
@@ -2542,7 +2572,7 @@ then looks in <code>&lt;prefix&gt;/dbt/dbt/latest/</code> and finds nothing).</p
   <strong>job-level</strong> (one <code>pipeline_run</code> per dbt job build).</li>
 </ul>
 <p>Store the HMAC signing key as the <code>dbt-webhook-secret</code> in DataQ's secret store; the webhook
-URL is shown in <strong>Settings → Webhooks</strong> like the others.</p>
+URL is shown in <strong>Admin → Integrations</strong> like the others.</p>
 <h3 id="lineage-from-manifestjson-adr-0034">Lineage from <code>manifest.json</code> (ADR 0034)<a class="headerlink" href="#lineage-from-manifestjson-adr-0034" title="Permanent link">¶</a></h3>
 <p>Alongside <code>run_results.json</code>, DataQ reads each job's <strong><code>manifest.json</code></strong> — the sibling artifact
 at <code>&lt;artifacts_uri&gt;/&lt;job&gt;/latest/manifest.json</code> — for <strong>table-level lineage</strong>. On a <strong>succeeded</strong>
