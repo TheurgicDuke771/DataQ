@@ -202,6 +202,41 @@ def _seed_role_fixtures(session: Session, *, owner: User) -> int:
     return len(tokens)
 
 
+#: A member who exists only to be offboarded by the E2E spec. Deliberately not
+#: one of `_ROLE_FIXTURES`: those back the per-role perspectives and a spec that
+#: revokes their PAT would break the specs that use it.
+OFFBOARD_TARGET_EMAIL = "offboard-target@dataq.local"
+
+
+def _seed_offboard_target(session: Session) -> str:
+    """A member with a live PAT for the offboarding spec to take apart.
+
+    Re-minted on every seed, like the role fixtures, so a previous run having
+    revoked it does not leave the spec with nothing to revoke.
+    """
+    user = session.scalars(
+        select(User).where(func.lower(User.email) == OFFBOARD_TARGET_EMAIL)
+    ).first()
+    if user is None:
+        user = User(
+            id=uuid.uuid4(),
+            aad_object_id=None,
+            email=OFFBOARD_TARGET_EMAIL,
+            display_name="Otto Offboard",
+        )
+        session.add(user)
+    user.role = "member"
+    session.flush()
+    for old in session.scalars(
+        select(ApiKey).where(ApiKey.user_id == user.id, ApiKey.name == "e2e-offboard")
+    ):
+        session.delete(old)
+    session.flush()
+    api_key_service.create_key(session, user, name="e2e-offboard")
+    session.commit()
+    return OFFBOARD_TARGET_EMAIL
+
+
 def seed() -> None:
     settings = get_settings()
     session = get_session()
@@ -218,13 +253,14 @@ def seed() -> None:
         summary = seed_demo_data(session, owner=user, secret_store=get_secret_store())
         operator_shares = _share_with_otp_operators(session, owner=user, settings=settings)
         _seed_role_fixtures(session, owner=user)
+        offboard_target = _seed_offboard_target(session)
         print(
             "Seeded dev data: "
             f"user={user.email} probe_connection={connection.name} "
             f"probe_suite={suite.name} probe_checks={len(checks)} | "
             f"demo connections={summary['connections']} suites={summary['suites']} "
             f"checks={summary['checks']} shares={summary['shares']} "
-            f"otp_operator_shares={operator_shares}"
+            f"otp_operator_shares={operator_shares} offboard_target={offboard_target}"
         )
     finally:
         session.close()
