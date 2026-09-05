@@ -1,7 +1,7 @@
 import { DeleteOutlined } from '@ant-design/icons';
-import { App, Button, Drawer, Empty, Flex, Select, Spin, Tag, Tooltip } from 'antd';
+import { App, Button, Drawer, Empty, Flex, Select, Tag, Tooltip } from 'antd';
 import SimpleList from '../SimpleList';
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 
 import {
   grantShare,
@@ -9,12 +9,12 @@ import {
   revokeShare,
   type Share,
   type SharePermission,
-  searchUsers,
   updateShare,
   type UserSummary,
 } from '../../api/shares';
 import { useCurrentUser } from '../../auth/useCurrentUser';
 import { useAsyncData } from '../../hooks/useAsyncData';
+import { UserSearchSelect } from '../shared/UserSearchSelect';
 import { AsyncBody } from '../AsyncBody';
 import { errorMessage } from '../../utils/errors';
 
@@ -209,9 +209,6 @@ function AddCollaborator({
   onAdded: () => void;
 }) {
   const { message } = App.useApp();
-  const [options, setOptions] = useState<UserSummary[]>([]);
-  const [searching, setSearching] = useState(false);
-  // The PICKED USER, held in state rather than re-derived from `options` on each render.
   const [picked, setPicked] = useState<UserSummary>();
   const [permission, setPermission] = useState<SharePermission>('view');
   // A Viewer cannot hold `edit` (ADR 0033): the backend rejects the grant, and
@@ -219,58 +216,17 @@ function AddCollaborator({
   const userId = picked?.id;
   const targetIsViewer = picked?.role === 'viewer';
   const [adding, setAdding] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  // Monotonic token so a slow earlier search can't overwrite a newer one's results (last-wins);
-  // unmount bumps it to a sentinel to drop any in-flight response.
-  const latest = useRef(0);
-  useEffect(
-    () => () => {
-      clearTimeout(timer.current);
-      latest.current = -1;
-    },
-    [],
-  );
-
-  // Debounce the directory query so a fast typist fires one search, not one per
-  // keystroke. The 2-char floor mirrors the backend (a shorter query returns []).
-  const onSearch = (raw: string) => {
-    const q = raw.trim();
-    clearTimeout(timer.current);
-    if (q.length < 2) {
-      setOptions([]);
-      setSearching(false); // a pending debounce was cancelled — drop its spinner
-      return;
-    }
-    setSearching(true);
-    const token = (latest.current += 1);
-    timer.current = setTimeout(() => {
-      searchUsers(q)
-        .then((users) => {
-          if (token !== latest.current) return; // superseded by a newer search
-          setOptions(users.filter((u) => !excludedIds.includes(u.id)));
-        })
-        .catch(() => {
-          if (token === latest.current) setOptions([]);
-        })
-        .finally(() => {
-          if (token === latest.current) setSearching(false);
-        });
-    }, 300);
-  };
 
   const onAdd = async () => {
     if (!userId) return;
     setAdding(true);
     try {
-      // Never send `edit` for a Viewer even if state got there some other way — the displayed value
-      // is already clamped above.
       const share = await grantShare(suiteId, {
         user_id: userId,
         permission: targetIsViewer ? 'view' : permission,
       });
       message.success(`${share.email}: shared`);
       setPicked(undefined);
-      setOptions([]);
       setPermission('view');
       onAdded();
     } catch (err) {
@@ -281,19 +237,11 @@ function AddCollaborator({
   };
 
   return (
-    // `wrap` + a search field that can actually shrink — the same shape TriggersPanel and
-    // SchedulesPanel already use for their control rows; this row was the one that never got it.
     <Flex gap={8} align="center" wrap>
-      <Select
-        showSearch={{ filterOption: false, onSearch }}
-        value={userId}
-        placeholder="Search by email or name"
-        onChange={(id: string) => setPicked(options.find((u) => u.id === id))}
-        notFoundContent={searching ? <Spin size="small" /> : null}
-        options={options.map((u) => ({
-          value: u.id,
-          label: u.display_name ? `${u.display_name} · ${u.email}` : u.email,
-        }))}
+      <UserSearchSelect
+        value={picked}
+        onChange={setPicked}
+        exclude={(u) => excludedIds.includes(u.id)}
         style={{ flex: 1, minWidth: 160 }}
       />
       <Select
@@ -304,8 +252,6 @@ function AddCollaborator({
         }))}
         onChange={setPermission}
         disabled={targetIsViewer}
-        // The tooltip is what stops a disabled control being a dead end: it says
-        // which lever actually changes the answer (their workspace role).
         title={
           targetIsViewer
             ? 'Workspace viewers are read-only — change their role to member to grant edit'

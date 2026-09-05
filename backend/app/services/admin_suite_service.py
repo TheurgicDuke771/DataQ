@@ -125,7 +125,9 @@ def transfer_ownership(
     kept: str | None = None
     if previous_owner_id is not None:
         existing = session.scalars(
-            select(Share).where(Share.suite_id == suite_id, Share.user_id == previous_owner_id)
+            select(Share)
+            .where(Share.suite_id == suite_id, Share.user_id == previous_owner_id)
+            .with_for_update()
         ).first()
         if keep_previous_owner_access:
             previous_owner = session.get(User, previous_owner_id, with_for_update=True)
@@ -174,6 +176,8 @@ def transfer_ownership(
 
 def delete_any_suite(session: Session, suite_id: uuid.UUID, *, actor: User) -> dict[str, int]:
     """Delete any suite as a workspace admin, recording what the cascade destroyed."""
+    # Hold the suite while counting so the audited impact matches what the cascade removes.
+    session.execute(select(Suite).where(Suite.id == suite_id).with_for_update())
     impact = suite_service.deletion_impact(session, suite_id)
     suite_service.delete_suite(
         session,

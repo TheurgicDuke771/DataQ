@@ -7,7 +7,7 @@ import {
   DELETION_IMPACT_UNAVAILABLE,
   describeDeletionImpact,
 } from '../../components/suites/deletionImpact';
-import { errorMessage } from '../../utils/errors';
+import { useAsyncAction } from '../../hooks/useAsyncAction';
 
 /** Admin delete of any suite (#1698) — states the blast radius and requires the
  *  suite's name to be typed, because this one is run on a suite the admin does
@@ -26,7 +26,7 @@ export function SuiteAdminDeleteModal({
   const { message } = App.useApp();
   const [impact, setImpact] = useState<string | null>(null);
   const [typed, setTyped] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  const { run, loading } = useAsyncAction('Delete failed');
 
   useEffect(() => {
     if (!suite) return;
@@ -45,19 +45,14 @@ export function SuiteAdminDeleteModal({
 
   const confirmed = suite !== null && typed.trim() === suite.name;
 
-  const onOk = async () => {
+  const onOk = () => {
     if (!suite || !confirmed) return;
-    setSubmitting(true);
-    try {
+    void run(async () => {
       await deleteAdminSuite(suite.id);
       message.success(`${suite.name} deleted`);
       onDeleted();
       onClose();
-    } catch (err) {
-      message.error(`Delete failed: ${errorMessage(err)}`);
-    } finally {
-      setSubmitting(false);
-    }
+    });
   };
 
   return (
@@ -68,7 +63,7 @@ export function SuiteAdminDeleteModal({
       onOk={onOk}
       okText="Delete"
       okType="danger"
-      okButtonProps={{ disabled: !confirmed, loading: submitting }}
+      okButtonProps={{ disabled: !confirmed, loading }}
       destroyOnHidden
     >
       <Flex vertical gap={12}>
