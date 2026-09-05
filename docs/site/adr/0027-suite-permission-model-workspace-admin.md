@@ -15,6 +15,8 @@
 > The implicit-suite-admin rule below is **unchanged**; the grant model gains one
 > rule — no `edit` shares to Viewers (their effective level caps at `view`).
 
+> **Amendment (2026-09-05, admin write pass):** ownership is no longer immutable. A workspace admin can transfer a suite to another member or admin (`POST /admin/suites/{id}/transfer`), revoke any per-suite share, and delete any suite; every one of these is audited with `admin_override: true`. The previous owner keeps an `edit` grant by default (clamped to `view` for a Viewer). `created_by` now means *current owner*; the creator at any past moment is recoverable from the `suite.transfer` audit trail.
+
 > **Companion (2026-07-18, [ADR 0037](0037-workspace-visible-asset-identity.md)):** the
 > suite ladder below remains the *only* grant model — but it now guards **suite-derived
 > detail only** (suite/check config, runs, results, samples, incidents, and the
@@ -101,9 +103,10 @@ Net per suite: **one owner + workspace-admin-as-admin + edit/view collaborators.
   supports **multiple** workspace-admins — use that to avoid a bottleneck. (For
   most teams, "manage access" and "delete" are governance actions, so centralising
   them is acceptable.)
-- **`owner` remains immutable / non-reassignable.** Workspace-admin is now the
-  succession path for an orphaned suite; explicit owner-reassignment stays a
-  separate future item.
+- **`owner` was immutable / non-reassignable until the admin write pass** (see the
+  amendment at the top): a workspace admin can now transfer a suite to another
+  member or admin. `created_by` then names the current owner; the original creator
+  is preserved in the `suite.transfer` audit event, not on the row.
 
 **Implementation shape**
 - `effective_permission` / `effective_permissions` return `admin` when the user

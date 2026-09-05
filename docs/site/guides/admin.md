@@ -112,6 +112,69 @@ has not earned.
 
 ## Members
 
+### Roles and access grants
+
+The **Members** table carries every user with their workspace role, editable in place. The
+last stored-role Admin cannot be demoted: the workspace would have nobody able to manage
+connections or membership, so the change is refused with the reason rather than accepted
+and silently reverted. Admins granted only by the environment allowlist do not count
+towards that guard — the allowlist is a recovery path, not the invariant.
+
+Below it, **Access grants** lists every per-suite grant in the workspace: one row per
+owner and one per share, unscoped by who owns what.
+
+### Revoking any share
+
+An Admin can revoke **any** per-suite share from this table, including on suites they
+neither own nor have been shared. Until now that was possible only for the suite's own
+owner, from the suite's sharing panel — which meant an Admin cleaning up after a departure
+had to be granted access to each suite first.
+
+The confirmation names the user, the level and the suite, because a grant row is read out
+of context here. Revoking is audited with the admin-override flag and the grant that was
+removed, so the trail survives the row.
+
+An **owner** row is not a grant and has no Revoke: ownership is not something a share
+carries, and it moves by transfer instead.
+
+## Suites
+
+### Transferring ownership
+
+**Transfer** hands a suite to another user — the offboarding primitive. When somebody
+leaves, their suites keep running, but nobody can manage sharing or delete them until an
+owner exists again.
+
+- The new owner gets full control: the suite, its checks and its history.
+- The previous owner keeps an **editor** grant by default, so a handover does not lock the
+  person still doing the work out of it. Clearing that checkbox removes their access
+  entirely, which is what an offboarding wants.
+- **Workspace viewers cannot own a suite.** Viewers are read-only everywhere, so they are
+  not listed in the picker and the transfer is refused if attempted another way. Change
+  their workspace role to member first.
+- A previous owner who is themselves a viewer keeps **view**, not edit, for the same
+  reason.
+
+Both owners are recorded in the audit event.
+
+### Deleting any suite
+
+**Delete** removes any suite in the workspace. Before the confirmation appears, DataQ
+counts exactly what the delete would destroy — checks, runs, results, and any schedules or
+trigger bindings pointing at the suite — and states it plainly. The counts are exact, never
+estimated; if they cannot be read, the confirmation says so rather than showing a number it
+does not have, and the delete is still available.
+
+Because this runs on a suite the Admin may not recognise, the confirmation requires the
+suite's **name to be typed**. The delete cascades and **cannot be undone**: the run history,
+results and monitor baselines go with the suite. The audit event records the counts, so
+what was destroyed is still answerable afterwards.
+
+If the goal is to stop a suite running rather than erase it, disable its schedules and
+trigger bindings instead — that keeps the history.
+
+## Members
+
 The Members tab manages two different things, and it helps to keep them apart:
 
 - **Workspace membership** — *who is allowed into this workspace at all.*

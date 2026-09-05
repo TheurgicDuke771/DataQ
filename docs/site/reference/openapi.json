@@ -44,6 +44,18 @@
       },
       "AdminAccessRead": {
         "properties": {
+          "grant_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grant Id"
+          },
           "permission": {
             "title": "Permission",
             "type": "string"
@@ -84,7 +96,8 @@
           "user_id",
           "user_email",
           "user_name",
-          "permission"
+          "permission",
+          "grant_id"
         ],
         "title": "AdminAccessRead",
         "type": "object"
@@ -7147,6 +7160,72 @@
         "title": "SuiteTarget",
         "type": "object"
       },
+      "SuiteTransfer": {
+        "additionalProperties": false,
+        "description": "`POST /admin/suites/{id}/transfer` body.",
+        "properties": {
+          "keep_previous_owner_access": {
+            "default": true,
+            "title": "Keep Previous Owner Access",
+            "type": "boolean"
+          },
+          "new_owner_user_id": {
+            "format": "uuid",
+            "title": "New Owner User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "new_owner_user_id"
+        ],
+        "title": "SuiteTransfer",
+        "type": "object"
+      },
+      "SuiteTransferResult": {
+        "properties": {
+          "new_owner_id": {
+            "format": "uuid",
+            "title": "New Owner Id",
+            "type": "string"
+          },
+          "previous_owner_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Owner Id"
+          },
+          "previous_owner_permission": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Owner Permission"
+          },
+          "suite_id": {
+            "format": "uuid",
+            "title": "Suite Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "suite_id",
+          "previous_owner_id",
+          "new_owner_id",
+          "previous_owner_permission"
+        ],
+        "title": "SuiteTransferResult",
+        "type": "object"
+      },
       "SuiteUpdate": {
         "additionalProperties": false,
         "properties": {
@@ -8505,6 +8584,144 @@
           }
         },
         "summary": "All suites (admin)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/suites/{suite_id}": {
+      "delete": {
+        "description": "Delete any suite in the workspace. The cascade is the same one the owner's\nown delete runs; the audit event records what it destroyed.",
+        "operationId": "delete_suite_api_v1_admin_suites__suite_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suite_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Suite Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete any suite (admin)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/suites/{suite_id}/access/{grant_id}": {
+      "delete": {
+        "description": "Revoke a share on any suite \u2014 the suite's own panel is owner/admin-gated,\nthis one is workspace-admin-gated and needs no grant on the suite itself.",
+        "operationId": "revoke_grant_api_v1_admin_suites__suite_id__access__grant_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suite_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Suite Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "grant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Grant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke any per-suite access grant (admin)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/suites/{suite_id}/transfer": {
+      "post": {
+        "description": "Hand a suite to another user \u2014 the offboarding primitive.",
+        "operationId": "transfer_suite_api_v1_admin_suites__suite_id__transfer_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suite_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Suite Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SuiteTransfer"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuiteTransferResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Transfer suite ownership (admin)",
         "tags": [
           "admin"
         ]

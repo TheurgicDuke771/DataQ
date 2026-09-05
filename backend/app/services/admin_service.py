@@ -85,6 +85,9 @@ class AdminAccessRow:
     user_email: str
     user_name: str | None
     permission: str  # 'owner' | 'admin' | 'edit' | 'view'
+    #: The `shares.id` an admin revoke targets — `None` for an implicit owner row,
+    #: which is not a grant and cannot be revoked (transfer ownership instead).
+    grant_id: UUID | None
 
 
 def list_all_suites(session: Session) -> list[AdminSuiteRow]:
@@ -176,21 +179,23 @@ def list_all_access(session: Session) -> list[AdminAccessRow]:
         User, Suite.created_by == User.id
     )
     share_stmt = (
-        select(Suite.id, Suite.name, User.id, User.email, User.display_name, Share.permission)
+        select(
+            Suite.id, Suite.name, User.id, User.email, User.display_name, Share.permission, Share.id
+        )
         .join(Suite, Share.suite_id == Suite.id)
         .join(User, Share.user_id == User.id)
     )
 
     rows = [
-        AdminAccessRow(sid, sname, uid, email, name, OWNER)
+        AdminAccessRow(sid, sname, uid, email, name, OWNER, None)
         for sid, sname, uid, email, name in session.execute(owner_stmt)
         # An erased author leaves no grant to report: the suite has no owner, and a row with a null
         # user would render as a grant to nobody.
         if uid is not None
     ]
     rows += [
-        AdminAccessRow(sid, sname, uid, email, name, perm)
-        for sid, sname, uid, email, name, perm in session.execute(share_stmt)
+        AdminAccessRow(sid, sname, uid, email, name, perm, grant_id)
+        for sid, sname, uid, email, name, perm, grant_id in session.execute(share_stmt)
     ]
     rows.sort(
         key=lambda r: (r.suite_name.lower(), _PERMISSION_RANK.get(r.permission, 9), r.user_email)
