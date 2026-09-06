@@ -1,5 +1,5 @@
 import { App } from 'antd';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -86,7 +86,9 @@ describe('RoleEditor', () => {
 
     await pick('admin');
 
-    await waitFor(() => expect(mockSet).toHaveBeenCalledWith('u-1', 'admin'));
+    await waitFor(() =>
+      expect(mockSet).toHaveBeenCalledWith('u-1', 'admin', { confirmSelf: false }),
+    );
     // The SERVER's row is what propagates — never an optimistic local guess, so
     // a change that appears to succeed and then reverts is impossible.
     await waitFor(() => expect(onChanged).toHaveBeenCalledWith(updated));
@@ -129,11 +131,31 @@ describe('RoleEditor', () => {
     renderEditor(user({ id: 'u-1', role: 'admin' }));
 
     await pick('member');
+    // Self-demotion asks first (the server refuses without confirm_self).
+    fireEvent.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Demote me' }),
+    );
+    await waitFor(() =>
+      expect(mockSet).toHaveBeenCalledWith('u-1', 'member', { confirmSelf: true }),
+    );
 
     // Refetched, not patched locally: `/me` reports the EFFECTIVE role, and an
     // admin still on WORKSPACE_ADMIN_EMAILS remains one — only the server knows.
     await waitFor(() => expect(fetchMe).toHaveBeenCalled());
     await waitFor(() => expect(mockUpdateMe).toHaveBeenCalledWith(refreshed));
+  });
+
+  it('does not call the API when a self-demotion is cancelled', async () => {
+    currentMe = { status: 'ok', data: { id: 'u-1' } };
+    renderEditor(user({ id: 'u-1', role: 'admin' }));
+
+    await pick('viewer');
+    fireEvent.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Cancel' }),
+    );
+    // antd keeps the closed dialog in the DOM; the behavioural assertion is the one that matters.
+    await waitFor(() => expect(mockSet).not.toHaveBeenCalled());
+    expect(mockUpdateMe).not.toHaveBeenCalled();
   });
 
   it('does not refetch /me when changing someone else’s role', async () => {

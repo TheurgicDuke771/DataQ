@@ -119,6 +119,8 @@ class UserRoleUpdate(ApiRequestModel):
     #: A Literal, not a bare `str`: an unknown tier is a 422 from the framework rather than
     #: something the service has to reject.
     role: Literal["admin", "member", "viewer"]
+    #: Required (true) when an admin demotes THEMSELVES; ignored for anyone else.
+    confirm_self: bool = False
 
 
 @router.patch(
@@ -133,7 +135,9 @@ def set_user_role(
     db: Annotated[Session, Depends(get_db)],
 ) -> AdminUserRead:
     """Set `user_id`'s stored workspace role — the one sanctioned way to demote."""
-    svc.set_user_role(db, user_id, new_role=payload.role, actor=current_user)
+    svc.set_user_role(
+        db, user_id, new_role=payload.role, actor=current_user, confirm_self=payload.confirm_self
+    )
     # Re-read through the SAME row builder the list uses, so the response carries the identical
     # computed fields (`allowlist_admin`, the suite counts).
     return AdminUserRead.model_validate(svc.get_admin_user(db, user_id))

@@ -1,4 +1,4 @@
-import { App, Select, Space, Tag, Tooltip } from 'antd';
+import { App, Modal, Select, Space, Tag, Tooltip } from 'antd';
 import { useState } from 'react';
 
 import {
@@ -25,14 +25,25 @@ export function RoleEditor({
   const updateMe = useUpdateMe();
   const [saving, setSaving] = useState(false);
 
-  async function change(role: WorkspaceRole) {
+  const isSelf = me.status === 'ok' && me.data.id === user.id;
+
+  const [pending, setPending] = useState<WorkspaceRole | null>(null);
+
+  function change(role: WorkspaceRole) {
     if (role === user.role) return;
+    // Demoting yourself removes the access that made the call; the server refuses without
+    // `confirm_self`, and the UI asks first rather than surfacing that refusal.
+    if (isSelf && role !== 'admin') setPending(role);
+    else void apply(role, false);
+  }
+
+  async function apply(role: WorkspaceRole, confirmSelf: boolean) {
     setSaving(true);
     try {
-      const updated = await setAdminUserRole(user.id, role);
+      const updated = await setAdminUserRole(user.id, role, { confirmSelf });
       onChanged(updated);
       message.success(`${user.email} is now ${role}`);
-      if (me.status === 'ok' && me.data.id === user.id) {
+      if (isSelf) {
         // Self-change: refetch rather than patching the context locally, because `/me` reports the
         // EFFECTIVE role.
         updateMe(await fetchMe());
@@ -48,6 +59,20 @@ export function RoleEditor({
 
   return (
     <Space size={4}>
+      <Modal
+        open={pending !== null}
+        title="Give up your admin role?"
+        okText="Demote me"
+        okButtonProps={{ danger: true }}
+        onOk={() => {
+          const role = pending;
+          setPending(null);
+          if (role) void apply(role, true);
+        }}
+        onCancel={() => setPending(null)}
+      >
+        You will be {pending} on your next request and lose access to this page.
+      </Modal>
       <Select<WorkspaceRole>
         value={user.role}
         onChange={change}

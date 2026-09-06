@@ -382,8 +382,11 @@ def set_user_role(
     *,
     new_role: str,
     actor: User,
+    confirm_self: bool = False,
 ) -> User:
-    """Set a user's stored workspace role. Caller must already be admin-gated."""
+    """Set a user's stored workspace role. Caller must already be admin-gated.
+    Demoting yourself needs `confirm_self`: it removes the very access that made
+    the call, so a mis-click must not be enough."""
     if new_role not in WORKSPACE_ROLES:
         raise RoleChangeRejectedError(
             f"unknown workspace role: {new_role!r}",
@@ -420,6 +423,12 @@ def set_user_role(
     # can be stale. Excluding a non-admin costs nothing.
     if new_role != ADMIN_ROLE:
         assert_admin_remains(session, exclude_user_id=target.id)
+        if target.id == actor.id and not confirm_self:
+            raise RoleChangeRejectedError(
+                "demoting yourself removes your admin access on your next request — "
+                "resend with confirm_self=true if you mean it",
+                detail={"user_id": str(user_id), "role": new_role},
+            )
 
     target.role = new_role
     # The durable record (ADR 0041 phase 1, #1318).
