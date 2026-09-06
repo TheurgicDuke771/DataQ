@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "388140bb0662",
+  "strategy": "manual-commit",
+  "branch": "docs/progress-offboarding-followups",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/38/8140bb0662/0/metadata.json",
+      "transcript": "/38/8140bb0662/0/full.jsonl",
+      "compact_transcript": "/38/8140bb0662/0/transcript.jsonl",
+      "content_hash": "/38/8140bb0662/0/content_hash.txt",
+      "prompt": "/38/8140bb0662/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 15044,
+    "cache_creation_tokens": 5467883,
+    "cache_read_tokens": 256253296,
+    "output_tokens": 505145,
+    "api_call_count": 579
+  }
+}
