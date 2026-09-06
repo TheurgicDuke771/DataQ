@@ -5253,6 +5253,17 @@
             ],
             "title": "New Owner User Id"
           },
+          "role_demoted_from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role Demoted From"
+          },
           "sessions_revoked": {
             "title": "Sessions Revoked",
             "type": "integer"
@@ -5296,6 +5307,7 @@
           "api_keys_revoked",
           "sessions_revoked",
           "membership_removed",
+          "role_demoted_from",
           "still_admitted_by",
           "skipped"
         ],
