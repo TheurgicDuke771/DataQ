@@ -241,7 +241,18 @@ export function OffboardModal({
 }
 
 function MembershipNote({ preview }: { preview: OffboardPreview }) {
-  if (preview.membership_state === 'member') return <Tag color="blue">will be withdrawn</Tag>;
+  if (preview.membership_state === 'member') {
+    return (
+      <Flex vertical gap={4}>
+        <Tag color="blue">will be withdrawn</Tag>
+        {preview.still_admitted_by.length > 0 && (
+          <Typography.Text type="warning" style={{ fontSize: 12 }}>
+            {preview.membership_note}
+          </Typography.Text>
+        )}
+      </Flex>
+    );
+  }
   return (
     <Flex vertical gap={4}>
       <Tag color="orange">
@@ -268,6 +279,14 @@ function Receipt({ receipt }: { receipt: OffboardReceipt }) {
           {receipt.membership_removed ? 'yes' : 'no'}
         </Descriptions.Item>
       </Descriptions>
+      {receipt.still_admitted_by.length > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          title="Still admitted by the environment"
+          description={`${receipt.still_admitted_by.join(' and ')} still admits ${receipt.email} on its own. Remove it there and restart — until then they can sign in.`}
+        />
+      )}
       {receipt.skipped.length > 0 && (
         <List
           size="small"
