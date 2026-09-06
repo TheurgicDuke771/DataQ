@@ -334,13 +334,20 @@ def test_the_preview_holds_no_row_locks(committed: _Fixture) -> None:
     (#1922): after a preview on one connection, another can still lock an
     admin row without waiting."""
     # An ADMIN leaver: only then does the preview consult the cross-table guard.
+    # Seeded on the fixture's REAL-commit connection, so it must be removed here
+    # too — a leaked stored-role admin breaks every later last-admin test.
     departing_admin = _user(committed.session, "admin")
     committed.session.commit()
-    offboarding_service.preview(committed.session, departing_admin.id, actor=committed.actor)
-    with committed.engine.connect() as other:
-        other.execute(text("SET lock_timeout = '500ms'"))
-        locked = other.execute(
-            text("SELECT id FROM users WHERE role = 'admin' ORDER BY id FOR UPDATE NOWAIT")
-        ).all()
-        other.rollback()
-    assert locked  # the fixture seeds at least one stored-role admin
+    try:
+        offboarding_service.preview(committed.session, departing_admin.id, actor=committed.actor)
+        with committed.engine.connect() as other:
+            other.execute(text("SET lock_timeout = '500ms'"))
+            locked = other.execute(
+                text("SELECT id FROM users WHERE role = 'admin' ORDER BY id FOR UPDATE NOWAIT")
+            ).all()
+            other.rollback()
+        assert locked  # the fixture seeds at least one stored-role admin
+    finally:
+        committed.session.rollback()
+        committed.session.delete(departing_admin)
+        committed.session.commit()

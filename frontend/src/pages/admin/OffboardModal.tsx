@@ -1,17 +1,17 @@
 import {
   Alert,
+  Button,
   App,
   Descriptions,
   Flex,
   Input,
   List,
   Modal,
-  Select,
   Spin,
   Tag,
   Typography,
 } from 'antd';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import {
   type AdminUser,
@@ -20,7 +20,9 @@ import {
   offboardUser,
   previewOffboarding,
 } from '../../api/admin';
-import { searchUsers, type UserSummary } from '../../api/shares';
+import { type UserSummary } from '../../api/shares';
+import { UserSearchSelect } from '../../components/shared/UserSearchSelect';
+import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { errorMessage } from '../../utils/errors';
 
 /** Offboard a departing user in one pass: hand over their suites, revoke their
@@ -41,13 +43,9 @@ export function OffboardModal({
   const [preview, setPreview] = useState<OffboardPreview>();
   const [previewError, setPreviewError] = useState<string>();
   const [receipt, setReceipt] = useState<OffboardReceipt>();
-  const [options, setOptions] = useState<UserSummary[]>([]);
-  const [searching, setSearching] = useState(false);
   const [picked, setPicked] = useState<UserSummary>();
   const [typed, setTyped] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const latest = useRef(0);
+  const { run, loading: submitting } = useAsyncAction('Offboarding failed');
 
   const userId = user?.id;
 
@@ -66,51 +64,15 @@ export function OffboardModal({
     return () => controller.abort();
   }, [userId]);
 
-  useEffect(
-    () => () => {
-      clearTimeout(timer.current);
-      latest.current = -1;
-    },
-    [],
-  );
-
-  const onSearch = (raw: string) => {
-    const q = raw.trim();
-    clearTimeout(timer.current);
-    if (q.length < 2) {
-      setOptions([]);
-      setSearching(false);
-      return;
-    }
-    setSearching(true);
-    const token = (latest.current += 1);
-    timer.current = setTimeout(() => {
-      searchUsers(q)
-        .then((users) => {
-          if (token !== latest.current) return;
-          // A viewer cannot own a suite and the leaver cannot inherit their own —
-          // the backend rejects both, so neither is offered.
-          setOptions(users.filter((u) => u.role !== 'viewer' && u.id !== userId));
-        })
-        .catch(() => {
-          if (token === latest.current) setOptions([]);
-        })
-        .finally(() => {
-          if (token === latest.current) setSearching(false);
-        });
-    }, 300);
-  };
-
   const needsOwner = (preview?.owned_suites.length ?? 0) > 0;
   const confirmed =
     preview !== undefined && typed.trim().toLowerCase() === preview.email.toLowerCase();
   const blocked = preview?.is_last_admin === true;
   const ready = confirmed && !blocked && (!needsOwner || picked !== undefined);
 
-  const onOk = async () => {
-    if (!userId || !preview || !ready) return;
-    setSubmitting(true);
-    try {
+  const onOk = () =>
+    void run(async () => {
+      if (!userId || !preview || !ready) return;
       const result = await offboardUser(userId, {
         new_owner_user_id: picked?.id ?? null,
         keep_previous_owner_access: false,
@@ -121,26 +83,24 @@ export function OffboardModal({
       setReceipt(result);
       message.success(`${preview.email} has been offboarded`);
       onOffboarded();
-    } catch (err) {
-      message.error(`Offboarding failed: ${errorMessage(err)}`);
-    } finally {
-      setSubmitting(false);
-    }
-  };
+    });
+  const done = receipt !== undefined;
 
   return (
     <Modal
       title={user ? `Offboard ${user.email}` : 'Offboard user'}
       open={user !== null}
       onCancel={onClose}
-      onOk={receipt ? onClose : onOk}
-      okText={receipt ? 'Done' : 'Offboard'}
-      okButtonProps={{
-        danger: !receipt,
-        disabled: !receipt && !ready,
-        loading: submitting,
-      }}
-      cancelButtonProps={{ style: receipt ? { display: 'none' } : undefined }}
+      footer={
+        done ? (
+          <Button type="primary" onClick={onClose}>
+            Done
+          </Button>
+        ) : undefined
+      }
+      onOk={onOk}
+      okText="Offboard"
+      okButtonProps={{ danger: true, disabled: !ready, loading: submitting }}
       destroyOnHidden
       width={620}
     >
@@ -203,17 +163,13 @@ export function OffboardModal({
                   </List.Item>
                 )}
               />
-              <Select
-                showSearch={{ filterOption: false, onSearch }}
-                value={picked?.id}
-                placeholder="Search by email or name"
-                onChange={(id: string) => setPicked(options.find((u) => u.id === id))}
-                notFoundContent={searching ? <Spin size="small" /> : null}
-                options={options.map((u) => ({
-                  value: u.id,
-                  label: u.display_name ? `${u.display_name} · ${u.email}` : u.email,
-                }))}
-                aria-label="New owner"
+              <UserSearchSelect
+                value={picked}
+                onChange={setPicked}
+                // A viewer cannot own a suite and the leaver cannot inherit their own —
+                // the backend rejects both, so neither is offered.
+                exclude={(u) => u.role === 'viewer' || u.id === userId}
+                ariaLabel="New owner"
               />
               <Typography.Text type="secondary">
                 The departing user keeps no access to the suites they hand over. Workspace viewers
