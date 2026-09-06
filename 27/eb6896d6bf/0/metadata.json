@@ -1,0 +1,62 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "27eb6896d6bf",
+  "session_id": "a3286bf3-0fe0-4e1a-a16e-4bc5404a9025",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-06T13:18:20.623628Z",
+  "branch": "feature/issue-1559-scoring-weights",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/_base.py",
+    "backend/app/api/v1/admin_privacy.py",
+    "backend/app/api/v1/admin_scoring.py",
+    "backend/app/mcp/server.py",
+    "backend/app/services/asset_view_service.py",
+    "backend/app/services/dashboard_service.py",
+    "backend/app/services/rollup.py",
+    "backend/app/services/scoring_settings_service.py",
+    "backend/tests/services/test_scoring_settings_service.py",
+    "frontend/src/pages/Profile.tsx",
+    "frontend/src/pages/admin/ScoringPanel.tsx",
+    "frontend/tests/pages/Profile.test.tsx"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "a3af84218456",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 6,
+    "cache_creation_tokens": 211127,
+    "cache_read_tokens": 148561,
+    "output_tokens": 4230,
+    "api_call_count": 3
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-06T13:18:20.596758Z",
+    "agent_lines": 37,
+    "agent_removed": 69,
+    "human_added": 0,
+    "human_modified": 1,
+    "human_removed": 3,
+    "total_committed": 38,
+    "total_lines_changed": 110,
+    "agent_percentage": 96.36363636363636,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 7,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 7
+      }
+    }
+  ]
+}

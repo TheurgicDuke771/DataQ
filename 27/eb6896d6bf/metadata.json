@@ -1,0 +1,37 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "27eb6896d6bf",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1559-scoring-weights",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/_base.py",
+    "backend/app/api/v1/admin_privacy.py",
+    "backend/app/api/v1/admin_scoring.py",
+    "backend/app/mcp/server.py",
+    "backend/app/services/asset_view_service.py",
+    "backend/app/services/dashboard_service.py",
+    "backend/app/services/rollup.py",
+    "backend/app/services/scoring_settings_service.py",
+    "backend/tests/services/test_scoring_settings_service.py",
+    "frontend/src/pages/Profile.tsx",
+    "frontend/src/pages/admin/ScoringPanel.tsx",
+    "frontend/tests/pages/Profile.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/27/eb6896d6bf/0/metadata.json",
+      "transcript": "/27/eb6896d6bf/0/full.jsonl",
+      "compact_transcript": "/27/eb6896d6bf/0/transcript.jsonl",
+      "content_hash": "/27/eb6896d6bf/0/content_hash.txt",
+      "prompt": "/27/eb6896d6bf/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 6,
+    "cache_creation_tokens": 211127,
+    "cache_read_tokens": 148561,
+    "output_tokens": 4230,
+    "api_call_count": 3
+  }
+}

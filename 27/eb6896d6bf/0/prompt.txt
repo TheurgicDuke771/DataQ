@@ -1,0 +1,1 @@
+How can we get this level of lineage view for all the available objects [atleast for snowflake], snowflake have the details we need to pull it. Do some research and let me know the feasibility and available options to achive this.
