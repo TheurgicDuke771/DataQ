@@ -705,3 +705,26 @@ def test_the_switch_on_import_cannot_miss_a_concurrent_first_sign_in(
     # member".
     if signed_in is not None:
         assert newcomer in members, "a user row exists that the import never admitted"
+
+
+def test_env_vars_naming_reads_only_configured_doors() -> None:
+    """The offboarding preview names exactly the vars a door reads (#1921)."""
+    assert svc.env_vars_naming("on-the-allowlist@acme.io", _ENV_LISTED) == (
+        "OIDC_ALLOWED_DOMAINS",
+        "OIDC_ALLOWED_EMAILS",
+    )
+    assert svc.env_vars_naming("nobody@else.io", _ENV_LISTED) == ()
+    stale = Settings(
+        environment="prod",
+        auth_dev_bypass=False,
+        oidc_allowed_emails="left@acme.io",  # no issuer → this allowlist gates nothing
+    )
+    assert svc.env_vars_naming("left@acme.io", stale) == ()
+    seed = Settings(
+        environment="prod",
+        auth_dev_bypass=False,
+        oidc_issuer="https://issuer.example/",
+        oidc_audience="dataq",
+        workspace_admin_emails="root@acme.io",
+    )
+    assert svc.env_vars_naming("Root@acme.io", seed) == ("WORKSPACE_ADMIN_EMAILS",)

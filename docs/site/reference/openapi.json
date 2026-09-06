@@ -5196,6 +5196,13 @@
             "title": "Role",
             "type": "string"
           },
+          "still_admitted_by": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Still Admitted By",
+            "type": "array"
+          },
           "user_id": {
             "format": "uuid",
             "title": "User Id",
@@ -5212,6 +5219,7 @@
           "membership_state",
           "membership_id",
           "membership_note",
+          "still_admitted_by",
           "owned_suites",
           "open_api_key_count",
           "live_session_count"
@@ -5259,6 +5267,13 @@
             "title": "Skipped",
             "type": "array"
           },
+          "still_admitted_by": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Still Admitted By",
+            "type": "array"
+          },
           "transferred_suite_ids": {
             "items": {
               "format": "uuid",
@@ -5281,6 +5296,7 @@
           "api_keys_revoked",
           "sessions_revoked",
           "membership_removed",
+          "still_admitted_by",
           "skipped"
         ],
         "title": "OffboardReceiptRead",

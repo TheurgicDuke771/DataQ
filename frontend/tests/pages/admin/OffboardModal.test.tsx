@@ -41,6 +41,7 @@ function preview(overrides: Partial<OffboardPreview> = {}): OffboardPreview {
     membership_state: 'member',
     membership_id: 'm1',
     membership_note: null,
+    still_admitted_by: [],
     owned_suites: [],
     open_api_key_count: 2,
     live_session_count: 1,
@@ -56,6 +57,7 @@ const RECEIPT: OffboardReceipt = {
   api_keys_revoked: 2,
   sessions_revoked: 1,
   membership_removed: false,
+  still_admitted_by: [],
   skipped: [
     { step: 'transfer_suites', reason: 'this user owns no suites' },
     { step: 'remove_membership', reason: 'this address is listed in OIDC_ALLOWED_EMAILS' },

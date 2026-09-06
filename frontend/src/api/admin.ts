@@ -205,6 +205,8 @@ export interface OffboardPreview {
   membership_state: MembershipState;
   membership_id: string | null;
   membership_note: string | null;
+  /** Env vars that admit this address on their own — the pass cannot close those. */
+  still_admitted_by: string[];
   owned_suites: OffboardOwnedSuite[];
   /** Unrevoked and unexpired only. */
   open_api_key_count: number;
@@ -224,6 +226,8 @@ export interface OffboardReceipt {
   api_keys_revoked: number;
   sessions_revoked: number;
   membership_removed: boolean;
+  /** Env vars that still admit the address after the pass — remove them there. */
+  still_admitted_by: string[];
   /** Steps that did not run, with why. Empty means every step ran. */
   skipped: OffboardStep[];
 }

@@ -167,37 +167,77 @@ def test_a_user_with_no_membership_row_says_so_rather_than_implying_a_removal(
     assert "nothing to withdraw" in (view["membership_note"] or "")
 
 
-def test_an_env_listed_address_names_the_variable_that_still_admits_them(
+def _oidc_allowlist(monkeypatch: pytest.MonkeyPatch, **allowlists: str) -> None:
+    """An OIDC allowlist only gates a door when generic OIDC is configured."""
+    monkeypatch.setenv("OIDC_ISSUER", "https://issuer.example/")
+    monkeypatch.setenv("OIDC_AUDIENCE", "dataq")
+    for var, value in allowlists.items():
+        monkeypatch.setenv(var, value)
+    get_settings.cache_clear()
+
+
+def test_a_row_beside_an_env_allowlist_is_still_withdrawn_and_the_var_is_named(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The row is not the whole rule — membership is the union of it and the env
-    allowlist, so deleting it here would leave a working sign-in.
+    """Membership is the UNION of the row and the env allowlist, so the row must
+    go regardless — and the env residue is reported beside it, not instead of it.
     """
     leaver = _user(db_session, "member", email=f"env-{uuid.uuid4().hex[:6]}@example.com")
     _member_row(db_session, leaver)
     db_session.commit()
-    monkeypatch.setenv("OIDC_ALLOWED_EMAILS", leaver.email)
-    get_settings.cache_clear()
+    _oidc_allowlist(monkeypatch, OIDC_ALLOWED_EMAILS=leaver.email)
+
+    view = _preview(client, leaver)
+
+    assert view["membership_state"] == "member"
+    assert view["still_admitted_by"] == ["OIDC_ALLOWED_EMAILS"]
+    assert "OIDC_ALLOWED_EMAILS" in (view["membership_note"] or "")
+
+
+def test_no_row_and_an_env_allowlist_is_env_listed(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    leaver = _user(db_session, "member", email=f"env-{uuid.uuid4().hex[:6]}@example.com")
+    db_session.commit()
+    _oidc_allowlist(monkeypatch, OIDC_ALLOWED_EMAILS=leaver.email)
 
     view = _preview(client, leaver)
 
     assert view["membership_state"] == "env_listed"
-    assert "OIDC_ALLOWED_EMAILS" in (view["membership_note"] or "")
+    assert view["still_admitted_by"] == ["OIDC_ALLOWED_EMAILS"]
+
+
+def test_an_allowlist_for_an_unconfigured_mode_admits_nobody(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A leftover `OIDC_ALLOWED_EMAILS` on a deployment with no OIDC issuer gates
+    no door (#1921) — reporting it would send the admin to edit a variable that
+    admits nobody while the row stayed. (A partial OTP config is refused by
+    `Settings` itself, so that shape cannot occur.)"""
+    leaver = _user(db_session, "member", email=f"stale-{uuid.uuid4().hex[:6]}@example.com")
+    _member_row(db_session, leaver)
+    db_session.commit()
+    monkeypatch.setenv("OIDC_ALLOWED_EMAILS", leaver.email)  # no issuer → not configured
+    get_settings.cache_clear()
+
+    view = _preview(client, leaver)
+
+    assert view["membership_state"] == "member"
+    assert view["still_admitted_by"] == []
+    assert view["membership_note"] is None
 
 
 def test_a_domain_allowlist_counts_as_env_listed_too(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     leaver = _user(db_session, "member", email=f"dom-{uuid.uuid4().hex[:6]}@leaver.example")
-    _member_row(db_session, leaver)
     db_session.commit()
-    monkeypatch.setenv("OIDC_ALLOWED_DOMAINS", "leaver.example")
-    get_settings.cache_clear()
+    _oidc_allowlist(monkeypatch, OIDC_ALLOWED_DOMAINS="leaver.example")
 
     view = _preview(client, leaver)
 
     assert view["membership_state"] == "env_listed"
-    assert "OIDC_ALLOWED_DOMAINS" in (view["membership_note"] or "")
+    assert view["still_admitted_by"] == ["OIDC_ALLOWED_DOMAINS"]
 
 
 def test_previewing_an_unknown_user_is_404(client: TestClient) -> None:
@@ -398,25 +438,39 @@ def test_a_step_that_cannot_run_is_reported_with_its_reason(
     assert receipt["membership_removed"] is False
 
 
-def test_an_env_listed_address_is_skipped_rather_than_silently_left_behind(
+def test_an_env_listed_row_is_withdrawn_and_the_residue_named(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     leaver = _user(db_session, "member", email=f"env-{uuid.uuid4().hex[:6]}@example.com")
-    member = _member_row(db_session, leaver)
+    member_id = _member_row(db_session, leaver).id
     db_session.commit()
-    monkeypatch.setenv("OIDC_ALLOWED_EMAILS", leaver.email)
-    get_settings.cache_clear()
+    _oidc_allowlist(monkeypatch, OIDC_ALLOWED_EMAILS=leaver.email)
+
+    receipt = _offboard(client, leaver).json()
+
+    assert receipt["membership_removed"] is True
+    assert receipt["still_admitted_by"] == ["OIDC_ALLOWED_EMAILS"]
+    assert [e["step"] for e in receipt["skipped"] if e["step"] == "remove_membership"] == []
+    # Both doors: the row is gone, and the receipt says which var still admits.
+    db_session.expire_all()
+    assert db_session.get(WorkspaceMember, member_id) is None
+
+
+def test_no_row_and_an_env_allowlist_skips_the_step_with_the_var_named(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    leaver = _user(db_session, "member", email=f"env-{uuid.uuid4().hex[:6]}@example.com")
+    db_session.commit()
+    _oidc_allowlist(monkeypatch, OIDC_ALLOWED_EMAILS=leaver.email)
 
     receipt = _offboard(client, leaver).json()
 
     assert receipt["membership_removed"] is False
+    assert receipt["still_admitted_by"] == ["OIDC_ALLOWED_EMAILS"]
     reason = next(
         entry["reason"] for entry in receipt["skipped"] if entry["step"] == "remove_membership"
     )
     assert "OIDC_ALLOWED_EMAILS" in reason
-    # The row is deliberately left: removing it would report a withdrawal that did
-    # not happen, since the allowlist admits on its own.
-    assert db_session.get(WorkspaceMember, member.id) is not None
 
 
 def test_authored_history_survives_the_offboarding(client: TestClient, db_session: Any) -> None:

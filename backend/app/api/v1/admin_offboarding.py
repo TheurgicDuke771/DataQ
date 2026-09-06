@@ -43,11 +43,12 @@ class OffboardPreviewRead(ApiModel):
     is_self: bool
     #: The pass is refused while this is true — nothing below it would run.
     is_last_admin: bool
-    #: `member` is the only state in which membership can be withdrawn here.
+    #: `member`: the row will be withdrawn. `env_listed`: no row, an env var admits.
     membership_state: Literal["member", "not_a_member", "env_listed"]
     membership_id: UUID | None
-    #: Why it cannot be, naming the env var when an allowlist is the reason.
     membership_note: str | None
+    #: Env vars that admit this address on their own — the pass cannot close those.
+    still_admitted_by: list[str]
     owned_suites: list[OwnedSuiteRead]
     #: Unrevoked, unexpired only — a PAT that already lapsed is not a live credential.
     open_api_key_count: int
@@ -75,6 +76,8 @@ class OffboardReceiptRead(ApiModel):
     api_keys_revoked: int
     sessions_revoked: int
     membership_removed: bool
+    #: Env vars that still admit this address after the pass — the admin's next job.
+    still_admitted_by: list[str]
     #: Every step that did not run, with its reason — an empty list means all ran.
     skipped: list[dict[str, str]]
 
@@ -103,6 +106,7 @@ def preview_offboarding(
         membership_state=view.membership_state,
         membership_id=view.membership_id,
         membership_note=view.membership_note,
+        still_admitted_by=list(view.still_admitted_by),
         owned_suites=[
             OwnedSuiteRead(
                 id=suite.id,
@@ -153,5 +157,6 @@ def offboard_user(
         api_keys_revoked=receipt.api_keys_revoked,
         sessions_revoked=receipt.sessions_revoked,
         membership_removed=receipt.membership_removed,
+        still_admitted_by=receipt.still_admitted_by,
         skipped=receipt.skipped,
     )
