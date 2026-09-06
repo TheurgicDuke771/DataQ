@@ -1,7 +1,14 @@
-import { screen } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { listAdminAccess, listAdminUsers } from '../../../src/api/admin';
+import {
+  listAdminAccess,
+  listAdminUsers,
+  listWorkspaceMembers,
+  offboardUser,
+  previewOffboarding,
+} from '../../../src/api/admin';
 import { AdminMembers } from '../../../src/pages/admin/AdminMembers';
 import { ACCESS, USER, renderSubPage } from './adminFixtures';
 
@@ -52,5 +59,49 @@ describe('AdminMembers', () => {
     expect(await screen.findByText('Failed to load members')).toBeInTheDocument();
     // The sibling table still renders its data.
     expect(screen.getByText('owner')).toBeInTheDocument();
+  });
+
+  it('reloads the membership panel and drops the re-role overlay after an offboarding', async () => {
+    vi.mocked(previewOffboarding).mockResolvedValue({
+      user_id: USER.id,
+      email: USER.email,
+      display_name: null,
+      role: 'member',
+      is_self: false,
+      is_last_admin: false,
+      membership_state: 'member',
+      membership_id: 'm1',
+      membership_note: null,
+      still_admitted_by: [],
+      owned_suites: [],
+      open_api_key_count: 0,
+      live_session_count: 0,
+    });
+    vi.mocked(offboardUser).mockResolvedValue({
+      user_id: USER.id,
+      email: USER.email,
+      new_owner_user_id: null,
+      transferred_suite_ids: [],
+      api_keys_revoked: 0,
+      sessions_revoked: 0,
+      membership_removed: true,
+      still_admitted_by: [],
+      skipped: [],
+    });
+    renderSubPage(<AdminMembers />);
+    await screen.findByText(USER.email);
+    await waitFor(() => expect(listWorkspaceMembers).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Offboard' }));
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.type(within(dialog).getByLabelText('Confirm email address'), USER.email);
+    const ok = within(dialog).getByRole('button', { name: /^Offboard/ });
+    await waitFor(() => expect(ok).toBeEnabled());
+    fireEvent.click(ok);
+
+    await waitFor(() => expect(offboardUser).toHaveBeenCalled());
+    // Both lists refetch — the membership panel is remounted, not left stale.
+    await waitFor(() => expect(listWorkspaceMembers).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mockUsers).toHaveBeenCalledTimes(2));
   });
 });
