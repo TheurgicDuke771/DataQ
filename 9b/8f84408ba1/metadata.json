@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "9b8f84408ba1",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1921-offboard-membership",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/9b/8f84408ba1/0/metadata.json",
+      "transcript": "/9b/8f84408ba1/0/full.jsonl",
+      "compact_transcript": "/9b/8f84408ba1/0/transcript.jsonl",
+      "content_hash": "/9b/8f84408ba1/0/content_hash.txt",
+      "prompt": "/9b/8f84408ba1/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 13792,
+    "cache_creation_tokens": 5390726,
+    "cache_read_tokens": 239478740,
+    "output_tokens": 459933,
+    "api_call_count": 538
+  }
+}

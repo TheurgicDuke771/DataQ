@@ -1,0 +1,686 @@
+do both
+
+---
+
+<task-notification>
+<task-id>aeb73eaa1650bae45</task-id>
+<tool-use-id>toolu_01Vcrxkgb9YkCaCEmjEm9YhV</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/aeb73eaa1650bae45.output</output-file>
+<status>failed</status>
+<summary>Agent "Angle Simplification: complexity" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message · your session limit resets 8:30pm (America/Vancouver) (error type rate_limit, HTTP 429, request id req_011CemB7CqJ5rBGDKvcC5tbW, model sent to the API: claude-fable-5-1)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I'll read the diff and the post-commit files.</result>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a3f9cb347090cea63</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a3f9cb347090cea63.output</output-file>
+<status>failed</status>
+<summary>Agent "Angle Reuse: duplicated helpers" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message · your session limit resets 8:30pm (America/Vancouver) (error type rate_limit, HTTP 429, request id req_011CemB7KTQR7aLmqKuBJ72y, model sent to the API: claude-fable-5-1)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a8dec600200bd1926</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a8dec600200bd1926.output</output-file>
+<status>failed</status>
+<summary>Agent "#1700 admin lens toggle" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message · your session limit resets 8:30pm (America/Vancouver) (error type rate_limit, HTTP 429, request id req_011CemB7UQB4bwUgMoK4v5Xt, model sent to the API: claude-opus-5)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Found a discrepancy between the issue text and the code: `/dashboard/summary` and `/runs` already pass `include_all=is_workspace_admin(...)`. Checking when that landed before deciding the default.</result>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aeeccb83d13d77198</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/aeeccb83d13d77198.output</output-file>
+<status>failed</status>
+<summary>Agent "Angle A: line-by-line scan" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message · your session limit resets 8:30pm (America/Vancouver) (error type rate_limit, HTTP 429, request id req_011CemB7au6ZqDTZzpZ56XSc, model sent to the API: claude-fable-5-1)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a5aaaa7e75f305774</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a5aaaa7e75f305774.output</output-file>
+<status>failed</status>
+<summary>Agent "Angle Efficiency: wasted work" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message · your session limit resets 8:30pm (America/Vancouver) (error type rate_limit, HTTP 429, request id req_011CemB7nJC9XmPg8QKqM2Hv, model sent to the API: claude-fable-5-1)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+</task-notification>
+
+---
+
+/compact
+
+---
+
+<task-notification>
+<task-id>a1962c001c87c3526</task-id>
+<tool-use-id>toolu_016gX3KAgQSWSaFKWJc8yjF1</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a1962c001c87c3526.output</output-file>
+<status>failed</status>
+<summary>Agent "Angle Altitude: root cause depth" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message · your session limit resets 8:30pm (America/Vancouver) (error type rate_limit, HTTP 429, request id req_011CemB93zHrhBPHexerabPr, model sent to the API: claude-fable-5-1)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a85e9e4394ac90bac</task-id>
+<tool-use-id>toolu_01VHx5Y4D11tnsE6inJjjrHe</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a85e9e4394ac90bac.output</output-file>
+<status>failed</status>
+<summary>Agent "Angle Conventions: CLAUDE.md rules" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message · your session limit resets 8:30pm (America/Vancouver) (error type rate_limit, HTTP 429, request id req_011CemBALbCwf362583WjrTW, model sent to the API: claude-fable-5-1)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a061ac596fc436814</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a061ac596fc436814.output</output-file>
+<status>failed</status>
+<summary>Agent "Angle B: removed-behavior audit" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message · your session limit resets 8:30pm (America/Vancouver) (error type rate_limit, HTTP 429, request id req_011CemBBCpfNaFkDFh7ULX1a, model sent to the API: claude-fable-5-1)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ae69b8596dc021ba2</task-id>
+<tool-use-id>toolu_01NabYpuvnpezaSM3a5yyBXg</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/ae69b8596dc021ba2.output</output-file>
+<status>failed</status>
+<summary>Agent "Angle C: cross-file tracer" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message · your session limit resets 8:30pm (America/Vancouver) (error type rate_limit, HTTP 429, request id req_011CemBCqK9s42Ssbd9D7myq, model sent to the API: claude-fable-5-1)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Now the callees and the rest of the diff, all independent.</result>
+</task-notification>
+
+---
+
+continue...
+
+---
+
+I think we can skip #1700 with comment, like, won't implement outdated or something like that. what do you think. 
+Carry on with #1913 full review. 
+Also #1559 is pending. 
+And CI for #1918 failed.
+
+---
+
+<task-notification>
+<task-id>a9ff0e2b8362b568d</task-id>
+<tool-use-id>toolu_01Az6RUDX7voS1oKRj8dPVRX</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a9ff0e2b8362b568d.output</output-file>
+<status>completed</status>
+<summary>Agent "Simplification angle" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+[
+  {
+    "file": "frontend/src/pages/admin/OffboardModal.tsx",
+    "line": 50,
+    "summary": "Lines 45–103 (`options`/`searching` state, the `timer`/`latest` refs, the unmount-cleanup effect and the whole debounced `onSearch`) are a verbatim copy of `frontend/src/components/shared/UserSearchSelect.tsx`, which already exists at HEAD with an `exclude` prop. The `&lt;Select&gt;` at 205–216 can be replaced by `&lt;UserSearchSelect value={picked} onChange={setPicked} exclude={(u) =&gt; u.role === 'viewer' || u.id === userId} ariaLabel=\"New owner\" /&gt;`, deleting ~60 lines and two refs.",
+    "failure_scenario": "The next fix to the last-wins token, the debounce window, or the unmount sentinel lands in the shared picker and not here (or vice versa), so the offboard picker silently keeps a race the transfer picker no longer has — two search boxes on the same admin page behaving differently."
+  },
+  {
+    "file": "frontend/src/pages/admin/OffboardModal.tsx",
+    "line": 305,
+    "summary": "`OffboardAction` always mounts the modal and forces a reset through `key={`${user.id}:${String(open)}`}` plus a nullable `user: AdminUser | null` prop, which then needs `userId = user?.id`, `if (!userId) return` in the effect, `open={user !== null}`, the `user ? … : 'Offboard user'` title, and `destroyOnHidden`. Simpler: `{open &amp;&amp; &lt;OffboardModal user={user} open onClose=… /&gt;}` with `user: AdminUser` non-null — closing unmounts, so the 55–58 comment about remount-vs-clear and the key string both disappear, and every `user?.`/`!userId` guard collapses.",
+    "failure_scenario": "Someone editing the row later drops `String(open)` from the key (it looks like a typo next to the AdminSuites `key={`transfer-${id ?? 'none'}`}` pattern) and re-opening the same user shows the previous receipt — precisely the bug the comment says the key prevents, kept alive only by a string-concatenation convention."
+  },
+  {
+    "file": "frontend/src/pages/admin/OffboardModal.tsx",
+    "line": 135,
+    "summary": "Four `receipt ?` ternaries spread across `onOk`, `okText`, `okButtonProps.danger`/`disabled` and `cancelButtonProps.style` encode one mode switch. Compute it once — `const done = receipt !== undefined;` then a single `footer={done ? &lt;Button type=\"primary\" onClick={onClose}&gt;Done&lt;/Button&gt; : undefined}` (antd Modal accepts a custom footer) — or hoist `const okProps = done ? {…} : {…}`; the `display:'none'` cancel hack goes away.",
+    "failure_scenario": "Adding a third phase (e.g. a 'partially applied' outcome) means finding and updating five scattered ternaries; missing one leaves a red 'Offboard' button enabled on a receipt screen that re-posts the pass."
+  },
+  {
+    "file": "backend/app/services/offboarding_service.py",
+    "line": 147,
+    "summary": "`_is_last_admin(db, user, *, lock: bool = False)` never reads `lock` — `assert_admin_remains` always takes `FOR UPDATE` itself. The `lock=True` at line 324 is dead; drop the parameter (keep `_load_user`'s, which is used).",
+    "failure_scenario": "A reader of `_run` concludes the preview path is unlocked and the pass path is locked, then 'fixes' the preview by passing `lock=True` too, or adds real locking logic behind the flag that the call sites never exercised — a no-op parameter is a lie in the signature."
+  },
+  {
+    "file": "backend/app/services/offboarding_service.py",
+    "line": 34,
+    "summary": "`MEMBER`/`NOT_A_MEMBER`/`ENV_LISTED` are three loose string constants typed as plain `str` on `OffboardPreview.membership_state`, while `admin_offboarding.py:47` re-declares the same vocabulary as `Literal[\"member\", \"not_a_member\", \"env_listed\"]`. Declare one `MembershipState = Literal[...]` in the service, type the dataclass field and `_membership`'s return with it, and import it into the API model — the module-level constants become unnecessary (or a `StrEnum`).",
+    "failure_scenario": "A fourth state added to the service (say `\"pending\"`) type-checks fine as `str`, the preview route then fails Pydantic validation at runtime with a 500 on the one user in that state — the Literal only ever guarded the copy, never the source."
+  },
+  {
+    "file": "backend/app/api/v1/admin_offboarding.py",
+    "line": 96,
+    "summary": "Both routes rebuild a frozen dataclass into a same-named Pydantic model field by field (lines 96–118 and 148–157, 25 lines). Sibling routers already use `model_config = ConfigDict(from_attributes=True)` + `Read.model_validate(view)` (`admin.py:139`, `admin_members.py:82`); nested `owned_suites` validates the same way. Likewise `OffboardReceipt.as_payload` (service line 91) hand-serialises the same fields for the audit `after` — `OffboardReceiptRead.model_validate(receipt).model_dump(mode=\"json\")` (or `dataclasses.asdict` + the existing audit JSON path) yields the same dict; the one extra key, `transferred_suite_count`, is derivable from the list it sits beside.",
+    "failure_scenario": "A new receipt/preview field (e.g. `channels_unsubscribed`) is added to the dataclass and reaches neither the API response nor the audit row, with no test failing — three parallel field lists that must be edited in lockstep, and the audit payload is the one nobody looks at until an incident."
+  }
+]
+```</result>
+<usage><subagent_tokens>121569</subagent_tokens><tool_uses>7</tool_uses><duration_ms>75338</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a4f8763bec5999a7a</task-id>
+<tool-use-id>toolu_01Qzs5odMjJpd5p5iUXQ9bXi</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a4f8763bec5999a7a.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle B: removed-behavior auditor" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+[
+  {
+    "file": "backend/app/services/offboarding_service.py",
+    "line": 128,
+    "summary": "`env_allowlists_naming` reads all four allowlist settings unconditionally, whereas `membership_service._access_allowlists` (the predicate every door actually enforces) deliberately ignores an unconfigured auth mode (OIDC list only when `generic_oidc_configured and oidc_allowlist_configured`; OTP list only when `otp_auth_configured`). The new helper therefore classifies as ENV_LISTED addresses the doors do not admit via env at all, and step (d) skips membership removal on that basis.",
+    "failure_scenario": "Deployment is generic-OIDC with membership enforced via the table; a stale `AUTH_OTP_ALLOWED_EMAILS=alice@acme.io` is still in the env from a previous OTP setup (OTP mailer block unset, so `otp_auth_configured` is False and `_decide` never consults it). Admin offboards Alice: preview says `env_listed` naming AUTH_OTP_ALLOWED_EMAILS, the pass revokes her PAT/sessions but leaves her `workspace_members` row and reports 'remove it there instead'. The operator removes the (inert) OTP entry; Alice signs in through OIDC again — her row still admits her, and nothing in the receipt or the Members page says the offboarding was incomplete."
+  },
+  {
+    "file": "backend/app/services/offboarding_service.py",
+    "line": 204,
+    "summary": "`_membership` returns ENV_LISTED (and skips removal) even when a real `workspace_members` row exists, diverging from `remove_member`, whose `_refuse_env_removal` only fires when there is NO row (a synthetic env-row id). The standalone Members page would delete the row; the composed pass refuses to, so after the env entry is removed the table row still grants membership.",
+    "failure_scenario": "Bob is both in `OIDC_ALLOWED_EMAILS` and has an admin-invited member row. Offboarding reports `remove_membership` skipped with 'remove it there instead'. The operator edits the env var and restarts, believing the receipt's instruction closed access. Bob's member row remains (the pass never deleted it and the receipt's `membership_id` is non-null only as an opaque hint), so his next OIDC sign-in is admitted by the table under `union(env, table)`. The advertised 'remove it there instead' is not sufficient, and the one place that could have deleted the row was told not to."
+  },
+  {
+    "file": "backend/app/services/offboarding_service.py",
+    "line": 383,
+    "summary": "Sessions are revoked by a direct `row.revoked_at = now` write, bypassing `session_service.revoke`, which emits the `session_revoked` structured log line (`session_id`, `user_id`). No per-session log or audit event is produced here; only a count lands in the receipt/summary log and the `user.offboard` audit `after` payload. PAT revocation likewise skips `revoke_key`'s per-key `api_key_revoked` log (though it does write the audit event).",
+    "failure_scenario": "A departed user's session appears in a later incident timeline (e.g. a request logged with `mode=session session_id=X` shortly before the offboarding). Operators search logs for `session_revoked session_id=X` — the marker every other revocation path emits — and find nothing, concluding the session was never revoked and escalating, when in fact it was revoked in this pass. ADR 0041 defers session-lifecycle audit, so the log line is the only revocation trail for sessions and this path drops it."
+  },
+  {
+    "file": "frontend/src/pages/admin/OffboardModal.tsx",
+    "line": 118,
+    "summary": "The modal sends `confirm_email: preview.email` (fetched from the same `user_id`) instead of the value the admin typed. The backend's `confirm_email` check (`OffboardRequest` docstring: 'typed by the admin') therefore only protects against a preview that went stale, and is trivially satisfied by any client that first calls preview — the confirmation is client-side theatre, not a server-enforced guard.",
+    "failure_scenario": "A script or MCP-adjacent automation built against the API copies the frontend's pattern (`preview(id).email` → `offboard(id, confirm_email=...)`) and a wrong `user_id` (off-by-one in a list, stale id after a re-sort) offboards the wrong person: suites transferred, PATs and sessions revoked, membership withdrawn, with no independent human-typed confirmation ever having existed server-side. The route documentation promises a typed-confirmation gate the server does not actually have."
+  },
+  {
+    "file": "backend/app/services/offboarding_service.py",
+    "line": 147,
+    "summary": "`_is_last_admin` accepts a `lock` kwarg that is never used (`assert_admin_remains` always locks; the `user` row was locked by the caller), and the guard fires on stored role via `exclude_user_id` regardless of whether membership is enforced — whereas `remove_member` only consults the guard when the row is actually being removed. When enforcement is off, the pass refuses the sole stored-role admin even though it removes nothing that affects the invariant (role untouched, no membership row).",
+    "failure_scenario": "Single-admin workspace with membership not yet switched on (no `workspace_members` rows, OIDC allowlist). The admin is leaving and wants to revoke their own PATs/sessions and hand over suites in one audited pass before the successor is promoted (successor is a Member, promotion is a separate, later step in the runbook). The pass 409s 'last admin' even though it would not touch `users.role` or any membership; the operator falls back to doing the steps piecemeal, which is exactly the half-finished state the module's docstring says is worse than none."
+  },
+  {
+    "file": "frontend/src/pages/admin/OffboardModal.tsx",
+    "line": 209,
+    "summary": "The inline new-owner picker duplicates `components/shared/UserSearchSelect.tsx` (already used by SuiteTransferModal/SharePanel) but drops its `shown = [value, ...options]` guard: `setPicked(options.find(...))` keys off the current `options`, so a subsequent search that no longer contains the picked user makes the Select show a bare id and, if the admin re-selects anything, can clear `picked`. Also drops the shared `exclude` seam.",
+    "failure_scenario": "Admin searches 'car', picks 'carol@acme.io', then types 'dav' to double-check another candidate without choosing them. Options are replaced; the Select's `value={picked?.id}` no longer matches any option, so antd renders the raw UUID as the label. The admin, seeing a UUID instead of Carol's name, is unsure who is selected; the Offboard button is still enabled (`picked` is set) and the transfer goes to whoever was silently retained — the exact 'later search blanks the selection' bug the shared component's docstring says it exists to rule out."
+  }
+]
+```</result>
+<usage><subagent_tokens>130401</subagent_tokens><tool_uses>12</tool_uses><duration_ms>122162</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a9a925a3ad43020ca</task-id>
+<tool-use-id>toolu_01SZzQ78RDWgYXzZsjZ8iTrR</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a9a925a3ad43020ca.output</output-file>
+<status>completed</status>
+<summary>Agent "Conventions (CLAUDE.md) angle" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>[]</result>
+<usage><subagent_tokens>135503</subagent_tokens><tool_uses>12</tool_uses><duration_ms>68397</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a14b031e15b724743</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a14b031e15b724743.output</output-file>
+<status>completed</status>
+<summary>Agent "Reuse angle" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+[
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/services/offboarding_service.py",
+    "line": 119,
+    "summary": "`env_allowlists_naming` re-implements the env-allowlist membership check that `membership_service` already owns (`_access_allowlists` + `env_verdict`, built on `core.identity.allowlisted`), and it diverges: it reads all four `oidc_*`/`auth_otp_*` sets unconditionally, whereas `_access_allowlists` only consults a mode that is actually configured (`generic_oidc_configured and oidc_allowlist_configured`, `otp_auth_configured`).",
+    "failure_scenario": "On a deployment where a leftover `AUTH_OTP_ALLOWED_EMAILS` (or an OIDC allowlist without generic OIDC) names the leaver, `_membership` returns ENV_LISTED and `_run` skips `remove_member` at line 396 — while the real door (`_decide` → `env_verdict`) ignores that var, so the `workspace_members` row is what admits them and offboarding leaves them signed in. Make `_access_allowlists` (or a new `env_vars_naming(email)` beside `env_listed_addresses`) public in membership_service and have offboarding call it, so the preview names exactly the vars the door reads."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/services/offboarding_service.py",
+    "line": 370,
+    "summary": "The PAT loop (snapshot → `revoked_at = now` → `record_entity_change(action='api_key.revoke')`) is a hand copy of `api_key_service.revoke_key`'s body; the stated reason (actor attribution) is a missing `actor` parameter, not a reason to fork.",
+    "failure_scenario": "Two writers of the `api_key.revoke` audit event that must stay byte-compatible — the copy already drifted (no `api_key_revoked` structured log line, so a live operator watching logs sees no per-key revoke during an offboarding). Add `actor: User | None = None` to `revoke_key` (defaulting to the owner) and call it per key; the shared `audit_coverage` row and log line then cover both doors."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/services/offboarding_service.py",
+    "line": 137,
+    "summary": "`_load_user(db, id, lock=)` is the third private copy of get-user-or-404-with-FOR-UPDATE: `admin_service.set_user_role` (lines ~389-398) and `admin_suite_service.transfer_ownership` (lines ~98-102) inline the same `select(User).where(...).with_for_update()` + `UserNotFoundError('user not found', detail={'user_id': ...})`.",
+    "failure_scenario": "Three places to change the 404 message/detail shape or the locking policy (set_user_role's existence-check-before-lock rationale is not in the other two). Hoist `_load_user` into `admin_service` next to `UserNotFoundError` (e.g. `get_user_or_404(session, user_id, *, lock=False)`) and use it from all three services."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/api/v1/admin_offboarding.py",
+    "line": 96,
+    "summary": "`preview_offboarding` and `offboard_user` (line 148) rebuild the response field-by-field (13 + nested `OwnedSuiteRead` + 8 fields) from dataclasses whose attribute names already match; the sibling admin routers (`admin.py:139`, `admin_members.py:82`, `api_keys.py:77`) use `model_config = ConfigDict(from_attributes=True)` + `Read.model_validate(obj)`.",
+    "failure_scenario": "Every field added to `OffboardPreview`/`OffboardReceipt` must be threaded through by hand in two places, and an omission compiles cleanly (the response silently lacks the field). Add `from_attributes=True` to `OwnedSuiteRead`/`OffboardPreviewRead`/`OffboardReceiptRead` and return `OffboardPreviewRead.model_validate(view)` / `OffboardReceiptRead.model_validate(receipt)` — nested tuples of dataclasses validate through `from_attributes` recursively."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/frontend/src/pages/admin/OffboardModal.tsx",
+    "line": 78,
+    "summary": "After #1917 this is the only remaining hand copy of the debounced/last-wins directory search + `&lt;Select&gt;` (lines 78-101, 205-216) that `components/shared/UserSearchSelect` now owns (`exclude` prop covers the viewer/self filter), and `onOk` (lines 111-125) re-inlines the `setSubmitting/try/catch/finally/message.error` scaffold that `hooks/useAsyncAction` replaced in `SuiteTransferModal`.",
+    "failure_scenario": "The local copy lacks the shared picker's `shown` fix (a later search that drops the picked user renders the bare UUID because `value={picked?.id}` is not in `options`), so the bug #1917 fixed for share/transfer is live here. Replace lines 78-101/205-216 with `&lt;UserSearchSelect value={picked} onChange={setPicked} exclude={(u) =&gt; u.role === 'viewer' || u.id === userId} ariaLabel=\"New owner\" /&gt;`, and `onOk` with `const { run, loading } = useAsyncAction('Offboarding failed')`; the preview fetch at line 62 can likewise be `useAsyncData((signal) =&gt; previewOffboarding(userId, signal))` instead of the manual AbortController/error-string effect."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/services/offboarding_service.py",
+    "line": 202,
+    "summary": "`_membership` re-issues `membership_service._row_for`'s query verbatim (`select(WorkspaceMember).where(func.lower(WorkspaceMember.email) == normalized)`) and hand-writes a second version of the 'admitted by the environment, remove it from &lt;VAR&gt; and restart' prose that `_refuse_env_removal` already emits.",
+    "failure_scenario": "Two email-normalisation lookups against `workspace_members` and two operator-facing env-removal messages to keep in step (they already disagree on wording and on which vars they name). Expose `_row_for` (e.g. `member_row_for_email`) from membership_service and reuse the `_refuse_env_removal` message text (or a shared constant) for the ENV_LISTED note."
+  }
+]
+```</result>
+<usage><subagent_tokens>131551</subagent_tokens><tool_uses>10</tool_uses><duration_ms>121779</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a4d96e8a334487e5d</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a4d96e8a334487e5d.output</output-file>
+<status>completed</status>
+<summary>Agent "Efficiency angle" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Confirmed: with `destroyOnHidden` and `open=false`, rc-dialog's `DialogWrap` returns `null` — no portal, no DOM. The per-row cost is the React component tree only (antd `Modal` wrapper hooks + `OffboardModal`'s 7 `useState`/2 `useRef`/2 `useEffect` + an `App.useApp()` context subscription per member row). I have everything needed for the findings.
+
+```json
+[
+  {
+    "file": "backend/app/services/offboarding_service.py",
+    "line": 152,
+    "summary": "The read-only GET preview calls `_is_last_admin` → `assert_admin_remains`, which takes `SELECT ... FOR UPDATE` on EVERY admin `users` row and on their `workspace_members` rows. The `lock` parameter on `_is_last_admin` is accepted and ignored, so preview and `_run` lock identically. Cheaper: for preview, run an unlocked `COUNT` of stored-role admins (joined to membership when enforced) — or add a `lock: bool` argument to `assert_admin_remains` and pass `False` from preview — and keep the locking form only in `_run`.",
+    "failure_scenario": "`get_db` never commits/rollbacks on a successful GET; the locks are held until `db.close()` after response serialization. During that window every `transfer_ownership` (locks target user FOR UPDATE), `set_role`, `remove_member`, and every other offboard preview/pass that touches an admin row queues behind a read; with `lock_timeout=5000` a concurrent admin action on a busy workspace 500s with a lock-timeout error because someone merely OPENED the Offboard modal. The modal's `useEffect` fires the preview on every open, so each row click is a workspace-wide admin write freeze."
+  },
+  {
+    "file": "backend/app/services/offboarding_service.py",
+    "line": 246,
+    "summary": "`_owned_suite_rows` calls `suite_service.deletion_impact` per owned suite: that is 1 `session.get` + 6 `COUNT(*)` subqueries = 7 round-trips per suite, of which only 3 (`checks`, `runs`, `results`) are consumed — `trigger_bindings`, `schedules`, `notification_channel_links` are computed and thrown away, and the `get_suite` 404 probe is redundant because the suite was just loaded by `_owned_suites`. Cheaper: one grouped query — `select(Suite.id, Suite.name, count(distinct Check.id), count(distinct Run.id), count(Result.id)).outerjoin(...).where(Suite.created_by == user_id).group_by(Suite.id)` — or three `GROUP BY suite_id` counts over `IN (owned ids)`.",
+    "failure_scenario": "A power user owning 40 suites makes the preview issue 1 + 40×7 = 281 queries, and the `results` count is a `results JOIN runs` scan per suite; on a suite with hundreds of thousands of result rows each COUNT is a real table pass. The modal shows a `Spin` for seconds, and it does so while holding the FOR UPDATE admin locks from the previous finding."
+  },
+  {
+    "file": "backend/app/services/offboarding_service.py",
+    "line": 238,
+    "summary": "`preview` loads full `ApiKey` and `UserSession` ORM rows (including `key_hash` / session token columns) with `ORDER BY`, materialises them into the identity map, then discards everything but `len()`. Cheaper: `db.scalar(select(func.count()).select_from(ApiKey).where(...))` — same predicate, no rows, no ordering, and no hashed credentials pulled into memory for a read that only needs a number.",
+    "failure_scenario": "For a service account with hundreds of PATs or a long-lived session table (sessions expire but are not deleted until a sweep), every preview transfers and hydrates all those rows just to render `N live`. It also loads `key_hash` for every open key into the API process for no reason — a wasted read that is also a wider secret-material surface than a count."
+  },
+  {
+    "file": "backend/app/services/offboarding_service.py",
+    "line": 354,
+    "summary": "`_run`'s transfer loop pays per-suite overhead the caller controls: `transfer_ownership` ends in `session.commit()` (expiring every loaded object on the `inner` session, `expire_on_commit` default) + `session.refresh(suite)`, and re-`SELECT ... FOR UPDATE`s the same `new_owner` user row on every iteration. So each iteration after the first is: refresh-SELECT of the next expired `Suite` (to read `suite.id`), FOR UPDATE on the suite, FOR UPDATE on the same target user again, share delete, share select, audit insert, COMMIT, refresh SELECT. Cheaper: snapshot `suite_ids = [s.id for s in suites]` before the loop (no expired-attribute refresh), and lock/validate the target user once outside the loop (a `transfer_ownership` variant that accepts a pre-locked `User`).",
+    "failure_scenario": "Offboarding a 40-suite owner produces ~40 redundant `SELECT users FOR UPDATE` on the identical row plus ~80 refresh SELECTs on `suites`, all inside one outer transaction that also holds the admin-row locks from `_is_last_admin` — the wall-clock of the whole request scales at ~9 round-trips per suite when 5 would do, and every concurrent admin action waits on it."
+  },
+  {
+    "file": "backend/app/services/offboarding_service.py",
+    "line": 389,
+    "summary": "`_membership` is executed in `preview` and again in `_run` (line 389), and in `_run` `remove_member` (membership_service.py:504-506) then re-runs `_stored_role` + a second `assert_admin_remains` — the same FOR UPDATE sweep `_is_last_admin` already did at the top of `_run` (line 152 via 324). Each `env_allowlists_naming` call also re-parses five comma-separated settings strings (the `*_set` properties are plain `@property`, not cached). Cheaper: compute `naming` once per pass and pass it through; and since `_run` has already proven `user` is not the last admin under lock, call the lower-level locked delete instead of `remove_member`, or give `remove_member` a `skip_admin_guard` flag for callers that already hold the guard.",
+    "failure_scenario": "Every offboard of an admin runs the cross-table lock sweep twice within one transaction (idempotent for correctness, wasted for cost) and parses the allowlists twice; on the preview→pass pair the same membership lookup is done three times. Not a correctness bug, but the second `assert_admin_remains` re-issues `enforcement_active` + two FOR UPDATE selects that already held rows, purely wasted round-trips inside the widest lock the app takes."
+  },
+  {
+    "file": "frontend/src/pages/admin/OffboardModal.tsx",
+    "line": 304,
+    "summary": "`OffboardAction` is rendered in every Members row (AdminMembers.tsx:86), so N closed `&lt;OffboardModal&gt;`s are mounted. rc-dialog's `DialogWrap` does return `null` when `!forceRender &amp;&amp; destroyOnHidden &amp;&amp; !animatedVisible` (verified in `@rc-component/dialog@1.10.0/es/DialogWrap.js:53`), so no DOM is produced — but N copies of `OffboardModal`'s 7 `useState` + 2 `useRef` + 2 `useEffect` + `App.useApp()` context subscription + antd `Modal`'s own hook chain (ConfigContext, token, deprecation warnings loop) still run on every table re-render, and the `key` including `String(open)` unmounts/remounts the whole subtree twice per open/close. Cheaper: hoist one `OffboardModal` into `AdminMembers` keyed on `offboarding?.id`, with the row action just calling `setOffboarding(u)` — one hook set instead of N, and the per-user reset the `key` was for still holds.",
+    "failure_scenario": "On a 200-member workspace every re-render of the table (any `setRerolled` from a role change, any `users.reload()`) re-runs ~200 idle modal component bodies plus 200 `App.useApp()` subscriptions; each also holds its own `AbortController`-less closures over `user`. Measurable as extra commit time on the role editor, and it grows linearly with the member count for a modal that can only ever be open for one row at a time."
+  }
+]
+```</result>
+<usage><subagent_tokens>127449</subagent_tokens><tool_uses>16</tool_uses><duration_ms>166480</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a796602fc5692640c</task-id>
+<tool-use-id>toolu_01JDJBQoqBKq6NA3akyfYQ5Q</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a796602fc5692640c.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle A: line-by-line diff scan" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+[
+  {
+    "file": "backend/app/services/offboarding_service.py",
+    "line": 128,
+    "summary": "env_allowlists_naming reads OIDC_ALLOWED_* and AUTH_OTP_ALLOWED_* unconditionally, diverging from membership_service._access_allowlists which only counts an allowlist whose auth mode is actually configured (generic_oidc_configured / otp_auth_configured). The offboard pass therefore reports ENV_LISTED and SKIPS the membership removal for a deployment where that env var gates nothing.",
+    "failure_scenario": "Azure-AD (or OTP) deployment with a stale/leftover OIDC_ALLOWED_EMAILS listing the leaver (config validators do not reject an OIDC allowlist without OIDC_ISSUER — the PR's own test test_an_env_listed_address_names_the_variable_that_still_admits_them sets exactly this: OIDC_ALLOWED_EMAILS with no issuer). Admin runs the pass, receipt says membership skipped 'remove it there instead'; operator removes the env entry, but the workspace_members row was never deleted, so the leaver still signs in via the membership door that ignores that env var. The 'skip' was based on a rule the real door does not apply."
+  },
+  {
+    "file": "backend/app/services/offboarding_service.py",
+    "line": 147,
+    "summary": "_is_last_admin takes a `lock=` parameter it never uses; assert_admin_remains always issues SELECT … FOR UPDATE on every stored-role admin user row (and their member rows). The read-only preview GET therefore takes row locks on all admins for the lifetime of the request session (get_db never commits a GET).",
+    "failure_scenario": "Two admins open the offboarding preview for different users at the same time, or one opens the preview while another PATCHes a role: the second request blocks on the first's FOR UPDATE until its session closes. Under a slow deletion_impact (large suites) the preview holds those locks for the whole count, serialising every admin-role write in the workspace behind a read-only screen. The unused `lock=` flag suggests the intent was to lock only in _run."
+  },
+  {
+    "file": "backend/app/services/offboarding_service.py",
+    "line": 389,
+    "summary": "The pass never demotes the departing user's stored role; an offboarded stored-role admin whose membership step was skipped (NOT_A_MEMBER when enforcement is off, or ENV_LISTED) still satisfies assert_admin_remains for everyone else.",
+    "failure_scenario": "Enforcement inactive (no workspace_members rows), two stored-role admins A and B. A offboards B (receipt: PATs/sessions revoked, membership 'nothing to withdraw'). B keeps role=admin, so when A later removes/demotes themselves the last-admin guard counts B as the remaining admin and allows it — the only admin left is the offboarded account whose credentials were just revoked."
+  },
+  {
+    "file": "frontend/src/pages/admin/AdminMembers.tsx",
+    "line": 24,
+    "summary": "onOffboarded reloads `users` and `access` but MembershipPanel owns its own useAsyncData(listWorkspaceMembers) and is never reloaded, so the withdrawn membership row stays on screen after the receipt.",
+    "failure_scenario": "Admin offboards a member; receipt says 'Membership withdrawn: yes'; the Workspace membership panel directly above still lists the leaver until a full page refresh. An admin who then clicks Remove on that stale row gets a 404 (member not found) and may conclude the offboarding did not run."
+  },
+  {
+    "file": "frontend/src/pages/admin/AdminMembers.tsx",
+    "line": 29,
+    "summary": "The `rerolled` overlay is applied over every reload of the users list and is never cleared, so a row the admin re-roled earlier in the page session keeps its snapshot (owned_suite_count, shared_suite_count, last_seen_at) even after users.reload() fires from onOffboarded.",
+    "failure_scenario": "Admin promotes Bob to member (rerolled[bob] captured with owned_suite_count=0), then offboards Alice choosing Bob as the new owner of her 3 suites. users.reload() returns Bob with owned_suite_count=3, but overlayUsers replaces it with the stale rerolled snapshot, so the table shows Bob still owning 0 and Alice still owning 3 (if Alice was also re-roled) — contradicting the receipt."
+  },
+  {
+    "file": "frontend/src/pages/admin/OffboardModal.tsx",
+    "line": 118,
+    "summary": "onOk posts `confirm_email: preview.email` (the server's own value) rather than what the admin typed, so the backend's typed-confirmation check is satisfied by construction and the 422 'confirmation does not match' path can never fire from this UI; the only confirmation is the client-side string compare at line 107.",
+    "failure_scenario": "Any client-side bug or DOM manipulation that sets `typed` (e.g. a browser autofill into the confirm input, or a future refactor of `ready`) is enough to enable the button; the request then carries the correct email regardless of what was typed, so the server-side guard the PR describes as 'a mismatch is a 422' provides no defence for the UI path — the guard exists only for direct API callers."
+  }
+]
+```</result>
+<usage><subagent_tokens>147973</subagent_tokens><tool_uses>18</tool_uses><duration_ms>227560</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aff0841bba4b018d7</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/aff0841bba4b018d7.output</output-file>
+<status>completed</status>
+<summary>Agent "Altitude angle" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+[
+  {
+    "file": "backend/app/services/offboarding_service.py",
+    "line": 119,
+    "summary": "`env_allowlists_naming` is a second, divergent env-inspection predicate: it reads `oidc_allowed_email_set` / `auth_otp_allowed_email_set` (and the domain sets) UNCONDITIONALLY, while `membership_service._access_allowlists` — the predicate every sign-in door actually uses — deliberately contributes nothing from a mode that is not configured (`generic_oidc_configured and oidc_allowlist_configured`, `otp_auth_configured`), with a docstring explaining why. The right depth is one function in membership_service (e.g. `env_gates_naming(email, settings) -&gt; list[str]` built on `_access_allowlists` + `is_admin_email`, mirroring `env_verdict`), consumed here and by `_refuse_env_removal` (which today hardcodes the three var names in prose).",
+    "failure_scenario": "An Azure-AD (`fastapi-azure-auth`) or Cognito deployment carries a leftover `AUTH_OTP_ALLOWED_EMAILS=alice@corp.com` (the local-stack default, or a mirror copied from `.env.app`) with no mailer configured, so OTP is OFF and `env_verdict` ignores that variable entirely. The preview reports alice as `env_listed`, the pass SKIPS step (d), her `workspace_members` row stays, and she keeps signing in through the row after the admin dutifully edits an env var that was never admitting her. Same with `OIDC_ALLOWED_DOMAINS=corp.com` set while `oidc_issuer` is empty: every user in the workspace becomes un-offboardable."
+  },
+  {
+    "file": "backend/app/services/offboarding_service.py",
+    "line": 390,
+    "summary": "In the `env_listed` state the pass refuses to delete a membership row that EXISTS and tells the admin to 'remove it there instead'. Membership is `union(env, row)`, so both doors must close; skipping the row deletion because a second door is open leaves the first door open too. The standalone primitive `membership_service.remove_member` does not do this — it deletes a real row whenever one exists and only refuses the synthetic env-row id — so the composed pass is stricter than its own primitive in exactly the wrong direction. Deeper fix: always remove the row when present (`membership_removed: true`) and report the env residue as a separate receipt field (e.g. `still_admitted_by: [\"AUTH_OTP_ALLOWED_EMAILS\"]`) so the admin is told what remains rather than left with two doors.",
+    "failure_scenario": "Alice is in `AUTH_OTP_ALLOWED_EMAILS` and also has a row from auto-import. Offboarding skips (d) with the note; the admin removes her from the env var and restarts; her row still stands, so `require_member` admits her at the OTP door and any surviving OIDC token, and the receipt in the audit trail says the pass completed. The admin has to notice, come back to Admin → Members and remove the row manually — the one-pass guarantee the module docstring promises is not kept."
+  },
+  {
+    "file": "backend/app/services/offboarding_service.py",
+    "line": 279,
+    "summary": "The savepoint-joined inner `Session` exists only because `transfer_ownership` and `remove_member` (both authored in this same epic, #1903/#1907) end in `session.commit()`. The codebase has no precedent for a nested Session (only `begin_nested()` in 5 places) and no `_core`/`commit: bool` split anywhere, so this introduces a one-off transaction trick rather than fixing the primitives' shape. The general change is the standard one: split each primitive into a commit-free core (`_transfer_ownership(session, ...)` / `_remove_member(session, ...)`) plus the thin committing public wrapper, and have `offboard` call the cores inside the request session with one `commit()`. That also removes the two identity maps, the outer-session `actor` being handed to an inner session, and the redundant `db.expire_all()` after `db.commit()` (SessionLocal already expires on commit).",
+    "failure_scenario": "The primitives' post-commit side effects fire on savepoint RELEASE, not on the real commit: for N owned suites, `transfer_ownership` emits N `suite_ownership_transferred` log lines (and `session.refresh(suite)` re-opens a fresh savepoint each time) before step (d) runs; when `remove_member` then raises, the outer rollback undoes every transfer but App Insights already holds N structured lines asserting they happened, with no compensating line — an operator reconciling the audit trail against logs sees transfers the DB never recorded. Any future primitive that adds a post-commit action (cache invalidation, notification dispatch) inherits the same premature firing."
+  },
+  {
+    "file": "backend/app/services/offboarding_service.py",
+    "line": 365,
+    "summary": "Step (c) copies `api_key_service.revoke_key`'s body because that function attributes the audit event to the key OWNER. The right fix is on the primitive: `revoke_key(db, user, key_id, *, actor: User | None = None)` (defaulting to `user`), or better an `api_key_service.revoke_all_for_user(db, user_id, *, actor)` and a matching `session_service.revoke_all_for_user(db, user_id)` — the by-user bulk revoke is a genuinely new primitive that belongs beside `revoke(db, token)`, not inline here. The copy already drifted: it drops the `api_key_revoked` and `session_revoked` log lines the primitives emit.",
+    "failure_scenario": "A later hardening of `revoke_key` (e.g. purging a resolved-token cache, or pushing a revocation event to the rate-limit/MCP layer so a PAT dies mid-session) lands only in api_key_service; offboarding's copy keeps flipping `revoked_at` alone, so the departing user's PAT keeps working at `/mcp` until whatever the new mechanism guards against expires — and the `api_key_revoked` log an incident responder greps for never appears for offboarded keys."
+  },
+  {
+    "file": "frontend/src/pages/admin/OffboardModal.tsx",
+    "line": 291,
+    "summary": "`OffboardAction` mounts one `&lt;Modal&gt;` (plus `App.useApp`, six `useState`s, two refs and a debounce timer) INSIDE every Members-table row, and compensates with a double key `${user.id}:${String(open)}`. The sibling page `AdminSuites.tsx` already shows the simpler shape: one page-level `useState&lt;AdminUser | null&gt;(null)` and a single `&lt;OffboardModal key={offboarding?.id ?? 'none'} user={offboarding} …/&gt;` next to the `DataTable`, with the row rendering only a button that calls the setter. The remount-on-user-change falls out of that key naturally, and the modal's lifecycle stops depending on the row cell's.",
+    "failure_scenario": "The modal's `receipt` lives in a table-cell component. After `onOffboarded()` reloads `users` and `access`, the re-sorted/paged list (20-row client pages) can move the offboarded user off the current page or past a filter, unmounting the cell — and with it the receipt and its 'Not done, and why' list — while the admin is still reading which steps were skipped. With the page-level mount the receipt survives any table re-render."
+  },
+  {
+    "file": "backend/app/api/v1/admin_offboarding.py",
+    "line": 47,
+    "summary": "The membership state vocabulary is declared three times: string constants `MEMBER/NOT_A_MEMBER/ENV_LISTED` in the service, `membership_state: str` on the `OffboardPreview` dataclass, and a hand-copied `Literal[\"member\", \"not_a_member\", \"env_listed\"]` on the API model. Declare it once in the service as `MembershipState = Literal[...]` (or an `Enum` like `membership_service.EnvVerdict`), type the dataclass field with it, and import it for the API model — so the OpenAPI schema and the service cannot drift. The same PR's `_is_last_admin(db, user, *, lock=False)` also carries an inert `lock` parameter (the body never reads it; `_run` passes `lock=True`), which reads as a locking guarantee the function does not itself provide.",
+    "failure_scenario": "A follow-up adds a fourth state in the service (e.g. `pending` for an unconfirmed auto-import row, which `membership_service.MemberRow.status` already distinguishes) and returns it from `_membership`; the dataclass accepts any `str`, the tests pass, and the API layer raises a Pydantic `ValidationError` → 500 on the preview for exactly those users, discovered only in prod. With one shared `Literal`, mypy fails the build at the service instead."
+  }
+]
+```</result>
+<usage><subagent_tokens>136943</subagent_tokens><tool_uses>18</tool_uses><duration_ms>182179</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aa18dc6eb0afb0e3e</task-id>
+<tool-use-id>toolu_01VDstD9R38WBNMtt8gzj825</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/aa18dc6eb0afb0e3e.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle C: cross-file tracer" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Confirmed empirically: the `api_key.revoke` event written by the pass lands with `row_hash = NULL` while every neighbouring event is chained.
+
+```json
+[
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/services/offboarding_service.py",
+    "line": 385,
+    "summary": "`db.flush()` after the api_key.revoke `record_entity_change` calls moves those AuditEvent rows out of `session.new` before any commit, and the #1460 hash-chain hook (`audit_chain._chain_pending_audit_events`, a `before_commit` listener that scans `session.new` only) never sees them — they are inserted with NULL `prev_hash`/`row_hash`. Verified against the real test DB: after an offboard the chain is [api_key.mint True, suite.transfer True, api_key.revoke FALSE, workspace_member.remove True, user.offboard True]. The receipt (user.offboard) IS chained, but the privileged credential-revoke events it summarises are off-chain and `verify_chain` reports them as 'unverifiable legacy'.",
+    "failure_scenario": "Admin offboards a user holding N live PATs. Every `api_key.revoke` event from the pass is written unhashed; an attacker with table write access can later alter or delete those rows (e.g. re-attribute the revoke, or hide that a key was revoked) and `verify_chain` stays green, since NULL-hash rows are counted as pre-chain legacy, never as a break. The existing test only asserts the action string is present, not `row_hash`. Fix: drop the `db.flush()` (nothing after it needs the ids) or move the flush before `record_entity_change`."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/services/offboarding_service.py",
+    "line": 323,
+    "summary": "Lock ordering in `_run` is: departing user row FOR UPDATE (`_load_user(lock=True)`) → then `assert_admin_remains` locks ALL stored-admin `users` rows ordered by id → then `transfer_ownership` locks suite, then new-owner user, then previous owner. `membership_guard.assert_admin_remains`'s docstring relies on 'users ordered by id' as the anti-deadlock ordering, and this path violates it by taking one user lock first out of order. (The `lock=True` argument to `_is_last_admin` is also accepted and never used.)",
+    "failure_scenario": "Two admins offboard two admin users X and Y concurrently (X.id &lt; Y.id). Request A locks Y, request B locks X; A's `assert_admin_remains` scan then waits on X, B's scan waits on Y → Postgres deadlock detection kills one with `DeadlockDetected` (OperationalError → 500, not 409). Same cycle against the standalone `POST /admin/suites/{id}/transfer` with `keep_previous_owner_access=true` (its ordering is suite → target → previous owner=X, while offboard is X → suite): A holds X wants S, B holds S wants X. And against `PATCH /admin/users/{T}/role` where T is the chosen heir and X is an admin: offboard holds X wants T (transfer_ownership's target lock); set_user_role holds T then scans admins and wants X."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/services/offboarding_service.py",
+    "line": 233,
+    "summary": "The read-only GET preview calls `_is_last_admin`, which unconditionally runs `assert_admin_remains` → `SELECT ... FOR UPDATE` over every stored-admin `users` row plus their `workspace_members` rows. `get_db` never commits, so the GET holds those row locks for the whole request — including the `_owned_suite_rows` loop that follows (line 246), which runs `deletion_impact` = 7 queries per owned suite (a `get_suite` load + 6 COUNT(*)s, of which only 3 are used; the results count joins through `runs` on the largest table in the schema).",
+    "failure_scenario": "An admin opens the offboard modal for a departing admin who owns many suites with large run/result history. While the preview counts results (seconds on a big `results` table), every concurrent `set_user_role`, `remove_member`, `transfer_ownership` (which FOR-UPDATEs the target user), another preview, and any other `assert_admin_remains` caller blocks behind a GET. Two previews of admin users are also deadlock-capable with an in-flight offboard (preview locks admins in id order; offboard locked its user first). A `SELECT` without FOR UPDATE (or using the guard's read-only branch) is what the preview needs; the counts should be a single grouped query rather than 7×N."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/services/offboarding_service.py",
+    "line": 391,
+    "summary": "`membership_service.remove_member` is called with `settings` defaulted, so it resolves `get_settings()` itself, while `_membership` (which decided that `state == MEMBER`) also used `get_settings()` unless a `settings` override was passed. `preview`/`_membership` accept a `settings` parameter for tests, but `_run` never threads one through, so a test that injects settings into `preview` gets a different membership verdict than the pass — and in production a `WORKSPACE_ADMIN_EMAILS` allowlist entry makes `_membership` return ENV_LISTED and skip the row delete, leaving the `workspace_members` row in place although the endpoint reports 'not withdrawn' only via `skipped`.",
+    "failure_scenario": "Departing user is listed in WORKSPACE_ADMIN_EMAILS (the documented bootstrap seed). The pass transfers suites and revokes credentials, then SKIPS membership removal (correct per ADR 0043) — but the user also keeps `users.role='admin'` and can re-authenticate via OIDC/OTP immediately, mint a new PAT and reclaim everything: the receipt says `membership_removed=false` with a note, but nothing forces the admin to read `skipped`, and the frontend receipt path must surface it prominently or the operator believes the person is gone. Verify `OffboardModal` renders `skipped` as a warning, not as a success footnote."
+  },
+  {
+    "file": "/Users/arijit/Coding/Python/DataQ/backend/app/services/offboarding_service.py",
+    "line": 354,
+    "summary": "`transfer_ownership(inner, ...)` and `remove_member(inner, ...)` each end in `session.commit()`; with SQLAlchemy 2.0.52 and `join_transaction_mode=\"create_savepoint\"` that is a RELEASE SAVEPOINT (outer transaction untouched — verified semantics), and `expire_on_commit=True` expires `user`, the `suites` list and `key` rows loaded through `inner`. Each later `suite.id` / `user.email` / `user.id` access is a refresh SELECT inside a fresh savepoint — correct but silent: the departing user's row was locked FOR UPDATE at line 323, and after the first inner commit `user.role` is re-read from the DB. `actor` belongs to the OUTER session and is never expired until `db.expire_all()` at the end, so `actor.id` in `log.info` triggers a SELECT on a new outer transaction after commit.",
+    "failure_scenario": "Not a data-loss path, but an unbounded-query one: for a user owning N suites, each `transfer_ownership` commit expires the whole inner identity map, and the loop then refreshes every remaining `Suite` (`suite.id`) plus `user` on each iteration — O(N²) refresh SELECTs on top of the 7×N preview counts; on the failure path the `except BaseException` correctly closes `inner` and rolls back `db`, so the atomicity claim holds. Cheapest fix: construct `inner` with `expire_on_commit=False` or capture `suite_ids = [s.id for s in suites]` before the loop."
+  }
+]
+```</result>
+<usage><subagent_tokens>141225</subagent_tokens><tool_uses>14</tool_uses><duration_ms>252039</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a7d3606fd9f0d1fba</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a7d3606fd9f0d1fba.output</output-file>
+<status>failed</status>
+<summary>Agent "Angle: altitude" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message · your session limit resets 1:30am (America/Vancouver) (error type rate_limit, HTTP 429, request id req_011CemWhqCj1wweRnheJLrZH, model sent to the API: claude-fable-5-1)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I'll read the diff first, then grep the callers.</result>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a033a048514e39c23</task-id>
+<tool-use-id>toolu_014c4vfx8UEappuXzxf8sh3o</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a033a048514e39c23.output</output-file>
+<status>failed</status>
+<summary>Agent "Angle B: removed-behavior audit" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message · your session limit resets 1:30am (America/Vancouver) (error type rate_limit, HTTP 429, request id req_011CemWhu2REVW3AmTiR4mZu, model sent to the API: claude-fable-5-1)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a30438faac727a3e6</task-id>
+<tool-use-id>toolu_01VJPcJysiZyGJn7zeiCyzyF</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a30438faac727a3e6.output</output-file>
+<status>failed</status>
+<summary>Agent "Angle C: cross-file tracer" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message · your session limit resets 1:30am (America/Vancouver) (error type rate_limit, HTTP 429, request id req_011CemWhzWpauVC2q3sHqgEJ, model sent to the API: claude-fable-5-1)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I'll start by reading the diff and the key files in parallel.</result>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a8fa779df7866831e</task-id>
+<tool-use-id>toolu_01SRHtL4Wku2JiUS1uPUa3tD</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a8fa779df7866831e.output</output-file>
+<status>failed</status>
+<summary>Agent "Angle: MCP honesty + audit/test gaps" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message · your session limit resets 1:30am (America/Vancouver) (error type rate_limit, HTTP 429, request id req_011CemWi2FzWboVgePgTEv2i, model sent to the API: claude-fable-5-1)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I'll start by reading the diff and the key files in parallel.</result>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ac2335c1bbc019fd3</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/ac2335c1bbc019fd3.output</output-file>
+<status>failed</status>
+<summary>Agent "Angle: CLAUDE.md conventions" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message · your session limit resets 1:30am (America/Vancouver) (error type rate_limit, HTTP 429, request id req_011CemWi9iTTSaYuvTWNGDtt, model sent to the API: claude-fable-5-1)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a1e2f5d3ea700a592</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a1e2f5d3ea700a592.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle: efficiency" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+[
+  {
+    "file": "backend/app/mcp/server.py",
+    "line": 746,
+    "summary": "`get_health_score` calls `scoring_settings_service.weights(session)` a second time right after `dashboard_service.dashboard_summary(...)` already resolved the same weights on the same session (dashboard_service.py:267). SQLAlchemy's identity map only serves hits — a `session.get(ScoringSetting, 1)` that returns None is NOT cached — so in the default state (no row stored, i.e. every workspace until an admin customises) both calls are real `SELECT ... FROM scoring_settings WHERE id = 1` round-trips. Cheaper: carry `weights` on `DashboardSummary` (dashboard_summary already has it in hand) or let `dashboard_summary` accept an optional `weights=` and pass the one the tool resolved; one lookup per request either way.",
+    "failure_scenario": "Every `get_health_score` MCP call issues 2 scoring_settings SELECTs instead of 1 (~0.3–1 ms RTT each on a managed Postgres across clouds); with a stored row the second is an identity-map hit, so the waste is largest precisely in the common default configuration."
+  },
+  {
+    "file": "backend/app/api/v1/admin_scoring.py",
+    "line": 47,
+    "summary": "`_read` calls `svc.get_row(db)` and then `svc.weights(db)`, which internally calls `get_row` again — two `session.get(ScoringSetting, 1)` for one response. With no row stored the miss is not memoised, so GET /admin/scoring does two identical SELECTs before the `User` lookup; after `db.commit()` in PUT/DELETE (expire_on_commit default) the first `get` refreshes the expired instance and the second is an identity-map hit, so those paths pay 1 extra call rather than 1 extra query. Cheaper: derive weights from the row already fetched — add `weights_of(row: ScoringSetting | None) -&gt; Weights` to the service (with `weights(session)` becoming `weights_of(get_row(session))`) and call `svc.weights_of(row)` in `_read`.",
+    "failure_scenario": "GET /admin/scoring on a default workspace: 2 SELECTs on scoring_settings + 0 User lookups where 1 SELECT suffices; the panel fetches this on every mount of /admin/settings."
+  },
+  {
+    "file": "backend/app/services/rollup.py",
+    "line": 44,
+    "summary": "`weights.penalty[s]` sits inside the generator `sum(weights.penalty[s] * counts.get(s, 0) for s in SEVERITY_STATUSES)`; `penalty` is a plain `@property` that builds a fresh 4-key dict on every access, so each `health_score` call allocates 4 dicts (one per severity status) to read one float each. Cheaper: hoist it (`penalty = weights.penalty` before the sum), or precompute once per instance — `functools.cached_property` works on a frozen dataclass (it writes to `__dict__`, bypassing `__setattr__`), or store the mapping in `__post_init__` via `object.__setattr__`. Alternatively drop the dict and read attributes directly (`getattr(weights, s, 0.0)`), since `pass` is always 0.",
+    "failure_scenario": "dashboard_summary with N accessible suites calls health_score 2N+2 times → 8N+8 throwaway dict allocations per dashboard render; on the /assets scorecard it is 4 per dimension. Microseconds each, but pure garbage on the hot dashboard path that the old module-level `_PENALTY` constant did not produce."
+  },
+  {
+    "file": "backend/app/services/dashboard_service.py",
+    "line": 176,
+    "summary": "`_suite_performance` computes `health_score(c, weights)` twice per suite — once for `score`, once inside `performance_state(...)`. This was pre-existing, but the diff rewrites both lines and the call is now more expensive (see the `penalty` dict build above: 8 dict allocations + two `evaluated_total` sums per suite instead of 4 + one). Cheaper: `s = health_score(c, weights)` once in the comprehension body (make it a loop or a helper) and pass `s` to both `SuitePerformance(score=s, state=performance_state(s))`.",
+    "failure_scenario": "A workspace with 50 suites does 100 health_score evaluations (400 dict builds, 100 histogram sums) per dashboard load where 50 would do; the result is identical since both calls take the same inputs."
+  },
+  {
+    "file": "backend/app/services/asset_view_service.py",
+    "line": 300,
+    "summary": "Verified-benign, recorded so it is not re-litigated: `_scorecard` resolves `weights(session)` once per call, and `_scorecard` is invoked only from `get_visible_asset` (one asset per request, asset_view_service.py:467). `list_visible_assets` uses `_roll_up` only and never touches `_scorecard`, so there is no per-asset-row `session.get(ScoringSetting, 1)` loop. Non-efficiency aside worth fixing while here: the `weights = ...` assignment was inserted ABOVE the function's docstring, which turns the docstring into a dead string expression (`_scorecard.__doc__` is now None) — move the line below it.",
+    "failure_scenario": "No wasted I/O today: 1 scoring_settings SELECT per GET /assets/{id}. The latent risk is a future caller looping `_scorecard` per asset (e.g. a scorecard column on the asset list) inheriting a per-row SELECT because the lookup is inside the helper rather than resolved once by the caller and passed in like `dashboard_service` does with `_suite_performance(..., weights)`."
+  },
+  {
+    "file": "frontend/src/pages/admin/ScoringPanel.tsx",
+    "line": 40,
+    "summary": "Verified-benign: the inline `useAsyncData(() =&gt; getScoringWeights())` does not refetch per render (the hook deliberately keys its effect on `nonce` only, not the fetcher identity), and per-render work is one `draftOf` object + `invalidReason` + the `dirty` comparison — a handful of comparisons over 3 numbers for a panel that re-renders only on keystrokes in three InputNumbers. No memoisation is warranted; `useMemo` here would cost more than it saves.",
+    "failure_scenario": "None measurable: 3 InputNumber controls, a single fetch on mount, one request per Save/Reset. No N-item list, no derived collection, no effect re-firing on state change."
+  }
+]
+```</result>
+<usage><subagent_tokens>115200</subagent_tokens><tool_uses>4</tool_uses><duration_ms>83141</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a874ab66fb66cc984</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/a874ab66fb66cc984.output</output-file>
+<status>failed</status>
+<summary>Agent "Angle A: line-by-line scan" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message · your session limit resets 1:30am (America/Vancouver) (error type rate_limit, HTTP 429, request id req_011CemWjZS1QLjHwcvfzTCeQ, model sent to the API: claude-fable-5-1)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aad51cac07b28a8f2</task-id>
+<tool-use-id>toolu_019mHxNNyvhaJJyrihJX3Akw</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/ff0a28fd-0012-4000-aaf5-a5dc7bf77c2f/tasks/aad51cac07b28a8f2.output</output-file>
+<status>completed</status>
+<summary>Agent "Angle: reuse + simplification" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>```json
+[
+  {
+    "file": "backend/app/api/v1/admin_scoring.py",
+    "line": 46,
+    "summary": "`_read`'s updated_by→email block (lines 49–52) is a verbatim copy of `admin_privacy.py:43–46`, and the surrounding `row.updated_at if row is not None else None` shape is copied too. Both singleton-settings routers now carry the same 'resolve the auditing user's email, tolerate a SET NULL'd FK' logic. Extract one helper — e.g. `updated_by_email(db, row) -&gt; str | None` in `backend/app/api/v1/_base.py` (or next to `audit_service.py:338`, which already does the actor→User lookup) — and call it from both `_read`s.",
+    "failure_scenario": "The next change to how an updated-by actor is rendered (e.g. showing display_name, or 'deleted user' instead of null after offboarding #1699 removes the row) has to be made in two routers that nobody links; one gets it and the Privacy card and Scoring card render the same auditing fact differently."
+  },
+  {
+    "file": "backend/app/services/scoring_settings_service.py",
+    "line": 80,
+    "summary": "`is_default(session)` has no production caller — `admin_scoring._read` inlines the same predicate as `is_default=row is None` (line 58), and only `test_scoring_settings_service.py` calls the function. Either delete it or make `_read` use it; don't ship both spellings.",
+    "failure_scenario": "A public service function that exists only to be asserted on is dead code with a test keeping it alive; if the meaning of 'default' ever changes (e.g. a stored row equal to the defaults should read as default), the router's inline `row is None` and the service's `is_default` diverge and the test still passes."
+  },
+  {
+    "file": "backend/app/services/scoring_settings_service.py",
+    "line": 52,
+    "summary": "The weight rule now lives in four places: `validate()` (range + order + critical&gt;0), `ScoringWeightsWrite` `Field(ge=0, le=MAX_WEIGHT)` / `Field(gt=0…)` (range), the `weights_ordered` CHECK (order + critical&gt;0), and `ScoringPanel.invalidReason` + a hardcoded `InputNumber max={100}` (order + critical&gt;0 + range). `validate()` already guards every door (it runs inside `set_weights`, so MCP/tests/imports hit it too) and raises a 422 with a reason; drop the Pydantic bounds and let the service be the single rule, and have the frontend read the ceiling from the API (`defaults`/a `max_weight` field) instead of literal `100`.",
+    "failure_scenario": "Today two adjacent bad inputs already produce two different 422 shapes — `warn=101` is a generic Pydantic validation error, `warn=2,fail=1` is `scoring_weights_invalid` with a message — so the UI's error handling has to understand both. Raising `MAX_WEIGHT` later requires touching `MAX_WEIGHT`, the `Field(le=…)`s, `Numeric(5,2)`, and `InputNumber max={100}`; missing the frontend one silently caps admins at 100 while the API accepts more."
+  },
+  {
+    "file": "backend/app/services/scoring_settings_service.py",
+    "line": 33,
+    "summary": "`Weights.penalty` is a property that builds a fresh 4-key dict on every access, and `rollup.health_score` (line 44) indexes it inside the generator — so each score allocates the dict four times, and `_suite_performance` calls `health_score` twice per suite. `w_max` is just an alias for `critical`. Simpler form: `penalty_for(self, status: str) -&gt; float: return 0.0 if status == 'pass' else getattr(self, status)` (or hoist `p = weights.penalty` once in `health_score`), and use `weights.critical` directly instead of `w_max`.",
+    "failure_scenario": "Two names for one value (`critical` vs `w_max`) invite a future divergence (a separate normaliser field) that the ADR does not intend; the per-call dict rebuild is pure allocation on the dashboard hot path (`health_score` runs for every suite, both windows and every asset dimension per request) with no behaviour it buys."
+  },
+  {
+    "file": "frontend/src/pages/admin/ScoringPanel.tsx",
+    "line": 112,
+    "summary": "`{reason &amp;&amp; dirty &amp;&amp; &lt;Alert …/&gt;}` — when `dirty` is false the draft equals `current`, which came back from the server already validated, so `reason` is necessarily null and the `dirty` conjunct is redundant. Likewise `onSave` re-checks `if (!draft || reason) return;` (line 63) after the Save button is already `disabled={!dirty || !!reason}`. Reduce to `{reason &amp;&amp; &lt;Alert/&gt;}` and drop the in-handler re-check (or keep only one guard).",
+    "failure_scenario": "Two copies of the 'can this be saved' predicate (button `disabled` vs the handler's early return vs the alert gate) drift the first time someone loosens one — e.g. allowing Save on a not-dirty draft to 'materialise' the defaults as a stored row — and the alert/handler silently keep the old rule, leaving a click that does nothing with no message."
+  },
+  {
+    "file": "backend/app/services/asset_view_service.py",
+    "line": 300,
+    "summary": "`weights = scoring_settings_service.weights(session)` was inserted ABOVE the function's docstring (`\"\"\"Per-dimension coverage + score for an asset (#889).\"\"\"`), so the string is now a bare expression statement and `_scorecard.__doc__` is `None`. Move the assignment below the docstring — the same shape as `dashboard_summary`, where `weights = …` sits after the docstring.",
+    "failure_scenario": "The docstring silently stops being one: tooling that reads `__doc__` (the prose-to-code guard, IDE hover, any future docstring-coverage lint) reports the function undocumented, and the next reader assumes the comment is an orphaned string and deletes it."
+  }
+]
+```</result>
+<usage><subagent_tokens>123232</subagent_tokens><tool_uses>15</tool_uses><duration_ms>106320</duration_ms></usage>
+</task-notification>
+
+---
+
+Continue on the current task(s), try to keep the number of sub-agents ~5, few more followups - 
+* User should not be hand written the alert chanels in the suits - It should be first configured by an admin then it should be available in the suit only as a dropdown value. 
+* In current state LLM get configured, Connections get created with wrong credentials - this needs to be changed [we have a test button to prevent this exact behaviour]. 
+* I think admin shouln't be able to modify their own account details [or is it not the standard practise] 
+* [Unrelated to current flow] Few more DMF checks we can add - FRESHNESS | SCHEMA_CHANGE_COUNT | ACCEPTED_VALUES | BLANK_COUNT | FUTURE_TIMESTAMP_PERCENT - create a issue now, no need to work on it. Also can we add them with expectation values.
+* Custom sql - both of them have generate from description, which is not correct [The card titled `custom sql` should not have that field]. 
+* [Bug] Severity thresholds - once set can't be removed through edit check. - verify and raise the bug, no need to work on it now. 
+* Display Message in result for a deleted check is currentlu - `No check results — the run did not complete.` Which is misleading, need to change. - verify and raise the bug, no need to work on it now. 
+* We can now remove the `Alert channels` section from the `Profile` page.
+
+---
+
+yes add the confirm_self step for self-demotion.
+
+---
+
+Continue with 1921, 1922, 1923, 1924, 1925.
