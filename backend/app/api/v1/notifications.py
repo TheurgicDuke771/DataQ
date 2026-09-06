@@ -35,6 +35,10 @@ class SuiteNotificationRead(ApiModel):
 
 
 class SuiteNotificationUpdate(ApiRequestModel):
+    """`enabled`/`alert_on` plus channel links are the whole config (#1926). The
+    three inline destinations below are accepted only as "" (clear a legacy
+    value); any other value is refused for every caller."""
+
     enabled: bool = True
     # Default 'warn' matches the no-config fallback, so an omitted threshold
     # doesn't silently tighten delivery (a saved config keeps the prior behaviour).
@@ -93,6 +97,23 @@ def put_notifications(
     secret_store: Annotated[SecretStore, Depends(get_secret_store)],
 ) -> SuiteNotificationRead:
     require_permission(db, suite_id, current_user.id, minimum="edit")
+    # A suite never takes its own destination (#1926) — only a clear ("") gets through,
+    # which is how an editor retires a legacy value in favour of a linked channel.
+    inline = [
+        name
+        for name, value in (
+            ("webhook", payload.webhook),
+            ("slack_webhook", payload.slack_webhook),
+            ("email_recipients", payload.email_recipients),
+        )
+        if value
+    ]
+    if inline:
+        raise svc.InlineDestinationNotAllowedError(
+            "a suite does not take its own webhook or recipient list — link one of the "
+            "channels an Admin configured under Settings; existing values can only be cleared",
+            detail={"fields": inline},
+        )
     config = svc.upsert_config(
         db,
         suite_id=suite_id,
