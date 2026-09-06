@@ -1,7 +1,6 @@
 import {
   Alert,
   App,
-  Button,
   Descriptions,
   Flex,
   Input,
@@ -52,8 +51,8 @@ export function OffboardModal({
 
   const userId = user?.id;
 
-  // Fetch only. Per-user state is reset by REMOUNTING (the `key` in
-  // `OffboardAction`), not by clearing it here — clearing state inside an effect
+  // Fetch only. Per-user state is reset by REMOUNTING (the page keys the modal
+  // per user), not by clearing it here — clearing state inside an effect
   // body cascades renders, and a stale receipt surviving into the next user's
   // modal is exactly the bug the key rules out.
   useEffect(() => {
@@ -310,29 +309,5 @@ function Receipt({ receipt }: { receipt: OffboardReceipt }) {
         />
       )}
     </Flex>
-  );
-}
-
-/** The Members-table row action that opens the modal. */
-export function OffboardAction({
-  user,
-  onOffboarded,
-}: {
-  user: AdminUser;
-  onOffboarded: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <Button size="small" type="text" danger onClick={() => setOpen(true)}>
-        Offboard
-      </Button>
-      <OffboardModal
-        key={`${user.id}:${String(open)}`}
-        user={open ? user : null}
-        onClose={() => setOpen(false)}
-        onOffboarded={onOffboarded}
-      />
-    </>
   );
 }
