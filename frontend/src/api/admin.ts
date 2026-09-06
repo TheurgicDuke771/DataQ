@@ -642,3 +642,34 @@ export async function putPrivacySettings(zeroSampleMode: boolean): Promise<Priva
   });
   return data;
 }
+
+/** Health-score penalty weights. `pass` is always 0; `is_default` means nothing is stored and the
+ *  ADR defaults apply. Scores are computed on read, so a change recolours every score at once. */
+export interface ScoringWeights {
+  warn: number;
+  fail: number;
+  critical: number;
+  is_default: boolean;
+  defaults: { warn: number; fail: number; critical: number };
+  updated_by: string | null;
+  updated_at: string | null;
+}
+
+export async function getScoringWeights(): Promise<ScoringWeights> {
+  const { data } = await api.get<ScoringWeights>('/admin/scoring');
+  return data;
+}
+
+export async function putScoringWeights(body: {
+  warn: number;
+  fail: number;
+  critical: number;
+}): Promise<ScoringWeights> {
+  const { data } = await api.put<ScoringWeights>('/admin/scoring', body);
+  return data;
+}
+
+export async function resetScoringWeights(): Promise<ScoringWeights> {
+  const { data } = await api.delete<ScoringWeights>('/admin/scoring');
+  return data;
+}

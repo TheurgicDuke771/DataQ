@@ -7,10 +7,11 @@ import { authMethodLabel } from '../../auth/config';
 import { LlmSettingsPanel } from '../../components/admin/LlmSettingsPanel';
 import { NotificationChannelsPanel } from '../../components/admin/NotificationChannelsPanel';
 import { PrivacyPanel } from './PrivacyPanel';
+import { ScoringPanel } from './ScoringPanel';
 import { type FetchFailure, fetchFailure } from '../../utils/errors';
 
 /** Workspace settings: general facts + SMTP pre-flight, notification channels, LLM provider,
- *  the secret-store notice and the danger zone (folded in from `/settings`, #1694). */
+ *  the privacy and scoring settings, the secret-store notice and the danger zone (folded in from `/settings`, #1694). */
 export function AdminSettings() {
   return (
     <Flex vertical gap={16}>
@@ -18,6 +19,7 @@ export function AdminSettings() {
       <NotificationsCard />
       <LlmSettingsPanel />
       <PrivacyPanel />
+      <ScoringPanel />
       <SecretsCard />
       <DangerCard />
     </Flex>

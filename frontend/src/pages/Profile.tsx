@@ -1,7 +1,5 @@
-import { Alert, App, Avatar, Card, Descriptions, Flex, Spin, Tag, Typography } from 'antd';
-import { TeamOutlined, UserOutlined } from '@ant-design/icons';
+import { App, Avatar, Card, Descriptions, Flex, Spin, Tag, Typography } from 'antd';
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
 
 import { authMethodLabel } from '../auth/config';
 import { useMe } from '../auth/useMe';
@@ -94,29 +92,6 @@ export function Profile() {
           </Descriptions.Item>
           <Descriptions.Item label="Last seen">{last_seen_at ?? '—'}</Descriptions.Item>
         </Descriptions>
-      </Card>
-
-      <Card
-        title={
-          <Flex gap={8} align="center">
-            <TeamOutlined /> Alert channels
-          </Flex>
-        }
-        size="small"
-      >
-        <Alert
-          type="info"
-          showIcon
-          icon={<UserOutlined />}
-          title="DQ alerts are configured per suite"
-          description={
-            <span>
-              Teams, Slack and email alerts (webhook/recipient + fail / warn / always threshold) are
-              set on each suite, so the right team is notified for the data they own. Open a suite
-              from <Link to="/suites">Suites</Link> to configure its notifications.
-            </span>
-          }
-        />
       </Card>
 
       <ApiKeysPanel />

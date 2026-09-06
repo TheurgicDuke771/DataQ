@@ -12,7 +12,7 @@ from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
 from backend.app.db.models import Result, Run, Suite
-from backend.app.services import suite_service
+from backend.app.services import scoring_settings_service, suite_service
 from backend.app.services.rollup import (
     AGGREGATABLE_RUN_STATUSES,
     health_score,
@@ -20,6 +20,7 @@ from backend.app.services.rollup import (
     pass_rate,
     performance_state,
 )
+from backend.app.services.scoring_settings_service import Weights
 
 # The ADR-0005 score math now lives in `services/rollup.py`, shared with the asset view and the #889
 # scorecard (one helper, not one-per-consumer).
@@ -75,6 +76,8 @@ class DashboardSummary:
     kpis: Kpis
     trend: list[TrendPoint]
     suite_performance: list[SuitePerformance]
+    #: The penalties every score above was computed with (#1559).
+    weights: Weights
 
 
 def _window_start(window_days: int) -> datetime:
@@ -145,7 +148,7 @@ def _run_trend(
 
 
 def _suite_performance(
-    session: Session, accessible: Select[tuple[uuid.UUID]]
+    session: Session, accessible: Select[tuple[uuid.UUID]], weights: Weights
 ) -> list[SuitePerformance]:
     """Per-suite health from each suite's **latest** run, worst (lowest) first."""
     # The shared latest-run-per-suite statement (#889) — kept in SQL here and inner-joined, which is
@@ -168,14 +171,10 @@ def _suite_performance(
         counts.setdefault(sid, {})[status] = count
         names[sid] = name
 
+    scores = {sid: health_score(c, weights) for sid, c in counts.items()}
     out = [
-        SuitePerformance(
-            suite_id=sid,
-            name=names[sid],
-            score=health_score(c),
-            state=performance_state(health_score(c)),
-        )
-        for sid, c in counts.items()
+        SuitePerformance(suite_id=sid, name=names[sid], score=s, state=performance_state(s))
+        for sid, s in scores.items()
     ]
     # Worst first (lowest score), suites with no severity result (score None) last.
     out.sort(key=lambda s: (s.score is None, s.score if s.score is not None else 0.0))
@@ -263,9 +262,10 @@ def dashboard_summary(
     # [now-2w, now-w) against the current [now-w, now].
     prev_since = since - timedelta(days=window_days)
 
+    weights = scoring_settings_service.weights(session)
     counts = _status_counts(session, accessible, since)
     prev_counts = _status_counts(session, accessible, prev_since, until=since)
-    score = health_score(counts)
+    score = health_score(counts, weights)
     rate = pass_rate(counts)
     total_runs = _total_runs(session, accessible, since)
     prev_total_runs = _total_runs(session, accessible, prev_since, until=since)
@@ -277,14 +277,15 @@ def dashboard_summary(
         total_runs=total_runs,
         active_connections=_active_connections(session, accessible),
         avg_duration_ms=avg_duration,
-        health_score_delta=_delta_points(score, health_score(prev_counts)),
+        health_score_delta=_delta_points(score, health_score(prev_counts, weights)),
         pass_rate_delta=_delta_points(rate, pass_rate(prev_counts)),
         total_runs_delta_pct=_delta_pct(float(total_runs), float(prev_total_runs)),
         avg_duration_delta_pct=_delta_pct(avg_duration, prev_avg_duration),
     )
     return DashboardSummary(
         window_days=window_days,
+        weights=weights,
         kpis=kpis,
         trend=_run_trend(session, accessible, since),
-        suite_performance=_suite_performance(session, accessible),
+        suite_performance=_suite_performance(session, accessible, weights),
     )

@@ -26,7 +26,7 @@ from backend.app.db.models import (
     worst_severity,
 )
 from backend.app.lineage.edges import lineage_neighbourhood
-from backend.app.services import audit_service
+from backend.app.services import audit_service, scoring_settings_service
 from backend.app.services.rollup import (
     AGGREGATABLE_RUN_STATUSES,
     evaluated_total,
@@ -298,6 +298,7 @@ def _latest_outcomes(session: Session, suites: list[Suite]) -> dict[uuid.UUID, R
 
 def _scorecard(session: Session, suite_ids: list[uuid.UUID], run_ids: list[uuid.UUID]) -> Scorecard:
     """Per-dimension coverage + score for an asset (#889)."""
+    weights = scoring_settings_service.weights(session)
     # ── what exists (coverage) ──
     check_rows = session.execute(
         select(Check.dimension, func.count())
@@ -336,7 +337,7 @@ def _scorecard(session: Session, suite_ids: list[uuid.UUID], run_ids: list[uuid.
                 checks_evaluated=evaluated_total(hist),
                 # `None` when nothing EVALUATED — no run yet, or every result
                 # skipped/errored. Distinct from 0, which means it ran and failed.
-                score=health_score(hist) if hist else None,
+                score=health_score(hist, weights) if hist else None,
             )
         )
     uncovered = sorted(set(DQ_DIMENSIONS) - set(checks_by_dimension))

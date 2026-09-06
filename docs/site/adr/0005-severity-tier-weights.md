@@ -1,8 +1,24 @@
 # ADR 0005 — Severity tier weights (warn / fail / critical → health score)
 
-- **Status:** Accepted
+- **Status:** Accepted (amended 2026-09-06)
 - **Date:** 2026-05-30
 - **Deciders:** @TheurgicDuke771
+
+
+> **Amendment (2026-09-06) — the weights are a workspace setting.** The three
+> non-zero penalties (`warn` / `fail` / `critical`) can be changed by a
+> workspace Admin under Admin → Settings → Scoring, audited on every change,
+> and reset to the values in this ADR. The values above remain the defaults an
+> empty setting resolves to. The decision this forced into the open: **scores
+> are computed on read and never stored**, so a change recolours every score
+> everywhere at once — dashboard, trend deltas, suite ranking, asset
+> scorecards, past and present. That is deliberate ("always the current lens"):
+> the alternative, snapshotting the weights or the score at run time, makes a
+> weight change a data migration and leaves two suites with the same result
+> histogram scored differently depending on when they ran. The audit event is
+> the only record of the step; readers comparing a score across a change should
+> look there. `pass` is fixed at 0 and the ordering `0 ≤ warn ≤ fail ≤ critical`,
+> `critical > 0`, is enforced both by the API and by a table CHECK.
 
 ## Context
 

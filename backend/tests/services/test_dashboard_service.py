@@ -336,3 +336,26 @@ def test_previous_window_does_not_leak_into_current_kpis(db_session: Any) -> Non
     summary = svc.dashboard_summary(db_session, user_id=alice.id, window_days=7)
     assert summary.kpis.health_score == 100.0
     assert summary.kpis.total_runs == 1
+
+
+# ── #1559: the stored weights reach every score the summary computes ─────────
+
+
+def test_summary_scores_with_the_workspace_weights(db_session: Any) -> None:
+    """Same data, different weights, different KPI *and* per-suite score — the
+    summary reads the workspace row rather than the ADR 0005 constants."""
+    from backend.app.services import scoring_settings_service
+
+    alice = _user(db_session)
+    suite = _suite(db_session, alice, name="s")
+    _run_with_results(
+        db_session, suite, run_status="succeeded", result_statuses=["pass", "fail"], age_days=0
+    )
+    before = svc.dashboard_summary(db_session, user_id=alice.id, window_days=7)
+    assert before.kpis.health_score == 75.0
+    assert before.suite_performance[0].score == 75.0
+
+    scoring_settings_service.set_weights(db_session, warn=0.5, fail=1.0, critical=1.0, actor=alice)
+    after = svc.dashboard_summary(db_session, user_id=alice.id, window_days=7)
+    assert after.kpis.health_score == 50.0
+    assert after.suite_performance[0].score == 50.0

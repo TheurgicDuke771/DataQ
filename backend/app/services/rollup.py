@@ -13,17 +13,12 @@ from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
 from backend.app.db.models import RESULT_SEVERITY_TIERS, Result, Run
+from backend.app.services.scoring_settings_service import DEFAULT_WEIGHTS, Weights
 
-# ── health score (ADR 0005) ────────────────────────────────────────────────── Fixed penalty
-# weights; W_MAX (the critical weight) normalises into [0, 100] so all-fail scores 50, not the
-# floor — critical stays meaningfully worse than fail.
-_PENALTY: Mapping[str, float] = {
-    "pass": 0.0,
-    "warn": 0.5,
-    "fail": 1.0,
-    "critical": 2.0,
-}  # nosec B105
-_W_MAX = 2.0
+# ── health score (ADR 0005) ──────────────────────────────────────────────────
+# Penalty weights come from `scoring_settings_service.weights(session)` — the ADR 0005
+# defaults unless an admin changed them (#1559). `critical` (W_MAX) normalises into
+# [0, 100] so all-fail scores 50, not the floor.
 
 # Only the four severity tiers count toward the score / pass-rate.
 SEVERITY_STATUSES: tuple[str, ...] = RESULT_SEVERITY_TIERS
@@ -38,15 +33,16 @@ def evaluated_total(counts: Mapping[str, int]) -> int:
     return sum(counts.get(s, 0) for s in SEVERITY_STATUSES)
 
 
-def health_score(counts: Mapping[str, int]) -> float | None:
+def health_score(counts: Mapping[str, int], weights: Weights = DEFAULT_WEIGHTS) -> float | None:
     """ADR-0005 health score from a status histogram, or ``None`` when no
-    severity results are in scope.
+    severity results are in scope. Callers that score for a user pass the
+    workspace's ``weights``; the default is only for weight-independent tests.
     """
     n = evaluated_total(counts)
     if n == 0:
         return None
-    penalty = sum(_PENALTY[s] * counts.get(s, 0) for s in SEVERITY_STATUSES)
-    return round(100.0 * (1.0 - penalty / (n * _W_MAX)), 1)
+    penalty = sum(weights.penalty(s) * counts.get(s, 0) for s in SEVERITY_STATUSES)
+    return round(100.0 * (1.0 - penalty / (n * weights.critical)), 1)
 
 
 def pass_rate(counts: Mapping[str, int]) -> float | None:
