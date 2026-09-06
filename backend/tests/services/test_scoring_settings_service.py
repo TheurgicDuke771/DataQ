@@ -31,8 +31,12 @@ def user(db_session: Any) -> User:
 
 def test_no_row_means_the_adr_0005_defaults(db_session: Session) -> None:
     assert svc.weights(db_session) == svc.DEFAULT_WEIGHTS
-    assert svc.is_default(db_session) is True
-    assert svc.DEFAULT_WEIGHTS.penalty == {"pass": 0.0, "warn": 0.5, "fail": 1.0, "critical": 2.0}
+    assert [svc.DEFAULT_WEIGHTS.penalty(s) for s in ("pass", "warn", "fail", "critical")] == [
+        0.0,
+        0.5,
+        1.0,
+        2.0,
+    ]
 
 
 def test_set_writes_the_row_and_an_audit_event(db_session: Session, user: User) -> None:
@@ -45,7 +49,6 @@ def test_set_writes_the_row_and_an_audit_event(db_session: Session, user: User) 
     )
     assert row.updated_by == user.id
     assert svc.weights(db_session) == svc.Weights(warn=0.25, fail=1.0, critical=4.0)
-    assert svc.is_default(db_session) is False
     event = db_session.query(AuditEvent).filter_by(action="scoring_setting.update").one()
     assert event.before is None
     assert event.after is not None and float(event.after["critical_weight"]) == 4.0

@@ -41,8 +41,8 @@ def health_score(counts: Mapping[str, int], weights: Weights = DEFAULT_WEIGHTS) 
     n = evaluated_total(counts)
     if n == 0:
         return None
-    penalty = sum(weights.penalty[s] * counts.get(s, 0) for s in SEVERITY_STATUSES)
-    return round(100.0 * (1.0 - penalty / (n * weights.w_max)), 1)
+    penalty = sum(weights.penalty(s) * counts.get(s, 0) for s in SEVERITY_STATUSES)
+    return round(100.0 * (1.0 - penalty / (n * weights.critical)), 1)
 
 
 def pass_rate(counts: Mapping[str, int]) -> float | None:

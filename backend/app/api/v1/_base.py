@@ -63,3 +63,14 @@ class ApiRequestModel(ApiModel):
     """
 
     model_config = ConfigDict(extra="forbid")
+
+
+def updated_by_email(db: Any, row: Any) -> str | None:
+    """Email of the admin a singleton-settings row records as `updated_by`, tolerating
+    a SET NULL'd FK."""
+    from backend.app.db.models import User
+
+    if row is None or row.updated_by is None:
+        return None
+    user = db.get(User, row.updated_by)
+    return user.email if user is not None else None

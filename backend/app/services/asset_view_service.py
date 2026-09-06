@@ -297,8 +297,8 @@ def _latest_outcomes(session: Session, suites: list[Suite]) -> dict[uuid.UUID, R
 
 
 def _scorecard(session: Session, suite_ids: list[uuid.UUID], run_ids: list[uuid.UUID]) -> Scorecard:
-    weights = scoring_settings_service.weights(session)
     """Per-dimension coverage + score for an asset (#889)."""
+    weights = scoring_settings_service.weights(session)
     # ── what exists (coverage) ──
     check_rows = session.execute(
         select(Check.dimension, func.count())

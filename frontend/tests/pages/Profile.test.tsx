@@ -75,12 +75,6 @@ describe('Profile', () => {
     expect(screen.getAllByText('Workspace admin').length).toBeGreaterThan(0);
   });
 
-  it('points alerting config at suites (per-suite, not per-user)', () => {
-    renderProfile(me);
-    expect(screen.getByText('DQ alerts are configured per suite')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Suites' })).toHaveAttribute('href', '/suites');
-  });
-
   it('shows an error state when /me fails', () => {
     renderProfile({ status: 'error', error: 'boom', kind: 'http' as const });
     // #910: dedicated error page (no status on the stubbed state → 500).

@@ -58,7 +58,7 @@ export function ScoringPanel() {
 
   const onSave = () =>
     void run(async () => {
-      if (!draft || reason) return;
+      if (!draft) return;
       apply(
         await putScoringWeights({
           warn: draft.warn as number,
@@ -110,7 +110,7 @@ export function ScoringPanel() {
               <InputNumber value={0} disabled aria-label="Pass weight" />
             </Space>
           </Space>
-          {reason && dirty && <Alert type="warning" showIcon title={reason} />}
+          {reason && <Alert type="warning" showIcon title={reason} />}
           <Space>
             <Button type="primary" onClick={onSave} disabled={!dirty || !!reason} loading={loading}>
               Save

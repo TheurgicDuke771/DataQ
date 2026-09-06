@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends
 from pydantic import Field
 from sqlalchemy.orm import Session
 
-from backend.app.api.v1._base import ApiModel
+from backend.app.api.v1._base import ApiModel, updated_by_email
 from backend.app.core.auth import require_workspace_admin
 from backend.app.db.models import User
 from backend.app.db.session import get_db
@@ -45,11 +45,8 @@ class ScoringWeightsWrite(ApiModel):
 
 def _read(db: Session) -> ScoringWeightsRead:
     row = svc.get_row(db)
-    w = svc.weights(db)
-    updated_by = None
-    if row is not None and row.updated_by is not None:
-        user = db.get(User, row.updated_by)
-        updated_by = user.email if user is not None else None
+    w = svc.weights_of(row)
+    updated_by = updated_by_email(db, row)
     d = svc.DEFAULT_WEIGHTS
     return ScoringWeightsRead(
         warn=w.warn,

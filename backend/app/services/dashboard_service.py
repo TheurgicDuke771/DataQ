@@ -76,6 +76,8 @@ class DashboardSummary:
     kpis: Kpis
     trend: list[TrendPoint]
     suite_performance: list[SuitePerformance]
+    #: The penalties every score above was computed with (#1559).
+    weights: Weights
 
 
 def _window_start(window_days: int) -> datetime:
@@ -169,14 +171,10 @@ def _suite_performance(
         counts.setdefault(sid, {})[status] = count
         names[sid] = name
 
+    scores = {sid: health_score(c, weights) for sid, c in counts.items()}
     out = [
-        SuitePerformance(
-            suite_id=sid,
-            name=names[sid],
-            score=health_score(c, weights),
-            state=performance_state(health_score(c, weights)),
-        )
-        for sid, c in counts.items()
+        SuitePerformance(suite_id=sid, name=names[sid], score=s, state=performance_state(s))
+        for sid, s in scores.items()
     ]
     # Worst first (lowest score), suites with no severity result (score None) last.
     out.sort(key=lambda s: (s.score is None, s.score if s.score is not None else 0.0))
@@ -286,6 +284,7 @@ def dashboard_summary(
     )
     return DashboardSummary(
         window_days=window_days,
+        weights=weights,
         kpis=kpis,
         trend=_run_trend(session, accessible, since),
         suite_performance=_suite_performance(session, accessible, weights),

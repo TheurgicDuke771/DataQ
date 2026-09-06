@@ -30,13 +30,8 @@ class Weights:
     fail: float
     critical: float
 
-    @property
-    def penalty(self) -> dict[str, float]:
-        return {"pass": 0.0, "warn": self.warn, "fail": self.fail, "critical": self.critical}
-
-    @property
-    def w_max(self) -> float:
-        return self.critical
+    def penalty(self, status: str) -> float:
+        return 0.0 if status == "pass" else float(getattr(self, status))
 
 
 DEFAULT_WEIGHTS = Weights(warn=0.5, fail=1.0, critical=2.0)
@@ -66,8 +61,7 @@ def get_row(session: Session) -> ScoringSetting | None:
     return session.get(ScoringSetting, _SETTINGS_ROW_ID)
 
 
-def weights(session: Session) -> Weights:
-    row = get_row(session)
+def weights_of(row: ScoringSetting | None) -> Weights:
     if row is None:
         return DEFAULT_WEIGHTS
     return Weights(
@@ -77,8 +71,8 @@ def weights(session: Session) -> Weights:
     )
 
 
-def is_default(session: Session) -> bool:
-    return get_row(session) is None
+def weights(session: Session) -> Weights:
+    return weights_of(get_row(session))
 
 
 def set_weights(

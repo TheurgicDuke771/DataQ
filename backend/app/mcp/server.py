@@ -83,7 +83,6 @@ from backend.app.services import (
     run_service,
     run_target,
     schedule_service,
-    scoring_settings_service,
     suite_io_service,
     suite_service,
     trigger_binding_service,
@@ -743,10 +742,10 @@ def get_health_score(window_days: int = 7) -> dict[str, Any]:
             window_days=window_days,
             include_all=is_workspace_admin(user),
         )
-        weights = scoring_settings_service.weights(session)
+        w = summary.weights
         return {
             "window_days": summary.window_days,
-            "weights": {"warn": weights.warn, "fail": weights.fail, "critical": weights.critical},
+            "weights": {"warn": w.warn, "fail": w.fail, "critical": w.critical},
             "health_score": summary.kpis.health_score,
             "pass_rate": summary.kpis.pass_rate,
             "total_runs": summary.kpis.total_runs,
