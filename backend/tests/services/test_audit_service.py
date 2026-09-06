@@ -24,6 +24,7 @@ class _FakeSession:
         self.added: list[Any] = []
         self.committed = False
         self.flushed = False
+        self.info: dict[str, Any] = {}
 
     def add(self, obj: Any) -> None:
         self.added.append(obj)

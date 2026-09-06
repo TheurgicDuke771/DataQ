@@ -382,7 +382,8 @@ def _run(
     for row in _live_sessions(db, user_id):
         row.revoked_at = now
         receipt.sessions_revoked += 1
-    db.flush()
+    # No flush here: the chain hook hashes only `session.new`, and a flushed audit
+    # event would commit unchained (#1920).
 
     # (d) Membership last: while it stands, an admin can still see the user in the
     # list and undo the steps above.

@@ -15,7 +15,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.orm import Session as SASession
 
 from backend.app.db.models import (
@@ -294,3 +294,25 @@ def test_a_failure_after_the_transfers_takes_them_back_too(
     assert observed["session_revoked"] is False
     assert observed["member_present"] is True
     assert observed["offboard_events"] == 0
+
+
+def test_every_audit_event_of_the_pass_is_chained(committed: _Fixture) -> None:
+    """A flush between `record_entity_change` and commit moved the api_key.revoke
+    events out of `session.new`, so the before_commit chain hook never hashed
+    them (#1920)."""
+    offboarding_service.offboard(
+        committed.session,
+        committed.leaver_id,
+        new_owner_user_id=committed.heir_id,
+        confirm_email=committed.leaver_email,
+        actor=committed.actor,
+    )
+    with committed.engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT action, row_hash IS NULL FROM audit_events "
+                "WHERE action IN ('api_key.revoke', 'user.offboard', 'suite.transfer')"
+            )
+        ).all()
+    assert {a for a, _ in rows} >= {"api_key.revoke", "user.offboard"}
+    assert [a for a, unhashed in rows if unhashed] == []

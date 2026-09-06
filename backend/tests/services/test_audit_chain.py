@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 import pytest
-from sqlalchemy import Table
+from sqlalchemy import Table, select
 from sqlalchemy.orm import Session
 
 from backend.app.db.models import AuditChainCheckpoint, AuditChainState, AuditEvent, User
@@ -265,3 +265,16 @@ def test_purge_checkpoint_is_none_when_nothing_is_older_than_cutoff(db_session: 
 
     assert checkpoint is None
     assert db_session.query(AuditChainCheckpoint).count() == 0
+
+
+def test_an_event_flushed_before_commit_is_still_chained(db_session: Any) -> None:
+    """An autoflush (any query after `record`) or an explicit flush moves the
+    event out of `session.new`; the hook must still hash it (#1920)."""
+    first = _record(db_session, suffix="-a")
+    db_session.flush()
+    second = _record(db_session, suffix="-b")
+    db_session.execute(select(AuditEvent.id)).all()  # autoflush
+    db_session.commit()
+    assert first.row_hash is not None
+    assert second.row_hash is not None
+    assert second.prev_hash == first.row_hash

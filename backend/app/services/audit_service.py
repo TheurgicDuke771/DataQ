@@ -27,7 +27,7 @@ from backend.app.db.models import (
 # `from ... import audit_chain`, so there is no name for a linter to call unused —
 # Ruff's `noqa: F401` satisfies Ruff but not CodeQL's own unused-import check, which
 # flagged the bound-name form and blocked the PR's merge gate.
-importlib.import_module("backend.app.services.audit_chain")
+_audit_chain = importlib.import_module("backend.app.services.audit_chain")
 
 log = get_logger(__name__)
 
@@ -396,6 +396,10 @@ def record(
         request_id=request_id if request_id is not None else request_id_var.get(),
     )
     session.add(event)
+    # Strong ref for the chain hook: once flushed (an explicit flush, or the
+    # autoflush of any later query) a clean object is only weakly held by the
+    # session and can be collected before commit — unhashed (#1920).
+    session.info.setdefault(_audit_chain.PENDING_CHAIN_KEY, []).append(event)
     return event
 
 

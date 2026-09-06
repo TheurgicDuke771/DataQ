@@ -104,6 +104,10 @@ def _lock_chain_state(session: Session) -> AuditChainState:
     return state
 
 
+#: `session.info` slot where `audit_service.record` parks events until they are hashed.
+PENDING_CHAIN_KEY = "audit_events_pending_chain"
+
+
 @event.listens_for(Session, "before_commit")
 def _chain_pending_audit_events(session: Session) -> None:
     """Extend the chain onto any newly-added, not-yet-hashed `AuditEvent` rows,
@@ -133,7 +137,23 @@ def _chain_pending_audit_events(session: Session) -> None:
     # `occurred_at` ALONE and relying on Python's stable sort keeps that
     # relative order for genuine ties, while still ordering events correctly
     # across separate, sequential commits.
-    pending = [obj for obj in session.new if isinstance(obj, AuditEvent) and obj.row_hash is None]
+    # `session.new` alone misses an event flushed before commit (an explicit
+    # flush, or the autoflush of any later query): a clean object is only weakly
+    # held, so the identity map cannot be scanned either. `record()` keeps a
+    # strong ref in `session.info` for exactly this (#1920). Objects a rollback
+    # expunged are no longer `in session` and are dropped here.
+    recorded = session.info.pop(PENDING_CHAIN_KEY, [])
+    seen: set[int] = set()
+    pending = []
+    for obj in list(session.new) + recorded:
+        if (
+            isinstance(obj, AuditEvent)
+            and obj.row_hash is None
+            and obj in session
+            and id(obj) not in seen
+        ):
+            seen.add(id(obj))
+            pending.append(obj)
     if not pending:
         return
     session.flush(pending)  # materializes server-generated id/occurred_at
