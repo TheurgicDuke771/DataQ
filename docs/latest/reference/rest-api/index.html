@@ -3133,6 +3133,21 @@ an outbound model request.</p>
 </tr>
 <tr>
 <td>GET</td>
+<td><code>/admin/scoring</code></td>
+<td>Health-score penalty weights in force, whether they are the defaults, and the defaults themselves.</td>
+</tr>
+<tr>
+<td>PUT</td>
+<td><code>/admin/scoring</code></td>
+<td>Set the weights (audited); 422 unless <code>0 ≤ warn ≤ fail ≤ critical</code> and <code>critical &gt; 0</code>.</td>
+</tr>
+<tr>
+<td>DELETE</td>
+<td><code>/admin/scoring</code></td>
+<td>Reset the weights to the defaults (audited).</td>
+</tr>
+<tr>
+<td>GET</td>
 <td><code>/admin/orchestration/webhooks</code></td>
 <td>Webhook receiver URLs + auth mode per provider.</td>
 </tr>

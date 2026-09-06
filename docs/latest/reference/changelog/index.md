@@ -17,6 +17,12 @@ the per-PR history lives in the repo's commit log and pull requests.
   withdrawal being reported that did not happen. See the
   [admin control centre guide](../guides/admin.md).
 
+- **Health-score weights are a workspace setting.** Admin → Settings → Scoring changes the
+  penalty each severity tier carries (`warn` / `fail` / `critical`; defaults 0.5 / 1.0 / 2.0)
+  and every change is audited. Scores are computed on read, so a change recolours every score
+  at once, past and present — the audit log is where the step is explained. See the
+  [admin control centre guide](../guides/admin.md).
+
 - **Zero-sample mode is a workspace setting.** Admin → Settings → Privacy & failing samples
   turns it on without a restart; the environment variable stays the floor and cannot be
   turned off from the app. `GET /admin/deployment` now says which of the two is in force.

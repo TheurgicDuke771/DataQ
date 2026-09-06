@@ -2412,6 +2412,13 @@ the per-PR history lives in the repo's commit log and pull requests.</p>
   <a href="../../guides/admin/">admin control centre guide</a>.</p>
 </li>
 <li>
+<p><strong>Health-score weights are a workspace setting.</strong> Admin → Settings → Scoring changes the
+  penalty each severity tier carries (<code>warn</code> / <code>fail</code> / <code>critical</code>; defaults 0.5 / 1.0 / 2.0)
+  and every change is audited. Scores are computed on read, so a change recolours every score
+  at once, past and present — the audit log is where the step is explained. See the
+  <a href="../../guides/admin/">admin control centre guide</a>.</p>
+</li>
+<li>
 <p><strong>Zero-sample mode is a workspace setting.</strong> Admin → Settings → Privacy &amp; failing samples
   turns it on without a restart; the environment variable stays the floor and cannot be
   turned off from the app. <code>GET /admin/deployment</code> now says which of the two is in force.</p>

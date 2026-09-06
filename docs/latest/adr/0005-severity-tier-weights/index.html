@@ -2332,10 +2332,26 @@
 
 <h1 id="adr-0005-severity-tier-weights-warn-fail-critical-health-score">ADR 0005 — Severity tier weights (warn / fail / critical → health score)<a class="headerlink" href="#adr-0005-severity-tier-weights-warn-fail-critical-health-score" title="Permanent link">¶</a></h1>
 <ul>
-<li><strong>Status:</strong> Accepted</li>
+<li><strong>Status:</strong> Accepted (amended 2026-09-06)</li>
 <li><strong>Date:</strong> 2026-05-30</li>
 <li><strong>Deciders:</strong> @TheurgicDuke771</li>
 </ul>
+<blockquote>
+<p><strong>Amendment (2026-09-06) — the weights are a workspace setting.</strong> The three
+non-zero penalties (<code>warn</code> / <code>fail</code> / <code>critical</code>) can be changed by a
+workspace Admin under Admin → Settings → Scoring, audited on every change,
+and reset to the values in this ADR. The values above remain the defaults an
+empty setting resolves to. The decision this forced into the open: <strong>scores
+are computed on read and never stored</strong>, so a change recolours every score
+everywhere at once — dashboard, trend deltas, suite ranking, asset
+scorecards, past and present. That is deliberate ("always the current lens"):
+the alternative, snapshotting the weights or the score at run time, makes a
+weight change a data migration and leaves two suites with the same result
+histogram scored differently depending on when they ran. The audit event is
+the only record of the step; readers comparing a score across a change should
+look there. <code>pass</code> is fixed at 0 and the ordering <code>0 ≤ warn ≤ fail ≤ critical</code>,
+<code>critical &gt; 0</code>, is enforced both by the API and by a table CHECK.</p>
+</blockquote>
 <h2 id="context">Context<a class="headerlink" href="#context" title="Permanent link">¶</a></h2>
 <p>v1 checks are not binary pass/fail. A check can carry up to three optional
 thresholds (<code>warn_threshold</code>, <code>fail_threshold</code>, <code>critical_threshold</code>), and a run

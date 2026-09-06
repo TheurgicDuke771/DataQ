@@ -1419,6 +1419,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#settings-scoring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings — scoring
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#integrations-webhook-auth" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2933,6 +2944,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#settings-scoring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings — scoring
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#integrations-webhook-auth" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3061,7 +3083,7 @@ without losing your place. <code>/admin</code> on its own lands on <strong>Overv
 <tr>
 <td>Settings</td>
 <td><code>/admin/settings</code></td>
-<td>Workspace facts and the sign-in method, the email pre-flight test, reusable notification channels, the LLM provider, the secret-store notice, and the danger zone.</td>
+<td>Workspace facts and the sign-in method, the email pre-flight test, reusable notification channels, the LLM provider, zero-sample mode, the health-score weights, the secret-store notice, and the danger zone.</td>
 </tr>
 <tr>
 <td>Compliance</td>
@@ -3432,6 +3454,17 @@ environment the toggle is shown pinned and can only be turned <em>on</em> from h
 that is deliberate, so an operator's floor cannot be undone by a click. Every change is
 audited with who made it and when. Samples stored before the switch are not deleted by it;
 the retention sweep removes them on its schedule.</p>
+<h2 id="settings-scoring">Settings — scoring<a class="headerlink" href="#settings-scoring" title="Permanent link">¶</a></h2>
+<p><strong>Health-score weights</strong> are the penalties each severity tier carries when a score is
+computed: <code>warn</code>, <code>fail</code> and <code>critical</code>, with <code>pass</code> fixed at zero. The defaults are
+0.5 / 1.0 / 2.0; <code>critical</code> doubles as the normaliser, so an all-<code>fail</code> suite scores 50 and
+an all-<code>critical</code> one scores 0. They must stay ordered (<code>warn ≤ fail ≤ critical</code>) and
+<code>critical</code> must be above zero, or the save is refused with the reason.</p>
+<p>Scores are computed when a page is read, never stored. A change therefore recolours <strong>every</strong>
+score at once — the dashboard cards and their period-over-period deltas, the suite ranking,
+asset scorecards, and any run you look at from before the change. There is no data-side
+event to explain the step; the audit log carries it, with the old and new weights and who
+saved them. <strong>Reset to defaults</strong> removes the stored row and is audited the same way.</p>
 <h2 id="integrations-webhook-auth">Integrations — webhook auth<a class="headerlink" href="#integrations-webhook-auth" title="Permanent link">¶</a></h2>
 <p>Each inbound webhook row states the auth mode it uses, because that determines how the URL
 must be handled. The Azure Data Factory URL carries a <strong>shared secret in the query string</strong>
