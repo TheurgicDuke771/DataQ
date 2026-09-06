@@ -113,11 +113,10 @@ function NotificationsCard() {
         title="Alerts are configured per suite"
         description={
           <span>
-            Teams, Slack and email alerts (webhook/recipient + fail / warn / always threshold) are
-            set on each suite so the owning team is notified for their data, falling back to the
-            workspace-wide default configured for the deployment when a suite sets none. Open a
-            suite from <Link to="/suites">Suites</Link> to configure its notifications — including
-            linking the reusable channels managed below.
+            Destinations are defined once here as channels; each suite then picks which of them it
+            alerts through and at what threshold (fail / warn / always), falling back to the
+            workspace-wide default configured for the deployment when a suite links none. Open a
+            suite from <Link to="/suites">Suites</Link> to set its threshold and link channels.
           </span>
         }
       />

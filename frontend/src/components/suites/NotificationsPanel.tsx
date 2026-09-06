@@ -1,10 +1,12 @@
-import { App, Alert, Button, Card, Flex, Input, Select, Spin, Switch, Tag, Typography } from 'antd';
+import { App, Alert, Button, Card, Flex, Select, Spin, Switch, Tag, Typography } from 'antd';
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 
 import {
   type AlertOn,
   getNotifications,
   putNotifications,
+  type SuiteNotification,
   type SuiteNotificationUpdate,
 } from '../../api/notifications';
 import {
@@ -14,6 +16,7 @@ import {
   type NotificationChannel,
   unlinkSuiteChannel,
 } from '../../api/notificationChannels';
+import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { useAsyncData } from '../../hooks/useAsyncData';
 import { errorMessage } from '../../utils/errors';
 
@@ -35,6 +38,9 @@ export function NotificationsPanel({
   canManage: boolean;
 }) {
   const { state, reload } = useAsyncData(() => getNotifications(suiteId));
+  const legacy =
+    state.status === 'ok' &&
+    (state.data.has_webhook || state.data.has_slack_webhook || !!state.data.email_recipients);
 
   return (
     <Flex vertical gap={16}>
@@ -42,9 +48,9 @@ export function NotificationsPanel({
         size="small"
         title={
           <Flex vertical gap={2}>
-            <Typography.Text strong>Legacy per-suite webhook</Typography.Text>
+            <Typography.Text strong>Alerting</Typography.Text>
             <Typography.Text type="secondary" style={{ fontSize: 12, fontWeight: 400 }}>
-              Send this suite's run outcomes to Microsoft Teams, Slack, or email.
+              Whether this suite alerts, on what, and to which of the channels an admin configured.
             </Typography.Text>
           </Flex>
         }
@@ -59,25 +65,29 @@ export function NotificationsPanel({
             description={state.error}
           />
         ) : (
-          <NotificationsForm
-            // Remount on a config change so the form re-seeds from the loaded values (render-phase
-            // reset, no setState-in-effect); an unchanged reload keeps the same key.
-            key={
-              `${state.data.enabled}:${state.data.alert_on}:${state.data.has_webhook}` +
-              `:${state.data.has_slack_webhook}:${state.data.email_recipients ?? ''}`
-            }
-            suiteId={suiteId}
-            canManage={canManage}
-            initialEnabled={state.data.enabled}
-            initialAlertOn={state.data.alert_on}
-            hasWebhook={state.data.has_webhook}
-            hasSlackWebhook={state.data.has_slack_webhook}
-            initialEmail={state.data.email_recipients ?? ''}
-            onChanged={reload}
-          />
+          <Flex vertical gap={16}>
+            <NotificationsForm
+              // Remount on a config change so the form re-seeds from the loaded values (render-
+              // phase reset, no setState-in-effect); an unchanged reload keeps the same key.
+              key={`${state.data.enabled}:${state.data.alert_on}`}
+              suiteId={suiteId}
+              canManage={canManage}
+              initialEnabled={state.data.enabled}
+              initialAlertOn={state.data.alert_on}
+              onChanged={reload}
+            />
+            <ChannelPicker suiteId={suiteId} canManage={canManage} />
+          </Flex>
         )}
       </Card>
-      <ChannelPicker suiteId={suiteId} canManage={canManage} />
+      {legacy && state.status === 'ok' && (
+        <LegacyDestinations
+          suiteId={suiteId}
+          canManage={canManage}
+          config={state.data}
+          onChanged={reload}
+        />
+      )}
     </Flex>
   );
 }
@@ -91,17 +101,8 @@ function ChannelPicker({ suiteId, canManage }: { suiteId: string; canManage: boo
   const linked = useAsyncData(() => listSuiteChannels(suiteId));
 
   return (
-    <Card
-      size="small"
-      title={
-        <Flex vertical gap={2}>
-          <Typography.Text strong>Linked channels (admin-managed)</Typography.Text>
-          <Typography.Text type="secondary" style={{ fontSize: 12, fontWeight: 400 }}>
-            Reusable destinations configured once in Settings and linked to any number of suites.
-          </Typography.Text>
-        </Flex>
-      }
-    >
+    <Flex vertical gap={4}>
+      <Typography.Text type="secondary">Channels</Typography.Text>
       {canManage ? (
         // `ManagedChannelPicker` mounts synchronously off `canManage` (not gated on
         // `linked` resolving), so its OWN listChannels fetch starts in parallel with
@@ -131,7 +132,12 @@ function ChannelPicker({ suiteId, canManage }: { suiteId: string; canManage: boo
             ))}
         </>
       )}
-    </Card>
+      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        Channels are created once by a workspace admin under{' '}
+        <Link to="/admin/settings">Settings → Notification channels</Link> and linked here. A suite
+        with none linked still alerts through the workspace defaults.
+      </Typography.Text>
+    </Flex>
   );
 }
 
@@ -233,40 +239,68 @@ function ChannelPickerBody({
   );
 }
 
-/** A write-only secret webhook field (Teams / Slack): shows set/not-set, never the
- *  value; a blank input leaves the stored secret unchanged. */
-function WebhookField({
-  label,
-  ariaLabel,
-  isSet,
-  value,
-  onChange,
-  disabled,
+/** Shown only while a suite still carries a per-suite webhook or recipient list from
+ *  before channels existed. Nothing here can be SET — an editor can only clear it and
+ *  link a channel instead; setting stays an Admin escape hatch on the API. */
+function LegacyDestinations({
+  suiteId,
+  canManage,
+  config,
+  onChanged,
 }: {
-  label: string;
-  ariaLabel: string;
-  isSet: boolean;
-  value: string;
-  onChange: (v: string) => void;
-  disabled: boolean;
+  suiteId: string;
+  canManage: boolean;
+  config: SuiteNotification;
+  onChanged: () => void;
 }) {
+  const { run, loading } = useAsyncAction('Could not clear the destination');
+  // Clearing sends the loaded (server-known) enabled/alert_on so it never persists an
+  // unsaved edit from the form above (#639 review).
+  const clear = (extra: Partial<SuiteNotificationUpdate>) => () =>
+    void run(async () => {
+      await putNotifications(suiteId, {
+        enabled: config.enabled,
+        alert_on: config.alert_on,
+        ...extra,
+      });
+      onChanged();
+    });
+  const rows: { label: string; set: boolean; extra: Partial<SuiteNotificationUpdate> }[] = [
+    { label: 'Teams webhook', set: config.has_webhook, extra: { webhook: '' } },
+    { label: 'Slack webhook', set: config.has_slack_webhook, extra: { slack_webhook: '' } },
+    {
+      label: `Email recipients${config.email_recipients ? ` (${config.email_recipients})` : ''}`,
+      set: !!config.email_recipients,
+      extra: { email_recipients: '' },
+    },
+  ];
   return (
-    <Flex vertical gap={4}>
-      <Flex align="center" gap={8}>
-        <Typography.Text type="secondary">{label}</Typography.Text>
-        <Tag color={isSet ? 'success' : 'default'}>{isSet ? 'set' : 'not set'}</Tag>
+    <Card
+      size="small"
+      title={
+        <Flex vertical gap={2}>
+          <Typography.Text strong>Legacy inline destinations</Typography.Text>
+          <Typography.Text type="secondary" style={{ fontSize: 12, fontWeight: 400 }}>
+            Set on this suite before channels existed. Move it to a channel above, then clear it.
+          </Typography.Text>
+        </Flex>
+      }
+    >
+      <Flex vertical gap={8}>
+        {rows
+          .filter((r) => r.set)
+          .map((r) => (
+            <Flex key={r.label} align="center" gap={8} wrap>
+              <Tag color="warning">{r.label}</Tag>
+              {canManage && (
+                <Button size="small" loading={loading} onClick={clear(r.extra)}>
+                  Clear
+                </Button>
+              )}
+            </Flex>
+          ))}
       </Flex>
-      <Input.Password
-        value={value}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={
-          isSet ? 'Enter a new https URL to replace it' : 'https://… (falls back to workspace)'
-        }
-        aria-label={ariaLabel}
-        style={{ maxWidth: 480 }}
-      />
-    </Flex>
+    </Card>
   );
 }
 
@@ -275,72 +309,25 @@ function NotificationsForm({
   canManage,
   initialEnabled,
   initialAlertOn,
-  hasWebhook,
-  hasSlackWebhook,
-  initialEmail,
   onChanged,
 }: {
   suiteId: string;
   canManage: boolean;
   initialEnabled: boolean;
   initialAlertOn: AlertOn;
-  hasWebhook: boolean;
-  hasSlackWebhook: boolean;
-  initialEmail: string;
   onChanged: () => void;
 }) {
   const { message } = App.useApp();
   const [enabled, setEnabled] = useState(initialEnabled);
   const [alertOn, setAlertOn] = useState<AlertOn>(initialAlertOn);
-  const [webhook, setWebhook] = useState('');
-  const [slackWebhook, setSlackWebhook] = useState('');
-  const [email, setEmail] = useState(initialEmail);
-  const [saving, setSaving] = useState(false);
+  const { run, loading: saving } = useAsyncAction('Save failed');
 
-  // Shared PUT with one error path (a failure toasts, never silently drops).
-  const putWith = async (
-    base: { enabled: boolean; alert_on: AlertOn },
-    extra: Partial<SuiteNotificationUpdate>,
-    successMsg: string,
-  ) => {
-    setSaving(true);
-    try {
-      await putNotifications(suiteId, { ...base, ...extra });
-      message.success(successMsg);
+  const onSave = () =>
+    void run(async () => {
+      await putNotifications(suiteId, { enabled, alert_on: alertOn });
+      message.success('Notifications saved');
       onChanged();
-      return true;
-    } catch (err) {
-      message.error(`Save failed: ${errorMessage(err)}`);
-      return false;
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const onSave = async () => {
-    const teams = webhook.trim();
-    const slack = slackWebhook.trim();
-    const ok = await putWith(
-      { enabled, alert_on: alertOn },
-      {
-        // Write-only secrets: only send when the user typed a new value.
-        ...(teams ? { webhook: teams } : {}),
-        ...(slack ? { slack_webhook: slack } : {}),
-        // Email is returned + editable → send the current value (WYSIWYG; "" clears).
-        email_recipients: email.trim(),
-      },
-      'Notifications saved',
-    );
-    if (ok) {
-      setWebhook('');
-      setSlackWebhook('');
-    }
-  };
-
-  // Clearing a webhook is a focused action — it must NOT persist an unsaved enabled/threshold edit,
-  // so it sends the loaded (server-known) enabled/alert_on (#639 review).
-  const clearWebhook = (extra: Partial<SuiteNotificationUpdate>, successMsg: string) => () =>
-    void putWith({ enabled: initialEnabled, alert_on: initialAlertOn }, extra, successMsg);
+    });
 
   return (
     <Flex vertical gap={16}>
@@ -366,60 +353,15 @@ function NotificationsForm({
         />
       </Flex>
 
-      <WebhookField
-        label="Teams webhook"
-        ariaLabel="Teams webhook URL"
-        isSet={hasWebhook}
-        value={webhook}
-        onChange={setWebhook}
-        disabled={!canManage}
-      />
-      <WebhookField
-        label="Slack webhook"
-        ariaLabel="Slack webhook URL"
-        isSet={hasSlackWebhook}
-        value={slackWebhook}
-        onChange={setSlackWebhook}
-        disabled={!canManage}
-      />
-
-      <Flex vertical gap={4}>
-        <Typography.Text type="secondary">Email recipients</Typography.Text>
-        <Input
-          value={email}
-          disabled={!canManage}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="a@example.com, b@example.com (falls back to workspace)"
-          aria-label="Email recipients"
-          style={{ maxWidth: 480 }}
-        />
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          Comma-separated addresses. Clear to fall back to the workspace recipients.
-        </Typography.Text>
-      </Flex>
-
       {canManage && (
-        <Flex gap={8} wrap>
-          <Button type="primary" loading={saving} onClick={onSave}>
-            Save
-          </Button>
-          {hasWebhook && (
-            <Button
-              loading={saving}
-              onClick={clearWebhook({ webhook: '' }, 'Teams webhook cleared')}
-            >
-              Clear Teams
-            </Button>
-          )}
-          {hasSlackWebhook && (
-            <Button
-              loading={saving}
-              onClick={clearWebhook({ slack_webhook: '' }, 'Slack webhook cleared')}
-            >
-              Clear Slack
-            </Button>
-          )}
-        </Flex>
+        <Button
+          type="primary"
+          loading={saving}
+          onClick={onSave}
+          style={{ alignSelf: 'flex-start' }}
+        >
+          Save
+        </Button>
       )}
     </Flex>
   );

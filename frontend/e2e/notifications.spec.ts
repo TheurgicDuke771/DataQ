@@ -4,15 +4,13 @@ import { expect, test } from '@playwright/test';
 // notification_service).
 test.describe('Suite notifications panel', () => {
   const card = (page: import('@playwright/test').Page) =>
-    page.locator('.ant-card').filter({ hasText: 'run outcomes to Microsoft Teams' });
+    page.locator('.ant-card').filter({ hasText: 'Whether this suite alerts' });
 
   const openSuite = async (page: import('@playwright/test').Page) => {
     await page.goto('/suites');
     await page.getByText('Orders quality').click();
     await expect(page).toHaveURL(/\/suites\/[0-9a-f-]+$/);
-    // #1761: this card's title changed from "Notifications" to "Legacy per-suite
-    // webhook" now that a reusable-channel picker sits alongside it.
-    await expect(card(page).getByText('Legacy per-suite webhook', { exact: true })).toBeVisible();
+    await expect(card(page).getByText('Alerting', { exact: true })).toBeVisible();
   };
 
   test('configure threshold routing and persist it across a reload', async ({ page }) => {
@@ -43,7 +41,7 @@ test.describe('Suite notifications panel', () => {
       }
     }
 
-    const threshold = panel.getByRole('combobox');
+    const threshold = panel.getByRole('combobox', { name: 'Alert threshold' });
     await threshold.click();
     await expect(page.locator('.ant-select-dropdown').last()).toBeVisible();
     for (let i = 0; i < Math.abs(target - current); i++) {
@@ -66,19 +64,18 @@ test.describe('Suite notifications panel', () => {
     expect(restored.ok()).toBe(true);
   });
 
-  test('webhooks are write-only secret affordances; email is editable', async ({ page }) => {
+  test('destinations are channels an admin configured — nothing inline can be typed', async ({
+    page,
+  }) => {
     await openSuite(page);
     const panel = card(page);
 
-    // The Teams + Slack fields never echo a stored URL — each is a set/not-set tag + password
-    // input.
-    await expect(panel.getByText('Teams webhook')).toBeVisible();
-    await expect(panel.getByLabel('Teams webhook URL')).toBeVisible();
-    await expect(panel.getByText('Slack webhook')).toBeVisible();
-    await expect(panel.getByLabel('Slack webhook URL')).toBeVisible();
-    await expect(panel.getByText('not set', { exact: true })).toHaveCount(2); // Teams + Slack
-
-    // Email recipients is a non-secret, editable field (#633).
-    await expect(panel.getByLabel('Email recipients')).toBeVisible();
+    // #1926: no webhook or recipient inputs on the suite; the picker lists admin channels.
+    await expect(panel.getByLabel('Linked channels')).toBeVisible();
+    await expect(panel.getByRole('link', { name: /Notification channels/ })).toBeVisible();
+    await expect(page.getByLabel('Teams webhook URL')).toHaveCount(0);
+    await expect(page.getByLabel('Email recipients')).toHaveCount(0);
+    // The seeded suite carries no legacy inline destination, so that card is absent.
+    await expect(page.getByText('Legacy inline destinations')).toHaveCount(0);
   });
 });
