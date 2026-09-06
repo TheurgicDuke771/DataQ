@@ -88,18 +88,57 @@ class EnvVerdict(enum.Enum):
     NO_ALLOWLIST = "no_allowlist"
 
 
-def _access_allowlists(s: Settings) -> list[tuple[frozenset[str], frozenset[str]]]:
-    """The allowlists that gate a door on THIS deployment.
+#: (emails var, domains var, emails, domains) per configured mode.
+_NamedGate = tuple[str, str, frozenset[str], frozenset[str]]
+
+
+def _named_gates(s: Settings) -> list[_NamedGate]:
+    """The allowlists that gate a door on THIS deployment, with the env var each
+    came from.
 
     An unconfigured mode contributes nothing: reading an unrelated mode's env var
     would deny an entire Azure-AD tenant, which has no app-side allowlist at all.
     """
-    gates = []
+    gates: list[_NamedGate] = []
     if s.generic_oidc_configured and s.oidc_allowlist_configured:
-        gates.append((s.oidc_allowed_email_set, s.oidc_allowed_domain_set))
+        gates.append(
+            (
+                "OIDC_ALLOWED_EMAILS",
+                "OIDC_ALLOWED_DOMAINS",
+                s.oidc_allowed_email_set,
+                s.oidc_allowed_domain_set,
+            )
+        )
     if s.otp_auth_configured:
-        gates.append((s.auth_otp_allowed_email_set, s.auth_otp_allowed_domain_set))
+        gates.append(
+            (
+                "AUTH_OTP_ALLOWED_EMAILS",
+                "AUTH_OTP_ALLOWED_DOMAINS",
+                s.auth_otp_allowed_email_set,
+                s.auth_otp_allowed_domain_set,
+            )
+        )
     return gates
+
+
+def _access_allowlists(s: Settings) -> list[tuple[frozenset[str], frozenset[str]]]:
+    return [(emails, domains) for _, _, emails, domains in _named_gates(s)]
+
+
+def env_vars_naming(email: str, settings: Settings | None = None) -> tuple[str, ...]:
+    """The env vars that admit `email` on this deployment — exactly the ones a
+    door reads (#1921). Empty means no env var keeps this address signed in.
+    """
+    s = settings or get_settings()
+    normalized = normalize_email(email)
+    _, _, domain = normalized.partition("@")
+    naming = ["WORKSPACE_ADMIN_EMAILS"] if s.is_admin_email(email) else []
+    for emails_var, domains_var, emails, domains in _named_gates(s):
+        if normalized in emails:
+            naming.append(emails_var)
+        if domain and domain in domains:
+            naming.append(domains_var)
+    return tuple(sorted(naming))
 
 
 def env_verdict(email: str, settings: Settings | None = None) -> EnvVerdict:
@@ -469,9 +508,8 @@ def _refuse_env_removal(db: Session, member_id: uuid.UUID, s: Settings) -> None:
         if _env_row_id(address) == member_id:
             raise MembershipChangeRejectedError(
                 "this address is admitted by the environment, not by the members "
-                "table — remove it from AUTH_OTP_ALLOWED_EMAILS / OIDC_ALLOWED_EMAILS "
-                "/ WORKSPACE_ADMIN_EMAILS and restart",
-                detail={"email": address},
+                f"table — remove it from {' and '.join(env_vars_naming(address, s))} and restart",
+                detail={"email": address, "env_vars": list(env_vars_naming(address, s))},
             )
 
 

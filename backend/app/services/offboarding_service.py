@@ -16,7 +16,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.config import Settings, get_settings
+from backend.app.core.config import Settings
 from backend.app.core.errors import DataQError
 from backend.app.core.identity import normalize_email
 from backend.app.core.logging import get_logger
@@ -69,8 +69,12 @@ class OffboardPreview:
     is_last_admin: bool
     membership_state: str
     membership_id: uuid.UUID | None
-    #: Why membership cannot be withdrawn here, naming the env var when that is why.
+    #: What the membership step will and will not achieve, naming the env var
+    #: when one keeps the address signed in regardless of the row.
     membership_note: str | None
+    #: Env vars that admit this address on their own — withdrawing the row is
+    #: not the whole removal while any is set (ADR 0043 decision 7).
+    still_admitted_by: tuple[str, ...]
     owned_suites: tuple[OwnedSuite, ...]
     open_api_key_count: int
     live_session_count: int
@@ -85,6 +89,8 @@ class OffboardReceipt:
     api_keys_revoked: int = 0
     sessions_revoked: int = 0
     membership_removed: bool = False
+    #: Env vars that still admit the address after the pass — the admin's next job.
+    still_admitted_by: list[str] = field(default_factory=list)
     #: `[{"step": ..., "reason": ...}]` — every step that did not run, and why.
     skipped: list[dict[str, str]] = field(default_factory=list)
 
@@ -98,40 +104,12 @@ class OffboardReceipt:
             "api_keys_revoked": self.api_keys_revoked,
             "sessions_revoked": self.sessions_revoked,
             "membership_removed": self.membership_removed,
+            "still_admitted_by": self.still_admitted_by,
             "skipped": self.skipped,
         }
 
 
 # ── Reads ─────────────────────────────────────────────────────────────────────
-
-#: Settings property → the env var an operator would edit. The preview names the
-#: variable, not the attribute.
-_EMAIL_ALLOWLISTS = {
-    "oidc_allowed_email_set": "OIDC_ALLOWED_EMAILS",
-    "auth_otp_allowed_email_set": "AUTH_OTP_ALLOWED_EMAILS",
-}
-_DOMAIN_ALLOWLISTS = {
-    "oidc_allowed_domain_set": "OIDC_ALLOWED_DOMAINS",
-    "auth_otp_allowed_domain_set": "AUTH_OTP_ALLOWED_DOMAINS",
-}
-
-
-def env_allowlists_naming(email: str, settings: Settings | None = None) -> list[str]:
-    """The env vars that would keep `email` signing in after the row is gone.
-
-    Membership is `union(env allowlist, workspace_members)` (ADR 0043 decision 7),
-    so withdrawing the row is not a removal while any of these still list them.
-    """
-    s = settings or get_settings()
-    normalized = normalize_email(email)
-    _, _, domain = normalized.partition("@")
-    naming = [var for attr, var in _EMAIL_ALLOWLISTS.items() if normalized in getattr(s, attr)]
-    naming += [
-        var for attr, var in _DOMAIN_ALLOWLISTS.items() if domain and domain in getattr(s, attr)
-    ]
-    if normalized in s.workspace_admin_email_set:
-        naming.append("WORKSPACE_ADMIN_EMAILS")
-    return sorted(set(naming))
 
 
 def _load_user(db: Session, user_id: uuid.UUID, *, lock: bool = False) -> User:
@@ -195,35 +173,49 @@ def _live_sessions(db: Session, user_id: uuid.UUID) -> list[UserSession]:
 
 def _membership(
     db: Session, email: str, settings: Settings | None = None
-) -> tuple[str, uuid.UUID | None, str | None]:
-    """(state, membership_id, note) — what step (d) will be able to do."""
-    naming = env_allowlists_naming(email, settings)
+) -> tuple[str, uuid.UUID | None, str | None, tuple[str, ...]]:
+    """(state, membership_id, note, still_admitted_by) — what step (d) will do.
+
+    A present row is always withdrawn: membership is `union(env, row)`, so leaving
+    the row because an env var also admits would keep BOTH doors open. The env
+    residue is reported beside it, never instead of it.
+    """
+    naming = membership_service.env_vars_naming(email, settings)
     row = db.execute(
         select(WorkspaceMember).where(func.lower(WorkspaceMember.email) == normalize_email(email))
     ).scalar_one_or_none()
+    listed = " and ".join(naming)
+    if row is not None:
+        note = (
+            f"the row will be withdrawn, but {listed} still admits this address on its own — "
+            "remove it there too, then restart"
+            if naming
+            else None
+        )
+        return MEMBER, row.id, note, naming
     if naming:
         return (
             ENV_LISTED,
-            row.id if row is not None else None,
-            "this address is listed in "
-            + " and ".join(naming)
-            + " — an env allowlist admits on its own, so removing the row here would "
-            "not withdraw access; remove it there instead",
-        )
-    if row is None:
-        return (
-            NOT_A_MEMBER,
             None,
-            "no workspace membership row — this workspace is not enforcing membership "
-            "for this address, so there is nothing to withdraw",
+            f"no workspace membership row — {listed} admits this address on its own; "
+            "remove it there, then restart",
+            naming,
         )
-    return MEMBER, row.id, None
+    return (
+        NOT_A_MEMBER,
+        None,
+        "no workspace membership row — this workspace is not enforcing membership "
+        "for this address, so there is nothing to withdraw",
+        naming,
+    )
 
 
-def preview(db: Session, user_id: uuid.UUID, *, actor: User) -> OffboardPreview:
+def preview(
+    db: Session, user_id: uuid.UUID, *, actor: User, settings: Settings | None = None
+) -> OffboardPreview:
     """What the pass would do, before anything is written."""
     user = _load_user(db, user_id)
-    state, member_id, note = _membership(db, user.email)
+    state, member_id, note, naming = _membership(db, user.email, settings)
     return OffboardPreview(
         user_id=user.id,
         email=user.email,
@@ -234,6 +226,7 @@ def preview(db: Session, user_id: uuid.UUID, *, actor: User) -> OffboardPreview:
         membership_state=state,
         membership_id=member_id,
         membership_note=note,
+        still_admitted_by=naming,
         owned_suites=tuple(_owned_suite_rows(db, user_id)),
         open_api_key_count=len(_open_api_keys(db, user_id)),
         live_session_count=len(_live_sessions(db, user_id)),
@@ -267,6 +260,7 @@ def offboard(
     confirm_email: str,
     actor: User,
     keep_previous_owner_access: bool = False,
+    settings: Settings | None = None,
 ) -> OffboardReceipt:
     """Run the whole pass, or none of it.
 
@@ -285,6 +279,7 @@ def offboard(
             confirm_email=confirm_email,
             actor=actor,
             keep_previous_owner_access=keep_previous_owner_access,
+            settings=settings,
         )
     except BaseException:
         # `inner` releases its savepoint state first, and the `finally` makes the
@@ -318,6 +313,7 @@ def _run(
     confirm_email: str,
     actor: User,
     keep_previous_owner_access: bool,
+    settings: Settings | None,
 ) -> OffboardReceipt:
     # (a) Guards, from locked state.
     user = _load_user(db, user_id, lock=True)
@@ -387,10 +383,11 @@ def _run(
 
     # (d) Membership last: while it stands, an admin can still see the user in the
     # list and undo the steps above.
-    state, member_id, note = _membership(db, user.email)
+    state, member_id, note, naming = _membership(db, user.email, settings)
+    receipt.still_admitted_by = list(naming)
     if state == MEMBER and member_id is not None:
         membership_service.remove_member(
-            db, member_id, actor=actor, confirm_self=user.id == actor.id
+            db, member_id, actor=actor, confirm_self=user.id == actor.id, settings=settings
         )
         receipt.membership_removed = True
     else:
