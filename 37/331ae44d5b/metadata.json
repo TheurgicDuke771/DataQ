@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "37331ae44d5b",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1559-scoring-weights",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/37/331ae44d5b/0/metadata.json",
+      "transcript": "/37/331ae44d5b/0/full.jsonl",
+      "compact_transcript": "/37/331ae44d5b/0/transcript.jsonl",
+      "content_hash": "/37/331ae44d5b/0/content_hash.txt",
+      "prompt": "/37/331ae44d5b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 11706,
+    "cache_creation_tokens": 5041575,
+    "cache_read_tokens": 219246789,
+    "output_tokens": 377601,
+    "api_call_count": 461
+  }
+}
