@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "909110415914",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1924-offboard-confirm-role",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/90/9110415914/0/metadata.json",
+      "transcript": "/90/9110415914/0/full.jsonl",
+      "compact_transcript": "/90/9110415914/0/transcript.jsonl",
+      "content_hash": "/90/9110415914/0/content_hash.txt",
+      "prompt": "/90/9110415914/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 14564,
+    "cache_creation_tokens": 5442128,
+    "cache_read_tokens": 249754359,
+    "output_tokens": 490507,
+    "api_call_count": 564
+  }
+}
