@@ -8042,6 +8042,11 @@
         "additionalProperties": false,
         "description": "`PATCH /admin/users/{id}/role` body (ADR 0033, #742).",
         "properties": {
+          "confirm_self": {
+            "default": false,
+            "title": "Confirm Self",
+            "type": "boolean"
+          },
           "role": {
             "enum": [
               "admin",
