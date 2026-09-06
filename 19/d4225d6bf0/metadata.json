@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "19d4225d6bf0",
+  "strategy": "manual-commit",
+  "branch": "feature/self-demotion-confirm",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/19/d4225d6bf0/0/metadata.json",
+      "transcript": "/19/d4225d6bf0/0/full.jsonl",
+      "compact_transcript": "/19/d4225d6bf0/0/transcript.jsonl",
+      "content_hash": "/19/d4225d6bf0/0/content_hash.txt",
+      "prompt": "/19/d4225d6bf0/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 15270,
+    "cache_creation_tokens": 5483173,
+    "cache_read_tokens": 259891053,
+    "output_tokens": 511414,
+    "api_call_count": 587
+  }
+}
