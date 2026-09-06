@@ -241,6 +241,13 @@ _LLM_SETTING_FIELDS: Final[tuple[str, ...]] = (
 )
 
 _PRIVACY_SETTING_FIELDS: Final[tuple[str, ...]] = ("id", "zero_sample_mode", "updated_by")
+_SCORING_SETTING_FIELDS: Final[tuple[str, ...]] = (
+    "id",
+    "warn_weight",
+    "fail_weight",
+    "critical_weight",
+    "updated_by",
+)
 
 # `token_hash` is absent and must stay absent. ADR 0041 §2.5: an api_key event
 # records the mint/revoke, **never the token or its hash**.
@@ -300,6 +307,7 @@ _SERIALIZERS: Final[dict[str, tuple[str, ...]]] = {
     "incident": _INCIDENT_FIELDS,
     "llm_setting": _LLM_SETTING_FIELDS,
     "privacy_setting": _PRIVACY_SETTING_FIELDS,
+    "scoring_setting": _SCORING_SETTING_FIELDS,
 }
 
 

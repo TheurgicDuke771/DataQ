@@ -83,6 +83,7 @@ from backend.app.services import (
     run_service,
     run_target,
     schedule_service,
+    scoring_settings_service,
     suite_io_service,
     suite_service,
     trigger_binding_service,
@@ -728,7 +729,10 @@ def get_health_score(window_days: int = 7) -> dict[str, Any]:
       — use ``list_connections`` for connection state.
 
     Scoped to the suites the user can access (a workspace-admin sees the whole
-    workspace).
+    workspace). ``weights`` are the per-tier penalties the score was computed
+    with; an admin can change them, and scores are computed on read, so two
+    readings across a change are not comparable — treat a shift beside changed
+    weights as re-scoring, not as a data change.
     """
     if window_days < 1 or window_days > 90:
         raise ToolError("window_days must be between 1 and 90")
@@ -739,8 +743,10 @@ def get_health_score(window_days: int = 7) -> dict[str, Any]:
             window_days=window_days,
             include_all=is_workspace_admin(user),
         )
+        weights = scoring_settings_service.weights(session)
         return {
             "window_days": summary.window_days,
+            "weights": {"warn": weights.warn, "fail": weights.fail, "critical": weights.critical},
             "health_score": summary.kpis.health_score,
             "pass_rate": summary.kpis.pass_rate,
             "total_runs": summary.kpis.total_runs,

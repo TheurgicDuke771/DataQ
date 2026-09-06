@@ -187,6 +187,7 @@ def test_get_health_score_shape(db_session: Any, monkeypatch: Any) -> None:
     out = server.get_health_score(window_days=7)
     assert out["window_days"] == 7
     assert {"health_score", "pass_rate", "total_runs", "active_connections", "trend"} <= out.keys()
+    assert out["weights"] == {"warn": 0.5, "fail": 1.0, "critical": 2.0}
 
 
 def test_get_health_score_rejects_bad_window(db_session: Any, monkeypatch: Any) -> None:
