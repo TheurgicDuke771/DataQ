@@ -6,24 +6,27 @@ behaviour. Alerts fire from the worker as soon as a run reaches a terminal state
 
 ## Channels
 
-| Channel | Configured by | How |
-|---|---|---|
-| Microsoft Teams | Workspace default **or per-suite override** | Incoming-webhook URL; the per-suite URL is set on the suite's **Notifications** panel (write-only — stored in the secret store, never echoed back) |
-| Slack | Workspace default **or per-suite override** | Incoming-webhook URL; same per-suite panel as Teams |
-| Email (SMTP) | Workspace default **or per-suite override** | SMTP host/port + from/password at the workspace level; a suite may override the **recipient** list |
+Alert destinations are **channels**: a Teams webhook, a Slack webhook, an email recipient
+list or a generic HMAC-signed webhook, each defined **once by a workspace Admin** under
+**Admin → Settings → Notification channels** and then linked to any number of suites. A
+suite's own panel offers only the channels that exist — nobody types a webhook URL into a
+suite. Webhook URLs are validated against a **per-channel** host allow-list (Teams:
+`webhook.office.com` / `logic.azure.com`; Slack: `hooks.slack.com`) so a typo cannot
+exfiltrate alerts to an arbitrary endpoint, and they are stored in the secret store, never
+echoed back.
 
-Workspace-level channels are enabled by environment configuration
+Workspace-level defaults still exist, enabled by environment configuration
 (`TEAMS_WEBHOOK_SECRET_NAME`, `SLACK_WEBHOOK_SECRET_NAME`, `EMAIL_*` — see the
 [env-var reference](https://github.com/TheurgicDuke771/DataQ/blob/main/.env.app.example)).
-A channel with no configuration is simply skipped; configuring none disables alerting.
-Webhook URLs are validated against a **per-channel** host allow-list (Teams:
-`webhook.office.com` / `logic.azure.com`; Slack: `hooks.slack.com`) so a typo can't
-exfiltrate alerts to an arbitrary endpoint. Teams, Slack and email all support a
-per-suite override; a suite that sets none falls back to its workspace default.
+A suite with no channel linked alerts through those; a suite with channels linked alerts
+through **both** — delivery is additive, not either/or.
 
-A separate, reusable **notification channel** model also exists (create once, attach to
-any suite) covering Teams/Slack/email plus a generic webhook type — currently API-only,
-with no dedicated UI yet.
+**Legacy inline destinations.** Before channels existed a suite could carry its own Teams
+or Slack webhook or recipient list. Those keep delivering, and the suite's panel shows them
+as a separate *Legacy inline destinations* card with a **Clear** per entry so an editor can
+move the suite onto a channel and retire the override. Setting a new inline destination
+is not possible any more — not from the app and not from the API, for anyone: the request
+is refused with the field named. A suite's destinations are the channels, full stop.
 
 ## Per-suite configuration
 
@@ -32,11 +35,8 @@ Open a suite → **Notifications** panel:
 - **Send alerts for this suite** — on/off.
 - **Alert threshold** — `On fail / critical` · `On warn and worse` (default) · `Always
   (every run)`.
-- **Teams webhook** — optional per-suite override of the workspace webhook. Write-only:
-  the tag shows *set / not set*, the URL is never displayed again.
-- **Slack webhook** — optional per-suite override of the workspace webhook, same write-only
-  behaviour as Teams.
-- **Email recipients** — optional per-suite override of the workspace `EMAIL_TO` list.
+- **Channels** — the admin-configured channels this suite alerts through; pick from the
+  list. Viewers see the linked names only.
 
 ## Severity-aware routing
 
