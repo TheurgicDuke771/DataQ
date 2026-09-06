@@ -197,6 +197,9 @@ test.describe('Admin control centre', () => {
 
     await row.getByRole('combobox').click();
     await chooseRole(page, 'viewer');
+    // The spec is signed in AS dev-bypass, so this is a self-demotion: confirm it first —
+    // the server's refusal is what the test is about, not the confirmation step.
+    await page.getByRole('dialog').getByRole('button', { name: 'Demote me' }).click();
 
     await expect(page.getByText(/dev-bypass identity/i)).toBeVisible();
     await expect(row).toContainText('admin');
