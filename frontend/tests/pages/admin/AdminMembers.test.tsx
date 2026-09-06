@@ -85,6 +85,7 @@ describe('AdminMembers', () => {
       api_keys_revoked: 0,
       sessions_revoked: 0,
       membership_removed: true,
+      role_demoted_from: 'member',
       still_admitted_by: [],
       skipped: [],
     });
