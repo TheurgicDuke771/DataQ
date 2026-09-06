@@ -171,9 +171,12 @@ describe('MembershipPanel', () => {
 
     expect(await screen.findByText('ops@acme.io')).toBeInTheDocument();
     expect(screen.getByText('listed in the environment')).toBeInTheDocument();
+    // getAllByRole walks the a11y tree with getComputedStyle per ancestor —
+    // ~1.5s here in jsdom, 15s+ on a loaded CI runner. Text lookup is O(1).
     const disabled = screen
-      .getAllByRole('button', { name: 'Remove' })
-      .filter((b) => b.hasAttribute('disabled'));
+      .getAllByText('Remove')
+      .map((el) => el.closest('button'))
+      .filter((b) => b?.hasAttribute('disabled'));
     expect(disabled).toHaveLength(1);
   });
 
