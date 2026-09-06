@@ -327,3 +327,20 @@ def test_every_audit_event_of_the_pass_is_chained(committed: _Fixture) -> None:
         ).all()
     assert {a for a, _ in rows} >= {"api_key.revoke", "user.offboard"}
     assert [a for a, unhashed in rows if unhashed] == []
+
+
+def test_the_preview_holds_no_row_locks(committed: _Fixture) -> None:
+    """A GET must not serialise the workspace's admin writes behind a screen
+    (#1922): after a preview on one connection, another can still lock an
+    admin row without waiting."""
+    # An ADMIN leaver: only then does the preview consult the cross-table guard.
+    departing_admin = _user(committed.session, "admin")
+    committed.session.commit()
+    offboarding_service.preview(committed.session, departing_admin.id, actor=committed.actor)
+    with committed.engine.connect() as other:
+        other.execute(text("SET lock_timeout = '500ms'"))
+        locked = other.execute(
+            text("SELECT id FROM users WHERE role = 'admin' ORDER BY id FOR UPDATE NOWAIT")
+        ).all()
+        other.rollback()
+    assert locked  # the fixture seeds at least one stored-role admin

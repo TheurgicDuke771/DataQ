@@ -53,6 +53,7 @@ def assert_admin_remains(
     *,
     exclude_user_id: UUID | None = None,
     exclude_member_id: UUID | None = None,
+    lock: bool = True,
 ) -> None:
     """Refuse a change that would leave nobody who can both sign in and administer.
 
@@ -63,25 +64,28 @@ def assert_admin_remains(
 
     Stored-role admins only: an allowlist-resolved admin can vanish with the
     next deploy, so it cannot be what keeps the workspace recoverable.
+
+    `lock=False` is for READ paths (a preview): the answer is advisory there, and
+    holding `FOR UPDATE` on every admin row for the life of a GET serialises the
+    workspace's admin writes behind a screen (#1922).
     """
-    admins = session.execute(
-        select(User.id, func.lower(User.email))
-        .where(User.role == ADMIN_ROLE)
-        .order_by(User.id)
-        .with_for_update()
-    ).all()
+    admins_stmt = (
+        select(User.id, func.lower(User.email)).where(User.role == ADMIN_ROLE).order_by(User.id)
+    )
+    if lock:
+        admins_stmt = admins_stmt.with_for_update()
+    admins = session.execute(admins_stmt).all()
     enforced = enforcement_active(session)
     member_ids: dict[str, UUID] = {}
     if enforced and admins:
-        member_ids = {
-            email: member_id
-            for member_id, email in session.execute(
-                select(WorkspaceMember.id, func.lower(WorkspaceMember.email))
-                .where(func.lower(WorkspaceMember.email).in_([email for _, email in admins]))
-                .order_by(WorkspaceMember.id)
-                .with_for_update()
-            ).all()
-        }
+        members_stmt = (
+            select(WorkspaceMember.id, func.lower(WorkspaceMember.email))
+            .where(func.lower(WorkspaceMember.email).in_([email for _, email in admins]))
+            .order_by(WorkspaceMember.id)
+        )
+        if lock:
+            members_stmt = members_stmt.with_for_update()
+        member_ids = {email: member_id for member_id, email in session.execute(members_stmt).all()}
     remaining = 0
     for user_id, email in admins:
         if user_id == exclude_user_id:
