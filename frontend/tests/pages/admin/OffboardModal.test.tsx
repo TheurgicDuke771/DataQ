@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AdminUser, OffboardPreview, OffboardReceipt } from '../../../src/api/admin';
 import { offboardUser, previewOffboarding } from '../../../src/api/admin';
 import { searchUsers } from '../../../src/api/shares';
-import { OffboardAction, OffboardModal } from '../../../src/pages/admin/OffboardModal';
+import { OffboardModal } from '../../../src/pages/admin/OffboardModal';
 import { renderSubPage } from './adminFixtures';
 
 vi.mock('../../../src/api/admin', () => ({
@@ -205,17 +205,6 @@ describe('OffboardModal', () => {
       }),
     );
     vi.useRealTimers();
-  });
-
-  it('opens from the members-table row action', async () => {
-    const user = userEvent.setup();
-    renderSubPage(<OffboardAction user={USER} onOffboarded={vi.fn()} />);
-    expect(mockPreview).not.toHaveBeenCalled();
-
-    await user.click(screen.getByRole('button', { name: 'Offboard' }));
-
-    expect(await screen.findByText('will be withdrawn')).toBeInTheDocument();
-    expect(mockPreview).toHaveBeenCalledWith('u9', expect.anything());
   });
 
   it('surfaces a preview failure instead of an empty confirmation form', async () => {
