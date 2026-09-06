@@ -186,3 +186,19 @@ def test_the_token_never_appears_in_a_log_line(db_session: Any, capsys: Any) -> 
     assert emitted, "nothing was emitted — the assertions below would be vacuous"
     assert token not in emitted
     assert token[len(svc.TOKEN_PREFIX) :][:12] not in emitted
+
+
+def test_revoke_all_for_user_takes_every_live_session_and_nothing_else(db_session: Any) -> None:
+    """The offboarding primitive (#1924)."""
+    user, bystander = _user(db_session), _user(db_session)
+    _, a = svc.create_session(db_session, user)
+    _, b = svc.create_session(db_session, user)
+    _, theirs = svc.create_session(db_session, bystander)
+    svc.revoke(db_session, b)
+
+    assert svc.revoke_all_for_user(db_session, user.id) == 1
+    db_session.flush()
+    assert svc.revoke_all_for_user(db_session, user.id) == 0
+    assert svc.resolve_token(db_session, theirs).id == bystander.id
+    with pytest.raises(svc.SessionAuthError):
+        svc.resolve_token(db_session, a)

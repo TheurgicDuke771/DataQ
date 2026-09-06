@@ -106,3 +106,22 @@ def revoke(db: Session, token: str) -> bool:
     db.commit()
     log.info("session_revoked", session_id=str(row.id), user_id=str(row.user_id))
     return True
+
+
+def revoke_all_for_user(db: Session, user_id: uuid.UUID) -> int:
+    """Revoke every live session `user_id` holds (#1924). No commit: the caller's
+    transaction ends it. Returns how many this call revoked."""
+    now = datetime.now(UTC)
+    rows = db.scalars(
+        select(UserSession)
+        .where(
+            UserSession.user_id == user_id,
+            UserSession.revoked_at.is_(None),
+            UserSession.expires_at > now,
+        )
+        .order_by(UserSession.id)
+    ).all()
+    for row in rows:
+        row.revoked_at = now
+        log.info("session_revoked", session_id=str(row.id), user_id=str(user_id))
+    return len(rows)

@@ -57,6 +57,7 @@ const RECEIPT: OffboardReceipt = {
   api_keys_revoked: 2,
   sessions_revoked: 1,
   membership_removed: false,
+  role_demoted_from: 'member',
   still_admitted_by: [],
   skipped: [
     { step: 'transfer_suites', reason: 'this user owns no suites' },
@@ -144,7 +145,8 @@ describe('OffboardModal', () => {
     mockOffboard.mockResolvedValue(RECEIPT);
     render();
     await screen.findByText('will be withdrawn');
-    await user.type(screen.getByLabelText('Confirm email address'), 'olivia@x.io');
+    // Typed in a different case: the request must carry what was TYPED, not the preview's value.
+    await user.type(screen.getByLabelText('Confirm email address'), 'Olivia@X.io');
     await waitFor(() => expect(okButton()).toBeEnabled());
     await user.click(okButton());
 
@@ -159,8 +161,9 @@ describe('OffboardModal', () => {
     expect(mockOffboard).toHaveBeenCalledWith('u9', {
       new_owner_user_id: null,
       keep_previous_owner_access: false,
-      confirm_email: 'olivia@x.io',
+      confirm_email: 'Olivia@X.io',
     });
+    expect(screen.getByText('member → viewer')).toBeInTheDocument();
   });
 
   it('sends the picked owner and never offers one the backend would reject', async () => {

@@ -69,6 +69,17 @@ def test_a_second_admin_unblocks_the_pass(db_session: Any) -> None:
         db_session, leaver.id, new_owner_user_id=None, confirm_email=leaver.email, actor=keeper
     )
     assert receipt.user_id == leaver.id
+    # The stored role goes with them (#1924): an offboarded admin must not keep
+    # counting toward the last-admin guard.
+    assert receipt.role_demoted_from == "admin"
+    db_session.refresh(leaver)
+    assert leaver.role == "viewer"
+    demotion = (
+        db_session.query(AuditEvent).filter_by(action="user.role_change", entity_id=leaver.id).one()
+    )
+    assert (demotion.before or {})["role"] == "admin"
+    assert (demotion.after or {})["role"] == "viewer"
+    assert demotion.actor_user_id == keeper.id
 
 
 def test_an_allowlist_admin_does_not_satisfy_the_guard(
