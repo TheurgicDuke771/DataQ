@@ -40,6 +40,14 @@ class InvalidWebhookError(DataQError):
     code = "webhook_invalid"
 
 
+class InlineDestinationNotAllowedError(DataQError):
+    """A suite never takes its own webhook or recipient list (#1926): destinations
+    are the channels an Admin configured. Existing inline values can only be cleared."""
+
+    status_code = 422
+    code = "inline_destination_not_allowed"
+
+
 class InvalidRecipientsError(DataQError):
     """Raised when a per-suite email recipient list is malformed (#633)."""
 

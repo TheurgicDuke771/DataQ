@@ -1693,6 +1693,10 @@ def get_notification_config(suite_id: str) -> dict[str, Any]:
     a linked channel exists, not identify it — call ``list_suite_channels`` for
     WHICH channel(s) and their type.
 
+    A ``*_source`` of ``"suite"`` is a **legacy** inline override: a suite can no
+    longer be given its own webhook or recipients (destinations are admin-defined
+    channels), it can only have one cleared — so do not suggest setting one.
+
     Webhook **URLs are never returned** — only whether one is set. A webhook URL
     is a bearer credential: anyone holding it can post into that channel, so it
     is stored as a secret reference and this tool reports its presence, not its
