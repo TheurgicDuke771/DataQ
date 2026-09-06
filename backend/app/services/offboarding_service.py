@@ -13,18 +13,27 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.identity import normalize_email
 from backend.app.core.logging import get_logger
-from backend.app.db.models import ADMIN_ROLE, ApiKey, Suite, User, UserSession, WorkspaceMember
+from backend.app.db.models import (
+    ADMIN_ROLE,
+    ApiKey,
+    Check,
+    Result,
+    Run,
+    Suite,
+    User,
+    UserSession,
+    WorkspaceMember,
+)
 from backend.app.services import admin_suite_service, audit_service, membership_service
 from backend.app.services.admin_service import UserNotFoundError
 from backend.app.services.membership_guard import RoleChangeRejectedError, assert_admin_remains
-from backend.app.services.suite_service import deletion_impact
 
 log = get_logger(__name__)
 
@@ -134,22 +143,20 @@ def env_allowlists_naming(email: str, settings: Settings | None = None) -> list[
     return sorted(set(naming))
 
 
-def _load_user(db: Session, user_id: uuid.UUID, *, lock: bool = False) -> User:
-    stmt = select(User).where(User.id == user_id)
-    if lock:
-        stmt = stmt.with_for_update()
-    user = db.execute(stmt).scalar_one_or_none()
+def _load_user(db: Session, user_id: uuid.UUID) -> User:
+    user = db.get(User, user_id)
     if user is None:
         raise UserNotFoundError("user not found", detail={"user_id": str(user_id)})
     return user
 
 
-def _is_last_admin(db: Session, user: User, *, lock: bool = False) -> bool:
-    """The shared cross-table guard: stored-role admins who are still members."""
+def _is_last_admin(db: Session, user: User, *, lock: bool) -> bool:
+    """The shared cross-table guard: stored-role admins who are still members.
+    Locked only by the pass; the preview's answer is advisory."""
     if user.role != ADMIN_ROLE:
         return False
     try:
-        assert_admin_remains(db, exclude_user_id=user.id)
+        assert_admin_remains(db, exclude_user_id=user.id, lock=lock)
     except RoleChangeRejectedError:
         return True
     return False
@@ -163,34 +170,32 @@ def _owned_suites(db: Session, user_id: uuid.UUID) -> list[Suite]:
     )
 
 
-def _open_api_keys(db: Session, user_id: uuid.UUID) -> list[ApiKey]:
+def _open_api_keys_stmt(user_id: uuid.UUID) -> Select[tuple[ApiKey]]:
     now = datetime.now(UTC)
-    return list(
-        db.scalars(
-            select(ApiKey)
-            .where(
-                ApiKey.user_id == user_id,
-                ApiKey.revoked_at.is_(None),
-                ApiKey.expires_at > now,
-            )
-            .order_by(ApiKey.created_at, ApiKey.id)
-        ).all()
+    return select(ApiKey).where(
+        ApiKey.user_id == user_id, ApiKey.revoked_at.is_(None), ApiKey.expires_at > now
     )
+
+
+def _live_sessions_stmt(user_id: uuid.UUID) -> Select[tuple[UserSession]]:
+    now = datetime.now(UTC)
+    return select(UserSession).where(
+        UserSession.user_id == user_id,
+        UserSession.revoked_at.is_(None),
+        UserSession.expires_at > now,
+    )
+
+
+def _count(db: Session, stmt: Select[Any]) -> int:
+    return int(db.scalar(select(func.count()).select_from(stmt.subquery())) or 0)
+
+
+def _open_api_keys(db: Session, user_id: uuid.UUID) -> list[ApiKey]:
+    return list(db.scalars(_open_api_keys_stmt(user_id).order_by(ApiKey.created_at, ApiKey.id)))
 
 
 def _live_sessions(db: Session, user_id: uuid.UUID) -> list[UserSession]:
-    now = datetime.now(UTC)
-    return list(
-        db.scalars(
-            select(UserSession)
-            .where(
-                UserSession.user_id == user_id,
-                UserSession.revoked_at.is_(None),
-                UserSession.expires_at > now,
-            )
-            .order_by(UserSession.id)
-        ).all()
-    )
+    return list(db.scalars(_live_sessions_stmt(user_id).order_by(UserSession.id)))
 
 
 def _membership(
@@ -230,30 +235,51 @@ def preview(db: Session, user_id: uuid.UUID, *, actor: User) -> OffboardPreview:
         display_name=user.display_name,
         role=user.role,
         is_self=user.id == actor.id,
-        is_last_admin=_is_last_admin(db, user),
+        is_last_admin=_is_last_admin(db, user, lock=False),
         membership_state=state,
         membership_id=member_id,
         membership_note=note,
         owned_suites=tuple(_owned_suite_rows(db, user_id)),
-        open_api_key_count=len(_open_api_keys(db, user_id)),
-        live_session_count=len(_live_sessions(db, user_id)),
+        # Counts, not hydrated rows: a preview needs a number, not every key hash.
+        open_api_key_count=_count(db, _open_api_keys_stmt(user_id)),
+        live_session_count=_count(db, _live_sessions_stmt(user_id)),
     )
 
 
 def _owned_suite_rows(db: Session, user_id: uuid.UUID) -> list[OwnedSuite]:
-    rows = []
-    for suite in _owned_suites(db, user_id):
-        impact = deletion_impact(db, suite.id)
-        rows.append(
-            OwnedSuite(
-                id=suite.id,
-                name=suite.name,
-                check_count=impact["checks"],
-                run_count=impact["runs"],
-                result_count=impact["results"],
-            )
+    """One grouped query per dependent table over the owned suites, not
+    `deletion_impact` per suite (7 round-trips each, 3 used — #1922)."""
+    suites = _owned_suites(db, user_id)
+    if not suites:
+        return []
+    ids = [suite.id for suite in suites]
+
+    def per_suite(stmt: Select[tuple[uuid.UUID, int]]) -> dict[uuid.UUID, int]:
+        return dict(db.execute(stmt).tuples().all())
+
+    checks = per_suite(
+        select(Check.suite_id, func.count()).where(Check.suite_id.in_(ids)).group_by(Check.suite_id)
+    )
+    runs = per_suite(
+        select(Run.suite_id, func.count()).where(Run.suite_id.in_(ids)).group_by(Run.suite_id)
+    )
+    results = per_suite(
+        select(Run.suite_id, func.count())
+        .select_from(Result)
+        .join(Run, Result.run_id == Run.id)
+        .where(Run.suite_id.in_(ids))
+        .group_by(Run.suite_id)
+    )
+    return [
+        OwnedSuite(
+            id=suite.id,
+            name=suite.name,
+            check_count=checks.get(suite.id, 0),
+            run_count=runs.get(suite.id, 0),
+            result_count=results.get(suite.id, 0),
         )
-    return rows
+        for suite in suites
+    ]
 
 
 # ── The pass ──────────────────────────────────────────────────────────────────
@@ -319,8 +345,10 @@ def _run(
     actor: User,
     keep_previous_owner_access: bool,
 ) -> OffboardReceipt:
-    # (a) Guards, from locked state.
-    user = _load_user(db, user_id, lock=True)
+    # (a) Guards, from locked state. The admin sweep locks `users` in id order
+    # (the departing admin's row among them) BEFORE any single-row lock, so two
+    # passes, or a pass beside a role change, queue instead of deadlocking.
+    user = _load_user(db, user_id)
     if _is_last_admin(db, user, lock=True):
         raise OffboardBlockedError(
             "this is the last admin in the workspace — promote another admin first",
@@ -336,6 +364,11 @@ def _run(
             "the departing user cannot inherit their own suites",
             detail={"user_id": str(user_id)},
         )
+    # The departing user and the heir, locked together in id order; the transfer
+    # loop's per-suite re-lock of the heir is then a no-op inside this transaction.
+    party = [uid for uid in (user_id, new_owner_user_id) if uid is not None]
+    db.execute(select(User.id).where(User.id.in_(party)).order_by(User.id).with_for_update()).all()
+    db.refresh(user)
 
     receipt = OffboardReceipt(
         user_id=user.id, email=user.email, new_owner_user_id=new_owner_user_id
