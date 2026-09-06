@@ -1,4 +1,4 @@
-import { Flex, Tag } from 'antd';
+import { Button, Flex, Tag } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useState } from 'react';
 
@@ -8,7 +8,7 @@ import { formatTimestamp } from '../../components/results/resultsFormat';
 import { type AsyncState, useAsyncData } from '../../hooks/useAsyncData';
 import { AccessGrantActions } from './AccessGrantActions';
 import { MembershipPanel } from './MembershipPanel';
-import { OffboardAction } from './OffboardModal';
+import { OffboardModal } from './OffboardModal';
 import { DataTable, Identity, Section } from './parts';
 
 /** Workspace membership: stored roles (ADR 0033) + every per-suite grant (ADR 0027). */
@@ -18,24 +18,40 @@ export function AdminMembers() {
   // Rows the admin has just re-roled, keyed by id.
   const [rerolled, setRerolled] = useState<Record<string, AdminUser>>({});
   const userState = overlayUsers(users.state, rerolled);
+  // One modal for the page, keyed per user so its state resets between people; the
+  // receipt survives the reload that re-sorts or pages the row away.
+  const [offboarding, setOffboarding] = useState<AdminUser | null>(null);
+  // Bumped after a pass: the membership panel owns its own fetch, and a withdrawn
+  // row must not stay on screen; remounting is the reload.
+  const [membershipEpoch, setMembershipEpoch] = useState(0);
+
+  const onOffboarded = () => {
+    setRerolled({});
+    users.reload();
+    access.reload();
+    setMembershipEpoch((n) => n + 1);
+  };
 
   return (
     <Flex vertical gap={16}>
-      <MembershipPanel />
+      <MembershipPanel key={membershipEpoch} />
       <Section title="Members">
         <DataTable
           state={userState}
           columns={userColumns(
             (updated) => setRerolled((prev) => ({ ...prev, [updated.id]: updated })),
-            () => {
-              users.reload();
-              access.reload();
-            },
+            setOffboarding,
           )}
           rowKey={(u) => u.id}
           errorMessage="Failed to load members"
         />
       </Section>
+      <OffboardModal
+        key={offboarding?.id ?? 'none'}
+        user={offboarding}
+        onClose={() => setOffboarding(null)}
+        onOffboarded={onOffboarded}
+      />
       <Section title="Access grants">
         <DataTable
           state={access.state}
@@ -61,7 +77,7 @@ function overlayUsers(
 /** A factory, not a constant, because the role cell needs the update callback. */
 const userColumns = (
   onChanged: (u: AdminUser) => void,
-  onOffboarded: () => void,
+  onOffboard: (u: AdminUser) => void,
 ): ColumnsType<AdminUser> => [
   {
     title: 'Member',
@@ -83,7 +99,11 @@ const userColumns = (
   {
     title: 'Actions',
     key: 'actions',
-    render: (_, u) => <OffboardAction user={u} onOffboarded={onOffboarded} />,
+    render: (_, u) => (
+      <Button size="small" type="text" danger onClick={() => onOffboard(u)}>
+        Offboard
+      </Button>
+    ),
   },
 ];
 
