@@ -1211,6 +1211,34 @@ class PrivacySetting(Base):
     updated_at: Mapped[datetime] = _updated_at()
 
 
+class ScoringSetting(Base):
+    """The workspace's health-score penalty weights (#1559). One row, the
+    `AuditChainState` idiom; an absent row means the ADR 0005 defaults.
+
+    Scores are computed live on read (never stored), so a change here recolours
+    every score everywhere at once — the recorded decision in ADR 0005's 2026-09
+    amendment. The audit event is the only trace of the step.
+    """
+
+    __tablename__ = "scoring_settings"
+    __table_args__ = (
+        CheckConstraint(
+            "warn_weight >= 0 AND warn_weight <= fail_weight "
+            "AND fail_weight <= critical_weight AND critical_weight > 0",
+            name="weights_ordered",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    warn_weight: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
+    fail_weight: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
+    critical_weight: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    updated_at: Mapped[datetime] = _updated_at()
+
+
 class AuditChainCheckpoint(Base):
     """One row per retention-sweep purge (#1460) — the documented explanation for
     the chain discontinuity a purge necessarily creates at its tail. Verification

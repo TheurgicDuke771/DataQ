@@ -339,6 +339,13 @@ erDiagram
         bool zero_sample_mode "default false - effective state is the env floor OR this"
         uuid updated_by FK "the admin who last changed it; SET NULL on erasure"
     }
+    scoring_settings {
+        int id PK "always 1 - singleton health-score weights (ADR 0005 amendment)"
+        numeric warn_weight "0 <= warn <= fail <= critical, critical > 0 (table CHECK)"
+        numeric fail_weight
+        numeric critical_weight "also the normaliser - all-critical scores 0"
+        uuid updated_by FK "the admin who last changed it; SET NULL on erasure"
+    }
     llm_settings {
         int id PK "always 1 - singleton provider config (ADR 0042)"
         string provider "anthropic / openai_compatible"
