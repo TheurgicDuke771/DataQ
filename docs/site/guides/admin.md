@@ -15,7 +15,7 @@ without losing your place. `/admin` on its own lands on **Overview**.
 | Overview | `/admin/overview` | Workspace counts — members, suites, open incidents, runs today — plus a "needs attention" feed and a workspace-health checklist, each row linking to the thing that needs fixing. |
 | Members | `/admin/members` | Every user with their workspace role (editable in place) and every per-suite access grant. |
 | Suites | `/admin/suites` | Every suite in the workspace, unscoped by sharing: owner, datasource, environment, check count, share count. |
-| Settings | `/admin/settings` | Workspace facts and the sign-in method, the email pre-flight test, reusable notification channels, the LLM provider, the secret-store notice, and the danger zone. |
+| Settings | `/admin/settings` | Workspace facts and the sign-in method, the email pre-flight test, reusable notification channels, the LLM provider, zero-sample mode, the health-score weights, the secret-store notice, and the danger zone. |
 | Compliance | `/admin/compliance` | The audit log with its filters and retention disclosure, audit-chain verification, the data-subject-rights tools, and the deployment / data-residency posture. |
 | Integrations | `/admin/integrations` | Ready-to-paste inbound webhook URLs for each configured orchestration provider, with the auth mode each one uses. |
 
@@ -361,6 +361,20 @@ environment the toggle is shown pinned and can only be turned *on* from here, ne
 that is deliberate, so an operator's floor cannot be undone by a click. Every change is
 audited with who made it and when. Samples stored before the switch are not deleted by it;
 the retention sweep removes them on its schedule.
+
+## Settings — scoring
+
+**Health-score weights** are the penalties each severity tier carries when a score is
+computed: `warn`, `fail` and `critical`, with `pass` fixed at zero. The defaults are
+0.5 / 1.0 / 2.0; `critical` doubles as the normaliser, so an all-`fail` suite scores 50 and
+an all-`critical` one scores 0. They must stay ordered (`warn ≤ fail ≤ critical`) and
+`critical` must be above zero, or the save is refused with the reason.
+
+Scores are computed when a page is read, never stored. A change therefore recolours **every**
+score at once — the dashboard cards and their period-over-period deltas, the suite ranking,
+asset scorecards, and any run you look at from before the change. There is no data-side
+event to explain the step; the audit log carries it, with the old and new weights and who
+saved them. **Reset to defaults** removes the stored row and is audited the same way.
 
 ## Integrations — webhook auth
 

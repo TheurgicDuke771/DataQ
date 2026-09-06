@@ -229,6 +229,9 @@ an outbound model request.
 | GET | `/admin/deployment` | Declared residency / deployment posture (`DEPLOYMENT_REGION`); `zero_sample_mode` is the effective value and `zero_sample_source` says which of env / setting turned it on. |
 | GET | `/admin/privacy` | Zero-sample mode: effective value, stored toggle, source, whether the environment pins it. |
 | PUT | `/admin/privacy` | Set zero-sample mode (audited); 409 when the environment pins it on and the request turns it off. |
+| GET | `/admin/scoring` | Health-score penalty weights in force, whether they are the defaults, and the defaults themselves. |
+| PUT | `/admin/scoring` | Set the weights (audited); 422 unless `0 ≤ warn ≤ fail ≤ critical` and `critical > 0`. |
+| DELETE | `/admin/scoring` | Reset the weights to the defaults (audited). |
 | GET | `/admin/orchestration/webhooks` | Webhook receiver URLs + auth mode per provider. |
 | POST | `/admin/orchestration/webhooks/{provider}/regenerate` | Mint a new webhook secret / signing key; the value is returned once, the previous one is accepted until `grace_until` (audited). |
 | POST | `/admin/orchestration/poll-now` | Queue an immediate orchestration poll for every connection, or one with `?connection_id=`. |

@@ -12,6 +12,9 @@ vi.mock('../../../src/api/admin', () => ({
   testAuthEmail: vi.fn(),
   getPrivacySettings: vi.fn(() => new Promise(() => {})),
   putPrivacySettings: vi.fn(),
+  getScoringWeights: vi.fn(() => new Promise(() => {})),
+  putScoringWeights: vi.fn(),
+  resetScoringWeights: vi.fn(),
 }));
 vi.mock('../../../src/api/llm', () => ({
   getLlmConfig: vi.fn(),
