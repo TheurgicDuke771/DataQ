@@ -3339,11 +3339,13 @@ everything their name is on — the connections they created, the check versions
 and the runs and results underneath the suites they handed over. Erasing a person's data is
 a separate, deliberate act on the Compliance page.</p>
 <p><strong>The env-listed caveat.</strong> Membership is the union of the member list and the deployment's
-own allowlists, so an address named in <code>OIDC_ALLOWED_EMAILS</code>, <code>OIDC_ALLOWED_DOMAINS</code>,
-<code>AUTH_OTP_ALLOWED_EMAILS</code>, <code>AUTH_OTP_ALLOWED_DOMAINS</code> or <code>WORKSPACE_ADMIN_EMAILS</code> still signs
-in after their row is gone. Rather than delete a row and report a withdrawal that did not
-happen, the pass <strong>skips that step and names the variable</strong> you have to edit. The same
-applies when there is no membership row at all.</p>
+own allowlists, so an address named in an allowlist the deployment actually uses (the OIDC
+ones when OIDC is configured, the OTP ones when the OTP mailer is, and <code>WORKSPACE_ADMIN_EMAILS</code>
+always) still signs in after their row is gone. The pass withdraws the row regardless — both
+doors have to close — and then <strong>names the variable you still have to edit</strong>, on the preview
+and again on the receipt. An allowlist for a sign-in mode the deployment does not use is
+ignored, because it admits nobody. When there is no membership row at all and an allowlist
+admits the address, the step is skipped with the same variable named.</p>
 <p>The closing receipt is the record: what was transferred, how many keys and sessions were
 revoked, whether membership was withdrawn, and every step that did not run with its reason.
 Each step also writes its own audit event, alongside one for the pass as a whole.</p>
