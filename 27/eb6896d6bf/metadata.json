@@ -3,7 +3,7 @@
   "checkpoint_id": "27eb6896d6bf",
   "strategy": "manual-commit",
   "branch": "feature/issue-1559-scoring-weights",
-  "checkpoints_count": 1,
+  "checkpoints_count": 2,
   "files_touched": [
     "backend/app/api/v1/_base.py",
     "backend/app/api/v1/admin_privacy.py",
@@ -25,13 +25,20 @@
       "compact_transcript": "/27/eb6896d6bf/0/transcript.jsonl",
       "content_hash": "/27/eb6896d6bf/0/content_hash.txt",
       "prompt": "/27/eb6896d6bf/0/prompt.txt"
+    },
+    {
+      "metadata": "/27/eb6896d6bf/1/metadata.json",
+      "transcript": "/27/eb6896d6bf/1/full.jsonl",
+      "compact_transcript": "/27/eb6896d6bf/1/transcript.jsonl",
+      "content_hash": "/27/eb6896d6bf/1/content_hash.txt",
+      "prompt": "/27/eb6896d6bf/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 6,
-    "cache_creation_tokens": 211127,
-    "cache_read_tokens": 148561,
-    "output_tokens": 4230,
-    "api_call_count": 3
+    "input_tokens": 12194,
+    "cache_creation_tokens": 5505602,
+    "cache_read_tokens": 223135528,
+    "output_tokens": 402253,
+    "api_call_count": 489
   }
 }
