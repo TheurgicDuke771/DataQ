@@ -159,11 +159,49 @@ def test_self_demotion_is_allowed_when_another_admin_exists(db_session: Any) -> 
     _user(db_session, "admin")
 
     admin_service.set_user_role(
-        db_session, stepping_down.id, new_role="member", actor=stepping_down
+        db_session, stepping_down.id, new_role="member", actor=stepping_down, confirm_self=True
     )
 
     db_session.refresh(stepping_down)
     assert stepping_down.role == "member"
+
+
+def test_self_demotion_needs_confirm_self(db_session: Any) -> None:
+    """A mis-click on your own row must not cost you admin: the service refuses
+    without the flag, and the row is untouched."""
+    stepping_down = _user(db_session, "admin")
+    _user(db_session, "admin")
+
+    with pytest.raises(admin_service.RoleChangeRejectedError, match="confirm_self"):
+        admin_service.set_user_role(
+            db_session, stepping_down.id, new_role="viewer", actor=stepping_down
+        )
+    db_session.refresh(stepping_down)
+    assert stepping_down.role == "admin"
+
+
+def test_self_promotion_and_other_users_need_no_confirmation(db_session: Any) -> None:
+    other = _user(db_session, "member")
+    actor = _user(db_session, "admin")
+    admin_service.set_user_role(db_session, other.id, new_role="viewer", actor=actor)
+    db_session.refresh(other)
+    assert other.role == "viewer"
+
+
+def test_self_demotion_over_the_api_needs_the_flag(
+    client: TestClient, db_session: Any, as_role: Any
+) -> None:
+    """The route must carry `confirm_self` through to the service (the dev-bypass
+    identity cannot stand in here — its role is refused for its own reason)."""
+    actor, headers = as_role("admin")
+    _user(db_session, "admin")  # keeps the last-admin guard out of the way
+    url = f"/api/v1/admin/users/{actor.id}/role"
+    refused = client.patch(url, json={"role": "member"}, headers=headers)
+    assert refused.status_code == 409
+    assert "confirm_self" in refused.json()["error"]["message"]
+    ok = client.patch(url, json={"role": "member", "confirm_self": True}, headers=headers)
+    assert ok.status_code == 200
+    assert ok.json()["role"] == "member"
 
 
 def test_an_allowlist_admin_does_not_satisfy_the_guard(

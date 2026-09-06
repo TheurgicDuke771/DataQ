@@ -62,8 +62,15 @@ export async function listAdminUsers(): Promise<AdminUser[]> {
 }
 
 /** Change a user's stored workspace role (ADR 0033, #742). */
-export async function setAdminUserRole(userId: string, role: WorkspaceRole): Promise<AdminUser> {
-  const { data } = await api.patch<AdminUser>(`/admin/users/${userId}/role`, { role });
+export async function setAdminUserRole(
+  userId: string,
+  role: WorkspaceRole,
+  opts: { confirmSelf?: boolean } = {},
+): Promise<AdminUser> {
+  const { data } = await api.patch<AdminUser>(`/admin/users/${userId}/role`, {
+    role,
+    confirm_self: opts.confirmSelf ?? false,
+  });
   return data;
 }
 

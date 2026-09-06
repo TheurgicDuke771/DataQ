@@ -118,7 +118,10 @@ The **Members** table carries every user with their workspace role, editable in 
 last stored-role Admin cannot be demoted: the workspace would have nobody able to manage
 connections or membership, so the change is refused with the reason rather than accepted
 and silently reverted. Admins granted only by the environment allowlist do not count
-towards that guard — the allowlist is a recovery path, not the invariant.
+towards that guard — the allowlist is a recovery path, not the invariant. Demoting
+**yourself** asks for confirmation first: it removes the access you are using, so a
+mis-click on your own row must not be enough. Promoting yourself, or changing anyone else,
+needs no confirmation.
 
 Below it, **Access grants** lists every per-suite grant in the workspace: one row per
 owner and one per share, unscoped by who owns what.

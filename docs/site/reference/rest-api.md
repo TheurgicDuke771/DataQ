@@ -215,7 +215,7 @@ an outbound model request.
 |---|---|---|
 | GET | `/admin/suites` · `/admin/users` · `/admin/access` | Unscoped workspace-wide views. |
 | GET | `/admin/overview` | The four Overview stat cards — members, suites, open incidents, runs today (UTC day). |
-| PATCH | `/admin/users/{id}/role` | Change a workspace role (last-admin guarded; audit-tabled). |
+| PATCH | `/admin/users/{id}/role` | Change a workspace role (last-admin guarded; demoting yourself needs `confirm_self`; audit-tabled). |
 | DELETE | `/admin/suites/{id}/access/{grant_id}` | Revoke any per-suite share, on any suite (audited as an admin override). |
 | POST | `/admin/suites/{id}/transfer` | Transfer suite ownership. A viewer cannot own (422); transferring to the current owner is a 409. The previous owner keeps an `edit` grant unless `keep_previous_owner_access` is false. |
 | DELETE | `/admin/suites/{id}` | Delete any suite. Same cascade as the owner's own delete; the audit event carries the destroyed counts. |
