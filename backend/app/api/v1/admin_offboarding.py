@@ -64,7 +64,8 @@ class OffboardRequest(ApiRequestModel):
     #: The departing user keeps nothing by default — the opposite of the standalone
     #: transfer endpoint, because here they are leaving.
     keep_previous_owner_access: bool = False
-    #: The user's own email address, typed by the admin. A mismatch is a 422.
+    #: The user's own email address as the admin TYPED it (never echoed from the
+    #: preview — the server-side check must see a human's input). A mismatch is a 422.
     confirm_email: str = Field(min_length=3, max_length=320)
 
 
@@ -76,6 +77,8 @@ class OffboardReceiptRead(ApiModel):
     api_keys_revoked: int
     sessions_revoked: int
     membership_removed: bool
+    #: The stored role before the pass set it to `viewer`; null if already a viewer.
+    role_demoted_from: str | None
     #: Env vars that still admit this address after the pass — the admin's next job.
     still_admitted_by: list[str]
     #: Every step that did not run, with its reason — an empty list means all ran.
@@ -157,6 +160,7 @@ def offboard_user(
         api_keys_revoked=receipt.api_keys_revoked,
         sessions_revoked=receipt.sessions_revoked,
         membership_removed=receipt.membership_removed,
+        role_demoted_from=receipt.role_demoted_from,
         still_admitted_by=receipt.still_admitted_by,
         skipped=receipt.skipped,
     )

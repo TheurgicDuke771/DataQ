@@ -120,3 +120,30 @@ def test_user_delete_cascades_keys(db_session: Any, user: User) -> None:
     db_session.delete(user)
     db_session.commit()
     assert db_session.execute(select(ApiKey)).scalar_one_or_none() is None
+
+
+def test_revoke_all_for_user_is_attributed_to_the_actor(
+    db_session: Any, user: User, other_user: User
+) -> None:
+    """The offboarding primitive (#1924): every open key goes, the audit event
+    names the ADMIN, and an expired or already-revoked key is not re-counted."""
+    from backend.app.db.models import AuditEvent
+
+    svc.create_key(db_session, user, name="a", expires_in_days=30)
+    svc.create_key(db_session, user, name="b", expires_in_days=30)
+    stale, _ = svc.create_key(db_session, user, name="c", expires_in_days=30)
+    svc.revoke_key(db_session, user, stale.id)
+
+    assert svc.revoke_all_for_user(db_session, user.id, actor=other_user) == 2
+    db_session.flush()
+    assert all(
+        k.revoked_at is not None for k in db_session.query(ApiKey).filter_by(user_id=user.id)
+    )
+    events = (
+        db_session.query(AuditEvent)
+        .filter_by(action="api_key.revoke")
+        .order_by(AuditEvent.occurred_at)
+        .all()
+    )
+    assert [e.actor_user_id for e in events][-2:] == [other_user.id, other_user.id]
+    assert svc.revoke_all_for_user(db_session, user.id, actor=other_user) == 0

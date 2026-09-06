@@ -20,8 +20,22 @@ from backend.app.core.config import Settings
 from backend.app.core.errors import DataQError
 from backend.app.core.identity import normalize_email
 from backend.app.core.logging import get_logger
-from backend.app.db.models import ADMIN_ROLE, ApiKey, Suite, User, UserSession, WorkspaceMember
-from backend.app.services import admin_suite_service, audit_service, membership_service
+from backend.app.db.models import (
+    ADMIN_ROLE,
+    VIEWER_ROLE,
+    ApiKey,
+    Suite,
+    User,
+    UserSession,
+    WorkspaceMember,
+)
+from backend.app.services import (
+    admin_suite_service,
+    api_key_service,
+    audit_service,
+    membership_service,
+    session_service,
+)
 from backend.app.services.admin_service import UserNotFoundError
 from backend.app.services.membership_guard import RoleChangeRejectedError, assert_admin_remains
 from backend.app.services.suite_service import deletion_impact
@@ -89,6 +103,9 @@ class OffboardReceipt:
     api_keys_revoked: int = 0
     sessions_revoked: int = 0
     membership_removed: bool = False
+    #: The stored role the user held before the pass set it to `viewer`; None
+    #: when they were already a viewer.
+    role_demoted_from: str | None = None
     #: Env vars that still admit the address after the pass — the admin's next job.
     still_admitted_by: list[str] = field(default_factory=list)
     #: `[{"step": ..., "reason": ...}]` — every step that did not run, and why.
@@ -104,6 +121,7 @@ class OffboardReceipt:
             "api_keys_revoked": self.api_keys_revoked,
             "sessions_revoked": self.sessions_revoked,
             "membership_removed": self.membership_removed,
+            "role_demoted_from": self.role_demoted_from,
             "still_admitted_by": self.still_admitted_by,
             "skipped": self.skipped,
         }
@@ -358,28 +376,27 @@ def _run(
     if not suites:
         receipt.skipped.append({"step": "transfer_suites", "reason": "this user owns no suites"})
 
-    # (c) Credentials. Written here rather than through `api_key_service.revoke_key`,
-    # which attributes the revoke to the key's OWNER — on an offboarding the actor is
-    # the admin, and a trail saying the departing user revoked their own key is worse
-    # than no trail.
-    now = datetime.now(UTC)
-    for key in _open_api_keys(db, user_id):
-        before = audit_service.snapshot("api_key", key)
-        key.revoked_at = now
-        audit_service.record_entity_change(
+    # (c) Credentials, attributed to the admin running the pass — a trail saying
+    # the departing user revoked their own key would be worse than none.
+    receipt.api_keys_revoked = api_key_service.revoke_all_for_user(db, user_id, actor=actor)
+    receipt.sessions_revoked = session_service.revoke_all_for_user(db, user_id)
+
+    # (c2) Stored role. Whether or not a membership row exists to withdraw, an
+    # offboarded admin must not keep counting toward the last-admin guard, and an
+    # offboarded member must not keep edit rights if they ever sign in again.
+    if user.role != VIEWER_ROLE:
+        previous = user.role
+        user.role = VIEWER_ROLE
+        audit_service.record(
             db,
-            action="api_key.revoke",
-            entity_type="api_key",
-            entity=key,
+            action="user.role_change",
+            entity_type="user",
+            entity_id=user.id,
             actor=actor,
-            before=before,
+            before={"id": str(user.id), "role": previous},
+            after={"id": str(user.id), "role": VIEWER_ROLE},
         )
-        receipt.api_keys_revoked += 1
-    for row in _live_sessions(db, user_id):
-        row.revoked_at = now
-        receipt.sessions_revoked += 1
-    # No flush here: the chain hook hashes only `session.new`, and a flushed audit
-    # event would commit unchained (#1920).
+        receipt.role_demoted_from = previous
 
     # (d) Membership last: while it stands, an admin can still see the user in the
     # list and undo the steps above.

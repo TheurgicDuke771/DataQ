@@ -115,7 +115,9 @@ export function OffboardModal({
       const result = await offboardUser(userId, {
         new_owner_user_id: picked?.id ?? null,
         keep_previous_owner_access: false,
-        confirm_email: preview.email,
+        // What the admin typed, not the preview's value: the server-side check is only a
+        // guard if it sees a human's input.
+        confirm_email: typed.trim(),
       });
       setReceipt(result);
       message.success(`${preview.email} has been offboarded`);
@@ -277,6 +279,11 @@ function Receipt({ receipt }: { receipt: OffboardReceipt }) {
         <Descriptions.Item label="Sessions revoked">{receipt.sessions_revoked}</Descriptions.Item>
         <Descriptions.Item label="Membership withdrawn">
           {receipt.membership_removed ? 'yes' : 'no'}
+        </Descriptions.Item>
+        <Descriptions.Item label="Role">
+          {receipt.role_demoted_from
+            ? `${receipt.role_demoted_from} → viewer`
+            : 'viewer (unchanged)'}
         </Descriptions.Item>
       </Descriptions>
       {receipt.still_admitted_by.length > 0 && (

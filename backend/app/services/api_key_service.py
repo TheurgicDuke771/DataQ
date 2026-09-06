@@ -173,3 +173,34 @@ def resolve_token(db: Session, token: str) -> User:
         user_id=str(user.id),
     )
     return user
+
+
+def revoke_all_for_user(db: Session, user_id: uuid.UUID, *, actor: User) -> int:
+    """Revoke every open key `user_id` holds, attributed to `actor` (an admin
+    offboarding them — #1924). No commit: the caller's transaction ends it.
+    Returns how many this call revoked."""
+    now = datetime.now(UTC)
+    keys = db.scalars(
+        select(ApiKey)
+        .where(ApiKey.user_id == user_id, ApiKey.revoked_at.is_(None), ApiKey.expires_at > now)
+        .order_by(ApiKey.created_at, ApiKey.id)
+    ).all()
+    for key in keys:
+        audit_before = audit_service.snapshot("api_key", key)
+        key.revoked_at = now
+        audit_service.record_entity_change(
+            db,
+            action="api_key.revoke",
+            entity_type="api_key",
+            entity=key,
+            actor=actor,
+            before=audit_before,
+        )
+        log.info(
+            "api_key_revoked",
+            api_key_id=str(key.id),
+            user_id=str(user_id),
+            key_prefix=key.key_prefix,
+            actor_id=str(actor.id),
+        )
+    return len(keys)

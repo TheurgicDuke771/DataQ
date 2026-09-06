@@ -271,9 +271,15 @@ and again on the receipt. An allowlist for a sign-in mode the deployment does no
 ignored, because it admits nobody. When there is no membership row at all and an allowlist
 admits the address, the step is skipped with the same variable named.
 
+The pass also sets the departing user's stored role to **viewer**, audited like any role
+change: an offboarded admin must not keep counting toward the last-admin guard, and an
+offboarded member must not keep edit rights if an allowlist ever lets them sign in again.
+The email you type to confirm is what the server checks — it is never filled in for you.
+
 The closing receipt is the record: what was transferred, how many keys and sessions were
-revoked, whether membership was withdrawn, and every step that did not run with its reason.
-Each step also writes its own audit event, alongside one for the pass as a whole.
+revoked, whether membership was withdrawn, the role change, any environment variable that
+still admits the address, and every step that did not run with its reason. Each step also
+writes its own audit event, alongside one for the pass as a whole.
 
 ### Seed and emergency access
 

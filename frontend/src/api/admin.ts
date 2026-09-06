@@ -226,6 +226,8 @@ export interface OffboardReceipt {
   api_keys_revoked: number;
   sessions_revoked: number;
   membership_removed: boolean;
+  /** The stored role before the pass set it to viewer; null if already a viewer. */
+  role_demoted_from: WorkspaceRole | null;
   /** Env vars that still admit the address after the pass — remove them there. */
   still_admitted_by: string[];
   /** Steps that did not run, with why. Empty means every step ran. */
