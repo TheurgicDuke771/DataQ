@@ -1,0 +1,68 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "88e6be19fa76",
+  "session_id": "a3286bf3-0fe0-4e1a-a16e-4bc5404a9025",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-06T13:27:21.917544Z",
+  "branch": "fix/issue-1920-offboard-chain",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "backend/app/services/audit_chain.py",
+    "backend/app/services/audit_service.py",
+    "backend/app/services/offboarding_service.py",
+    "backend/tests/services/test_audit_chain.py",
+    "backend/tests/services/test_audit_service.py",
+    "backend/tests/services/test_offboarding_service.py"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "eea3017f6a2e",
+  "checkpoint_transcript_start": 43,
+  "transcript_lines_at_start": 43,
+  "compact_transcript_start": 5,
+  "token_usage": {
+    "input_tokens": 4,
+    "cache_creation_tokens": 137647,
+    "cache_read_tokens": 134145,
+    "output_tokens": 1950,
+    "api_call_count": 2
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-06T13:27:21.886851Z",
+    "agent_lines": 14,
+    "agent_removed": 9,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 4,
+    "total_committed": 14,
+    "total_lines_changed": 27,
+    "agent_percentage": 85.18518518518519,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 55,
+      "user_lines_removed": 4,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 7,
+        "backend/app/services/audit_chain.py": 9,
+        "backend/app/services/offboarding_service.py": 2,
+        "backend/tests/services/test_audit_chain.py": 14,
+        "backend/tests/services/test_offboarding_service.py": 23
+      },
+      "user_removed_per_file": {
+        "backend/app/services/audit_chain.py": 1,
+        "backend/app/services/offboarding_service.py": 1,
+        "backend/tests/services/test_audit_chain.py": 1,
+        "backend/tests/services/test_offboarding_service.py": 1
+      }
+    }
+  ]
+}

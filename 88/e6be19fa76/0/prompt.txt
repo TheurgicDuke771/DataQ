@@ -1,0 +1,1 @@
+yes but in DataQ we are not getting the lineage untill we add a check against the table, even though inventory sync pull all the tables.
