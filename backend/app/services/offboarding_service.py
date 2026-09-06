@@ -9,9 +9,9 @@ suites still owned by somebody who can no longer sign in) is worse than none.
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
@@ -39,17 +39,20 @@ from backend.app.services import (
     membership_service,
     session_service,
 )
-from backend.app.services.admin_service import UserNotFoundError
+from backend.app.services.admin_service import get_user_or_404
 from backend.app.services.membership_guard import RoleChangeRejectedError, assert_admin_remains
 
 log = get_logger(__name__)
 
 AUDIT_ACTION = "user.offboard"
 
-#: Membership states the preview and the receipt share.
-MEMBER = "member"
-NOT_A_MEMBER = "not_a_member"
-ENV_LISTED = "env_listed"
+#: `member`: a row exists and will be withdrawn. `env_listed`: no row, an env var
+#: admits. `not_a_member`: neither. One vocabulary for the service, the API model
+#: and the receipt, so a new state cannot type-check here and 500 there.
+MembershipState = Literal["member", "not_a_member", "env_listed"]
+MEMBER: MembershipState = "member"
+NOT_A_MEMBER: MembershipState = "not_a_member"
+ENV_LISTED: MembershipState = "env_listed"
 
 
 class OffboardRejectedError(DataQError):
@@ -83,7 +86,7 @@ class OffboardPreview:
     is_self: bool
     #: Refused up front — the workspace would be left with no stored-role admin.
     is_last_admin: bool
-    membership_state: str
+    membership_state: MembershipState
     membership_id: uuid.UUID | None
     #: What the membership step will and will not achieve, naming the env var
     #: when one keeps the address signed in regardless of the row.
@@ -114,29 +117,12 @@ class OffboardReceipt:
     skipped: list[dict[str, str]] = field(default_factory=list)
 
     def as_payload(self) -> dict[str, Any]:
-        return {
-            "user_id": str(self.user_id),
-            "email": self.email,
-            "new_owner_user_id": str(self.new_owner_user_id) if self.new_owner_user_id else None,
-            "transferred_suite_ids": [str(sid) for sid in self.transferred_suite_ids],
-            "transferred_suite_count": len(self.transferred_suite_ids),
-            "api_keys_revoked": self.api_keys_revoked,
-            "sessions_revoked": self.sessions_revoked,
-            "membership_removed": self.membership_removed,
-            "role_demoted_from": self.role_demoted_from,
-            "still_admitted_by": self.still_admitted_by,
-            "skipped": self.skipped,
-        }
+        """The audit `after` payload — every field, plus the count a reader wants
+        without counting. `record()` makes the UUIDs JSON-safe."""
+        return {**asdict(self), "transferred_suite_count": len(self.transferred_suite_ids)}
 
 
 # ── Reads ─────────────────────────────────────────────────────────────────────
-
-
-def _load_user(db: Session, user_id: uuid.UUID) -> User:
-    user = db.get(User, user_id)
-    if user is None:
-        raise UserNotFoundError("user not found", detail={"user_id": str(user_id)})
-    return user
 
 
 def _is_last_admin(db: Session, user: User, *, lock: bool) -> bool:
@@ -181,7 +167,7 @@ def _count(db: Session, stmt: Select[Any]) -> int:
 
 def _membership(
     db: Session, email: str, settings: Settings | None = None
-) -> tuple[str, uuid.UUID | None, str | None, tuple[str, ...]]:
+) -> tuple[MembershipState, uuid.UUID | None, str | None, tuple[str, ...]]:
     """(state, membership_id, note, still_admitted_by) — what step (d) will do.
 
     A present row is always withdrawn: membership is `union(env, row)`, so leaving
@@ -222,7 +208,7 @@ def preview(
     db: Session, user_id: uuid.UUID, *, actor: User, settings: Settings | None = None
 ) -> OffboardPreview:
     """What the pass would do, before anything is written."""
-    user = _load_user(db, user_id)
+    user = get_user_or_404(db, user_id)
     state, member_id, note, naming = _membership(db, user.email, settings)
     return OffboardPreview(
         user_id=user.id,
@@ -299,7 +285,12 @@ def offboard(
     release savepoints inside ONE transaction that only `db` can end — a failure
     at any step takes every earlier step back with it.
     """
-    inner = Session(bind=db.connection(), join_transaction_mode="create_savepoint")
+    # `expire_on_commit=False`: each primitive's commit is a savepoint release, and
+    # expiring the identity map on every one of them made the transfer loop refresh
+    # every remaining suite per iteration.
+    inner = Session(
+        bind=db.connection(), join_transaction_mode="create_savepoint", expire_on_commit=False
+    )
     try:
         receipt = _run(
             inner,
@@ -347,7 +338,7 @@ def _run(
     # (a) Guards, from locked state. The admin sweep locks `users` in id order
     # (the departing admin's row among them) BEFORE any single-row lock, so two
     # passes, or a pass beside a role change, queue instead of deadlocking.
-    user = _load_user(db, user_id)
+    user = get_user_or_404(db, user_id)
     if _is_last_admin(db, user, lock=True):
         raise OffboardBlockedError(
             "this is the last admin in the workspace — promote another admin first",
@@ -381,16 +372,16 @@ def _run(
             f"this user owns {len(suites)} suite(s) — choose who inherits them",
             detail={"owned_suite_count": len(suites)},
         )
-    for suite in suites:
+    for suite_id in [suite.id for suite in suites]:
         assert new_owner_user_id is not None
         admin_suite_service.transfer_ownership(
             db,
-            suite.id,
+            suite_id,
             new_owner_user_id=new_owner_user_id,
             actor=actor,
             keep_previous_owner_access=keep_previous_owner_access,
         )
-        receipt.transferred_suite_ids.append(suite.id)
+        receipt.transferred_suite_ids.append(suite_id)
     if not suites:
         receipt.skipped.append({"step": "transfer_suites", "reason": "this user owns no suites"})
 

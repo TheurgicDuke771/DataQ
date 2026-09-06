@@ -376,6 +376,13 @@ class UserNotFoundError(DataQError):
     code = "user_not_found"
 
 
+def get_user_or_404(session: Session, user_id: UUID) -> User:
+    user = session.get(User, user_id)
+    if user is None:
+        raise UserNotFoundError("user not found", detail={"user_id": str(user_id)})
+    return user
+
+
 def set_user_role(
     session: Session,
     user_id: UUID,
@@ -391,8 +398,7 @@ def set_user_role(
         )
 
     # Existence first, so a bad id is a 404 rather than a lock wait.
-    if session.get(User, user_id) is None:
-        raise UserNotFoundError("user not found", detail={"user_id": str(user_id)})
+    get_user_or_404(session, user_id)
 
     # ── Everything below decides from LOCKED state, and that is load-bearing ── An earlier cut read
     # `target.role` before taking the lock and gated the last-admin guard on that value.

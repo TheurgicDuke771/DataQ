@@ -6,11 +6,11 @@ their primitives, it does not extend either axis.
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
-from pydantic import Field
+from pydantic import ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import ApiModel, ApiRequestModel
@@ -27,6 +27,8 @@ router = APIRouter(
 
 
 class OwnedSuiteRead(ApiModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
     name: str
     check_count: int
@@ -35,6 +37,8 @@ class OwnedSuiteRead(ApiModel):
 
 
 class OffboardPreviewRead(ApiModel):
+    model_config = ConfigDict(from_attributes=True)
+
     user_id: UUID
     email: str
     display_name: str | None
@@ -44,7 +48,7 @@ class OffboardPreviewRead(ApiModel):
     #: The pass is refused while this is true — nothing below it would run.
     is_last_admin: bool
     #: `member`: the row will be withdrawn. `env_listed`: no row, an env var admits.
-    membership_state: Literal["member", "not_a_member", "env_listed"]
+    membership_state: svc.MembershipState
     membership_id: UUID | None
     membership_note: str | None
     #: Env vars that admit this address on their own — the pass cannot close those.
@@ -70,6 +74,8 @@ class OffboardRequest(ApiRequestModel):
 
 
 class OffboardReceiptRead(ApiModel):
+    model_config = ConfigDict(from_attributes=True)
+
     user_id: UUID
     email: str
     new_owner_user_id: UUID | None
@@ -98,31 +104,7 @@ def preview_offboarding(
     """Read-only. Nothing here is reserved or locked — a suite can change owner
     between this call and the pass, so treat the counts as of now.
     """
-    view = svc.preview(db, user_id, actor=current_user)
-    return OffboardPreviewRead(
-        user_id=view.user_id,
-        email=view.email,
-        display_name=view.display_name,
-        role=view.role,
-        is_self=view.is_self,
-        is_last_admin=view.is_last_admin,
-        membership_state=view.membership_state,
-        membership_id=view.membership_id,
-        membership_note=view.membership_note,
-        still_admitted_by=list(view.still_admitted_by),
-        owned_suites=[
-            OwnedSuiteRead(
-                id=suite.id,
-                name=suite.name,
-                check_count=suite.check_count,
-                run_count=suite.run_count,
-                result_count=suite.result_count,
-            )
-            for suite in view.owned_suites
-        ],
-        open_api_key_count=view.open_api_key_count,
-        live_session_count=view.live_session_count,
-    )
+    return OffboardPreviewRead.model_validate(svc.preview(db, user_id, actor=current_user))
 
 
 @router.post(
@@ -152,15 +134,4 @@ def offboard_user(
         actor=current_user,
         keep_previous_owner_access=payload.keep_previous_owner_access,
     )
-    return OffboardReceiptRead(
-        user_id=receipt.user_id,
-        email=receipt.email,
-        new_owner_user_id=receipt.new_owner_user_id,
-        transferred_suite_ids=receipt.transferred_suite_ids,
-        api_keys_revoked=receipt.api_keys_revoked,
-        sessions_revoked=receipt.sessions_revoked,
-        membership_removed=receipt.membership_removed,
-        role_demoted_from=receipt.role_demoted_from,
-        still_admitted_by=receipt.still_admitted_by,
-        skipped=receipt.skipped,
-    )
+    return OffboardReceiptRead.model_validate(receipt)
