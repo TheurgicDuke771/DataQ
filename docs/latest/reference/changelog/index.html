@@ -2427,6 +2427,14 @@ the per-PR history lives in the repo's commit log and pull requests.</p>
 <h3 id="changed">Changed<a class="headerlink" href="#changed" title="Permanent link">¶</a></h3>
 <ul>
 <li>
+<p>⚠️ <strong>Suites alert through admin-configured channels only.</strong> The per-suite Notifications
+  panel no longer takes a Teams or Slack webhook URL or a recipient list: it offers the
+  channels a workspace Admin created under Settings, and that is all. Existing inline
+  destinations keep delivering and are shown as a <em>Legacy inline destinations</em> card with a
+  Clear per entry. On the API, setting one is refused for every caller (the field is
+  named); clearing stays open to anyone with edit access.</p>
+</li>
+<li>
 <p>⚠️ <strong>Every DataQ user signs in.</strong> The local stack has one sign-in mode, emailed
   codes, and a mis-set or empty sign-in configuration now stops the API with a message
   naming it instead of coming up open. Existing local setups: an <code>.env</code> with an empty

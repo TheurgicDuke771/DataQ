@@ -168,8 +168,8 @@ All three sit behind one provider interface; **trigger bindings** map
 
 Delivered when a run breaches its threshold ([Notifications & alerting](notifications.md)):
 
-- **Channels** — Microsoft Teams (workspace + per-suite webhook), Slack, and email, with
-  deep links + expected-vs-observed context.
+- **Channels** — Microsoft Teams, Slack, email and generic HMAC webhooks, defined once by an
+  admin and linked per suite, with deep links + expected-vs-observed context.
 - **Threshold** — per suite: fail-only / warn-and-worse (default) / always.
 - **Severity routing** — urgency scales with severity; critical escalates.
 - **Dedup** — you hear about a breakage once (and again on escalation); a clean run resets.

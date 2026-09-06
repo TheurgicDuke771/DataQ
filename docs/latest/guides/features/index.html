@@ -2743,8 +2743,8 @@ are <strong>not</strong> datasources (<a href="../orchestration/">Orchestration<
 <h2 id="alerting">Alerting<a class="headerlink" href="#alerting" title="Permanent link">¶</a></h2>
 <p>Delivered when a run breaches its threshold (<a href="../notifications/">Notifications &amp; alerting</a>):</p>
 <ul>
-<li><strong>Channels</strong> — Microsoft Teams (workspace + per-suite webhook), Slack, and email, with
-  deep links + expected-vs-observed context.</li>
+<li><strong>Channels</strong> — Microsoft Teams, Slack, email and generic HMAC webhooks, defined once by an
+  admin and linked per suite, with deep links + expected-vs-observed context.</li>
 <li><strong>Threshold</strong> — per suite: fail-only / warn-and-worse (default) / always.</li>
 <li><strong>Severity routing</strong> — urgency scales with severity; critical escalates.</li>
 <li><strong>Dedup</strong> — you hear about a breakage once (and again on escalation); a clean run resets.</li>

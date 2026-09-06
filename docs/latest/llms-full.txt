@@ -349,9 +349,9 @@ Workspace-wide defaults (a Slack webhook, an SMTP sender, a Teams webhook) are s
 deployed DataQ through environment configuration; a suite can override the Teams webhook and
 the email recipients.
 
-![Admin → Settings → Notification channels explains that alert routing lives on each suite](../assets/screenshots/settings-notifications.png){ .screenshot }
+![Admin → Settings → Notification channels: destinations are defined once here, then linked from each suite](../assets/screenshots/settings-notifications.png){ .screenshot }
 
-*Workspace settings point you back to the suite: that is where the routing lives.*
+*Destinations live here; each suite decides which of them it uses and when.*
 
 ## 2. Turn alerts on for the suite
 
@@ -2415,8 +2415,8 @@ All three sit behind one provider interface; **trigger bindings** map
 
 Delivered when a run breaches its threshold ([Notifications & alerting](notifications.md)):
 
-- **Channels** — Microsoft Teams (workspace + per-suite webhook), Slack, and email, with
-  deep links + expected-vs-observed context.
+- **Channels** — Microsoft Teams, Slack, email and generic HMAC webhooks, defined once by an
+  admin and linked per suite, with deep links + expected-vs-observed context.
 - **Threshold** — per suite: fail-only / warn-and-worse (default) / always.
 - **Severity routing** — urgency scales with severity; critical escalates.
 - **Dedup** — you hear about a breakage once (and again on escalation); a clean run resets.
@@ -2630,24 +2630,27 @@ behaviour. Alerts fire from the worker as soon as a run reaches a terminal state
 
 ## Channels
 
-| Channel | Configured by | How |
-|---|---|---|
-| Microsoft Teams | Workspace default **or per-suite override** | Incoming-webhook URL; the per-suite URL is set on the suite's **Notifications** panel (write-only — stored in the secret store, never echoed back) |
-| Slack | Workspace default **or per-suite override** | Incoming-webhook URL; same per-suite panel as Teams |
-| Email (SMTP) | Workspace default **or per-suite override** | SMTP host/port + from/password at the workspace level; a suite may override the **recipient** list |
+Alert destinations are **channels**: a Teams webhook, a Slack webhook, an email recipient
+list or a generic HMAC-signed webhook, each defined **once by a workspace Admin** under
+**Admin → Settings → Notification channels** and then linked to any number of suites. A
+suite's own panel offers only the channels that exist — nobody types a webhook URL into a
+suite. Webhook URLs are validated against a **per-channel** host allow-list (Teams:
+`webhook.office.com` / `logic.azure.com`; Slack: `hooks.slack.com`) so a typo cannot
+exfiltrate alerts to an arbitrary endpoint, and they are stored in the secret store, never
+echoed back.
 
-Workspace-level channels are enabled by environment configuration
+Workspace-level defaults still exist, enabled by environment configuration
 (`TEAMS_WEBHOOK_SECRET_NAME`, `SLACK_WEBHOOK_SECRET_NAME`, `EMAIL_*` — see the
 [env-var reference](https://github.com/TheurgicDuke771/DataQ/blob/main/.env.app.example)).
-A channel with no configuration is simply skipped; configuring none disables alerting.
-Webhook URLs are validated against a **per-channel** host allow-list (Teams:
-`webhook.office.com` / `logic.azure.com`; Slack: `hooks.slack.com`) so a typo can't
-exfiltrate alerts to an arbitrary endpoint. Teams, Slack and email all support a
-per-suite override; a suite that sets none falls back to its workspace default.
+A suite with no channel linked alerts through those; a suite with channels linked alerts
+through **both** — delivery is additive, not either/or.
 
-A separate, reusable **notification channel** model also exists (create once, attach to
-any suite) covering Teams/Slack/email plus a generic webhook type — currently API-only,
-with no dedicated UI yet.
+**Legacy inline destinations.** Before channels existed a suite could carry its own Teams
+or Slack webhook or recipient list. Those keep delivering, and the suite's panel shows them
+as a separate *Legacy inline destinations* card with a **Clear** per entry so an editor can
+move the suite onto a channel and retire the override. Setting a new inline destination
+is not possible any more — not from the app and not from the API, for anyone: the request
+is refused with the field named. A suite's destinations are the channels, full stop.
 
 ## Per-suite configuration
 
@@ -2656,11 +2659,8 @@ Open a suite → **Notifications** panel:
 - **Send alerts for this suite** — on/off.
 - **Alert threshold** — `On fail / critical` · `On warn and worse` (default) · `Always
   (every run)`.
-- **Teams webhook** — optional per-suite override of the workspace webhook. Write-only:
-  the tag shows *set / not set*, the URL is never displayed again.
-- **Slack webhook** — optional per-suite override of the workspace webhook, same write-only
-  behaviour as Teams.
-- **Email recipients** — optional per-suite override of the workspace `EMAIL_TO` list.
+- **Channels** — the admin-configured channels this suite alerts through; pick from the
+  list. Viewers see the linked names only.
 
 ## Severity-aware routing
 
@@ -3269,6 +3269,13 @@ the per-PR history lives in the repo's commit log and pull requests.
   turned off from the app. `GET /admin/deployment` now says which of the two is in force.
 
 ### Changed
+
+- ⚠️ **Suites alert through admin-configured channels only.** The per-suite Notifications
+  panel no longer takes a Teams or Slack webhook URL or a recipient list: it offers the
+  channels a workspace Admin created under Settings, and that is all. Existing inline
+  destinations keep delivering and are shown as a *Legacy inline destinations* card with a
+  Clear per entry. On the API, setting one is refused for every caller (the field is
+  named); clearing stays open to anyone with edit access.
 
 - ⚠️ **Every DataQ user signs in.** The local stack has one sign-in mode, emailed
   codes, and a mis-set or empty sign-in configuration now stops the API with a message

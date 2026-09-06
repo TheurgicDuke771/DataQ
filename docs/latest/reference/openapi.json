@@ -7402,6 +7402,7 @@
       },
       "SuiteNotificationUpdate": {
         "additionalProperties": false,
+        "description": "`enabled`/`alert_on` plus channel links are the whole config (#1926). The\nthree inline destinations below are accepted only as \"\" (clear a legacy\nvalue); any other value is refused for every caller.",
         "properties": {
           "alert_on": {
             "default": "warn",
