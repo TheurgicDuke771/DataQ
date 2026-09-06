@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "55afd4ebaf38",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1923-members-stale",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/55/afd4ebaf38/0/metadata.json",
+      "transcript": "/55/afd4ebaf38/0/full.jsonl",
+      "compact_transcript": "/55/afd4ebaf38/0/transcript.jsonl",
+      "content_hash": "/55/afd4ebaf38/0/content_hash.txt",
+      "prompt": "/55/afd4ebaf38/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 14272,
+    "cache_creation_tokens": 5420124,
+    "cache_read_tokens": 245257711,
+    "output_tokens": 476782,
+    "api_call_count": 553
+  }
+}
