@@ -17,7 +17,7 @@
 fastapi==0.141.1
 uvicorn[standard]==0.52.4
 python-multipart==0.0.32          # required for FastAPI form data; CVE-2026-24486/40347/42561 (was 0.0.20)
-anthropic==1.2.0                  # MIT (rule 40); the LLMProvider seam's Anthropic impl (ADR 0042). Uses httpx2 internally — coexists with our httpx pin
+anthropic==1.3.0                  # MIT (rule 40); the LLMProvider seam's Anthropic impl (ADR 0042). Uses httpx2 internally — coexists with our httpx pin
 httpx==0.28.1                     # the backend's outbound HTTP client — Teams/Slack alerting, ADF + Airflow polling, Marquez lineage, the OpenBao secret store (ADR 0039). Was dev-only and reached prod transitively via openlineage, i.e. unpinned from our side (#1055)
 
 # ── Task queue ──
