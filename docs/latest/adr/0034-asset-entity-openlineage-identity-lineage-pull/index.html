@@ -2303,6 +2303,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#amendment-2026-09-06-warehouse-native-lineage-flipped-to-default-on" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Amendment (2026-09-06) — warehouse-native lineage flipped to default ON
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2503,6 +2514,25 @@ graph.</p>
 <p><strong>Status of decision 5:</strong> amended. Authz stays derived from suite grants (no asset-level
 ACLs — the rejection in <em>Alternatives</em> stands). What changes is that the derivation now
 says explicitly what an <em>ungranted</em> asset is: not a secret, and not a dead link.</p>
+<h2 id="amendment-2026-09-06-warehouse-native-lineage-flipped-to-default-on">Amendment (2026-09-06) — warehouse-native lineage flipped to default ON<a class="headerlink" href="#amendment-2026-09-06-warehouse-native-lineage-flipped-to-default-on" title="Permanent link">¶</a></h2>
+<p>The <code>refresh_warehouse_lineage</code> beat task (Snowflake <code>GET_LINEAGE</code> / UC <code>system.access</code>)
+shipped gated behind <code>WAREHOUSE_LINEAGE_ENABLED</code>, defaulting <code>false</code> — recorded only as an
+inline comment (<code>backend/app/core/config.py</code>), never in this ADR, because the concern at
+the time was narrow: the underlying views need <code>ACCOUNT_USAGE</code>/<code>system.access</code> grants a
+connection's principal might not hold, and erroring a daily beat tick on every warehouse
+lacking them looked like unwanted noise.</p>
+<p>In practice this meant the lineage graph — the flagship "asset-first" surface this ADR
+exists to build — stayed dark for every connection until an admin discovered and flipped
+an environment variable nothing in the UI surfaces. Combined with ADR 0040's <code>inventory_sync</code>
+being opt-in too, the <em>only</em> thing that reliably populated <code>assets</code> and <code>lineage_edges</code> in
+practice was authoring a check — the lazy <code>resolve_and_upsert_asset</code> fallback this ADR
+never intended as the primary path.</p>
+<p><strong>Now default ON.</strong> A principal missing the needed grants degrades per-connection
+(<code>lineage_degraded_reason</code>/<code>lineage_last_error</code>, surfaced via <code>warehouse_lineage_status</code> —
+§ decision 5's amendment) rather than the whole feature staying invisible; that degraded
+path already existed and was exercised in testing before this flip. Set
+<code>WAREHOUSE_LINEAGE_ENABLED=false</code> to opt a deployment back out wholesale (e.g. a principal
+known in advance to lack the grants everywhere, or a cost-sensitive <code>ACCOUNT_USAGE</code> budget).</p>
 
 
 

@@ -2389,20 +2389,36 @@ rows (zero suites, empty scorecard, every dimension uncovered) — that IS the
 runs, so its scorecard shows coverage gaps, never a score.</p>
 <h2 id="5-opt-in-bounds">5. Opt-in + bounds<a class="headerlink" href="#5-opt-in-bounds" title="Permanent link">¶</a></h2>
 <ul>
-<li><strong>Per-connection opt-in</strong> (<code>inventory_sync: true</code> in the connection's JSONB
-  config; a checkbox on the Snowflake/UC connection forms; default off). No
-  migration — config is already free-form, and the flag is not a secret.</li>
-<li><strong>Cap:</strong> <code>ASSET_INVENTORY_MAX_TABLES</code> (default 2000) per connection; when the
+<li><strong>Per-connection toggle</strong> (<code>inventory_sync</code> in the connection's JSONB config;
+  a checkbox on the Snowflake/UC connection forms). No migration — config is
+  already free-form, and the flag is not a secret.</li>
+</ul>
+<blockquote>
+<p><strong>Amendment (2026-09-06):</strong> flipped to <strong>default ON</strong> (<code>inventory_sync: false</code>
+is now the opt-out, applied uniformly to connections with no key present),
+alongside <code>WAREHOUSE_LINEAGE_ENABLED</code> (ADR 0034 §858) defaulting to <code>true</code>.
+The original "default off" framing above optimized for never running an
+unconsented warehouse query — but it meant the one thing DataQ tells users
+it is ("asset-first") never actually happened without an admin finding and
+flipping two separate, undocumented-in-the-UI switches first; the reported
+symptom was "lineage only appears once a check exists," which is exactly the
+lazy-<code>resolve_and_upsert_asset</code> fallback path this ADR's §4 already
+describes, standing in as the <em>only</em> path in practice. The cost profile is
+unchanged from §3/§6 (INFORMATION_SCHEMA-class enumeration queries, capped by
+<code>ASSET_INVENTORY_MAX_TABLES</code>) — this is a stance change on who bears the
+decision, not a new capability. Existing connections need no backfill: an
+absent key already reads as opted-in under the new default.
+- <strong>Cap:</strong> <code>ASSET_INVENTORY_MAX_TABLES</code> (default 2000) per connection; when the
   enumeration exceeds it, sync the first N in catalog order and log the
   overflow loudly (<code>inventory_sync_truncated</code>, with counts) — a silent cap
-  reads as "covered everything" (the no-silent-caps rule).</li>
-<li><strong>Fail-soft per connection</strong>, like the lineage refresh: one unreachable
+  reads as "covered everything" (the no-silent-caps rule).
+- <strong>Fail-soft per connection</strong>, like the lineage refresh: one unreachable
   warehouse logs and never aborts the sweep of the others. <em>(Amended later: the
   guarantee explicitly covers the outcome BOOKKEEPING too — that write is
   row-locked, re-fetches the connection by id rather than trusting an
   instance the preceding rollback expired, and can never raise. Each of those
-  three, unguarded, turned a per-connection failure into a per-sweep one.)</em></li>
-<li><strong>UC grant prerequisite:</strong> <code>system.information_schema</code> is not implicitly
+  three, unguarded, turned a per-connection failure into a per-sweep one.)</em>
+- <strong>UC grant prerequisite:</strong> <code>system.information_schema</code> is not implicitly
   readable — the connection's PAT needs an explicit <code>SELECT</code> grant on it (the
   same class of prerequisite as the lineage pull's <code>system.access</code> grant). The
   toggle's form hint and deploy/README say so. <strong>The user-facing health signal
@@ -2414,8 +2430,8 @@ runs, so its scorecard shows coverage gaps, never a score.</p>
   the failure having been raised by the enumeration query itself — a
   permission-shaped failure from the secret store or the driver handshake gets
   the generic reason, because naming a grant for one of those would send an
-  admin to fix something that was never broken.</system></li>
-<li><strong>Zero-row enumeration is not a failure — but it isn't silent either:</strong> the failure
+  admin to fix something that was never broken.
+- <strong>Zero-row enumeration is not a failure — but it isn't silent either:</strong> the failure
   path above only covers the enumeration QUERY erroring. Snowflake's
   <code>INFORMATION_SCHEMA</code> is privilege-filtered, not access-denied — a role missing
   every grant on the objects gets an empty result set, not an exception — so a
@@ -2430,8 +2446,8 @@ runs, so its scorecard shows coverage gaps, never a score.</p>
   neutral informational note on the connections list ("0 tables found"), not an
   error or warning — reusing <code>inventory_sync_last_error</code> for this would just
   move the "confident wrong answer" failure mode this project has named before to the opposite polarity.
-  A drop from N&gt;0 renders as a distinct warning badge ("tables dropped to 0").</li>
-</ul>
+  A drop from N&gt;0 renders as a distinct warning badge ("tables dropped to 0").</system></p>
+</blockquote>
 <h2 id="6-s3-compatible-namespace-decided-here">6. S3-compatible namespace (decided here)<a class="headerlink" href="#6-s3-compatible-namespace-decided-here" title="Permanent link">¶</a></h2>
 <p><code>_resolve_s3</code> keys the namespace on bucket alone (<code>s3://{bucket}</code>), which was
 sound while every <code>s3</code> connection was AWS (bucket names globally unique). With
