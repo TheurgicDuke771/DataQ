@@ -404,14 +404,14 @@ function ConnectionCard({
                   <Badge status="warning" text="DMF unavailable" />
                 </Tooltip>
               ))}
-            {/* Opted-in inventory sync (#1104) whose principal can't read the
+            {/* Inventory sync (on by default, #1104) whose principal can't read the
                 enumeration query — e.g. a UC PAT missing SELECT on
                 system.information_schema — used to fail every daily tick with
-                nothing visible here: toggle on, connection test green (the
+                nothing visible here: sync on, connection test green (the
                 `SELECT 1` probe never exercises this query), zero assets ever
                 appear. `inventory_sync_failing_since` is only set while the
-                connection is opted in AND currently unhealthy. */}
-            {Boolean(connection.config?.inventory_sync) &&
+                connection is opted in (not explicitly `false`) AND currently unhealthy. */}
+            {connection.config?.inventory_sync !== false &&
               connection.inventory_sync_failing_since && (
                 <Tooltip
                   title={`Inventory sync failing since ${formatTimestamp(connection.inventory_sync_failing_since)}: ${connection.inventory_sync_last_error ?? 'unknown reason'}`}
@@ -429,7 +429,7 @@ function ConnectionCard({
                 `inventory_sync_last_table_count` (only ever stamped on a
                 success) is describing the CURRENT state, not a stale reading
                 left over from before the sync started erroring. */}
-            {Boolean(connection.config?.inventory_sync) &&
+            {connection.config?.inventory_sync !== false &&
               !connection.inventory_sync_failing_since &&
               connection.inventory_sync_last_table_count === 0 &&
               (connection.inventory_sync_zero_since ? (

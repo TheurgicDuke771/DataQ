@@ -157,8 +157,8 @@ def create_celery_app() -> Celery:
                 "task": "beat_heartbeat",
                 "schedule": BEAT_HEARTBEAT_INTERVAL_S,  # 1 minute
             },
-            # Warehouse-native lineage refresh (#858, ADR 0034): dark by default —
-            # no-ops unless WAREHOUSE_LINEAGE_ENABLED.
+            # Warehouse-native lineage refresh (#858, ADR 0034): on by default —
+            # no-ops if WAREHOUSE_LINEAGE_ENABLED is set false.
             "refresh-warehouse-lineage": {
                 "task": "refresh_warehouse_lineage",
                 "schedule": crontab(hour="2", minute="37"),  # daily, 02:37 UTC
@@ -169,7 +169,8 @@ def create_celery_app() -> Celery:
                 "task": "refresh_credential_expiry",
                 "schedule": crontab(hour="2", minute="57"),  # daily, 02:57 UTC
             },
-            # Warehouse inventory sync (#919, ADR 0040): per-connection opt-in, no global gate.
+            # Warehouse inventory sync (#919, ADR 0040): on by default at the connection grain,
+            # opt-out via `inventory_sync: false`; no global gate.
             "sync-asset-inventory": {
                 "task": "sync_asset_inventory",
                 "schedule": crontab(hour="3", minute="17"),  # daily, 03:17 UTC

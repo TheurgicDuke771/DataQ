@@ -86,9 +86,24 @@ runs, so its scorecard shows coverage gaps, never a score.
 
 ## 5. Opt-in + bounds
 
-- **Per-connection opt-in** (`inventory_sync: true` in the connection's JSONB
-  config; a checkbox on the Snowflake/UC connection forms; default off). No
-  migration — config is already free-form, and the flag is not a secret.
+- **Per-connection toggle** (`inventory_sync` in the connection's JSONB config;
+  a checkbox on the Snowflake/UC connection forms). No migration — config is
+  already free-form, and the flag is not a secret.
+
+> **Amendment (2026-09-06):** flipped to **default ON** (`inventory_sync: false`
+> is now the opt-out, applied uniformly to connections with no key present),
+> alongside `WAREHOUSE_LINEAGE_ENABLED` (ADR 0034 §858) defaulting to `true`.
+> The original "default off" framing above optimized for never running an
+> unconsented warehouse query — but it meant the one thing DataQ tells users
+> it is ("asset-first") never actually happened without an admin finding and
+> flipping two separate, undocumented-in-the-UI switches first; the reported
+> symptom was "lineage only appears once a check exists," which is exactly the
+> lazy-`resolve_and_upsert_asset` fallback path this ADR's §4 already
+> describes, standing in as the *only* path in practice. The cost profile is
+> unchanged from §3/§6 (INFORMATION_SCHEMA-class enumeration queries, capped by
+> `ASSET_INVENTORY_MAX_TABLES`) — this is a stance change on who bears the
+> decision, not a new capability. Existing connections need no backfill: an
+> absent key already reads as opted-in under the new default.
 - **Cap:** `ASSET_INVENTORY_MAX_TABLES` (default 2000) per connection; when the
   enumeration exceeds it, sync the first N in catalog order and log the
   overflow loudly (`inventory_sync_truncated`, with counts) — a silent cap

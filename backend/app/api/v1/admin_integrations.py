@@ -321,9 +321,10 @@ def set_inventory_sync(
     db: Annotated[Session, Depends(get_db)],
     secret_store: Annotated[SecretStore, Depends(get_secret_store)],
 ) -> InventorySyncRead:
-    """Flip the ADR 0040 opt-in on the connection's config, through the ordinary
-    connection-update path — so the change is audited and snapshotted into
-    `connection_versions` exactly like an edit made in the connection editor.
+    """Flip the ADR 0040 `inventory_sync` toggle (on by default) on the connection's
+    config, through the ordinary connection-update path — so the change is audited
+    and snapshotted into `connection_versions` exactly like an edit made in the
+    connection editor.
 
     Turning it ON schedules nothing: the sweep is a daily beat task, so use "Run now"
     to see tables before then. Turning it OFF clears the sync bookkeeping and leaves
