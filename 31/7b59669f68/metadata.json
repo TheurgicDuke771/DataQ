@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "317b59669f68",
+  "strategy": "manual-commit",
+  "branch": "feature/asset-first-lineage-default-on",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/services/test_poll_health.py",
+    "frontend/tests/components/ConnectionForm.test.tsx",
+    "frontend/tests/components/connectionFormSpec.test.ts",
+    "frontend/tests/pages/ConnectionNew.test.tsx",
+    "frontend/tests/pages/Connections.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/31/7b59669f68/0/metadata.json",
+      "transcript": "/31/7b59669f68/0/full.jsonl",
+      "compact_transcript": "/31/7b59669f68/0/transcript.jsonl",
+      "content_hash": "/31/7b59669f68/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 64,
+    "cache_creation_tokens": 24177,
+    "cache_read_tokens": 6861304,
+    "output_tokens": 9904,
+    "api_call_count": 32
+  }
+}
