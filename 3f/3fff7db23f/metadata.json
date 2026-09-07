@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "3f3fff7db23f",
+  "strategy": "manual-commit",
+  "branch": "feature/asset-first-lineage-default-on",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/components/connections/ConnectionForm.tsx",
+    "frontend/src/components/connections/ConnectionTypeFields.tsx",
+    "frontend/src/components/connections/connectionFormSpec.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/3f/3fff7db23f/0/metadata.json",
+      "transcript": "/3f/3fff7db23f/0/full.jsonl",
+      "compact_transcript": "/3f/3fff7db23f/0/transcript.jsonl",
+      "content_hash": "/3f/3fff7db23f/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 52,
+    "cache_creation_tokens": 15683,
+    "cache_read_tokens": 5061196,
+    "output_tokens": 7938,
+    "api_call_count": 26
+  }
+}
