@@ -564,9 +564,11 @@ def update_connection(
             supplied_secret=secret,
             supplied_extra_secrets={"catalog": catalog_secret},
         )
-        was_syncing = bool(stored_config.get("inventory_sync"))
+        # Asset-first default (2026-09): a connection syncs unless `inventory_sync` is
+        # explicitly `false` — an absent key is opted IN, not opted out.
+        was_syncing = stored_config.get("inventory_sync") is not False
         conn.config = merged_config
-        if was_syncing and not bool((conn.config or {}).get("inventory_sync")):
+        if was_syncing and (conn.config or {}).get("inventory_sync") is False:
             # Turning the ADR 0040 toggle OFF ends the sync, so the outcome state describes
             # something that no longer happens (#1104).
             conn.inventory_sync_last_attempted_at = None

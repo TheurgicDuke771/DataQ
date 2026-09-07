@@ -31,8 +31,13 @@ class InventorySyncEnumerationError(Exception):
 
 
 def inventory_opted_in(connection: Connection) -> bool:
-    """The per-connection opt-in gate: ``inventory_sync`` truthy in config."""
-    return bool((connection.config or {}).get("inventory_sync"))
+    """The per-connection sync gate: on unless ``inventory_sync`` is explicitly ``false``.
+
+    Asset-first by default (2026-09) — a table is a known asset the moment it exists in the
+    warehouse, not once someone remembers to flip a switch. ``False`` is the only opt-out; an
+    absent key (every connection created before this flip) reads as opted in.
+    """
+    return (connection.config or {}).get("inventory_sync") is not False
 
 
 def sync_connection_inventory(

@@ -312,7 +312,9 @@ class TestWarehouseLineageStalenessSurface:
         from backend.app.core.config import get_settings
 
         monkeypatch.setenv("LINEAGE_STALE_AFTER_HOURS", "48")
-        monkeypatch.delenv("WAREHOUSE_LINEAGE_ENABLED", raising=False)
+        # Asset-first default (2026-09): the setting is now on unless explicitly disabled,
+        # so "off" must be set, not merely left unset.
+        monkeypatch.setenv("WAREHOUSE_LINEAGE_ENABLED", "false")
         get_settings.cache_clear()
 
         from backend.app.services.asset_view_service import warehouse_lineage_status

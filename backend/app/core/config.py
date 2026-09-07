@@ -77,9 +77,10 @@ class Settings(BaseSettings):
     lineage_provider: str = ""
     marquez_url: str | None = None
 
-    # Warehouse-native lineage pull (ADR 0034, #858) — off by default: it queries ACCOUNT_USAGE /
-    # system.access, which need grants the principal may lack.
-    warehouse_lineage_enabled: bool = False
+    # Warehouse-native lineage pull (ADR 0034, #858) — on by default (asset-first: lineage is a
+    # baseline capability, not an add-on). Queries ACCOUNT_USAGE / system.access; set false if the
+    # principal lacks those grants and the daily refresh should no-op instead of erroring per run.
+    warehouse_lineage_enabled: bool = True
 
     # Snowflake GET_LINEAGE seeds walked per refresh (#892) — a latency/cost bound.
     warehouse_lineage_max_seeds: int = 500

@@ -33,8 +33,9 @@ def _user(db_session: Any) -> User:
 
 def _connection(db_session: Any, *, opted_in: bool, conn_type: str = "snowflake") -> Connection:
     config: dict[str, Any] = {"account": "ACC-1", "database": "DATAQ_DB"}
-    if opted_in:
-        config["inventory_sync"] = True
+    # Asset-first default (2026-09): a missing key opts IN, so the opt-OUT case must be
+    # written explicitly rather than simply omitted.
+    config["inventory_sync"] = opted_in if opted_in else False
     conn = Connection(
         name=f"{conn_type}-{uuid.uuid4().hex[:8]}",
         type=conn_type,
@@ -390,7 +391,7 @@ class TestZeroTableEnumeration:
         db_session.refresh(conn)
         assert conn.inventory_sync_zero_since is not None
 
-        conn.config = {k: v for k, v in conn.config.items() if k != "inventory_sync"}
+        conn.config = {**conn.config, "inventory_sync": False}
         db_session.commit()
         inventory_service.sync_asset_inventory(db_session, secret_store=_store())
 
@@ -529,7 +530,7 @@ class TestOutcomeRobustness:
         db_session.refresh(conn)
         assert conn.inventory_sync_failing_since is not None
 
-        conn.config = {k: v for k, v in conn.config.items() if k != "inventory_sync"}
+        conn.config = {**conn.config, "inventory_sync": False}
         db_session.commit()
         inventory_service.sync_asset_inventory(db_session, secret_store=_store())
 

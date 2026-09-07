@@ -57,9 +57,11 @@ class SnowflakeConfig(BaseModel):
     schema_: str = Field(alias="schema")
     warehouse: str
     role: str | None = None
-    # Warehouse inventory sync opt-in (#919, ADR 0040): when true, the daily sync enumerates this
-    # connection's database into `assets`.
-    inventory_sync: bool = False
+    # Warehouse inventory sync (#919, ADR 0040): on by default (asset-first) — the daily sync
+    # enumerates this connection's database into `assets` unless explicitly set false. NOTE: this
+    # default is documentation only — the real gate is `inventory_service.inventory_opted_in`,
+    # which reads the raw connection.config dict and never sees this validated model.
+    inventory_sync: bool = True
     # Auth method. 'password' (default — back-compat for existing configs that carry no auth_type)
     # puts the password in the DSN. 'key_pair' authenticates with an RSA private key passed as
     # `private_key` connect-arg, and the DSN carries no password; the secret is either a bare PEM

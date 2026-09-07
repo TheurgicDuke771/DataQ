@@ -13,7 +13,7 @@ def _settings(*, enabled: bool) -> Any:
     return _S()
 
 
-def test_task_dark_by_default(monkeypatch: Any) -> None:
+def test_task_no_ops_when_disabled(monkeypatch: Any) -> None:
     opened = False
 
     def _session() -> Any:

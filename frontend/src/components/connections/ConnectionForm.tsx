@@ -20,6 +20,7 @@ import {
   composeSecret,
   initialConfigForType,
   movedDestinationFields,
+  withToggleDefaults,
 } from './connectionFormSpec';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { errorMessage } from '../../utils/errors';
@@ -68,7 +69,13 @@ export function ConnectionForm({
   useEffect(() => {
     form.resetFields();
     if (connection) {
-      form.setFieldsValue({ name: connection.name, config: connection.config });
+      // A stored config with no `inventory_sync` key reads as opted IN under the current
+      // backend default — `withToggleDefaults` makes the toggle render that, rather than
+      // showing OFF for a connection that is actually syncing (see connectionFormSpec.ts).
+      form.setFieldsValue({
+        name: connection.name,
+        config: withToggleDefaults(type, connection.config),
+      });
     } else {
       form.setFieldsValue({ config: initialConfigForType(type) });
     }

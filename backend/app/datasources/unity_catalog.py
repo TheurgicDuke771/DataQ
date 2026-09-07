@@ -49,8 +49,8 @@ class UnityCatalogConfig(BaseModel):
 
     workspace_url: str
     warehouse_id: str
-    # Warehouse inventory sync opt-in (#919, ADR 0040) — see SnowflakeConfig.
-    inventory_sync: bool = False
+    # Warehouse inventory sync (#919, ADR 0040) — on by default; see SnowflakeConfig.
+    inventory_sync: bool = True
 
     @field_validator("workspace_url")
     @classmethod

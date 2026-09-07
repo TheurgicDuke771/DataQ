@@ -227,11 +227,16 @@ def test_turning_inventory_sync_off_clears_its_outcome_state(db_session: Any) ->
     conn.inventory_sync_failing_since = datetime.now(UTC)
     db_session.flush()
 
+    # Asset-first default (2026-09): a missing key opts IN, so turning the sync OFF
+    # requires an explicit `false`, not just omitting the key.
     updated = svc.update_connection(
-        db_session, conn.id, config=dict(_SF_CONFIG), secret_store=FakeSecretStore()
+        db_session,
+        conn.id,
+        config={**_SF_CONFIG, "inventory_sync": False},
+        secret_store=FakeSecretStore(),
     )
 
-    assert updated.config.get("inventory_sync") is None
+    assert updated.config.get("inventory_sync") is False
     assert updated.inventory_sync_last_attempted_at is None
     assert updated.inventory_sync_last_error is None
     assert updated.inventory_sync_failing_since is None

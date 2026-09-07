@@ -161,3 +161,26 @@ graph.
 **Status of decision 5:** amended. Authz stays derived from suite grants (no asset-level
 ACLs — the rejection in *Alternatives* stands). What changes is that the derivation now
 says explicitly what an *ungranted* asset is: not a secret, and not a dead link.
+
+## Amendment (2026-09-06) — warehouse-native lineage flipped to default ON
+
+The `refresh_warehouse_lineage` beat task (Snowflake `GET_LINEAGE` / UC `system.access`)
+shipped gated behind `WAREHOUSE_LINEAGE_ENABLED`, defaulting `false` — recorded only as an
+inline comment (`backend/app/core/config.py`), never in this ADR, because the concern at
+the time was narrow: the underlying views need `ACCOUNT_USAGE`/`system.access` grants a
+connection's principal might not hold, and erroring a daily beat tick on every warehouse
+lacking them looked like unwanted noise.
+
+In practice this meant the lineage graph — the flagship "asset-first" surface this ADR
+exists to build — stayed dark for every connection until an admin discovered and flipped
+an environment variable nothing in the UI surfaces. Combined with ADR 0040's `inventory_sync`
+being opt-in too, the *only* thing that reliably populated `assets` and `lineage_edges` in
+practice was authoring a check — the lazy `resolve_and_upsert_asset` fallback this ADR
+never intended as the primary path.
+
+**Now default ON.** A principal missing the needed grants degrades per-connection
+(`lineage_degraded_reason`/`lineage_last_error`, surfaced via `warehouse_lineage_status` —
+§ decision 5's amendment) rather than the whole feature staying invisible; that degraded
+path already existed and was exercised in testing before this flip. Set
+`WAREHOUSE_LINEAGE_ENABLED=false` to opt a deployment back out wholesale (e.g. a principal
+known in advance to lack the grants everywhere, or a cost-sensitive `ACCOUNT_USAGE` budget).

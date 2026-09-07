@@ -13,6 +13,13 @@ export interface TextField {
   type?: 'text' | 'tags' | 'toggle';
   /** Helper text under the field. */
   extra?: string;
+  /**
+   * `toggle` only: the value an absent config key should be treated as. Must be applied by
+   * merging into the config object before it reaches the form (see `withToggleDefaults`) —
+   * a per-`Form.Item` `initialValue` is silently overwritten the moment `setFieldsValue`
+   * replaces the whole `config` subtree, which both the create and edit seeding paths do.
+   */
+  default?: boolean;
 }
 
 export interface AuthOption {
@@ -78,6 +85,7 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
         label: 'Inventory sync',
         type: 'toggle',
         optional: true,
+        default: true,
         extra: 'Daily sync of every table in this database into the asset view.',
       },
     ],
@@ -135,6 +143,7 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
         label: 'Inventory sync',
         type: 'toggle',
         optional: true,
+        default: true,
         extra:
           'Daily sync of every table this workspace exposes into the asset view. ' +
           'Needs SELECT on system.information_schema for this PAT.',
@@ -257,12 +266,33 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
   },
 };
 
+/**
+ * Fill in any `toggle` field's default for a key the config doesn't carry — a key already
+ * present (`true`, or an explicit `false` opt-out) is left untouched. Must run on every config
+ * object before it reaches the form: a `Form.Item`'s own `initialValue` is silently discarded
+ * the moment `setFieldsValue` replaces the whole `config` subtree, which both the create and
+ * edit seeding paths in `ConnectionForm` do.
+ */
+export function withToggleDefaults(
+  type: ConnectionType,
+  config: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const result = { ...config };
+  for (const field of CONNECTION_FORM_SPECS[type].textFields) {
+    if (field.type === 'toggle' && field.default !== undefined && !(field.name in result)) {
+      result[field.name] = field.default;
+    }
+  }
+  return result;
+}
+
 /** Initial `config` for a freshly-selected type — seeds the default auth_type
- * (if any) plus the type's own `defaultConfig` (e.g. Iceberg's `catalog_name`). */
+ * (if any) plus the type's own `defaultConfig` (e.g. Iceberg's `catalog_name`), and any
+ * `toggle` field's default (e.g. `inventory_sync`). */
 export function initialConfigForType(type: ConnectionType): Record<string, unknown> {
   const spec = CONNECTION_FORM_SPECS[type];
   const auth = spec.auth ? { auth_type: spec.auth[0].value } : {};
-  return { ...spec.defaultConfig, ...auth };
+  return withToggleDefaults(type, { ...spec.defaultConfig, ...auth });
 }
 
 /** The auth mode a connection's config selects (undefined for single-secret types). */

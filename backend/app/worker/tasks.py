@@ -856,8 +856,8 @@ def reap_stuck_llm_invocations() -> int:
 
 @celery_app.task(name="sync_asset_inventory")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
 def sync_asset_inventory() -> int:
-    """Daily warehouse inventory sync (#919, ADR 0040) — dark by default at the
-    connection grain (``inventory_sync: true``); no warehouse query without opt-in.
+    """Daily warehouse inventory sync (#919, ADR 0040) — on by default at the
+    connection grain; ``inventory_sync: false`` is the opt-out (asset-first, 2026-09).
     Its `last_seen` advancement also keeps discovered assets out of the orphan sweep.
     """
     from backend.app.services import inventory_service
@@ -1018,8 +1018,9 @@ def refresh_lineage_pull() -> int:
 
 @celery_app.task(name="refresh_warehouse_lineage")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
 def refresh_warehouse_lineage() -> int:
-    """Daily warehouse-native lineage refresh (#858, ADR 0034) — dark by default
-    (``WAREHOUSE_LINEAGE_ENABLED``; the views need grants the principal may lack).
+    """Daily warehouse-native lineage refresh (#858, ADR 0034) — on by default
+    (``WAREHOUSE_LINEAGE_ENABLED``; set false if the principal lacks the ACCOUNT_USAGE /
+    system.access grants this needs and the daily refresh should no-op instead of erroring).
     Per-connection fail-soft: one unreachable warehouse never aborts the sweep.
     """
     if not get_settings().warehouse_lineage_enabled:

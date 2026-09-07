@@ -151,12 +151,15 @@ describe('Connections', () => {
         type: 'unity_catalog',
         config: { inventory_sync: true },
       }),
-      // NOT opted in, even though failing_since happens to be set — must stay
-      // unbadged, since the badge is scoped to opted-in connections only.
+      // Explicitly opted OUT (asset-first default, 2026-09: a missing key opts IN, so this
+      // must set `inventory_sync: false` to actually be the not-opted-in case), even though
+      // failing_since happens to be set — must stay unbadged, since the badge is scoped to
+      // opted-in connections only.
       conn({
         id: 'c3',
         name: 'uc-not-opted-in',
         type: 'unity_catalog',
+        config: { inventory_sync: false },
         inventory_sync_failing_since: '2026-08-01T00:00:00Z',
       }),
     ]);

@@ -46,7 +46,11 @@ describe('initialConfigForType', () => {
   });
 
   it('still seeds the default auth_type for a type that has one', () => {
-    expect(initialConfigForType('snowflake')).toEqual({ auth_type: 'password' });
+    // Also carries `inventory_sync: true` — its toggle field's default (asset-first, 2026-09).
+    expect(initialConfigForType('snowflake')).toEqual({
+      auth_type: 'password',
+      inventory_sync: true,
+    });
   });
 
   it('is empty for a type with neither auth modes nor defaults', () => {

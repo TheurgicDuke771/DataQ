@@ -8860,7 +8860,7 @@
     },
     "/api/v1/admin/inventory-sync/{connection_id}": {
       "patch": {
-        "description": "Flip the ADR 0040 opt-in on the connection's config, through the ordinary\nconnection-update path \u2014 so the change is audited and snapshotted into\n`connection_versions` exactly like an edit made in the connection editor.\n\nTurning it ON schedules nothing: the sweep is a daily beat task, so use \"Run now\"\nto see tables before then. Turning it OFF clears the sync bookkeeping and leaves\nalready-discovered assets in place.",
+        "description": "Flip the ADR 0040 `inventory_sync` toggle (on by default) on the connection's\nconfig, through the ordinary connection-update path \u2014 so the change is audited\nand snapshotted into `connection_versions` exactly like an edit made in the\nconnection editor.\n\nTurning it ON schedules nothing: the sweep is a daily beat task, so use \"Run now\"\nto see tables before then. Turning it OFF clears the sync bookkeeping and leaves\nalready-discovered assets in place.",
         "operationId": "set_inventory_sync_api_v1_admin_inventory_sync__connection_id__patch",
         "parameters": [
           {

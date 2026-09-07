@@ -18,9 +18,10 @@ function ConfigTextField({
 }) {
   const optional = field.optional && !forceRequired;
   if (field.type === 'toggle') {
-    // A boolean config flag (e.g. `inventory_sync`, ADR 0040). `valuePropName` wires the Switch's
-    // `checked` into the form value; an untouched toggle simply omits the key, which the backend
-    // defaults to false.
+    // A boolean config flag (e.g. `inventory_sync`, ADR 0040). The default the switch shows
+    // for an untouched/absent key comes from `withToggleDefaults` — merged into the config
+    // BEFORE it reaches the form, in `ConnectionForm`'s create/edit seeding — rather than a
+    // `Form.Item initialValue` here, which `setFieldsValue({ config })` would silently discard.
     return (
       <Form.Item
         name={['config', field.name]}
