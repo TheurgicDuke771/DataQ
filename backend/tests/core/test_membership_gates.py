@@ -537,14 +537,14 @@ def _doors() -> list[Door]:
             credential="session",
             surface="rest",
             setup=lambda db, user: session_service.create_session(db, user)[1],
-            exercise=lambda db, token: session_service.resolve_token(db, token),
+            exercise=session_service.resolve_token,
         ),
         Door(
             name="api_key_service.resolve_token",
             credential="pat",
             surface="rest",
             setup=lambda db, user: api_key_service.create_key(db, user, name="sweep")[1],
-            exercise=lambda db, token: api_key_service.resolve_token(db, token),
+            exercise=api_key_service.resolve_token,
         ),
         Door(
             name="mcp.auth.resolve_current_user",
