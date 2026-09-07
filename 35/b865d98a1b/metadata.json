@@ -1,0 +1,47 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "35b865d98a1b",
+  "strategy": "manual-commit",
+  "branch": "feature/asset-first-lineage-default-on",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/admin_integrations.py",
+    "backend/app/core/config.py",
+    "backend/app/datasources/snowflake.py",
+    "backend/app/datasources/unity_catalog.py",
+    "backend/app/services/connection_service.py",
+    "backend/app/services/inventory_service.py",
+    "backend/app/worker/celery_app.py",
+    "backend/app/worker/tasks.py",
+    "backend/tests/services/test_connection_service.py",
+    "backend/tests/services/test_inventory_service.py",
+    "backend/tests/worker/test_warehouse_lineage_task.py",
+    "docs/site/adr/0034-asset-entity-openlineage-identity-lineage-pull.md",
+    "docs/site/adr/0040-warehouse-inventory-sync-table-enumeration-seam.md",
+    "frontend/src/components/connections/ConnectionTypeFields.tsx",
+    "frontend/src/pages/Connections.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/35/b865d98a1b/0/metadata.json",
+      "transcript": "/35/b865d98a1b/0/full.jsonl",
+      "compact_transcript": "/35/b865d98a1b/0/transcript.jsonl",
+      "content_hash": "/35/b865d98a1b/0/content_hash.txt",
+      "prompt": "/35/b865d98a1b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 142,
+    "cache_creation_tokens": 152872,
+    "cache_read_tokens": 11219957,
+    "output_tokens": 23926,
+    "api_call_count": 71,
+    "subagent_tokens": {
+      "input_tokens": 38,
+      "cache_creation_tokens": 135393,
+      "cache_read_tokens": 2176336,
+      "output_tokens": 3889,
+      "api_call_count": 19
+    }
+  }
+}

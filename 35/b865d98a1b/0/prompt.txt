@@ -1,0 +1,2 @@
+Make both ON by default. 
+We are claiming we are asset first, but we are not acting anything like tha at all.
