@@ -461,3 +461,64 @@ describe('ConnectionForm — moving a credential destination (#1401)', () => {
     expect(mockUpdate.mock.calls[0][1].secret).toBeUndefined();
   });
 });
+
+describe('ConnectionForm — inventory_sync toggle default (asset-first, 2026-09)', () => {
+  const noInventoryKeyConnection: Connection = {
+    id: 'conn-sf-2',
+    name: 'legacy-sf',
+    type: 'snowflake',
+    env: 'dev',
+    // No `inventory_sync` key — the common case for every connection created before the
+    // default flipped. The backend now reads this as opted IN, and the form must render
+    // (and resubmit) that, not a stale "off".
+    config: {
+      account: 'ab12345.eu-west-1',
+      user: 'DQ',
+      database: 'ANALYTICS',
+      schema: 'PUBLIC',
+      warehouse: 'COMPUTE_WH',
+      role: 'DQ_ROLE',
+      auth_type: 'password',
+    },
+    has_secret: true,
+    created_by: 'u1',
+  };
+
+  it('renders the toggle checked in edit mode when the stored config has no inventory_sync key', async () => {
+    render(
+      <AntApp>
+        <ConnectionForm
+          type="snowflake"
+          connection={noInventoryKeyConnection}
+          onSaved={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </AntApp>,
+    );
+
+    const toggle = await screen.findByRole('switch', { name: /Inventory sync/ });
+    expect(toggle).toBeChecked();
+  });
+
+  it('resubmits inventory_sync=true on an untouched save so it matches what the toggle showed', async () => {
+    const user = userEvent.setup();
+    mockUpdate.mockResolvedValue(noInventoryKeyConnection);
+
+    render(
+      <AntApp>
+        <ConnectionForm
+          type="snowflake"
+          connection={noInventoryKeyConnection}
+          onSaved={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </AntApp>,
+    );
+
+    await screen.findByRole('switch', { name: /Inventory sync/ });
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
+    expect(mockUpdate.mock.calls[0][1].config).toMatchObject({ inventory_sync: true });
+  });
+});
