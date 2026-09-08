@@ -1,0 +1,34 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "7b2b0974f23d",
+  "strategy": "manual-commit",
+  "branch": "docs/landing-page-connections-shot",
+  "checkpoints_count": 11,
+  "files_touched": [
+    "marketing/assets/shots/connections-list.png",
+    "marketing/index.html"
+  ],
+  "sessions": [
+    {
+      "metadata": "/7b/2b0974f23d/0/metadata.json",
+      "transcript": "/7b/2b0974f23d/0/full.jsonl",
+      "compact_transcript": "/7b/2b0974f23d/0/transcript.jsonl",
+      "content_hash": "/7b/2b0974f23d/0/content_hash.txt",
+      "prompt": "/7b/2b0974f23d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 166,
+    "cache_creation_tokens": 144549,
+    "cache_read_tokens": 23285772,
+    "output_tokens": 30899,
+    "api_call_count": 83,
+    "subagent_tokens": {
+      "input_tokens": 508,
+      "cache_creation_tokens": 988528,
+      "cache_read_tokens": 36286634,
+      "output_tokens": 26914,
+      "api_call_count": 254
+    }
+  }
+}
