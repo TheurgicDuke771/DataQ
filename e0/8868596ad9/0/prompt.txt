@@ -1,0 +1,475 @@
+Hey, 
+Get the delta between last deployed and current main. 
+Test throughly and rigorously, [use playwright testing, qa-verifier, ui-tester agents as required] 
+And iff all looks good, then deploy the changes to both the cloud.
+
+note: for SF conn you can use this PAT - `/Users/arijit/Downloads/DATAQ_READER_PAT_ROTATED_1787431645559-token-secret.txt`
+
+---
+
+Check using UI wherever possible
+
+---
+
+<task-notification>
+<task-id>ad80207a7635d2f31</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/542f9d98-8f83-4209-ad0d-9c6ba292b27c/tasks/ad80207a7635d2f31.output</output-file>
+<status>completed</status>
+<summary>Agent "Desktop+mobile UI parity sweep" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I've launched the ui-tester agent in the background to run this full QA sweep — it will drive a real browser via Playwright MCP against the running local stack (signing in via email OTP through Mailpit), exercise the admin control centre, notification channels, LLM UI, zero-sample-mode toggle, and regression-check the existing core flows, on both desktop and mobile viewports, plus do the backend↔frontend parity audit from source.
+
+This is a thorough, multi-step mission (destructive-flow walkthroughs, two viewport sweeps, source grepping), so it'll take a while. I'll report back with the full findings — severity-ranked, with file:line citations, console errors, and screenshot paths — once it completes. No need to poll; I'll surface it as soon as it's done.</result>
+<usage><subagent_tokens>109876</subagent_tokens><tool_uses>2</tool_uses><duration_ms>53218</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ac626f7ae873d1d0a</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/542f9d98-8f83-4209-ad0d-9c6ba292b27c/tasks/ac626f7ae873d1d0a.output</output-file>
+<status>completed</status>
+<summary>Agent "CI-mirroring QA battery + authz probes" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result># QA/QE Report — pre-deploy battery on accumulated `main` (`7a3244a4`)
+
+## 1. Gate results table (Mode 1)
+
+| Gate | Result |
+|---|---|
+| `black --check backend/` | ✅ 554 files unchanged |
+| `ruff check backend/` | ✅ All checks passed |
+| `python scripts/check-typecheck-deps.py` | ✅ clean |
+| `mypy backend/app/` | ✅ Success: no issues in 190 files |
+| `mypy backend/tests/` | ✅ Success: no issues in 284 files |
+| `bandit -c pyproject.toml -r backend/app/` | ✅ 0 issues (43,180 LOC scanned) |
+| `python scripts/check-precommit-tooling-sync.py` | ✅ clean |
+| `python scripts/check-identifiers.py` | ✅ clean |
+| `python scripts/check-docs-publication.py` | ✅ clean |
+| `pytest backend/tests/` | ✅ 6218 passed, 10 skipped, coverage 97.05% (≥80% gate) |
+| `pnpm format:check` | ✅ clean |
+| `pnpm lint` (`--max-warnings 0`) | ✅ clean |
+| `pnpm typecheck` | ✅ clean |
+| `pnpm test:coverage` | ✅ 1359 passed, 122 files; lines 89.84%, statements 88.34%, branches 86.03%, functions 85.15% (≥80% gate) |
+| `pip-audit -r backend/requirements-dev.txt` (CI's exact invocation) | ✅ No known vulnerabilities |
+| `node scripts/audit_bulk.cjs --audit-level=high` (CI's exact invocation) | ✅ 519 packages, 0 advisories at high+ |
+
+**CodeQL and betterleaks** are CI-only/pre-commit-only per the standard caveat — not cleared by this run; no credential-shaped additions were spotted in anything touched during this session's testing.
+
+All Mode 1 gates green against this exact 90-commit accumulation. No drift found between this table and `.github/workflows/ci.yml`'s audit invocations.
+
+## 2. Test-quality audit (Mode 2) — highest-risk new code
+
+Scope: `backend/app/services/offboarding_service.py`, `membership_service.py`/`membership_guard.py` (ADR 0043), `audit_chain.py` (#1920), `backend/app/core/config.py`/`core/auth.py` dev-bypass opt-in (#1901/#1902), `privacy_settings_service.py` (zero-sample mode).
+
+- **#1920 audit-chain-hook fix — mutation-verified it can actually FAIL.** `test_an_event_flushed_before_commit_is_still_chained` (`backend/tests/services/test_audit_chain.py:270`) was mutation-checked by reverting `_chain_pending_audit_events` to read only `session.new` (dropping the `session.info.pop(PENDING_CHAIN_KEY, [])` merge) — the test failed as expected. This satisfies the standing "prove the regression test can fail" rule for exactly the concurrency/ordering-bug class this project has repeatedly shipped untested-by-construction.
+- **Dev-bypass opt-in (#1901/#1902):** `backend/tests/core/test_dev_bypass_config.py` covers off-by-default, in-dev-alone-no-conflict, conflicts against all three real auth modes (OTP/Azure AD/generic OIDC) by parametrization, environment-outside-dev refusal, and `init_auth()` raising `RuntimeError` at boot for each bad combination. Solid.
+- **Offboarding service:** `backend/tests/services/test_offboarding_service.py` + `backend/tests/api/test_admin_offboarding.py` — 8 + 24 tests covering: last-admin block (including that an allowlist-only admin does NOT satisfy the guard), atomicity (a mid-pass failure rolls back suite transfers *and* leaves no credential revoked — via the `create_savepoint` inner session), audit-chaining of every step's own event, no-row-lock-held-by-preview, case-insensitive confirmation-email match, self-inheritance rejection, Viewer-cannot-inherit, env-listed/not-a-member membership-state reporting, and (critically) the RBAC probe uses a **real** offboarding target user id rather than a fabricated one — avoiding the vacuous-pass trap this project has hit repeatedly (`_REAL_RUN`/`_REAL_CHECK`/`CheckVersion` class). Router gate is declared both at the `APIRouter(dependencies=...)` level and redundantly per-route (`require_workspace_admin`), matching the "a guard needs its own guard" lesson.
+- **Membership service:** exceptionally thorough — including two dedicated concurrency tests (`test_the_last_admin_guard_holds_under_interleaved_sessions`, `test_the_switch_on_import_cannot_miss_a_concurrent_first_sign_in`) and **exactly the invariant this task asked about**, already unit-tested pre-existing to this delta: `test_a_live_pat_stops_resolving_after_removal`, `test_a_live_session_cookie_stops_resolving_after_removal`, `test_every_declared_door_refuses_a_removed_member`.
+- **Zero-sample-mode / `privacy_settings_service.py`:** 100% line coverage; tests cover the resolver truth table, stored-vs-effective distinction, no query-time caching, env-forced-on override refusal in both directions, and audit-on-change with correct before-state on a second change.
+- **Coverage** (from the full pytest run, all above 80%): `offboarding_service.py` 100%, `audit_chain.py` 100%, `privacy_settings_service.py` 100%, `membership_service.py` 97% (gaps: lines 193, 294, 307, 459-461, 485, 499 — minor edge branches, not the guard logic), `membership_guard.py` 98% (line 39), `webhook_secret_service.py` 86% (gaps are store-outage logging branches, 53-57/62-64/66/100-101).
+
+**No hard findings in Mode 2.** This is the most heavily-tested area of the delta by a wide margin — the review chain visible in commit history (5 rounds of `/code-review` findings on offboarding alone, per `docs/progress.md`/memory) already produced the adversarial coverage a first-pass audit would normally flag.
+
+## 3. Live application probe (Mode 3)
+
+**Environment note:** this local stack mirrors prod-like real data (one live Snowflake account, 2 real suites) rather than `seed_dev`'s fixture set — `backend/scripts/e2e_smoke.py`'s hardcoded expectations (`"Orders quality"` suite, all six connection types) don't match, and its dry-run step posts obsolete `table`/`schema` fields the current `CheckDryRunRequest` schema (`backend/app/api/v1/checks.py:425`) rejects with `extra_forbidden` — the endpoint now resolves the target from the suite itself. **Neither is an app defect** — verified by reproducing the exact dry-run call with the corrected shape, which returned a proper structured 422 (`suite_target_invalid`) for an untargeted suite, and a proper structured 502 (`dry_run_failed`) for a targeted one lacking live network reachability. No 500s were observed anywhere in the whole session. I'm filing the stale smoke-script shape as a follow-up (Mode-3 tooling drift), not a blocker.
+
+| Scenario | Result |
+|---|---|
+| Health/baseline reachability | ✅ `/healthz` 200, connections/suites CRUD, secret redaction on connection read-back |
+| Unknown expectation type | ✅ 422 `check_config_invalid` with the full supported list |
+| Missing required config arg | ✅ 422 `check_config_invalid` |
+| Wrong-typed config arg | ✅ 422 `check_config_invalid` |
+| Inverted severity thresholds (warn &gt; critical) | ✅ 422 `check_config_invalid` |
+| NUL byte in check name / column config | ✅ 422 `validation_error` (rejected before persistence) |
+| Oversized check name (100k chars) | ✅ 422 `string_too_long` (256-char cap) |
+| Control chars / unicode / SQL-metachar column names | 🟡 accepted at persist-time (201) — see finding below |
+| Dry-run against those persisted malformed columns | ✅ 502 `dry_run_failed`, structured, no crash |
+| Custom-SQL multi-statement | ✅ 422 `custom_sql_invalid` |
+| Custom-SQL DROP/UPDATE/DELETE | ✅ 422 `custom_sql_invalid` (`first_keyword` named) |
+| Custom-SQL comment-obfuscated DROP (`;`-chained) | ✅ 422 `custom_sql_invalid` (single-statement rule catches it) |
+| Custom-SQL on non-SQL (flat-file) datasource | ⚪ prerequisite-skipped — no flat-file connection in this environment |
+| Run lifecycle: trigger, finished-run `GET /progress` | ✅ run failed gracefully (`failure_reason` structured, no hang) on unreachable creds; progress readable post-finish |
+| Cancel run mid-flight | ⚪ not exercised — run finished before I could race it (sub-second dispatch) |
+| Suite deletion with runs + results present | ✅ 204, cascade clean, `runs`/`results` count = 0 by direct DB query afterward |
+| **Authz: Member on 10 new admin/offboarding endpoints** | ✅ 10/10 → 403 `workspace_admin_required` |
+| **Authz: Viewer on the same 10 endpoints** | ✅ 10/10 → 403 `workspace_admin_required` |
+| **Offboarding revoke-all invariant: PAT+session immediately dead on next call, no restart** | ✅ session → 401 `invalid_session`; PAT → 401 `invalid_api_key` |
+| PAT surface: garbage token | ✅ 401 `invalid_api_key` |
+| PAT surface: revoked token (same code path) | ✅ 401 `invalid_api_key` — uniform with garbage, no oracle |
+| PAT plaintext never in read-back | ✅ `GET /me/api-keys` shows only `key_prefix` |
+| Webhook hostility (per-provider auth) | ⚪ not attempted — required planting scratch secrets into OpenBao per the runbook; deprioritized given budget, should be covered before deploy if not recently exercised |
+| MCP surface spot-check | ⚪ not attempted this session — budget; recommend at minimum re-confirming the LLM-track MCP tools inherit the same gates before deploy, since this delta adds `llm.py` MCP surface |
+| Redaction spot check on failing samples | ⚪ not attempted — no failing check produced a failing-sample row in this session (Snowflake unreachable) |
+| Cleanup | ✅ zero `qa-verifier-scratch-` suites/checks/PATs/memberships remain (verified via `/suites`, `/admin/suites`, `/admin/members`, direct Postgres query). Two `qa-verifier-scratch-*` `User` rows persist with no PATs/memberships/suites attached — expected, DataQ has no user hard-delete primitive by design |
+
+### Findings
+
+🟡 **Concern (non-blocking):** control characters, unicode, and SQL-metacharacter-shaped strings in a check's `config.column` field are accepted at check-creation time (201) with no client-visible warning; they only surface as a structured 502 at dry-run/run time. This is defensible (the column name isn't validated against the real schema until execution), but means an authored-but-never-dry-run check can sit in a suite silently unrunnable. Not a security issue (SQL injection attempts are neutralized — reached the SQL layer as literal failed identifiers, never executed), and not new to this delta. Recommend filing as a UX follow-up (`/gh-issue-from-finding`), not a deploy blocker.
+
+🟡 **Follow-up filed as a recommendation, not found in the open-issue list:** `backend/scripts/e2e_smoke.py`'s dry-run step (line ~129 of the script) sends `table`/`schema` fields that `CheckDryRunRequest` (`backend/app/api/v1/checks.py:425`) now rejects via `extra_forbidden` — the endpoint contract moved to resolving the target from the suite (`ADR`-aligned, correct app behavior), but the baseline smoke script wasn't updated, so it always reports a false negative on that assertion. Recommend a small fixup PR to `backend/scripts/e2e_smoke.py` (drop `table`/`schema`, rely on the suite's own target, matching the "Bind to a *datasource* connection" comment already there).
+
+⚪ **Not exercised, recommend before/at next deploy window if not recently covered elsewhere:** webhook hostility battery (per-provider auth on `/api/v1/orchestration/events/&lt;provider&gt;`) and an MCP-surface spot-check specifically against the new `llm.py`/`llm_*` MCP tools this delta likely touches (LLM UI feature). Neither showed up as a code-quality gap in Mode 1/2 — this is a live-surface coverage gap only, driven by session budget.
+
+## Verdict
+
+**Pass — all gates green, test quality acceptable on the highest-risk new code, and the specific invariant you flagged (offboarding's revoke-all takes effect on the very next call, no token-revocation-elsewhere needed) is confirmed live. Ready to push/deploy**, with two non-blocking notes to fold into the deploy follow-up list:
+
+1. File the stale `e2e_smoke.py` dry-run shape (Mode 3 tooling drift) — small fixup PR, not a code defect.
+2. Before or shortly after this deploy, run the webhook-hostility battery and an MCP-tool spot-check against the new LLM tools specifically — not attempted this session due to budget, and not covered by the otherwise-thorough unit-test suite for the *live* protocol surface.
+
+Nothing found rises to a 🔴 hard finding or a gate failure. Relevant paths: `/Users/arijit/Coding/Python/DataQ/backend/app/services/offboarding_service.py`, `/Users/arijit/Coding/Python/DataQ/backend/app/services/audit_chain.py`, `/Users/arijit/Coding/Python/DataQ/backend/tests/services/test_audit_chain.py`, `/Users/arijit/Coding/Python/DataQ/backend/tests/core/test_dev_bypass_config.py`, `/Users/arijit/Coding/Python/DataQ/backend/tests/api/test_admin_offboarding.py`, `/Users/arijit/Coding/Python/DataQ/backend/scripts/e2e_smoke.py`, `/Users/arijit/Coding/Python/DataQ/backend/app/api/v1/checks.py`.</result>
+<usage><subagent_tokens>187326</subagent_tokens><tool_uses>95</tool_uses><duration_ms>966733</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>aa88d93df5f8c81c2</task-id>
+<tool-use-id>toolu_017mBzNX8piqhhuyADijzcNt</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/542f9d98-8f83-4209-ad0d-9c6ba292b27c/tasks/aa88d93df5f8c81c2.output</output-file>
+<status>completed</status>
+<summary>Agent "QA sweep of new admin/notification/LLM UI" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Good, all backend routes have matching frontend clients (already confirmed via earlier grep). Now I'll write up the final report.
+
+## QA Report — DataQ v1.2 admin-control-centre delta (commit `7a3244a4`)
+
+**Summary:** Desktop: mostly healthy, 1 new minor defect + 2 known-issue reconfirmations. Mobile: no layout breakage found on the screens tested (390×844) — the admin control centre is unusually mobile-solid for a brand-new surface. Parity: 0 real gaps found — backend↔frontend wiring for admin/offboarding/scoring/privacy/notification-channels/LLM is complete and consistent. 1 mobile-testing process gap (no Playwright mobile project). Environment note: the local Snowflake PAT is expired, which blocked live-data verification of a few flows (noted per-item below, not counted as product defects).
+
+I could not test everything in the prompt to full depth in one pass (self-demotion completion, webhook-secret regen, live LLM output) — reasons given per item. Everything else in the brief was exercised end-to-end against the real running app.
+
+---
+
+### Desktop findings
+
+1. **New — Silent no-feedback path confirmed benign on inspection, not a defect.** Creating a notification channel with an invalid Teams webhook host returned a 422 (`webhook_invalid`, allowed hosts `webhook.office.com`/`logic.azure.com`) and the modal showed no visible error at the time I captured the snapshot. Reading `frontend/src/components/admin/NotificationChannelsPanel.tsx:306-310` shows the failure path does call `message.error(...)` with the real backend detail — my snapshot just landed after the antd toast's ~3s auto-dismiss. Verified-benign; no code change needed. (No screenshot; disposable channel was cleaned up.)
+
+2. **Known — #605 (still reproduces).** A suite run that fails to execute (expired Snowflake PAT, see below) surfaces only "The run failed to execute. See the server logs for details." in the Run-detail page, even though the worker log (`docker compose logs worker`) carries a fully classifiable reason: `snowflake.connector.errors.DatabaseError: 394401 (08001)… Programmatic access token is expired.` Root cause is upstream of the UI — `backend/app/services/run_service.py:339` catches the datasource exception and the REST/UI layer never surfaces the classified message, exactly the gap #605 tracks.
+
+3. **Known — cosmetic antd v6 deprecation warnings (#1275 class, still reproduces).** Two distinct console warnings observed during the sweep: `antd: List` component deprecated (fires on the Offboard receipt's "Not done, and why" list, `frontend/src/pages/admin/OffboardModal.tsx:252`) and `antd: Table` `rowKey` function's `index` parameter deprecated (fires on the incident-evidence "Metric trend"/"Other checks" tables in the asset page). Cosmetic, no user-facing effect.
+
+4. **Environment limitation, not a code defect — both seeded Snowflake connections have an expired PAT.** `docker compose logs worker` shows `Programmatic access token is expired` for `SF - Retail` and a `SecretNotFoundError` for `SF - Analytics` (`conn-snowflake-sf-analytics-dev-d12d9512` not set in OpenBao). This blocked live verification of: the LLM SQL-generation panel actually returning generated SQL (it failed honestly with `llm_request_invalid: the table's columns could not be read`), the RCA narrative returning real content (Ollama itself was also unreachable — `llm_provider_unavailable: LLM endpoint unreachable: ConnectError` — a second, independent gap, see below), and Zero-sample-mode's effect on a fresh failing sample (no live run could complete to produce one). The app's own UI correctly surfaces both failures (connection health panel shows "credential set / DMF unavailable / inventory sync failing" per connection, and the LLM panel shows a clean error) — this is a deploy-decision-relevant fact about the *local sandbox*, not the shipped code.
+
+### What I verified working well (desktop)
+
+- **Admin → Members**: invite flow (`Add member`) correctly warns "This turns membership enforcement on" before the first member is added, auto-imports the existing signed-in user for review, and the resulting `Confirm`/`Remove` review flow works. Role dropdown (admin/member/viewer) renders correctly; I opened it on `admin@dataq.com` and confirmed the shape but did not complete a self-demotion (Claude Code's auto-mode classifier itself blocked the click on safety grounds — I did not attempt to route around it).
+- **Offboarding flow**: created a real throwaway user (`qa-throwaway@dataq.com`, signed in once via Mailpit OTP to get a real user row + live session), then ran the full Offboard modal — preview correctly showed 0 suites/0 PATs/1 live session, required typing the email to confirm, and the receipt correctly reported `sessions_revoked: 1`, `membership_removed: yes`, `role: member → viewer`, and `skipped: [transfer_suites — this user owns no suites]`. I independently verified the session was actually dead afterward: `curl` with the pre-offboard session cookie now returns 401. This is a real, working destructive action, not cosmetic.
+- **Health-score weights**: editing (0.5→0.6 warn), Save, "Customised" tag + audit attribution, then "Reset to defaults" issuing an immediate `DELETE /admin/scoring` and reverting the UI — all round-tripped correctly and is now back at defaults.
+- **Orphan-secret sweep** ("Run sweep") and **audit-chain verify** ("Verify now") both execute live and return honest results (67 events hashed/intact; 9 secrets scanned, 0 orphans, 7 "too young to judge").
+- **Notification channels (Settings → Notification channels)**: create/edit/delete all round-trip correctly against the real API; SSRF host-allowlist validation on Teams/Slack webhooks works as designed; switching channel type correctly clears the previous type's fields (a documented #1878-review fix, confirmed still in place).
+- **Per-suite alerting panel** (`NotificationsPanel.tsx`) is **not** stale/dead UI — it correctly reflects the new architecture: the per-suite enable/threshold toggle and channel-linking picker are current, and a real pre-existing legacy inline destination (`email: royarijit04@outlook.com` on `SF - Retail - OL`) is shown in a clearly labelled "Legacy inline destinations" card with only a Clear action (no way to set new inline destinations) — exactly the "still alerts through admin-configured channels, legacy migration path only" design the task described. This is healthy, not a leftover.
+- **LLM in-app UI**: the SQL-generation panel, "Generate from a description" card, and RCA "Explain this failure" button all render correctly and, with no reachable warehouse/LLM, fail with clear, specific, non-crashing error alerts rather than hanging or throwing an unhandled exception. This is the expected/desired behavior per the task brief.
+- **Zero-sample-mode toggle**: found under Admin → Settings → "Privacy &amp; failing samples"; toggling On/Off round-trips via `PUT /admin/privacy`, is audited, and the UI text is accurate about scope ("takes effect on the next run… does not delete already-stored samples"). Effect on an actual failing sample could not be observed live (see environment limitation above).
+- **Regression spot-check**: Dashboard, Connections, Suites list/detail, Results list, Run detail all rendered correctly with zero console errors (besides the two known antd warnings) and zero unexpected 4xx/5xx on `/api/v1/*` for any normal navigation.
+- **Custom SQL "Generate from a description" card** — confirmed it does exist under the Custom-SQL category exactly as **known — #1929 (still reproduces)**: `frontend/src/pages/CheckNew.tsx:232` / `frontend/src/components/checks/SqlGeneratePanel.tsx:79`.
+
+---
+
+### Mobile findings (390×844)
+
+No horizontal-overflow or layout-breakage defects found on any screen tested: Dashboard, Suite detail (two-panel + alerting/legacy-destinations cards), Admin → Members (tab bar, three tables), Check editor (category picker + Custom-SQL + Monaco editor + "Generate from a description"). Measured `document.documentElement.scrollWidth === clientWidth === 390` on every screen. All `antd` tables tested use `scroll={{ x: 'max-content' }}` (confirmed 18 usages via `grep -rn "scroll={{" frontend/src`) and measured internally scrolling (`overflow-x: auto`, table `scrollWidth` up to 991px inside a 315px wrapper on Admin → Members) rather than pushing the page.
+
+The Admin tab bar (Overview/Members/Suites/Settings/Compliance/Integrations) visually truncates "Settings" and hides Compliance/Integrations behind an ellipsis button at 390px — this is antd `Tabs`' own built-in overflow-menu behavior (`ref=f13e63`, `img "ellipsis"`), not a bug; every tab remains reachable through it.
+
+Screenshots (full-page, 390×844) saved under `/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/542f9d98-8f83-4209-ad0d-9c6ba292b27c/scratchpad/qa_screenshots/`:
+- `mobile_dashboard_390.png`
+- `mobile_suite_detail_390.png`
+- `mobile_admin_members_390.png`
+- `mobile_check_editor_customsql_390.png`
+
+**Gap (not a defect, a testing-process gap):** `frontend/playwright.config.ts` defines only `chromium`/`live-smoke`/OTP-baseURL projects (all `Desktop Chrome`, `viewport: 1440×900`) — there is **no mobile-viewport Playwright project**, so nothing in CI guards the mobile rendering I just spot-checked by hand. Given the size of this delta and that the admin surface is brand new, this is worth flagging once as the mission brief requests.
+
+I did not have time in this pass to mobile-test the LLM SQL-gen live-output path, RCA narrative rendering with real content, the Members role-change confirmation modal's full shape, or the notification-channel create/edit modals at 360×740 (small-Android) — only 390×844 was covered given the breadth of the desktop sweep this delta required.
+
+---
+
+### Parity audit (backend ↔ frontend, source-only)
+
+**No real gaps found.** Every new backend router has a matching, actually-used frontend client:
+
+| Backend router | Frontend client | Frontend surface |
+|---|---|---|
+| `admin.py` (suites/users/access/members/offboarding/audit-events/deployment/data-subject/secret-sweep/webhooks/inventory-sync/llm) | `frontend/src/api/admin.ts` (688 lines, every endpoint called) | `pages/admin/*` |
+| `admin_members.py` | `admin.ts:127-160` | `AdminMembers.tsx` |
+| `admin_offboarding.py` | `admin.ts:248-262` | `OffboardModal.tsx` |
+| `admin_scoring.py` | `admin.ts:672-686` | `ScoringPanel.tsx` |
+| `admin_privacy.py` | `admin.ts:648-653` | `PrivacyPanel.tsx` |
+| `admin_integrations.py` | `admin.ts` (webhook regen/inventory sync/poll-now) | `IntegrationsPanels.tsx` |
+| `admin_suites.py` | `admin.ts` (delete/transfer/access-revoke) | `AdminSuites.tsx`, `SuiteTransferModal.tsx` |
+| `notification_channels.py` (8 routes) | `notificationChannels.ts` (all 8 called) | `NotificationChannelsPanel.tsx`, `NotificationsPanel.tsx` |
+| `llm.py` (4 routes) | `llm.ts` (all 4 called) | `SqlGeneratePanel.tsx`, check-suggestion card, RCA narrative in incident-evidence dialog |
+
+**Old per-suite inline notification config is intentional deprecation, correctly reflected in the UI, not dead code.** `notifications.py` (`GET/PUT/DELETE /suites/{id}/notifications`) is still called by `frontend/src/api/notifications.ts`, used by `NotificationsPanel.tsx`'s `NotificationsForm` (enable/threshold — still current) and `LegacyDestinations` (webhook/Slack/email — shown only when a suite already has one set, with only a Clear action, steering the admin to the new channel picker). This is the healthy migration path, not a stale leftover — see desktop findings above.
+
+**Enumerations checked and consistent:** `CONNECTION_TYPES` (backend `models.py` vs frontend `connections.ts`/`connectionVisuals.tsx`), channel `type` enum (backend `notification_channels.py` vs frontend `CHANNEL_TYPES`/`CHANNEL_TYPE_LABELS` in `notificationChannels.ts` — both list `teams | slack | email | webhook`), LLM provider enum (`openai_compatible` etc. — backend `llm.py` vs frontend `LlmConfig`).
+
+**No stale "coming soon" stubs found** contradicting a shipped backend capability — grepped for `coming (in|soon)`, `disabled placeholder`, `not yet` across `frontend/src/pages` and `frontend/src/components/admin`; the one hit close to that shape (`#1840`, "Settings → Notifications tab says a workspace-wide default channel is 'a post-v1 follow-up'") could not be reproduced — the live text at `AdminSettings.tsx:118` already describes the real workspace-default fallback correctly, so either it was already fixed or the wording review flagged has since moved; recorded as unreproduced against current `main`, not re-filed.
+
+---
+
+### What's healthy (recap)
+
+The admin-control-centre epic is, on this pass, solidly built: every destructive/config action I exercised (invite, offboard, role-review-confirm, channel CRUD, scoring reset, secret sweep, audit-chain verify, zero-sample toggle) round-tripped correctly against the real API, produced accurate UI state, and left an audit trail. Error handling for the two genuinely-broken-in-this-sandbox external dependencies (expired Snowflake PAT, unreachable local Ollama) was honest and non-crashing everywhere I hit it — exactly what the "test and report" brief was checking for. Mobile rendering of this brand-new surface had zero overflow defects found, which is unusual for a first pass and worth noting as a positive signal for the deploy decision.
+
+### Files/paths referenced
+
+- `frontend/src/pages/admin/OffboardModal.tsx`
+- `frontend/src/components/admin/NotificationChannelsPanel.tsx:306-310`
+- `frontend/src/components/suites/NotificationsPanel.tsx`
+- `frontend/src/pages/admin/AdminSettings.tsx:118`
+- `frontend/src/pages/CheckNew.tsx:232`, `frontend/src/components/checks/SqlGeneratePanel.tsx:79`
+- `frontend/playwright.config.ts:59-90`
+- `backend/app/services/run_service.py:339`
+- `backend/app/api/v1/admin_privacy.py`, `admin_scoring.py`, `admin_members.py`, `admin_offboarding.py`, `notification_channels.py`, `llm.py`
+- Screenshots: `/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/542f9d98-8f83-4209-ad0d-9c6ba292b27c/scratchpad/qa_screenshots/`</result>
+<usage><subagent_tokens>417755</subagent_tokens><tool_uses>193</tool_uses><duration_ms>1376189</duration_ms></usage>
+</task-notification>
+
+---
+
+Use this PAT for SF - `/Users/arijit/Downloads/DATAQ_READER_PAT_ROTATED_1787431645559-token-secret.txt`
+
+---
+
+<task-notification>
+<task-id>bmb32rv39</task-id>
+<summary>Monitor event: "Watch Azure + AWS Deploy workflow runs to completion"</summary>
+<event>Azure: in_progress</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bmb32rv39</task-id>
+<summary>Monitor event: "Watch Azure + AWS Deploy workflow runs to completion"</summary>
+<event>AWS: in_progress</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bmb32rv39</task-id>
+<summary>Monitor event: "Watch Azure + AWS Deploy workflow runs to completion"</summary>
+<event>Azure: in_progress</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bmb32rv39</task-id>
+<summary>Monitor event: "Watch Azure + AWS Deploy workflow runs to completion"</summary>
+<event>AWS: in_progress</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bmb32rv39</task-id>
+<summary>Monitor event: "Watch Azure + AWS Deploy workflow runs to completion"</summary>
+<event>Azure: in_progress</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bmb32rv39</task-id>
+<summary>Monitor event: "Watch Azure + AWS Deploy workflow runs to completion"</summary>
+<event>AWS: in_progress</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bmb32rv39</task-id>
+<summary>Monitor event: "Watch Azure + AWS Deploy workflow runs to completion"</summary>
+<event>Azure: in_progress</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bmb32rv39</task-id>
+<summary>Monitor event: "Watch Azure + AWS Deploy workflow runs to completion"</summary>
+<event>AWS: in_progress</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bmb32rv39</task-id>
+<summary>Monitor event: "Watch Azure + AWS Deploy workflow runs to completion"</summary>
+<event>Azure: in_progress</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bmb32rv39</task-id>
+<summary>Monitor event: "Watch Azure + AWS Deploy workflow runs to completion"</summary>
+<event>AWS: in_progress</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bmb32rv39</task-id>
+<summary>Monitor event: "Watch Azure + AWS Deploy workflow runs to completion"</summary>
+<event>Azure: in_progress</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bmb32rv39</task-id>
+<summary>Monitor event: "Watch Azure + AWS Deploy workflow runs to completion"</summary>
+<event>AWS: in_progress</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bmb32rv39</task-id>
+<summary>Monitor event: "Watch Azure + AWS Deploy workflow runs to completion"</summary>
+<event>Azure: in_progress</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bmb32rv39</task-id>
+<summary>Monitor event: "Watch Azure + AWS Deploy workflow runs to completion"</summary>
+<event>AWS: in_progress</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bmb32rv39</task-id>
+<summary>Monitor event: "Watch Azure + AWS Deploy workflow runs to completion"</summary>
+<event>Azure: completed success</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bmb32rv39</task-id>
+<summary>Monitor event: "Watch Azure + AWS Deploy workflow runs to completion"</summary>
+<event>AWS: in_progress</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bmb32rv39</task-id>
+<summary>Monitor event: "Watch Azure + AWS Deploy workflow runs to completion"</summary>
+<event>AWS: in_progress</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bmb32rv39</task-id>
+<summary>Monitor event: "Watch Azure + AWS Deploy workflow runs to completion"</summary>
+<event>AWS: in_progress</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bmb32rv39</task-id>
+<summary>Monitor event: "Watch Azure + AWS Deploy workflow runs to completion"</summary>
+<event>AWS: in_progress</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bmb32rv39</task-id>
+<summary>Monitor event: "Watch Azure + AWS Deploy workflow runs to completion"</summary>
+<event>AWS: in_progress</event>
+</task-notification>
+
+---
+
+Okay, generated new PAT - 
+`/Users/arijit/Downloads/DATAQ_*_PAT-token-secret.txt` 
+rotate the existing PROD tokens first using these, then complete the validation. 
+these expires in 15 days.
+
+---
+
+<task-notification>
+<task-id>bmb32rv39</task-id>
+<summary>Monitor event: "Watch Azure + AWS Deploy workflow runs to completion"</summary>
+<event>AWS: in_progress</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bmb32rv39</task-id>
+<summary>Monitor event: "Watch Azure + AWS Deploy workflow runs to completion"</summary>
+<event>AWS: in_progress</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bmb32rv39</task-id>
+<summary>Monitor event: "Watch Azure + AWS Deploy workflow runs to completion"</summary>
+<event>AWS: in_progress</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bmb32rv39</task-id>
+<summary>Monitor event: "Watch Azure + AWS Deploy workflow runs to completion"</summary>
+<event>AWS: in_progress</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bmb32rv39</task-id>
+<summary>Monitor event: "Watch Azure + AWS Deploy workflow runs to completion"</summary>
+<event>AWS: in_progress</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bmb32rv39</task-id>
+<summary>Monitor event: "Watch Azure + AWS Deploy workflow runs to completion"</summary>
+<event>AWS: in_progress</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bmb32rv39</task-id>
+<summary>Monitor event: "Watch Azure + AWS Deploy workflow runs to completion"</summary>
+<event>AWS: completed success</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bmb32rv39</task-id>
+<summary>Monitor event: "Watch Azure + AWS Deploy workflow runs to completion"</summary>
+<event>BOTH_DONE</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bmb32rv39</task-id>
+<tool-use-id>toolu_015aoPR3iW4p55jQxDiwxhtb</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/542f9d98-8f83-4209-ad0d-9c6ba292b27c/tasks/bmb32rv39.output</output-file>
+<status>completed</status>
+<summary>Monitor "Watch Azure + AWS Deploy workflow runs to completion" stream ended</summary>
+</task-notification>

@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "e08868596ad9",
+  "strategy": "manual-commit",
+  "branch": "chore/rotate-snowflake-reader-pat-2026-09-08",
+  "checkpoints_count": 26,
+  "files_touched": [
+    "docs/ops-log.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/e0/8868596ad9/0/metadata.json",
+      "transcript": "/e0/8868596ad9/0/full.jsonl",
+      "compact_transcript": "/e0/8868596ad9/0/transcript.jsonl",
+      "content_hash": "/e0/8868596ad9/0/content_hash.txt",
+      "prompt": "/e0/8868596ad9/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 186,
+    "cache_creation_tokens": 278287,
+    "cache_read_tokens": 15753522,
+    "output_tokens": 31382,
+    "api_call_count": 93
+  }
+}
