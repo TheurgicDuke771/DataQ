@@ -2510,3 +2510,127 @@ def test_a_random_sample_covering_the_whole_file_never_builds_an_index_list(
     )
     assert len(frame) == 30
     assert record["sampled"] is False and record["total_rows"] == 30
+
+
+# ── efficiency seams (#1329) ─────────────────────────────────────────────────
+# Every assertion here is on the SEAM — clients constructed, requests issued,
+# bytes fetched — because none of it is visible in the returned frame.
+
+
+class _FakeS3Client:
+    """A boto3 S3 client over one canned object, counting what it is asked for."""
+
+    def __init__(self, content: bytes, log: dict[str, Any]) -> None:
+        self._content = content
+        self._log = log
+        self.closed = False
+
+    def head_object(self, **_kwargs: Any) -> dict[str, Any]:
+        self._log["heads"] += 1
+        return {"ContentLength": len(self._content), "LastModified": _LANDED}
+
+    def get_object(
+        self, *, Range: str | None = None, **_kwargs: Any  # noqa: N803 — boto3 kwargs
+    ) -> dict[str, Any]:
+        if Range is None:
+            self._log["downloads"] += 1
+            return {"Body": io.BytesIO(self._content)}
+        first, last = Range.removeprefix("bytes=").split("-")
+        start, end = int(first), int(last)
+        self._log["ranges"].append((start, end - start + 1))
+        return {"Body": io.BytesIO(self._content[start : end + 1])}
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _fake_s3(monkeypatch: pytest.MonkeyPatch, content: bytes) -> dict[str, Any]:
+    """Patch the CLIENT FACTORY, leaving the real `read_range`/`object_size` in play.
+
+    Patching `read_range` — what every other test here does — is blind to client
+    construction by definition, which is how a client per range request survived
+    every review of the behaviour.
+    """
+    log: dict[str, Any] = {"clients": [], "heads": 0, "downloads": 0, "ranges": []}
+
+    def _factory(_cfg: Any, _secret: str) -> _FakeS3Client:
+        client = _FakeS3Client(content, log)
+        log["clients"].append(client)
+        return client
+
+    monkeypatch.setattr(flatfile, "_s3_client", _factory)
+    return log
+
+
+def test_one_sampled_read_builds_one_store_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A range walk issues many requests where the pre-#882 code issued one
+    download, so a client per request is pure overhead on exactly the access
+    pattern sampling introduced.
+    """
+    log = _fake_s3(monkeypatch, _csv_bytes(400_000))
+
+    frame, _ = flatfile.read_sampled_dataframe(
+        conn_type="s3",
+        config=_S3_CONFIG,
+        path="raw/big.csv",
+        secret="s",
+        sample=SampleSpec(strategy="head", rows=200_000),
+    )
+
+    assert len(frame) == 200_000
+    assert len(log["ranges"]) > 1, "one request only — this test would pass trivially"
+    assert len(log["clients"]) == 1
+
+
+def test_a_random_sampled_read_builds_one_store_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The random path opens more seams than head (count/stream/metadata), so it
+    is the one most likely to leak a client per stage.
+    """
+    log = _fake_s3(monkeypatch, _csv_bytes(50_000))
+
+    frame, _ = flatfile.read_sampled_dataframe(
+        conn_type="s3",
+        config=_S3_CONFIG,
+        path="raw/big.csv",
+        secret="s",
+        sample=SampleSpec(strategy="random", rows=100, seed=3),
+    )
+
+    assert len(frame) == 100
+    assert len(log["clients"]) == 1
+
+
+def test_a_sampled_read_closes_the_client_it_opened(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A session that outlives its read is a leaked connection pool in a worker
+    that runs thousands of them.
+    """
+    log = _fake_s3(monkeypatch, _csv_bytes(5_000))
+
+    flatfile.read_sampled_dataframe(
+        conn_type="s3",
+        config=_S3_CONFIG,
+        path="raw/big.csv",
+        secret="s",
+        sample=SampleSpec(strategy="head", rows=10),
+    )
+
+    assert [client.closed for client in log["clients"]] == [True]
+
+
+def test_separate_reads_never_share_a_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Amortising WITHIN one read, never across reads: a module-level cache would
+    hand a Celery prefork child a client its parent opened, and boto3 clients are
+    not fork-safe.
+    """
+    log = _fake_s3(monkeypatch, _csv_bytes(1_000))
+    for _ in range(2):
+        flatfile.read_sampled_dataframe(
+            conn_type="s3",
+            config=_S3_CONFIG,
+            path="raw/big.csv",
+            secret="s",
+            sample=SampleSpec(strategy="head", rows=10),
+        )
+
+    assert len(log["clients"]) == 2
+    assert log["clients"][0] is not log["clients"][1]
