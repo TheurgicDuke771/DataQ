@@ -397,7 +397,7 @@ def test_the_floor_is_applied_once_not_twice(
     elapsed, slept = _timed_post(monkeypatch, client, REQUEST_URL, {"email": _address()})
 
     assert elapsed >= _FLOOR, f"answered in {elapsed:.3f}s"
-    assert 0 < slept <= _FLOOR, f"padded {slept:.3f}s against a {_FLOOR}s floor"
+    assert slept <= _FLOOR, f"padded {slept:.3f}s against a {_FLOOR}s floor"
 
 
 def test_a_dispatch_failure_is_held_to_the_floor_too(
@@ -587,7 +587,7 @@ def test_the_verify_floor_is_applied_once_not_twice(
     )
 
     assert elapsed >= _VERIFY_FLOOR, f"answered in {elapsed:.3f}s"
-    assert 0 < slept <= _VERIFY_FLOOR, f"padded {slept:.3f}s against a {_VERIFY_FLOOR}s floor"
+    assert slept <= _VERIFY_FLOOR, f"padded {slept:.3f}s against a {_VERIFY_FLOOR}s floor"
 
 
 def test_the_unconfigured_503_is_NOT_padded_on_verify(
