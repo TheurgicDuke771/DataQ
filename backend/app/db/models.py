@@ -637,6 +637,10 @@ class Run(Base):
                 "OR triggered_by LIKE 'dbt:%'"
             ),
         ),
+        # #1245: the `/runs` newest-first page order. Serves the unfiltered list (the default
+        # Results read, which is `suite_id IN (<accessible suites>)` and so cannot use the
+        # suite-leading index above) and, by filtered index scan, the `?status=` one.
+        Index("ix_runs_created_id", text("created_at DESC"), text("id DESC")),
         # #1715: `markers.triggered_runs` looks runs up by marker alone, which the index above
         # cannot serve (it leads with suite_id). IS NOT NULL, not the LIKE predicate: an IN of
         # non-null literals provably implies the former and not the latter.
@@ -762,6 +766,8 @@ class PipelineRun(Base):
         # `orchestration.markers` can look a marker up (and detect a collision) without a
         # sequential scan. The expression must stay TEXTUALLY what `markers._reconstructed_marker`
         # emits, or the planner will not match it.
+        # #1245: the `/pipeline_runs` newest-first page order (`pipeline_run_order_by`).
+        Index("ix_pipeline_runs_created_id", text("created_at DESC"), text("id DESC")),
         Index(
             "ix_pipeline_runs_marker",
             text("(provider || ':' || pipeline_or_dag_id || ':' || provider_run_id)"),
@@ -1034,6 +1040,9 @@ class Incident(Base):
         Index("ix_incidents_check_id", "check_id"),
         Index("ix_incidents_suite_id", "suite_id"),
         Index("ix_incidents_status", "status"),
+        # #1245: the `/incidents` page order — `last_seen_at`, not `created_at`, because the
+        # list orders, filters and windows on the most recent breach (`list_incidents`).
+        Index("ix_incidents_last_seen_id", text("last_seen_at DESC"), text("id DESC")),
         # The dedup guarantee; the engine's ON CONFLICT index_where mirrors this predicate — keep
         # the two in sync.
         Index(
