@@ -637,6 +637,14 @@ class Run(Base):
                 "OR triggered_by LIKE 'dbt:%'"
             ),
         ),
+        # #1715: `markers.triggered_runs` looks runs up by marker alone, which the index above
+        # cannot serve (it leads with suite_id). IS NOT NULL, not the LIKE predicate: an IN of
+        # non-null literals provably implies the former and not the latter.
+        Index(
+            "ix_runs_triggered_by",
+            "triggered_by",
+            postgresql_where=text("triggered_by IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
