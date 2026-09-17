@@ -1,0 +1,95 @@
+<task-notification>
+<task-id>bmfd1jd11</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/794954e4-fe13-4114-a690-7693154a1d09/tasks/bmfd1jd11.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for PR #1973 to leave OPEN state" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ad749c5e17ff35c94</task-id>
+<tool-use-id>toolu_01RbPCLAy2t3bKARauLiaSEC</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/794954e4-fe13-4114-a690-7693154a1d09/tasks/ad749c5e17ff35c94.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix #1811 split beat out of worker" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Everything is in order. Here's the final report.
+
+## Summary
+
+**PR: https://github.com/TheurgicDuke771/DataQ/pull/1974** (branch `fix/issue-1811-split-beat-service`, milestone 22 set), fixes #1811, implementing Option 4 exactly as directed.
+
+**What shipped:**
+- celery-beat split out of `worker -B` into its own process/service everywhere: `docker-compose.yml`, `docker-compose.ghcr.yml` (new `beat` service), Azure `deploy/terraform/azure/containerapps.tf` (`azurerm_container_app.beat`, min=max=1), AWS `deploy/terraform/aws/ecs.tf` (`aws_ecs_service.beat`, desired_count=1, `deployment_minimum_healthy_percent=0`/`maximum_percent=100` so a rolling deploy never overlaps two beats — justified in the code comment).
+- Worker `min_replicas=1` on Azure kept, but re-justified (its stated reason was beat; now it's queued-dispatch latency), per the brief's "re-evaluate, don't just leave it."
+- `.github/workflows/deploy.yml` / `deploy-aws.yml` + `scripts/ci/ecs_roll.sh` (used as-is, generic by service name) now roll and independently verify beat's image SHA, plus a soft liveness check (`beat: Starting` in its own log stream) — the #1361 lesson.
+- Docs updated: `deploy/README.md`, `deploy/terraform/aws/README.md`, `docs/site/architecture/overview.md` (both mermaid diagrams + legend + key-invariant bullet), `CLAUDE.md` §2.
+- New regression test `backend/tests/core/test_beat_split.py` (4 tests, no PyYAML dependency — regex-based like the sibling `test_worker_launch_commands.py`).
+- Filed the #1811 residual as a **comment on #1393** (https://github.com/TheurgicDuke771/DataQ/issues/1393#issuecomment-5707267273) rather than a new issue, since its AC almost-but-not-quite covers concurrent-peak memory measurement.
+
+**Gates (backend, full sweep):** ruff/black/mypy (`backend/app` + `backend/tests`, 475 files)/bandit all clean; `tofu fmt -check` + `tofu validate` (init `-backend=false`) clean on both clouds — no `plan`/`apply` run; full `pytest backend/tests` green (766 in `core` alone, 904 across `core`+`worker`, plus a full-suite background run that exited 0).
+
+**Regression-test red proof:** stashed the compose/tf changes, ran the 4 new tests — all failed for the right reason (`-B` present / no `beat` service / no `azurerm_container_app.beat` / no `aws_ecs_service.beat`); restored and confirmed green.
+
+**Code review (`/code-review --comment`) found and fixed 2 real issues** (commit `6a4350ab`):
+1. The beat-liveness watchdog only armed on `worker_ready`, so a dead/wedged **beat** (now separate) got "fixed" by restarting the healthy worker instead — now arms on `beat_init` too, terminating whichever process it runs in.
+2. AWS's new beat liveness check called `aws logs filter-log-events` with no matching IAM grant, silently swallowing AccessDenied and warning on every deploy regardless of outcome — added the missing `logs:FilterLogEvents` grant scoped to beat's log group and stopped swallowing the error.
+
+**Open/left for the user:** nothing new filed as an issue (the one residual went to #1393 as a comment, per the brief's guidance to prefer that over duplicating). PR is not merged, per instructions.</result>
+<usage><subagent_tokens>361932</subagent_tokens><tool_uses>175</tool_uses><duration_ms>1741164</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-ad749c5e17ff35c94</worktreePath><worktreeBranch>worktree-agent-ad749c5e17ff35c94</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>abf8ca3f178346ff7</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/794954e4-fe13-4114-a690-7693154a1d09/tasks/abf8ca3f178346ff7.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix #1534 bounded locator fetch" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Done. **PR: https://github.com/TheurgicDuke771/DataQ/pull/1971** (branch `fix/issue-1534-bounded-locator-fetch`, milestone 22, `Fixes #1534`). Not merged, per the brief. Full CI green: 15/15 required checks pass, `deploy` skipping, MERGEABLE.
+
+## What the bug actually was (verified against installed GX 1.17.2, not from memory)
+
+The issue's framing ("COMPLETE materialises the full unexpected-index list") is half right, and the half it got wrong is the interesting half:
+
+- `_sqlalchemy_map_condition_index` (the **locator** query) **already** `.limit(result_format["partial_unexpected_count"])`, which defaults to 20 = our `SAMPLE_ROW_CAP`. So locators were never the unbounded fetch.
+- `_sqlalchemy_column_map_condition_values` (the unexpected **values** query) puts its `LIMIT` inside the `!= COMPLETE` branch — so under COMPLETE it emits `SELECT col AS unexpected_values FROM … WHERE &lt;fail cond&gt;` **with no LIMIT at all**. Client-side materialisation is capped by `fetchmany(MAX_RESULT_RECORDS=200)`, so the real exposure is warehouse-side result-set materialisation + the streamed fetch (and the worker too on drivers that buffer whole result sets). That is the live defect on Snowflake and UC pushdown.
+
+Proven by running real GX on a sqlite SQLAlchemy batch and spying on emitted SQL — the values query came back LIMIT-less at 500 failing rows.
+
+## Fix
+
+SQL lanes now request `SUMMARY` with `partial_unexpected_count = min(SAMPLE_ROW_CAP, MAX_RESULT_RECORDS)`, which puts the same `LIMIT` on **both** row-returning queries; `SUMMARY` returns the identical locator rows under `partial_unexpected_index_list`, so `_extract_sample_failures` reads either key and still writes our stable `unexpected_index_list`. Lane detection is `isinstance(batch_definition.data_asset.datasource, SQLDatasource)` (Snowflake + Databricks-SQL both subclass it), so **frame lanes keep COMPLETE byte-identically**. Byte-compat proven by diffing the mapped `SuiteOutcome` from both formats: **identical** at 3, 20 and 200 failing rows across map/aggregate/distinct-value expectations.
+
+Sibling fields checked: `partial_unexpected_list` inherits the bound; `unexpected_list`/`unexpected_index_query`/custom SQL's `details.unexpected_rows` are COMPLETE-only and read by nothing in DataQ; distinct-values `observed_value` is result-format-insensitive and already SQL-limited (#1229 class not left open). Residuals recorded in `docs/site/architecture/perf-baseline.md`.
+
+## Red proof
+
+Mutation `if not sql_batch:` → `if True:` (pre-fix COMPLETE):
+```
+E  assert 'LIMIT' in 'SELECT order_number AS unexpected_values FROM (SELECT * FROM orders WHERE 1 = 1) AS anon_1 WHERE order_number IS NULL'
+FAILED test_sql_batch_limits_every_failing_row_query
+FAILED test_sql_batch_without_index_columns_is_bounded_too
+2 failed, 4 passed
+```
+Assertions are on the seam (emitted SQL + bound params), not sample length — a length assertion passes against unfixed code.
+
+## Gates (local)
+
+`ruff` pass · `black --check` 555 unchanged · `mypy backend/app backend/tests` 475 files clean · `bandit -c pyproject.toml -r backend/app` no issues · `pytest backend/tests` **6226 passed, 10 skipped**, coverage 97.05%.
+
+## Review (`code-review --comment`)
+
+3 findings, **all fixed in-PR** (fixup commit `16bd1502`, each thread replied to): `_is_sql_batch` failed open silently → now logs `gx_batch_lane_undetermined` at WARNING with a test on the log line; the cap could exceed GX's `MAX_RESULT_RECORDS` asymmetrically → clamped; custom SQL (the only lane whose GX payload changes) had no unconditional test → added. Nothing deferred, nothing filed.
+
+## Needs you
+
+**Live verification (AC box 3) is NOT done and is explicitly unchecked in the PR body** — no warehouse credentials in this worktree. The PR spells out what to observe: run a widely-failing check with an identifier column on Snowflake and on UC-with-pushdown, then read the warehouse's own query history — both the `… AS unexpected_values …` query and the locator query must carry `LIMIT 20` and return 20 rows (`QUERY_HISTORY.ROWS_PRODUCED` = 20 / Databricks query profile), while the run still reports the true `unexpected_count`, 20 redacted sample rows with the identifier, and unmoved severity banding; plus one custom-SQL check per warehouse to confirm `observed_value` still carries the unexpected row count.</result>
+<usage><subagent_tokens>302997</subagent_tokens><tool_uses>200</tool_uses><duration_ms>2114818</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-abf8ca3f178346ff7</worktreePath><worktreeBranch>worktree-agent-abf8ca3f178346ff7</worktreeBranch></worktree>
+</task-notification>
