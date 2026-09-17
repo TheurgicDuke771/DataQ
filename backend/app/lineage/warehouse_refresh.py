@@ -1,16 +1,41 @@
-"""Persist warehouse-native lineage edges into the `lineage_edges` cache (#858)."""
+"""Persist warehouse-native lineage edges into the `lineage_edges` cache (#858).
+
+A snapshot pull that only PARTIALLY observed current state is persisted accrete-only,
+with no stale-edge prune, so a transient blip cannot wipe real edges. That trade used to
+promise "the next clean pull prunes normally, so a genuinely removed dependency is at
+worst one cycle late" — a promise nothing enforced (#1236): a persistent condition that
+reads as transient suspends pruning on every cycle, forever.
+
+Two things now enforce and report it:
+
+* **A bounded backstop.** ``connections.lineage_last_authoritative_refresh_at`` records
+  when the cache was last pruned. Once that is older than ``LINEAGE_STALE_AFTER_HOURS``,
+  the next successful pull prunes anyway and logs ``warehouse_lineage_prune_forced`` at
+  WARNING — a stale-but-honest graph beats an unboundedly accreting one. It re-stamps,
+  so the suspension resumes for another window rather than degrading to "always prune on
+  a partial pull".
+* **A reported suspension.** :class:`WarehouseRefreshOutcome` carries the suspension and
+  its age through to the connection and ``warehouse_lineage_status``, so the lineage
+  banner can say pruning has been suspended since X instead of it living only in a log.
+
+A NULL stamp means no prune has ever been recorded for the connection, and the backstop
+deliberately does NOT fire on it: a first-ever partial pull would delete edges accreted
+from earlier partial pulls, against an observation never shown to be complete. That state
+is reported instead.
+"""
 
 from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
+from backend.app.core.config import get_settings
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.db.models import Connection, LineageEdge
@@ -45,6 +70,15 @@ class WarehouseRefreshOutcome:
     # For an incremental (log) source, the high-water mark the caller persists and
     # passes back as ``since`` next refresh. ``None`` for a snapshot source.
     new_watermark: datetime | None = None
+    # #1236 — whether THIS pull pruned, and if not, how long pruning has been suspended.
+    # Always False for an incremental source, which never prunes by design.
+    prune_suspended: bool = False
+    # When the cache was last pruned. ``None`` means never — an age that cannot be stated,
+    # which is a different answer from "recently" and must not render as one.
+    prune_suspended_since: datetime | None = None
+    # The backstop fired: a partial pull pruned anyway because the suspension outlived
+    # ``LINEAGE_STALE_AFTER_HOURS``.
+    prune_forced: bool = False
 
 
 def refresh_warehouse_edges(
@@ -100,6 +134,15 @@ def _persist(
     # The snapshot regime's two destructive halves — the stale-edge prune and the verbatim `columns`
     # replace — are BOTH claims that this pull is the current truth.
     authoritative_snapshot = not provider.is_incremental and result.prunable
+    # The backstop (#1236): a partial snapshot pull prunes anyway once the suspension has
+    # outlived the staleness window. `columns` still merges rather than replacing — only the
+    # stale-edge half is forced, since a partial pull's column set genuinely is partial.
+    prune_forced = (
+        not provider.is_incremental
+        and not result.prunable
+        and _suspension_exhausted(connection.lineage_last_authoritative_refresh_at)
+    )
+    prune = authoritative_snapshot or prune_forced
     # clock_timestamp() advances within the tx (unlike now()), captured BEFORE the edge upserts
     # stamp a strictly-later last_seen.
     refresh_started_at = session.execute(select(func.clock_timestamp())).scalar_one()
@@ -133,9 +176,9 @@ def _persist(
         )
         _upsert_edges(session, edge_rows, replace_columns=authoritative_snapshot)
 
-    # Prune ONLY an authoritative snapshot source (Snowflake OBJECT_DEPENDENCIES — a current-state
-    # view — on a pull that observed current state completely enough).
-    if authoritative_snapshot:
+    # Prune ONLY a snapshot source, and only when the pull observed current state completely
+    # enough (Snowflake OBJECT_DEPENDENCIES — a current-state view) or the backstop fired.
+    if prune:
         session.execute(
             delete(LineageEdge).where(
                 LineageEdge.source == source,
@@ -143,6 +186,19 @@ def _persist(
                 LineageEdge.last_seen < refresh_started_at,
             )
         )
+        if prune_forced:
+            log.warning(
+                "warehouse_lineage_prune_forced",
+                connection_id=str(connection.id),
+                source=source,
+                tier=str(result.tier),
+                reason=result.degraded_reason,
+                suspended_since=_isoformat(connection.lineage_last_authoritative_refresh_at),
+                threshold_hours=get_settings().lineage_stale_after_hours,
+            )
+        # Re-stamped on a forced prune too: the suspension then resumes for another window
+        # instead of the backstop degrading into "prune on every partial pull".
+        connection.lineage_last_authoritative_refresh_at = refresh_started_at
     elif not provider.is_incremental:
         # A snapshot source that skipped its prune is a WARNING, not a detail (#1109 review).
         log.warning(
@@ -151,6 +207,7 @@ def _persist(
             source=source,
             tier=str(result.tier),
             reason=result.degraded_reason,
+            suspended_since=_isoformat(connection.lineage_last_authoritative_refresh_at),
         )
     live = session.execute(
         select(func.count())
@@ -169,7 +226,8 @@ def _persist(
         skipped_tiers=list(result.skipped_tiers),
         # A snapshot refresh that did NOT prune is the interesting one to see in the logs — it means
         # the pull was partial.
-        pruned=authoritative_snapshot,
+        pruned=prune,
+        prune_forced=prune_forced,
     )
     return WarehouseRefreshOutcome(
         live_edges=int(live),
@@ -177,7 +235,29 @@ def _persist(
         degraded_reason=result.degraded_reason,
         freshness_lag=result.freshness_lag,
         new_watermark=result.new_watermark,
+        prune_suspended=not prune and not provider.is_incremental,
+        prune_suspended_since=connection.lineage_last_authoritative_refresh_at,
+        prune_forced=prune_forced,
     )
+
+
+def _isoformat(value: datetime | None) -> str | None:
+    return value.isoformat() if value is not None else None
+
+
+def _suspension_exhausted(last_pruned_at: datetime | None) -> bool:
+    """Has pruning been suspended longer than ``LINEAGE_STALE_AFTER_HOURS``?
+
+    ``None`` is False, not True: no prune has ever been recorded, so there is no
+    suspension age to exceed, and forcing one would delete edges accreted from earlier
+    partial pulls against an observation never shown to be complete. A non-positive
+    threshold disables the backstop entirely, matching how the same setting already
+    disables the staleness signal.
+    """
+    threshold_hours = get_settings().lineage_stale_after_hours
+    if last_pruned_at is None or threshold_hours <= 0:
+        return False
+    return datetime.now(UTC) - last_pruned_at > timedelta(hours=threshold_hours)
 
 
 def refresh_connection_lineage(

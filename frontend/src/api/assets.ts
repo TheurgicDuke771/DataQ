@@ -146,6 +146,12 @@ export interface WarehouseLineageStatus {
   /** #1091: the refresh loop silently stopped — last refresh is older than the
    *  staleness window, with no error and no degradation recorded. */
   stale: boolean;
+  /** #1236: the last refresh left stale edges unpruned, so this source's graph can only grow —
+   *  an edge shown may be a dependency that was REMOVED. Optional: an API predating #1236
+   *  omits it, and `undefined` must read as "not reported", never as "pruning is fine". */
+  prune_suspended?: boolean;
+  /** When this source last pruned. `null` means NEVER — a different answer from "recently". */
+  prune_suspended_since?: string | null;
 }
 
 /** Metadata mutation payload — mirrors `AssetMetadataUpdate` (admin-only). */

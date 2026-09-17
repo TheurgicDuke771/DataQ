@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.core.config import get_settings
 from backend.app.db.models import Asset, Connection, LineageEdge, User
 from backend.app.lineage.warehouse import (
     MAX_COLUMN_PAIRS_PER_EDGE,
@@ -559,3 +560,165 @@ def test_snapshot_refresh_replaces_column_pairs_never_accretes(
     )
     cols = _columns_for(db_session, sf_connection)
     assert cols[(_ident("SRC").name, _ident("DST").name)] is None
+
+
+# ── #1236: the prune-suspension backstop ─────────────────────────────────────
+
+
+def _partial(*names: tuple[str, str]) -> WarehouseLineageResult:
+    """A snapshot pull that only PARTIALLY observed current state — no prune licence."""
+    return WarehouseLineageResult(
+        edges=tuple(LineageEdgePair(_ident(u), _ident(d)) for u, d in names),
+        tier=LineageTier.SNOWFLAKE_OBJECT_DEPENDENCIES,
+        degraded_reason="view-level lineage only — get_lineage: call failed (RuntimeError)",
+        prunable=False,
+    )
+
+
+def _refresh(
+    db_session: Session, connection: Connection, result: WarehouseLineageResult, **kwargs: Any
+) -> Any:
+    return refresh_warehouse_edges(
+        db_session,
+        connection=connection,
+        provider=_StubProvider(result, **kwargs),
+        conn=object(),
+    )
+
+
+def test_a_clean_pull_stamps_the_prune_marker(
+    sf_connection: Connection, db_session: Session
+) -> None:
+    """The backstop's clock only exists because a pruning pull records itself."""
+    assert sf_connection.lineage_last_authoritative_refresh_at is None
+    outcome = _refresh(db_session, sf_connection, _result(("A", "B")))
+    assert outcome is not None
+    assert sf_connection.lineage_last_authoritative_refresh_at is not None
+    assert outcome.prune_suspended is False
+    assert outcome.prune_forced is False
+
+
+def test_n_consecutive_partial_cycles_fire_the_backstop_exactly_once_past_the_threshold(
+    sf_connection: Connection, db_session: Session
+) -> None:
+    """The defect #1236 names: a persistent condition that READS as transient suspends
+    the prune every cycle, forever, and `lineage_edges` accretes with no bound.
+
+    Drives five consecutive partial pulls. The first four are inside
+    LINEAGE_STALE_AFTER_HOURS and must NOT prune — that is the accrete-only trade
+    working. The fifth is past it and prunes anyway, and having re-stamped, the sixth
+    goes back to suspending rather than pruning on every partial pull thereafter.
+    """
+    hours = get_settings().lineage_stale_after_hours
+    _refresh(db_session, sf_connection, _result(("A", "B"), ("C", "D")))
+    pruned_at = sf_connection.lineage_last_authoritative_refresh_at
+    assert pruned_at is not None
+
+    for cycle in range(4):
+        outcome = _refresh(db_session, sf_connection, _partial(("A", "B")))
+        assert outcome is not None, cycle
+        assert outcome.prune_forced is False, cycle
+        assert outcome.prune_suspended is True, cycle
+        # (C,D) survives every suspended cycle — nothing has been wiped by a blip.
+        assert outcome.live_edges == 2, cycle
+        assert sf_connection.lineage_last_authoritative_refresh_at == pruned_at, cycle
+
+    # Age the marker past the threshold: the suspension has now outlived its window.
+    sf_connection.lineage_last_authoritative_refresh_at = datetime.now(UTC) - timedelta(
+        hours=hours + 1
+    )
+    db_session.commit()
+
+    outcome = _refresh(db_session, sf_connection, _partial(("A", "B")))
+    assert outcome is not None
+    assert outcome.prune_forced is True
+    assert outcome.prune_suspended is False
+    assert outcome.live_edges == 1  # (C,D) finally removed
+    forced_at = sf_connection.lineage_last_authoritative_refresh_at
+    assert forced_at is not None and forced_at > datetime.now(UTC) - timedelta(minutes=5)
+
+    # And it re-stamped, so the NEXT partial pull suspends again rather than the backstop
+    # degrading into "prune on every partial pull" (which would discard the whole trade).
+    outcome = _refresh(db_session, sf_connection, _partial(("A", "B"), ("E", "F")))
+    assert outcome is not None
+    assert outcome.prune_forced is False
+    assert outcome.prune_suspended is True
+    assert sf_connection.lineage_last_authoritative_refresh_at == forced_at
+
+
+def test_the_backstop_does_not_fire_on_a_first_ever_partial_pull(
+    sf_connection: Connection, db_session: Session
+) -> None:
+    """A NULL marker means no prune has ever been recorded — there is no suspension age
+    to exceed. Pruning here would delete edges accreted from earlier partial pulls
+    against an observation never shown to be complete, so it is reported, not forced.
+    """
+    assert sf_connection.lineage_last_authoritative_refresh_at is None
+    outcome = _refresh(db_session, sf_connection, _partial(("A", "B")))
+    assert outcome is not None
+    assert outcome.prune_forced is False
+    assert outcome.prune_suspended is True
+    # The honest half: the age is reported as None ("never"), not silently as "recent".
+    assert outcome.prune_suspended_since is None
+    assert sf_connection.lineage_last_authoritative_refresh_at is None
+
+
+def test_an_incremental_source_never_reports_a_suspension(
+    sf_connection: Connection, db_session: Session
+) -> None:
+    """An incremental (log) source prunes NOTHING by design, so "has not pruned" is not a
+    fault — reporting it would put a permanent warning on a healthy Unity Catalog
+    connection.
+    """
+    sf_connection.lineage_last_authoritative_refresh_at = datetime.now(UTC) - timedelta(days=365)
+    db_session.commit()
+    outcome = _refresh(
+        db_session,
+        sf_connection,
+        _partial(("A", "B")),
+        source="uc",
+        is_incremental=True,
+    )
+    assert outcome is not None
+    assert outcome.prune_suspended is False
+    assert outcome.prune_forced is False
+
+
+def test_a_forced_prune_does_not_replace_column_pairs(
+    sf_connection: Connection, db_session: Session
+) -> None:
+    """Only the stale-edge half is forced. A partial pull's COLUMN set is genuinely
+    partial, so replacing it verbatim would overwrite a real column mapping with the
+    floor tier's nothing — exactly the second destructive half #1109 gated.
+    """
+    rich = WarehouseLineageResult(
+        edges=(LineageEdgePair(_ident("SRC"), _ident("DST"), column_pairs=(("a", "b"),)),),
+        tier=LineageTier.SNOWFLAKE_GET_LINEAGE,
+    )
+    _refresh(db_session, sf_connection, rich)
+    sf_connection.lineage_last_authoritative_refresh_at = datetime.now(UTC) - timedelta(days=365)
+    db_session.commit()
+
+    outcome = _refresh(db_session, sf_connection, _partial(("SRC", "DST")))
+    assert outcome is not None and outcome.prune_forced is True
+    cols = _columns_for(db_session, sf_connection)
+    assert cols[(_ident("SRC").name, _ident("DST").name)] == [["a", "b"]]
+
+
+def test_a_non_positive_threshold_disables_the_backstop(
+    sf_connection: Connection, db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`LINEAGE_STALE_AFTER_HOURS <= 0` already disables the staleness signal; the
+    backstop reads the same setting and must honour the same off switch, or turning the
+    signal off would silently arm a destructive behaviour instead.
+    """
+    settings = get_settings()
+    monkeypatch.setattr(settings, "lineage_stale_after_hours", 0)
+    _refresh(db_session, sf_connection, _result(("A", "B"), ("C", "D")))
+    sf_connection.lineage_last_authoritative_refresh_at = datetime.now(UTC) - timedelta(days=365)
+    db_session.commit()
+
+    outcome = _refresh(db_session, sf_connection, _partial(("A", "B")))
+    assert outcome is not None
+    assert outcome.prune_forced is False
+    assert outcome.live_edges == 2

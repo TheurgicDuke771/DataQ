@@ -136,6 +136,22 @@ def get_warehouse_lineage_provider(connection_type: str) -> WarehouseLineageProv
     return None
 
 
+WAREHOUSE_LINEAGE_CONNECTION_TYPES: tuple[str, ...] = ("snowflake", "unity_catalog")
+
+
+def snapshot_lineage_connection_types() -> tuple[str, ...]:
+    """Connection types whose warehouse provider is a SNAPSHOT source — the only ones a
+    stale-edge prune, and therefore a prune suspension, can apply to (#1236). Derived
+    from the providers rather than restated, so a new snapshot source joins by existing.
+    """
+    types = []
+    for connection_type in WAREHOUSE_LINEAGE_CONNECTION_TYPES:
+        provider = get_warehouse_lineage_provider(connection_type)
+        if provider is not None and not provider.is_incremental:
+            types.append(connection_type)
+    return tuple(types)
+
+
 def dedupe_edges(edges: Sequence[LineageEdgePair]) -> tuple[LineageEdgePair, ...]:
     """Collapse duplicate ``(upstream, downstream)`` pairs, preserving first-seen order."""
     seen: set[tuple[tuple[str, str], tuple[str, str]]] = set()

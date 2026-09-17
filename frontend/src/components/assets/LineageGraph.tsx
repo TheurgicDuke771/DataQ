@@ -16,6 +16,19 @@ import { type CenterAsset, NODE_H, NODE_W, buildLineageLayout } from './lineageL
  * Lineage graph (#805) — one left-to-right DAG replacing the two separate upstream/downstream list
  * boxes: provenance on the left, the asset under view in the middle, blast radius on the right.
  */
+/** #1236: "this source stopped removing edges" — the opposite failure from staleness, so it is
+ *  worded as accretion. `prune_suspended_since === null` means it has NEVER pruned; `undefined`
+ *  means an API predating #1236 did not report, which must not render as either. */
+function pruneSuspensionNote(s: WarehouseLineageStatus): string | null {
+  if (!s.prune_suspended) return null;
+  const since = s.prune_suspended_since;
+  const when =
+    since === null || since === undefined
+      ? 'has never removed stale edges'
+      : `has not removed stale edges since ${new Date(since).toLocaleString()}`;
+  return `${when} — edges shown may include dependencies that no longer exist`;
+}
+
 export function LineageGraph({
   center,
   upstream,
@@ -152,6 +165,16 @@ export function LineageGraph({
                       </Typography.Text>
                     </div>
                   ) : null}
+                  {/* #1236: composes here for the same reason staleness does — a failing
+                      source is also a non-pruning one, and suppressing either note behind
+                      the other is the #987 shape. */}
+                  {pruneSuspensionNote(s) ? (
+                    <div style={{ marginLeft: 12 }}>
+                      <Typography.Text type="secondary">
+                        Stale-edge pruning is suspended: this source {pruneSuspensionNote(s)}.
+                      </Typography.Text>
+                    </div>
+                  ) : null}
                 </div>
               ))}
               <div style={{ marginTop: 4 }}>
@@ -190,17 +213,29 @@ export function LineageGraph({
                       stopped refreshing (the prod incident: 9 days old, zero errors),
                       and "lineage is degraded" would misname what is wrong. A source
                       that is both coarse and stale shows both. */}
-                  {s.stale
-                    ? `no refresh since ${
-                        s.last_refreshed_at
-                          ? new Date(s.last_refreshed_at).toLocaleString()
-                          : 'unknown'
-                      } — lineage from this source is stale${
-                        s.degraded_reason
-                          ? `; last refresh also reported: ${s.degraded_reason}`
-                          : ''
-                      }`
-                    : (s.degraded_reason ?? 'lineage is degraded')}
+                  {/* #1236: each qualifier is an independent note. The old single
+                      expression fell through to "lineage is degraded" for anything that
+                      was neither stale nor tier-degraded, which would MISNAME a suspended
+                      prune — the same mistake #1091 fixed for staleness. */}
+                  {[
+                    s.stale
+                      ? `no refresh since ${
+                          s.last_refreshed_at
+                            ? new Date(s.last_refreshed_at).toLocaleString()
+                            : 'unknown'
+                        } — lineage from this source is stale`
+                      : null,
+                    s.degraded_reason
+                      ? s.stale
+                        ? `last refresh also reported: ${s.degraded_reason}`
+                        : s.degraded_reason
+                      : null,
+                    pruneSuspensionNote(s)
+                      ? `stale-edge pruning is suspended: this source ${pruneSuspensionNote(s)}`
+                      : null,
+                  ]
+                    .filter((note): note is string => note !== null)
+                    .join('; ') || 'lineage is degraded'}
                 </div>
               ))}
             </>
