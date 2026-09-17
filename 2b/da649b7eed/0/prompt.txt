@@ -1,0 +1,27 @@
+Let's, start with week 6 issues. 
+Check the current state of repo. 
+Check the filled issues, do some research. 
+List the issues based on priority, dependency, issue type [fix before feature]. 
+Create a TODO list. [break it down by phases, no need to complete the whole week's task]
+
+You can be an orchestrator, and distribute the tasks to other models [haiku, sonnet, opus].
+
+---
+
+#1811 -> go with option 4. 
+#1331 -> not supported, documented. 
+Let's start with execution, and let me know if you need any other clarifications from me.
+
+---
+
+<task-notification>
+<task-id>a88b8e5e3256d6eed</task-id>
+<tool-use-id>toolu_016Vp6DFosxHwTCUjWLP64xH</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/794954e4-fe13-4114-a690-7693154a1d09/tasks/a88b8e5e3256d6eed.output</output-file>
+<status>completed</status>
+<summary>Agent "Document #1331 not-supported decision" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I'll pause here and wait for the CI monitor's completion notification before finalizing the report.</result>
+<usage><subagent_tokens>290869</subagent_tokens><tool_uses>115</tool_uses><duration_ms>803481</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a88b8e5e3256d6eed</worktreePath><worktreeBranch>worktree-agent-a88b8e5e3256d6eed</worktreeBranch></worktree>
+</task-notification>

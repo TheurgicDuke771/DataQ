@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.10.6",
+  "checkpoint_id": "2bda649b7eed",
+  "session_id": "794954e4-fe13-4114-a690-7693154a1d09",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-17T01:57:36.360399Z",
+  "branch": "chore/js-yaml-ghsa-2883",
+  "checkpoints_count": 2,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-fable-5-1",
+  "turn_id": "e0b04dcb12bc",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 904,
+    "cache_creation_tokens": 165924,
+    "cache_read_tokens": 4116674,
+    "output_tokens": 25186,
+    "api_call_count": 31
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 7,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 7
+      }
+    }
+  ]
+}
