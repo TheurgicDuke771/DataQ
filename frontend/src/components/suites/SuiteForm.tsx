@@ -439,13 +439,15 @@ type BatchPreviewSpec = string;
 type BatchPreviewState =
   | { status: 'idle' }
   | { status: 'loading'; spec: BatchPreviewSpec }
-  | { status: 'resolved'; spec: BatchPreviewSpec; path: string }
-  | { status: 'no-match'; spec: BatchPreviewSpec }
+  | { status: 'resolved'; spec: BatchPreviewSpec; path: string; truncated: boolean }
+  | { status: 'no-match'; spec: BatchPreviewSpec; truncated: boolean; scanned: number }
   | { status: 'error'; spec: BatchPreviewSpec; message: string };
 
 /**
  * Live "resolves to: `<path>`" hint next to the batch fields (#1193): debounces `GET
- * /suites/{id}/batch-preview` as prefix/pattern/strategy/batch change.
+ * /suites/{id}/batch-preview` as prefix/pattern/strategy/batch change. The preview listing is
+ * budget-bounded (#1243), so a `truncated` response is rendered as a hint, not a fact — it says
+ * what the first `scanned` objects showed, not what's necessarily true of the whole prefix.
  */
 function BatchPreviewHint({ suiteId }: { suiteId?: string }) {
   const form = Form.useFormInstance();
@@ -461,42 +463,55 @@ function BatchPreviewHint({ suiteId }: { suiteId?: string }) {
 
   const [state, setState] = useState<BatchPreviewState>({ status: 'idle' });
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  // Monotonic token so a slow earlier request can't overwrite a newer one's result (mirrors
-  // SharePanel's directory-search debounce); only ever read inside a callback (never during
-  // render), so it's exempt from the refs-during-render rule.
-  const token = useRef(0);
+  // The in-flight request for the CURRENT spec — aborted, not merely ignored, the moment a newer
+  // spec supersedes it (#1243): a fast typist must not leave N live listings running server-side.
+  const abortRef = useRef<AbortController | null>(null);
   useEffect(
     () => () => {
       clearTimeout(timer.current);
-      token.current = -1;
+      abortRef.current?.abort();
     },
     [],
   );
 
   useEffect(() => {
     clearTimeout(timer.current);
+    abortRef.current?.abort();
     if (!active) return;
-    const current = (token.current += 1);
     timer.current = setTimeout(() => {
-      if (current !== token.current) return; // superseded before the debounce even fired
+      const controller = new AbortController();
+      abortRef.current = controller;
       setState({ status: 'loading', spec });
-      previewBatchTarget(suiteId as string, {
-        pattern: pattern as string,
-        strategy,
-        ...(strategy === 'specific' ? { batch: batch as string } : {}),
-        ...(prefix ? { prefix } : {}),
-      })
-        .then((path) => {
-          if (current !== token.current) return;
-          setState({ status: 'resolved', spec, path });
+      previewBatchTarget(
+        suiteId as string,
+        {
+          pattern: pattern as string,
+          strategy,
+          ...(strategy === 'specific' ? { batch: batch as string } : {}),
+          ...(prefix ? { prefix } : {}),
+        },
+        controller.signal,
+      )
+        .then((result) => {
+          if (controller.signal.aborted) return;
+          if (result.path === null) {
+            setState({
+              status: 'no-match',
+              spec,
+              truncated: result.truncated,
+              scanned: result.scanned,
+            });
+            return;
+          }
+          setState({ status: 'resolved', spec, path: result.path, truncated: result.truncated });
         })
         .catch((err: unknown) => {
-          if (current !== token.current) return;
+          if (controller.signal.aborted) return;
           const envelope = axios.isAxiosError(err)
             ? (err.response?.data as BatchPreviewErrorEnvelope | undefined)?.error
             : undefined;
           if (envelope?.code === BATCH_PREVIEW_NO_DATA_CODE) {
-            setState({ status: 'no-match', spec });
+            setState({ status: 'no-match', spec, truncated: false, scanned: 0 });
             return;
           }
           // The 502's own message is deliberately generic ("could not list the datasource store")
@@ -524,13 +539,16 @@ function BatchPreviewHint({ suiteId }: { suiteId?: string }) {
     return (
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
         Resolves to: <Typography.Text code>{state.path}</Typography.Text>
+        {state.truncated && ' (best match in the first objects scanned — may not be final)'}
       </Typography.Text>
     );
   }
   if (state.status === 'no-match') {
     return (
       <Typography.Text type="warning" style={{ fontSize: 12 }}>
-        No file currently matches this pattern.
+        {state.truncated
+          ? `No match in the first ${state.scanned} objects scanned — there may be more under this prefix than the preview could check.`
+          : 'No file currently matches this pattern.'}
       </Typography.Text>
     );
   }

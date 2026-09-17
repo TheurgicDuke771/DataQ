@@ -5,7 +5,13 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { Connection } from '../../src/api/connections';
-import { createSuite, previewBatchTarget, type Suite, updateSuite } from '../../src/api/suites';
+import {
+  type BatchPreviewResponse,
+  createSuite,
+  previewBatchTarget,
+  type Suite,
+  updateSuite,
+} from '../../src/api/suites';
 import { SuiteForm } from '../../src/components/suites/SuiteForm';
 import { selectOption } from '../support/antd';
 
@@ -39,6 +45,14 @@ function batchPreviewFailure(
     config: { headers: new AxiosHeaders() },
   };
   return err;
+}
+
+/** A resolved (non-truncated) `BatchPreviewResponse` for the given `path`. */
+function previewOk(
+  path: string,
+  overrides: Partial<BatchPreviewResponse> = {},
+): BatchPreviewResponse {
+  return { path, scanned: 1, truncated: false, ...overrides };
 }
 
 const adlsConnection: Connection = {
@@ -197,7 +211,7 @@ describe('SuiteForm — flat-file batch target (#1180)', () => {
     mockUpdate.mockResolvedValue(suite());
     // This target is already `active` (a suiteId + pattern) on first render, so the 400ms preview
     // debounce (#1193) WILL fire — normally cancelled by unmount before it does, but that's a race.
-    mockPreview.mockResolvedValue('adls_flatfile/logistics_tracking/irrelevant.csv');
+    mockPreview.mockResolvedValue(previewOk('adls_flatfile/logistics_tracking/irrelevant.csv'));
     renderForm({
       suite: suite({
         target: {
@@ -239,7 +253,7 @@ describe('SuiteForm — flat-file batch target (#1180)', () => {
     mockUpdate.mockResolvedValue(suite());
     // Same #1254 debounce race as the test above: this target is active from
     // first render, so mock the preview call the debounce will make.
-    mockPreview.mockResolvedValue('adls_flatfile/logistics_tracking/irrelevant.csv');
+    mockPreview.mockResolvedValue(previewOk('adls_flatfile/logistics_tracking/irrelevant.csv'));
     renderForm({
       suite: suite({
         target: {
@@ -272,7 +286,7 @@ describe('SuiteForm — flat-file batch target (#1180)', () => {
     mockUpdate.mockResolvedValue(suite());
     // Same #1254 debounce race: 'weekly' falls back to 'latest', which is
     // still an active target, so the debounce still fires.
-    mockPreview.mockResolvedValue('adls_flatfile/logistics_tracking/irrelevant.csv');
+    mockPreview.mockResolvedValue(previewOk('adls_flatfile/logistics_tracking/irrelevant.csv'));
     renderForm({
       suite: suite({
         target: {
@@ -335,7 +349,7 @@ async function expectStaleAnswerDropped(path: string) {
 
 describe('SuiteForm — batch preview hint (#1193)', () => {
   it('shows "Resolves to: <path>" once the live preview resolves, and re-fetches on a field change', async () => {
-    mockPreview.mockResolvedValueOnce('orders/orders_20260601.csv');
+    mockPreview.mockResolvedValueOnce(previewOk('orders/orders_20260601.csv'));
     renderForm({
       suite: suite({
         id: 's1',
@@ -350,28 +364,38 @@ describe('SuiteForm — batch preview hint (#1193)', () => {
     await waitFor(() =>
       expect(screen.getByLabelText('Filename pattern (regex)')).toHaveValue('orders_(\\d+)\\.csv'),
     );
-    await waitFor(() => expect(mockPreview).toHaveBeenCalledWith('s1', expect.anything()), {
-      timeout: 2000,
-    });
-    expect(mockPreview).toHaveBeenCalledWith('s1', {
-      pattern: 'orders_(\\d+)\\.csv',
-      strategy: 'latest',
-      prefix: 'orders/',
-    });
+    await waitFor(
+      () =>
+        expect(mockPreview).toHaveBeenCalledWith('s1', expect.anything(), expect.any(AbortSignal)),
+      { timeout: 2000 },
+    );
+    expect(mockPreview).toHaveBeenCalledWith(
+      's1',
+      {
+        pattern: 'orders_(\\d+)\\.csv',
+        strategy: 'latest',
+        prefix: 'orders/',
+      },
+      expect.any(AbortSignal),
+    );
     expect(await screen.findByText('Resolves to:')).toBeInTheDocument();
     expect(await screen.findByText('orders/orders_20260601.csv')).toBeInTheDocument();
 
     // Editing the pattern re-requests a fresh preview for the new spec.
-    mockPreview.mockResolvedValueOnce('orders/orders_20260602.csv');
+    mockPreview.mockResolvedValueOnce(previewOk('orders/orders_20260602.csv'));
     fireEvent.change(screen.getByLabelText('Filename pattern (regex)'), {
       target: { value: 'orders_(\\d+)_v2\\.csv' },
     });
     expect(await screen.findByText('orders/orders_20260602.csv')).toBeInTheDocument();
-    expect(mockPreview).toHaveBeenLastCalledWith('s1', {
-      pattern: 'orders_(\\d+)_v2\\.csv',
-      strategy: 'latest',
-      prefix: 'orders/',
-    });
+    expect(mockPreview).toHaveBeenLastCalledWith(
+      's1',
+      {
+        pattern: 'orders_(\\d+)_v2\\.csv',
+        strategy: 'latest',
+        prefix: 'orders/',
+      },
+      expect.any(AbortSignal),
+    );
   });
 
   it('shows a friendly "no file matches" hint instead of a raw error on the no-data 422', async () => {
@@ -470,7 +494,7 @@ describe('SuiteForm — batch preview hint (#1193)', () => {
   it('drops the previous answer the moment the spec changes, rather than relabelling it', async () => {
     // The hint's whole point is before-you-save confidence, so it must never present an answer
     // about spec A as the resolution of spec B.
-    mockPreview.mockResolvedValueOnce('orders/orders_20260601.csv');
+    mockPreview.mockResolvedValueOnce(previewOk('orders/orders_20260601.csv'));
     renderForm({
       suite: suite({
         id: 's1',
@@ -480,7 +504,7 @@ describe('SuiteForm — batch preview hint (#1193)', () => {
     expect(await screen.findByText('orders/orders_20260601.csv')).toBeInTheDocument();
 
     // Never resolves: the hint has only the STALE answer to fall back on.
-    mockPreview.mockReturnValueOnce(new Promise<string>(() => {}));
+    mockPreview.mockReturnValueOnce(new Promise<BatchPreviewResponse>(() => {}));
     fireEvent.change(screen.getByLabelText('Filename pattern (regex)'), {
       target: { value: 'shipments_(\\d+)\\.csv' },
     });
@@ -488,10 +512,37 @@ describe('SuiteForm — batch preview hint (#1193)', () => {
     await expectStaleAnswerDropped('orders/orders_20260601.csv');
   });
 
+  it('aborts a superseded in-flight preview request rather than merely ignoring it (#1243)', async () => {
+    // The whole point of the fix: a fast typist must not leave N live listings running
+    // server-side — the previous request's own AbortSignal must actually fire.
+    let firstSignal: AbortSignal | undefined;
+    mockPreview.mockImplementationOnce((_suiteId, _params, signal) => {
+      firstSignal = signal;
+      return new Promise<BatchPreviewResponse>(() => {}); // never resolves — supersede it below
+    });
+    renderForm({
+      suite: suite({
+        id: 's1',
+        target: { pattern: 'orders_(\\d+)\\.csv', strategy: 'latest' },
+      }),
+    });
+
+    await waitFor(() => expect(firstSignal).toBeInstanceOf(AbortSignal));
+    expect(firstSignal?.aborted).toBe(false);
+
+    mockPreview.mockResolvedValueOnce(previewOk('orders/orders_20260601.csv'));
+    fireEvent.change(screen.getByLabelText('Filename pattern (regex)'), {
+      target: { value: 'shipments_(\\d+)\\.csv' },
+    });
+
+    await waitFor(() => expect(firstSignal?.aborted).toBe(true));
+    expect(await screen.findByText('orders/orders_20260601.csv')).toBeInTheDocument();
+  });
+
   it('does not re-show a previous answer when the batch key is cleared and re-entered', async () => {
     // The active=false→true flip: emptying the batch key hides the hint, and typing a new one used
     // to bring the OLD batch's path straight back.
-    mockPreview.mockResolvedValueOnce('orders/orders_20260601.csv');
+    mockPreview.mockResolvedValueOnce(previewOk('orders/orders_20260601.csv'));
     renderForm({
       suite: suite({
         id: 's1',
@@ -504,7 +555,7 @@ describe('SuiteForm — batch preview hint (#1193)', () => {
     fireEvent.change(screen.getByLabelText('Batch key'), { target: { value: '' } });
     await waitFor(() => expect(screen.queryByText(/Resolves to:/)).not.toBeInTheDocument());
 
-    mockPreview.mockReturnValueOnce(new Promise<string>(() => {}));
+    mockPreview.mockReturnValueOnce(new Promise<BatchPreviewResponse>(() => {}));
     fireEvent.change(screen.getByLabelText('Batch key'), { target: { value: '20260615' } });
 
     await expectStaleAnswerDropped('orders/orders_20260601.csv');
@@ -512,7 +563,7 @@ describe('SuiteForm — batch preview hint (#1193)', () => {
 
   it('withholds the preview call for a "specific" strategy until a batch key is entered', async () => {
     const user = userEvent.setup();
-    mockPreview.mockResolvedValue('orders/orders_ready.csv');
+    mockPreview.mockResolvedValue(previewOk('orders/orders_ready.csv'));
     renderForm({
       // Strategy is 'specific' from the start but with no batch key yet.
       suite: suite({
@@ -529,11 +580,15 @@ describe('SuiteForm — batch preview hint (#1193)', () => {
     await user.type(screen.getByLabelText('Batch key'), 'ready');
 
     await waitFor(() =>
-      expect(mockPreview).toHaveBeenCalledWith('s1', {
-        pattern: 'orders_(\\d+)\\.csv',
-        strategy: 'specific',
-        batch: 'ready',
-      }),
+      expect(mockPreview).toHaveBeenCalledWith(
+        's1',
+        {
+          pattern: 'orders_(\\d+)\\.csv',
+          strategy: 'specific',
+          batch: 'ready',
+        },
+        expect.any(AbortSignal),
+      ),
     );
   });
 });
