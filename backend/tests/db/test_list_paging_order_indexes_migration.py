@@ -108,15 +108,18 @@ def test_index_columns_match_the_page_order(db_session: Any) -> None:
 
 
 def test_up_down_up(db_session: Any) -> None:
-    """Runs the migration module's OWN statements (CONCURRENTLY stripped — it cannot run
-    inside this fixture's open transaction), so a wrong index name in `downgrade()` goes
-    red here.
+    """Executes the exact statement strings `upgrade()`/`downgrade()` run (CONCURRENTLY
+    stripped — it cannot run inside this fixture's open transaction), so a wrong name or a
+    narrowed loop in either function goes red here rather than being re-derived by the test.
     """
     module = _load_migration()
     connection = db_session.connection()
-    for name, table, columns in module._INDEXES:
-        drop_sql = f"DROP INDEX IF EXISTS {name}"
-        create_sql = f"CREATE INDEX IF NOT EXISTS {name} ON {table} ({columns})"
+    drops = [sql.replace("CONCURRENTLY ", "") for sql in module._drop_sql()]
+    creates = [sql.replace("CONCURRENTLY ", "") for sql in module._create_sql()]
+    names = [name for name, _table, _columns in module._INDEXES]
+    assert names == [_RUNS_INDEX, _PIPELINE_INDEX, _INCIDENTS_INDEX]
+    for name, drop_sql, create_sql in zip(names, drops, creates, strict=True):
+        assert name in drop_sql and name in create_sql
         for _ in range(2):
             assert _indexdef(connection, name) is not None
             connection.execute(text(drop_sql))
@@ -125,10 +128,16 @@ def test_up_down_up(db_session: Any) -> None:
         assert _indexdef(connection, name) is not None
 
 
-def test_downgrade_drops_exactly_the_indexes_it_created(db_session: Any) -> None:
+def test_downgrade_drops_every_index_upgrade_creates(db_session: Any) -> None:
+    """`downgrade()` must not silently leave one behind. Driven off the module's own
+    statement builders, not off a second list written here.
+    """
     module = _load_migration()
-    names = {name for name, _table, _columns in module._INDEXES}
-    assert names == {_RUNS_INDEX, _PIPELINE_INDEX, _INCIDENTS_INDEX}
+    connection = db_session.connection()
+    for sql in module._drop_sql():
+        connection.execute(text(sql.replace("CONCURRENTLY ", "")))
+    for name in (_RUNS_INDEX, _PIPELINE_INDEX, _INCIDENTS_INDEX):
+        assert _indexdef(connection, name) is None, f"downgrade() left {name} behind"
 
 
 def test_runs_list_uses_the_index(db_session: Any) -> None:
@@ -165,10 +174,16 @@ def test_incidents_list_uses_the_index(db_session: Any) -> None:
 
 def test_incident_count_is_not_claimed_to_use_the_page_index(db_session: Any) -> None:
     """The `X-Total-Count` COUNT is deliberately NOT served by these indexes — it has no
-    ORDER BY. Recorded as a test so the PR's "the COUNT now dominates page 1" finding
-    cannot quietly become false.
+    ORDER BY. Recorded as a test so the "the COUNT now dominates page 1" finding cannot
+    quietly become false.
+
+    `enable_seqscan = off` is what gives the assertion teeth: without it the empty test
+    table always seq-scans and the claim holds no matter which indexes exist. With every
+    index on the table available and a scan forbidden, the planner still reaches for a
+    suite-leading one.
     """
     connection = db_session.connection()
+    connection.execute(text("SET LOCAL enable_seqscan = off"))
     statement = (
         select(func.count())
         .select_from(Incident)
@@ -184,3 +199,4 @@ def test_incident_count_is_not_claimed_to_use_the_page_index(db_session: Any) ->
     )
     plan = _plan(connection, statement)
     assert _INCIDENTS_INDEX not in plan, plan
+    assert "ix_incidents_suite_id" in plan, plan

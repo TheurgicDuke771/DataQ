@@ -37,16 +37,27 @@ _INDEXES: tuple[tuple[str, str, str], ...] = (
 )
 
 
+def _create_sql() -> list[str]:
+    return [
+        f"CREATE INDEX CONCURRENTLY IF NOT EXISTS {name} ON {table} ({columns})"
+        for name, table, columns in _INDEXES
+    ]
+
+
+def _drop_sql() -> list[str]:
+    return [f"DROP INDEX CONCURRENTLY IF EXISTS {name}" for name, _table, _columns in _INDEXES]
+
+
 def upgrade() -> None:
     with op.get_context().autocommit_block():
-        for name, table, columns in _INDEXES:
+        for drop, create in zip(_drop_sql(), _create_sql(), strict=True):
             # DROP first: a crashed earlier attempt can leave an INVALID index that
             # CREATE ... IF NOT EXISTS would then skip over.
-            op.execute(f"DROP INDEX CONCURRENTLY IF EXISTS {name}")
-            op.execute(f"CREATE INDEX CONCURRENTLY IF NOT EXISTS {name} ON {table} ({columns})")
+            op.execute(drop)
+            op.execute(create)
 
 
 def downgrade() -> None:
     with op.get_context().autocommit_block():
-        for name, _table, _columns in _INDEXES:
-            op.execute(f"DROP INDEX CONCURRENTLY IF EXISTS {name}")
+        for drop in _drop_sql():
+            op.execute(drop)
