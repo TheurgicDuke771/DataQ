@@ -105,6 +105,17 @@ def sniff_delimiter(sample: bytes) -> str:
         return _DEFAULT_DELIMITER
 
 
+def sniff_from_reader(reader: RangeReader) -> str:
+    """Sniff a CSV's delimiter off ``reader``'s first chunk and rewind it (#1329).
+
+    The stream's own first window already covers these bytes, so reading them
+    here costs no request where a separate `read_range` cost one per read.
+    """
+    head = reader.read(_SNIFF_BYTES)
+    reader.seek(0)
+    return sniff_delimiter(head)
+
+
 def trim_to_row_boundary(raw: bytes) -> bytes:
     """Cut ``raw`` at the last quote-safe newline (#595 C4)."""
     end = len(raw)
@@ -435,17 +446,7 @@ def csv_row_count(
         session=session,
     )
     with closing(reader):
-        sep = sniff_delimiter(
-            read_range(
-                conn_type=conn_type,
-                config=config,
-                path=path,
-                secret=secret,
-                start=0,
-                length=_SNIFF_BYTES,
-                session=session,
-            )
-        )
+        sep = sniff_from_reader(reader)
         with pv.open_csv(reader, parse_options=pv.ParseOptions(delimiter=sep)) as batches:
             # The header is consumed by the reader, so batch rows are data rows.
             return sum(batch.num_rows for batch in batches)
@@ -530,7 +531,7 @@ def _open_batch_stream(
     if fmt == "csv":
         import pyarrow.csv as pv
 
-        sep = sniff_delimiter(read_range(**reader_args, start=0, length=_SNIFF_BYTES))
+        sep = sniff_from_reader(reader)
         stream = pv.open_csv(reader, parse_options=pv.ParseOptions(delimiter=sep))
         return stream, stream.schema, False, _closer(stream.close)
 

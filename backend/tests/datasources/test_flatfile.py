@@ -2463,18 +2463,24 @@ def test_a_file_that_shrank_between_the_count_and_the_take_is_refused(
     """
     big = _csv_bytes(1_000)
     small = _csv_bytes(20)
-    calls: list[int] = []
+    live = {"content": big}
+    counted = flatfile.row_count
 
-    def _counting_read_range(*, start: int, length: int, **_k: Any) -> bytes:
-        # First pass (the row count) sees the big file; every later read sees the
-        # replacement — the re-upload, reproduced deterministically.
-        calls.append(1)
-        content = big if len(calls) <= 2 else small
-        return content[start : start + length]
+    def _shrink_after_the_count(**kwargs: Any) -> int:
+        # The re-upload lands between the count and the take, reproduced by
+        # INTENT rather than by a call tally — a tally re-breaks whenever the
+        # number of range requests a pass issues changes.
+        total = counted(**kwargs)
+        live["content"] = small
+        return total
+
+    def _read_range(*, start: int, length: int, **_k: Any) -> bytes:
+        return live["content"][start : start + length]
 
     monkeypatch.setattr(flatfile, "file_stat", lambda **k: flatfile.FileStat(_LANDED, len(big)))
-    monkeypatch.setattr(flatfile, "read_range", _counting_read_range)
-    monkeypatch.setattr(flatfile, "object_size", lambda **k: len(big))
+    monkeypatch.setattr(flatfile, "read_range", _read_range)
+    monkeypatch.setattr(flatfile, "object_size", lambda **k: len(live["content"]))
+    monkeypatch.setattr(flatfile, "row_count", _shrink_after_the_count)
 
     with pytest.raises(SamplingDrawError, match="changed while it was being sampled"):
         flatfile.read_sampled_dataframe(
@@ -2634,3 +2640,45 @@ def test_separate_reads_never_share_a_client(monkeypatch: pytest.MonkeyPatch) ->
 
     assert len(log["clients"]) == 2
     assert log["clients"][0] is not log["clients"][1]
+
+
+def _semicolon_csv(rows: int) -> bytes:
+    return b"id;name\n" + b"".join(f"{i};n{i}\n".encode() for i in range(rows))
+
+
+def test_the_delimiter_sniff_costs_no_request_of_its_own(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The sniff used to issue its own `_SNIFF_BYTES` range GET immediately before
+    opening a stream whose first window covers those same bytes — one wasted round
+    trip per sampled CSV read, invisible in the frame.
+    """
+    ranges: list[tuple[int, int]] = []
+    _patch_store(monkeypatch, content=_semicolon_csv(5_000), ranges=ranges)
+
+    frame, _ = flatfile.read_sampled_dataframe(
+        conn_type="s3",
+        config={},
+        path="raw/semi.csv",
+        secret="s",
+        sample=SampleSpec(strategy="random", rows=20, seed=2),
+    )
+
+    # The sniff still WORKS — a `;` file parsed with the pandas default comma is
+    # one column named after the whole header (#476).
+    assert list(frame.columns) == ["id", "name"]
+    assert [r for r in ranges if r[1] == flatfile._SNIFF_BYTES] == []
+
+
+def test_counting_a_csv_sniffs_without_a_second_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`row_count` backs the volume monitor, which runs on every scheduled suite —
+    the same wasted round trip, on the hottest flat-file path there is.
+    """
+    ranges: list[tuple[int, int]] = []
+    _patch_store(monkeypatch, content=_semicolon_csv(300), ranges=ranges)
+
+    assert flatfile.row_count(conn_type="s3", config={}, path="raw/semi.csv", secret="s") == 300
+    assert [r for r in ranges if r[1] == flatfile._SNIFF_BYTES] == []
+    assert len(ranges) == 1, "the whole small file is one window — anything more is the sniff"
