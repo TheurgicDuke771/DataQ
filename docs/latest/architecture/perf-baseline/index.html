@@ -1837,6 +1837,56 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#v12-list-endpoint-paging-indexes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.2 — list-endpoint paging indexes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v1.2 — list-endpoint paging indexes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#measured" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Measured
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-was-deliberately-not-added" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What was deliberately NOT added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#two-findings-this-leaves-open" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Two findings this leaves open
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2648,6 +2698,56 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#v12-list-endpoint-paging-indexes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.2 — list-endpoint paging indexes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v1.2 — list-endpoint paging indexes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#measured" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Measured
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-was-deliberately-not-added" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What was deliberately NOT added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#two-findings-this-leaves-open" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Two findings this leaves open
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -3436,6 +3536,149 @@ Snowflake ramp above.</p>
   (both are pure warehouse-side SQL, same as Snowflake's path) suggests a
   worker-side wall would appear at a higher rung; it just wasn't tested.</li>
 </ul>
+<hr>
+<h2 id="v12-list-endpoint-paging-indexes">v1.2 — list-endpoint paging indexes<a class="headerlink" href="#v12-list-endpoint-paging-indexes" title="Permanent link">¶</a></h2>
+<p>Captured on PostgreSQL 16 against a seeded scratch database — <strong>150,000 <code>runs</code></strong>
+(10 suites, 5 statuses), <strong>120,000 <code>pipeline_runs</code></strong> (3 providers) and
+<strong>120,000 <code>incidents</code></strong> (3 states) — by running <code>EXPLAIN (ANALYZE, BUFFERS)</code> over
+the statements the service layer actually compiles, not hand-written
+approximations of them.</p>
+<p>The three list endpoints page newest-first with a total order, and none of the
+three tables had an index matching that order:</p>
+<table>
+<thead>
+<tr>
+<th>endpoint</th>
+<th>table</th>
+<th>page order</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET /runs</code></td>
+<td><code>runs</code></td>
+<td><code>created_at DESC, id DESC</code></td>
+</tr>
+<tr>
+<td><code>GET /pipeline_runs</code></td>
+<td><code>pipeline_runs</code></td>
+<td><code>created_at DESC, id DESC</code></td>
+</tr>
+<tr>
+<td><code>GET /incidents</code></td>
+<td><code>incidents</code></td>
+<td><strong><code>last_seen_at DESC, id DESC</code></strong></td>
+</tr>
+</tbody>
+</table>
+<p><code>/incidents</code> pages by <code>last_seen_at</code>, not <code>created_at</code> — it orders, filters and
+windows on the most recent breach. An index on <code>created_at</code> would have been
+built, reported present, and never used.</p>
+<h3 id="measured">Measured<a class="headerlink" href="#measured" title="Permanent link">¶</a></h3>
+<p>Execution time, page size 50 (<code>/runs</code>, <code>/pipeline_runs</code>) and 100 (<code>/incidents</code>):</p>
+<table>
+<thead>
+<tr>
+<th>query</th>
+<th>before</th>
+<th>after</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/runs</code> unfiltered, offset 0</td>
+<td>30.5 ms</td>
+<td><strong>0.08 ms</strong></td>
+</tr>
+<tr>
+<td><code>/runs</code> unfiltered, offset 10k</td>
+<td>25.6 ms</td>
+<td>3.3 ms</td>
+</tr>
+<tr>
+<td><code>/runs</code> unfiltered, offset 90k</td>
+<td>37.3 ms</td>
+<td>32.1 ms</td>
+</tr>
+<tr>
+<td><code>/runs</code> workspace-admin, offset 0</td>
+<td>16.8 ms</td>
+<td><strong>0.07 ms</strong></td>
+</tr>
+<tr>
+<td><code>/runs</code> <code>?status=failed</code>, offset 0</td>
+<td>7.5 ms</td>
+<td><strong>0.09 ms</strong></td>
+</tr>
+<tr>
+<td><code>/runs</code> <code>?suite_id=</code>, offset 0</td>
+<td>0.07 ms</td>
+<td>0.09 ms (unchanged — already indexed)</td>
+</tr>
+<tr>
+<td><code>/pipeline_runs</code> unfiltered, offset 0</td>
+<td>7.5 ms</td>
+<td><strong>0.03 ms</strong></td>
+</tr>
+<tr>
+<td><code>/pipeline_runs</code> unfiltered, offset 90k</td>
+<td>24.4 ms</td>
+<td>7.1 ms</td>
+</tr>
+<tr>
+<td><code>/pipeline_runs</code> <code>?provider=adf</code>, offset 0</td>
+<td>5.9 ms</td>
+<td><strong>0.02 ms</strong></td>
+</tr>
+<tr>
+<td><code>/incidents</code> unfiltered, offset 0</td>
+<td>16.8 ms</td>
+<td><strong>0.09 ms</strong></td>
+</tr>
+<tr>
+<td><code>/incidents</code> unfiltered, offset 90k</td>
+<td>35.9 ms</td>
+<td>25.1 ms</td>
+</tr>
+<tr>
+<td><code>/incidents</code> <code>?state=open</code>, offset 0</td>
+<td>7.5 ms</td>
+<td><strong>0.10 ms</strong></td>
+</tr>
+<tr>
+<td><code>/incidents</code> <code>?asset_id=</code>, offset 0</td>
+<td>0.17 ms</td>
+<td>0.17 ms (unchanged — already indexed)</td>
+</tr>
+</tbody>
+</table>
+<p>Before, every unfiltered read was a parallel sequential scan plus a top-N
+heapsort of the whole table. After, it is an ordered index scan that stops at
+<code>limit + offset</code> rows.</p>
+<h3 id="what-was-deliberately-not-added">What was deliberately NOT added<a class="headerlink" href="#what-was-deliberately-not-added" title="Permanent link">¶</a></h3>
+<p>Filter-leading composites — <code>(status, created_at DESC, id DESC)</code>,
+<code>(provider, created_at DESC, id DESC)</code>, <code>(status, last_seen_at DESC, id DESC)</code>,
+<code>(suite_id, last_seen_at DESC, id DESC)</code> — were built and measured, then
+dropped. The plain ordering index alone already turns every filtered <strong>page-1</strong>
+read into an ordered index scan (0.02–0.13 ms, within noise of the composite),
+because the filters are not selective enough to beat "walk the order and skip":
+<code>?status=failed</code> discards 197 rows before filling a 50-row page. The composites
+pay off only at deep offsets on a <em>filtered</em> list (for example <code>?state=open</code>
+at offset 10k: 11.6 ms with the ordering index versus 4.3 ms with the
+composite), and no product surface issues that request — the UI sends no
+<code>status</code>/<code>provider</code>/<code>state</code> filter at all. Four indexes of write amplification
+on three high-write tables is not worth a case nothing asks for.</p>
+<h3 id="two-findings-this-leaves-open">Two findings this leaves open<a class="headerlink" href="#two-findings-this-leaves-open" title="Permanent link">¶</a></h3>
+<ol>
+<li><strong>The <code>X-Total-Count</code> COUNT now dominates page 1.</strong> It has no <code>ORDER BY</code>, so
+   these indexes cannot serve it: <code>/runs</code> 20.5 ms, <code>/incidents</code> 13.6 ms,
+   <code>/pipeline_runs</code> 6.6 ms — against a list that is now 0.03–0.10 ms. Page 1 of
+   <code>/runs</code> is ~250× more COUNT than list.</li>
+<li><strong><code>OFFSET</code> is still linear.</strong> At offset 90k the database walks and discards
+   90,000 index entries: <code>/runs</code> 32.1 ms, <code>/incidents</code> 25.1 ms. The ordering is
+   already total, which is the precondition for keyset/seek paging, but that
+   changes the request contract and is tracked separately.</li>
+</ol>
 <hr>
 
 

@@ -400,3 +400,76 @@ Snowflake ramp above.
   worker-side wall would appear at a higher rung; it just wasn't tested.
 
 ---
+
+## v1.2 — list-endpoint paging indexes
+
+Captured on PostgreSQL 16 against a seeded scratch database — **150,000 `runs`**
+(10 suites, 5 statuses), **120,000 `pipeline_runs`** (3 providers) and
+**120,000 `incidents`** (3 states) — by running `EXPLAIN (ANALYZE, BUFFERS)` over
+the statements the service layer actually compiles, not hand-written
+approximations of them.
+
+The three list endpoints page newest-first with a total order, and none of the
+three tables had an index matching that order:
+
+| endpoint | table | page order |
+|---|---|---|
+| `GET /runs` | `runs` | `created_at DESC, id DESC` |
+| `GET /pipeline_runs` | `pipeline_runs` | `created_at DESC, id DESC` |
+| `GET /incidents` | `incidents` | **`last_seen_at DESC, id DESC`** |
+
+`/incidents` pages by `last_seen_at`, not `created_at` — it orders, filters and
+windows on the most recent breach. An index on `created_at` would have been
+built, reported present, and never used.
+
+### Measured
+
+Execution time, page size 50 (`/runs`, `/pipeline_runs`) and 100 (`/incidents`):
+
+| query | before | after |
+|---|---|---|
+| `/runs` unfiltered, offset 0 | 30.5 ms | **0.08 ms** |
+| `/runs` unfiltered, offset 10k | 25.6 ms | 3.3 ms |
+| `/runs` unfiltered, offset 90k | 37.3 ms | 32.1 ms |
+| `/runs` workspace-admin, offset 0 | 16.8 ms | **0.07 ms** |
+| `/runs` `?status=failed`, offset 0 | 7.5 ms | **0.09 ms** |
+| `/runs` `?suite_id=`, offset 0 | 0.07 ms | 0.09 ms (unchanged — already indexed) |
+| `/pipeline_runs` unfiltered, offset 0 | 7.5 ms | **0.03 ms** |
+| `/pipeline_runs` unfiltered, offset 90k | 24.4 ms | 7.1 ms |
+| `/pipeline_runs` `?provider=adf`, offset 0 | 5.9 ms | **0.02 ms** |
+| `/incidents` unfiltered, offset 0 | 16.8 ms | **0.09 ms** |
+| `/incidents` unfiltered, offset 90k | 35.9 ms | 25.1 ms |
+| `/incidents` `?state=open`, offset 0 | 7.5 ms | **0.10 ms** |
+| `/incidents` `?asset_id=`, offset 0 | 0.17 ms | 0.17 ms (unchanged — already indexed) |
+
+Before, every unfiltered read was a parallel sequential scan plus a top-N
+heapsort of the whole table. After, it is an ordered index scan that stops at
+`limit + offset` rows.
+
+### What was deliberately NOT added
+
+Filter-leading composites — `(status, created_at DESC, id DESC)`,
+`(provider, created_at DESC, id DESC)`, `(status, last_seen_at DESC, id DESC)`,
+`(suite_id, last_seen_at DESC, id DESC)` — were built and measured, then
+dropped. The plain ordering index alone already turns every filtered **page-1**
+read into an ordered index scan (0.02–0.13 ms, within noise of the composite),
+because the filters are not selective enough to beat "walk the order and skip":
+`?status=failed` discards 197 rows before filling a 50-row page. The composites
+pay off only at deep offsets on a *filtered* list (for example `?state=open`
+at offset 10k: 11.6 ms with the ordering index versus 4.3 ms with the
+composite), and no product surface issues that request — the UI sends no
+`status`/`provider`/`state` filter at all. Four indexes of write amplification
+on three high-write tables is not worth a case nothing asks for.
+
+### Two findings this leaves open
+
+1. **The `X-Total-Count` COUNT now dominates page 1.** It has no `ORDER BY`, so
+   these indexes cannot serve it: `/runs` 20.5 ms, `/incidents` 13.6 ms,
+   `/pipeline_runs` 6.6 ms — against a list that is now 0.03–0.10 ms. Page 1 of
+   `/runs` is ~250× more COUNT than list.
+2. **`OFFSET` is still linear.** At offset 90k the database walks and discards
+   90,000 index entries: `/runs` 32.1 ms, `/incidents` 25.1 ms. The ordering is
+   already total, which is the precondition for keyset/seek paging, but that
+   changes the request contract and is tracked separately.
+
+---
