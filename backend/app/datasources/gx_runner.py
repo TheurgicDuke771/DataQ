@@ -29,6 +29,9 @@ _SAMPLE_KEYS = (
     "unexpected_index_list",
 )
 
+_INDEX_LIST_KEY = "unexpected_index_list"
+_PARTIAL_INDEX_LIST_KEY = "partial_unexpected_index_list"
+
 # Cap on rows `_value_signal_summary_by_column` examines (#1230) — unbounded,
 # the per-cell regex/entropy work is O(rows x columns) inside the Celery run path.
 _VALUE_SIGNAL_SUMMARY_ROW_CAP = 5_000
@@ -108,13 +111,31 @@ def _value_signal_summary_by_column(rows: list[Any]) -> dict[str, dict[str, int]
     return summary
 
 
+def _locator_rows(result: dict[str, Any]) -> tuple[bool, Any]:
+    """The locator rows in a GX result, under whichever key this result format used.
+
+    ``COMPLETE`` (the frame lanes) names them `unexpected_index_list`; ``SUMMARY`` (the SQL
+    lanes, #1534) names the same rows, from the same LIMIT-ed locator query, as
+    `partial_unexpected_index_list`.
+    """
+    for key in (_INDEX_LIST_KEY, _PARTIAL_INDEX_LIST_KEY):
+        if key in result:
+            return True, result[key]
+    return False, None
+
+
 def _extract_sample_failures(result: dict[str, Any]) -> dict[str, Any] | None:
     """Copy the failing-row keys out of a GX result, bounded to `SAMPLE_ROW_CAP` (#1196)."""
     sample: dict[str, Any] = {}
     for key in _SAMPLE_KEYS:
-        if key not in result:
+        if key == _INDEX_LIST_KEY:
+            present, value = _locator_rows(result)
+            if not present:
+                continue
+        elif key in result:
+            value = result[key]
+        else:
             continue
-        value = result[key]
         if key == "unexpected_index_list" and not _is_identifier_index_list(value):
             continue
         if (
@@ -269,6 +290,37 @@ def _execute(
     return to_suite_outcome(result)
 
 
+def _is_sql_batch(batch_definition: Any) -> bool:
+    """Does this batch definition run on a SQLAlchemy execution engine?"""
+    from great_expectations.datasource.fluent import SQLDatasource
+
+    datasource = getattr(getattr(batch_definition, "data_asset", None), "datasource", None)
+    return isinstance(datasource, SQLDatasource)
+
+
+def _result_format(*, sql_batch: bool, index_columns: list[str] | None) -> Any:
+    """The GX result format for this lane.
+
+    COMPLETE on a SQL engine fetches the unexpected VALUES with no ``LIMIT`` — the locator
+    query is already bounded by `partial_unexpected_count`, the values query is not, so a
+    widely-failing check on a large table makes the warehouse materialise every failing row
+    (#1534). SUMMARY pushes the same bound onto both queries and returns the identical rows
+    under `partial_unexpected_index_list`. The frame lanes keep COMPLETE: pandas holds the
+    batch in memory already, and its locator list is capped at capture (#1196).
+    """
+    if not sql_batch:
+        if not index_columns:
+            return "COMPLETE"
+        return {"result_format": "COMPLETE", "unexpected_index_column_names": index_columns}
+    result_format: dict[str, Any] = {
+        "result_format": "SUMMARY",
+        "partial_unexpected_count": SAMPLE_ROW_CAP,
+    }
+    if index_columns:
+        result_format["unexpected_index_column_names"] = index_columns
+    return result_format
+
+
 def run_expectations(
     context: Any,
     *,
@@ -279,6 +331,7 @@ def run_expectations(
     index_columns: list[str] | None = None,
 ) -> SuiteOutcome:
     """Register the suite + validation definition for `batch_definition` and run."""
+    sql_batch = _is_sql_batch(batch_definition)
     if not index_columns:
         return _execute(
             context,
@@ -286,7 +339,7 @@ def run_expectations(
             checks=checks,
             name=name,
             batch_parameters=batch_parameters,
-            result_format="COMPLETE",
+            result_format=_result_format(sql_batch=sql_batch, index_columns=None),
         )
     outcome = _execute(
         context,
@@ -294,7 +347,7 @@ def run_expectations(
         checks=checks,
         name=name,
         batch_parameters=batch_parameters,
-        result_format={"result_format": "COMPLETE", "unexpected_index_column_names": index_columns},
+        result_format=_result_format(sql_batch=sql_batch, index_columns=index_columns),
     )
     if outcome.checks and all(check.errored for check in outcome.checks):
         return _execute(
@@ -303,6 +356,6 @@ def run_expectations(
             checks=checks,
             name=f"{name}-noidx",
             batch_parameters=batch_parameters,
-            result_format="COMPLETE",
+            result_format=_result_format(sql_batch=sql_batch, index_columns=None),
         )
     return outcome

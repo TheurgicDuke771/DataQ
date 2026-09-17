@@ -374,6 +374,21 @@ Snowflake ramp above.
 - **Widening the pushdown allowlist** stays a per-type audited decision
   (unity_catalog.py:168-182) — each additional expectation type needs its own
   live-verification pass before joining `SQL_PUSHDOWN_EXPECTATION_TYPES`.
+- **The failing-row fetch is now bounded in SQL, not after the fact.**
+  Every rung above was measured on a suite whose checks mostly *passed*, which is
+  the case the old result format survived. Under `COMPLETE`, GX LIMITs the
+  locator query to `partial_unexpected_count` but emits the unexpected-*values*
+  query with no `LIMIT` at all, so a widely-failing check (a 50%-null column on a
+  large table) made the warehouse materialise every failing row before the sample
+  cap applied — the client-side fetch was bounded at GX's own
+  `MAX_RESULT_RECORDS` (200), the warehouse-side work was not. Both SQL lanes
+  (Snowflake, UC pushdown + custom SQL) now run `SUMMARY` with
+  `partial_unexpected_count = SAMPLE_ROW_CAP`, which puts the same `LIMIT` on
+  both queries and returns the identical rows; the frame lanes keep `COMPLETE`.
+  **Residual:** an `observed_value` that is itself a list (the distinct-values
+  expectations) is still bounded only at capture, and a custom-SQL check is the
+  user's own statement — GX reads at most 200 rows of it, but the warehouse-side
+  cost of the query is theirs.
 - **Beyond 200M** was not measured — this campaign matched Snowflake's tested
   ceiling rather than exceeding it. Nothing in the pushdown/custom-SQL mechanism
   (both are pure warehouse-side SQL, same as Snowflake's path) suggests a
