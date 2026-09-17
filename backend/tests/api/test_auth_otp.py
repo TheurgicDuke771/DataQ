@@ -316,6 +316,28 @@ def test_the_endpoints_503_when_otp_is_not_configured(
 _FLOOR = 0.4
 
 
+def _timed_post(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, url: str, payload: dict[str, str]
+) -> tuple[float, float]:
+    """(wall seconds, seconds spent in `time.sleep`). The pad is bounded by the floor
+    whatever the handler's own work costs, so the slept total — not the wall clock,
+    which a loaded runner inflates — is what tells one floor from two.
+    """
+    import time
+
+    real_sleep = time.sleep
+    slept: list[float] = []
+
+    def _recording_sleep(seconds: float) -> None:
+        slept.append(seconds)
+        real_sleep(seconds)
+
+    monkeypatch.setattr(time, "sleep", _recording_sleep)
+    started = time.monotonic()
+    client.post(url, json=payload)
+    return time.monotonic() - started, sum(slept)
+
+
 def test_an_ineligible_response_is_held_as_long_as_an_eligible_one(
     client: TestClient, otp_env: dict[str, Any]
 ) -> None:
@@ -363,20 +385,19 @@ def test_a_throttled_response_is_held_to_the_floor_too(
     assert elapsed >= _FLOOR, f"throttled answered in {elapsed:.3f}s"
 
 
-def test_the_floor_is_applied_once_not_twice(client: TestClient, otp_env: dict[str, Any]) -> None:
+def test_the_floor_is_applied_once_not_twice(
+    client: TestClient, otp_env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A floor applied in two places (service AND endpoint, say) would still hide
     eligibility — and would double every sign-in's latency while looking correct.
     The bound is the tell: one floor, not two.
     """
-    import time
-
     otp_env["settings"] = _otp_settings(auth_otp_request_min_seconds=_FLOOR)
 
-    started = time.monotonic()
-    client.post(REQUEST_URL, json={"email": _address()})
-    elapsed = time.monotonic() - started
+    elapsed, slept = _timed_post(monkeypatch, client, REQUEST_URL, {"email": _address()})
 
-    assert _FLOOR <= elapsed < 2 * _FLOOR, f"{elapsed:.3f}s is not one floor's worth"
+    assert elapsed >= _FLOOR, f"answered in {elapsed:.3f}s"
+    assert slept <= _FLOOR, f"padded {slept:.3f}s against a {_FLOOR}s floor"
 
 
 def test_a_dispatch_failure_is_held_to_the_floor_too(
@@ -554,20 +575,19 @@ def test_a_SUCCESSFUL_verification_is_NOT_padded(
 
 
 def test_the_verify_floor_is_applied_once_not_twice(
-    client: TestClient, otp_env: dict[str, Any]
+    client: TestClient, otp_env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """One floor, not two — a second pad anywhere on the path would still hide
     eligibility while doubling the wait, so the upper bound is the tell.
     """
-    import time
-
     otp_env["settings"] = _verify_floor_settings()
 
-    started = time.monotonic()
-    client.post(VERIFY_URL, json={"email": _address(), "code": "000000"})
-    elapsed = time.monotonic() - started
+    elapsed, slept = _timed_post(
+        monkeypatch, client, VERIFY_URL, {"email": _address(), "code": "000000"}
+    )
 
-    assert _VERIFY_FLOOR <= elapsed < 2 * _VERIFY_FLOOR, f"{elapsed:.3f}s is not one floor's worth"
+    assert elapsed >= _VERIFY_FLOOR, f"answered in {elapsed:.3f}s"
+    assert slept <= _VERIFY_FLOOR, f"padded {slept:.3f}s against a {_VERIFY_FLOOR}s floor"
 
 
 def test_the_unconfigured_503_is_NOT_padded_on_verify(
