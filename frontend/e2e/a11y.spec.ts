@@ -5,11 +5,9 @@ import { fileURLToPath } from 'node:url';
 
 import {
   type AxeViolationLike,
-  diffNew,
   filterGated,
-  formatViolations,
-  loadBaseline,
-  saveBaseline,
+  newViolationsMessage,
+  ratchet,
   toRecords,
 } from '../scripts/a11y/ratchet';
 
@@ -36,22 +34,8 @@ async function checkRoute(page: import('@playwright/test').Page, surface: string
   const results = await new AxeBuilder({ page }).options({ ancestry: true }).analyze();
   const gated = filterGated(results.violations as AxeViolationLike[]);
   const records = toRecords(surface, gated);
-
-  if (CAPTURE) {
-    const rest = loadBaseline(BASELINE_PATH).filter((r) => r.surface !== surface);
-    saveBaseline(BASELINE_PATH, [...rest, ...records]);
-    return;
-  }
-
-  const baseline = loadBaseline(BASELINE_PATH).filter((r) => r.surface === surface);
-  const newViolations = diffNew(records, baseline);
-  expect(
-    newViolations,
-    newViolations.length > 0
-      ? `${surface}: NEW serious/critical a11y violation(s) not in frontend/a11y-baseline.json:\n` +
-          formatViolations(newViolations)
-      : undefined,
-  ).toEqual([]);
+  const { newViolations } = ratchet(surface, records, { path: BASELINE_PATH, capture: CAPTURE });
+  expect(newViolations, newViolationsMessage(surface, newViolations)).toEqual([]);
 }
 
 test.describe('Accessibility floor (axe-core, serious/critical, ratcheted)', () => {

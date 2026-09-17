@@ -20,13 +20,10 @@ import { fileURLToPath } from 'node:url';
 
 import {
   type AxeViolationLike,
-  diffNew,
   filterGated,
-  formatViolations,
-  loadBaseline,
-  saveBaseline,
+  newViolationsMessage,
+  ratchet,
   toRecords,
-  type ViolationRecord,
 } from '../../scripts/a11y/ratchet';
 
 import { type Connection, getConnection, listConnections } from '../../src/api/connections';
@@ -89,10 +86,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const BASELINE_PATH = resolve(__dirname, '../../a11y-baseline.json');
 const CAPTURE = process.env.A11Y_BASELINE === '1';
 
-const captured: ViolationRecord[] = [];
-const baseline = loadBaseline(BASELINE_PATH);
-
-/** Run axe over `container`, keep only serious/critical, diff or capture per `CAPTURE`. */
+/** Run axe over `container`, keep only serious/critical, diff or capture per `CAPTURE`.
+ * Each call does its own load-modify-save when capturing (see `ratchet()`), so per-test
+ * ordering within this file doesn't matter — no batching/deferred-write needed. */
 async function checkA11y(surface: string, container: HTMLElement): Promise<void> {
   const results = await axe.run(container, {
     ancestry: true,
@@ -102,29 +98,13 @@ async function checkA11y(surface: string, container: HTMLElement): Promise<void>
   });
   const gated = filterGated(results.violations as AxeViolationLike[]);
   const records = toRecords(surface, gated);
-
-  if (CAPTURE) {
-    captured.push(...records);
-    return;
-  }
-
-  const relevant = baseline.filter((b) => b.surface === surface);
-  const newViolations = diffNew(records, relevant);
-  if (newViolations.length > 0) {
-    throw new Error(
-      `${surface}: ${newViolations.length} NEW serious/critical a11y violation(s) not in the baseline ` +
-        `(frontend/a11y-baseline.json). Fix them, or if this is deliberately deferred work, ` +
-        `regenerate the baseline with \`pnpm a11y:baseline\` and explain why in the PR:\n` +
-        formatViolations(newViolations),
-    );
-  }
+  const { newViolations } = ratchet(surface, records, { path: BASELINE_PATH, capture: CAPTURE });
+  const message = newViolationsMessage(surface, newViolations);
+  if (message) throw new Error(message);
 }
 
 afterEach(() => vi.clearAllMocks());
 
-// A single, ordered top-level describe so the CAPTURE writeback (module-scope `captured`
-// array, flushed in the final test) sees every surface's records regardless of file/test
-// execution order within this file.
 describe('component a11y floor (#1670)', () => {
   it('ConnectionForm (snowflake) has no new serious/critical violations', async () => {
     const { container } = render(
@@ -276,13 +256,5 @@ describe('component a11y floor (#1670)', () => {
       expect(document.querySelectorAll('tr.ant-table-row').length).toBeGreaterThan(0),
     );
     await checkA11y('component:Results', container);
-  });
-
-  // Must run last: flushes the captured records to disk when regenerating the baseline
-  // (`A11Y_BASELINE=1 pnpm a11y:baseline`). A no-op otherwise.
-  it('writes the captured baseline shard when A11Y_BASELINE=1', () => {
-    if (!CAPTURE) return;
-    const others = loadBaseline(BASELINE_PATH).filter((r) => !r.surface.startsWith('component:'));
-    saveBaseline(BASELINE_PATH, [...others, ...captured]);
   });
 });

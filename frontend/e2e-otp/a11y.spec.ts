@@ -5,11 +5,9 @@ import { fileURLToPath } from 'node:url';
 import { expect, test } from './fixtures';
 import {
   type AxeViolationLike,
-  diffNew,
   filterGated,
-  formatViolations,
-  loadBaseline,
-  saveBaseline,
+  newViolationsMessage,
+  ratchet,
   toRecords,
 } from '../scripts/a11y/ratchet';
 
@@ -26,23 +24,10 @@ test('sign-in screen', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByLabel('Email address')).toBeVisible();
 
+  const surface = 'route:/sign-in';
   const results = await new AxeBuilder({ page }).options({ ancestry: true }).analyze();
   const gated = filterGated(results.violations as AxeViolationLike[]);
-  const records = toRecords('route:/sign-in', gated);
-
-  if (CAPTURE) {
-    const rest = loadBaseline(BASELINE_PATH).filter((r) => r.surface !== 'route:/sign-in');
-    saveBaseline(BASELINE_PATH, [...rest, ...records]);
-    return;
-  }
-
-  const baseline = loadBaseline(BASELINE_PATH).filter((r) => r.surface === 'route:/sign-in');
-  const newViolations = diffNew(records, baseline);
-  expect(
-    newViolations,
-    newViolations.length > 0
-      ? `route:/sign-in: NEW serious/critical a11y violation(s) not in frontend/a11y-baseline.json:\n` +
-          formatViolations(newViolations)
-      : undefined,
-  ).toEqual([]);
+  const records = toRecords(surface, gated);
+  const { newViolations } = ratchet(surface, records, { path: BASELINE_PATH, capture: CAPTURE });
+  expect(newViolations, newViolationsMessage(surface, newViolations)).toEqual([]);
 });

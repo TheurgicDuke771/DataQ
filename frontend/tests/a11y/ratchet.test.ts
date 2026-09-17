@@ -13,6 +13,7 @@ import {
   type AxeViolationLike,
   diffNew,
   loadBaseline,
+  ratchet,
   saveBaseline,
   toRecords,
 } from '../../scripts/a11y/ratchet';
@@ -70,7 +71,8 @@ describe('baseline round-trip has one row per unique key (no useId collapse)', (
     const path = join(dir, 'baseline.json');
 
     const records = toRecords('route:/results', [twoDistinctUseIdNodes()]);
-    saveBaseline(path, records);
+    const captured = ratchet('route:/results', records, { path, capture: true });
+    expect(captured.newViolations).toEqual([]);
 
     const baseline = loadBaseline(path);
     expect(baseline).toHaveLength(2);
@@ -79,8 +81,8 @@ describe('baseline round-trip has one row per unique key (no useId collapse)', (
     expect(uniqueKeys.size).toBe(baseline.length);
 
     // Re-running the exact same scan against the just-saved baseline reports nothing new.
-    const rescanned = diffNew(records, loadBaseline(path));
-    expect(rescanned).toEqual([]);
+    const rescanned = ratchet('route:/results', records, { path, capture: false });
+    expect(rescanned.newViolations).toEqual([]);
   });
 
   it('saveBaseline never collapses rows that differ only in ancestry', () => {

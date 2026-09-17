@@ -1,7 +1,8 @@
-// Shared accessibility-violation ratchet — imported by both the Playwright a11y spec
-// (frontend/e2e/a11y.spec.ts, real axe-core results via @axe-core/playwright) and the
-// Vitest component a11y test (frontend/tests/a11y/components.a11y.test.tsx, axe-core run
-// directly against jsdom). Kept framework-free so neither test runner's globals leak here.
+// Shared accessibility-violation ratchet — imported by both the Playwright a11y specs
+// (frontend/e2e/a11y.spec.ts + frontend/e2e-otp/a11y.spec.ts, real axe-core results via
+// @axe-core/playwright) and the Vitest component a11y test
+// (frontend/tests/a11y/components.a11y.test.tsx, axe-core run directly against jsdom).
+// Kept framework-free so neither test runner's globals leak here.
 //
 // The ratchet (#1670): fail a run only on a violation NOT already in the committed
 // baseline. This stops regression today without requiring every existing violation to be
@@ -103,7 +104,9 @@ export function saveBaseline(path: string, baseline: Baseline): void {
   writeFileSync(path, JSON.stringify(payload, null, 2) + '\n', 'utf-8');
 }
 
-/** Records present in `current` but not in `baseline` — what the ratchet fails on. */
+/** Records present in `current` but not in `baseline` — what the ratchet fails on. Not
+ * pre-filtered to `current`'s surface by the caller: `key()` already includes `surface`, so
+ * a baseline row for a different surface can never collide with one of `current`'s keys. */
 export function diffNew(current: ViolationRecord[], baseline: Baseline): ViolationRecord[] {
   const known = new Set(baseline.map(key));
   return current.filter((r) => !known.has(key(r)));
@@ -113,4 +116,53 @@ export function formatViolations(records: ViolationRecord[]): string {
   return records
     .map((r) => `  [NEW] ${r.surface} — ${r.ruleId} (${r.impact}) at ${r.selector}\n    ${r.help}`)
     .join('\n');
+}
+
+export interface RatchetOptions {
+  /** Path to the committed baseline JSON (frontend/a11y-baseline.json). */
+  path: string;
+  /** `A11Y_BASELINE=1` — regenerate this surface's baseline rows instead of gating. */
+  capture: boolean;
+}
+
+export interface RatchetResult {
+  /** Empty in capture mode (nothing to fail on during a deliberate regen) — otherwise the
+   * violations present now but absent from the committed baseline. */
+  newViolations: ViolationRecord[];
+}
+
+/** The ratchet-or-capture glue shared by all three a11y specs (#1670): in capture mode,
+ * overwrite `surface`'s rows in the baseline; otherwise diff `records` against the
+ * committed baseline. Each call does an immediate load-modify-save in capture mode, so
+ * regenerating multiple surfaces from one process (the Vitest file, or a Playwright run
+ * with `--workers=1`) is safe called once per surface, in any order. */
+export function ratchet(
+  surface: string,
+  records: ViolationRecord[],
+  { path, capture }: RatchetOptions,
+): RatchetResult {
+  if (capture) {
+    const rest = loadBaseline(path).filter((r) => r.surface !== surface);
+    saveBaseline(path, [...rest, ...records]);
+    return { newViolations: [] };
+  }
+  return { newViolations: diffNew(records, loadBaseline(path)) };
+}
+
+/** The one failure-message builder for all three specs — tells the reader what broke and
+ * how to respond, so a reviewer reading either Playwright's or Vitest's output gets the
+ * same instructions either way. `undefined` (rather than a "no violations" string) when
+ * there's nothing new, since `expect(x, undefined)` uses the default matcher message and
+ * Vitest's `throw` path is skipped entirely in that case. */
+export function newViolationsMessage(
+  surface: string,
+  newViolations: ViolationRecord[],
+): string | undefined {
+  if (newViolations.length === 0) return undefined;
+  return (
+    `${surface}: NEW serious/critical a11y violation(s) not in frontend/a11y-baseline.json. ` +
+    'Fix them, or if this is deliberately deferred work, regenerate the baseline with ' +
+    '`pnpm a11y:baseline` and explain why in the PR:\n' +
+    formatViolations(newViolations)
+  );
 }
