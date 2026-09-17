@@ -192,6 +192,12 @@ def test_flatfile_batch_pattern_at_length_cap_is_accepted() -> None:
         r"([a-z]*)+",
         r"(a*)*",
         r"orders_(\d+)+\.csv",
+        # Bounded repetition is still exponential — a `{m,n}` cap just raises the
+        # pathological-input length needed to blow up, it doesn't remove the blowup
+        # (/code-review catch: the original guard matched only a bare `+`/`*` suffix).
+        r"(a+){50,}",
+        r"(a+){2,20}",
+        r"(a+)+?",  # lazy quantifiers backtrack the same way
     ],
 )
 def test_flatfile_batch_nested_quantifier_pattern_is_rejected(pattern: str) -> None:
@@ -206,6 +212,8 @@ def test_flatfile_batch_nested_quantifier_pattern_is_rejected(pattern: str) -> N
         r"orders_(\d{4}-\d{2}-\d{2})\.csv",
         r"(ab)+",
         r"a+",
+        r"(order_id){2}",  # a quantified group with no quantifier INSIDE it — plain repetition
+        r"(sales|orders)_\d{4}\.csv",
     ],
 )
 def test_flatfile_batch_ordinary_quantified_patterns_are_not_flagged(pattern: str) -> None:

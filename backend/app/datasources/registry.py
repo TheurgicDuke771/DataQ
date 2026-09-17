@@ -299,12 +299,20 @@ _BATCH_STRATEGIES = {"latest", "specific"}
 #: (`resolve_target`) enforce the identical rule.
 _MAX_BATCH_PATTERN_LENGTH = 200
 
+#: A quantifier token: `+`/`*`, or a `{m}`/`{m,}`/`{m,n}` bound — each optionally
+#: lazy (`+?`, `{2,}?`, ...). `?` alone is excluded: it can't repeat a group's
+#: match more than once, so it can't itself drive backtracking blowup.
+_QUANTIFIER = r"(?:[+*]|\{\d+(?:,\d*)?\})\??"
+
 #: Catastrophic backtracking's classic construct is a quantified GROUP whose own
-#: body is itself quantified — e.g. ``(a+)+`` or ``([a-z]*)+`` — which a
-#: pathological key (many repeats of the inner unit, then a non-match) can drive
-#: to exponential-time matching. Detected structurally, not exhaustively: this
-#: catches the common shape, not every possible ReDoS pattern.
-_NESTED_QUANTIFIER_RE = re.compile(r"\([^()]*[+*][^()]*\)[+*]")
+#: body is itself quantified — e.g. ``(a+)+``, ``([a-z]*)+``, or the bounded
+#: forms ``(a+){50,}``/``(a+){2,20}`` (still exponential — a bound just raises
+#: the pathological-input length needed to blow up, it doesn't remove the
+#: blowup). A pathological key (many repeats of the inner unit, then a
+#: non-match) can drive any of these to exponential-time matching. Detected
+#: structurally, not exhaustively: this catches the common shape, not every
+#: possible ReDoS pattern.
+_NESTED_QUANTIFIER_RE = re.compile(rf"\([^()]*{_QUANTIFIER}[^()]*\){_QUANTIFIER}")
 
 
 def _reject_redos_shape(pattern: str) -> None:
