@@ -95,6 +95,7 @@ const baseline = loadBaseline(BASELINE_PATH);
 /** Run axe over `container`, keep only serious/critical, diff or capture per `CAPTURE`. */
 async function checkA11y(surface: string, container: HTMLElement): Promise<void> {
   const results = await axe.run(container, {
+    ancestry: true,
     // jsdom-appropriate: skip rules axe-core itself documents as needing real layout
     // (best-practice, not the WCAG floor this ratchet targets).
     rules: { 'color-contrast': { enabled: false } },

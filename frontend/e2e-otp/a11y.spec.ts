@@ -26,7 +26,7 @@ test('sign-in screen', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByLabel('Email address')).toBeVisible();
 
-  const results = await new AxeBuilder({ page }).analyze();
+  const results = await new AxeBuilder({ page }).options({ ancestry: true }).analyze();
   const gated = filterGated(results.violations as AxeViolationLike[]);
   const records = toRecords('route:/sign-in', gated);
 

@@ -33,7 +33,7 @@ const CAPTURE = process.env.A11Y_BASELINE === '1';
  * invocation must run this spec with `--workers=1` (documented in the `a11y:baseline`
  * script) to avoid a write race across routes. */
 async function checkRoute(page: import('@playwright/test').Page, surface: string): Promise<void> {
-  const results = await new AxeBuilder({ page }).analyze();
+  const results = await new AxeBuilder({ page }).options({ ancestry: true }).analyze();
   const gated = filterGated(results.violations as AxeViolationLike[]);
   const records = toRecords(surface, gated);
 

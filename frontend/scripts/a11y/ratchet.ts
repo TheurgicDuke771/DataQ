@@ -10,12 +10,13 @@ import { readFileSync, writeFileSync } from 'node:fs';
 
 /** A minimal axe-core violation shape — just enough of the real `AxeResults['violations']`
  *  element to build a stable identity, independent of which axe binding produced it
- *  (`@axe-core/playwright`'s AxeResults and axe-core's own `run()` result share this shape). */
+ *  (`@axe-core/playwright`'s AxeResults and axe-core's own `run()` result share this shape).
+ *  Callers must run axe with `{ ancestry: true }` so `nodes[].ancestry` is populated. */
 export interface AxeViolationLike {
   id: string;
   impact?: string | null;
   help: string;
-  nodes: Array<{ target: unknown[] }>;
+  nodes: Array<{ target: unknown[]; ancestry?: unknown[] }>;
 }
 
 /** One ratcheted violation, flattened to one row per affected DOM node (an axe violation
@@ -25,7 +26,15 @@ export interface ViolationRecord {
   surface: string;
   ruleId: string;
   impact: string;
-  /** The CSS selector axe-core reports for the offending node, joined if it's a frame path. */
+  /** axe-core's structural `ancestry` path for the node (nth-child based, no ids) — this,
+   * not `selector`, is the baseline identity. Two elements whose only difference is a
+   * React `useId()`-minted id still have distinct ancestries, since ancestry walks DOM
+   * position rather than reporting the node's own selector. Falls back to `target` if the
+   * caller ran axe without `ancestry: true` (defensive; every caller here passes it). */
+  ancestry: string;
+  /** The raw CSS selector axe-core reports for the offending node — human-readable context
+   * in failure output only, never part of the baseline identity (a `useId()` id here is
+   * expected to vary from run to run without meaning a violation is new or gone). */
   selector: string;
   help: string;
 }
@@ -48,11 +57,14 @@ export function toRecords(surface: string, violations: AxeViolationLike[]): Viol
   for (const violation of violations) {
     const impact = violation.impact ?? 'unknown';
     for (const node of violation.nodes) {
+      const ancestrySource =
+        node.ancestry && node.ancestry.length > 0 ? node.ancestry : node.target;
       records.push({
         surface,
         ruleId: violation.id,
         impact,
-        selector: JSON.stringify(node.target.map(normalizeSelectorPart)),
+        ancestry: JSON.stringify(ancestrySource),
+        selector: JSON.stringify(node.target),
         help: violation.help,
       });
     }
@@ -60,24 +72,13 @@ export function toRecords(surface: string, violations: AxeViolationLike[]): Viol
   return records;
 }
 
-/** React's `useId()` mints per-mount-order ids (`_r_s_`, `:r1:`, …) — stable within one
- * render, but NOT across two separate page loads/renders when anything upstream changes
- * how many ids were minted before this one (a genuinely flaky key, found live: the same
- * antd Select flipped between an id-based and a class-based axe selector across two runs
- * of the results route with identical seeded data). Collapse any such id to a fixed
- * placeholder so the baseline key is the DOM structure, not this run's id numbering. */
-function normalizeSelectorPart(part: unknown): unknown {
-  if (typeof part !== 'string') return part;
-  return part.replace(/#_r_[0-9a-z]+_\b|:r[0-9a-z]+:/gi, '#useId');
-}
-
 /** Keep only serious/critical violations — the ratchet's floor (#1670 item 1). */
 export function filterGated(violations: AxeViolationLike[]): AxeViolationLike[] {
   return violations.filter((v) => isGatedImpact(v.impact));
 }
 
-function key(record: Pick<ViolationRecord, 'surface' | 'ruleId' | 'selector'>): string {
-  return `${record.surface}\0${record.ruleId}\0${record.selector}`;
+function key(record: Pick<ViolationRecord, 'surface' | 'ruleId' | 'ancestry'>): string {
+  return `${record.surface}\0${record.ruleId}\0${record.ancestry}`;
 }
 
 export function loadBaseline(path: string): Baseline {
