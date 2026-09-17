@@ -645,6 +645,10 @@ class Run(Base):
             "triggered_by",
             postgresql_where=text("triggered_by IS NOT NULL"),
         ),
+        # #1245: the `/runs` newest-first page order. Serves the unfiltered list (the default
+        # Results read, which is `suite_id IN (<accessible suites>)` and so cannot use
+        # `ix_runs_suite_created`) and, by filtered index scan, the `?status=` one.
+        Index("ix_runs_created_id", text("created_at DESC"), text("id DESC")),
     )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
@@ -766,6 +770,8 @@ class PipelineRun(Base):
             "ix_pipeline_runs_marker",
             text("(provider || ':' || pipeline_or_dag_id || ':' || provider_run_id)"),
         ),
+        # #1245: the `/pipeline_runs` newest-first page order (`pipeline_run_order_by`).
+        Index("ix_pipeline_runs_created_id", text("created_at DESC"), text("id DESC")),
     )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
@@ -1034,6 +1040,9 @@ class Incident(Base):
         Index("ix_incidents_check_id", "check_id"),
         Index("ix_incidents_suite_id", "suite_id"),
         Index("ix_incidents_status", "status"),
+        # #1245: the `/incidents` page order — `last_seen_at`, not `created_at`, because the
+        # list orders, filters and windows on the most recent breach (`list_incidents`).
+        Index("ix_incidents_last_seen_id", text("last_seen_at DESC"), text("id DESC")),
         # The dedup guarantee; the engine's ON CONFLICT index_where mirrors this predicate — keep
         # the two in sync.
         Index(
