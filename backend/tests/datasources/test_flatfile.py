@@ -2710,3 +2710,54 @@ def test_a_growing_head_window_fetches_only_the_delta(
         assert start == cursor
         cursor += length
     assert sum(length for _, length in ranges) == cursor
+
+
+def test_a_sampled_run_probes_the_objects_metadata_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`run_service` drives ONE runner through checks then monitors, and
+    `FlatFileCheckRunner._stat` already holds the object's size for the whole run.
+    The sampled read and the volume count each re-probed it because both are
+    module functions with no access to that memo.
+
+    Counted at the CLIENT, not at `object_size`: patching the function under test
+    is exactly what cannot see a memo that lives inside it.
+    """
+    log = _fake_s3(monkeypatch, _csv_bytes(500))
+
+    runner = flatfile.FlatFileCheckRunner(
+        conn_type="s3",
+        config=_S3_CONFIG,
+        secret="x",
+        sampling=SampleSpec(strategy="head", rows=10),
+    )
+    outcome = runner.run_checks(
+        table="raw/big.csv",
+        schema=None,
+        checks=[CheckSpec("expect_column_values_to_not_be_null", {"column": "id"})],
+    )
+    monitors = runner.run_monitors(
+        table="raw/big.csv", schema=None, monitors=[_spec("volume", min_rows=1, max_rows=10_000)]
+    )
+
+    assert outcome.checks[0].success is True
+    assert monitors[0].errored is False
+    assert (monitors[0].observed_value or {})["row_count"] == 500
+    assert log["heads"] == 1, "the run re-probed metadata it already held"
+
+
+def test_one_sampled_read_heads_the_object_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Without a caller-supplied stat the read must still HEAD once, not once per
+    reader it opens — the random path opens a counting stream and a taking one.
+    """
+    log = _fake_s3(monkeypatch, _csv_bytes(20_000))
+
+    flatfile.read_sampled_dataframe(
+        conn_type="s3",
+        config=_S3_CONFIG,
+        path="raw/big.csv",
+        secret="s",
+        sample=SampleSpec(strategy="random", rows=50, seed=7),
+    )
+
+    assert log["heads"] == 1

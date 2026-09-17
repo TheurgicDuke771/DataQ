@@ -185,6 +185,9 @@ class StoreSession:
         self._adls_config: AdlsConfig | None = None
         #: Clients constructed by this session — asserted by the seam tests.
         self.clients_created = 0
+        #: Byte sizes already known per path. The runner's `FileStat` memo seeds
+        #: this, so a sampled read never re-HEADs an object already stat'd (#1329).
+        self.sizes: dict[str, int] = {}
 
     @property
     def s3_config(self) -> S3Config:
@@ -266,12 +269,19 @@ def object_size(
     secret: str,
     session: StoreSession | None = None,
 ) -> int:
-    """Byte length of exactly ``path`` — one metadata call (live seam, #882)."""
+    """Byte length of exactly ``path`` — one metadata call (live seam, #882).
+
+    Answered from the session's size memo when it already holds ``path``.
+    """
     with _session(session, conn_type=conn_type, config=config, secret=secret) as ses:
+        known = ses.sizes.get(path)
+        if known is not None:
+            return known
         if conn_type == "s3":
-            length: int = ses.s3.head_object(Bucket=ses.s3_config.bucket, Key=path)["ContentLength"]
-            return length
-        size: int = ses.blob(path).get_blob_properties().size
+            size: int = ses.s3.head_object(Bucket=ses.s3_config.bucket, Key=path)["ContentLength"]
+        else:
+            size = ses.blob(path).get_blob_properties().size
+        ses.sizes[path] = size
         return size
 
 
@@ -570,13 +580,25 @@ def _csv_head_frame(reader_args: dict[str, Any], *, limit: int) -> tuple[Any, bo
 
 
 def read_sampled_dataframe(
-    *, conn_type: str, config: dict[str, Any], path: str, secret: str, sample: SampleSpec
+    *,
+    conn_type: str,
+    config: dict[str, Any],
+    path: str,
+    secret: str,
+    sample: SampleSpec,
+    stat: FileStat | None = None,
 ) -> tuple[Any, dict[str, Any]]:
-    """A bounded sample of a flat file, plus the record of what was sampled (#595)."""
+    """A bounded sample of a flat file, plus the record of what was sampled (#595).
+
+    ``stat`` is the caller's already-fetched metadata for ``path``; passing it
+    spares the readers a second HEAD of the same object (#1329).
+    """
     fmt = format_from_path(path)
     if fmt is None:
         raise ValueError(f"unsupported flat-file format for path {path!r}")
     with StoreSession(conn_type=conn_type, config=config, secret=secret) as session:
+        if stat is not None and stat.size is not None:
+            session.sizes[path] = stat.size
         return _sampled_frame(
             {
                 "conn_type": conn_type,
@@ -785,6 +807,23 @@ class FlatFileCheckRunner:
         if size is not None:
             enforce_byte_cap(size, cap=cap, target=f"file {path!r}")
 
+    def _counted_rows(self, path: str, stat: FileStat) -> int:
+        """`row_count` over one store session seeded with ``stat`` (#1329) — the
+        CSV walk behind a volume monitor is many range reads, not one download.
+        """
+        with StoreSession(
+            conn_type=self._conn_type, config=self._config, secret=self._secret
+        ) as session:
+            if stat.size is not None:
+                session.sizes[path] = stat.size
+            return row_count(
+                conn_type=self._conn_type,
+                config=self._config,
+                path=path,
+                secret=self._secret,
+                session=session,
+            )
+
     def _load_frame(self, path: str) -> tuple[Any, dict[str, Any] | None]:
         """The frame the checks run against, plus its sampling record (or ``None``)."""
         if self._sampling is not None:
@@ -795,6 +834,7 @@ class FlatFileCheckRunner:
                 path=path,
                 secret=self._secret,
                 sample=self._sampling,
+                stat=self._stat(path),
             )
         self._guard_object_size(path)
         frame = read_dataframe(
@@ -864,17 +904,7 @@ class FlatFileCheckRunner:
             if frame_is_needed:
                 return len(dataframe())
             # Memoized like the frame: no per-monitor re-scans or read retries.
-            return int(
-                _memoized(
-                    counted,
-                    lambda: row_count(
-                        conn_type=self._conn_type,
-                        config=self._config,
-                        path=table,
-                        secret=self._secret,
-                    ),
-                )
-            )
+            return int(_memoized(counted, lambda: self._counted_rows(table, stat)))
 
         def scalar_for(spec: MonitorSpec) -> Any:
             if spec.kind == VOLUME:
