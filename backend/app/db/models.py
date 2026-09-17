@@ -637,6 +637,14 @@ class Run(Base):
                 "OR triggered_by LIKE 'dbt:%'"
             ),
         ),
+        # #1715: `markers.triggered_runs` looks runs up by marker alone, which the index above
+        # cannot serve (it leads with suite_id). IS NOT NULL, not the LIKE predicate: an IN of
+        # non-null literals provably implies the former and not the latter.
+        Index(
+            "ix_runs_triggered_by",
+            "triggered_by",
+            postgresql_where=text("triggered_by IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
@@ -1314,14 +1322,23 @@ class LlmInvocation(Base):
         _in_check("status", LLM_INVOCATION_STATUSES, "llm_invocation_status_valid"),
         Index("ix_llm_invocations_requested_by", "requested_by_user_id"),
         # #1717: the #1644 reaper's per-status equality sweeps. Partial, so it stays a few rows wide
-        # while the table (retained forever, G4 audit record) grows. `llm_rca`'s succeeded-narrative
-        # lookup is the other non-PK read and is NOT covered here (#1743).
+        # while the table (retained forever, G4 audit record) grows.
         Index(
             "ix_llm_invocations_status_open",
             "status",
             postgresql_where=text(
                 "status IN (" + ", ".join(f"'{s}'" for s in LLM_INVOCATION_OPEN_STATUSES) + ")"
             ),
+        ),
+        # #1743: `llm_rca.latest_narrative_invocation`, called per active incident from the
+        # alert-dispatch path. The expression must stay TEXTUALLY what the ORM emits for
+        # `LlmInvocation.request["incident_id"].astext`, or the planner will not match it.
+        Index(
+            "ix_llm_invocations_rca_incident",
+            text("(request ->> 'incident_id')"),
+            text("created_at DESC"),
+            text("id DESC"),
+            postgresql_where=text("kind = 'rca_narrative' AND status = 'succeeded'"),
         ),
     )
 

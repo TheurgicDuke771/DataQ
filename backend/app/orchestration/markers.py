@@ -9,15 +9,21 @@ the boundary (``"nightly:etl"``+``"run-1"`` vs ``"nightly"``+``"etl:run-1"``).
 Every reader therefore reconstructs-and-compares against the stored columns and
 FAILS CLOSED when more than one row matches (#1714), instead of attributing a DQ
 run to whichever row came back first.
+
+Both directions are indexed (#1715): marker -> `pipeline_runs` by the
+`ix_pipeline_runs_marker` expression index (#1814), marker -> `runs` by
+`ix_runs_triggered_by`. Neither index can be made UNIQUE — a colliding marker is
+legitimate input, and a unique index would refuse the INSERT instead of letting
+the reader fail closed.
 """
 
 from __future__ import annotations
 
 import uuid
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass, field
 
-from sqlalchemy import ColumnElement, func, select
+from sqlalchemy import ColumnElement, Select, func, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_logger
@@ -43,20 +49,23 @@ def _reconstructed_marker() -> ColumnElement[str]:
     )
 
 
+def pipeline_runs_for_marker_statement(marker: str) -> Select[tuple[PipelineRun]]:
+    """Served by ``ix_pipeline_runs_marker`` (#1814); the provider pre-filter stays as a
+    cheap second candidate for the planner.
+    """
+    provider, _sep, _rest = marker.partition(":")
+    return select(PipelineRun).where(
+        PipelineRun.provider == provider, _reconstructed_marker() == marker
+    )
+
+
 def pipeline_runs_for_marker(session: Session, marker: str) -> list[PipelineRun]:
     """Every stored pipeline run that reconstructs to ``marker`` — the caller decides
     what more than one means (nothing, for every reader today).
     """
-    provider, sep, _rest = marker.partition(":")
-    if not sep:
+    if ":" not in marker:
         return []
-    return list(
-        session.scalars(
-            select(PipelineRun).where(
-                PipelineRun.provider == provider, _reconstructed_marker() == marker
-            )
-        )
-    )
+    return list(session.scalars(pipeline_runs_for_marker_statement(marker)))
 
 
 def unambiguous_pipeline_run(session: Session, marker: str) -> PipelineRun | None:
@@ -88,6 +97,13 @@ def ambiguous_markers(session: Session, markers: Iterable[str]) -> set[str]:
     return {marker for marker, _count in rows}
 
 
+def runs_for_markers_statement(markers: Collection[str]) -> Select[tuple[Run]]:
+    """Served by `ix_runs_triggered_by` (#1715); `uq_runs_suite_triggered_by` leads with
+    `suite_id` and cannot answer a marker-only lookup.
+    """
+    return select(Run).where(Run.triggered_by.in_(markers)).order_by(Run.created_at.desc())
+
+
 @dataclass
 class TriggeredRuns:
     #: Per pipeline run, the DQ runs it triggered, newest first — ``[]`` when its
@@ -104,11 +120,7 @@ def triggered_runs(session: Session, pipeline_runs: Sequence[PipelineRun]) -> Tr
     if not by_marker:
         return TriggeredRuns()
     ambiguous = ambiguous_markers(session, by_marker)
-    for run in session.scalars(
-        select(Run)
-        .where(Run.triggered_by.in_(set(by_marker) - ambiguous))
-        .order_by(Run.created_at.desc())
-    ):
+    for run in session.scalars(runs_for_markers_statement(set(by_marker) - ambiguous)):
         assert run.triggered_by is not None
         by_marker[run.triggered_by].append(run.id)
     if ambiguous:

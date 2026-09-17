@@ -99,8 +99,10 @@ def create_celery_app() -> Celery:
         # Deliberately NOT acks_late: early ack stops an OOM-killing run from being redelivered to a
         # fresh child (#755 poison pill).
         task_acks_late=False,
-        # Beat runs EMBEDDED in the worker (`worker -B`) in dev AND prod; beat state does not
-        # survive a restart.
+        # Beat runs as its OWN process/service (`celery ... beat`, no `-B`) in dev AND prod since
+        # #1811 — split out so a worker OOM (overlapping large suites under the concurrency=4 /
+        # 2 GiB rig, #1790) can never take the scheduler down with it (the #405 class). Beat state
+        # does not survive a restart either way.
         beat_schedule_filename=os.path.join(tempfile.gettempdir(), "dataq-celerybeat-schedule"),
         beat_schedule={
             "poll-orchestration-runs": {
@@ -273,13 +275,17 @@ def _dispatch_startup_tasks(**_kwargs: Any) -> None:
             log.exception("startup_task_dispatch_failed", task=name)
 
 
-@worker_ready.connect  # type: ignore[untyped-decorator]  # celery signal .connect is unannotated
-def _start_beat_watchdog(**_kwargs: Any) -> None:
-    """Arm the beat liveness watchdog once this worker is consuming (#904)."""
+def _arm_beat_watchdog(*, process: str) -> None:
+    """Start the beat liveness watchdog thread IN THE CALLING PROCESS (#904) — it
+    terminates whichever process it runs in, so arming it on the worker restarts a
+    wedged worker, and arming it on beat (#1811: beat is no longer embedded, so a
+    wedged/dead beat is a DIFFERENT failure than a wedged worker and the worker's
+    own watchdog restarting the worker does nothing to fix it) restarts beat.
+    """
     settings = get_settings()
     stale_after = settings.beat_watchdog_stale_after_s
     if stale_after <= 0:
-        get_logger(__name__).info("beat_watchdog_disabled")
+        get_logger(__name__).info("beat_watchdog_disabled", process=process)
         return
     try:
         from backend.app.worker.beat_watchdog import build_store, start_watchdog
@@ -292,7 +298,24 @@ def _start_beat_watchdog(**_kwargs: Any) -> None:
             interval_s=float(settings.beat_watchdog_interval_s),
         )
     except Exception:  # pragma: no cover - defensive; startup must not fail on this
-        get_logger(__name__).exception("beat_watchdog_start_failed")
+        get_logger(__name__).exception("beat_watchdog_start_failed", process=process)
+
+
+@worker_ready.connect  # type: ignore[untyped-decorator]  # celery signal .connect is unannotated
+def _start_worker_watchdog(**_kwargs: Any) -> None:
+    """Catches a worker that is alive but not executing tasks — including the
+    scheduled heartbeat task itself; restarting the worker is the fix here.
+    """
+    _arm_beat_watchdog(process="worker")
+
+
+@beat_init.connect  # type: ignore[untyped-decorator]  # celery signal .connect is unannotated
+def _start_beat_process_watchdog(**_kwargs: Any) -> None:
+    """Catches beat itself wedging (no heartbeat task ever gets scheduled) — the
+    worker's own watchdog above can't detect or fix that, since it only sees
+    whether tasks it's HANDED get executed, not whether beat is handing them out.
+    """
+    _arm_beat_watchdog(process="beat")
 
 
 @task_failure.connect  # type: ignore[untyped-decorator]  # celery signal .connect is unannotated

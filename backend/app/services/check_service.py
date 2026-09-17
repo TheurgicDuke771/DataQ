@@ -467,10 +467,11 @@ def validate_comparison_check(
         if "sampling" in source_spec:
             # `resolve_target` below would happily ACCEPT a sampling block on a capable source type.
             raise CheckConfigInvalidError(
-                "a comparison source does not support 'sampling' yet — the reader "
-                "materialises both sides in full for the diff, so the block would be "
-                "silently ignored. Narrow the source, or set config.max_rows "
-                "deliberately.",
+                "a comparison source does not support 'sampling' — decided, not "
+                "just unbuilt, see ADR 0015's 2026-09-16 amendment (#1331): two "
+                "independent samples of the two sides would share almost no keys "
+                "and report a confidently wrong reconciliation. Narrow the source "
+                "with config.source.query, or set config.max_rows deliberately.",
                 detail={"field": "config.source.sampling"},
             )
         try:

@@ -34,6 +34,8 @@ AI clients ──MCP/HTTP──► │  proxies /api + /mcp + /healthz same-orig
                     FastAPI (Container Apps, INTERNAL ingress) ──► PostgreSQL
                          │  │
                          │  └──► Celery worker ──► GX execution ──► Snowflake / ADLS / S3 / UC
+                         ├──► Celery beat (own process/service since #1811 — schedules only,
+                         │        never executes a task, so a worker OOM can't kill it)
                          ├──► Redis (task queue)
                          ├──► Key Vault (secrets)
                          └──► App Insights (observability)

@@ -1,6 +1,6 @@
-# ECS Fargate — api (internal, Cloud Map DNS), worker (Celery + embedded beat, min=max=1 desired
-# count — mirrors the Azure Container App's min_replicas=1 rationale: it can't scale to zero
-# because it runs beat), and frontend (public via the ALB).
+# ECS Fargate — api (internal, Cloud Map DNS), worker (Celery task execution only, no beat since
+# #1811), beat (the sole schedule dispatcher, its own service, desired_count=1 always), and
+# frontend (public via the ALB).
 
 resource "aws_ecs_cluster" "app" {
   name = "dataq-app"
@@ -195,7 +195,7 @@ resource "aws_ecs_service" "api" {
   }
 }
 
-# ── Worker (Celery worker + embedded beat) ──────────────────────────────
+# ── Worker (Celery task execution only, no beat — #1811) ──────────────────
 
 resource "aws_ecs_task_definition" "worker" {
   family                   = "dataq-app-worker"
@@ -211,10 +211,13 @@ resource "aws_ecs_task_definition" "worker" {
       name      = "worker"
       image     = local.backend_image
       essential = true
-      # -Q celery,llm (#1777): llm_invoke has its own queue now. A command-array change like
-      # this needs an explicit `tofu apply -replace` on this task def, not just an image roll —
-      # container_definitions is under ignore_changes (see the rollout gotcha in the AWS README).
-      command     = ["celery", "-A", "backend.app.worker.celery_app", "worker", "-B", "-Q", "celery,llm", "--loglevel=INFO"]
+      # -Q celery,llm (#1777): llm_invoke has its own queue now. NO -B (#1811): beat is now its
+      # own service below, so a worker OOM (concurrency=4 prefork children under the 2 GiB hard
+      # limit, overlapping large suites — #1790) can never take the scheduler down with it (the
+      # #405 class). A command-array change like this needs an explicit `tofu apply -replace` on
+      # this task def, not just an image roll — container_definitions is under ignore_changes
+      # (see the rollout gotcha in the AWS README).
+      command     = ["celery", "-A", "backend.app.worker.celery_app", "worker", "-Q", "celery,llm", "--loglevel=INFO"]
       environment = local.worker_env
       secrets     = local.boot_secrets
       logConfiguration = {
@@ -241,10 +244,80 @@ resource "aws_ecs_service" "worker" {
   name            = "dataq-app-worker"
   cluster         = aws_ecs_cluster.app.id
   task_definition = aws_ecs_task_definition.worker.arn
-  # Cannot scale to zero — runs embedded celery-beat (schedule dispatcher +
-  # orchestration polling), same as the Azure Container App's min_replicas=1.
-  desired_count = 1
-  launch_type   = "FARGATE"
+  desired_count   = 1
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets          = aws_subnet.public[*].id
+    security_groups  = [aws_security_group.ecs_tasks.id]
+    assign_public_ip = true
+  }
+
+  lifecycle {
+    ignore_changes = [task_definition]
+  }
+}
+
+# ── Beat (Celery schedule dispatcher — ONLY this one, #1811) ──────────────
+# Split out of the worker so a worker OOM can never take the scheduler down with it (the #405
+# class). Reuses the worker's task role: beat needs the same boot-time Secrets Manager grant to
+# resolve DATABASE_URL/REDIS_URL/SECRET_STORE, even though it never reads a connection credential.
+# No ADOT sidecar: beat's own process never calls `configure_tracing` (that only fires on Celery's
+# `worker_process_init` signal, which a bare `celery beat` invocation never emits — true before
+# #1811 too, since beat ran as the embedded worker's PARENT process, not a forked prefork child),
+# so a sidecar here would add a container with nothing to receive OTLP from it.
+resource "aws_ecs_task_definition" "beat" {
+  family                   = "dataq-app-beat"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  # Beat only schedules — it enqueues tasks, never runs them — so it gets Fargate's smallest valid
+  # CPU/memory pairing, nowhere near the worker's 1024/2048.
+  cpu                = 256
+  memory             = 512
+  execution_role_arn = aws_iam_role.ecs_task_execution.arn
+  task_role_arn      = aws_iam_role.ecs_task_worker.arn
+
+  container_definitions = jsonencode([
+    {
+      name        = "beat"
+      image       = local.backend_image
+      essential   = true
+      command     = ["celery", "-A", "backend.app.worker.celery_app", "beat", "--loglevel=INFO"]
+      environment = local.worker_env
+      secrets     = local.boot_secrets
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.beat.name
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "beat"
+        }
+      }
+    },
+  ])
+
+  lifecycle {
+    ignore_changes = [container_definitions]
+  }
+
+  tags = { Name = "dataq-app-beat" }
+}
+
+resource "aws_ecs_service" "beat" {
+  name            = "dataq-app-beat"
+  cluster         = aws_ecs_cluster.app.id
+  task_definition = aws_ecs_task_definition.beat.arn
+  desired_count   = 1
+  launch_type     = "FARGATE"
+
+  # minimum_healthy_percent=0 / maximum_percent=100 (the OPPOSITE of the ECS default 100/200): a
+  # rolling deploy stops the OLD task before starting the new one, so there is a brief gap with
+  # NO beat rather than a window with TWO. Beat has no scheduling redundancy story — a few seconds
+  # of "no scheduler" during a deploy is far cheaper than a double-fired periodic task (duplicate
+  # orchestration-poll dispatch, a schedule tick landing twice) — see the compose-side comment for
+  # the same one-instance invariant.
+  deployment_minimum_healthy_percent = 0
+  deployment_maximum_percent         = 100
 
   network_configuration {
     subnets          = aws_subnet.public[*].id

@@ -24,7 +24,7 @@ import json
 import uuid
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_logger
@@ -468,8 +468,19 @@ def latest_narrative_for_incident(
 
 def latest_narrative_invocation(session: Session, incident_id: uuid.UUID) -> LlmInvocation | None:
     """The row behind `latest_narrative_for_incident` — the UI read needs the
-    requester and timestamp beside the response."""
-    return session.scalars(
+    requester and timestamp beside the response.
+
+    The predicate matches `ix_llm_invocations_rca_incident` (#1743) — keep the
+    three clauses as they are, or the partial expression index stops applying.
+    `.limit(1)` is what lets the planner stop at the index's first entry instead
+    of sorting every matching row; `.first()` alone discards the rest client-side.
+    """
+    return session.scalars(narrative_lookup_statement(incident_id)).first()
+
+
+def narrative_lookup_statement(incident_id: uuid.UUID) -> Select[tuple[LlmInvocation]]:
+    """The statement itself, so the index test can plan the real query."""
+    return (
         select(LlmInvocation)
         .where(
             LlmInvocation.kind == RCA_KIND,
@@ -477,7 +488,8 @@ def latest_narrative_invocation(session: Session, incident_id: uuid.UUID) -> Llm
             LlmInvocation.request["incident_id"].astext == str(incident_id),
         )
         .order_by(LlmInvocation.created_at.desc(), LlmInvocation.id.desc())
-    ).first()
+        .limit(1)
+    )
 
 
 #: Why a stored narrative is not shown to a caller who can otherwise read the

@@ -478,8 +478,10 @@ def test_a_sampling_block_on_a_comparison_source_is_refused(
     client: TestClient, db_session: Any
 ) -> None:
     """#595 C7. `config.source` goes through the same `resolve_target` a suite target does, which
-    now ACCEPTS a sampling block on a capable type — and `comparison_run._source_spec` then
-    drops it when it builds the `DatasetSpec`.
+    ACCEPTS a sampling block on a capable type — and `comparison_run._source_spec` would drop it
+    when it builds the `DatasetSpec`. #1331 (ADR 0015's 2026-09-16 amendment) settled this as a
+    permanent decision, not a placeholder pending a future build — the message must say so, since
+    an author reading "not supported yet" has a different next action than one reading "decided".
     """
     target_conn = _connection(db_session)
     source_conn = _connection(db_session, conn_type="s3")
@@ -500,4 +502,8 @@ def test_a_sampling_block_on_a_comparison_source_is_refused(
     )
     assert resp.status_code == 422
     assert _error_code(resp) == "check_config_invalid"
-    assert "sampling" in resp.json()["error"]["message"]
+    message = resp.json()["error"]["message"]
+    assert "sampling" in message
+    # Points the author at the decision record, not just the refusal (#1331).
+    assert "ADR 0015" in message
+    assert "not just unbuilt" in message
