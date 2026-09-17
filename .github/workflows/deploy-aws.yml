@@ -32,6 +32,10 @@ env:
   # scoped to the dataq-app-* families, so these are contract, not convention).
   API_SERVICE: dataq-app-api
   WORKER_SERVICE: dataq-app-worker
+  # celery-beat's own service (#1811) — split out of the worker so a worker OOM can never take
+  # the scheduler down with it. Rolled and verified independently below, not inferred from the
+  # worker's roll (the #1361 lesson: a service that never starts is invisible otherwise).
+  BEAT_SERVICE: dataq-app-beat
   FRONTEND_SERVICE: dataq-app-frontend
   MIGRATE_FAMILY: dataq-app-migrate
 
@@ -135,18 +139,39 @@ jobs:
           fi
           echo "Migration succeeded."
 
-      # Register new api/worker revisions on the new image and roll both, then WAIT for the
-      # deployments to complete.
-      - name: Deploy API + worker
+      # Register new api/worker/beat revisions on the new image and roll all three, then WAIT for
+      # the deployments to complete. beat (#1811) is rolled and verified in the SAME step as the
+      # others — not skipped or assumed — because a service that never starts is invisible to the
+      # public-surface smoke (#1361).
+      - name: Deploy API + worker + beat
         run: |
           set -euo pipefail
           source scripts/ci/retry.sh
           source scripts/ci/ecs_roll.sh
           ecs_roll_service "${{ vars.ECS_CLUSTER }}" "$API_SERVICE" "$IMAGE"
           ecs_roll_service "${{ vars.ECS_CLUSTER }}" "$WORKER_SERVICE" "$IMAGE"
-          ecs_wait_stable "${{ vars.ECS_CLUSTER }}" "$API_SERVICE" "$WORKER_SERVICE"
+          ecs_roll_service "${{ vars.ECS_CLUSTER }}" "$BEAT_SERVICE" "$IMAGE"
+          ecs_wait_stable "${{ vars.ECS_CLUSTER }}" "$API_SERVICE" "$WORKER_SERVICE" "$BEAT_SERVICE"
           ecs_verify_image "${{ vars.ECS_CLUSTER }}" "$API_SERVICE" "$IMAGE"
           ecs_verify_image "${{ vars.ECS_CLUSTER }}" "$WORKER_SERVICE" "$IMAGE"
+          ecs_verify_image "${{ vars.ECS_CLUSTER }}" "$BEAT_SERVICE" "$IMAGE"
+
+      # Beat logs "beat: Starting..." on boot (the exact line #405 crashed on) — an image match
+      # alone doesn't prove the process is actually scheduling, so check its own log stream too.
+      - name: Verify beat is scheduling
+        run: |
+          set -euo pipefail
+          group="/dataq-app/beat"
+          for attempt in 1 2 3 4 5 6; do
+            found=$(aws logs filter-log-events --log-group-name "$group" \
+              --start-time "$(( ($(date +%s) - 300) * 1000 ))" \
+              --filter-pattern '"beat: Starting"' \
+              --query 'length(events)' --output text 2>/dev/null || echo 0)
+            [[ "$found" -gt 0 ]] && { echo "beat is scheduling."; exit 0; }
+            echo "beat log line not seen yet (attempt $attempt/6) — retrying in 10s"
+            sleep 10
+          done
+          echo "::warning::never saw 'beat: Starting' in $group in the last 5 minutes — check the beat service manually."
 
   frontend:
     name: Frontend — build image, deploy to ECS

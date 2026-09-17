@@ -41,6 +41,7 @@ jobs:
           for pair in "AZURE_RESOURCE_GROUP=${{ vars.AZURE_RESOURCE_GROUP }}" \
                       "API_APP_NAME=${{ vars.API_APP_NAME }}" \
                       "WORKER_APP_NAME=${{ vars.WORKER_APP_NAME }}" \
+                      "BEAT_APP_NAME=${{ vars.BEAT_APP_NAME }}" \
                       "MIGRATE_JOB_NAME=${{ vars.MIGRATE_JOB_NAME }}"; do
             [[ -n "${pair#*=}" ]] || { echo "::error::repo variable ${pair%%=*} is not set"; fail=1; }
           done
@@ -157,6 +158,35 @@ jobs:
             --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
             --query "properties.template.containers[0].image" -o tsv)
           [[ "$live" == "$IMAGE" ]] || { echo "::error::worker image mismatch after update: $live"; exit 1; }
+
+      # A separate app since #1811 — verified independently (the #1361 lesson: a service that
+      # never starts is invisible to a smoke that only probes the public surface).
+      - name: Deploy beat
+        run: |
+          set -euo pipefail
+          source scripts/ci/retry.sh
+          retry az containerapp update \
+            --name "${{ vars.BEAT_APP_NAME }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --image "$IMAGE"
+          live=$(az containerapp show \
+            --name "${{ vars.BEAT_APP_NAME }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --query "properties.template.containers[0].image" -o tsv)
+          [[ "$live" == "$IMAGE" ]] || { echo "::error::beat image mismatch after update: $live"; exit 1; }
+          # Beat logs "beat: Starting..." on boot (the exact line #405 crashed on) — a revision
+          # up with the right image but a dead beat process is exactly the invisible-service
+          # failure #1361 taught us to check for explicitly, not infer from the update exiting 0.
+          for attempt in 1 2 3 4 5 6; do
+            log=$(az containerapp logs show \
+              --name "${{ vars.BEAT_APP_NAME }}" \
+              --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+              --tail 50 --type console 2>/dev/null || true)
+            grep -q "beat: Starting" <<<"$log" && { echo "beat is scheduling."; break; }
+            echo "beat log line not seen yet (attempt $attempt/6) — retrying in 10s"
+            sleep 10
+          done
+          grep -q "beat: Starting" <<<"$log" || echo "::warning::never saw 'beat: Starting' in the last 50 log lines — check the beat app manually."
 
   frontend:
     name: Frontend — build image, deploy to Container App
