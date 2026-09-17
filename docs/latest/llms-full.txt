@@ -4473,6 +4473,7 @@ flowchart LR
         Frontend["Frontend · nginx + React SPA<br/>sole public ingress · runtime OIDC config"]
         API["FastAPI · internal ingress<br/>REST /api/v1 + /mcp · OIDC JWT"]
         Worker["Celery worker<br/>GX Core execution"]
+        Beat["Celery beat · own process<br/>schedules only, never executes"]
         Infra["PostgreSQL · Redis · Key Vault · App Insights<br/>suites·runs·results·pipeline_runs · queue · secrets · traces"]
     end
     subgraph alerts["🔔 Alerts · ResultPublisher seam"]
@@ -4493,6 +4494,7 @@ flowchart LR
     API -->|enqueue run| Worker
     API -.-> Infra
     Worker -.-> Infra
+    Beat -.->|schedule tick, enqueue| Infra
     Worker -->|run outcome| alerts
     Worker -->|GX checks| ds
 
@@ -4501,7 +4503,7 @@ flowchart LR
     classDef integ fill:#FAEEDA,stroke:#854F0B,color:#633806
     classDef notify fill:#FAECE7,stroke:#993C1D,color:#712B13
     classDef client fill:#F1EFE8,stroke:#5F5E5A,color:#444441
-    class API,Worker,Infra,Frontend hub
+    class API,Worker,Beat,Infra,Frontend hub
     class SF,Files,UC,Iceberg src
     class ADF,AF,DBT integ
     class Teams,Email notify
@@ -4522,7 +4524,7 @@ The flow reads left → right: **inputs** (Clients, Orchestration) drive the **D
 |---|---|
 | Grey | Clients — browser web UI + AI clients (over MCP) |
 | Orange | Orchestration — ADF · Airflow · dbt (monitor + trigger only, **never** datasources) |
-| Blue | DataQ platform — Frontend (nginx SPA) · FastAPI · Celery worker · PostgreSQL · Redis · Key Vault · App Insights |
+| Blue | DataQ platform — Frontend (nginx SPA) · FastAPI · Celery worker · Celery beat (own process) · PostgreSQL · Redis · Key Vault · App Insights |
 | Green | Datasources — GX checks run against these |
 | Red | Alert channels — Teams · Slack · Email (the `ResultPublisher` seam) |
 
@@ -5050,6 +5052,7 @@ flowchart LR
         FE["Frontend nginx — SOLE public ingress (TLS)<br/>serves the SPA + runtime auth config (non-secret)"]
         API["FastAPI — internal ingress only<br/>validates EVERY request itself (no EasyAuth)"]
         WK["Celery worker — no ingress"]
+        BT["Celery beat — no ingress, own process"]
     end
     subgraph backing["🔒 Credentialed backing services"]
         KV["Key Vault (all connection + webhook secrets)"]
@@ -5073,12 +5076,15 @@ flowchart LR
     API -- "JWT validated (fastapi-azure-auth / MCP JWTVerifier)<br/>+ per-suite authz + sample redaction" --> API
     API -- "enqueue tasks" --> RD
     RD -- "deliver tasks" --> WK
+    BT -- "schedule tick, enqueue tasks" --> RD
     API -- "UAMI — no stored credential" --> KV
     WK -- "UAMI — no stored credential" --> KV
     API --> PG
     WK --> PG
+    BT --> PG
     API --> APPI
     WK --> APPI
+    BT --> APPI
     WK -- "GX checks / monitor SQL" --> DS
     WK -- "run-outcome alerts" --> AL
     WK -- "10-min poll fallback" --> OAPI
@@ -5088,7 +5094,7 @@ flowchart LR
     classDef ext fill:#F1EFE8,stroke:#5F5E5A,color:#444441
     classDef sec fill:#FAEEDA,stroke:#854F0B,color:#633806
     classDef out fill:#E1F5EE,stroke:#0F6E56,color:#085041
-    class FE,API,WK hub
+    class FE,API,WK,BT hub
     class B,AI,WH,IDP ext
     class KV,PG,RD,APPI sec
     class DS,AL,OAPI,LLM out
@@ -5110,7 +5116,8 @@ Boundary notes:
 - **The frontend (Container App on Azure, ECS Fargate task on AWS) is the sole public surface** (ADR [0028](../adr/0028-cloud-neutral-image-runtime-config-generic-oidc.md) §5). It's one generic nginx image whose auth is injected at **runtime** (`DATAQ_AUTH_*` → generic OIDC, validated against Azure AD or AWS Cognito — no MSAL, nothing cloud-specific baked in), and it reverse-proxies `/api` + `/mcp` + `/healthz` same-origin to the **internal-ingress** API. The API is not reachable directly from the internet; external orchestrator webhooks land on the frontend and are proxied through.
 - **Orchestration providers (ADF · Airflow · dbt) are not datasources.** They live in `pipeline_runs`, not `runs`. Trigger bindings map `(provider, pipeline_id, env) → suite_id`.
 - **Scheduled/triggered suite runs are Celery-only.** FastAPI never enqueues GX itself for a full suite run; it dispatches a task. **Exception — synchronous preview paths:** the check dry-run (`POST /suites/{id}/checks/dryrun`) and the column profiler (`POST /suites/{id}/profile`) run a single GX check / a profiling query against the datasource **synchronously in a threadpool** (persisting nothing) — interactive authoring aids, not scheduled runs.
-- **The worker consumes two Celery queues.** `run_suite` and the periodic beat tasks stay on the default `celery` queue; the three LLM intelligence tasks (`sql_generation` · `check_suggestion` · `rca_narrative`) route to a dedicated `llm` queue, so a backlog of long-running suite runs never starves an LLM request behind it. Both queues are consumed by the same worker process (`-Q celery,llm`) — this is queue separation for fair scheduling, not a second worker deployment.
+- **The worker consumes two Celery queues.** `run_suite` and the periodic beat-dispatched tasks stay on the default `celery` queue; the three LLM intelligence tasks (`sql_generation` · `check_suggestion` · `rca_narrative`) route to a dedicated `llm` queue, so a backlog of long-running suite runs never starves an LLM request behind it. Both queues are consumed by the same worker process (`-Q celery,llm`) — this is queue separation for fair scheduling, not a second worker deployment.
+- **celery-beat is its own process/service, never embedded in the worker.** Beat only schedules — it enqueues tasks onto the broker, it never executes one — so a worker OOM (overlapping large suites under `worker_concurrency=4` and a 2 GiB hard limit) can never take the scheduler down with it. This is what stops orchestration polling, scheduled-suite dispatch, and every daily sweep from going silently dark because the process that ran them died. Exactly one beat instance may ever run (min=max=1 replica / desired_count=1) — a second would double-fire every periodic task.
 - **The outbound LLM intelligence layer is live, off by default.** An admin must configure a provider (Anthropic or an OpenAI-compatible endpoint) and credential before any call leaves the deployment. SQL generation and check suggestions send masked aggregate profiler statistics only; RCA narratives additionally send the triggering check's own `observed_value`, routed through the same column-policy/warehouse-tag redaction floor every other results surface applies, plus its `expected_value` (a check-authored threshold, never masked). Raw sample rows are never sent on any path. See [Security & data handling](../security/overview.md).
 - **All connection secrets via the deployment's secret store in production / staging** — Key Vault on Azure, Secrets Manager on AWS. Local dev may resolve secrets via `KV_SECRET_*` env vars through the `EnvSecretStore` backend (see `backend/app/core/secrets.py`). No credentials are ever hardcoded.
 - **The `/mcp` endpoint exposes the same service layer to AI clients.** The 48 FastMCP tools (25 read-only, 18 that change state, 5 live-probe tools gated like writes) are thin wrappers reusing the same services + per-suite authz + sample redaction as the REST API — no logic duplication. It mounts under **either** sign-in mode (SSO, email OTP) and stays unmounted, **fail-closed**, only when none is configured. Under SSO it validates the same OIDC bearer (Azure AD or Cognito — a `JWTVerifier` on the same tenant/audience/scope) or a PAT; **under email OTP a PAT is the only accepted credential** — a raw JWT and a session cookie are both rejected there, since there is no IdP-issued bearer to validate and a session is a browser-only credential. See [ADR 0008](../adr/0008-mcp-server.md) / [ADR 0032](../adr/0032-email-otp-signin.md).

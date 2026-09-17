@@ -2592,6 +2592,7 @@ flowchart LR
         Frontend["Frontend · nginx + React SPA&lt;br/&gt;sole public ingress · runtime OIDC config"]
         API["FastAPI · internal ingress&lt;br/&gt;REST /api/v1 + /mcp · OIDC JWT"]
         Worker["Celery worker&lt;br/&gt;GX Core execution"]
+        Beat["Celery beat · own process&lt;br/&gt;schedules only, never executes"]
         Infra["PostgreSQL · Redis · Key Vault · App Insights&lt;br/&gt;suites·runs·results·pipeline_runs · queue · secrets · traces"]
     end
     subgraph alerts["🔔 Alerts · ResultPublisher seam"]
@@ -2612,6 +2613,7 @@ flowchart LR
     API --&gt;|enqueue run| Worker
     API -.-&gt; Infra
     Worker -.-&gt; Infra
+    Beat -.-&gt;|schedule tick, enqueue| Infra
     Worker --&gt;|run outcome| alerts
     Worker --&gt;|GX checks| ds
 
@@ -2620,7 +2622,7 @@ flowchart LR
     classDef integ fill:#FAEEDA,stroke:#854F0B,color:#633806
     classDef notify fill:#FAECE7,stroke:#993C1D,color:#712B13
     classDef client fill:#F1EFE8,stroke:#5F5E5A,color:#444441
-    class API,Worker,Infra,Frontend hub
+    class API,Worker,Beat,Infra,Frontend hub
     class SF,Files,UC,Iceberg src
     class ADF,AF,DBT integ
     class Teams,Email notify
@@ -2651,7 +2653,7 @@ flowchart LR
 </tr>
 <tr>
 <td>Blue</td>
-<td>DataQ platform — Frontend (nginx SPA) · FastAPI · Celery worker · PostgreSQL · Redis · Key Vault · App Insights</td>
+<td>DataQ platform — Frontend (nginx SPA) · FastAPI · Celery worker · Celery beat (own process) · PostgreSQL · Redis · Key Vault · App Insights</td>
 </tr>
 <tr>
 <td>Green</td>
@@ -3156,6 +3158,7 @@ flowchart LR
         FE["Frontend nginx — SOLE public ingress (TLS)&lt;br/&gt;serves the SPA + runtime auth config (non-secret)"]
         API["FastAPI — internal ingress only&lt;br/&gt;validates EVERY request itself (no EasyAuth)"]
         WK["Celery worker — no ingress"]
+        BT["Celery beat — no ingress, own process"]
     end
     subgraph backing["🔒 Credentialed backing services"]
         KV["Key Vault (all connection + webhook secrets)"]
@@ -3179,12 +3182,15 @@ flowchart LR
     API -- "JWT validated (fastapi-azure-auth / MCP JWTVerifier)&lt;br/&gt;+ per-suite authz + sample redaction" --&gt; API
     API -- "enqueue tasks" --&gt; RD
     RD -- "deliver tasks" --&gt; WK
+    BT -- "schedule tick, enqueue tasks" --&gt; RD
     API -- "UAMI — no stored credential" --&gt; KV
     WK -- "UAMI — no stored credential" --&gt; KV
     API --&gt; PG
     WK --&gt; PG
+    BT --&gt; PG
     API --&gt; APPI
     WK --&gt; APPI
+    BT --&gt; APPI
     WK -- "GX checks / monitor SQL" --&gt; DS
     WK -- "run-outcome alerts" --&gt; AL
     WK -- "10-min poll fallback" --&gt; OAPI
@@ -3194,7 +3200,7 @@ flowchart LR
     classDef ext fill:#F1EFE8,stroke:#5F5E5A,color:#444441
     classDef sec fill:#FAEEDA,stroke:#854F0B,color:#633806
     classDef out fill:#E1F5EE,stroke:#0F6E56,color:#085041
-    class FE,API,WK hub
+    class FE,API,WK,BT hub
     class B,AI,WH,IDP ext
     class KV,PG,RD,APPI sec
     class DS,AL,OAPI,LLM out
@@ -3214,7 +3220,8 @@ flowchart LR
 <li><strong>The frontend (Container App on Azure, ECS Fargate task on AWS) is the sole public surface</strong> (ADR <a href="../../adr/0028-cloud-neutral-image-runtime-config-generic-oidc/">0028</a> §5). It's one generic nginx image whose auth is injected at <strong>runtime</strong> (<code>DATAQ_AUTH_*</code> → generic OIDC, validated against Azure AD or AWS Cognito — no MSAL, nothing cloud-specific baked in), and it reverse-proxies <code>/api</code> + <code>/mcp</code> + <code>/healthz</code> same-origin to the <strong>internal-ingress</strong> API. The API is not reachable directly from the internet; external orchestrator webhooks land on the frontend and are proxied through.</li>
 <li><strong>Orchestration providers (ADF · Airflow · dbt) are not datasources.</strong> They live in <code>pipeline_runs</code>, not <code>runs</code>. Trigger bindings map <code>(provider, pipeline_id, env) → suite_id</code>.</li>
 <li><strong>Scheduled/triggered suite runs are Celery-only.</strong> FastAPI never enqueues GX itself for a full suite run; it dispatches a task. <strong>Exception — synchronous preview paths:</strong> the check dry-run (<code>POST /suites/{id}/checks/dryrun</code>) and the column profiler (<code>POST /suites/{id}/profile</code>) run a single GX check / a profiling query against the datasource <strong>synchronously in a threadpool</strong> (persisting nothing) — interactive authoring aids, not scheduled runs.</li>
-<li><strong>The worker consumes two Celery queues.</strong> <code>run_suite</code> and the periodic beat tasks stay on the default <code>celery</code> queue; the three LLM intelligence tasks (<code>sql_generation</code> · <code>check_suggestion</code> · <code>rca_narrative</code>) route to a dedicated <code>llm</code> queue, so a backlog of long-running suite runs never starves an LLM request behind it. Both queues are consumed by the same worker process (<code>-Q celery,llm</code>) — this is queue separation for fair scheduling, not a second worker deployment.</li>
+<li><strong>The worker consumes two Celery queues.</strong> <code>run_suite</code> and the periodic beat-dispatched tasks stay on the default <code>celery</code> queue; the three LLM intelligence tasks (<code>sql_generation</code> · <code>check_suggestion</code> · <code>rca_narrative</code>) route to a dedicated <code>llm</code> queue, so a backlog of long-running suite runs never starves an LLM request behind it. Both queues are consumed by the same worker process (<code>-Q celery,llm</code>) — this is queue separation for fair scheduling, not a second worker deployment.</li>
+<li><strong>celery-beat is its own process/service, never embedded in the worker.</strong> Beat only schedules — it enqueues tasks onto the broker, it never executes one — so a worker OOM (overlapping large suites under <code>worker_concurrency=4</code> and a 2 GiB hard limit) can never take the scheduler down with it. This is what stops orchestration polling, scheduled-suite dispatch, and every daily sweep from going silently dark because the process that ran them died. Exactly one beat instance may ever run (min=max=1 replica / desired_count=1) — a second would double-fire every periodic task.</li>
 <li><strong>The outbound LLM intelligence layer is live, off by default.</strong> An admin must configure a provider (Anthropic or an OpenAI-compatible endpoint) and credential before any call leaves the deployment. SQL generation and check suggestions send masked aggregate profiler statistics only; RCA narratives additionally send the triggering check's own <code>observed_value</code>, routed through the same column-policy/warehouse-tag redaction floor every other results surface applies, plus its <code>expected_value</code> (a check-authored threshold, never masked). Raw sample rows are never sent on any path. See <a href="../../security/overview/">Security &amp; data handling</a>.</li>
 <li><strong>All connection secrets via the deployment's secret store in production / staging</strong> — Key Vault on Azure, Secrets Manager on AWS. Local dev may resolve secrets via <code>KV_SECRET_*</code> env vars through the <code>EnvSecretStore</code> backend (see <code>backend/app/core/secrets.py</code>). No credentials are ever hardcoded.</li>
 <li><strong>The <code>/mcp</code> endpoint exposes the same service layer to AI clients.</strong> The 48 FastMCP tools (25 read-only, 18 that change state, 5 live-probe tools gated like writes) are thin wrappers reusing the same services + per-suite authz + sample redaction as the REST API — no logic duplication. It mounts under <strong>either</strong> sign-in mode (SSO, email OTP) and stays unmounted, <strong>fail-closed</strong>, only when none is configured. Under SSO it validates the same OIDC bearer (Azure AD or Cognito — a <code>JWTVerifier</code> on the same tenant/audience/scope) or a PAT; <strong>under email OTP a PAT is the only accepted credential</strong> — a raw JWT and a session cookie are both rejected there, since there is no IdP-issued bearer to validate and a session is a browser-only credential. See <a href="../../adr/0008-mcp-server/">ADR 0008</a> / <a href="../../adr/0032-email-otp-signin/">ADR 0032</a>.</li>
