@@ -12,9 +12,14 @@ tell "blipped once last night" from "has not pruned in three weeks".
 Backfill: existing snapshot-source connections that have refreshed without error
 get `lineage_last_refresh_at`. The alternative — leaving them NULL — would make
 every already-healthy Snowflake connection report "has never pruned" on the
-deploy. The approximation is one-time and bounded: if such a connection is in
-fact suspended, its next partial pull leaves the stamp untouched and the backstop
-fires one staleness window later.
+deploy. The approximation is one-time and self-correcting on the NEXT refresh, not a
+staleness window later: `lineage_last_refresh_at` advances every cycle while this stamp
+advances only on a pull that actually pruned, so a still-suspended connection re-reports
+as suspended one refresh interval after the deploy.
+
+`ADD COLUMN` and the backfill share one transaction. That is the shape rule 9 exists to
+catch, and it is left as-is deliberately: a nullable `ADD COLUMN` is metadata-only (no
+rewrite) and `connections` holds tens of rows, so the combined statement is sub-second.
 
 NULL after this migration means "no prune has ever been recorded for this
 connection" — the backstop deliberately does NOT fire on it, because a
