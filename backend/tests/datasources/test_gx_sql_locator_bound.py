@@ -21,6 +21,7 @@ from sqlalchemy.engine import Engine
 
 from backend.app.datasources.base import SAMPLE_ROW_CAP, CheckOutcome, CheckSpec
 from backend.app.datasources.gx_runner import _execute, _is_sql_batch, run_expectations
+from backend.app.services.custom_sql import CUSTOM_SQL_EXPECTATION_TYPE
 
 _FAILING_ROWS = 500
 _NOT_NULL = "expect_column_values_to_not_be_null"
@@ -172,6 +173,40 @@ def test_sql_sample_output_is_unchanged(tmp_path: Path, failing: int) -> None:
     rows = sample["unexpected_index_list"]
     assert all(set(row) == {"customer_id", "order_number"} for row in rows)
     assert [row["customer_id"] for row in rows] == list(range(1000, 1000 + min(failing, 20)))
+
+
+def test_custom_sql_still_reports_its_unexpected_row_count(tmp_path: Path) -> None:
+    """The custom-SQL lane is the only one whose GX payload actually changes: under COMPLETE
+    `UnexpectedRowsExpectation` also returns `details.unexpected_rows`, which nothing reads.
+    What IS read — the unexpected row count as `observed_value` — must survive.
+    """
+    context, batch_definition = _sql_batch_definition(tmp_path, failing=_FAILING_ROWS, name="csql")
+    outcome = run_expectations(
+        context,
+        batch_definition=batch_definition,
+        checks=[
+            CheckSpec(
+                CUSTOM_SQL_EXPECTATION_TYPE,
+                {"unexpected_rows_query": "SELECT * FROM {batch} WHERE order_number IS NULL"},
+            )
+        ],
+        name="custom-sql",
+    )
+    check = outcome.checks[0]
+    assert check.errored is False
+    assert check.success is False
+    assert check.observed_value == {"observed_value": _FAILING_ROWS}
+
+
+def test_undetermined_lane_falls_back_loudly() -> None:
+    """A GX rename of the `data_asset` / `datasource` chain reverts the SQL lanes to the
+    unbounded COMPLETE fetch with identical results — invisible unless it says so.
+    """
+    from structlog.testing import capture_logs
+
+    with capture_logs() as logs:
+        assert _is_sql_batch(object()) is False
+    assert any(entry["event"] == "gx_batch_lane_undetermined" for entry in logs)
 
 
 def test_frame_batch_keeps_the_complete_lane() -> None:

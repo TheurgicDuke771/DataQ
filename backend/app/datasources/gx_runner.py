@@ -32,6 +32,21 @@ _SAMPLE_KEYS = (
 _INDEX_LIST_KEY = "unexpected_index_list"
 _PARTIAL_INDEX_LIST_KEY = "partial_unexpected_index_list"
 
+
+def _sql_partial_unexpected_count() -> int:
+    """The `partial_unexpected_count` the SQL lanes ask GX for (#1534).
+
+    Clamped to GX's own `MAX_RESULT_RECORDS`: the values query clamps to it anyway
+    (`min(partial_unexpected_count, MAX_RESULT_RECORDS)`) while the locator query does not,
+    so an un-clamped cap above it would fetch locator rows the extractor then discards.
+    """
+    from great_expectations.constants import MAX_RESULT_RECORDS
+
+    return min(SAMPLE_ROW_CAP, int(MAX_RESULT_RECORDS))
+
+
+_SQL_PARTIAL_UNEXPECTED_COUNT = _sql_partial_unexpected_count()
+
 # Cap on rows `_value_signal_summary_by_column` examines (#1230) — unbounded,
 # the per-cell regex/entropy work is O(rows x columns) inside the Celery run path.
 _VALUE_SIGNAL_SUMMARY_ROW_CAP = 5_000
@@ -291,10 +306,19 @@ def _execute(
 
 
 def _is_sql_batch(batch_definition: Any) -> bool:
-    """Does this batch definition run on a SQLAlchemy execution engine?"""
+    """Does this batch definition run on a SQLAlchemy execution engine?
+
+    Undetermined resolves to False (the frame lane) — a wrong SUMMARY on a pandas batch
+    would silently truncate the locator list — but never silently: losing this attribute
+    chain reverts every SQL run to the unbounded fetch #1534 closed, with identical results.
+    """
     from great_expectations.datasource.fluent import SQLDatasource
 
-    datasource = getattr(getattr(batch_definition, "data_asset", None), "datasource", None)
+    try:
+        datasource = batch_definition.data_asset.datasource
+    except AttributeError:
+        log.warning("gx_batch_lane_undetermined", batch=type(batch_definition).__name__)
+        return False
     return isinstance(datasource, SQLDatasource)
 
 
@@ -314,7 +338,7 @@ def _result_format(*, sql_batch: bool, index_columns: list[str] | None) -> Any:
         return {"result_format": "COMPLETE", "unexpected_index_column_names": index_columns}
     result_format: dict[str, Any] = {
         "result_format": "SUMMARY",
-        "partial_unexpected_count": SAMPLE_ROW_CAP,
+        "partial_unexpected_count": _SQL_PARTIAL_UNEXPECTED_COUNT,
     }
     if index_columns:
         result_format["unexpected_index_column_names"] = index_columns
