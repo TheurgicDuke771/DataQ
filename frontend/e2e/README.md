@@ -12,15 +12,29 @@ the React UI a user actually clicks: `browser → Vite proxy → api → DB`.
 
 ## Specs
 
-| Spec                       | Covers                                                                                       |
-| -------------------------- | -------------------------------------------------------------------------------------------- |
-| `smoke.spec.ts`            | dev-bypass auth, app shell, sider nav                                                        |
-| `connections.spec.ts`      | seeded connections grouped by type, "Test all" health path                                   |
-| `suites.spec.ts`           | seeded suite → checks; check + suite authoring round-trips                                   |
-| `results.spec.ts`          | seeded runs, run-detail drill-down, pipeline-runs feed                                       |
-| `schedules.spec.ts`        | SchedulesPanel: add / pause / delete + invalid-cron 422 path                                 |
-| `trigger-bindings.spec.ts` | TriggersPanel: bind pipeline / disable / remove (seeded ADF connection)                      |
-| `notifications.spec.ts`    | NotificationsPanel: threshold routing persisted across reload; write-only webhook affordance |
+| Spec                       | Covers                                                                                              |
+| -------------------------- | --------------------------------------------------------------------------------------------------- |
+| `smoke.spec.ts`            | dev-bypass auth, app shell, sider nav                                                               |
+| `connections.spec.ts`      | seeded connections grouped by type, "Test all" health path                                          |
+| `suites.spec.ts`           | seeded suite → checks; check + suite authoring round-trips                                          |
+| `results.spec.ts`          | seeded runs, run-detail drill-down, pipeline-runs feed                                              |
+| `schedules.spec.ts`        | SchedulesPanel: add / pause / delete + invalid-cron 422 path                                        |
+| `trigger-bindings.spec.ts` | TriggersPanel: bind pipeline / disable / remove (seeded ADF connection)                             |
+| `notifications.spec.ts`    | NotificationsPanel: threshold routing persisted across reload; write-only webhook affordance        |
+| `a11y.spec.ts`             | axe-core (`@axe-core/playwright`) scan of the main routes, ratcheted against a baseline — see below |
+
+## Accessibility floor (#1670)
+
+`a11y.spec.ts` runs axe-core over dashboard/connections/suites (list + detail)/results/run-detail/
+assets/admin (the sign-in screen has no dev-bypass equivalent — it's covered by
+`e2e-otp/a11y.spec.ts` instead) and keeps only `serious`/`critical` violations. It **ratchets**
+against the committed `frontend/a11y-baseline.json` (shared with the Vitest component lane in
+`tests/a11y/components.a11y.test.tsx` via `frontend/scripts/a11y/ratchet.ts`) rather than requiring
+every existing violation fixed first — a run fails only on a violation NOT already in the baseline.
+
+Regenerate it deliberately (never by hand-editing the JSON) with `pnpm a11y:baseline` — it needs
+the same stack this lane already needs (below), plus the OTP stack for the sign-in half; explain
+the diff in your PR when you do.
 
 antd Select gotchas (learned per spec, reuse these): rc-select pre-highlights
 option 0 when nothing is selected, so `Enter` alone takes the first option and
