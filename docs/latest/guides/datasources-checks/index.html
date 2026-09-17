@@ -3063,8 +3063,14 @@ sample), so it is the supported way to check a target that is otherwise too big.
   turning sampling on under one), and per check at run time for suites that
   predate the gate. Use a <strong>volume monitor</strong> instead: it counts the whole dataset
   without loading it.</li>
-<li><strong>Sampling on a comparison check's <code>source</code></strong> — the comparison reader
-  materialises both sides in full for the diff, so the block would be ignored.</li>
+<li><strong>Sampling on a comparison check's <code>source</code></strong> — refused at author time
+  (422), not silently ignored. A comparison diffs by key, so two independent
+  positional samples of the two sides would share almost no keys and report a
+  confidently wrong reconciliation; that needs <em>coherent</em> key-set sampling,
+  a different mechanism this ADR decided not to build (see
+  <a href="../../adr/0015-two-connection-comparison-check-model/#amendment-2026-09-16-comparison-sources-do-not-support-sampling">ADR 0015's amendment</a>).
+  For a large comparison, use <code>COMPARISON_MAX_ROWS</code>'s fail-fast cap and narrow
+  the source (or target) with a query filter instead of sampling it.</li>
 </ul>
 <p>On Unity Catalog a seeded random sample is pushed down as
 <code>TABLESAMPLE (p PERCENT) REPEATABLE (seed)</code>, so the seed genuinely pins the draw

@@ -2488,7 +2488,7 @@
 </tr>
 <tr>
 <td><a href="0015-two-connection-comparison-check-model/">0015</a></td>
-<td>Two-connection comparison check model — suite stays single-connection and supplies the <strong>target under test</strong>; a <code>comparison</code> check adds one <strong>source</strong> ref (<code>checks.source_connection_id</code> FK) + suite-target-shaped <code>config.source</code>; execution via a new <code>DatasetReader</code> seam + the ported FDC engine, row-cap fail-fast; report files derived on-demand, never stored; <strong>no</strong> connection→connection generalization (0030 Option B stays deferred)</td>
+<td>Two-connection comparison check model — suite stays single-connection and supplies the <strong>target under test</strong>; a <code>comparison</code> check adds one <strong>source</strong> ref (<code>checks.source_connection_id</code> FK) + suite-target-shaped <code>config.source</code>; execution via a new <code>DatasetReader</code> seam + the ported FDC engine, row-cap fail-fast; report files derived on-demand, never stored; <strong>no</strong> connection→connection generalization (0030 Option B stays deferred). <strong>Amended 2026-09-16: comparison sources do not support <code>sampling</code></strong> — coherent key-set sampling is a different mechanism from the suite-target's positional sampling and was not built; <code>COMPARISON_MAX_ROWS</code> fail-fast + query-filter narrowing are the sanctioned alternatives</td>
 <td>Accepted (built 2026-07-12)</td>
 </tr>
 <tr>

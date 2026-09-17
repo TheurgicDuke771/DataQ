@@ -1970,8 +1970,14 @@ Things it deliberately **refuses** rather than silently allowing:
   turning sampling on under one), and per check at run time for suites that
   predate the gate. Use a **volume monitor** instead: it counts the whole dataset
   without loading it.
-- **Sampling on a comparison check's `source`** — the comparison reader
-  materialises both sides in full for the diff, so the block would be ignored.
+- **Sampling on a comparison check's `source`** — refused at author time
+  (422), not silently ignored. A comparison diffs by key, so two independent
+  positional samples of the two sides would share almost no keys and report a
+  confidently wrong reconciliation; that needs *coherent* key-set sampling,
+  a different mechanism this ADR decided not to build (see
+  [ADR 0015's amendment](../adr/0015-two-connection-comparison-check-model.md#amendment-2026-09-16-comparison-sources-do-not-support-sampling)).
+  For a large comparison, use `COMPARISON_MAX_ROWS`'s fail-fast cap and narrow
+  the source (or target) with a query filter instead of sampling it.
 
 On Unity Catalog a seeded random sample is pushed down as
 `TABLESAMPLE (p PERCENT) REPEATABLE (seed)`, so the seed genuinely pins the draw
@@ -5377,10 +5383,15 @@ that would stamp "sampled" on a result that was not.
   cheap (`scan().count()` is snapshot metadata); what it needs first is its **own
   measurement** — Iceberg passed at 2M rows where UC died, so inheriting
   `RUN_MAX_SCAN_ROWS`'s 1.5M would refuse a rung measured to work.
-- **Comparison sources cannot sample** — refused at save
-  time rather than ignored. It needs *coherent* key-set sampling: two independent
-  draws from two 5M-row sides would share almost no keys and report everything as
-  a mismatch, which is worse than refusing.
+- **Comparison sources cannot sample — decided: not supported**, see
+  [ADR 0015's 2026-09-16 amendment](../adr/0015-two-connection-comparison-check-model.md#amendment-2026-09-16-comparison-sources-do-not-support-sampling).
+  Coherent key-set sampling — draw a key set, then fetch exactly those keys
+  from both sides — is a different mechanism from the suite-target's
+  positional sampling; two independent draws from two 5M-row sides would share
+  almost no keys and report everything as a mismatch, which is worse than
+  refusing. The refusal at `check_service.validate_comparison_check` is the
+  enforced contract; `COMPARISON_MAX_ROWS` fail-fast + narrowing the source
+  with a query filter are the sanctioned alternatives.
 - **Column projection for flat-file monitors.** A column-freshness monitor still
   reads every column to compute one `MAX`. Parquet could project a single column
   off its footer, which would remove most of the remaining monitor-path memory.
@@ -7433,7 +7444,7 @@ Each ADR captures a single significant architecture decision: the context, the d
 | [0012](0012-monitor-kind-seam.md) | Monitor-kind seam (`check.kind` discriminator + numeric metric storage) | Accepted |
 | [0013](0013-marketplace-distribution-and-anti-lock-in.md) | Marketplace distribution (customer-deployed BYOL) and anti-vendor-lock-in guardrails | Accepted (amended by 0031 — §5 licensing line + licensed-revenue framing) |
 | [0014](0014-reconciliation-comparison-check-kind.md) | Cross-dataset reconciliation as a `comparison` check kind (reuse FastAPI_DataComparison engine) | Accepted |
-| [0015](0015-two-connection-comparison-check-model.md) | Two-connection comparison check model — suite stays single-connection and supplies the **target under test**; a `comparison` check adds one **source** ref (`checks.source_connection_id` FK) + suite-target-shaped `config.source`; execution via a new `DatasetReader` seam + the ported FDC engine, row-cap fail-fast; report files derived on-demand, never stored; **no** connection→connection generalization (0030 Option B stays deferred) | Accepted (built 2026-07-12) |
+| [0015](0015-two-connection-comparison-check-model.md) | Two-connection comparison check model — suite stays single-connection and supplies the **target under test**; a `comparison` check adds one **source** ref (`checks.source_connection_id` FK) + suite-target-shaped `config.source`; execution via a new `DatasetReader` seam + the ported FDC engine, row-cap fail-fast; report files derived on-demand, never stored; **no** connection→connection generalization (0030 Option B stays deferred). **Amended 2026-09-16: comparison sources do not support `sampling`** — coherent key-set sampling is a different mechanism from the suite-target's positional sampling and was not built; `COMPARISON_MAX_ROWS` fail-fast + query-filter narrowing are the sanctioned alternatives | Accepted (built 2026-07-12) |
 | [0016](0016-severity-derivation-semantics.md) | Severity derivation semantics (band the unexpected-%, thresholds override GX success) | Accepted |
 | [0017](0017-python-313-runtime-upgrade.md) | Upgrade Python runtime 3.11 → 3.13 (3.14 deferred — GX-capped); bundled with the Snowflake 3→4 CVE refresh | Accepted |
 | [0018](0018-results-surface-and-grafana-deferral.md) | Results surface is an in-app page (suite-scoped authz + PII redaction); Grafana deferred to optional ops add-on | Accepted |
@@ -8948,6 +8959,22 @@ The check-level source ref settles 0014's question only. ADR 0030's Option B (a 
 - [ADR 0030](0030-iceberg-native-read-path.md) — Option B (connection→connection) stays deferred; not generalized here.
 - [ADR 0033](0033-workspace-roles-rbac.md) — connections are workspace-visible; referencing one as a source needs no new authz surface (mutations stay Admin-only).
 - Source engine: `github.com/TheurgicDuke771/FastAPI_DataComparison` (MIT) — `data_comparison/{record_comparison,column_comparison,get_dataset}.py`.
+
+## Amendment — 2026-09-16: comparison sources do not support `sampling`
+
+**Background:** the platform's opt-in `sampling` block on a suite's target (a runner-side, `head`/`random` row-*position* draw) went live earlier in the reconciliation feature's life. Because a comparison check's `config.source` is validated by the same `resolve_target` a suite target is, it *accepted* a `sampling` block that the comparison run path then silently dropped when building the internal dataset spec — a save that looked successful and a run that materialized the whole side anyway. That honesty gap was closed with a 422 refusal at `check_service.validate_comparison_check`. This amendment settles the follow-on question the refusal deferred — build coherent sampling, or record that it is out of scope. **Decision: out of scope, not built.**
+
+**Why two independent draws are confidently wrong, not merely imprecise.** A comparison diffs by key: it reads the source, reads the target, and joins them on `config.keys`. The suite-target `sampling` mechanism is a *positional* draw local to one dataset — "materialize fewer rows of this one target," honoured entirely inside one `CheckRunner`/`DatasetReader`, with no notion of what the other side of a diff contains. Apply that unmodified to both sides of a comparison and the two draws share almost no keys by construction: a 100k-row uniform sample of a 5M-row source and an independent 100k-row uniform sample of a 5M-row target overlap in roughly `100k² / 5M ≈ 2,000` keys, so on the order of 98% of both samples would report as "additional in source" / "additional in target." That is not a noisy estimate of the mismatch-rate — it is a full-authority reconciliation result (mismatch-%, severity banding, `sample_failures`) asserting the two datasets disagree almost completely, quite possibly while they agree perfectly. A refusal tells the author nothing ran; a coherently-wrong diff tells them something false with all of §4's result machinery behind it, which is worse.
+
+**Why this needs a different mechanism, not a bigger version of the existing one.** The suite-target `sampling` mechanism is single-dataset and read-shape-local: it never needs to know what any other reader is doing. Sampling a comparison *correctly* means the same key set must land on both sides — draw a key set (from one side, a hash partition, or similar) and then fetch **exactly those keys** from both readers before diffing. That is a join-aware operation spanning two connections and two adapters, and — for SQL sources — a second targeted round trip per side (a keyed `WHERE key IN (...)` fetch, or equivalent) that positional `head`/`random` sampling has no shape for at all. Building it means designing a new `DatasetSpec`-adjacent mechanism, not extending the existing `sampling` block's semantics to a second dataset.
+
+**The enforced contract stays exactly the existing refusal, and it is total, not partial.** `check_service.validate_comparison_check` 422s any `sampling` block under `config.source` unconditionally. One option on the table was to lift the refusal only for the shapes that turn out to be genuinely supported by a partial implementation — since none does, the refusal is not narrowed for any shape (source query, whole-table, cross-env, or otherwise). Nothing about the refusal's mechanism changes here; this amendment is the recorded rationale the refusal's own error message points at.
+
+**Sanctioned alternatives for a comparison over a large dataset**, both already supported by this ADR's §1 and §3:
+- **`COMPARISON_MAX_ROWS` fail-fast** (default 100,000 rows per side, overridable per check via `config.max_rows`, validated in `validate_comparison_check`) — either side over the cap ends the run in an operational `error` naming the cap, never a diff over truncated frames (Decision §3).
+- **Narrow the source or target with a filter, not a statistical sample.** `config.source.query` (source) and `config.target_query` (target, always run on the suite's own connection) are read-only SQL projections (Decision §1, reusing ADR 0019's custom-SQL validation) — reduce the comparison to the date range, partition, or key subset an author actually needs reconciled. This is a deliberate, author-controlled narrowing of *what* is compared, not an approximation of the whole standing in for it.
+
+**Reopen trigger.** This is not a permanent technical ceiling — it is "not built because no consumer has needed it yet, and building it wrong is worse than refusing." Reopen when a real user has a reconciliation over more than `COMPARISON_MAX_ROWS` rows per side that a query filter genuinely cannot narrow, with a concrete key-set design (how the key set is drawn, how both readers are told to fetch exactly it, and how both sides' `sampling` records land on the result, matching the existing sampling record's own shape) — the design work belongs to whoever picks it up with a real dataset shape in hand, not to this decision record.
 
 
 ---
