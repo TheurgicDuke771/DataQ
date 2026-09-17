@@ -11,31 +11,36 @@
    **1a. Every functionality change ships with test coverage** — unit/integration as applicable. Enforced by the ≥80% CI gate (rule 13/14) since the Week-8 flip (2026-07-03); this is no longer a "from Week 8" aspiration, it's live and blocking.
    **1b. Update docs in the same PR if the change is user-facing or architectural** — CLAUDE.md, the relevant ADR, CONTRIBUTING.md, or user docs, whichever applies.
    **1c. Every PR gets an agentic code review before merge.** Spawn `/code-review` (never an inline self-review only), and post its findings to the PR as inline comments (`/code-review --comment`). Fix what it finds in the same PR where feasible; anything genuinely deferred must be filed as a GitHub issue (rule 3) — never dropped silently.
+
 2. **Manually test each committed change before starting the next functionality**, in addition to automated coverage. "Tested" means: the affected code path was exercised locally, not just that it compiled.
 3. **Defects → GitHub issue first, never silent fixes.** Use `gh issue create --title "fix: <desc>"`. The PR that fixes it must include `Fixes #N` in the title or body. This also covers findings deferred out of a `/code-review` pass (rule 1c).
 
-   **3a. "Pre-existing" is not a disposition.** DataQ runs in production, where the age of a defect says nothing about its blast radius — a bug that predates your change is live for users *right now*. So every finding, whoever raises it and whenever it was introduced, ends in exactly one of two states: **fixed**, or **filed**. Never a third — not "noted in the review reply", not "documented in a docstring", not "out of scope for this PR". A finding that exists only in prose is gone when the conversation ends.
-   - A reviewer's "pre-existing, not a blocker" means *file it and reference the number in your reply*, not *merge past it*.
+   **3a. "Pre-existing" is not a disposition.** DataQ runs in production, where the age of a defect says nothing about its blast radius — a bug that predates your change is live for users _right now_. So every finding, whoever raises it and whenever it was introduced, ends in exactly one of two states: **fixed**, or **filed**. Never a third — not "noted in the review reply", not "documented in a docstring", not "out of scope for this PR". A finding that exists only in prose is gone when the conversation ends.
+   - A reviewer's "pre-existing, not a blocker" means _file it and reference the number in your reply_, not _merge past it_.
    - Concluding something is genuinely **not** a defect is a valid outcome — record the determination and its evidence so nobody re-litigates it. Verified-benign is fine; unexamined is not.
    - Documenting a known limitation in a comment is necessary but **not sufficient**; the tracked issue is what keeps it work rather than folklore.
    - Deferring scope out of a PR is fine and often right. The follow-up issue is precisely what makes it a deferral instead of a drop.
 
    This rule exists because the expensive bugs here were all "pre-existing" the day before they cost real time: [#953](https://github.com/TheurgicDuke771/DataQ/issues/953) (UC freshness broken since #426, behind three green suites), [#954](https://github.com/TheurgicDuke771/DataQ/issues/954) (dead credentials invisible until a run failed), [#828](https://github.com/TheurgicDuke771/DataQ/issues/828) (lineage dark for six days).
+
 4. **Every new functionality ships with unit tests.** Tests live next to the code they cover (`backend/tests/`, `frontend/tests/`).
 
-   **4a. Test for failure modes, not just the happy path.** Lesson from the column-profiler bugs ([#145](https://github.com/TheurgicDuke771/DataQ/issues/145)/[#147](https://github.com/TheurgicDuke771/DataQ/issues/147)): the profiler sat at ~94% line coverage and still `500`d on a mixed-type column — *line coverage measures lines, not input space*. So:
-   - **Adversarial inputs for data-ingesting code.** Any function that processes external data (a file, a DataFrame, a user query) gets swept with the shared hostile-input battery in [`backend/tests/support/adversarial.py`](backend/tests/support/adversarial.py) — mixed types, unhashable cells, NaN/Inf, bytes, empty, and **both numpy & pyarrow backends** (they raise different exception types). The contract: *never raise, emit plain JSON* (`assert_json_safe`).
+   **4a. Test for failure modes, not just the happy path.** Lesson from the column-profiler bugs ([#145](https://github.com/TheurgicDuke771/DataQ/issues/145)/[#147](https://github.com/TheurgicDuke771/DataQ/issues/147)): the profiler sat at ~94% line coverage and still `500`d on a mixed-type column — _line coverage measures lines, not input space_. So:
+   - **Adversarial inputs for data-ingesting code.** Any function that processes external data (a file, a DataFrame, a user query) gets swept with the shared hostile-input battery in [`backend/tests/support/adversarial.py`](backend/tests/support/adversarial.py) — mixed types, unhashable cells, NaN/Inf, bytes, empty, and **both numpy & pyarrow backends** (they raise different exception types). The contract: _never raise, emit plain JSON_ (`assert_json_safe`).
    - **Don't mock the seam you're validating.** If the behaviour under test lives inside a function you stub, the test proves nothing about it — exercise the real path (or at least assert the error mapping) for negative cases like a missing credential.
    - **An independent lens on negative paths.** A test written alongside the code shares its blind spots; let `/code-review` (or a second pass) scrutinise the failure-mode tests, not just the happy ones.
-   - **Periodic mutation spikes** on critical pure modules to find *covered-but-unasserted* logic (e.g. an over-narrow `except`). Manual/periodic — **not** a CI gate (too slow). `mutmut` is pinned in its **own** `requirements-mutation.txt`, deliberately **not** `-r`'d by `requirements-dev.txt`, so it stays off CI's install + `pip-audit` merge-gate surface. mutmut **3.x** is config-driven (the old `--paths-to-mutate/--tests-dir/--runner` flags are gone): the `[tool.mutmut]` block in `pyproject.toml` carries a working example. Per spike, point `source_paths` at the one module you're spiking and narrow `pytest_add_cli_args_test_selection` to its tests, then `pip install -r backend/requirements-mutation.txt` and run **from the repo root**:
+   - **Periodic mutation spikes** on critical pure modules to find _covered-but-unasserted_ logic (e.g. an over-narrow `except`). Manual/periodic — **not** a CI gate (too slow). `mutmut` is pinned in its **own** `requirements-mutation.txt`, deliberately **not** `-r`'d by `requirements-dev.txt`, so it stays off CI's install + `pip-audit` merge-gate surface. mutmut **3.x** is config-driven (the old `--paths-to-mutate/--tests-dir/--runner` flags are gone): the `[tool.mutmut]` block in `pyproject.toml` carries a working example. Per spike, point `source_paths` at the one module you're spiking and narrow `pytest_add_cli_args_test_selection` to its tests, then `pip install -r backend/requirements-mutation.txt` and run **from the repo root**:
      ```bash
      mutmut run            # mutate + run; copies the tree into ./mutants/ (gitignored) and runs pytest there
      mutmut results        # list survivors (🙁) — works natively on 3.13 again (see below)
      mutmut show <name>    # diff one survivor, e.g. backend.app.services.custom_sql.x_validate_query__mutmut_44
      ```
-     - **Why the config looks the way it does:** 3.x copies `source_paths` into `./mutants/`, `chdir`s in, and runs pytest there — so `also_copy` must bring the whole importable package + tests (+ `pyproject.toml`), and `pytest_add_cli_args = ["-o", "addopts="]` strips the repo's `--cov` flags (mutmut runs its own coverage plugin; a second `--cov` is a pytest *usage error* in-process, exit 4).
+     - **Why the config looks the way it does:** 3.x copies `source_paths` into `./mutants/`, `chdir`s in, and runs pytest there — so `also_copy` must bring the whole importable package + tests (+ `pyproject.toml`), and `pytest_add_cli_args = ["-o", "addopts="]` strips the repo's `--cov` flags (mutmut runs its own coverage plugin; a second `--cov` is a pytest _usage error_ in-process, exit 4).
      - **3.13 reporting is fixed:** the [#253](https://github.com/TheurgicDuke771/DataQ/issues/253) crash was mutmut 2.5.0's pony-ORM decompiler choking on 3.13 bytecode; **3.x dropped pony**, so `mutmut results`/`show` no longer crash — no more SQLite-cache workaround. Sanity-check each survivor: a mutated **type annotation** (e.g. `| None` → `& None`) or an unasserted-detail string (e.g. a dict key) is an equivalent/uninteresting mutant, not a real gap.
    - **Frontend mutation spikes (Stryker)** are the same idea for pure TS (conversion/resolver utils — `suiteTarget.ts`, `checkForm.ts`, …): `frontend/mutation/run.sh [--mutate '<glob>']`. Like mutmut, it's **manual/periodic, not CI**; Stryker is kept **out of `frontend/package.json`** (off the `pnpm audit` gate) — the script installs it ad-hoc (pinned) and restores the manifest on exit. Config in `frontend/stryker.conf.json`; details + survivor-triage notes in [`frontend/mutation/README.md`](frontend/mutation/README.md).
+
+   **4b. Automated accessibility floor — axe-core, ratcheted, not big-bang** ([#1670](https://github.com/TheurgicDuke771/DataQ/issues/1670), Theme-3 item 1): `serious`/`critical` axe-core violations are checked on every PR, in the existing jobs — no new required check. The Playwright lane (`frontend/e2e/a11y.spec.ts` + `frontend/e2e-otp/a11y.spec.ts` for the sign-in screen, `@axe-core/playwright`) scans dashboard/connections/suites (list+detail)/results/run-detail/assets/admin/sign-in against the real seeded stack; the Vitest lane (`frontend/tests/a11y/components.a11y.test.tsx`, `axe-core` run directly against jsdom — **not** the `vitest-axe` npm package, a single-maintainer fork last published over a year ago and never promoted past `0.1.0`, which fails the rule-40 supply-chain bar) covers the check editor, connection form, suite form, results table, and notification panel. Both diff against the committed baseline `frontend/a11y-baseline.json` (shared logic in `frontend/scripts/a11y/ratchet.ts`) and fail ONLY on a violation not already in it — fixing what the baseline records is tracked separately, never silently re-added to the baseline to make a red run green. Regenerate the baseline deliberately, never by hand-editing the JSON, with `pnpm a11y:baseline` (needs the same CI-equivalent stack as `pnpm e2e` + `pnpm e2e:otp`) when a change to rendered markup is intentional — explain why in the PR.
+
 5. **Definition of Done (DoD)** per task, in order:
    - One functionality per commit (rule 1)
    - Unit/integration tests written and passing (rule 1a)
@@ -80,7 +85,7 @@ All checks run on every PR and must pass before merge.
 13. **Python:** Ruff (lint) → Black `--check` (format) → mypy (types) → Bandit (SAST) → pytest (from Week 8).
 14. **Frontend:** ESLint → Prettier `--check` → Vitest (from Week 8).
 15. **Secret scanning:** betterleaks in pre-commit hook AND in CI. A secret detected in CI blocks merge.
-15a. **No personal or live-infrastructure identifiers** (`scripts/check-identifiers.py`, pre-commit
+    15a. **No personal or live-infrastructure identifiers** (`scripts/check-identifiers.py`, pre-commit
     AND CI — same both-layers rule as 15, and in the same required job). The repo is public, and an
     identifier is not a secret: a leaked secret is revoked and rotated, while a hostname, account id
     or email names something real that keeps existing. Blocked: personal email addresses, Azure
@@ -91,14 +96,14 @@ All checks run on every PR and must pass before merge.
     Deployment-specific values belong in gitignored config: `shared_pg_server_name` in
     `deploy/terraform/azure/variables.tf` is the worked example — required, no default, set per
     deployment.
-15b. **Location is the publication decision** (`scripts/check-docs-publication.py`). The site is
+    15b. **Location is the publication decision** (`scripts/check-docs-publication.py`). The site is
     rooted at `docs/site/` (mkdocs `docs_dir`): a page publishes iff it lives there, and internal
     planning docs stay directly under `docs/` where the build never sees them. Publish = move the
     file into `docs/site/` **and** add it to `nav` (or the script's `PUBLISHED_UNLINKED` list, e.g.
     ADRs); internal = keep it out of `docs/site/`. The hook pins `docs_dir` and refuses a
     reintroduced `exclude_docs` — the old model published every `.md` under `docs/` by default, and
     two internal documents reached the public site exactly that way.
-15c. **Frontend UI text never cites an ADR/issue/PR number** (`scripts/check-frontend-no-ticket-refs.py`,
+    15c. **Frontend UI text never cites an ADR/issue/PR number** (`scripts/check-frontend-no-ticket-refs.py`,
     pre-commit AND CI — same both-layers rule as 15/15a). Rule 41 already keeps ticket references out
     of the public docs site for the same reason: a number that only resolves against this repo's
     issue tracker is meaningless to someone without access to it, and that context belongs in the PR
@@ -109,7 +114,7 @@ All checks run on every PR and must pass before merge.
     reference in this codebase already follows, which is also what keeps an unquoted CSS hex color
     or an ordinary "Batch #4521"-style UI number from tripping it. A deliberate exception takes
     `frontend-ui-ok: <reason>` on the line or the one above.
-16. **SAST:** Bandit (Python) + CodeQL (GitHub Actions) on every PR. **Suppression hygiene (#806):** a suppression comment carries its test id and *nothing else* — put the justification on its own line above, and never spell `# nosec`/`# noqa` inside prose. Bandit parses everything after its token as a test-id list (so an inline explanation emits one warning per word, and merely *mentioning* the token in a nearby comment does the same); Ruff rejects the same shape as a malformed directive. **Judge a suppression by the gate's exit code, never by its warnings:** `bandit -c pyproject.toml -r backend/app/` (the CI command) must exit 0 with "No issues identified". A `nosec encountered … but no failed test` warning does **not** mean the suppression is dead — on a multi-line node bandit emits one per covered line that had no finding, so it is unavoidable noise around a load-bearing marker. Removing one on that evidence breaks the build; confirm against the exit code first.
+16. **SAST:** Bandit (Python) + CodeQL (GitHub Actions) on every PR. **Suppression hygiene (#806):** a suppression comment carries its test id and _nothing else_ — put the justification on its own line above, and never spell `# nosec`/`# noqa` inside prose. Bandit parses everything after its token as a test-id list (so an inline explanation emits one warning per word, and merely _mentioning_ the token in a nearby comment does the same); Ruff rejects the same shape as a malformed directive. **Judge a suppression by the gate's exit code, never by its warnings:** `bandit -c pyproject.toml -r backend/app/` (the CI command) must exit 0 with "No issues identified". A `nosec encountered … but no failed test` warning does **not** mean the suppression is dead — on a multi-line node bandit emits one per covered line that had no finding, so it is unavoidable noise around a load-bearing marker. Removing one on that evidence breaks the build; confirm against the exit code first.
 17. **Dependency vulnerability scanning:** Dependabot alerts + auto-PRs for security updates, plus a synchronous CI gate (`pip-audit` backend, `pnpm audit` frontend). Python deps are pinned in `backend/requirements*.txt` (single source of truth; `environment.yml` and CI install from there).
 
 ---
@@ -135,7 +140,13 @@ These are locked on Day 1 of Week 1. Do not drift.
 27. **PII redaction at the logger level** — not at every call site. Failed-check sample rows can contain sensitive data. The redactor in `backend/app/core/logging.py` strips known PII fields centrally.
 28. **Consistent error shape** across all API responses. Definition in `backend/app/core/errors.py`:
     ```json
-    { "error": { "code": "SNAKE_CASE_CODE", "message": "Human-readable string", "detail": {} } }
+    {
+      "error": {
+        "code": "SNAKE_CASE_CODE",
+        "message": "Human-readable string",
+        "detail": {}
+      }
+    }
     ```
 29. **App Insights exception tracking wired from Week 1**, not Week 7. Middleware in `backend/app/main.py` captures all unhandled exceptions from the first commit.
 
@@ -166,7 +177,7 @@ These are locked on Day 1 of Week 1. Do not drift.
 38. **Security vulnerabilities are not public GitHub issues.** Report via [GitHub Security Advisories](https://github.com/TheurgicDuke771/DataQ/security/advisories/new). See [SECURITY.md](.github/SECURITY.md).
 39. **Quarterly MCP supply-chain audit:** once a quarter, for each client-side MCP server pinned in `.mcp.json` (see CLAUDE.md Appendix), verify the package hasn't been deprecated, yanked, or transferred to a new publisher (e.g. `npm view <pkg> maintainers time`), and review the changelog before bumping the pinned major version. MCP servers run with local tool access — treat a publisher change like a compromised dependency until verified.
 40. **Dependency license guardrail ([ADR 0031](docs/site/adr/0031-oss-byol-distribution-licensing.md)):** DataQ ships MIT — the dependency tree stays free of strong-copyleft and source-available licenses (GPL, AGPL, SSPL, BUSL/Elastic, Commons-Clause). Weak copyleft (LGPL/MPL/EPL) is acceptable with notice preservation. Adding a dependency that violates this needs an explicit ADR-level exception. Run the license sweep (backend: installed-env metadata; frontend: lockfile/`node_modules` license fields) alongside the rule-39 quarterly audit and before any release/image publish.
-41. **Published docs (`docs/site/`, the `docs_dir` GitHub Pages build) never cite issue IDs or PR numbers** — no `#NNNN`, no `github.com/.../issues/…` or `/pull/…` links. Those are internal project-tracking artifacts with no meaning to an external reader of the public site; state the *behavior*, not the ticket that produced it. Also don't link a published page to an un-published internal doc (`README.md`, `CONTRIBUTING.md`, `CLAUDE.md`, `docs/progress*.md`, `docs/retro*.md`, `docs/ops-log.md`) — those aren't reachable from the site and the link is dead weight for a reader outside the repo. Minimize cross-links from ordinary published pages into `docs/site/adr/` too: ADRs are design-rationale records for contributors, not the audience of a feature guide — link one only when the ADR itself is the answer to what the reader is asking, not as a routine "see also." **Within `docs/site/adr/`:** ADR-to-ADR references are fine (an ADR is allowed to cite another ADR it supersedes/amends/depends on — that's the decision graph, not project tracking). ADR-to-PR references should still be minimized — an ADR records *why a decision was made*, not *which PR shipped it*; a PR link ties a durable rationale to an ephemeral implementation artifact and is exactly the class rule 41 exists to keep out.
+41. **Published docs (`docs/site/`, the `docs_dir` GitHub Pages build) never cite issue IDs or PR numbers** — no `#NNNN`, no `github.com/.../issues/…` or `/pull/…` links. Those are internal project-tracking artifacts with no meaning to an external reader of the public site; state the _behavior_, not the ticket that produced it. Also don't link a published page to an un-published internal doc (`README.md`, `CONTRIBUTING.md`, `CLAUDE.md`, `docs/progress*.md`, `docs/retro*.md`, `docs/ops-log.md`) — those aren't reachable from the site and the link is dead weight for a reader outside the repo. Minimize cross-links from ordinary published pages into `docs/site/adr/` too: ADRs are design-rationale records for contributors, not the audience of a feature guide — link one only when the ADR itself is the answer to what the reader is asking, not as a routine "see also." **Within `docs/site/adr/`:** ADR-to-ADR references are fine (an ADR is allowed to cite another ADR it supersedes/amends/depends on — that's the decision graph, not project tracking). ADR-to-PR references should still be minimized — an ADR records _why a decision was made_, not _which PR shipped it_; a PR link ties a durable rationale to an ephemeral implementation artifact and is exactly the class rule 41 exists to keep out.
 
 ---
 
@@ -174,17 +185,18 @@ These are locked on Day 1 of Week 1. Do not drift.
 
 ### Backend (`backend/`)
 
-| Layer | Package | Responsibility |
-|---|---|---|
-| API | `backend/app/api/v1/` | FastAPI routers only — no business logic |
-| Services | `backend/app/services/` | Business logic, orchestration between layers |
+| Layer         | Package                      | Responsibility                                          |
+| ------------- | ---------------------------- | ------------------------------------------------------- |
+| API           | `backend/app/api/v1/`        | FastAPI routers only — no business logic                |
+| Services      | `backend/app/services/`      | Business logic, orchestration between layers            |
 | Orchestration | `backend/app/orchestration/` | `OrchestrationProvider` abstraction + ADF/Airflow impls |
-| Datasources | `backend/app/datasources/` | GX adapter per datasource type |
-| DB | `backend/app/db/` | SQLAlchemy models + session management |
-| Core | `backend/app/core/` | Config, logging, errors — imported by all layers |
-| MCP | `backend/app/mcp/` | FastMCP tools (Week 7 only) |
+| Datasources   | `backend/app/datasources/`   | GX adapter per datasource type                          |
+| DB            | `backend/app/db/`            | SQLAlchemy models + session management                  |
+| Core          | `backend/app/core/`          | Config, logging, errors — imported by all layers        |
+| MCP           | `backend/app/mcp/`           | FastMCP tools (Week 7 only)                             |
 
 **Naming:**
+
 - Files: `snake_case.py`
 - Classes: `PascalCase`
 - Functions / variables: `snake_case`
@@ -192,21 +204,23 @@ These are locked on Day 1 of Week 1. Do not drift.
 - Async functions: always `async def` for anything that touches DB, Redis, or external HTTP
 
 **Import order** (enforced by Ruff / isort):
+
 1. Standard library
 2. Third-party (`fastapi`, `sqlalchemy`, `celery`, …)
 3. First-party (`backend.app.*`)
 
 ### Frontend (`frontend/`)
 
-| Layer | Path | Responsibility |
-|---|---|---|
-| Pages | `src/pages/` | Route-level components |
-| Components | `src/components/` | Reusable UI components |
-| API client | `src/api/` | Generated OpenAPI client (Week 4+) |
-| Hooks | `src/hooks/` | Custom React hooks |
-| Store | `src/store/` | Global state (if needed) |
+| Layer      | Path              | Responsibility                     |
+| ---------- | ----------------- | ---------------------------------- |
+| Pages      | `src/pages/`      | Route-level components             |
+| Components | `src/components/` | Reusable UI components             |
+| API client | `src/api/`        | Generated OpenAPI client (Week 4+) |
+| Hooks      | `src/hooks/`      | Custom React hooks                 |
+| Store      | `src/store/`      | Global state (if needed)           |
 
 **Naming:**
+
 - Component files: `PascalCase.tsx`
 - Hook files: `useXxx.ts`
 - Util files: `camelCase.ts`
@@ -273,7 +287,7 @@ browser E2E lane runs in this mode with the variables set explicitly in the work
 
 ### Mermaid diagrams in published docs
 
-Syntactically *valid* ≠ *renders correctly*. In **sequence-diagram** text, `#` starts
+Syntactically _valid_ ≠ _renders correctly_. In **sequence-diagram** text, `#` starts
 Mermaid's HTML-entity escape (`#35;` → `#`) and a stray `;` terminates a statement — a bare
 `#NNN` issue ref or an inline semicolon silently truncates the rendered line while the syntax
 check still passes. Write issue refs in sequence diagrams as `#35;NNN` (renders as `#NNN`;
