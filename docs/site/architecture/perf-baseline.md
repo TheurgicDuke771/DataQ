@@ -272,14 +272,54 @@ that would stamp "sampled" on a result that was not.
 - **Column projection for flat-file monitors.** A column-freshness monitor still
   reads every column to compute one `MAX`. Parquet could project a single column
   off its footer, which would remove most of the remaining monitor-path memory.
-- **Efficiency and reuse.** The sampled CSV
-  `random` path reads the object twice, and the count and take construct their CSV
-  streams separately (consistent today by coincidence, not construction).
+- **Reuse in the sampled readers.** The count and the take still construct
+  their CSV streams separately (consistent today by coincidence, not
+  construction), and `object_size` remains a narrower second call to the same
+  store API `file_stat` already makes.
 - **Incremental / delta-only validation** stays out of scope by design:
   sampling bounds *how much* is read, not *which part is new*. Note for whoever
   builds it — a watermark belongs on the run target beside `sampling`, and its
   result record should be the same shape as `sampling`, so the run-detail surface
   learns one vocabulary for "this verdict covers less than everything".
+
+### Closed since: the sampled read paths do less IO
+
+> Captured **2026-09-17**, same method as above — the store seams pointed at a
+> local file, so the readers execute for real and only the network is stood in
+> for. A ~250 MB, 2.97M-row CSV; the `random` scenario draws 10,000 rows, the
+> `head` one asks for 150,000 (enough to grow the head window twice).
+
+| | random 10k | | head 150k | |
+|---|---|---|---|---|
+| | before | after | before | after |
+| MB fetched | 500.1 | **250.0** | 32.5 | **16.8** |
+| Store requests | 64 | **31** | 6 | 6 |
+| Clients constructed | 64 | **1** | 6 | **1** |
+| Wall time (s) | 0.67 | 0.44 | 0.19 | 0.20 |
+| Peak RSS (MiB) | ~587 | ~550 | ~672 | ~701 |
+
+Four changes, each asserted on the seam rather than on the frame — every one of
+them is invisible in the returned rows, which is why they survived the review of
+the behaviour:
+
+- **The CSV `random` draw is one pass.** Counting the object and then taking the
+  drawn positions streamed it twice; a reservoir draw (Vitter's Algorithm L)
+  samples and counts together. `total_rows` now means *the rows walked by the
+  read that produced this sample*, so it is measured closer to the take than the
+  count it replaced. Parquet is unaffected — its count is a footer read, not a
+  pass.
+- **The growing head window fetches deltas.** It re-read `[0, window)` on each
+  doubling, so reaching 4 MB cost 1 + 2 + 4 = 7 MB.
+- **The delimiter sniff costs no request of its own.** It is read off the
+  stream's own first chunk, which covered those bytes anyway.
+- **One store client per logical read**, seeded with the runner's already-fetched
+  file metadata, so a checks-then-monitors run HEADs the object once instead of
+  three times.
+
+Wall time understates the gain: against a local file a request costs no round
+trip, so the halved request count is free here and is not in a deployment. Peak
+RSS is unchanged by design — what moved is IO, not what the reservoir holds,
+which is bounded by the sample.
 
 ---
 
