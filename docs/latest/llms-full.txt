@@ -3252,6 +3252,16 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ## Unreleased
 
+### Fixed
+
+- **The batch-target preview no longer scans unbounded, or matches a regex it hasn't
+  vetted, in the API process.** The suite editor's live "resolves to" hint now stops at a
+  small object-count/wall-clock budget (`BATCH_PREVIEW_MAX_OBJECTS`/`_MAX_SECONDS`) and
+  reports `truncated` honestly instead of scanning until it can be sure; a batch pattern is
+  refused up front if it is too long or shaped for catastrophic regex backtracking (the
+  same check applies whether the pattern is being saved or previewed). The frontend cancels
+  a superseded preview request instead of merely ignoring its answer.
+
 ### Added
 
 - **Offboarding is one guided pass.** Admin → Members → **Offboard** hands a departing

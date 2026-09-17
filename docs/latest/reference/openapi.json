@@ -1053,15 +1053,32 @@
         "type": "object"
       },
       "BatchPreviewRead": {
-        "description": "The concrete file path a batch-target spec resolves to right now \u2014 the same\nlive resolution `run_target.materialize_path` performs at run time, run early\nand without persisting anything (#1193). Callers re-request on every field\nchange to keep the \"resolves to\" hint live while authoring.",
+        "description": "The concrete file path a batch-target spec resolves to right now \u2014 the same\nlive resolution `run_target.materialize_path` performs at run time, run early\nand without persisting anything (#1193). Callers re-request on every field\nchange to keep the \"resolves to\" hint live while authoring.\n\nUnlike the run path, this listing is budget-bounded (#1243) \u2014 `truncated`\nsays whether the object/wall-clock budget cut the scan short before it could\nsee every object under the prefix, in which case `path` is only the best\nmatch seen among the first `scanned` objects, not a guaranteed answer.",
         "properties": {
           "path": {
-            "title": "Path",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
+          "scanned": {
+            "title": "Scanned",
+            "type": "integer"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
           }
         },
         "required": [
-          "path"
+          "path",
+          "scanned",
+          "truncated"
         ],
         "title": "BatchPreviewRead",
         "type": "object"
