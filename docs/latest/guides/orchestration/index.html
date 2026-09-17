@@ -2776,6 +2776,29 @@ schema disclosure) and renders as a locked box. Snowflake's column grain lives i
 the asset's lineage graph</strong>, not hidden — the graph says "view-level only" rather than presenting a
 coarse graph as complete. <code>OBJECT_DEPENDENCIES</code> is a current-state view, so its refresh is a
 <strong>snapshot diff</strong> (re-read whole, prune stale edges).</p>
+<p><strong>A partial snapshot pull does not prune — and the suspension is bounded and reported.</strong> When a
+snapshot refresh only partly observed current state (a tier skipped or half-traversed for a
+transient-looking reason), the edges it found are added but no stale edge is removed, so a blip
+can never wipe real lineage. Because a <em>persistent</em> condition can read as transient, that
+suspension is not open-ended:</p>
+<ul>
+<li><strong>It is reported.</strong> The asset's lineage graph says pruning is suspended, and since when. The
+  wording is deliberately about <em>extra</em> edges, not missing ones: a graph that stopped pruning can
+  only grow, so what you see may include a dependency that was removed from the warehouse. That is
+  the opposite of the staleness case beside it, and confusing the two sends you looking for the
+  wrong problem.</li>
+<li><strong>It expires.</strong> Once pruning has been suspended for longer than <code>LINEAGE_STALE_AFTER_HOURS</code>
+  (default 48), the next successful refresh prunes anyway and logs
+  <code>warehouse_lineage_prune_forced</code> at WARNING. A stale-but-honest graph beats one that accretes
+  forever. The refresh then re-arms the suspension for another window rather than pruning on every
+  partial pull afterwards.</li>
+<li><strong>A source that has never pruned is reported, never forced.</strong> If no prune has ever been recorded
+  for a connection, the graph says so ("has never removed stale edges") instead of an age — and the
+  expiry deliberately does not apply, because a first-ever partial pull would delete edges gathered
+  by earlier partial pulls against an observation never shown to be complete.</li>
+</ul>
+<p>Setting <code>LINEAGE_STALE_AFTER_HOURS</code> to <code>0</code> turns off the staleness signal <strong>and</strong> this expiry, so
+pruning then stays suspended until a genuinely clean pull arrives.</p>
 <p><strong>Unity Catalog — <code>system.access.table_lineage</code></strong>, an append-only <strong>log</strong> with an <code>event_time</code>. So
 its refresh is <strong>incremental</strong>: read forward from a persisted watermark (<code>connections.lineage_watermark</code>),
 advance it to the new max, and <strong>never prune</strong> — an edge absent from the latest window is a historical
