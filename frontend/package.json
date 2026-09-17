@@ -29,7 +29,7 @@
     "axios": "^1.20.0",
     "monaco-editor": "^0.56.0",
     "oidc-client-ts": "^3.5.0",
-    "react": "^19.2.8",
+    "react": "^19.3.0",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.3",
     "recharts": "^3.10.1"
@@ -42,7 +42,7 @@
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.7",
     "@types/node": "26",
-    "@types/react": "^19.2.18",
+    "@types/react": "^19.3.0",
     "@types/react-dom": "^19.2.5",
     "@vitejs/plugin-react": "^6.1.1",
     "@vitest/coverage-v8": "^4.1.8",
