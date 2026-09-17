@@ -7,8 +7,6 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from alembic.migration import MigrationContext
-from alembic.operations import Operations
 from sqlalchemy import text
 
 from backend.app.services import llm_rca
@@ -63,22 +61,23 @@ def test_create_all_builds_the_partial_index(db_session: Any) -> None:
 def test_up_down_up(db_session: Any) -> None:
     """down (drop) -> up (recreate) -> down, against live DDL from the `create_all` baseline.
 
-    The migration body runs CONCURRENTLY inside `autocommit_block()`, which cannot run in this
-    fixture's open transaction — so exercise the same DDL transactionally here and leave the
-    CONCURRENTLY path to `alembic upgrade head` (run against a scratch database on the PR).
+    Runs the migration module's OWN statements, so a wrong index name in `downgrade()` — the
+    plausible copy/paste slip from the template migration — goes red here instead of staying
+    green against a hand-written copy. Only `CONCURRENTLY` is stripped: it cannot run inside
+    this fixture's open transaction, and the real concurrent path is covered by
+    `alembic upgrade head` against a scratch database (see the PR).
     """
+    module = _load_migration()
+    create_sql = module._CREATE_SQL.replace("CONCURRENTLY ", "")
+    drop_sql = module._DROP_SQL.replace("CONCURRENTLY ", "")
+    assert _INDEX in drop_sql, f"downgrade() drops the wrong index: {drop_sql}"
     connection = db_session.connection()
-    ctx = MigrationContext.configure(connection)
-    create_sql = _load_migration()._INDEX_SQL.replace("CONCURRENTLY ", "")
-    with Operations.context(ctx):
+    for _ in range(2):
         _assert_shape(_indexdef(connection))
-        connection.execute(text(f"DROP INDEX {_INDEX}"))
+        connection.execute(text(drop_sql))
         assert _indexdef(connection) is None
         connection.execute(text(create_sql))
-        _assert_shape(_indexdef(connection))
-        connection.execute(text(f"DROP INDEX {_INDEX}"))
-        assert _indexdef(connection) is None
-        connection.execute(text(create_sql))
+    _assert_shape(_indexdef(connection))
 
 
 def test_narrative_lookup_uses_the_index(db_session: Any) -> None:
@@ -89,6 +88,10 @@ def test_narrative_lookup_uses_the_index(db_session: Any) -> None:
 
     `enable_seqscan = off` removes the empty-table cost preference; it cannot make an
     unprovable partial index or a non-matching expression eligible.
+
+    `literal_binds` is the real wire form only because the pinned driver interpolates
+    client-side — `test_the_index_depends_on_client_side_parameter_binding` holds that
+    assumption to account.
     """
     connection = db_session.connection()
     connection.execute(text("SET LOCAL enable_seqscan = off"))
@@ -96,3 +99,37 @@ def test_narrative_lookup_uses_the_index(db_session: Any) -> None:
     compiled = statement.compile(bind=connection.engine, compile_kwargs={"literal_binds": True})
     plan = "\n".join(row[0] for row in connection.execute(text(f"EXPLAIN {compiled}")))
     assert _INDEX in plan, f"the narrative lookup did not use {_INDEX}:\n{plan}"
+
+
+def test_the_index_depends_on_client_side_parameter_binding(db_session: Any) -> None:
+    """A partial expression index needs CONSTANTS: the planner must prove `kind`/`status`
+    imply the index predicate, and `request ->> 'incident_id'` must match the indexed
+    expression textually. Under server-side binding those are all parameters, nothing is
+    provable, and the query silently falls back to a sequential scan — with the suite green,
+    since a wrong plan is still a correct answer.
+
+    `EXPLAIN (GENERIC_PLAN)` (PG16+) plans exactly that case, so assert BOTH halves: the
+    generic plan does not reach the index, and the driver actually in use is one that
+    interpolates client-side. A psycopg3 swap then turns this from a silent perf regression
+    into a failing test (#1979).
+    """
+    connection = db_session.connection()
+    assert connection.dialect.driver == "psycopg2", (
+        "the RCA index only applies under client-side parameter binding; "
+        f"driver is {connection.dialect.driver!r} — see this test's docstring"
+    )
+    connection.execute(text("SET LOCAL enable_seqscan = off"))
+    generic = "\n".join(
+        row[0]
+        for row in connection.execute(
+            text(
+                "EXPLAIN (GENERIC_PLAN) SELECT id FROM llm_invocations "
+                "WHERE kind = $1 AND status = $2 AND (request ->> $3) = $4 "
+                "ORDER BY created_at DESC, id DESC LIMIT $5"
+            )
+        )
+    )
+    assert _INDEX not in generic, (
+        "server-side binding now reaches the index — the client-side-binding caveat "
+        f"on this index can be dropped:\n{generic}"
+    )

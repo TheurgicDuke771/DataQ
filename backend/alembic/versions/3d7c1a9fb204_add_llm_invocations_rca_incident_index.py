@@ -25,19 +25,22 @@ down_revision: str | None = "2017e2c7ee11"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-_INDEX_SQL = (
+_CREATE_SQL = (
     "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_llm_invocations_rca_incident "
     "ON llm_invocations ((request ->> 'incident_id'), created_at DESC, id DESC) "
     "WHERE kind = 'rca_narrative' AND status = 'succeeded'"
 )
+_DROP_SQL = "DROP INDEX CONCURRENTLY IF EXISTS ix_llm_invocations_rca_incident"
 
 
 def upgrade() -> None:
     with op.get_context().autocommit_block():
-        op.execute("DROP INDEX CONCURRENTLY IF EXISTS ix_llm_invocations_rca_incident")
-        op.execute(_INDEX_SQL)
+        # DROP first: a crashed earlier attempt can leave an INVALID index that
+        # CREATE ... IF NOT EXISTS would then skip over.
+        op.execute(_DROP_SQL)
+        op.execute(_CREATE_SQL)
 
 
 def downgrade() -> None:
     with op.get_context().autocommit_block():
-        op.execute("DROP INDEX CONCURRENTLY IF EXISTS ix_llm_invocations_rca_incident")
+        op.execute(_DROP_SQL)
