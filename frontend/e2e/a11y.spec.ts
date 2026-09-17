@@ -92,6 +92,7 @@ test.describe('Accessibility floor (axe-core, serious/critical, ratcheted)', () 
     await page.goto('/results');
     await page.locator('tr.ant-table-row').first().click();
     await expect(page).toHaveURL(/\/results\/[0-9a-f-]+$/);
+    await expect(page.getByTestId('rd-screen')).toBeVisible();
     await checkRoute(page, 'route:/results/:id');
   });
 

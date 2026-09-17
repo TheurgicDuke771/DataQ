@@ -18,7 +18,7 @@
     "e2e:otp": "playwright test --project=otp",
     "e2e:ui": "playwright test --ui",
     "typecheck": "tsc --noEmit",
-    "a11y:baseline": "A11Y_BASELINE=1 vitest run tests/a11y && A11Y_BASELINE=1 playwright test e2e/a11y.spec.ts --workers=1 && A11Y_BASELINE=1 playwright test --project=otp e2e-otp/a11y.spec.ts --workers=1"
+    "a11y:baseline": "A11Y_BASELINE=1 vitest run tests/a11y && A11Y_BASELINE=1 playwright test e2e/a11y.spec.ts --workers=1 && E2E_OTP=1 A11Y_BASELINE=1 playwright test --project=otp e2e-otp/a11y.spec.ts --workers=1"
   },
   "dependencies": {
     "@ant-design/icons": "^6.3.4",
