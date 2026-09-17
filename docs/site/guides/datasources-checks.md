@@ -232,8 +232,14 @@ Things it deliberately **refuses** rather than silently allowing:
   turning sampling on under one), and per check at run time for suites that
   predate the gate. Use a **volume monitor** instead: it counts the whole dataset
   without loading it.
-- **Sampling on a comparison check's `source`** — the comparison reader
-  materialises both sides in full for the diff, so the block would be ignored.
+- **Sampling on a comparison check's `source`** — refused at author time
+  (422), not silently ignored. A comparison diffs by key, so two independent
+  positional samples of the two sides would share almost no keys and report a
+  confidently wrong reconciliation; that needs *coherent* key-set sampling,
+  a different mechanism this ADR decided not to build (see
+  [ADR 0015's amendment](../adr/0015-two-connection-comparison-check-model.md#amendment-2026-09-16-comparison-sources-do-not-support-sampling)).
+  For a large comparison, use `COMPARISON_MAX_ROWS`'s fail-fast cap and narrow
+  the source (or target) with a query filter instead of sampling it.
 
 On Unity Catalog a seeded random sample is pushed down as
 `TABLESAMPLE (p PERCENT) REPEATABLE (seed)`, so the seed genuinely pins the draw

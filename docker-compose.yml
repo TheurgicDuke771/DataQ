@@ -199,11 +199,11 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     restart: unless-stopped
-    # -B runs celery-beat embedded in the worker (the #171 orchestration polling schedule) — dev
-    # AND prod alike (containerapps.tf runs the same `worker -B`; there is no separate beat process
-    # anywhere, #1091). -Q celery,llm (#1777): llm_invoke has its own queue now — a worker not
-    # listening to it here would silently never process an LLM dispatch.
-    command: celery -A backend.app.worker.celery_app worker -B -Q celery,llm --loglevel=INFO
+    # -Q celery,llm (#1777): llm_invoke has its own queue now — a worker not listening to it here
+    # would silently never process an LLM dispatch. NO -B here (#1811): beat runs as its own
+    # `beat` service below, so a worker OOM (overlapping large suites, 4 prefork children under a
+    # 2 GiB hard limit — #1811/#1790) can never take the scheduler down with it (the #405 class).
+    command: celery -A backend.app.worker.celery_app worker -Q celery,llm --loglevel=INFO
     env_file:
       - path: .env.app
         required: false
@@ -215,6 +215,42 @@ services:
       OPENBAO_ADDR: http://openbao:8200
       OPENBAO_TOKEN: ${OPENBAO_TOKEN:?run ./scripts/setup.sh (or set OPENBAO_TOKEN) — ADR 0039}
       # Same auth block as the api.
+      <<: *otp-auth-env
+    volumes:
+      - ./backend:/workspace/backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      openbao:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      otp-mail-secret:
+        condition: service_completed_successfully
+
+  # celery-beat, split out of the worker (#1811): the ONLY schedule dispatcher — never run a
+  # second replica of this service, or every periodic task (orchestration polling, scheduled
+  # suite dispatch, sweeps) fires twice. celery_app.py's `beat_schedule_filename` already points
+  # the schedule shelve at tempfile.gettempdir() (#1408); no `-s` override needed here.
+  beat:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    command: celery -A backend.app.worker.celery_app beat --loglevel=INFO
+    env_file:
+      - path: .env.app
+        required: false
+    environment:
+      DATABASE_URL: *database-url
+      REDIS_URL: redis://redis:6379/0
+      # Must match api/worker so secrets the API writes are visible here (#86).
+      SECRET_STORE: ${SECRET_STORE:-openbao}
+      OPENBAO_ADDR: http://openbao:8200
+      OPENBAO_TOKEN: ${OPENBAO_TOKEN:?run ./scripts/setup.sh (or set OPENBAO_TOKEN) — ADR 0039}
+      # Same auth block as the api/worker.
       <<: *otp-auth-env
     volumes:
       - ./backend:/workspace/backend

@@ -85,6 +85,20 @@ data "aws_iam_policy_document" "github_deploy" {
       aws_iam_role.ecs_task_worker.arn,
     ]
   }
+
+  # Read-only, scoped to beat's OWN log group: the deploy workflow's "is beat actually
+  # scheduling" liveness check (#1811) reads it after every roll. Without this the
+  # `aws logs filter-log-events` call is a silent AccessDenied on every deploy —
+  # the check's `2>/dev/null || echo 0` swallows the error and always prints the
+  # "never saw beat: Starting" warning, defeating the #1361 guarantee it exists for.
+  statement {
+    sid     = "ReadBeatLogsForDeploySmoke"
+    actions = ["logs:FilterLogEvents"]
+    resources = [
+      aws_cloudwatch_log_group.beat.arn,
+      "${aws_cloudwatch_log_group.beat.arn}:*",
+    ]
+  }
 }
 
 resource "aws_iam_role_policy" "github_deploy" {
