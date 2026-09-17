@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.6",
+  "checkpoint_id": "5445706c7924",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1983-otp-floor-test-flake",
+  "checkpoints_count": 10,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/54/45706c7924/0/metadata.json",
+      "transcript": "/54/45706c7924/0/full.jsonl",
+      "compact_transcript": "/54/45706c7924/0/transcript.jsonl",
+      "content_hash": "/54/45706c7924/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 4,
+    "cache_creation_tokens": 5984,
+    "cache_read_tokens": 672219,
+    "output_tokens": 4142,
+    "api_call_count": 2
+  }
+}
