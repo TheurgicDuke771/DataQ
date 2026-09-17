@@ -292,10 +292,38 @@ def _iceberg_target(target: dict[str, Any], conn_type: str) -> ResolvedTarget:
 #: it is a property of the flat-file target shape, not of the service layer.
 _BATCH_STRATEGIES = {"latest", "specific"}
 
+#: A batch pattern is matched against every listed object key — for the run path
+#: in the worker, for the preview in the API process (#1243). Python's `re` has
+#: no match timeout, so a short length cap plus a shape check below are the only
+#: defenses available; both apply here so save (`validate_target`) and preview
+#: (`resolve_target`) enforce the identical rule.
+_MAX_BATCH_PATTERN_LENGTH = 200
+
+#: Catastrophic backtracking's classic construct is a quantified GROUP whose own
+#: body is itself quantified — e.g. ``(a+)+`` or ``([a-z]*)+`` — which a
+#: pathological key (many repeats of the inner unit, then a non-match) can drive
+#: to exponential-time matching. Detected structurally, not exhaustively: this
+#: catches the common shape, not every possible ReDoS pattern.
+_NESTED_QUANTIFIER_RE = re.compile(r"\([^()]*[+*][^()]*\)[+*]")
+
+
+def _reject_redos_shape(pattern: str) -> None:
+    if len(pattern) > _MAX_BATCH_PATTERN_LENGTH:
+        raise TargetShapeError(
+            f"batch 'pattern' must be at most {_MAX_BATCH_PATTERN_LENGTH} characters"
+        )
+    if _NESTED_QUANTIFIER_RE.search(pattern):
+        raise TargetShapeError(
+            "batch 'pattern' has a quantified group nested inside another quantifier "
+            "(e.g. '(a+)+') — this shape can cause catastrophic-backtracking regex "
+            "matching; rewrite it without nested repetition"
+        )
+
 
 def _batch_spec(target: dict[str, Any]) -> BatchSpec:
     """Validate + build a flat-file `BatchSpec` from a batch target (422 on bad shape)."""
     pattern = _require(target, "pattern", "flat-file")
+    _reject_redos_shape(pattern)
     try:
         compiled = re.compile(pattern)
     except re.error as exc:
