@@ -81,6 +81,13 @@ it and fail specs for a reason that has nothing to do with the UI. The cap is
 _raised_ for the lane, never disabled. `otp-admin@dataq.local` is the one fixed
 address, named in `WORKSPACE_ADMIN_EMAILS` so the admin-nav gating can be checked.
 
+## Accessibility floor (#1670)
+
+`a11y.spec.ts` scans the sign-in screen with axe-core (`@axe-core/playwright`) — the one route
+that only exists in this lane, since dev-bypass (`e2e/`) has no sign-in wall. It shares the same
+ratchet + committed baseline as `e2e/a11y.spec.ts`; see that spec's README section for the full
+rationale, and `pnpm a11y:baseline` to regenerate.
+
 ## What is deliberately not covered
 
 - **A time-expired code.** It would need a 10-minute wait or a clock hack, and the

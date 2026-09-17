@@ -1,6 +1,7 @@
 """Flat-file IO + GX runner tests."""
 
 import io
+import time
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
@@ -1620,6 +1621,147 @@ def test_resolve_batch_file_closes_the_listing_when_resolution_refuses(
         )
 
     assert stub.closed is True
+
+
+# ── preview-time listing budget (#1243) ───────────────────────────────────────
+
+
+def test_preview_resolves_a_match_within_budget_untruncated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(flatfile, "iter_files", _fake_listing(_BATCH_FILES))
+    result = flatfile.resolve_batch_file_preview(
+        conn_type="s3",
+        config={},
+        secret="s",
+        prefix="data/",
+        pattern=_PATTERN,
+        max_objects=100,
+        max_seconds=5.0,
+    )
+    assert result.path == "data/orders_2026-06-03.csv"
+    assert result.scanned == len(_BATCH_FILES)
+    assert result.truncated is False
+
+
+def test_preview_object_budget_stops_the_scan_and_reports_truncated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Ascending listings put the newest key last — a budget-truncated scan over
+    # these 9 objects can only ever see the first 3, never the true "latest".
+    files = [flatfile.FileRef(f"data/orders_2026-06-{i:02d}.csv") for i in range(1, 10)]
+    monkeypatch.setattr(flatfile, "iter_files", _fake_listing(files))
+    result = flatfile.resolve_batch_file_preview(
+        conn_type="s3",
+        config={},
+        secret="s",
+        prefix="data/",
+        pattern=_PATTERN,
+        max_objects=3,
+        max_seconds=5.0,
+    )
+    assert result.scanned == 3
+    assert result.truncated is True
+    # Best-among-scanned, not the true latest — honest, not silently wrong.
+    assert result.path == "data/orders_2026-06-03.csv"
+
+
+def test_preview_object_budget_with_no_match_reports_truncated_not_no_data(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The scan never found a match AND never finished — this must read as "didn't
+    scan enough to say" (`truncated=True`, `path=None`), never as the stronger
+    "no file matches this pattern anywhere" a completed, empty scan would mean.
+    """
+    files = [flatfile.FileRef(f"data/other_{i}.csv") for i in range(10)]
+    monkeypatch.setattr(flatfile, "iter_files", _fake_listing(files))
+    result = flatfile.resolve_batch_file_preview(
+        conn_type="s3",
+        config={},
+        secret="s",
+        prefix="data/",
+        pattern=_PATTERN,
+        max_objects=3,
+        max_seconds=5.0,
+    )
+    assert result.path is None
+    assert result.scanned == 3
+    assert result.truncated is True
+
+
+def test_preview_wall_clock_budget_cuts_a_slow_listing_short(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The object budget alone can't protect an API thread against a store that is
+    merely SLOW to enumerate (network latency, a huge prefix) — the wall-clock leg
+    is what actually bounds how long the thread is held, independent of how many
+    objects that time bought.
+    """
+
+    def _slow(**_kwargs: Any) -> Any:
+        for i in range(1_000_000):
+            time.sleep(0.01)
+            yield flatfile.FileRef(f"data/orders_{i:07d}.csv")
+
+    monkeypatch.setattr(flatfile, "iter_files", _slow)
+    start = time.monotonic()
+    result = flatfile.resolve_batch_file_preview(
+        conn_type="s3",
+        config={},
+        secret="s",
+        prefix="data/",
+        pattern=_PATTERN,
+        max_objects=1_000_000,  # effectively unbounded — the clock must stop it
+        max_seconds=0.2,
+    )
+    elapsed = time.monotonic() - start
+    assert result.truncated is True
+    assert result.scanned < 1_000_000
+    assert elapsed < 2.0, f"wall-clock budget did not bound the scan: took {elapsed}s"
+
+
+def test_preview_closes_the_listing_stream_on_normal_completion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stub = _BlobStub()
+    monkeypatch.setattr(flatfile, "_blob_service", lambda acfg, secret: stub)
+
+    result = flatfile.resolve_batch_file_preview(
+        conn_type="adls_gen2",
+        config=_ADLS_CONFIG,
+        secret="sas",
+        prefix="orders/",
+        pattern=r"orders/(\w)\.csv",
+        max_objects=100,
+        max_seconds=5.0,
+    )
+
+    assert result.path == "orders/b.csv"  # 'b' > 'a' — the stub's two blobs
+    assert result.scanned == 2
+    assert result.truncated is False
+    assert stub.closed is True
+
+
+def test_preview_never_raises_batch_listing_too_large(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The run path's hard cap (`_BATCH_LISTING_MAX`) is irrelevant to preview —
+    even a listing far past it must come back as a bounded, honest partial, never
+    the run path's `BatchListingTooLargeError`.
+    """
+    files = [flatfile.FileRef(f"data/orders_{i:07d}.csv") for i in range(10_000)]
+    monkeypatch.setattr(flatfile, "iter_files", _fake_listing(files))
+    monkeypatch.setattr(flatfile, "_BATCH_LISTING_MAX", 100)  # far below the file count above
+
+    result = flatfile.resolve_batch_file_preview(
+        conn_type="s3",
+        config={},
+        secret="s",
+        prefix="data/",
+        pattern=_PATTERN,
+        max_objects=2000,
+        max_seconds=5.0,
+    )
+    assert result.scanned == 2000
+    assert result.truncated is True
 
 
 # ── sampling + the scan guardrail (#595) ─────────────────────────────────────

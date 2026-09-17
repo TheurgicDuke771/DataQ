@@ -245,6 +245,14 @@ class Settings(BaseSettings):
     # diff; over-cap fails fast, never a truncated diff.
     comparison_max_rows: int = 100_000
 
+    # ── Batch-target preview budget (#1243) ─────────────────────────────────── The batch-preview
+    # endpoint lists the live store synchronously in the API process's threadpool, so it needs a
+    # much tighter budget than the run path's own `flatfile._BATCH_LISTING_MAX` (500k, worker-only).
+    # Whichever bound is hit first ends the scan; the response then says `truncated` rather than
+    # raising, since a preview is a hint, not an authoritative answer.
+    batch_preview_max_objects: int = Field(default=2000, ge=1)
+    batch_preview_max_seconds: float = Field(default=3.0, gt=0, le=60)
+
     # Workspace-admin allowlist, matched case-insensitively against the IdP email (a generic
     # identity attribute — no Azure claim read, ADR 0010/0013).
     workspace_admin_emails: str = ""

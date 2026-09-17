@@ -667,9 +667,16 @@ class BatchPreviewRead(ApiModel):
     live resolution `run_target.materialize_path` performs at run time, run early
     and without persisting anything (#1193). Callers re-request on every field
     change to keep the "resolves to" hint live while authoring.
+
+    Unlike the run path, this listing is budget-bounded (#1243) — `truncated`
+    says whether the object/wall-clock budget cut the scan short before it could
+    see every object under the prefix, in which case `path` is only the best
+    match seen among the first `scanned` objects, not a guaranteed answer.
     """
 
-    path: str
+    path: str | None
+    scanned: int
+    truncated: bool
 
 
 @router.get(
@@ -687,18 +694,19 @@ def preview_batch_target(
     batch: Annotated[str | None, Query(max_length=255)] = None,
     prefix: Annotated[str, Query(max_length=1024)] = "",
 ) -> BatchPreviewRead:
-    # sync def → threadpool; the object listing is blocking.
+    # sync def → threadpool; the object listing is blocking, but bounded (#1243) —
+    # it can no longer hold the thread for an unbounded scan.
     # Authoring aid → 'edit', same gate as the profiler/columns/policy-suggest.
     suite = require_permission(db, suite_id, current_user.id, minimum="edit")
     connection = db.get(Connection, suite.connection_id)
     assert connection is not None
     # Every failure mode is already a typed `DataQError` from `run_target` (batch_preview_no_data /
-    # _invalid / _failed, or suite_target_invalid), so the router stays a pass-through.
+    # _failed, or suite_target_invalid), so the router stays a pass-through.
     # Credential-health seam (#1697) — `preview_batch` takes primitives, not the ORM row,
     # so the seam sits here where the row is in scope. The only door in this file that
     # does not reach the signal through a service-layer `session=` argument.
     with credential_health.credential_use(db, connection):
-        path = run_target.preview_batch(
+        outcome = run_target.preview_batch(
             connection.type,
             connection.config,
             prefix=prefix,
@@ -708,7 +716,7 @@ def preview_batch_target(
             secret_ref=connection.secret_ref,
             secret_store=secret_store,
         )
-    return BatchPreviewRead(path=path)
+    return BatchPreviewRead(path=outcome.path, scanned=outcome.scanned, truncated=outcome.truncated)
 
 
 # ── failing-sample redaction policy (#415) ──────────────────────────────────
