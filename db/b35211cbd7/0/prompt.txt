@@ -1,0 +1,81 @@
+Let's, start with week 6 issues. 
+Check the current state of repo. 
+Check the filled issues, do some research. 
+List the issues based on priority, dependency, issue type [fix before feature]. 
+Create a TODO list. [break it down by phases, no need to complete the whole week's task]
+
+You can be an orchestrator, and distribute the tasks to other models [haiku, sonnet, opus].
+
+---
+
+#1811 -> go with option 4. 
+#1331 -> not supported, documented. 
+Let's start with execution, and let me know if you need any other clarifications from me.
+
+---
+
+<task-notification>
+<task-id>a88b8e5e3256d6eed</task-id>
+<tool-use-id>toolu_016Vp6DFosxHwTCUjWLP64xH</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/794954e4-fe13-4114-a690-7693154a1d09/tasks/a88b8e5e3256d6eed.output</output-file>
+<status>completed</status>
+<summary>Agent "Document #1331 not-supported decision" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I'll pause here and wait for the CI monitor's completion notification before finalizing the report.</result>
+<usage><subagent_tokens>290869</subagent_tokens><tool_uses>115</tool_uses><duration_ms>803481</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a88b8e5e3256d6eed</worktreePath><worktreeBranch>worktree-agent-a88b8e5e3256d6eed</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a88b8e5e3256d6eed</task-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/794954e4-fe13-4114-a690-7693154a1d09/tasks/a88b8e5e3256d6eed.output</output-file>
+<status>completed</status>
+<summary>Agent "Document #1331 not-supported decision" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I'll wait for the remaining checks to complete.</result>
+<usage><subagent_tokens>290010</subagent_tokens><tool_uses>116</tool_uses><duration_ms>962388</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a88b8e5e3256d6eed</worktreePath><worktreeBranch>worktree-agent-a88b8e5e3256d6eed</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a88b8e5e3256d6eed</task-id>
+<tool-use-id>toolu_01MEt2fq4WaAtnYnFP9qbXPp</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/794954e4-fe13-4114-a690-7693154a1d09/tasks/a88b8e5e3256d6eed.output</output-file>
+<status>completed</status>
+<summary>Agent "Document #1331 not-supported decision" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>ToolStop confirmed. Finalizing the report now.
+
+## Final report
+
+**PR:** https://github.com/TheurgicDuke771/DataQ/pull/1970 — `docs(adr): record that comparison sources do not support sampling (#1331)`, branch `docs/adr-0015-comparison-sampling-not-supported`, milestone set to 22 (v1.2 Week 6). Body ends `Closes #1331`.
+
+**What shipped**
+1. ADR 0015 amended with a dated (2026-09-16) decision-record section: comparison sources do not support `sampling`, decided not built. Explains the key-set-collision math (two independent samples of two large sides overlap in ~2,000 keys out of 100k, so ~98% reads as mismatch — confidently wrong, worse than refusing), why it's a genuinely different mechanism from #595's positional sampling (join-aware, spans two connections/adapters, needs a keyed re-fetch) rather than an extension of it, confirms the existing `check_service.validate_comparison_check` 422 (from PR #1325) as the enforced, total (not partial) contract, names the sanctioned alternatives that already exist in the ADR (`COMPARISON_MAX_ROWS` fail-fast; narrowing via `config.source.query`/`config.target_query`), and records the reopen trigger (a real &gt;100k-row-per-side need a filter can't narrow → new issue with a concrete key-set design).
+2. Updated `docs/site/adr/README.md`'s 0015 index line, `perf-baseline.md`'s "still open" comparison bullet (now points at the decision), and the `datasources-checks.md` guide's sampling-refusals list (now explains *why* and links the amendment) — no other `docs/site/` page implied sampling was coming.
+3. Confirmed the #1325 refusal and its test (`test_a_sampling_block_on_a_comparison_source_is_refused`); improved the 422 message to point at the decision ("decided, not just unbuilt... see ADR 0015's 2026-09-16 amendment"); updated the test to assert the message actually changed. Checked MCP `create_check`/`update_check`/`dryrun_check` docstrings in `backend/app/mcp/server.py` — none mention comparison sampling as upcoming, so nothing there needed changing.
+4. `docs/progress.md`: flipped the W6 tracker row for #1331 to done, refreshed the Snapshot open-issue/PR counts against a live search-API re-count.
+
+**Gate results (all run locally before push)**
+- `ruff check`, `black --check` — clean (both touched files, then full `backend/`).
+- `mypy backend/app backend/tests` (full sweep) — clean, 474 files.
+- `bandit -c pyproject.toml -r backend/app/services/check_service.py` — clean.
+- `pytest backend/tests/api/test_comparison_checks.py` — 34/34 passed (against a local test Postgres, `TEST_DATABASE_URL` pointed at the running `dataq-postgres-1` container's `dataq_test` DB).
+- `mkdocs build --strict` — clean (an anchor-slug mismatch from my first draft was caught and fixed before commit: MkDocs slugs collapse `--` to `-`).
+- `scripts/check-docs-references.py` (pre-commit hook, CONTRIBUTING rule 41) — caught my first draft citing `#1331`/`#595`/`#1325` and raw GitHub issue/PR links inside `docs/site/`; rewrote all of it to state the behavior/decision itself. Second commit passed clean.
+
+**Regression-test proof (red → green)**
+Temporarily reverted the 422 message to its pre-amendment text via the Edit tool, re-ran the updated test — it failed exactly on the new `assert "ADR 0015" in message` line (confirmed red, for the right reason: `AssertionError: assert 'ADR 0015' in "a comparison source does not support 'sampling' yet"`), then restored the fixed message and re-ran green (34/34).
+
+**Code review:** ran the `code-review` skill against PR #1970 with `--comment` — zero findings ("low-risk, docs-heavy PR... one cosmetic error-message change; I did not find any correctness, cleanup, altitude, or convention issues worth surfacing"). Nothing to post, nothing deferred from the review itself.
+
+**CI status at handoff:** Backend lint/type/SAST/dep-audit, Frontend lint, CodeQL (both), betterleaks, GitGuardian, build, and Frontend browser E2E (Playwright) all passed. Backend tests and Frontend tests were still pending when told to stop waiting. `Frontend — dependency audit (pnpm audit)` failed on a newly-disclosed advisory pair (js-yaml HIGH `GHSA-2883-xcg3-v3hh`, vitest/@vitest/mocker MODERATE `GHSA-82fw-gwwq-j7x9`) unrelated to this docs-only change (confirmed: same job passed on `main`'s prior commit; this PR touches zero frontend files). I filed it as **issue #1972** (milestone 24, v1.2 Backlog) before being told it's already being fixed separately in PR #1973 — leaving #1972 open since it's a legitimate, independently-discovered finding either way; feel free to close it as a duplicate once #1973 merges.
+
+**Left open:** nothing from this task's own scope. #1972 (pnpm audit CVEs) is explicitly out of scope for #1970 and being handled by PR #1973 per the coordinator. Backend/Frontend test job results on #1970 weren't confirmed green before stopping — worth a final glance before merge, though nothing in the diff touches code paths those suites exercise beyond the one file already proven green locally.</result>
+<usage><subagent_tokens>293368</subagent_tokens><tool_uses>118</tool_uses><duration_ms>1012536</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a88b8e5e3256d6eed</worktreePath><worktreeBranch>worktree-agent-a88b8e5e3256d6eed</worktreeBranch></worktree>
+</task-notification>
