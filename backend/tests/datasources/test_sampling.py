@@ -17,6 +17,7 @@ from backend.app.datasources.sampling import (
     enforce_row_cap,
     enforce_sample_cap,
     parse_sample_spec,
+    reservoir_sample,
     sample_row_indices,
     sampling_record,
     stamp_sampling,
@@ -374,3 +375,109 @@ def test_stamping_preserves_the_rest_of_each_outcome() -> None:
     assert check.errored is True
     assert check.error_message == "boom"
     assert check.sampling == {"sampled": True}
+
+
+# ── reservoir_sample (#1329) ─────────────────────────────────────────────────
+
+
+def test_a_reservoir_draw_returns_the_requested_rows_and_the_walked_count() -> None:
+    taken, walked = reservoir_sample(_batches(40, 40, 20), rows=10, seed=1)
+    ids = _ids(taken)
+    assert len(ids) == 10
+    assert len(set(ids)) == 10
+    assert walked == 100, "the walked count IS the population — nothing else counts it"
+
+
+def test_a_reservoir_draw_comes_back_in_file_order() -> None:
+    """A reservoir is UNORDERED by nature. Callers read the frame positionally —
+    the failing-row locator, the head of a preview, every eyeball on the result —
+    so the rows are re-sorted by position before they are handed back.
+    """
+    for seed in range(20):
+        ids = _ids(reservoir_sample(_batches(30, 30, 30), rows=8, seed=seed)[0])
+        assert ids == sorted(ids), f"seed {seed} returned rows out of file order"
+
+
+def test_a_reservoir_draw_reaches_past_the_head_of_the_stream() -> None:
+    """The reservoir starts as the first `rows` rows; a sampler that never
+    replaces them is a head sample wearing a random label.
+    """
+    ids = _ids(reservoir_sample(_batches(100, 100, 100), rows=10, seed=3)[0])
+    assert max(ids) > 200
+
+
+def test_a_reservoir_draw_is_reproducible_under_a_seed() -> None:
+    first = _ids(reservoir_sample(_batches(50, 50), rows=12, seed=99)[0])
+    second = _ids(reservoir_sample(_batches(50, 50), rows=12, seed=99)[0])
+    assert first == second
+
+
+def test_reservoir_draws_under_different_seeds_differ() -> None:
+    draws = {tuple(_ids(reservoir_sample(_batches(200), rows=10, seed=s)[0])) for s in range(10)}
+    assert len(draws) > 1
+
+
+def test_the_batch_boundary_does_not_bias_the_draw() -> None:
+    """Batching is an artefact of the reader, not of the data. The same 100 rows
+    split three ways must draw the same rows as one batch under one seed — if the
+    reservoir's bookkeeping used per-batch offsets wrongly, this is where it shows.
+    """
+    one = _ids(reservoir_sample(_batches(100), rows=9, seed=17)[0])
+    many = _ids(reservoir_sample(_batches(7, 53, 40), rows=9, seed=17)[0])
+    assert one == many
+
+
+def test_a_reservoir_of_a_stream_shorter_than_the_sample_keeps_everything() -> None:
+    taken, walked = reservoir_sample(_batches(3, 4), rows=100, seed=1)
+    assert _ids(taken) == list(range(7))
+    assert walked == 7
+
+
+def test_a_reservoir_of_an_empty_stream_is_empty() -> None:
+    taken, walked = reservoir_sample([], rows=10, seed=1)
+    assert taken == [] and walked == 0
+
+
+def test_a_reservoir_skips_empty_batches_without_shifting_positions() -> None:
+    """An empty batch is a real thing a CSV reader emits; counting it as a row
+    would slide every later position by one and draw the wrong rows.
+    """
+    empty = pa.record_batch({"id": pa.array([], type=pa.int64())})
+    taken, walked = reservoir_sample([empty, *_batches(10), empty], rows=4, seed=2)
+    assert walked == 10
+    assert set(_ids(taken)) <= set(range(10))
+
+
+def test_a_reservoir_draw_is_uniform_across_the_population() -> None:
+    """The property that makes this a SAMPLE. Asserted with a chi-square over a
+    FIXED seed list, so the test is deterministic — a random seed list would make
+    a genuinely uniform sampler flaky ~1 run in 1000 and a biased one pass.
+    """
+    population, draw, seeds = 50, 5, 300
+    counts = [0] * population
+    for seed in range(seeds):
+        for row in _ids(reservoir_sample(_batches(population), rows=draw, seed=seed)[0]):
+            counts[row] += 1
+
+    expected = seeds * draw / population
+    chi_square = sum((count - expected) ** 2 / expected for count in counts)
+    # df = 49; the 0.999 quantile of chi-square(49) is 85.35. A head-biased
+    # sampler scores in the thousands here.
+    assert chi_square < 85.35, f"draw is not uniform (chi-square {chi_square:.1f}, counts {counts})"
+    assert min(counts) > 0, "some row was never drawn in 1500 draws"
+
+
+def test_a_reservoir_draw_keeps_every_column_of_the_row() -> None:
+    """The slots hold ROWS, not ids: a gather that lost a column would still pass
+    every count-based assertion above.
+    """
+    batch = pa.record_batch(
+        {
+            "id": pa.array(range(20), type=pa.int64()),
+            "note": pa.array([f"n{i}" for i in range(20)]),
+        }
+    )
+    taken, _ = reservoir_sample([batch], rows=5, seed=4)
+    table = pa.Table.from_batches(taken)
+    assert table.column_names == ["id", "note"]
+    assert [f"n{i}" for i in table.column("id").to_pylist()] == table.column("note").to_pylist()

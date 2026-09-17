@@ -43,6 +43,7 @@ from backend.app.datasources.sampling import (
     enforce_byte_cap,
     enforce_sample_cap,
     merge_by_position,
+    reservoir_sample,
     sample_row_indices,
     sampling_record,
     split_row_count_checks,
@@ -629,9 +630,13 @@ def _sampled_frame(
         )
 
     want_head = sample.strategy == SAMPLE_HEAD
+    # A CSV has no cheap count, so counting it first meant walking the object
+    # twice for one sample; the reservoir draws and counts in the same pass
+    # (#1329). Parquet keeps the count — its footer read is not a pass.
+    single_pass = not want_head and fmt == "csv"
     total: int | None = None
     indices: list[int] | None = None
-    if not want_head:
+    if not want_head and not single_pass:
         total = row_count(**reader_args)
         # `None` = sample covers the whole dataset — read straight through rather
         # than materialise an identity index list (~40 MB at 1.4M rows).
@@ -639,7 +644,9 @@ def _sampled_frame(
 
     batches, schema, arrow_backed, close = _open_batch_stream(reader_args, fmt)
     try:
-        if indices is not None:
+        if single_pass:
+            taken, total = reservoir_sample(batches, rows=sample.rows, seed=sample.seed)
+        elif indices is not None:
             taken = take_indices(batches, indices)
         else:
             # `rows + 1` for head (probe row); the counted total for an
@@ -649,7 +656,11 @@ def _sampled_frame(
         close()
 
     read_rows = sum(batch.num_rows for batch in taken)
-    if indices is not None:
+    if single_pass:
+        # `total` is the rows walked in this pass — the population as of the read
+        # that produced the sample, not of an earlier counting pass.
+        truncated = read_rows < (total or 0)
+    elif indices is not None:
         # `total` is set on every path that produces indices.
         assert total is not None
         _require_complete_draw(read_rows, len(indices), path=path, total=total)

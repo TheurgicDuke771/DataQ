@@ -2458,18 +2458,19 @@ def test_a_row_count_expectation_runs_normally_on_an_unsampled_flat_file(
 def test_a_file_that_shrank_between_the_count_and_the_take_is_refused(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """J1. A random sample is inherently two passes — count, then take — and a landing zone is
-    exactly where an object is re-uploaded between them.
+    """J1. Parquet's random sample is still two passes — a footer count, then a
+    take — and a landing zone is exactly where an object is re-uploaded between
+    them. (CSV no longer has this failure mode at all: its draw and its count are
+    the same pass since #1329, which is why this test moved off CSV.)
     """
-    big = _csv_bytes(1_000)
-    small = _csv_bytes(20)
+    big = _parquet(rows=1_000)
+    small = _parquet(rows=20)
     live = {"content": big}
     counted = flatfile.row_count
 
     def _shrink_after_the_count(**kwargs: Any) -> int:
         # The re-upload lands between the count and the take, reproduced by
-        # INTENT rather than by a call tally — a tally re-breaks whenever the
-        # number of range requests a pass issues changes.
+        # INTENT rather than by a call tally.
         total = counted(**kwargs)
         live["content"] = small
         return total
@@ -2486,7 +2487,7 @@ def test_a_file_that_shrank_between_the_count_and_the_take_is_refused(
         flatfile.read_sampled_dataframe(
             conn_type="s3",
             config={},
-            path="raw/moving.csv",
+            path="raw/moving.parquet",
             secret="s",
             sample=SampleSpec(strategy="random", rows=100, seed=1),
         )
@@ -2761,3 +2762,139 @@ def test_one_sampled_read_heads_the_object_once(monkeypatch: pytest.MonkeyPatch)
     )
 
     assert log["heads"] == 1
+
+
+def test_a_random_csv_sample_walks_the_object_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The headline: a CSV has no cheap count, so counting it and then taking the
+    drawn positions streamed the whole object TWICE for one sample. Asserted in
+    BYTES, because the returned frame is a valid sample either way.
+    """
+    content = _csv_bytes(200_000)
+    ranges: list[tuple[int, int]] = []
+    _patch_store(monkeypatch, content=content, ranges=ranges)
+
+    frame, record = flatfile.read_sampled_dataframe(
+        conn_type="s3",
+        config={},
+        path="raw/big.csv",
+        secret="s",
+        sample=SampleSpec(strategy="random", rows=100, seed=5),
+    )
+
+    fetched = sum(length for _, length in ranges)
+    assert len(frame) == 100
+    assert record["total_rows"] == 200_000
+    # It really did walk the file (a short read would be a broken sample), and
+    # walked it once — two passes is >= 2x, one is ~1x.
+    assert len(content) <= fetched < len(content) * 1.5
+
+
+def test_a_random_csv_sample_reads_the_rows_in_file_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A reservoir is unordered; the frame handed to GX and to the row locator is
+    read positionally, so the ordering contract the two-pass take had must hold.
+    """
+    _patch_store(monkeypatch, content=_csv_bytes(5_000))
+    frame, _ = flatfile.read_sampled_dataframe(
+        conn_type="s3",
+        config={},
+        path="raw/big.csv",
+        secret="s",
+        sample=SampleSpec(strategy="random", rows=40, seed=8),
+    )
+    ids = list(frame["id"])
+    assert ids == sorted(ids)
+    assert len(set(ids)) == 40
+
+
+def test_a_random_csv_sample_of_a_quoted_file_keeps_whole_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An embedded newline inside a quoted field is data, not a row break — and
+    the single-pass draw counts rows as the PARSER sees them, so a sampler that
+    counted newlines would draw positions that do not exist.
+    """
+    _patch_store(monkeypatch, content=_quoted_csv(3_000))
+    frame, record = flatfile.read_sampled_dataframe(
+        conn_type="s3",
+        config={},
+        path="raw/quoted.csv",
+        secret="s",
+        sample=SampleSpec(strategy="random", rows=25, seed=6),
+    )
+    assert record["total_rows"] == 3_000
+    assert len(frame) == 25
+    assert all("line one\nline two" in note for note in frame["note"])
+    assert list(frame["id"]) == sorted(frame["id"])
+
+
+@pytest.mark.parametrize(
+    ("name", "content", "rows"),
+    [
+        ("header_only", b"id,name\n", 0),
+        ("crlf", b"id,name\r\n" + b"".join(f"{i},n{i}\r\n".encode() for i in range(40)), 40),
+        ("semicolons", b"id;name\n" + b"".join(f"{i};n{i}\n".encode() for i in range(40)), 40),
+        ("tabs", b"id\tname\n" + b"".join(f"{i}\tn{i}\n".encode() for i in range(40)), 40),
+        ("pipes", b"id|name\n" + b"".join(f"{i}|n{i}\n".encode() for i in range(40)), 40),
+        ("no_trailing_newline", b"id,name\n0,a\n1,b", 2),
+        ("under_the_sniff_window", b"id,name\n0,a\n", 1),
+    ],
+)
+def test_a_random_csv_sample_survives_awkward_csv_shapes(
+    name: str, content: bytes, rows: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every one of these is a real landing-zone file, and each one either changes
+    where a row boundary is or how wide a row is.
+    """
+    _patch_store(monkeypatch, content=content)
+    frame, record = flatfile.read_sampled_dataframe(
+        conn_type="s3",
+        config={},
+        path=f"raw/{name}.csv",
+        secret="s",
+        sample=SampleSpec(strategy="random", rows=10, seed=1),
+    )
+    assert list(frame.columns) == ["id", "name"], name
+    assert record["total_rows"] == rows, name
+    assert len(frame) == min(rows, 10), name
+    assert record["sampled"] is (rows > 10), name
+
+
+def test_a_random_csv_sample_of_an_empty_object_is_refused_like_any_other_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A zero-byte object has no header, so it has no columns to check — the read
+    must fail loudly rather than hand GX a frame with no schema.
+    """
+    import pyarrow.lib
+
+    _patch_store(monkeypatch, content=b"")
+    with pytest.raises(pyarrow.lib.ArrowInvalid, match="Empty CSV file"):
+        flatfile.read_sampled_dataframe(
+            conn_type="s3",
+            config={},
+            path="raw/empty.csv",
+            secret="s",
+            sample=SampleSpec(strategy="random", rows=10, seed=1),
+        )
+
+
+@pytest.mark.parametrize(("name", "frame"), ADVERSARIAL_FRAMES)
+def test_a_random_csv_sample_survives_adversarial_values(
+    name: str, frame: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The values a real landing zone carries — mixed types, NaN/Inf, unicode,
+    unhashables — through the CSV writer and back out of a single-pass draw.
+    """
+    content = frame.to_csv(index=False).encode()
+    _patch_store(monkeypatch, content=content)
+    sampled, record = flatfile.read_sampled_dataframe(
+        conn_type="s3",
+        config={},
+        path=f"raw/{name}.csv",
+        secret="s",
+        sample=SampleSpec(strategy="random", rows=2, seed=1),
+    )
+    assert record["total_rows"] == len(frame), name
+    assert len(sampled) == min(len(frame), 2), name
