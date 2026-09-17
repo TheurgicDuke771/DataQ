@@ -163,11 +163,14 @@ jobs:
           set -euo pipefail
           group="/dataq-app/beat"
           for attempt in 1 2 3 4 5 6; do
-            found=$(aws logs filter-log-events --log-group-name "$group" \
+            # No `|| echo 0` here: an AccessDenied (missing `logs:FilterLogEvents` on the deploy
+            # role) must fail loudly, not be swallowed and mistaken for "beat hasn't logged yet" —
+            # that exact silent-swallow is what let a permissions gap through review once already.
+            events_json=$(aws logs filter-log-events --log-group-name "$group" \
               --start-time "$(( ($(date +%s) - 300) * 1000 ))" \
               --filter-pattern '"beat: Starting"' \
-              --query 'length(events)' --output text 2>/dev/null || echo 0)
-            [[ "$found" -gt 0 ]] && { echo "beat is scheduling."; exit 0; }
+              --query 'length(events)' --output text)
+            [[ "$events_json" -gt 0 ]] && { echo "beat is scheduling."; exit 0; }
             echo "beat log line not seen yet (attempt $attempt/6) — retrying in 10s"
             sleep 10
           done
