@@ -722,3 +722,43 @@ def test_a_non_positive_threshold_disables_the_backstop(
     assert outcome is not None
     assert outcome.prune_forced is False
     assert outcome.live_edges == 2
+
+
+def test_the_backstop_does_not_fire_on_a_pull_that_observed_nothing(
+    sf_connection: Connection, db_session: Session
+) -> None:
+    """A floor on the forced prune, mirroring the `if identities:` guard on the upsert half.
+
+    Snowflake's "floor tier unavailable" branch can return a partial result with NO edges
+    at all. Forcing a prune against it deletes the source's ENTIRE graph on the strength of
+    a pull that admits it learned nothing — the opposite of the accrete-only trade. An
+    empty pull that IS prunable is a true observation and still prunes; only the forced
+    prune is withheld.
+    """
+    _refresh(db_session, sf_connection, _result(("A", "B"), ("C", "D")))
+    sf_connection.lineage_last_authoritative_refresh_at = datetime.now(UTC) - timedelta(days=365)
+    db_session.commit()
+
+    outcome = _refresh(db_session, sf_connection, _partial())  # no edges observed
+    assert outcome is not None
+    assert outcome.prune_forced is False
+    assert outcome.prune_suspended is True
+    assert outcome.live_edges == 2, "the whole graph was wiped by a pull that saw nothing"
+
+
+def test_a_genuinely_empty_but_prunable_pull_still_prunes(
+    sf_connection: Connection, db_session: Session
+) -> None:
+    """The counterpart the floor must not break: `WarehouseLineageResult.empty()` is a pull
+    that ran and observed no edges — a true current-state observation. It prunes, or a
+    dependency removed from a warehouse that now has none would live in the cache forever.
+    """
+    _refresh(db_session, sf_connection, _result(("A", "B")))
+    outcome = _refresh(
+        db_session,
+        sf_connection,
+        WarehouseLineageResult.empty(LineageTier.SNOWFLAKE_GET_LINEAGE),
+    )
+    assert outcome is not None
+    assert outcome.prune_suspended is False
+    assert outcome.live_edges == 0

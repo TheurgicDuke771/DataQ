@@ -79,6 +79,12 @@ class WarehouseRefreshOutcome:
     # The backstop fired: a partial pull pruned anyway because the suspension outlived
     # ``LINEAGE_STALE_AFTER_HOURS``.
     prune_forced: bool = False
+    # The instant this refresh observed the source, from the DATABASE clock — the same value
+    # the prune stamp uses. `refresh_connection_lineage` persists it as
+    # ``lineage_last_refresh_at`` rather than a fresh `datetime.now()`, because the suspension
+    # is derived by comparing the two: a second, strictly-later wall-clock reading would make
+    # every healthy pruning connection compare as permanently suspended.
+    refreshed_at: datetime | None = None
 
 
 def refresh_warehouse_edges(
@@ -140,6 +146,11 @@ def _persist(
     prune_forced = (
         not provider.is_incremental
         and not result.prunable
+        # A floor, mirroring the `if identities:` guard on the upsert half: a partial pull that
+        # observed NOTHING would have the delete wipe the source's whole graph on the strength
+        # of a pull that admits it learned nothing. An empty PRUNABLE pull is a true observation
+        # and still prunes — this floor only withholds the FORCED one.
+        and bool(result.edges)
         and _suspension_exhausted(connection.lineage_last_authoritative_refresh_at)
     )
     prune = authoritative_snapshot or prune_forced
@@ -238,6 +249,7 @@ def _persist(
         prune_suspended=not prune and not provider.is_incremental,
         prune_suspended_since=connection.lineage_last_authoritative_refresh_at,
         prune_forced=prune_forced,
+        refreshed_at=refresh_started_at,
     )
 
 
@@ -295,7 +307,10 @@ def refresh_connection_lineage(
         _record_refresh_error(session, connection, RuntimeError("warehouse lineage unavailable"))
         return None
 
-    connection.lineage_last_refresh_at = datetime.now(UTC)
+    # The refresh's own as-of instant, NOT a fresh reading (see `WarehouseRefreshOutcome
+    # .refreshed_at`): the suspension is `last_refresh > last_pruned`, so a later wall-clock
+    # value here would report every healthy pruning connection as permanently suspended.
+    connection.lineage_last_refresh_at = outcome.refreshed_at or datetime.now(UTC)
     connection.lineage_last_tier = str(outcome.tier)
     # Bounded write: the reason is a joined list of constructed per-tier notes (#902), and the
     # column is String(512) — overflow must degrade to a clipped note.

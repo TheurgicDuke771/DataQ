@@ -12,10 +12,6 @@ import { nameSegments } from './assetTree';
 import { namespaceLabel } from './namespaceLabel';
 import { type CenterAsset, NODE_H, NODE_W, buildLineageLayout } from './lineageLayout';
 
-/**
- * Lineage graph (#805) — one left-to-right DAG replacing the two separate upstream/downstream list
- * boxes: provenance on the left, the asset under view in the middle, blast radius on the right.
- */
 /** #1236: "this source stopped removing edges" — the opposite failure from staleness, so it is
  *  worded as accretion. `prune_suspended_since === null` means it has NEVER pruned; `undefined`
  *  means an API predating #1236 did not report, which must not render as either. */
@@ -29,6 +25,10 @@ function pruneSuspensionNote(s: WarehouseLineageStatus): string | null {
   return `${when} — edges shown may include dependencies that no longer exist`;
 }
 
+/**
+ * Lineage graph (#805) — one left-to-right DAG replacing the two separate upstream/downstream list
+ * boxes: provenance on the left, the asset under view in the middle, blast radius on the right.
+ */
 export function LineageGraph({
   center,
   upstream,
@@ -199,7 +199,7 @@ export function LineageGraph({
           type="info"
           showIcon
           style={{ marginBottom: 12 }}
-          title="Workspace lineage sources: some report at a coarser tier or are stale"
+          title="Workspace lineage sources: some are coarse, stale, or no longer pruning"
           description={
             <>
               <div style={{ marginBottom: 4 }}>
