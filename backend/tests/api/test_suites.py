@@ -1939,37 +1939,43 @@ def test_column_policy_suggest_profiles_and_classifies(
 # ── batch-target preview (#1193) ─────────────────────────────────────
 
 
-def _patch_resolve_batch_file(monkeypatch: pytest.MonkeyPatch, fn: Any) -> None:
-    # `run_target.materialize_path` lazy-imports `flatfile` on every call (to keep the write-time
-    # path GX-free) and reads `resolve_batch_file` off the module at call time.
-    monkeypatch.setattr("backend.app.datasources.flatfile.resolve_batch_file", fn)
+def _patch_resolve_batch_file_preview(monkeypatch: pytest.MonkeyPatch, fn: Any) -> None:
+    # `run_target.preview_batch` lazy-imports `flatfile` on every call (to keep the write-time
+    # path GX-free) and reads `resolve_batch_file_preview` off the module at call time (#1243).
+    monkeypatch.setattr("backend.app.datasources.flatfile.resolve_batch_file_preview", fn)
     override_secret_store(app, FakeSecretStore(default="test-secret"))
+
+
+def _preview_result(**kwargs: Any) -> Any:
+    from backend.app.datasources.flatfile import BatchPreviewResult
+
+    kwargs.setdefault("scanned", 1)
+    kwargs.setdefault("truncated", False)
+    return BatchPreviewResult(**kwargs)
 
 
 def test_batch_preview_returns_resolved_path(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     sid = _s3_suite(client, db_session)
-    _patch_resolve_batch_file(monkeypatch, lambda **_: "orders/orders_20260601.csv")
+    _patch_resolve_batch_file_preview(
+        monkeypatch, lambda **_: _preview_result(path="orders/orders_20260601.csv", scanned=3)
+    )
     resp = client.get(
         f"/api/v1/suites/{sid}/batch-preview",
         params={"prefix": "orders/", "pattern": r"orders_(\d+)\.csv", "strategy": "latest"},
     )
     assert resp.status_code == 200
-    assert resp.json() == {"path": "orders/orders_20260601.csv"}
+    assert resp.json() == {"path": "orders/orders_20260601.csv", "scanned": 3, "truncated": False}
 
 
 def test_batch_preview_no_match_returns_422(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from backend.app.datasources.flatfile import BatchNotFoundError
-
     sid = _s3_suite(client, db_session)
-
-    def _raise(**_: Any) -> str:
-        raise BatchNotFoundError("no files matched")
-
-    _patch_resolve_batch_file(monkeypatch, _raise)
+    _patch_resolve_batch_file_preview(
+        monkeypatch, lambda **_: _preview_result(path=None, scanned=4, truncated=False)
+    )
     resp = client.get(
         f"/api/v1/suites/{sid}/batch-preview", params={"pattern": r"orders_(\d+)\.csv"}
     )
@@ -1977,22 +1983,41 @@ def test_batch_preview_no_match_returns_422(
     assert resp.json()["error"]["code"] == "batch_preview_no_data"
 
 
-def test_batch_preview_listing_too_large_returns_422(
+def test_batch_preview_truncated_scan_returns_an_honest_partial_not_422(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from backend.app.datasources.flatfile import BatchListingTooLargeError
-
+    """The preview budget (#1243) cut the scan short before it could finish — this
+    must come back 200 with `truncated: true`, never the 422 "no data" that would
+    falsely claim the pattern matches nothing anywhere under the prefix.
+    """
     sid = _s3_suite(client, db_session)
-
-    def _raise(**_: Any) -> str:
-        raise BatchListingTooLargeError("too many objects")
-
-    _patch_resolve_batch_file(monkeypatch, _raise)
+    _patch_resolve_batch_file_preview(
+        monkeypatch, lambda **_: _preview_result(path=None, scanned=2000, truncated=True)
+    )
     resp = client.get(
         f"/api/v1/suites/{sid}/batch-preview", params={"pattern": r"orders_(\d+)\.csv"}
     )
-    assert resp.status_code == 422
-    assert resp.json()["error"]["code"] == "batch_preview_invalid"
+    assert resp.status_code == 200
+    assert resp.json() == {"path": None, "scanned": 2000, "truncated": True}
+
+
+def test_batch_preview_truncated_scan_with_a_provisional_match(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sid = _s3_suite(client, db_session)
+    _patch_resolve_batch_file_preview(
+        monkeypatch,
+        lambda **_: _preview_result(
+            path="orders/orders_2026-06-01.csv", scanned=2000, truncated=True
+        ),
+    )
+    resp = client.get(
+        f"/api/v1/suites/{sid}/batch-preview", params={"pattern": r"orders_(\d+)\.csv"}
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["path"] == "orders/orders_2026-06-01.csv"
+    assert body["truncated"] is True
 
 
 def test_batch_preview_connectivity_failure_returns_502(
@@ -2000,10 +2025,10 @@ def test_batch_preview_connectivity_failure_returns_502(
 ) -> None:
     sid = _s3_suite(client, db_session)
 
-    def _raise(**_: Any) -> str:
+    def _raise(**_: Any) -> Any:
         raise RuntimeError("boom")
 
-    _patch_resolve_batch_file(monkeypatch, _raise)
+    _patch_resolve_batch_file_preview(monkeypatch, _raise)
     resp = client.get(
         f"/api/v1/suites/{sid}/batch-preview", params={"pattern": r"orders_(\d+)\.csv"}
     )
@@ -2019,10 +2044,10 @@ def test_batch_preview_never_echoes_an_adapter_message(
     sid = _s3_suite(client, db_session)
     leaky = "invalid credentials for https://acct.blob.core.windows.net/c?sig=SECRETTOKEN"
 
-    def _raise(**_: Any) -> str:
+    def _raise(**_: Any) -> Any:
         raise ValueError(leaky)
 
-    _patch_resolve_batch_file(monkeypatch, _raise)
+    _patch_resolve_batch_file_preview(monkeypatch, _raise)
     resp = client.get(
         f"/api/v1/suites/{sid}/batch-preview", params={"pattern": r"orders_(\d+)\.csv"}
     )
@@ -2037,14 +2062,48 @@ def test_batch_preview_invalid_regex_returns_422_before_listing(
 ) -> None:
     sid = _s3_suite(client, db_session)
 
-    def _boom(**_: Any) -> str:  # pragma: no cover - must never be reached
-        raise AssertionError("resolve_batch_file must not be called for a bad pattern")
+    def _boom(**_: Any) -> Any:  # pragma: no cover - must never be reached
+        raise AssertionError("resolve_batch_file_preview must not be called for a bad pattern")
 
-    _patch_resolve_batch_file(monkeypatch, _boom)
+    _patch_resolve_batch_file_preview(monkeypatch, _boom)
     resp = client.get(
         f"/api/v1/suites/{sid}/batch-preview",
         params={"pattern": r"orders_([0-9.csv"},  # unbalanced group
     )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "suite_target_invalid"
+
+
+def test_batch_preview_over_length_pattern_returns_422_before_listing(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sid = _s3_suite(client, db_session)
+
+    def _boom(**_: Any) -> Any:  # pragma: no cover - must never be reached
+        raise AssertionError(
+            "resolve_batch_file_preview must not be called for an over-long pattern"
+        )
+
+    _patch_resolve_batch_file_preview(monkeypatch, _boom)
+    resp = client.get(f"/api/v1/suites/{sid}/batch-preview", params={"pattern": "a" * 201})
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "suite_target_invalid"
+
+
+def test_batch_preview_nested_quantifier_pattern_returns_422_before_listing(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The ReDoS-shape guard (#1243) applies at the SAME seam as save-time
+    validation — a catastrophic-backtracking pattern is refused here too, never
+    reaching a live match attempt.
+    """
+    sid = _s3_suite(client, db_session)
+
+    def _boom(**_: Any) -> Any:  # pragma: no cover - must never be reached
+        raise AssertionError("resolve_batch_file_preview must not be called for this pattern")
+
+    _patch_resolve_batch_file_preview(monkeypatch, _boom)
+    resp = client.get(f"/api/v1/suites/{sid}/batch-preview", params={"pattern": r"(a+)+$"})
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "suite_target_invalid"
 
@@ -2083,11 +2142,11 @@ def test_batch_preview_default_strategy_is_latest(
     sid = _s3_suite(client, db_session)
     captured: dict[str, Any] = {}
 
-    def _fake(**kwargs: Any) -> str:
+    def _fake(**kwargs: Any) -> Any:
         captured.update(kwargs)
-        return "orders/orders_2.csv"
+        return _preview_result(path="orders/orders_2.csv")
 
-    _patch_resolve_batch_file(monkeypatch, _fake)
+    _patch_resolve_batch_file_preview(monkeypatch, _fake)
     resp = client.get(
         f"/api/v1/suites/{sid}/batch-preview", params={"pattern": r"orders_(\d+)\.csv"}
     )

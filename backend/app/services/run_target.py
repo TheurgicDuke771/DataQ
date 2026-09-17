@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
+from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
@@ -79,14 +81,24 @@ class BatchPreviewNoDataError(DataQError):
     code = "batch_preview_no_data"
 
 
-class BatchPreviewInvalidError(DataQError):
-    status_code = 422
-    code = "batch_preview_invalid"
-
-
 class BatchPreviewFailedError(DataQError):
     status_code = 502
     code = "batch_preview_failed"
+
+
+@dataclass(frozen=True)
+class BatchPreviewOutcome:
+    """The preview's own answer shape (#1243) — deliberately distinct from the
+    run path's plain `str` path, because a preview may legitimately stop before
+    it can be sure. ``path`` is the best match seen within budget (or ``None``);
+    ``truncated`` says whether the object/wall-clock budget cut the scan short,
+    so a caller can render "no match in the first N objects (there may be more)"
+    instead of a false "no match anywhere".
+    """
+
+    path: str | None
+    scanned: int
+    truncated: bool
 
 
 def preview_batch(
@@ -99,31 +111,46 @@ def preview_batch(
     batch: str | None,
     secret_ref: str | None,
     secret_store: SecretStore,
-) -> str:
-    """Resolve a batch spec against the live listing, without saving it (#1193)."""
-    # Lazy import for the same reason `materialize_path` has one — and because the
-    # two flat-file errors are only meaningful once we're on the listing path.
-    from backend.app.datasources.flatfile import BatchListingTooLargeError, BatchNotFoundError
+) -> BatchPreviewOutcome:
+    """Resolve a batch spec against the live listing, without saving it (#1193).
+
+    Unlike the run path (`materialize_path` → `flatfile.resolve_batch_file`,
+    bounded only by the worker-scale `_BATCH_LISTING_MAX`), this runs
+    synchronously in the API process's threadpool, so it uses its own much
+    tighter object-count + wall-clock budget (`Settings.batch_preview_max_*`,
+    #1243) and never raises `BatchListingTooLargeError` — a budget-truncated
+    scan is an honest partial answer, not a failure.
+    """
+    # Lazy import for the same reason `materialize_path` has one.
+    from backend.app.datasources import flatfile
 
     target: dict[str, Any] = {"pattern": pattern, "strategy": strategy, "prefix": prefix}
     if batch is not None:
         target["batch"] = batch
     resolved = resolve_target(conn_type, target)
-    try:
-        return materialize_path(
-            conn_type, config, resolved, secret_ref=secret_ref, secret_store=secret_store
-        )
-    except BatchNotFoundError as exc:
-        # "no data yet" — the same meaning a run gives it (#122) — not a shape
-        # problem, so it stays distinct from SuiteTargetInvalidError.
-        raise BatchPreviewNoDataError(
-            "no file currently matches this batch pattern",
+    if resolved.batch is None:
+        # A flat-file batch target always resolves through this function; a literal
+        # `path` target has no listing to preview.
+        return BatchPreviewOutcome(path=resolved.table, scanned=0, truncated=False)
+    if not secret_ref:
+        raise SuiteTargetInvalidError(
+            "flat-file batch target requires a connection credential to list the store",
             detail={"connection_type": conn_type},
-        ) from exc
-    except BatchListingTooLargeError as exc:
-        # The only exception whose text is safe to echo: a fixed sentence built
-        # from the caller's own prefix and our own limit (`flatfile._counted`).
-        raise BatchPreviewInvalidError(str(exc), detail={"connection_type": conn_type}) from exc
+        )
+    spec = resolved.batch
+    settings = get_settings()
+    try:
+        result = flatfile.resolve_batch_file_preview(
+            conn_type=conn_type,
+            config=dict(config),
+            secret=secret_store.get(secret_ref),
+            prefix=spec.prefix,
+            pattern=spec.pattern,
+            strategy=spec.strategy,
+            batch=spec.batch,
+            max_objects=settings.batch_preview_max_objects,
+            max_seconds=settings.batch_preview_max_seconds,
+        )
     except DataQError:
         # SuiteTargetInvalidError (422) — e.g. a batch target on a connection with no stored
         # credential to list with — already carries the right status/code/message; keep it as-is.
@@ -136,3 +163,13 @@ def preview_batch(
             "batch preview could not list the datasource store",
             detail={"reason": classify_failure_reason(exc)},
         ) from exc
+
+    if result.path is None and not result.truncated:
+        # The listing was exhausted (within budget) and nothing matched — the
+        # same definitive "no data yet" meaning a run gives it (#122), not a
+        # shape problem, so it stays distinct from SuiteTargetInvalidError.
+        raise BatchPreviewNoDataError(
+            "no file currently matches this batch pattern",
+            detail={"connection_type": conn_type},
+        )
+    return BatchPreviewOutcome(path=result.path, scanned=result.scanned, truncated=result.truncated)

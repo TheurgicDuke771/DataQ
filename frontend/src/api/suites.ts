@@ -473,15 +473,30 @@ export interface BatchPreviewRequest {
 }
 
 /**
+ * Mirrors the backend `BatchPreviewRead` (#1243): the preview listing is budget-bounded, so
+ * `path` may be the best match seen so far rather than a guaranteed answer whenever `truncated`
+ * is true — a caller must render that distinction, not treat every response as final.
+ */
+export interface BatchPreviewResponse {
+  path: string | null;
+  scanned: number;
+  truncated: boolean;
+}
+
+/**
  * Mirrors the backend `GET /suites/{id}/batch-preview` (#1193): resolves a flat-file batch spec
- * against the connection's LIVE object listing right now, without saving anything.
+ * against the connection's LIVE object listing right now, without saving anything. `signal`
+ * aborts an in-flight request — the caller supersedes it (#1243), rather than merely ignoring
+ * whatever answer eventually comes back.
  */
 export async function previewBatchTarget(
   suiteId: string,
   params: BatchPreviewRequest,
-): Promise<string> {
-  const { data } = await api.get<{ path: string }>(`/suites/${suiteId}/batch-preview`, {
+  signal?: AbortSignal,
+): Promise<BatchPreviewResponse> {
+  const { data } = await api.get<BatchPreviewResponse>(`/suites/${suiteId}/batch-preview`, {
     params,
+    signal,
   });
-  return data.path;
+  return data;
 }

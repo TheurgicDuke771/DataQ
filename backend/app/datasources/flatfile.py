@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import io
 import re
+import time
 from collections.abc import Callable, Generator, Iterable, Iterator
 from contextlib import closing
 from dataclasses import dataclass
@@ -960,3 +961,77 @@ def resolve_batch_file(
         # Only when large but answered — a refused listing already logged its error.
         if _BATCH_LISTING_WARN_AT <= scanned < _BATCH_LISTING_MAX:
             log.warning("flatfile_batch_listing_large", scanned=scanned, conn_type=conn_type)
+
+
+# ── preview-time listing budget (#1243) ─────────────────────────────
+# `resolve_batch_file` above backs the RUN path (Celery worker) and keeps
+# `_BATCH_LISTING_MAX` untouched. The preview endpoint runs synchronously in the
+# API process's threadpool, so it needs its own, much smaller budget on both
+# object count AND wall clock — an author typing into a broad prefix must not be
+# able to pin an API thread. When the budget runs out first, the scan stops
+# without raising: a preview is a hint, so "here's what the first N objects
+# said" is an honest, useful answer (mirrors the #1105 asset-truncation shape),
+# not an error.
+
+
+@dataclass
+class BatchPreviewResult:
+    """Outcome of a budget-bounded preview scan. ``truncated`` means the object
+    or wall-clock budget was hit before the listing was exhausted — ``path`` is
+    then the best match seen so far (or ``None``), never a guarantee that a
+    later, unscanned object wouldn't have won instead.
+    """
+
+    path: str | None
+    scanned: int
+    truncated: bool
+
+
+@dataclass
+class _Budget:
+    """Mutable counters the bounded generator updates as it runs, read back by
+    the caller once iteration stops (a generator can't return extra values).
+    """
+
+    max_objects: int
+    max_seconds: float
+    scanned: int = 0
+    truncated: bool = False
+
+
+def _budget_bounded(files: Iterable[FileRef], budget: _Budget) -> Iterator[FileRef]:
+    """Yield from `files`, stopping (without raising) once either budget is hit."""
+    deadline = time.monotonic() + budget.max_seconds
+    for file in files:
+        if budget.scanned >= budget.max_objects or time.monotonic() >= deadline:
+            budget.truncated = True
+            return
+        budget.scanned += 1
+        yield file
+
+
+def resolve_batch_file_preview(
+    *,
+    conn_type: str,
+    config: dict[str, Any],
+    secret: str,
+    prefix: str,
+    pattern: str,
+    strategy: str = "latest",
+    batch: str | None = None,
+    max_objects: int,
+    max_seconds: float,
+) -> BatchPreviewResult:
+    """Preview-only counterpart to `resolve_batch_file`: bounded scan, honest
+    partial answer instead of `BatchListingTooLargeError` (#1243).
+    """
+    budget = _Budget(max_objects=max_objects, max_seconds=max_seconds)
+    stream = iter_files(conn_type=conn_type, config=config, prefix=prefix, secret=secret)
+    with closing(stream):
+        try:
+            path = resolve_batch(
+                _budget_bounded(stream, budget), pattern=pattern, strategy=strategy, batch=batch
+            )
+        except BatchNotFoundError:
+            path = None
+    return BatchPreviewResult(path=path, scanned=budget.scanned, truncated=budget.truncated)
