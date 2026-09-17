@@ -547,13 +547,20 @@ def _open_batch_stream(
 
 
 def _csv_head_frame(reader_args: dict[str, Any], *, limit: int) -> tuple[Any, bool]:
-    """The first ``limit`` rows of a CSV via a doubling byte range (#595)."""
+    """The first ``limit`` rows of a CSV via a doubling byte range (#595).
+
+    Each growth fetches only the bytes past what is already buffered (#1329):
+    re-reading the prefix made reaching 4 MB cost 1 + 2 + 4 = 7 MB.
+    """
     size = object_size(**reader_args)
+    buffered = bytearray()
     window = _CSV_HEAD_BYTES
     while True:
         span = min(window, size)
-        raw = read_range(**reader_args, start=0, length=span)
+        if span > len(buffered):
+            buffered += read_range(**reader_args, start=len(buffered), length=span - len(buffered))
         reached_eof = span >= size
+        raw = bytes(buffered)
         if not reached_eof:
             raw = trim_to_row_boundary(raw)
         frame = read_csv_bytes(io.BytesIO(raw), nrows=limit)

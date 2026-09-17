@@ -2682,3 +2682,31 @@ def test_counting_a_csv_sniffs_without_a_second_request(
     assert flatfile.row_count(conn_type="s3", config={}, path="raw/semi.csv", secret="s") == 300
     assert [r for r in ranges if r[1] == flatfile._SNIFF_BYTES] == []
     assert len(ranges) == 1, "the whole small file is one window — anything more is the sniff"
+
+
+def test_a_growing_head_window_fetches_only_the_delta(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Re-reading `[0, window)` on every doubling made reaching 4 MB cost
+    1 + 2 + 4 = 7 MB. Bounded, and pure waste — asserted on the ranges, since the
+    frame is byte-identical either way.
+    """
+    ranges: list[tuple[int, int]] = []
+    _patch_store(monkeypatch, content=_csv_bytes(400_000), ranges=ranges)
+
+    frame, _ = flatfile.read_sampled_dataframe(
+        conn_type="s3",
+        config={},
+        path="raw/big.csv",
+        secret="s",
+        sample=SampleSpec(strategy="head", rows=200_000),
+    )
+
+    assert len(frame) == 200_000
+    assert len(ranges) > 1, "the window never grew — this test would pass trivially"
+    # Contiguous and disjoint: every request starts where the last one ended.
+    cursor = 0
+    for start, length in ranges:
+        assert start == cursor
+        cursor += length
+    assert sum(length for _, length in ranges) == cursor
