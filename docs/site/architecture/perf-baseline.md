@@ -260,10 +260,15 @@ that would stamp "sampled" on a result that was not.
   cheap (`scan().count()` is snapshot metadata); what it needs first is its **own
   measurement** — Iceberg passed at 2M rows where UC died, so inheriting
   `RUN_MAX_SCAN_ROWS`'s 1.5M would refuse a rung measured to work.
-- **Comparison sources cannot sample** — refused at save
-  time rather than ignored. It needs *coherent* key-set sampling: two independent
-  draws from two 5M-row sides would share almost no keys and report everything as
-  a mismatch, which is worse than refusing.
+- **Comparison sources cannot sample — decided: not supported**, see
+  [ADR 0015's 2026-09-16 amendment](../adr/0015-two-connection-comparison-check-model.md#amendment-2026-09-16-comparison-sources-do-not-support-sampling).
+  Coherent key-set sampling — draw a key set, then fetch exactly those keys
+  from both sides — is a different mechanism from the suite-target's
+  positional sampling; two independent draws from two 5M-row sides would share
+  almost no keys and report everything as a mismatch, which is worse than
+  refusing. The refusal at `check_service.validate_comparison_check` is the
+  enforced contract; `COMPARISON_MAX_ROWS` fail-fast + narrowing the source
+  with a query filter are the sanctioned alternatives.
 - **Column projection for flat-file monitors.** A column-freshness monitor still
   reads every column to compute one `MAX`. Parquet could project a single column
   off its footer, which would remove most of the remaining monitor-path memory.
