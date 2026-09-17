@@ -191,3 +191,75 @@ describe('LineageGraph staleness surface (#1091)', () => {
     expect(screen.queryByText(/Workspace lineage sources/)).toBeNull();
   });
 });
+
+// #1236: a suspended prune is the OPPOSITE failure from staleness — the graph accretes, so an
+// edge shown may be a dependency that no longer exists. Worded as extra edges, never missing ones.
+const SUSPENDED = {
+  connection_id: 'c4',
+  name: 'prod-snowflake-suspended',
+  type: 'snowflake',
+  tier: 'snowflake_object_dependencies',
+  degraded_reason: null,
+  last_error: null,
+  last_refreshed_at: '2026-07-18T19:16:00Z',
+  stale: false,
+  prune_suspended: true,
+  prune_suspended_since: '2026-07-01T00:00:00Z',
+};
+
+describe('LineageGraph prune-suspension surface (#1236)', () => {
+  it('reports a suspended prune with its age, as accretion rather than staleness', () => {
+    renderGraph({ warehouseStatus: [SUSPENDED] });
+    const note = screen.getByText(/Workspace lineage sources/).closest('.ant-alert');
+    expect(note).toHaveTextContent('prod-snowflake-suspended');
+    expect(note).toHaveTextContent(/pruning is suspended/);
+    expect(note).toHaveTextContent(/has not removed stale edges since/);
+    expect(note).toHaveTextContent(/may include dependencies that no longer exist/);
+    // The misnaming this guards against — a suspended prune is neither of these.
+    expect(note).not.toHaveTextContent('lineage is degraded');
+    expect(note).not.toHaveTextContent(/no refresh since/);
+  });
+
+  it('says NEVER, not a date, when the source has no recorded prune', () => {
+    // null means no prune has ever happened. Rendering it as "since Invalid Date" (or omitting
+    // the clause) would turn "we have never once cleaned this graph" into a detail.
+    renderGraph({ warehouseStatus: [{ ...SUSPENDED, prune_suspended_since: null }] });
+    const note = screen.getByText(/Workspace lineage sources/).closest('.ant-alert');
+    expect(note).toHaveTextContent(/has never removed stale edges/);
+    expect(note).not.toHaveTextContent(/Invalid Date/);
+  });
+
+  it('says nothing when an API predating the field omits it', () => {
+    // `undefined` is "not reported", which must not render as either a suspension or an
+    // all-clear — the two-step-deploy window where the banner runs against the old API.
+    renderGraph({
+      warehouseStatus: [
+        { ...DEGRADED, prune_suspended: undefined, prune_suspended_since: undefined },
+      ],
+    });
+    expect(screen.queryByText(/pruning is suspended/)).toBeNull();
+    expect(screen.getByText(/view-level lineage only/)).toBeTruthy();
+  });
+
+  it('keeps the suspension note on a FAILING source (#987 shape)', () => {
+    // A failing source is also a non-pruning one; suppressing either note behind the other is
+    // exactly the one-field-hides-another bug.
+    renderGraph({
+      warehouseStatus: [{ ...FAILING, prune_suspended: true, prune_suspended_since: null }],
+    });
+    const alert = screen.getByText(/refresh is failing/).closest('.ant-alert');
+    expect(alert).toHaveClass('ant-alert-warning');
+    expect(alert).toHaveTextContent('the datasource could not be reached');
+    expect(alert).toHaveTextContent(/pruning is suspended/);
+    expect(alert).toHaveTextContent(/has never removed stale edges/);
+  });
+
+  it('reports a coarse AND suspended source as two qualifiers, not one', () => {
+    renderGraph({
+      warehouseStatus: [{ ...SUSPENDED, degraded_reason: 'view-level lineage only' }],
+    });
+    const note = screen.getByText(/Workspace lineage sources/).closest('.ant-alert');
+    expect(note).toHaveTextContent('view-level lineage only');
+    expect(note).toHaveTextContent(/pruning is suspended/);
+  });
+});

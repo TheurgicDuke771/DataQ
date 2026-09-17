@@ -144,6 +144,12 @@ class WarehouseLineageStatusRead(ApiModel):
     # #1091: the refresh loop silently stopped — no error, no degradation, just no refresh within
     # LINEAGE_STALE_AFTER_HOURS.
     stale: bool = False
+    # #1236: the last refresh left stale edges unpruned, so the graph from this source can only
+    # grow. Snapshot sources only (an incremental source never prunes).
+    prune_suspended: bool = False
+    # When this source last pruned. `null` means NEVER — not "recently", and not unknown-because-
+    # the-field-is-new.
+    prune_suspended_since: datetime | None = None
 
 
 class DimensionScoreRead(ApiModel):

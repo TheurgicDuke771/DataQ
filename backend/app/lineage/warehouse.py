@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
+from functools import cache
 from typing import Protocol, runtime_checkable
 
 from backend.app.services.asset_identity import AssetIdentity
@@ -134,6 +135,23 @@ def get_warehouse_lineage_provider(connection_type: str) -> WarehouseLineageProv
 
         return UnityCatalogLineageProvider()
     return None
+
+
+WAREHOUSE_LINEAGE_CONNECTION_TYPES: tuple[str, ...] = ("snowflake", "unity_catalog")
+
+
+@cache
+def snapshot_lineage_connection_types() -> tuple[str, ...]:
+    """Connection types whose warehouse provider is a SNAPSHOT source — the only ones a
+    stale-edge prune, and therefore a prune suspension, can apply to (#1236). Derived
+    from the providers rather than restated, so a new snapshot source joins by existing.
+    """
+    types = []
+    for connection_type in WAREHOUSE_LINEAGE_CONNECTION_TYPES:
+        provider = get_warehouse_lineage_provider(connection_type)
+        if provider is not None and not provider.is_incremental:
+            types.append(connection_type)
+    return tuple(types)
 
 
 def dedupe_edges(edges: Sequence[LineageEdgePair]) -> tuple[LineageEdgePair, ...]:
