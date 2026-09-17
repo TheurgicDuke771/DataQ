@@ -1,0 +1,297 @@
+<task-notification>
+<task-id>bmfd1jd11</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/794954e4-fe13-4114-a690-7693154a1d09/tasks/bmfd1jd11.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for PR #1973 to leave OPEN state" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ad749c5e17ff35c94</task-id>
+<tool-use-id>toolu_01RbPCLAy2t3bKARauLiaSEC</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/794954e4-fe13-4114-a690-7693154a1d09/tasks/ad749c5e17ff35c94.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix #1811 split beat out of worker" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Everything is in order. Here's the final report.
+
+## Summary
+
+**PR: https://github.com/TheurgicDuke771/DataQ/pull/1974** (branch `fix/issue-1811-split-beat-service`, milestone 22 set), fixes #1811, implementing Option 4 exactly as directed.
+
+**What shipped:**
+- celery-beat split out of `worker -B` into its own process/service everywhere: `docker-compose.yml`, `docker-compose.ghcr.yml` (new `beat` service), Azure `deploy/terraform/azure/containerapps.tf` (`azurerm_container_app.beat`, min=max=1), AWS `deploy/terraform/aws/ecs.tf` (`aws_ecs_service.beat`, desired_count=1, `deployment_minimum_healthy_percent=0`/`maximum_percent=100` so a rolling deploy never overlaps two beats — justified in the code comment).
+- Worker `min_replicas=1` on Azure kept, but re-justified (its stated reason was beat; now it's queued-dispatch latency), per the brief's "re-evaluate, don't just leave it."
+- `.github/workflows/deploy.yml` / `deploy-aws.yml` + `scripts/ci/ecs_roll.sh` (used as-is, generic by service name) now roll and independently verify beat's image SHA, plus a soft liveness check (`beat: Starting` in its own log stream) — the #1361 lesson.
+- Docs updated: `deploy/README.md`, `deploy/terraform/aws/README.md`, `docs/site/architecture/overview.md` (both mermaid diagrams + legend + key-invariant bullet), `CLAUDE.md` §2.
+- New regression test `backend/tests/core/test_beat_split.py` (4 tests, no PyYAML dependency — regex-based like the sibling `test_worker_launch_commands.py`).
+- Filed the #1811 residual as a **comment on #1393** (https://github.com/TheurgicDuke771/DataQ/issues/1393#issuecomment-5707267273) rather than a new issue, since its AC almost-but-not-quite covers concurrent-peak memory measurement.
+
+**Gates (backend, full sweep):** ruff/black/mypy (`backend/app` + `backend/tests`, 475 files)/bandit all clean; `tofu fmt -check` + `tofu validate` (init `-backend=false`) clean on both clouds — no `plan`/`apply` run; full `pytest backend/tests` green (766 in `core` alone, 904 across `core`+`worker`, plus a full-suite background run that exited 0).
+
+**Regression-test red proof:** stashed the compose/tf changes, ran the 4 new tests — all failed for the right reason (`-B` present / no `beat` service / no `azurerm_container_app.beat` / no `aws_ecs_service.beat`); restored and confirmed green.
+
+**Code review (`/code-review --comment`) found and fixed 2 real issues** (commit `6a4350ab`):
+1. The beat-liveness watchdog only armed on `worker_ready`, so a dead/wedged **beat** (now separate) got "fixed" by restarting the healthy worker instead — now arms on `beat_init` too, terminating whichever process it runs in.
+2. AWS's new beat liveness check called `aws logs filter-log-events` with no matching IAM grant, silently swallowing AccessDenied and warning on every deploy regardless of outcome — added the missing `logs:FilterLogEvents` grant scoped to beat's log group and stopped swallowing the error.
+
+**Open/left for the user:** nothing new filed as an issue (the one residual went to #1393 as a comment, per the brief's guidance to prefer that over duplicating). PR is not merged, per instructions.</result>
+<usage><subagent_tokens>361932</subagent_tokens><tool_uses>175</tool_uses><duration_ms>1741164</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-ad749c5e17ff35c94</worktreePath><worktreeBranch>worktree-agent-ad749c5e17ff35c94</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>abf8ca3f178346ff7</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/794954e4-fe13-4114-a690-7693154a1d09/tasks/abf8ca3f178346ff7.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix #1534 bounded locator fetch" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Done. **PR: https://github.com/TheurgicDuke771/DataQ/pull/1971** (branch `fix/issue-1534-bounded-locator-fetch`, milestone 22, `Fixes #1534`). Not merged, per the brief. Full CI green: 15/15 required checks pass, `deploy` skipping, MERGEABLE.
+
+## What the bug actually was (verified against installed GX 1.17.2, not from memory)
+
+The issue's framing ("COMPLETE materialises the full unexpected-index list") is half right, and the half it got wrong is the interesting half:
+
+- `_sqlalchemy_map_condition_index` (the **locator** query) **already** `.limit(result_format["partial_unexpected_count"])`, which defaults to 20 = our `SAMPLE_ROW_CAP`. So locators were never the unbounded fetch.
+- `_sqlalchemy_column_map_condition_values` (the unexpected **values** query) puts its `LIMIT` inside the `!= COMPLETE` branch — so under COMPLETE it emits `SELECT col AS unexpected_values FROM … WHERE &lt;fail cond&gt;` **with no LIMIT at all**. Client-side materialisation is capped by `fetchmany(MAX_RESULT_RECORDS=200)`, so the real exposure is warehouse-side result-set materialisation + the streamed fetch (and the worker too on drivers that buffer whole result sets). That is the live defect on Snowflake and UC pushdown.
+
+Proven by running real GX on a sqlite SQLAlchemy batch and spying on emitted SQL — the values query came back LIMIT-less at 500 failing rows.
+
+## Fix
+
+SQL lanes now request `SUMMARY` with `partial_unexpected_count = min(SAMPLE_ROW_CAP, MAX_RESULT_RECORDS)`, which puts the same `LIMIT` on **both** row-returning queries; `SUMMARY` returns the identical locator rows under `partial_unexpected_index_list`, so `_extract_sample_failures` reads either key and still writes our stable `unexpected_index_list`. Lane detection is `isinstance(batch_definition.data_asset.datasource, SQLDatasource)` (Snowflake + Databricks-SQL both subclass it), so **frame lanes keep COMPLETE byte-identically**. Byte-compat proven by diffing the mapped `SuiteOutcome` from both formats: **identical** at 3, 20 and 200 failing rows across map/aggregate/distinct-value expectations.
+
+Sibling fields checked: `partial_unexpected_list` inherits the bound; `unexpected_list`/`unexpected_index_query`/custom SQL's `details.unexpected_rows` are COMPLETE-only and read by nothing in DataQ; distinct-values `observed_value` is result-format-insensitive and already SQL-limited (#1229 class not left open). Residuals recorded in `docs/site/architecture/perf-baseline.md`.
+
+## Red proof
+
+Mutation `if not sql_batch:` → `if True:` (pre-fix COMPLETE):
+```
+E  assert 'LIMIT' in 'SELECT order_number AS unexpected_values FROM (SELECT * FROM orders WHERE 1 = 1) AS anon_1 WHERE order_number IS NULL'
+FAILED test_sql_batch_limits_every_failing_row_query
+FAILED test_sql_batch_without_index_columns_is_bounded_too
+2 failed, 4 passed
+```
+Assertions are on the seam (emitted SQL + bound params), not sample length — a length assertion passes against unfixed code.
+
+## Gates (local)
+
+`ruff` pass · `black --check` 555 unchanged · `mypy backend/app backend/tests` 475 files clean · `bandit -c pyproject.toml -r backend/app` no issues · `pytest backend/tests` **6226 passed, 10 skipped**, coverage 97.05%.
+
+## Review (`code-review --comment`)
+
+3 findings, **all fixed in-PR** (fixup commit `16bd1502`, each thread replied to): `_is_sql_batch` failed open silently → now logs `gx_batch_lane_undetermined` at WARNING with a test on the log line; the cap could exceed GX's `MAX_RESULT_RECORDS` asymmetrically → clamped; custom SQL (the only lane whose GX payload changes) had no unconditional test → added. Nothing deferred, nothing filed.
+
+## Needs you
+
+**Live verification (AC box 3) is NOT done and is explicitly unchecked in the PR body** — no warehouse credentials in this worktree. The PR spells out what to observe: run a widely-failing check with an identifier column on Snowflake and on UC-with-pushdown, then read the warehouse's own query history — both the `… AS unexpected_values …` query and the locator query must carry `LIMIT 20` and return 20 rows (`QUERY_HISTORY.ROWS_PRODUCED` = 20 / Databricks query profile), while the run still reports the true `unexpected_count`, 20 redacted sample rows with the identifier, and unmoved severity banding; plus one custom-SQL check per warehouse to confirm `observed_value` still carries the unexpected row count.</result>
+<usage><subagent_tokens>302997</subagent_tokens><tool_uses>200</tool_uses><duration_ms>2114818</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-abf8ca3f178346ff7</worktreePath><worktreeBranch>worktree-agent-abf8ca3f178346ff7</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a16871ae213ef3035</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/794954e4-fe13-4114-a690-7693154a1d09/tasks/a16871ae213ef3035.output</output-file>
+<status>completed</status>
+<summary>Agent "Verify two PR-1976 candidate findings" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**Candidate 1: CONFIRMED**
+
+- The `resolved` state type carries only `path`/`truncated`, no `scanned`: `| { status: 'resolved'; spec: BatchPreviewSpec; path: string; truncated: boolean }`.
+- The resolved-truncated render is a generic string with no interpolation: `{state.truncated &amp;&amp; ' (best match in the first objects scanned — may not be final)'}`, whereas the sibling no-match branch does interpolate: `` `No match in the first ${state.scanned} objects scanned...` ``.
+- The data is available and dropped on the floor: the `.then()` handler receives `result.scanned` (used for `no-match`) but omits it when building the `resolved` state (`setState({ status: 'resolved', spec, path: result.path, truncated: result.truncated });` — no `scanned` field).
+- Confirmed the API always includes it: `BatchPreviewRead` (backend/app/api/v1/suites.py:678) declares `scanned: int` unconditionally, and `preview_batch` (backend/app/services/run_target.py:175) returns `scanned=result.scanned` on the matched/truncated path too (`return BatchPreviewOutcome(path=result.path, scanned=result.scanned, truncated=result.truncated)`). So the asymmetry is a frontend plumbing gap, not a backend data gap.
+
+**Candidate 2: CONFIRMED**
+
+- `_NESTED_QUANTIFIER_RE = re.compile(r"\([^()]*[+*][^()]*\)[+*]")` (registry.py:307) only matches when the group itself is immediately followed by a literal `+` or `*`. A bounded outer quantifier like `{50,}` or `{10,20}` doesn't match that trailing `[+*]` alternation, so `_NESTED_QUANTIFIER_RE.search("(a+){50,}")` returns `None` — the guard doesn't fire, and `(a+){50,}` (or `{10,20}`) still exhibits the same exponential-backtracking shape against a crafted non-matching suffix (e.g., `"a"*50 + "!"`), so a hang is still possible despite the guard.
+- This limitation is explicitly disclosed in a comment directly above the regex: `#: catches the common shape, not every possible ReDoS pattern.` (registry.py:306).</result>
+<usage><subagent_tokens>95560</subagent_tokens><tool_uses>3</tool_uses><duration_ms>14927</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a841f5b7170ccb15a</task-id>
+<tool-use-id>toolu_01CmC7SuLqwuDL9CAzRRgbZe</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/794954e4-fe13-4114-a690-7693154a1d09/tasks/a841f5b7170ccb15a.output</output-file>
+<status>completed</status>
+<summary>Agent "Fix #1243 batch-preview bounds" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>## Summary
+
+Fixed GitHub issue #1243 in `TheurgicDuke771/DataQ`: **PR [#1976](https://github.com/TheurgicDuke771/DataQ/pull/1976)** — `fix(suites): bound the batch-target preview listing and regex work (#1243)`, milestone set to 22 (v1.2 W6). Branch `fix/issue-1243-bounded-batch-preview`, 6 commits (4 functional + 2 review fixups), all pushed.
+
+**What shipped (all 3 ACs):**
+1. **Bounded preview listing** — new `flatfile.resolve_batch_file_preview` with a preview-only object-count + wall-clock budget (`Settings.batch_preview_max_objects=2000` / `batch_preview_max_seconds=3.0`, both env-documented in `deploy/README.md` + `.env.app.example`). On budget exhaustion it returns an honest partial (`BatchPreviewOutcome(path, scanned, truncated)`) instead of raising or scanning further. The run path (`materialize_path`/`resolve_batch_file`, worker/comparison/dry-run) is completely untouched.
+2. **Regex bound** — `registry._batch_spec` (the one seam both save and preview go through via `resolve_target`) now enforces a 200-char pattern length cap and a structural nested-quantifier ReDoS check, extended mid-review to also catch bounded repetition (`{m,}`/`{m,n}`) and lazy quantifiers, not just bare `+`/`*`.
+3. **Frontend abort** — `BatchPreviewHint` now `AbortController`s a superseded request instead of only ignoring its answer, and renders `truncated`/`scanned` honestly (fixed mid-review to also show the scan count on a truncated-but-matched result, matching the no-match branch).
+4. **MCP**: verified by grep — no MCP tool wraps batch preview, so nothing there needed updating.
+
+**Gate results:** backend `ruff`/`black`/`mypy`/`bandit` all clean; full backend suite 6244 passed, 10 skipped (pre-existing/unrelated), 0 failed; frontend `eslint`/`prettier`/`tsc`/`vitest` all clean, 1361 passed.
+
+**Regression-red proofs (all reverted → confirmed red → restored):**
+- Budget removed → wall-clock test hangs indefinitely (killed), 3 other tests fail with real unbounded scan counts.
+- ReDoS guard disabled → all 6 tests `DID NOT RAISE`, end-to-end `preview_batch` test proves the listing seam is never reached (0.19s, no hang).
+- Frontend abort removed → new test fails (`expected true, got false`).
+- Empirically confirmed out-of-process (bounded subprocess, 3s hard timeout) that `(a+)+$` against 30 `a`s genuinely hangs — justifying the ReDoS mitigation isn't theoretical.
+
+**Review disposition:** ran `/code-review` on the PR — 2 findings, both fixed in-PR via fixup commits, each mutation-verified:
+1. `_NESTED_QUANTIFIER_RE` only caught bare `+`/`*` trailing quantifiers, missing bounded forms like `(a+){50,}` — extended and reverified.
+2. Frontend `resolved` state dropped the `scanned` count that the `no-match` sibling state carried — plumbed through and asserted with a new test.
+
+Nothing left open — no issue filed, since both findings were fixed in this PR.</result>
+<usage><subagent_tokens>467015</subagent_tokens><tool_uses>322</tool_uses><duration_ms>3176237</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a841f5b7170ccb15a</worktreePath><worktreeBranch>worktree-agent-a841f5b7170ccb15a</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a86d346374e5951ec</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/794954e4-fe13-4114-a690-7693154a1d09/tasks/a86d346374e5951ec.output</output-file>
+<status>completed</status>
+<summary>Agent "W6 Phase 2 DB migration lane" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>**PR 1 of 4 open — #1743.**
+
+- **PR:** https://github.com/TheurgicDuke771/DataQ/pull/1978 (milestone 22 set)
+- **What shipped:** migration `3d7c1a9fb204` adding a partial expression index `ix_llm_invocations_rca_incident ON llm_invocations ((request -&gt;&gt; 'incident_id'), created_at DESC, id DESC) WHERE kind='rca_narrative' AND status='succeeded'`, the matching `__table_args__` entry, and `.limit(1)` on the lookup (extracted as `narrative_lookup_statement` so the planner test plans the real query).
+- **EXPLAIN evidence (60k seeded rows, 3,750 rca/succeeded):** hit case 864 buffers / 4.40 ms → 3 buffers / 0.04 ms; miss case 858 / 3.2 ms → 2 / 0.02 ms. Index 336 kB vs 6,864 kB table. The issue's `(kind, status, suite_id)` candidate was measured and **rejected** — still 862 buffers, heap-filtering 3,746 rows. The `suite_id` rewrite was assessed and not taken (no measurable gain, and `llm_invocations.suite_id` is `SET NULL` while the current query has no such exclusion); recorded in the PR body.
+- **Gates:** ruff clean · black 557 files unchanged · mypy 476 files clean (`app` + `tests`) · bandit no issues · `pytest backend/tests/db backend/tests/services/test_llm_rca.py` 157 passed. Alembic `upgrade head` → `downgrade -1` → `upgrade head` against a real Postgres scratch DB (`dataq_migtest`), CONCURRENTLY path included.
+- **Red proof:** removing the `Index(...)` from the model turns 3 of 5 tests red, the planner test for the right reason (`Seq Scan on llm_invocations` with `enable_seqscan=off` still forced). Output pasted in the PR body.
+- **Reviews:** `migration-safety` → **Pass, backward-compatible** (single head confirmed, no revision collision, correct `down_revision`, no model/migration drift, `SHARE UPDATE EXCLUSIVE` only). `code-review` → 2 low findings, **both fixed in-PR** (`d8e2fcc3`): the up/down test now runs the migration's own `_CREATE_SQL`/`_DROP_SQL` (mutation-checked red on a wrong index name), and the `literal_binds` assumption is now held to account by a `EXPLAIN (GENERIC_PLAN)` test — which found something sharper than the report: under server-side binding *nothing* is provable, the partial predicate fails too, not just the expression.
+- **Filed:** #1979 — partial/expression indexes repo-wide (`ix_llm_invocations_status_open`, `ix_pipeline_runs_marker`) rest on psycopg2's client-side binding; a psycopg3 swap would silently un-index them. Milestone 22, not fixed here.
+
+Continuing to **#1715** now, stacked on this branch.</result>
+<usage><subagent_tokens>224132</subagent_tokens><tool_uses>78</tool_uses><duration_ms>1053042</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a86d346374e5951ec</worktreePath><worktreeBranch>worktree-agent-a86d346374e5951ec</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+session is about to terminate, commit what is completed and try to wrap up the agents and gather the in-progress details.
+
+---
+
+<task-notification>
+<task-id>a0263226f685a89d5</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/794954e4-fe13-4114-a690-7693154a1d09/tasks/a0263226f685a89d5.output</output-file>
+<status>completed</status>
+<summary>Agent "#1670 a11y CI ratchet" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Draft PR created and milestoned. Everything is committed and pushed.
+
+## Hand-over
+
+**Branch:** `feature/issue-1670-a11y-axe-ratchet`
+**PR (draft):** https://github.com/TheurgicDuke771/DataQ/pull/1981 (milestone 22)
+**Follow-up issue filed:** https://github.com/TheurgicDuke771/DataQ/issues/1980 (milestone 24, `enhancement`) — baseline rule/surface histogram for the fix work
+
+**Done:**
+- `@axe-core/playwright` + `axe-core` added, pinned major `4`, both MPL-2.0
+- `vitest-axe` evaluated and **rejected** (single unmaintained maintainer, stuck at `0.1.0` for &gt;1yr, pins old `axe-core`) — used `axe-core` directly instead, per the issue's own fallback
+- `frontend/scripts/a11y/ratchet.ts` — shared diff/capture/baseline logic
+- `frontend/e2e/a11y.spec.ts` — scans dashboard/connections/suites(list+detail)/results/run-detail/assets/admin
+- `frontend/e2e-otp/a11y.spec.ts` — scans sign-in (only exists in OTP lane)
+- `frontend/tests/a11y/components.a11y.test.tsx` — check editor, connection form, suite form, results table, notification panel
+- `frontend/a11y-baseline.json` committed, 107 serious/critical violations captured
+- `pnpm a11y:baseline` script to regenerate deliberately
+- No new CI job — both lanes ride the existing `frontend-test`/`frontend-e2e` jobs, so no ruleset change needed
+- Docs: `CONTRIBUTING.md` rule 4b, both `e2e*/README.md` (no top-level `frontend/README.md` exists)
+- Full local verification: lint/format/typecheck/test:coverage all green; ratchet mutation-checked red→green on both lanes; Playwright lanes run against isolated CI-equivalent stacks (own Postgres/Redis/OpenBao/OTP-stack on non-default ports) without touching the other session's running compose stack (verified via `docker ps`)
+- Commit made, pushed, draft PR opened and milestoned
+
+**Not done (explicit next steps):**
+1. Run `/code-review --comment` on PR #1981 and address findings (mandatory per CONTRIBUTING rule 1c) — not run this session
+2. Fix anything the review finds via follow-up commits, file issues for anything deferred
+3. Re-verify `docs/progress.md` truly needs no entry (marked N/A as pure test infra)
+4. Once green, mark PR ready-for-review (currently draft) — do not merge
+
+**No package/licence surprises left open** — both licence decisions are made and documented in the PR body and CONTRIBUTING.md.</result>
+<usage><subagent_tokens>310333</subagent_tokens><tool_uses>159</tool_uses><duration_ms>1503573</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a0263226f685a89d5</worktreePath><worktreeBranch>worktree-agent-a0263226f685a89d5</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a86d346374e5951ec</task-id>
+<tool-use-id>toolu_01VvNYCeZjv24ueYM2FNGTcA</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/794954e4-fe13-4114-a690-7693154a1d09/tasks/a86d346374e5951ec.output</output-file>
+<status>completed</status>
+<summary>Agent "W6 Phase 2 DB migration lane" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Everything is committed and pushed; nothing is lost.
+
+## Hand-over
+
+### PR 1 — #1743 · **COMPLETE, auto-merge armed**
+- **PR:** https://github.com/TheurgicDuke771/DataQ/pull/1978 · branch `fix/issue-1743-llm-invocations-rca-index` · milestone 22
+- Migration `3d7c1a9fb204` (partial expression index on the RCA-narrative incident lookup) + model sync + `.limit(1)`. Gates all green, alembic up/down/up on real Postgres, red proof captured, `migration-safety` **Pass**, `/code-review` 2 findings **both fixed in-PR** (`d8e2fcc3`).
+- **Filed:** #1979 — partial/expression indexes repo-wide depend on psycopg2's client-side binding; a psycopg3 swap would silently un-index them. Milestone 22, not fixed.
+
+### PR 2 — #1715 · **code COMPLETE, opened as DRAFT (reviews not run)**
+- **PR:** https://github.com/TheurgicDuke771/DataQ/pull/1982 (draft) · branch `fix/issue-1715-marker-correlation-index` · **stacked on #1978** · milestone 22 · commit `7e8190b9`
+- **Done:** migration `b4e91c7a0d38` (`ix_runs_triggered_by ON runs (triggered_by) WHERE triggered_by IS NOT NULL`), model sync, two statement extractions in `markers.py`, module-docstring update, 5 tests. Gates green (ruff/black/mypy 477 files/bandit clean; 1483 passed, 1 skipped). Alembic up/down/up verified on real Postgres. Red proof captured and in the PR body.
+- **Key finding — the issue's premise was stale.** #1728 + #1814 already made the `pipeline_runs` marker lookup a 4-buffer index seek at 120k rows. The real residual is the *other* direction: `markers.triggered_runs` was a parallel seq scan of all 150k `runs` on every Results-page pipeline-runs load — **1833 buffers / 9.12 ms → 17 buffers / 0.08 ms**.
+- **I did NOT build the stored `marker` column** the brief directed. Reasons, all in the PR body: (a) zero measured gain — the lookup it targets is already a seek; (b) the **unique index would be a live defect** — a colliding marker is legitimate input (#1714 fails closed on it deliberately), so UNIQUE converts a read that declines to guess into a *rejected `pipeline_runs` INSERT*, dropping an orchestration observation. If you want it built anyway, that is yours to overrule.
+- **Unfinished:** `migration-safety` agent, `orchestration-abstraction-guard` agent, and `/code-review 1982 --comment` have **not** been run. Mark ready-for-review after those.
+
+### PR 3 — #1245 · **NOT STARTED**
+Next steps: branch from `fix/issue-1715-marker-correlation-index`. The seed data is already in place in scratch DB `dataq_migtest` (150k `runs` across 10 suites, 120k `pipeline_runs` across 3 providers / 40 pipelines) — `incidents` still needs seeding. Run `EXPLAIN (ANALYZE, BUFFERS)` per table for the unfiltered list **and** `?suite_id=`/`?status=`/`?provider=`/`?state=`, then decide per table. Note `runs` already has `ix_runs_suite_created (suite_id, created_at DESC, id DESC)` and `ix_runs_status`, so the `?suite_id=` case may already be covered — "the planner ignores it" is a valid outcome, record it, add no dead weight.
+
+### PR 4 — #1236 · **NOT STARTED**
+Lineage prune-suspension backstop: both options (persisted `lineage_last_authoritative_refresh_at` on `connections` + `LINEAGE_STALE_AFTER_HOURS`; and plumbing the suspension through `WarehouseRefreshOutcome` → `warehouse_lineage_status`), plus the `warehouse_refresh` module docstring which still states the unenforced promise, plus MCP payload/docstring if `grep lineage backend/app/mcp/server.py` hits.
+
+### Environment notes for whoever picks this up
+- Scratch DB `dataq_migtest` on the compose Postgres (`docker exec dataq-postgres-1 psql -U dataq -d dataq_migtest`) is at head with all seed data. Seeds in the scratchpad: `seed_1743.sql`, `seed_1715.sql`, `seed_runs.sql`; `runwith.py` runs alembic against it.
+- A gitignored `.env` was copied into the worktree so `conftest.py` can resolve the test DB — not tracked, `git status` is clean.
+- Alembic head on my chain is now `b4e91c7a0d38`; #1245's migration (if any) must chain from it.</result>
+<usage><subagent_tokens>315351</subagent_tokens><tool_uses>116</tool_uses><duration_ms>1532062</duration_ms></usage>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-a86d346374e5951ec</worktreePath><worktreeBranch>worktree-agent-a86d346374e5951ec</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+we have ~10% usages left, try to pick one item which can be close, don't spawn any agents
+
+---
+
+keep your memory updated, so next session can pickup right away [without reading the full cache]
+
+---
+
+we still have some usages left, you can pickup some other items
+
+---
+
+<task-notification>
+<task-id>bc25sp4n9</task-id>
+<tool-use-id>toolu_01McpNVsu1yaS1UW8BV37uhN</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/794954e4-fe13-4114-a690-7693154a1d09/tasks/bc25sp4n9.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait up to 15 min for #1978 and #1976 to merge" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+now ~5% left, try to wrap up
+
+---
+
+session re-newed, let's continue
+
+---
+
+session re-newed, let's continue
