@@ -11,6 +11,11 @@ resource "aws_cloudwatch_log_group" "worker" {
   retention_in_days = var.log_retention_days
 }
 
+resource "aws_cloudwatch_log_group" "beat" {
+  name              = "/dataq-app/beat"
+  retention_in_days = var.log_retention_days
+}
+
 resource "aws_cloudwatch_log_group" "frontend" {
   name              = "/dataq-app/frontend"
   retention_in_days = var.log_retention_days

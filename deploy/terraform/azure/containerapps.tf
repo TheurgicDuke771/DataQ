@@ -1,5 +1,5 @@
-# The DataQ backend on Container Apps — api (external ingress), worker (Celery + embedded beat), and
-# the migrate Job.
+# The DataQ backend on Container Apps — api (external ingress), worker (Celery, no beat — #1811),
+# beat (the sole schedule dispatcher, its own Container App), and the migrate Job.
 
 locals {
   backend_image   = "${var.backend_image_repo}:${var.image_tag}"
@@ -57,7 +57,8 @@ locals {
     { name = "EMAIL_TO", value = var.email_to },
   ]
 
-  # Worker-only env, on top of app_env.
+  # Worker + beat env, on top of app_env (beat also gets it — same boot-time SecretStore/DB wiring,
+  # #1811 — even though WAREHOUSE_LINEAGE_ENABLED only matters to the worker's sweep task).
   worker_env = concat(local.app_env, [
     { name = "WAREHOUSE_LINEAGE_ENABLED", value = "true" },
   ])
@@ -128,7 +129,7 @@ resource "azurerm_container_app" "api" {
   depends_on = [azurerm_role_assignment.kv_app_secrets]
 }
 
-# ── Worker (Celery worker + embedded beat) ───────────────────────────────────
+# ── Worker (Celery worker — task execution only, no beat since #1811) ───────
 resource "azurerm_container_app" "worker" {
   name                         = "dataq-app-worker"
   container_app_environment_id = data.azurerm_container_app_environment.shared.id
@@ -149,8 +150,9 @@ resource "azurerm_container_app" "worker" {
   }
 
   template {
-    # min_replicas = 1: the worker also runs celery-beat (-B) for the schedule
-    # dispatcher + orchestration polling, so it can't scale to zero.
+    # min_replicas = 1: NOT beat's reason anymore (#1811 moved beat to its own app below) — kept
+    # at 1 so a queued run_suite/llm_invoke doesn't wait on a cold-start replica before it's even
+    # picked up. Re-evaluate scale-to-zero separately if dispatch latency is ever found acceptable.
     min_replicas = 1
     max_replicas = 1
     container {
@@ -158,9 +160,10 @@ resource "azurerm_container_app" "worker" {
       image  = local.backend_image
       cpu    = 1.0
       memory = "2Gi"
-      # -Q celery,llm (#1777): llm_invoke has its own queue now — must be listed
-      # or this worker never consumes it.
-      command = ["celery", "-A", "backend.app.worker.celery_app", "worker", "-B", "-Q", "celery,llm", "--loglevel=INFO"]
+      # -Q celery,llm (#1777): llm_invoke has its own queue now — must be listed or this worker
+      # never consumes it. NO -B (#1811): beat is a separate Container App below, so a worker OOM
+      # under concurrency=4 (overlapping large suites, #1790) can never take the scheduler with it.
+      command = ["celery", "-A", "backend.app.worker.celery_app", "worker", "-Q", "celery,llm", "--loglevel=INFO"]
       dynamic "env" {
         for_each = local.worker_env
         content {
@@ -174,6 +177,65 @@ resource "azurerm_container_app" "worker" {
 
   # Image is workflow-managed (see the api resource) — ignore it so an apply never
   # rolls the worker back to var.image_tag.
+  lifecycle {
+    ignore_changes = [template[0].container[0].image]
+  }
+
+  tags       = local.common_tags
+  depends_on = [azurerm_role_assignment.kv_app_secrets]
+}
+
+# ── Beat (Celery schedule dispatcher — ONLY this one, #1811) ─────────────────
+# Split out of the worker so a worker OOM (concurrency=4 prefork children under the 2 GiB hard
+# limit, overlapping large suites — #1790) can never take the scheduler down with it (the #405
+# class: orchestration polling, scheduled-suite dispatch, and every sweep going silently dark).
+# min = max = 1: beat must run EXACTLY ONE instance or every periodic task fires twice.
+resource "azurerm_container_app" "beat" {
+  name                         = "dataq-app-beat"
+  container_app_environment_id = data.azurerm_container_app_environment.shared.id
+  resource_group_name          = data.azurerm_resource_group.dataq.name
+  revision_mode                = "Single"
+
+  identity {
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.app.id]
+  }
+
+  dynamic "secret" {
+    for_each = local.app_secrets
+    content {
+      name  = secret.value.name
+      value = secret.value.value
+    }
+  }
+
+  template {
+    min_replicas = 1
+    max_replicas = 1
+    container {
+      name  = "beat"
+      image = local.backend_image
+      # Beat only schedules — it enqueues tasks, never runs them — so it carries the platform's
+      # smallest valid CPU/memory pairing, nowhere near the worker's 1.0/2Gi.
+      cpu     = 0.25
+      memory  = "0.5Gi"
+      command = ["celery", "-A", "backend.app.worker.celery_app", "beat", "--loglevel=INFO"]
+      # Same env as the worker (local.worker_env, not just app_env): beat needs the same
+      # SECRET_STORE/DATABASE_URL/APPLICATIONINSIGHTS wiring to boot cleanly, even though it never
+      # reads a connection credential itself.
+      dynamic "env" {
+        for_each = local.worker_env
+        content {
+          name        = env.value.name
+          value       = lookup(env.value, "value", null)
+          secret_name = lookup(env.value, "secret_name", null)
+        }
+      }
+    }
+  }
+
+  # Image is workflow-managed (see the api resource) — ignore it so an apply never
+  # rolls beat back to var.image_tag.
   lifecycle {
     ignore_changes = [template[0].container[0].image]
   }

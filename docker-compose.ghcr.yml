@@ -153,10 +153,29 @@ services:
   worker:
     image: *backend-image
     restart: unless-stopped
-    # -B runs celery-beat embedded (orchestration polling, scheduled dispatch) —
-    # the same topology every deployment uses, prod included (#1091). -Q celery,llm
-    # (#1777): llm_invoke has its own queue now — must be listed or never consumed.
-    command: celery -A backend.app.worker.celery_app worker -B -Q celery,llm --loglevel=INFO
+    # -Q celery,llm (#1777): llm_invoke has its own queue now — must be listed or never consumed.
+    # NO -B (#1811): beat runs as its own `beat` service below, so a worker OOM can never take the
+    # scheduler down with it (the #405 class).
+    command: celery -A backend.app.worker.celery_app worker -Q celery,llm --loglevel=INFO
+    environment: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      openbao:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      otp-mail-secret:
+        condition: service_completed_successfully
+
+  # celery-beat, split out of the worker (#1811). ONE instance only — never scale this service, or
+  # every periodic task (orchestration polling, scheduled dispatch, sweeps) fires twice.
+  beat:
+    image: *backend-image
+    restart: unless-stopped
+    command: celery -A backend.app.worker.celery_app beat --loglevel=INFO
     environment: *app-env
     depends_on:
       postgres:

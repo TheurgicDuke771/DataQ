@@ -69,7 +69,7 @@ mode for you. A production deployment must flip all of the following. Values liv
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | unset | Azure Monitor / App Insights backend for spans + logs (observability, OTel — ADR 0010). |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | generic OTLP/HTTP backend for spans + logs (#589) — any OTLP consumer (Tempo/Jaeger/Datadog/Collector); set alongside App Insights for parity, or alone for a non-Azure deploy. |
 | `OPENLINEAGE_URL` | unset | OpenLineage emission (ADR 0034, #758) — **dark by default**: unset ⇒ zero emission. Point at an OL receiver (Marquez, DataHub's OL endpoint) and every suite run emits START + terminal RunEvents with DQ facets (5s emit timeout, fail-open, no sample rows ever). Advanced transports via the library-owned `OPENLINEAGE__TRANSPORT__*` / `OPENLINEAGE_CONFIG`; `OPENLINEAGE_DISABLED=true` forces dark. |
-| `WAREHOUSE_LINEAGE_ENABLED` | unset (`false`) | **`true`** on the **worker only** to run the daily `refresh_warehouse_lineage` sweep (ADR 0034, #858) — **dark by default** because the Snowflake `ACCOUNT_USAGE` / UC `system.access` views it reads need a grant the connection principal may not hold. Set in `containerapps.tf` (`local.worker_env`). Only the worker runs beat, so setting it on the api does nothing. |
+| `WAREHOUSE_LINEAGE_ENABLED` | unset (`false`) | **`true`** on the **worker only** to run the daily `refresh_warehouse_lineage` sweep (ADR 0034, #858) — **dark by default** because the Snowflake `ACCOUNT_USAGE` / UC `system.access` views it reads need a grant the connection principal may not hold. Set in `containerapps.tf` (`local.worker_env`, shared with beat). Beat only *schedules* the sweep task; the **worker** is what actually executes it and reads this flag, so setting it on the api does nothing. |
 | `LINEAGE_PROVIDER` / `MARQUEZ_URL` | unset | **leave unset** unless you run a lineage server. This deployment deliberately does **not** set them (#1086): Marquez is a dev-only compose profile and production is expected to bring its own catalog (ADR 0034). Set them only when pointing at a reachable OL-compatible server. Two failure shapes differ: an unreachable `MARQUEZ_URL` leaves the pull *configured but failing* (fail-soft, logged, pruning deliberately skipped for cross-source safety); **un-setting the provider is now handled** ([#1090](https://github.com/TheurgicDuke771/DataQ/issues/1090)) — the next daily `refresh_lineage_pull` tick sweeps the orphaned `source='marquez'` edges (logged as `lineage_pull_orphans_purged`; re-configuring re-pulls). A configured-but-broken provider (typo'd name, missing URL) deliberately does NOT purge. |
 | `LINEAGE_STALE_AFTER_HOURS` | `48` | staleness window for the asset-view lineage-source banner (#1091): a warehouse lineage source last refreshed longer ago than this is flagged **stale**, independent of error/degraded — a refresh loop that silently stops must not render as healthy. `0` disables. |
 | `WAREHOUSE_LINEAGE_MAX_SEEDS` | `500` | seed cap for the Snowflake `GET_LINEAGE` per-seed traversal (#892) — the Enterprise-only top tier walks this many enumerated tables (ADR 0040 seam) per refresh, **two round trips each** (upstream + downstream), so it is a latency/cost bound. Overflow walks the first N in catalog order and logs `get_lineage_seeds_truncated`; `<=0` removes the bound. Ignored on Standard accounts (the tier is edition-gated) and by every other tier. |
@@ -145,7 +145,10 @@ Browser ─► dataq-app-frontend (Container App: nginx SPA, external ingress :8
               ▼
         Azure Container Apps
           • dataq-app-api      (FastAPI image, INTERNAL ingress :8000 — not public)
-          • dataq-app-worker   (same image, `celery -A ... worker` + beat)
+          • dataq-app-worker   (same image, `celery -A ... worker` — task execution only)
+          • dataq-app-beat     (same image, `celery -A ... beat` — the ONE schedule dispatcher,
+                                min=max=1 replica, split out of the worker since #1811 so a
+                                worker OOM can never take the scheduler down with it)
           • dataq-app-migrate  (Container Apps Job: `alembic upgrade head`)
               │
               ├─► Azure Database for PostgreSQL (DATABASE_URL)
@@ -174,12 +177,13 @@ that, this app needs:
    the migrate **job** runs `alembic upgrade head`. The `deploy/terraform/azure/` stack
    provisions all of this; the GHCR package must be **public** so ACA pulls it
    anonymously.
-2. **Managed identity** on the api + worker apps with a **custom get+list+set Key Vault
+2. **Managed identity** on the api + worker + beat apps with a **custom get+list+set Key Vault
    role** (read+write but not the broader built-in Secrets Officer, so
    `DefaultAzureCredential` resolves `SECRET_STORE=azure_key_vault` for both reads and
    the connection-credential writes the API performs; read-only breaks
    connection-create-with-secret — #622).
-3. **App env**: set the keys on the api + worker apps. The **complete** env-var
+3. **App env**: set the keys on the api + worker + beat apps (beat since #1811, split out of the
+   worker). The **complete** env-var
    reference (every Settings key) is [../.env.app.example](../.env.app.example);
    the prod-specific *values* are in [deploy/.env.app.prod.example](.env.app.prod.example).
    Secret values (DB/Redis URL, App Insights, webhook URLs) are Key Vault-backed
@@ -267,6 +271,7 @@ environment).
 the same OIDC login.
 
 **Variables:** `AZURE_RESOURCE_GROUP`, `API_APP_NAME`, `WORKER_APP_NAME`,
+`BEAT_APP_NAME` (the celery-beat Container App, split out of the worker — #1811),
 `FRONTEND_APP_NAME`, `MIGRATE_JOB_NAME`. No `VITE_AZURE_*` build values (the
 frontend is configured at runtime, ADR 0028) and no `ACR_*` — the images live on
 GHCR at fixed `ghcr.io/theurgicduke771/dataq-{backend,frontend}` paths.
@@ -277,6 +282,15 @@ GHCR at fixed `ghcr.io/theurgicduke771/dataq-{backend,frontend}` paths.
 2. Run the **Deploy** workflow manually (`workflow_dispatch`) to validate end-to-end.
 3. To deploy on every merge, uncomment the `push: branches: [main]` trigger in
    the workflow.
+
+> **New Container App/ECS service? `tofu apply` FIRST, then the Deploy workflow.** The Deploy
+> workflows only roll images onto resources that already exist — they never create infra. The
+> `dataq-app-beat` Container App / `beat` ECS service (#1811) is the first instance of this: apply
+> `deploy/terraform/azure/` and `deploy/terraform/aws/` on both clouds, set the new
+> `BEAT_APP_NAME` repo variable (Azure; AWS derives the beat service name from its fixed
+> `dataq-app-beat` family, same as the other services), **then** dispatch `deploy.yml` /
+> `deploy-aws.yml` — dispatching first would `az containerapp update` / `ecs update-service`
+> against a resource that doesn't exist yet and fail the deploy.
 
 Migrations are additive/backward-compatible (CLAUDE.md), so the workflow runs
 `alembic upgrade head` **before** rolling the apps — the running old code
@@ -365,8 +379,11 @@ don't stop at HTTP 200s. Work top-down:
   proxied paths since the ADR 0028 §5 cutover, so a `200` with the SPA shell is the expected
   result, NOT Swagger UI or a JSON schema). The API's own prod-docs gate (`ENVIRONMENT=prod`
   → `404`, #170) still applies on its internal ingress, which is unreachable from outside.
-- [ ] **Infra rolled cleanly** — api / worker / frontend are on the **deployed tag** (not the
-  old image), the migrate job execution is `Succeeded`, Celery beat starts clean (#405/#407)
+- [ ] **Infra rolled cleanly** — api / worker / **beat** / frontend are each independently on the
+  **deployed tag** (not the old image — check each app's SHA separately, not just the workflow's
+  exit code: the #1361 lesson is that a service which never starts is invisible to a smoke that
+  only probes the public surface), the migrate job execution is `Succeeded`, Celery beat starts
+  clean (#405/#407, now on its own `dataq-app-beat` app since #1811)
   and orchestration polling reads Key Vault (#406/#408), and App Insights shows no post-roll
   errors.
 - [ ] **One-time app-level backfills for this release have been run.** Not every data fix is a

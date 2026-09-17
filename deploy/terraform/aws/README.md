@@ -10,7 +10,7 @@ only for this deployment.
 | Resource | Purpose |
 |---|---|
 | VPC, 2 public subnets, IGW, route table | Networking. No NAT Gateway (decision: public-subnets-no-NAT, ~$33/mo saved — ECS tasks get no public inbound access, only the ALB→frontend path is internet-reachable) |
-| `aws_ecs_cluster.app` + 3 Fargate services (api, worker, frontend) + 1 task def (migrate) | The app itself. api is internal-only (Cloud Map DNS `api.dataq.local`); frontend is the sole public surface (behind the ALB); worker runs embedded celery-beat, `desired_count=1` always (cannot scale to zero) |
+| `aws_ecs_cluster.app` + 4 Fargate services (api, worker, beat, frontend) + 1 task def (migrate) | The app itself. api is internal-only (Cloud Map DNS `api.dataq.local`); frontend is the sole public surface (behind the ALB); **beat is the ONLY celery-beat process** (#1811, split out of the worker so a worker OOM can never take the scheduler down) — `desired_count=1` always, deploys with `minimum_healthy_percent=0` so two beats never run at once during a roll |
 | `aws_cloudfront_distribution.app` → `aws_lb.app` (ALB, HTTP :80) | Public ingress. CloudFront terminates HTTPS on its default `*.cloudfront.net` cert (#1345 — Cognito requires an HTTPS redirect URI); the ALB admits only CloudFront's origin-facing ranges and forwards to the frontend target group |
 | `aws_db_instance.app` (RDS Postgres, `db.t4g.micro`) | The app's own database — this stack creates it directly (no shared-server bootstrap dance like the Azure stack, since this account is dedicated) |
 | `aws_elasticache_replication_group.app` (`cache.t4g.micro`, TLS + auth token) | Celery broker + rate-limit store |
@@ -53,6 +53,12 @@ tofu apply -input=false tfplan
 
 **Cost starts here.** `tofu apply` creates real, billable AWS resources (Fargate, RDS, ElastiCache, ALB). Review the plan before applying. See the root-level deployment plan (in the session that built this stack) for the cost breakdown against the AWS free-tier credit.
 
+> **Existing stack picking up a new service (e.g. `beat`, #1811)?** `tofu apply` first — the
+> Deploy workflow only rolls images onto services that already exist, it never creates them.
+> Applying registers `aws_ecs_service.beat` (family `dataq-app-beat`, fixed name, no new repo
+> variable needed — `deploy-aws.yml` references it the same way it references the other three)
+> **before** the next `deploy-aws.yml` dispatch tries to `update-service` it.
+
 ## After apply — wire the Deploy workflow
 
 ```bash
@@ -77,10 +83,12 @@ the Azure `deploy.yml` runs, adapted to ECS:
 2. register a new `dataq-app-migrate` task-definition revision on the new
    image and `run-task` it with the api service's live network configuration,
    **waiting for exit 0** before anything rolls (fail-closed);
-3. register new api/worker/frontend revisions, `update-service`, and
+3. register new api/worker/**beat**/frontend revisions, `update-service`, and
    `wait services-stable`, then verify the primary deployment's image really
    is the new tag (a circuit-breaker rollback to the old image must fail the
-   run, not pass as "stable");
+   run, not pass as "stable") — beat (#1811) is rolled and verified **separately**
+   from the worker, not inferred from the worker's roll succeeding (the #1361
+   lesson: a service that never starts is invisible unless you check it directly);
 4. optional public-surface smoke (healthz/SPA 200, `/api` 401) — runs only
    when the `AWS_FRONTEND_URL` repo variable is set, since the CloudFront URL
    is deployment-specific and deliberately not tracked in the repo (#730).
