@@ -5,10 +5,10 @@ from typing import Any
 import pytest
 
 from backend.app.datasources.base import ResolvedTarget  # moved in #727
+from backend.app.datasources.flatfile import BatchPreviewResult
 from backend.app.services import run_target
 from backend.app.services.run_target import (
     BatchPreviewFailedError,
-    BatchPreviewInvalidError,
     BatchPreviewNoDataError,
     SuiteTargetInvalidError,
     resolve_target,
@@ -169,6 +169,92 @@ def test_flatfile_batch_specific_without_capture_group_raises() -> None:
         resolve_target("s3", {"pattern": r"orders\.csv", "strategy": "specific", "batch": "x"})
 
 
+# ── ReDoS-shape rejection (#1243) ────────────────────────────────────────────
+# Enforced in `registry._batch_spec`, the single place BOTH `validate_target`
+# (save) and `preview_batch` (preview, via `resolve_target`) compile the
+# pattern — so a save-time check that agrees with preview requires nothing
+# extra here beyond going through `resolve_target` itself.
+
+
+def test_flatfile_batch_pattern_over_length_cap_raises() -> None:
+    with pytest.raises(SuiteTargetInvalidError, match="at most"):
+        resolve_target("s3", {"pattern": "a" * 201})
+
+
+def test_flatfile_batch_pattern_at_length_cap_is_accepted() -> None:
+    resolve_target("s3", {"pattern": "a" * 200})  # no raise
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        r"(a+)+$",
+        r"([a-z]*)+",
+        r"(a*)*",
+        r"orders_(\d+)+\.csv",
+    ],
+)
+def test_flatfile_batch_nested_quantifier_pattern_is_rejected(pattern: str) -> None:
+    with pytest.raises(SuiteTargetInvalidError, match="nested"):
+        resolve_target("s3", {"pattern": pattern})
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        r"orders_(\d+)\.csv",
+        r"orders_(\d{4}-\d{2}-\d{2})\.csv",
+        r"(ab)+",
+        r"a+",
+    ],
+)
+def test_flatfile_batch_ordinary_quantified_patterns_are_not_flagged(pattern: str) -> None:
+    resolve_target("s3", {"pattern": pattern})  # no raise
+
+
+def test_a_known_catastrophic_backtracking_pattern_never_reaches_a_match_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`(a+)+$` against a long run of 'a's is the textbook ReDoS trigger — Python's
+    `re` has no match timeout, so the only defense available is refusing the
+    SHAPE before a match is ever attempted (#1243). This is the end-to-end
+    regression test for the actual attack surface the issue describes: the
+    preview endpoint, given the pattern AND a store that would hand it a long,
+    hostile key. It asserts the listing seam is never even called (not just
+    "no exception") and that the whole call is wall-clock bounded — a real
+    match of this pattern against a hostile key would blow straight through
+    any reasonable bound (confirmed once, out-of-process: the same pattern
+    against 30 'a's plus a non-matching suffix does not return within 3 seconds
+    when actually matched).
+    """
+    import time
+
+    def _must_not_be_called(**_: Any) -> Any:  # pragma: no cover - must never run
+        raise AssertionError(
+            "flatfile.resolve_batch_file_preview must not be reached for a rejected pattern"
+        )
+
+    monkeypatch.setattr(
+        "backend.app.datasources.flatfile.resolve_batch_file_preview", _must_not_be_called
+    )
+    long_hostile_key = "a" * 5000 + "!"  # never terminates a `(a+)+$` match attempt
+
+    start = time.monotonic()
+    with pytest.raises(SuiteTargetInvalidError):
+        run_target.preview_batch(
+            "s3",
+            {},
+            prefix=long_hostile_key,
+            pattern=r"(a+)+$",
+            strategy="latest",
+            batch=None,
+            secret_ref="kv-ref",
+            secret_store=FakeSecretStore(default="secret-value", raise_on_write=True),
+        )
+    elapsed = time.monotonic() - start
+    assert elapsed < 1.0, f"pattern-shape rejection took {elapsed}s — no longer bounded"
+
+
 # ───────────────────────── materialize_path (A4 live step) ─────────
 
 
@@ -247,19 +333,21 @@ def test_an_orchestration_provider_still_has_no_run_path() -> None:
         assert "no run path" in str(exc.value)
 
 
-# ───────────────────────── preview_batch (#1193) ────────────────────
+# ───────────────────────── preview_batch (#1193, budget #1243) ──────
 
 
 def test_preview_batch_resolves_via_the_live_seam(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Threads through resolve_target (shape validation) + materialize_path (the
-    # live listing) exactly like a saved batch-target suite would at run time.
+    # Threads through resolve_target (shape validation) + the budget-bounded
+    # preview listing (#1243) — the run path's own `materialize_path` is untouched.
     captured: dict[str, Any] = {}
 
-    def _fake_resolve(**kwargs: Any) -> str:
+    def _fake_resolve(**kwargs: Any) -> BatchPreviewResult:
         captured.update(kwargs)
-        return "orders/orders_20260601.csv"
+        return BatchPreviewResult(path="orders/orders_20260601.csv", scanned=3, truncated=False)
 
-    monkeypatch.setattr("backend.app.datasources.flatfile.resolve_batch_file", _fake_resolve)
+    monkeypatch.setattr(
+        "backend.app.datasources.flatfile.resolve_batch_file_preview", _fake_resolve
+    )
     out = run_target.preview_batch(
         "s3",
         {"bucket": "b"},
@@ -270,9 +358,16 @@ def test_preview_batch_resolves_via_the_live_seam(monkeypatch: pytest.MonkeyPatc
         secret_ref="kv-ref",
         secret_store=FakeSecretStore(default="secret-value", raise_on_write=True),
     )
-    assert out == "orders/orders_20260601.csv"
+    assert out.path == "orders/orders_20260601.csv"
+    assert out.scanned == 3 and out.truncated is False
     assert captured["prefix"] == "orders/" and captured["strategy"] == "latest"
     assert captured["secret"] == "secret-value" and captured["conn_type"] == "s3"
+    # The preview budget comes from Settings, not a hardcoded/run-path value.
+    from backend.app.core.config import get_settings
+
+    settings = get_settings()
+    assert captured["max_objects"] == settings.batch_preview_max_objects
+    assert captured["max_seconds"] == settings.batch_preview_max_seconds
 
 
 @pytest.mark.parametrize("conn_type", ["adls_gen2", "s3"])
@@ -280,7 +375,8 @@ def test_preview_batch_accepts_flatfile_types(
     conn_type: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        "backend.app.datasources.flatfile.resolve_batch_file", lambda **_: "x/orders_1.csv"
+        "backend.app.datasources.flatfile.resolve_batch_file_preview",
+        lambda **_: BatchPreviewResult(path="x/orders_1.csv", scanned=1, truncated=False),
     )
     out = run_target.preview_batch(
         conn_type,
@@ -292,7 +388,7 @@ def test_preview_batch_accepts_flatfile_types(
         secret_ref="kv-ref",
         secret_store=FakeSecretStore(default="secret-value", raise_on_write=True),
     )
-    assert out == "x/orders_1.csv"
+    assert out.path == "x/orders_1.csv"
 
 
 @pytest.mark.parametrize("conn_type", ["snowflake", "unity_catalog", "iceberg", "adf", "airflow"])
@@ -301,10 +397,12 @@ def test_preview_batch_rejects_non_flatfile_connections(
 ) -> None:
     # No second hardcoded flat-file type set here: a batch spec carries no `table`/`path`, so every
     # SQL datasource's shape rejects it and an orchestration provider has no run path at all.
-    def _boom(**_: Any) -> str:  # pragma: no cover - must never be reached
-        raise AssertionError("resolve_batch_file must not be called for a non-flat-file type")
+    def _boom(**_: Any) -> BatchPreviewResult:  # pragma: no cover - must never be reached
+        raise AssertionError(
+            "resolve_batch_file_preview must not be called for a non-flat-file type"
+        )
 
-    monkeypatch.setattr("backend.app.datasources.flatfile.resolve_batch_file", _boom)
+    monkeypatch.setattr("backend.app.datasources.flatfile.resolve_batch_file_preview", _boom)
     with pytest.raises(SuiteTargetInvalidError) as exc:
         run_target.preview_batch(
             conn_type,
@@ -322,10 +420,10 @@ def test_preview_batch_rejects_non_flatfile_connections(
 def test_preview_batch_invalid_regex_raises_before_any_listing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def _boom(**_: Any) -> str:  # pragma: no cover - must never be reached
-        raise AssertionError("resolve_batch_file must not be called for a bad pattern")
+    def _boom(**_: Any) -> BatchPreviewResult:  # pragma: no cover - must never be reached
+        raise AssertionError("resolve_batch_file_preview must not be called for a bad pattern")
 
-    monkeypatch.setattr("backend.app.datasources.flatfile.resolve_batch_file", _boom)
+    monkeypatch.setattr("backend.app.datasources.flatfile.resolve_batch_file_preview", _boom)
     with pytest.raises(SuiteTargetInvalidError):
         run_target.preview_batch(
             "s3",
@@ -353,14 +451,14 @@ def test_preview_batch_specific_without_capture_group_raises() -> None:
         )
 
 
-def _preview_s3(monkeypatch: pytest.MonkeyPatch, exc: Exception) -> None:
-    """Drive `preview_batch` on an s3 connection whose listing raises `exc`."""
+def _preview_s3(monkeypatch: pytest.MonkeyPatch, *, exc: Exception) -> Any:
+    """Drive `preview_batch` on an s3 connection whose bounded listing raises `exc`."""
 
-    def _raise(**_: Any) -> str:
+    def _raise(**_: Any) -> BatchPreviewResult:
         raise exc
 
-    monkeypatch.setattr("backend.app.datasources.flatfile.resolve_batch_file", _raise)
-    run_target.preview_batch(
+    monkeypatch.setattr("backend.app.datasources.flatfile.resolve_batch_file_preview", _raise)
+    return run_target.preview_batch(
         "s3",
         {},
         prefix="orders/",
@@ -372,23 +470,80 @@ def _preview_s3(monkeypatch: pytest.MonkeyPatch, exc: Exception) -> None:
     )
 
 
-def test_preview_batch_maps_not_found_to_no_data(monkeypatch: pytest.MonkeyPatch) -> None:
-    from backend.app.datasources.flatfile import BatchNotFoundError
+def test_preview_batch_reports_no_match_within_a_completed_scan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The listing finished (within budget) and nothing matched — a definitive
+    "no data yet" (#122), same 422 as before the preview budget existed.
+    """
+    monkeypatch.setattr(
+        "backend.app.datasources.flatfile.resolve_batch_file_preview",
+        lambda **_: BatchPreviewResult(path=None, scanned=4, truncated=False),
+    )
+    with pytest.raises(BatchPreviewNoDataError):
+        run_target.preview_batch(
+            "s3",
+            {},
+            prefix="orders/",
+            pattern=r"orders_(\d+)\.csv",
+            strategy="latest",
+            batch=None,
+            secret_ref="kv-ref",
+            secret_store=FakeSecretStore(default="secret-value", raise_on_write=True),
+        )
 
-    with pytest.raises(BatchPreviewNoDataError) as exc:
-        _preview_s3(monkeypatch, BatchNotFoundError("no files matched"))
-    assert exc.value.status_code == 422
+
+def test_preview_batch_reports_a_truncated_scan_with_no_match_as_an_honest_partial(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The budget ran out before the listing finished — this must NOT raise
+    `BatchPreviewNoDataError` (that would falsely claim "no file exists anywhere
+    under this prefix"); it is an honest "didn't get far enough to say" (#1243).
+    """
+    monkeypatch.setattr(
+        "backend.app.datasources.flatfile.resolve_batch_file_preview",
+        lambda **_: BatchPreviewResult(path=None, scanned=2000, truncated=True),
+    )
+    out = run_target.preview_batch(
+        "s3",
+        {},
+        prefix="orders/",
+        pattern=r"orders_(\d+)\.csv",
+        strategy="latest",
+        batch=None,
+        secret_ref="kv-ref",
+        secret_store=FakeSecretStore(default="secret-value", raise_on_write=True),
+    )
+    assert out.path is None
+    assert out.scanned == 2000
+    assert out.truncated is True
 
 
-def test_preview_batch_maps_listing_too_large_to_invalid(monkeypatch: pytest.MonkeyPatch) -> None:
-    from backend.app.datasources.flatfile import BatchListingTooLargeError
-
-    # The one exception whose text IS safe to surface: `flatfile._counted` builds
-    # it from the caller's own prefix plus our own limit, no adapter text at all.
-    with pytest.raises(BatchPreviewInvalidError) as exc:
-        _preview_s3(monkeypatch, BatchListingTooLargeError("lists more than 500000 objects"))
-    assert exc.value.status_code == 422
-    assert "500000" in str(exc.value)
+def test_preview_batch_reports_a_truncated_scan_with_a_provisional_match(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Budget hit AFTER a match was already seen: the best-so-far path is still a
+    useful hint, but `truncated=True` says it isn't a guaranteed answer (a later,
+    unscanned object could sort ahead of it under 'latest').
+    """
+    monkeypatch.setattr(
+        "backend.app.datasources.flatfile.resolve_batch_file_preview",
+        lambda **_: BatchPreviewResult(
+            path="orders/orders_2026-06-01.csv", scanned=2000, truncated=True
+        ),
+    )
+    out = run_target.preview_batch(
+        "s3",
+        {},
+        prefix="orders/",
+        pattern=r"orders_(\d+)\.csv",
+        strategy="latest",
+        batch=None,
+        secret_ref="kv-ref",
+        secret_store=FakeSecretStore(default="secret-value", raise_on_write=True),
+    )
+    assert out.path == "orders/orders_2026-06-01.csv"
+    assert out.truncated is True
 
 
 def test_preview_batch_never_echoes_a_bare_value_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -396,7 +551,7 @@ def test_preview_batch_never_echoes_a_bare_value_error(monkeypatch: pytest.Monke
     # and boto3/azure text routinely carries the endpoint, the account, or a token fragment.
     leaky = "Invalid credentials for https://acct.blob.core.windows.net/?sig=SECRETTOKEN"
     with pytest.raises(BatchPreviewFailedError) as exc:
-        _preview_s3(monkeypatch, ValueError(leaky))
+        _preview_s3(monkeypatch, exc=ValueError(leaky))
     assert exc.value.status_code == 502
     assert "SECRETTOKEN" not in str(exc.value)
     assert "SECRETTOKEN" not in str(exc.value.detail)
@@ -407,7 +562,7 @@ def test_preview_batch_maps_an_arbitrary_failure_to_a_classified_502(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     with pytest.raises(BatchPreviewFailedError) as exc:
-        _preview_s3(monkeypatch, RuntimeError("connection timed out to 10.1.2.3:443"))
+        _preview_s3(monkeypatch, exc=RuntimeError("connection timed out to 10.1.2.3:443"))
     assert exc.value.status_code == 502
     assert "10.1.2.3" not in str(exc.value.detail)
 
