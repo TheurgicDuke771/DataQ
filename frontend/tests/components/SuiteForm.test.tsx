@@ -398,6 +398,25 @@ describe('SuiteForm — batch preview hint (#1193)', () => {
     );
   });
 
+  it('renders a truncated-but-matched preview with the scanned count, not a vague caveat', async () => {
+    // /code-review (#1976): the resolved+truncated branch used to drop `scanned` while the
+    // no-match branch carried it — the same honesty fields must reach both render paths.
+    mockPreview.mockResolvedValueOnce(
+      previewOk('orders/orders_2026-06-01.csv', { scanned: 2000, truncated: true }),
+    );
+    renderForm({
+      suite: suite({
+        id: 's1',
+        target: { pattern: 'orders_(\\d+)\\.csv', strategy: 'latest' },
+      }),
+    });
+
+    expect(await screen.findByText('orders/orders_2026-06-01.csv')).toBeInTheDocument();
+    expect(
+      await screen.findByText(/best match in the first 2000 objects scanned/),
+    ).toBeInTheDocument();
+  });
+
   it('shows a friendly "no file matches" hint instead of a raw error on the no-data 422', async () => {
     mockPreview.mockRejectedValueOnce(
       batchPreviewFailure(

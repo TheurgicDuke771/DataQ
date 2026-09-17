@@ -439,7 +439,13 @@ type BatchPreviewSpec = string;
 type BatchPreviewState =
   | { status: 'idle' }
   | { status: 'loading'; spec: BatchPreviewSpec }
-  | { status: 'resolved'; spec: BatchPreviewSpec; path: string; truncated: boolean }
+  | {
+      status: 'resolved';
+      spec: BatchPreviewSpec;
+      path: string;
+      truncated: boolean;
+      scanned: number;
+    }
   | { status: 'no-match'; spec: BatchPreviewSpec; truncated: boolean; scanned: number }
   | { status: 'error'; spec: BatchPreviewSpec; message: string };
 
@@ -503,7 +509,13 @@ function BatchPreviewHint({ suiteId }: { suiteId?: string }) {
             });
             return;
           }
-          setState({ status: 'resolved', spec, path: result.path, truncated: result.truncated });
+          setState({
+            status: 'resolved',
+            spec,
+            path: result.path,
+            truncated: result.truncated,
+            scanned: result.scanned,
+          });
         })
         .catch((err: unknown) => {
           if (controller.signal.aborted) return;
@@ -539,7 +551,8 @@ function BatchPreviewHint({ suiteId }: { suiteId?: string }) {
     return (
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
         Resolves to: <Typography.Text code>{state.path}</Typography.Text>
-        {state.truncated && ' (best match in the first objects scanned — may not be final)'}
+        {state.truncated &&
+          ` (best match in the first ${state.scanned} objects scanned — may not be final)`}
       </Typography.Text>
     );
   }
