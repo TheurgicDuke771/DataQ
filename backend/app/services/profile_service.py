@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import io
 from collections.abc import Callable, Generator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -24,10 +23,9 @@ from backend.app.core.secrets import SecretStore
 from backend.app.datasources.flatfile import (
     STREAM_CHUNK,
     RangeReader,
-    download_bytes,
     format_from_path,
-    read_csv_bytes,
     read_csv_head,
+    read_csv_projected_sample,
 )
 from backend.app.datasources.iceberg import (
     IcebergConfig,
@@ -678,12 +676,14 @@ def _read_dataframe(
         )
 
     wanted = set(columns)
-    raw = io.BytesIO(
-        download_bytes(
-            conn_type=connection.type, config=connection.config, path=path, secret=secret
-        )
+    return read_csv_projected_sample(
+        conn_type=connection.type,
+        config=connection.config,
+        path=path,
+        secret=secret,
+        rows=_SAMPLE_ROWS,
+        usecols=lambda name: name in wanted,
     )
-    return read_csv_bytes(raw, nrows=_SAMPLE_ROWS, usecols=lambda name: name in wanted)
 
 
 def _read_parquet_sample(

@@ -486,14 +486,46 @@ def _extend_window(reader_args: dict[str, Any], buffered: bytearray, *, span: in
     return len(got) < asked
 
 
-def _window_frame(buffered: bytearray, *, limit: int, reached_eof: bool) -> Any:
+def _window_frame(
+    buffered: bytearray, *, limit: int, reached_eof: bool, usecols: CsvUseCols = None
+) -> Any:
     """Parse at most ``limit`` rows out of a head window, dropping the trailing
-    partial row unless the window reached EOF (#595 C4).
+    partial row unless the window reached EOF (#595 C4). ``usecols`` — anything
+    `pandas.read_csv` accepts, e.g. a membership callable — projects at parse
+    time (#2000), same as the profiler's old full-download read did.
     """
     raw = bytes(buffered)
     if not reached_eof:
         raw = trim_to_row_boundary(raw)
-    return read_csv_bytes(io.BytesIO(raw), nrows=limit)
+    kwargs: dict[str, Any] = {"nrows": limit}
+    if usecols is not None:
+        kwargs["usecols"] = usecols
+    return read_csv_bytes(io.BytesIO(raw), **kwargs)
+
+
+#: What `pandas.read_csv`'s own ``usecols`` accepts — a membership test or an
+#: explicit name list, never an arbitrary value the type checker can't narrow.
+CsvUseCols = Callable[[str], bool] | Iterable[str] | None
+
+
+def _reader_args(
+    *,
+    conn_type: str,
+    config: dict[str, Any],
+    path: str,
+    secret: str,
+    session: StoreSession | None = None,
+) -> dict[str, Any]:
+    """The kwargs every store-read helper (`object_size`/`read_range`/`RangeReader`)
+    takes, built once so the shape can't drift between call sites (#2000 review).
+    """
+    return {
+        "conn_type": conn_type,
+        "config": config,
+        "path": path,
+        "secret": secret,
+        "session": session,
+    }
 
 
 def read_csv_head(
@@ -511,13 +543,9 @@ def read_csv_head(
     same short-read-is-EOF rule, same quote-aware trim — they were two copies of
     one read and #1325 had to fix the same defect in both.
     """
-    reader_args = {
-        "conn_type": conn_type,
-        "config": config,
-        "path": path,
-        "secret": secret,
-        "session": session,
-    }
+    reader_args = _reader_args(
+        conn_type=conn_type, config=config, path=path, secret=secret, session=session
+    )
     buffered = bytearray()
     # One byte MORE than the window, so a short read unambiguously means EOF —
     # a file of exactly window size must not be mistaken for a cut one.
@@ -590,24 +618,95 @@ def _open_batch_stream(
     )
 
 
-def _csv_head_frame(reader_args: dict[str, Any], *, limit: int) -> Any:
+#: Sentinel distinguishing "use the configured scan-byte cap" (the default, every
+#: caller today) from an explicit ``None`` opt-out for a caller that has already
+#: bounded the read some other way.
+_CONFIGURED_CAP = object()
+
+
+def _csv_head_frame(
+    reader_args: dict[str, Any],
+    *,
+    limit: int,
+    usecols: CsvUseCols = None,
+    max_window_bytes: int | None = _CONFIGURED_CAP,  # type: ignore[assignment]
+) -> Any:
     """The first ``limit`` rows of a CSV via a doubling byte range (#595).
 
     Each growth fetches only the bytes past what is already buffered (#1329):
     re-reading the prefix made reaching 4 MB cost 1 + 2 + 4 = 7 MB. A frame
-    SHORTER than ``limit`` therefore means the walk reached EOF — the only other
-    way out of the loop is a full one.
+    SHORTER than ``limit`` therefore means the walk reached EOF — the only
+    other way out of the loop is ``max_window_bytes`` (#2000): the window is
+    NOT allowed to grow past it while there is still more file to read and the
+    target row count isn't met yet, whether that is because a single row is
+    malformed/unterminated or simply because the rows are legitimately wide —
+    either way, silently reading further would be the unbounded whole-object
+    walk this function exists to avoid, so it raises a classified
+    `FlatFileReadError` instead of a) growing without limit or b) returning a
+    partial frame that a caller (e.g. the suite-run sample's ``truncated``
+    flag) would then have no way to distinguish from a legitimate EOF.
+
+    ``max_window_bytes <= 0`` (default `RUN_MAX_SCAN_BYTES`, so 0 only via an
+    explicit override) disables the check entirely — the walk is then bounded
+    only by the object's own size, matching this function's pre-#2000
+    behaviour.
+
+    Defaults to ``RUN_MAX_SCAN_BYTES`` (every caller today: the suite-run
+    sampled path in `_sampled_frame` and the profiler's `read_csv_projected_sample`
+    both need the same guard, not just the one that asked first) — pass
+    ``max_window_bytes=None`` explicitly to opt out for a caller that has
+    already bounded the read some other way. This reuses the existing
+    whole-object scan cap rather than adding a second setting; it now also
+    means "the head-window ceiling before a bounded CSV read gives up", which
+    is documented here and in the env var reference rather than left implicit.
     """
+    if max_window_bytes is _CONFIGURED_CAP:
+        max_window_bytes = get_settings().run_max_scan_bytes
     size = object_size(**reader_args)
     buffered = bytearray()
     window = _CSV_HEAD_BYTES
     while True:
         span = min(window, size)
         reached_eof = _extend_window(reader_args, buffered, span=span) or span >= size
-        frame = _window_frame(buffered, limit=limit, reached_eof=reached_eof)
+        frame = _window_frame(buffered, limit=limit, reached_eof=reached_eof, usecols=usecols)
         if len(frame) >= limit or reached_eof:
             return frame
+        if max_window_bytes is not None and max_window_bytes > 0 and span >= max_window_bytes:
+            raise FlatFileReadError(
+                f"could not reach the requested sample within the {max_window_bytes:,}-byte "
+                "scan cap — the file may have a malformed/unterminated row, or its rows are "
+                "wide enough that RUN_MAX_SCAN_BYTES needs raising for this target row count"
+            )
         window *= 2
+
+
+def read_csv_projected_sample(
+    *,
+    conn_type: str,
+    config: dict[str, Any],
+    path: str,
+    secret: str,
+    rows: int,
+    usecols: CsvUseCols = None,
+) -> Any:
+    """The column profiler's bounded CSV read (#2000): the first ``rows`` data
+    rows, projected to ``usecols`` at parse time, via the same doubling head
+    window `read_sampled_dataframe` uses for a suite run — never the whole
+    object, which the profiler used to download just to keep a handful of
+    columns from its first 100k rows.
+
+    ``RUN_MAX_SCAN_BYTES`` caps the window growth: a target that can't be
+    reached within that budget raises a classified `FlatFileReadError`
+    (surfaced as `ProfileFailedError` by `profile_file`) instead of silently
+    walking the window out to the object's own size — a failure mode the
+    profiler could not previously produce for a CSV, since the old
+    whole-object read either succeeded or failed on the download itself.
+    """
+    with StoreSession(conn_type=conn_type, config=config, secret=secret) as session:
+        reader_args = _reader_args(
+            conn_type=conn_type, config=config, path=path, secret=secret, session=session
+        )
+        return _csv_head_frame(reader_args, limit=rows, usecols=usecols)
 
 
 def read_sampled_dataframe(
@@ -632,13 +731,9 @@ def read_sampled_dataframe(
         raise ValueError(f"unsupported flat-file format for path {path!r}")
     with StoreSession(conn_type=conn_type, config=config, secret=secret) as session:
         return _sampled_frame(
-            {
-                "conn_type": conn_type,
-                "config": config,
-                "path": path,
-                "secret": secret,
-                "session": session,
-            },
+            _reader_args(
+                conn_type=conn_type, config=config, path=path, secret=secret, session=session
+            ),
             fmt=fmt,
             path=path,
             sample=sample,

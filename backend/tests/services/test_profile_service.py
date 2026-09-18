@@ -651,19 +651,50 @@ def _conn(*, conn_type: str, config: dict[str, Any], secret_ref: str | None = "r
     return SimpleNamespace(id=uuid.uuid4(), type=conn_type, config=config, secret_ref=secret_ref)
 
 
-def _patch_object(monkeypatch: pytest.MonkeyPatch, content: bytes) -> list[tuple[int, int]]:
-    """Serve ``content`` over the BOUNDED read seam (#882) and record the ranges."""
-    from backend.app.datasources import flatfile
+@dataclasses.dataclass
+class _ObjectSeam:
+    """What was asked of the store while a `_read_dataframe` call ran (#2000
+    review) — one fixture for both the projection tests (which only care about
+    the returned frame) and the bounded-read tests (which assert on the seam:
+    bytes/ranges actually fetched, and that the whole-object route was never
+    reached at all).
+    """
 
-    ranges: list[tuple[int, int]] = []
+    ranges: list[tuple[int, int]]
+    download_calls: list[int]
+
+    @property
+    def bytes_read(self) -> int:
+        return sum(length for _, length in self.ranges)
+
+
+def _patch_object(monkeypatch: pytest.MonkeyPatch, content: bytes) -> _ObjectSeam:
+    """Serve ``content`` over the BOUNDED read seam (#882) and record what was
+    asked for, on both the whole-object and the ranged path.
+    """
+    from backend.app.datasources import flatfile
+    from backend.app.services import profile_service as svc
+
+    seam = _ObjectSeam(ranges=[], download_calls=[])
 
     def _read_range(*, start: int, length: int, **_k: object) -> bytes:
-        ranges.append((start, length))
+        seam.ranges.append((start, length))
         return content[start : start + length]
+
+    def _download_whole_object(**_k: object) -> bytes:
+        seam.download_calls.append(1)
+        return content
 
     monkeypatch.setattr(flatfile, "object_size", lambda **k: len(content))
     monkeypatch.setattr(flatfile, "read_range", _read_range)
-    return ranges
+    # Only reached by an unbounded (whole-object) read — present on both bindings so a
+    # regression back to it produces a clean, seam-visible failure (however it's imported)
+    # rather than a real network call erroring out on a missing credential. A no-op on the
+    # fixed CSV path (which no longer imports `download_bytes` at all), kept for whichever
+    # binding a future regression calls through.
+    monkeypatch.setattr(flatfile, "download_bytes", _download_whole_object)
+    monkeypatch.setattr(svc, "download_bytes", _download_whole_object, raising=False)
+    return seam
 
 
 def test_read_dataframe_csv_projects_only_requested_columns(
@@ -671,7 +702,7 @@ def test_read_dataframe_csv_projects_only_requested_columns(
 ) -> None:
     from backend.app.services import profile_service as svc
 
-    monkeypatch.setattr(svc, "download_bytes", lambda **k: b"a,b,c\n1,2,3\n4,5,6\n")
+    _patch_object(monkeypatch, b"a,b,c\n1,2,3\n4,5,6\n")
     df = svc._read_dataframe(
         _flatfile_conn(),
         path="x.csv",
@@ -692,7 +723,7 @@ def test_read_dataframe_csv_projects_columns_from_a_semicolon_file(
     """
     from backend.app.services import profile_service as svc
 
-    monkeypatch.setattr(svc, "download_bytes", lambda **k: b"a;b;c\n1;2;3\n4;5;6\n")
+    _patch_object(monkeypatch, b"a;b;c\n1;2;3\n4;5;6\n")
     df = svc._read_dataframe(
         _flatfile_conn(),
         path="x.csv",
@@ -702,6 +733,37 @@ def test_read_dataframe_csv_projects_columns_from_a_semicolon_file(
     )
     assert list(df.columns) == ["a", "c"]
     assert len(df) == 2
+
+
+def test_read_dataframe_csv_does_not_download_the_whole_object(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#2000: `_read_dataframe`'s CSV branch used to `download_bytes` the whole
+    object before applying `nrows`/`usecols`. Proven on the SEAM — bytes
+    actually fetched via `read_range`, and that the whole-object `download_bytes`
+    route is never called at all — not on the returned frame, which the old
+    whole-object read would satisfy just as well.
+    """
+    from backend.app.services import profile_service as svc
+
+    header = ",".join(f"c{i}" for i in range(20)) + "\n"
+    body = "".join(",".join(str(r) for _ in range(20)) + "\n" for r in range(300_000))
+    content = (header + body).encode()
+    seam = _patch_object(monkeypatch, content)
+
+    df = svc._read_dataframe(
+        _flatfile_conn(),
+        path="x.csv",
+        file_format="csv",
+        columns=["c0", "c1"],
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
+    )
+
+    assert list(df.columns) == ["c0", "c1"]
+    assert len(df) == svc._SAMPLE_ROWS
+    assert not seam.download_calls, "must never fetch the whole object"
+    assert len(seam.ranges) > 1, "the window never grew — this test would pass trivially"
+    assert seam.bytes_read < len(content) * 0.7, "bounded read must not approach the full object"
 
 
 def test_read_dataframe_parquet_projects_only_requested_columns(
@@ -748,7 +810,7 @@ def test_read_dataframe_parquet_samples_do_not_download_the_whole_object(
         }
     ).to_parquet(buf, row_group_size=50_000)
     content = buf.getvalue()
-    ranges = _patch_object(monkeypatch, content)
+    seam = _patch_object(monkeypatch, content)
 
     df = svc._read_dataframe(
         _flatfile_conn(),
@@ -761,11 +823,10 @@ def test_read_dataframe_parquet_samples_do_not_download_the_whole_object(
     assert len(df) == svc._SAMPLE_ROWS  # capped, not the file's 200,000 rows
     # The property under test: real range GETs were issued, and there were only a handful of them
     # (`STREAM_CHUNK`'s few-large-requests shape) — not "some stats came back correct".
-    assert ranges
-    assert len(ranges) <= 5
+    assert seam.ranges
+    assert len(seam.ranges) <= 5
     # Bytes land close to parity with the object's own size, not a multiple of it.
-    total_read = sum(length for _, length in ranges)
-    assert total_read < len(content) * 1.5
+    assert seam.bytes_read < len(content) * 1.5
 
 
 def test_read_dataframe_parquet_sample_uses_the_streaming_chunk_on_many_small_row_groups(
@@ -792,7 +853,7 @@ def test_read_dataframe_parquet_sample_uses_the_streaming_chunk_on_many_small_ro
         }
     ).to_parquet(buf, row_group_size=rows_per_group)
     content = buf.getvalue()
-    ranges = _patch_object(monkeypatch, content)
+    seam = _patch_object(monkeypatch, content)
 
     df = svc._read_dataframe(
         _flatfile_conn(),
@@ -804,13 +865,12 @@ def test_read_dataframe_parquet_sample_uses_the_streaming_chunk_on_many_small_ro
     assert set(df.columns) == {"a", "c"}
     assert len(df) == svc._SAMPLE_ROWS
 
-    total_read = sum(length for _, length in ranges)
     # The regression this pins: with the seeking-sized default window, this fixture measured ~6.8x
     # the object's size across 92 requests.
-    assert total_read < len(content) * 1.5
+    assert seam.bytes_read < len(content) * 1.5
     # Request COUNT, not just bytes — a large window that still issued one request per row group
     # would also fail this even if coincidentally under the byte bound.
-    assert len(ranges) < 10
+    assert len(seam.ranges) < 10
 
 
 def test_read_dataframe_parquet_sample_of_an_empty_file_returns_typed_empty_frame(
@@ -881,7 +941,7 @@ def test_list_file_columns_parquet_reads_schema_names(monkeypatch: pytest.Monkey
     buf = io.BytesIO()
     # Big enough that "read the footer" and "read the object" are distinguishable.
     pd.DataFrame({"a": range(50_000), "b": range(50_000), "c": range(50_000)}).to_parquet(buf)
-    ranges = _patch_object(monkeypatch, buf.getvalue())
+    seam = _patch_object(monkeypatch, buf.getvalue())
     cols = list_file_columns(
         _flatfile_conn(),
         path="x.parquet",
@@ -891,7 +951,7 @@ def test_list_file_columns_parquet_reads_schema_names(monkeypatch: pytest.Monkey
     assert set(cols) == {"a", "b", "c"}
     # #882: listing columns must not pay for the whole object. The names were
     # always right — reading only the footer is the property under test.
-    assert ranges and sum(length for _, length in ranges) < len(buf.getvalue())
+    assert seam.ranges and seam.bytes_read < len(buf.getvalue())
 
 
 # ── list_columns dispatch (target/type validation, no I/O) ──
