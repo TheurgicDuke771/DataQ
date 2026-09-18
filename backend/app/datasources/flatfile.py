@@ -473,6 +473,28 @@ def csv_row_count(
             return sum(batch.num_rows for batch in batches)
 
 
+def _extend_window(reader_args: dict[str, Any], buffered: bytearray, *, span: int) -> bool:
+    """Grow ``buffered`` to ``span`` bytes, fetching only the delta (#1329), and
+    report whether the store returned less than asked — i.e. EOF.
+    """
+    if span <= len(buffered):
+        return False
+    asked = span - len(buffered)
+    got = read_range(**reader_args, start=len(buffered), length=asked)
+    buffered += got
+    return len(got) < asked
+
+
+def _window_frame(buffered: bytearray, *, limit: int, reached_eof: bool) -> Any:
+    """Parse at most ``limit`` rows out of a head window, dropping the trailing
+    partial row unless the window reached EOF (#595 C4).
+    """
+    raw = bytes(buffered)
+    if not reached_eof:
+        raw = trim_to_row_boundary(raw)
+    return read_csv_bytes(io.BytesIO(raw), nrows=limit)
+
+
 def read_csv_head(
     *,
     conn_type: str,
@@ -482,21 +504,24 @@ def read_csv_head(
     rows: int,
     session: StoreSession | None = None,
 ) -> Any:
-    """Parse the first ``rows`` data rows of a CSV from a bounded head read (#882)."""
+    """Parse the first ``rows`` data rows of a CSV from a bounded head read (#882).
+
+    One fixed window of `_csv_head_frame`'s growing walk (#1330): same delta fetch,
+    same short-read-is-EOF rule, same quote-aware trim — they were two copies of
+    one read and #1325 had to fix the same defect in both.
+    """
+    reader_args = {
+        "conn_type": conn_type,
+        "config": config,
+        "path": path,
+        "secret": secret,
+        "session": session,
+    }
+    buffered = bytearray()
     # One byte MORE than the window, so a short read unambiguously means EOF —
     # a file of exactly window size must not be mistaken for a cut one.
-    head = read_range(
-        conn_type=conn_type,
-        config=config,
-        path=path,
-        secret=secret,
-        start=0,
-        length=_CSV_HEAD_BYTES + 1,
-        session=session,
-    )
-    if len(head) > _CSV_HEAD_BYTES:
-        head = trim_to_row_boundary(head)
-    return read_csv_bytes(io.BytesIO(head), nrows=rows)
+    reached_eof = _extend_window(reader_args, buffered, span=_CSV_HEAD_BYTES + 1)
+    return _window_frame(buffered, limit=rows, reached_eof=reached_eof)
 
 
 def row_count(
@@ -575,17 +600,8 @@ def _csv_head_frame(reader_args: dict[str, Any], *, limit: int) -> tuple[Any, bo
     window = _CSV_HEAD_BYTES
     while True:
         span = min(window, size)
-        short = False
-        if span > len(buffered):
-            asked = span - len(buffered)
-            got = read_range(**reader_args, start=len(buffered), length=asked)
-            buffered += got
-            short = len(got) < asked
-        reached_eof = short or span >= size
-        raw = bytes(buffered)
-        if not reached_eof:
-            raw = trim_to_row_boundary(raw)
-        frame = read_csv_bytes(io.BytesIO(raw), nrows=limit)
+        reached_eof = _extend_window(reader_args, buffered, span=span) or span >= size
+        frame = _window_frame(buffered, limit=limit, reached_eof=reached_eof)
         if len(frame) >= limit or reached_eof:
             return frame, reached_eof
         window *= 2
