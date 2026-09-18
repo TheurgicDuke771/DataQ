@@ -20,6 +20,7 @@ from backend.app.datasources.iceberg import (
     iceberg_credentials,
     load_iceberg_table,
     read_iceberg_dataframe,
+    scan_row_count,
 )
 from backend.app.datasources.sampling import enforce_byte_cap
 from backend.app.db.models import Connection
@@ -209,7 +210,7 @@ def _iceberg_read(
     # #754/#826).
     secret, catalog_secret = iceberg_credentials(cfg, connection.secret_ref, secret_store)
     table = load_iceberg_table(cfg, secret, spec.table, catalog_secret)
-    count = int(table.scan().count())  # snapshot metadata — no data files read
+    count = scan_row_count(table)  # snapshot metadata — no data files read
     if count > max_rows:
         raise _too_large(count, max_rows, side_hint=f"iceberg table {spec.table!r}")
     df = read_iceberg_dataframe(

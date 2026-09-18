@@ -254,12 +254,17 @@ that would stamp "sampled" on a result that was not.
 - **Unity Catalog needs a live run.** The pushdown SQL is DataQ's own
   construction and is unit-pinned, but `TABLESAMPLE (x PERCENT) REPEATABLE (seed)`
   behaviour is a Databricks fact — only a live run is evidence.
-- **Iceberg has neither a cap nor sampling.** It is the third
-  runner that materialises a whole dataset, so the out-of-memory-reporting gap
-  stays open there. The probe is
-  cheap (`scan().count()` is snapshot metadata); what it needs first is its **own
-  measurement** — Iceberg passed at 2M rows where UC died, so inheriting
-  `RUN_MAX_SCAN_ROWS`'s 1.5M would refuse a rung measured to work.
+- **Iceberg now has a cap; it does not have sampling, and its cap value is not yet
+  measured.** The guardrail shipped: a `scan().count()` probe (snapshot metadata,
+  no data files read) refuses an over-cap read before `to_arrow()`, on both the
+  expectation path and the freshness scan-fallback, and is skipped entirely when
+  the cap is disabled. The **value** lives in its own setting,
+  `RUN_MAX_SCAN_ROWS_ICEBERG`, defaulting to "inherit `RUN_MAX_SCAN_ROWS`" —
+  Iceberg passed at 2M rows where UC died at 2M, so the inherited 1.5M would
+  refuse a rung measured to work, and the real ceiling is somewhere between 2M
+  (passed) and 5M (killed the container). Until that curve is run on the
+  prod-parity rig the shared number is a placeholder, not a decision. Sampling
+  stays out of scope (`row_filter` + a scan limit is its own piece of work).
 - **Comparison sources cannot sample — decided: not supported**, see
   [ADR 0015's 2026-09-16 amendment](../adr/0015-two-connection-comparison-check-model.md#amendment-2026-09-16-comparison-sources-do-not-support-sampling).
   Coherent key-set sampling — draw a key set, then fetch exactly those keys
