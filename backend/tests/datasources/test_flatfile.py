@@ -1200,6 +1200,33 @@ def test_a_csv_row_count_is_not_a_newline_count(monkeypatch: pytest.MonkeyPatch)
     assert flatfile.row_count(conn_type="s3", config={}, path="raw/x.csv", secret="s") == 2
 
 
+def test_the_csv_count_and_the_csv_sample_walk_one_parse_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#1330 item 3. Counting a CSV and taking rows from it open separate Arrow
+    streams; if their parse options ever differed, one would number the rows the
+    other walks. A quoted newline inside a `;`-delimited file is the detector: it
+    is ONE row under the sniffed delimiter and TWO under a comma, so a divergence
+    shows up as a count that disagrees with the walked population.
+    """
+    content = b"id;note;amount\n" b'1;"line one\nline two";10\n' b"2;plain;20\n" b"3;other;30\n"
+    _patch_store(monkeypatch, content=content)
+
+    counted = flatfile.row_count(conn_type="s3", config={}, path="raw/x.csv", secret="s")
+    frame, record = flatfile.read_sampled_dataframe(
+        conn_type="s3",
+        config={},
+        path="raw/x.csv",
+        secret="s",
+        sample=SampleSpec(strategy="random", rows=2, seed=7),
+    )
+
+    assert counted == 3
+    # The population the sampling pass itself walked — same rows, same numbering.
+    assert record["total_rows"] == counted
+    assert list(frame.columns) == ["id", "note", "amount"]
+
+
 def test_volume_and_column_freshness_together_read_the_object_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

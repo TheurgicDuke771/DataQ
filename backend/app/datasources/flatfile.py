@@ -117,6 +117,18 @@ def sniff_from_reader(reader: RangeReader) -> str:
     return sniff_delimiter(head)
 
 
+def open_csv_stream(reader: RangeReader) -> Any:
+    """The ONE Arrow CSV stream configuration over a `RangeReader` (#1330).
+
+    Counting a CSV and taking rows from it walk separate streams; if their parse
+    options ever differed, the positions drawn against one numbering would be read
+    out of another — an off-by-N sample with no symptom.
+    """
+    import pyarrow.csv as pv
+
+    return pv.open_csv(reader, parse_options=pv.ParseOptions(delimiter=sniff_from_reader(reader)))
+
+
 def trim_to_row_boundary(raw: bytes) -> bytes:
     """Cut ``raw`` at the last quote-safe newline (#595 C4)."""
     end = len(raw)
@@ -446,8 +458,6 @@ def csv_row_count(
     session: StoreSession | None = None,
 ) -> int:
     """Row count of a CSV, streamed in batches — never a full DataFrame (#942)."""
-    import pyarrow.csv as pv
-
     # Big window: this walks end to end; the seeking default would mean
     # thousands of range requests.
     reader = RangeReader(
@@ -459,8 +469,7 @@ def csv_row_count(
         session=session,
     )
     with closing(reader):
-        sep = sniff_from_reader(reader)
-        with pv.open_csv(reader, parse_options=pv.ParseOptions(delimiter=sep)) as batches:
+        with open_csv_stream(reader) as batches:
             # The header is consumed by the reader, so batch rows are data rows.
             return sum(batch.num_rows for batch in batches)
 
@@ -542,10 +551,7 @@ def _open_batch_stream(
         return close
 
     if fmt == "csv":
-        import pyarrow.csv as pv
-
-        sep = sniff_from_reader(reader)
-        stream = pv.open_csv(reader, parse_options=pv.ParseOptions(delimiter=sep))
+        stream = open_csv_stream(reader)
         return stream, stream.schema, False, _closer(stream.close)
 
     import pyarrow.parquet as pq
