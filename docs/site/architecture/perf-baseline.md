@@ -37,7 +37,7 @@ Two sentences of conclusion:
 | | |
 |---|---|
 | App code | `main`, during v1.1 development |
-| Measurement rig | docker-compose stack pinned to **production parity**: worker at 1 CPU / 2 GiB / `celery --concurrency=4` (the value the worker now pins in its Celery config, `WORKER_CONCURRENCY` — the prefork default reads the *host's* core count, not the container's, and had silently differed between the two reference deployments), driven through the real REST API |
+| Measurement rig | docker-compose stack pinned to **production parity**: worker at 1 CPU / 2 GiB / `celery --concurrency=4` (the pool size at the time of this campaign; the worker pins it in its Celery config from `WORKER_CONCURRENCY`, and the value is **now 2** — see "The concurrency decision" below), driven through the real REST API |
 | Iceberg leg | run against the deployed stack (the native catalog wasn't reachable from the local rig) — wall via REST, worker memory via the platform metric |
 | Worker memory sampling | `docker stats` at 1 Hz (local); 1-min max metric (prod) |
 | Checks per rung | 5 expectations (not-null ×2, between ×2, unique ×1) + volume & freshness monitors on the SQL/UC/Iceberg rungs (flat files also support freshness/volume, incl. arrival-time freshness, but weren't run through this particular campaign) |
@@ -338,7 +338,8 @@ Same shape as every prior rung: a 6-col order-lines table (`line_id`, `order_id`
 `sku_id`, `qty`, `unit_price`, `line_ts`), created via
 `CREATE TABLE … AS SELECT … FROM range(n)` on the harness's Databricks Free
 Edition serverless SQL warehouse, run through the **real** `UnityCatalogCheckRunner`
-via the prod-parity rig (worker capped 1 CPU / 2 GiB, `celery --concurrency=4`),
+via the prod-parity rig (worker capped 1 CPU / 2 GiB, `celery --concurrency=4`,
+the pool size at the time of this campaign),
 driven through the real REST API. Suite: the same 5 expectations as every other
 rung (not-null ×2, between ×2, unique ×1) — all five are in the audited pushdown
 allowlist. Worker memory sampled via `docker stats` at ~1 Hz; "wall" is
@@ -632,7 +633,8 @@ substitution the v1.1 section above used. The database cases run against a
 **scratch** database seeded with `generate_series`, never the application one.
 
 **The rig is a development machine, not the production rig.** Production is 1
-CPU / 2 GiB per worker container with Celery prefork concurrency 4; these
+CPU / 2 GiB per worker container with Celery prefork concurrency 2 (it was 4
+when the concurrent-peak rows below were captured); these
 numbers were taken on a 14-core / 48 GiB laptop. Absolute wall clock therefore
 says nothing about production latency — the value here is the *shape* (how a
 number moves with volume) and the *deterministic* counters, which do not depend

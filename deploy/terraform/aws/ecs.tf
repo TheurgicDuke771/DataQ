@@ -212,8 +212,8 @@ resource "aws_ecs_task_definition" "worker" {
       image     = local.backend_image
       essential = true
       # -Q celery,llm (#1777): llm_invoke has its own queue now. NO -B (#1811): beat is now its
-      # own service below, so a worker OOM (concurrency=4 prefork children under the 2 GiB hard
-      # limit, overlapping large suites — #1790) can never take the scheduler down with it (the
+      # own service below, so a worker OOM (prefork children under the 2 GiB hard limit,
+      # overlapping large suites — #1790) can never take the scheduler down with it (the
       # #405 class). A command-array change like this needs an explicit `tofu apply -replace` on
       # this task def, not just an image roll — container_definitions is under ignore_changes
       # (see the rollout gotcha in the AWS README).

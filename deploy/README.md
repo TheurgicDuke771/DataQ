@@ -532,9 +532,20 @@ Terraform, listed here so the table's Azure values aren't mistaken for the only 
   entry) without applying the matching command change in the same coordinated step means the
   worker silently never consumes the new queue — messages queue forever with no error.
   Worker *pool* size is deliberately NOT a command flag for this reason: `worker_concurrency`
-  is set in `celery_app.py` from `WORKER_CONCURRENCY` (default 4, #1790) and ships with the
+  is set in `celery_app.py` from `WORKER_CONCURRENCY` and ships with the
   image roll; before that the prefork default read the host's core count and the two clouds ran
   4 and 2 on identical 1-vCPU tasks.
+- **The worker pool is 2, and it ships with the image — no IaC step.** It was 4 until the
+  concurrent-peak measurement (see the concurrency section of
+  [perf-baseline.md](../docs/site/architecture/perf-baseline.md)) put four overlapping 1M-row
+  flat-file runs at ~3.1 GiB of child resident memory against a 2 GiB container. A plain image
+  roll applies it; no `tofu apply`. **After the rollout, watch:** the `celery` queue depth on the
+  admin health page (two slots drain a schedule collision more slowly — a standing backlog means
+  the worker wants more replicas, not more slots), worker OOM restarts (should stop), and
+  `llm_invoke` latency — the worker consumes `-Q celery,llm` round-robin, so a queued LLM call is
+  *fetched* fairly but still needs one of the two slots, and two long suites can hold both.
+  Persistent LLM-call latency behind long suites is a case for a second worker replica or a
+  dedicated `llm` worker, not for raising the pool back.
 - **The OpenTofu state passphrase is a data-at-rest key, not a credential (#1087).** State is
   encrypted (AES-GCM / PBKDF2); the passphrase lives in the gitignored
   `deploy/terraform/azure/terraform.tfvars`. It **cannot be revoked and cannot be re-minted** —
