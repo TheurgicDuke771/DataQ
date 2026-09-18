@@ -673,7 +673,10 @@ Medians of 5 runs per tier, each in its own process. The suites are the same
 5 expectations every campaign on this page has used (not-null ×2, between ×2,
 unique ×1, all passing) and a 25-expectation extension in which **8 checks fail
 widely** — that second column is a data property, not a suite-size property, and
-the difference between the two is the most expensive finding here.
+the difference between the two is the most expensive finding here. The tables
+are a snapshot from the first capture on the development rig; the committed
+machine-readable baseline is the authoritative copy and is refreshed whenever a
+gated metric changes on purpose (its `git_sha` says which commit it measured).
 
 #### Flat-file runs — volume × checks × sampling
 

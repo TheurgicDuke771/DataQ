@@ -8,8 +8,12 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from backend.scripts.perf import cases_db, cases_flatfile, cases_warehouse  # noqa: F401
+from backend.scripts.perf import cases_db, cases_flatfile, cases_warehouse
 from backend.scripts.perf.harness import Case, registered
+
+#: Importing a case module is what registers its cases; naming them here keeps the
+#: imports load-bearing rather than incidental.
+CASE_MODULES = (cases_db, cases_flatfile, cases_warehouse)
 
 
 def registry() -> dict[str, Case]:
