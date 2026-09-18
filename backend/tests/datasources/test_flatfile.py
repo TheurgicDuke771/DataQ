@@ -901,7 +901,12 @@ _S3_CONFIG = {"bucket": "raw", "region": "us-west-2", "access_key_id": "AKIAX"}
 _ADLS_CONFIG = {"account_url": "https://acct.blob.core.windows.net", "container": "raw"}
 
 
-# ── file_last_modified (live seam) ──
+def _last_modified(**kwargs: Any) -> datetime | None:
+    """`file_stat`'s arrival time — what the removed `file_last_modified` returned."""
+    return flatfile.file_stat(**kwargs).last_modified
+
+
+# ── file_stat arrival time (live seam) ──
 
 
 class _HeadS3Stub:
@@ -921,7 +926,7 @@ class _HeadS3Stub:
         return {"LastModified": self._modified}
 
 
-def test_file_last_modified_s3_heads_the_exact_key(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_file_stat_last_modified_s3_heads_the_exact_key(monkeypatch: pytest.MonkeyPatch) -> None:
     """A single metadata call, not a prefix listing: this runs on every scheduled
     monitor run, and `data/orders.csv` among dated siblings would otherwise drain
     every page each time — the unbounded-read-on-a-scheduled-path defect (#854).
@@ -929,15 +934,13 @@ def test_file_last_modified_s3_heads_the_exact_key(monkeypatch: pytest.MonkeyPat
     """
     stub = _HeadS3Stub()
     monkeypatch.setattr(flatfile, "_s3_client", lambda cfg, secret: stub)
-    got = flatfile.file_last_modified(
-        conn_type="s3", config=_S3_CONFIG, path="orders/a.csv", secret="s"
-    )
+    got = _last_modified(conn_type="s3", config=_S3_CONFIG, path="orders/a.csv", secret="s")
     assert got == _LANDED
     assert stub.calls == [(_S3_CONFIG["bucket"], "orders/a.csv")]
 
 
 @pytest.mark.parametrize("code", ["404", "NoSuchKey", "NotFound"])
-def test_file_last_modified_s3_missing_object_is_none(
+def test_file_stat_last_modified_s3_missing_object_is_none(
     monkeypatch: pytest.MonkeyPatch, code: str
 ) -> None:
     """Absent → None, which the caller turns into a per-check error. A missing file
@@ -945,14 +948,12 @@ def test_file_last_modified_s3_missing_object_is_none(
     """
     monkeypatch.setattr(flatfile, "_s3_client", lambda cfg, secret: _HeadS3Stub(error_code=code))
     assert (
-        flatfile.file_last_modified(
-            conn_type="s3", config=_S3_CONFIG, path="orders/gone.csv", secret="s"
-        )
+        _last_modified(conn_type="s3", config=_S3_CONFIG, path="orders/gone.csv", secret="s")
         is None
     )
 
 
-def test_file_last_modified_s3_other_errors_propagate(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_file_stat_last_modified_s3_other_errors_propagate(monkeypatch: pytest.MonkeyPatch) -> None:
     """This call is also the store-reachability probe, so an auth/permission failure
     must fail the whole run rather than be mistaken for a missing file.
     """
@@ -962,9 +963,7 @@ def test_file_last_modified_s3_other_errors_propagate(monkeypatch: pytest.Monkey
     from botocore.exceptions import ClientError
 
     with pytest.raises(ClientError):
-        flatfile.file_last_modified(
-            conn_type="s3", config=_S3_CONFIG, path="orders/a.csv", secret="s"
-        )
+        _last_modified(conn_type="s3", config=_S3_CONFIG, path="orders/a.csv", secret="s")
 
 
 class _HeadBlobStub:
@@ -995,24 +994,24 @@ class _HeadBlobStub:
         self.closed = True
 
 
-def test_file_last_modified_adls_reads_blob_properties_and_closes(
+def test_file_stat_last_modified_adls_reads_blob_properties_and_closes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     stub = _HeadBlobStub()
     monkeypatch.setattr(flatfile, "_blob_service", lambda acfg, secret: stub)
-    got = flatfile.file_last_modified(
+    got = _last_modified(
         conn_type="adls_gen2", config=_ADLS_CONFIG, path="orders/a.csv", secret="sas"
     )
     assert got == _LANDED
     assert stub.closed
 
 
-def test_file_last_modified_adls_missing_blob_is_none_and_still_closes(
+def test_file_stat_last_modified_adls_missing_blob_is_none_and_still_closes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     stub = _HeadBlobStub(missing=True)
     monkeypatch.setattr(flatfile, "_blob_service", lambda acfg, secret: stub)
-    got = flatfile.file_last_modified(
+    got = _last_modified(
         conn_type="adls_gen2", config=_ADLS_CONFIG, path="orders/gone.csv", secret="sas"
     )
     assert got is None
@@ -1200,6 +1199,33 @@ def test_a_csv_row_count_is_not_a_newline_count(monkeypatch: pytest.MonkeyPatch)
     assert flatfile.row_count(conn_type="s3", config={}, path="raw/x.csv", secret="s") == 2
 
 
+def test_the_csv_count_and_the_csv_sample_walk_one_parse_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#1330 item 3. Counting a CSV and taking rows from it open separate Arrow
+    streams; if their parse options ever differed, one would number the rows the
+    other walks. A quoted newline inside a `;`-delimited file is the detector: it
+    is ONE row under the sniffed delimiter and TWO under a comma, so a divergence
+    shows up as a count that disagrees with the walked population.
+    """
+    content = b"id;note;amount\n" b'1;"line one\nline two";10\n' b"2;plain;20\n" b"3;other;30\n"
+    _patch_store(monkeypatch, content=content)
+
+    counted = flatfile.row_count(conn_type="s3", config={}, path="raw/x.csv", secret="s")
+    frame, record = flatfile.read_sampled_dataframe(
+        conn_type="s3",
+        config={},
+        path="raw/x.csv",
+        secret="s",
+        sample=SampleSpec(strategy="random", rows=2, seed=7),
+    )
+
+    assert counted == 3
+    # The population the sampling pass itself walked — same rows, same numbering.
+    assert record["total_rows"] == counted
+    assert list(frame.columns) == ["id", "note", "amount"]
+
+
 def test_volume_and_column_freshness_together_read_the_object_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1384,6 +1410,23 @@ def test_object_size_adls_reads_size_and_closes(monkeypatch: pytest.MonkeyPatch)
         == 7
     )
     assert stub.closed  # the finally must release the connection pool
+
+
+def test_object_size_refuses_a_stat_that_carries_no_length(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`file_stat` models a length-less stat (`size=None`); sharing its one HEAD
+    means `object_size` can now be handed one. It must refuse, not hand a `None`
+    back to a `RangeReader` that would arithmetic on it.
+    """
+    stub = _RangeBlobStub()
+    monkeypatch.setattr(flatfile, "_blob_service", lambda acfg, secret: stub)
+    monkeypatch.setattr(flatfile, "_head_stat", lambda ses, path: flatfile.FileStat(_LANDED, None))
+
+    with pytest.raises(flatfile.FlatFileReadError):
+        flatfile.object_size(
+            conn_type="adls_gen2", config=_ADLS_CONFIG, path="orders/a.csv", secret="sas"
+        )
 
 
 def test_read_range_of_nothing_asks_the_store_for_nothing(

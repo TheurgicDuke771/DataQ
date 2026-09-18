@@ -20,7 +20,12 @@ from backend.app.datasources.base import (
     SuiteOutcome,
 )
 from backend.app.datasources.gx_runner import run_expectations
-from backend.app.datasources.monitors import FRESHNESS, VOLUME, run_monitors_over_engine
+from backend.app.datasources.monitors import (
+    FRESHNESS,
+    VOLUME,
+    row_count_from_scalar,
+    run_monitors_over_engine,
+)
 from backend.app.datasources.sampling import (
     SamplingDrawError,
     enforce_row_cap,
@@ -264,7 +269,12 @@ class UnityCatalogCheckRunner:
         return pd.read_sql_table(table, self._engine.get(), schema=schema)
 
     def _count_rows(self, *, table: str, schema: str | None) -> int:
-        """``COUNT(*)`` over the target — the size probe (live seam, #595)."""
+        """``COUNT(*)`` over the target — the size probe (live seam, #595).
+
+        The scalar is normalised by `monitors.row_count_from_scalar`, the one place
+        that knows a COUNT crosses a driver boundary (#1330) — the volume monitor
+        reads the same value off the same warehouse.
+        """
         from sqlalchemy import func, select
 
         engine = self._engine.get()
@@ -275,7 +285,9 @@ class UnityCatalogCheckRunner:
             dialect=engine.dialect,
         )
         with engine.connect() as conn:
-            return int(conn.execute(select(func.count()).select_from(target)).scalar_one())
+            return row_count_from_scalar(
+                conn.execute(select(func.count()).select_from(target)).scalar_one()
+            )
 
     def _read_sampled_table(
         self, *, table: str, schema: str | None, sample: SampleSpec

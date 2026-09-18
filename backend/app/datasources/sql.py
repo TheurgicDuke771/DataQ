@@ -5,7 +5,7 @@ lazy engine lifecycle (#427), and the statement-echo strip (#1203).
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any, Final
 
 from backend.app.datasources.base import CheckSpec
@@ -55,6 +55,15 @@ def _quote_namespace_part(name: str, dialect: Dialect) -> str:
     return str(dialect.identifier_preparer.quote_identifier(name))
 
 
+def _require_identifiers(parts: Sequence[tuple[str | None, str]]) -> None:
+    """Allowlist-check each ``(part, label)`` in the caller's own order (#1330) —
+    the order is the error the user sees first, so it stays with the caller.
+    """
+    for part, label in parts:
+        if part is not None and not is_sql_identifier(part):
+            raise ValueError(f"invalid {label} identifier: {part!r}")
+
+
 def core_table(
     *,
     table: str,
@@ -68,9 +77,7 @@ def core_table(
 
     if catalog is not None and schema is None:
         raise ValueError(f"table {table!r} has a catalog but no schema")
-    for part, label in ((table, "table"), (schema, "schema"), (catalog, "catalog")):
-        if part is not None and not is_sql_identifier(part):
-            raise ValueError(f"invalid {label} identifier: {part!r}")
+    _require_identifiers(((table, "table"), (schema, "schema"), (catalog, "catalog")))
 
     if catalog is not None:
         if dialect is None:
@@ -89,13 +96,17 @@ def core_table(
 def qualified_sql_name(
     *, table: str, schema: str | None, catalog: str | None, dialect: Dialect
 ) -> str:
-    """``[catalog.][schema.]table`` as a pre-quoted string for a `text()` statement."""
+    """``[catalog.][schema.]table`` as a pre-quoted string for a `text()` statement.
+
+    Deliberately separate from `core_table` (#1330): a Core clause cannot carry a
+    clause attached to the FROM item (`TABLESAMPLE`), which is the only reason a
+    caller ever hand-assembles the name. They share the allowlist check and the
+    per-part quoting decision, which is where a divergence would actually bite.
+    """
     if catalog is not None and schema is None:
         raise ValueError(f"table {table!r} has a catalog but no schema")
     parts = [(catalog, "catalog"), (schema, "schema"), (table, "table")]
-    for part, label in parts:
-        if part is not None and not is_sql_identifier(part):
-            raise ValueError(f"invalid {label} identifier: {part!r}")
+    _require_identifiers(parts)
     return ".".join(_quote_namespace_part(part, dialect) for part, _ in parts if part is not None)
 
 

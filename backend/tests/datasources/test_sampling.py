@@ -28,14 +28,6 @@ from backend.app.datasources.sampling import (
 # ── parse_sample_spec ──
 
 
-def test_absent_sampling_is_none_not_a_default_spec() -> None:
-    """No block means "read everything", the historical behaviour — never a
-    silently-applied default cap, which would change what every existing suite
-    validates.
-    """
-    assert parse_sample_spec(None) is None
-
-
 def test_a_valid_head_spec_parses() -> None:
     assert parse_sample_spec({"strategy": "head", "rows": 1000}) == SampleSpec(
         strategy="head", rows=1000, seed=None

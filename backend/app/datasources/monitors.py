@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 from backend.app.core.errors import SafeMonitorError
 from backend.app.core.timeutil import as_utc
-from backend.app.datasources.base import CheckOutcome, MonitorSpec
+from backend.app.datasources.base import CheckOutcome, MonitorSpec, parse_whole_number
 from backend.app.datasources.sql import core_table, folding_identifier, is_sql_identifier
 from backend.app.services.failure_classifier import safe_failure_reason
 
@@ -341,13 +341,9 @@ def _anomaly_int(config: dict[str, Any], key: str, default: int, *, low: int, hi
     """One bounded integer from an anomaly config. ``bool`` rejected (int
     subclass — ``True`` would pass as 1); integral floats accepted (JSON clients).
     """
-    raw = config.get(key, default)
-    if isinstance(raw, bool):
-        raise MonitorConfigError(f"anomaly {key} must be an integer, not a boolean")
-    if isinstance(raw, float) and raw.is_integer():
-        raw = int(raw)
-    if not isinstance(raw, int):
-        raise MonitorConfigError(f"anomaly {key} must be an integer: {_echo(raw)}")
+    raw = parse_whole_number(
+        config.get(key, default), what=f"anomaly {key}", error=MonitorConfigError, echo=_echo
+    )
     if not low <= raw <= high:
         raise MonitorConfigError(f"anomaly {key} must be between {low} and {high}: {raw}")
     return raw
