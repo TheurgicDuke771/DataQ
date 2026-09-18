@@ -149,6 +149,50 @@ def test_the_reservation_is_released_even_when_the_run_crashes(
     assert released == [run.id]
 
 
+def test_the_requeued_message_can_actually_be_executed(
+    monkeypatch: pytest.MonkeyPatch, stub_run_path: None
+) -> None:
+    """The defer path has to publish a message the worker can run. `signature_from_request`
+    KEEPS the original positional args unless `args` is passed, and `dispatch_run` publishes
+    `run_id` positionally — so a kwargs-only retry re-binds it and dies with a TypeError
+    instead of re-queueing. Exercised through the real retry, not the direct-call shortcut,
+    because a directly-called task raises `Retry` before the signature is ever built.
+    """
+    import inspect
+
+    run = _queued_run()
+    _install(
+        monkeypatch,
+        run=run,
+        estimate=run_admission.MemoryEstimate(bytes=900 * MiB, basis="flat_file_size"),
+        decision=run_admission.AdmissionDecision(defer=True),
+    )
+    from backend.app.worker.celery_app import celery_app
+
+    task = celery_app.tasks["run_suite"]
+    published: dict[str, Any] = {}
+    monkeypatch.setattr(
+        type(task),
+        "apply_async",
+        lambda self, args=None, kwargs=None, **_o: published.update(
+            args=tuple(args or ()), kwargs=dict(kwargs or {})
+        ),
+    )
+    task.push_request(
+        args=(str(run.id),), kwargs={}, called_directly=False, is_eager=False, retries=0
+    )
+    try:
+        with pytest.raises(Retry):
+            task.run(str(run.id))
+    finally:
+        task.pop_request()
+
+    # The published message binds cleanly against the task's own signature — which is the
+    # property that broke, not the presence of any particular key.
+    inspect.signature(task.run).bind(*published["args"], **published["kwargs"])
+    assert published["kwargs"]["run_id"] == str(run.id)
+
+
 def test_a_carried_estimate_is_not_re_probed_on_a_retry(
     monkeypatch: pytest.MonkeyPatch, stub_run_path: None
 ) -> None:

@@ -780,9 +780,15 @@ CSV and a ~930 MiB idle worker:
 | Before (pool 2) | 2,372 MiB | 3,302 MiB | **1.6× over** |
 | After (pool 2, budget 1 GiB) | ≤ 1,024 MiB reserved | 1,954 MiB | fits |
 
-The budget default is `RUN_MAX_SCAN_BYTES × 8`, i.e. **exactly one at-the-cap
-full-load flat-file read in flight**; the second concurrent large run waits while
-the other slot stays free for the pushdown and sampled work that costs nothing.
+The budget default is `RUN_MAX_SCAN_BYTES × 8`, which admits one at-the-cap CSV
+read and leaves the second slot for the pushdown and sampled work that costs
+nothing. The other cap-bounded estimates — an at-the-cap Parquet read, a batch
+target, the Unity Catalog frame lane at its row cap — come out *above* the whole
+budget, so they are admitted only when nothing else holds any. That is the
+intended answer rather than a mis-tuned default: the measured peaks for exactly
+those cases (1,278 MiB Parquet at 5M rows, 1,681 MiB for a 1M-row UC frame) do
+not fit beside anything on a 2 GiB worker either. Large reads are serialised;
+they are not refused.
 
 Three properties are deliberate, and each is the answer to a way this could have
 been worse than the problem:
@@ -798,10 +804,13 @@ been worse than the problem:
   Redis admits (the same stance rate limiting takes), and every reservation is a
   lease — because the OOM case is exactly the one where cleanup code does not run.
 
-Pushdown lanes bypass admission entirely: they hold no dataset in the worker, and
-charging them for one would serialise the cheapest work on the platform. Iceberg
-has no estimator yet — its `scan().count()` probe is tracked separately — and is
-logged as unmetered rather than counted as free.
+Pushdown lanes bypass admission for the suite's own batch: they hold no dataset in
+the worker, and charging them for one would serialise the cheapest work on the
+platform. They are **not** exempt from a comparison check, whose two sides
+materialise in the worker on every datasource — that estimate is added on top, and
+is the whole estimate on an otherwise-pushdown suite. Iceberg has no estimator yet
+— its `scan().count()` probe is tracked separately — and is logged as unmetered
+rather than counted as free.
 
 #### Database growth — the reads a user waits on
 

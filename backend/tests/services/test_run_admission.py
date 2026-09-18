@@ -202,6 +202,64 @@ def test_a_unity_catalog_frame_suite_is_bounded_by_the_row_cap() -> None:
     assert estimate.bytes == settings.run_max_scan_rows * settings.run_admission_row_bytes
 
 
+def test_an_over_cap_object_is_clamped_to_the_cap_it_will_be_refused_at(
+    stub_flat_file: Any,
+) -> None:
+    """Otherwise a run that fails in a second first queues behind every other one."""
+    settings = get_settings()
+    stub_flat_file(settings.run_max_scan_bytes * 40)
+    run, session = _graph("s3", target={"path": "raw/orders.csv"})
+
+    estimate = run_admission.estimate_run_memory(_sess(session), run)
+
+    assert estimate is not None
+    assert estimate.bytes == int(settings.run_max_scan_bytes * settings.run_admission_expansion_csv)
+
+
+def test_comparison_checks_are_metered_even_on_a_pushdown_connection() -> None:
+    """Both sides of a comparison land in the worker whatever the datasource is (ADR 0015),
+    so the Snowflake bypass must not carry them through unmetered.
+    """
+    run, session = _graph("snowflake", target={"table": "ORDERS"})
+    session._checks[0].kind = "comparison"
+
+    estimate = run_admission.estimate_run_memory(_sess(session), run)
+
+    assert estimate is not None
+    assert estimate.basis == "comparison_sides"
+    settings = get_settings()
+    assert estimate.bytes == 2 * settings.comparison_max_rows * settings.run_admission_row_bytes
+
+
+def test_comparison_sides_add_to_the_suite_s_own_batch(stub_flat_file: Any) -> None:
+    stub_flat_file(1 * MiB)
+    run, session = _graph("s3", target={"path": "raw/orders.csv"})
+    session._checks[0].kind = "comparison"
+
+    estimate = run_admission.estimate_run_memory(_sess(session), run)
+
+    settings = get_settings()
+    assert estimate is not None
+    assert estimate.basis == "flat_file_size"
+    assert estimate.bytes == int(1 * MiB * settings.run_admission_expansion_csv) + (
+        2 * settings.comparison_max_rows * settings.run_admission_row_bytes
+    )
+
+
+def test_a_flat_file_connection_without_a_credential_is_not_silently_unmetered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    monkeypatch.setattr(run_admission.log, "info", lambda event, **_kw: events.append(event))
+    run, session = _graph("s3", target={"path": "raw/orders.csv"})
+    connection = session.get(Connection, None)
+    connection.secret_ref = None
+
+    assert run_admission.estimate_run_memory(_sess(session), run) is None
+
+    assert "run_admission_no_credential" in events
+
+
 def test_iceberg_has_no_estimator_yet_and_is_not_silently_metered() -> None:
     """Deliberate: the cheap `scan().count()` probe lands separately. It must read as
     unmetered (and be logged), never as a zero-byte run that always fits.

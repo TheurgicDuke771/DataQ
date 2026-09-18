@@ -305,6 +305,11 @@ def _admit_run(
         run_admission.set_queued_reason(session, run=run, reason=run_admission.AWAITING_MEMORY)
         raise task.retry(
             countdown=settings.run_admission_retry_seconds,
+            # `args=()` is load-bearing: `signature_from_request` keeps the ORIGINAL
+            # positional args when only `kwargs` is passed, and `dispatch_run` publishes
+            # `run_id` positionally — so the retry would bind it twice and die with a
+            # TypeError instead of re-queueing.
+            args=(),
             kwargs={
                 "run_id": str(run_id),
                 "admission": run_admission.carry(estimate),

@@ -13,7 +13,7 @@ push work down to the warehouse hold no dataset in the worker and bypass admissi
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from sqlalchemy import select
@@ -24,7 +24,7 @@ from backend.app.core.logging import get_logger
 from backend.app.core.memory_budget import Admission, MemoryBudget, get_memory_budget
 from backend.app.core.secrets import get_secret_store
 from backend.app.datasources.base import ResolvedTarget
-from backend.app.db.models import Check, Connection, Run, Suite
+from backend.app.db.models import COMPARISON_KIND, Check, Connection, Run, Suite
 from backend.app.services import run_target
 
 log = get_logger(__name__)
@@ -74,6 +74,10 @@ def _flat_file_estimate(connection: Connection, target: ResolvedTarget) -> Memor
     from backend.app.datasources.flatfile import file_stat
 
     if not connection.secret_ref:
+        # Nothing to probe the store with. The run fails on the same missing credential
+        # moments later, but say so rather than leaving a materialising runner unmetered
+        # and silent.
+        log.info("run_admission_no_credential", connection_id=str(connection.id))
         return None
     sampled = _sample_bytes(target)
     if sampled is not None:
@@ -103,7 +107,12 @@ def _flat_file_estimate(connection: Connection, target: ResolvedTarget) -> Memor
     if stat.size is None:
         # The store would not say. Treat it as unknown, not as zero.
         return MemoryEstimate(bytes=0, basis="flat_file_size_unknown", exclusive=True)
-    return MemoryEstimate(bytes=int(stat.size * _settings_expansion(path)), basis="flat_file_size")
+    # Clamped by the scan cap: an over-cap object is refused before it is downloaded, so
+    # reserving for the whole 5 GiB would make a run that fails in a second queue behind
+    # every other one first.
+    cap = get_settings().run_max_scan_bytes
+    size = min(stat.size, cap) if cap > 0 else stat.size
+    return MemoryEstimate(bytes=int(size * _settings_expansion(path)), basis="flat_file_size")
 
 
 def _unity_catalog_estimate(
@@ -126,35 +135,60 @@ def _unity_catalog_estimate(
     )
 
 
+def _comparison_bytes(checks: list[Check]) -> int:
+    """Both sides of a comparison materialise in the worker whatever the datasource is
+    (ADR 0015) — including on a pushdown connection, which otherwise holds nothing.
+    """
+    if not any(c.kind == COMPARISON_KIND for c in checks):
+        return 0
+    settings = get_settings()
+    # Two sides, each bounded by the comparison engine's own row cap.
+    return 2 * settings.comparison_max_rows * settings.run_admission_row_bytes
+
+
 def estimate_run_memory(session: Session, run: Run) -> MemoryEstimate | None:
     """What this run will hold in the worker, or ``None`` when admission does not apply.
 
-    ``None`` covers three cases, all deliberate: a pushdown lane (holds nothing), a run whose
-    graph will not execute anyway (``_run_suite`` produces the real error), and a datasource
-    with no estimator yet — Iceberg, whose cheap `scan().count()` probe lands separately. The
-    last one is logged, so an unmetered materialising runner is visible rather than silent.
+    ``None`` covers three cases, all deliberate: a pushdown lane with no comparison checks
+    (holds nothing), a run whose graph will not execute anyway (``_run_suite`` produces the
+    real error), and a datasource with no estimator yet — Iceberg, whose cheap
+    `scan().count()` probe lands separately. Each is logged, so an unmetered materialising
+    runner is visible rather than silent.
     """
     suite = session.get(Suite, run.suite_id)
     connection = session.get(Connection, suite.connection_id) if suite is not None else None
     if suite is None or connection is None:
-        return None
-    if connection.type in PUSHDOWN_TYPES:
         return None
     try:
         target = run_target.resolve_target(connection.type, suite.target)
     except Exception:
         return None
     checks = list(session.scalars(select(Check).where(Check.suite_id == suite.id)))
+    comparison = _comparison_bytes(checks)
     try:
-        if connection.type in {"adls_gen2", "s3"}:
-            return _flat_file_estimate(connection, target)
-        if connection.type == "unity_catalog":
-            return _unity_catalog_estimate(connection, target, checks)
+        estimate = _dataset_estimate(run, connection, target, checks)
     except Exception:
         # A probe failure must not fail the run — the read path raises its own classified
         # error moments later, with a better message than anything available here.
         log.warning("run_admission_estimate_failed", run_id=str(run.id), exc_info=True)
         return None
+    if not comparison:
+        return estimate
+    if estimate is None:
+        return MemoryEstimate(bytes=comparison, basis="comparison_sides")
+    return replace(estimate, bytes=estimate.bytes + comparison)
+
+
+def _dataset_estimate(
+    run: Run, connection: Connection, target: ResolvedTarget, checks: list[Check]
+) -> MemoryEstimate | None:
+    """The estimate for the suite's own batch, before comparison sides are added."""
+    if connection.type in PUSHDOWN_TYPES:
+        return None
+    if connection.type in {"adls_gen2", "s3"}:
+        return _flat_file_estimate(connection, target)
+    if connection.type == "unity_catalog":
+        return _unity_catalog_estimate(connection, target, checks)
     log.info(
         "run_admission_no_estimator",
         run_id=str(run.id),
