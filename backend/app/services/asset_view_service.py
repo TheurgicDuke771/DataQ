@@ -7,7 +7,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import ColumnElement, func, or_, select, tuple_
+from sqlalchemy import ColumnElement, and_, func, or_, select, tuple_
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import get_settings
@@ -26,6 +26,10 @@ from backend.app.db.models import (
     worst_severity,
 )
 from backend.app.lineage.edges import lineage_neighbourhood
+from backend.app.lineage.warehouse import (
+    WAREHOUSE_LINEAGE_CONNECTION_TYPES,
+    snapshot_lineage_connection_types,
+)
 from backend.app.services import audit_service, scoring_settings_service
 from backend.app.services.rollup import (
     AGGREGATABLE_RUN_STATUSES,
@@ -163,6 +167,12 @@ class WarehouseLineageStatus:
     # #1091: the refresh loop silently STOPPED — no error, no degradation, just no refresh within
     # the staleness window.
     stale: bool = False
+    # #1236: the last refresh did NOT prune stale edges, so the graph from this source can only
+    # grow. Snapshot sources only — an incremental source never prunes by design.
+    prune_suspended: bool = False
+    # When this source last pruned. NULL means never, which is a different answer from "a long
+    # time ago" and must not render as one.
+    prune_suspended_since: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -498,16 +508,29 @@ def warehouse_lineage_status(session: Session) -> list[WarehouseLineageStatus]:
         if settings.warehouse_lineage_enabled and stale_after_hours > 0
         else None
     )
+    # #1236: a prune suspension is only meaningful for a SNAPSHOT source — an incremental
+    # one never prunes, so "has not pruned" would read as a fault on a healthy connection.
+    snapshot_types = snapshot_lineage_connection_types()
+    suspended_condition = and_(
+        Connection.type.in_(snapshot_types),
+        # NULL stamp = no prune ever recorded. Reported (the graph can only grow) but never a
+        # backstop trigger — see `warehouse_refresh._suspension_exhausted`.
+        or_(
+            Connection.lineage_last_authoritative_refresh_at.is_(None),
+            Connection.lineage_last_refresh_at > Connection.lineage_last_authoritative_refresh_at,
+        ),
+    )
     conditions: list[ColumnElement[bool]] = [
         Connection.lineage_degraded_reason.is_not(None),
         Connection.lineage_last_error.is_not(None),
+        suspended_condition,
     ]
     if stale_before is not None:
         conditions.append(Connection.lineage_last_refresh_at < stale_before)
 
     rows = session.scalars(
         select(Connection).where(
-            Connection.type.in_(("snowflake", "unity_catalog")),
+            Connection.type.in_(WAREHOUSE_LINEAGE_CONNECTION_TYPES),
             Connection.lineage_last_refresh_at.is_not(None),
             or_(*conditions),
         )
@@ -526,9 +549,24 @@ def warehouse_lineage_status(session: Session) -> list[WarehouseLineageStatus]:
                 and c.lineage_last_refresh_at is not None
                 and c.lineage_last_refresh_at < stale_before
             ),
+            prune_suspended=_prune_suspended(c, snapshot_types),
+            prune_suspended_since=c.lineage_last_authoritative_refresh_at,
         )
         for c in rows
     ]
+
+
+def _prune_suspended(connection: Connection, snapshot_types: tuple[str, ...]) -> bool:
+    """Did the connection's most recent refresh leave stale edges unpruned (#1236)?
+
+    Reported ALONGSIDE `last_error`/`stale`, never instead of them: a failing source is
+    also a non-pruning one, and folding either into the other is the #987 shape — one
+    field silently suppressing another.
+    """
+    if connection.type not in snapshot_types or connection.lineage_last_refresh_at is None:
+        return False
+    last_pruned = connection.lineage_last_authoritative_refresh_at
+    return last_pruned is None or connection.lineage_last_refresh_at > last_pruned
 
 
 def failing_lineage_sources(session: Session) -> list[LineageSourceHealth]:

@@ -388,6 +388,11 @@ class Connection(Base):
     lineage_degraded_reason: Mapped[str | None] = mapped_column(String(512))
     # Classified, redaction-safe (mirrors last_poll_error). NULL = last refresh ran.
     lineage_last_error: Mapped[str | None] = mapped_column(String(512))
+    # #1236: when the cache was last PRUNED against an observation — the prune-suspension
+    # clock. NULL means no prune has ever been recorded (the backstop does not fire on it).
+    lineage_last_authoritative_refresh_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
 
     # ── Inventory-sync outcome state (#1104), mirrors lineage_last_* ───────────── (the connection
     # test's SELECT 1 never exercises the enumeration query).
