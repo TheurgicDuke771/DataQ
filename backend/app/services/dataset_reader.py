@@ -142,6 +142,9 @@ def _sql_read(
             source = _table(schema, table, spec.catalog, dialect)
             count_stmt = sa.select(sa.func.count()).select_from(source)
             select_stmt = sa.select(sa.text("*")).select_from(source).limit(max_rows + 1)
+        # Deliberately NOT the runners' scan guardrail (#1330): `max_rows` is the
+        # comparison engine's own per-side budget (ADR 0015) and its refusal names
+        # which SIDE was too big, so the two count-and-refuse pairs stay separate.
         count = int(conn.execute(count_stmt).scalar_one())
         if count > max_rows:
             raise _too_large(count, max_rows, side_hint="dataset")
