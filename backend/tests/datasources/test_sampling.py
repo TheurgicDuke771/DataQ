@@ -481,3 +481,15 @@ def test_a_reservoir_draw_keeps_every_column_of_the_row() -> None:
     table = pa.Table.from_batches(taken)
     assert table.column_names == ["id", "note"]
     assert [f"n{i}" for i in table.column("id").to_pylist()] == table.column("note").to_pylist()
+
+
+def test_a_reservoir_weight_that_rounds_to_one_still_skips() -> None:
+    """``exp(log(u) / rows)`` rounds to exactly 1.0 for a draw within ~rows·eps of
+    1 — vanishingly rare per read, but an unhandled crash in a Celery task, and
+    ``log1p(-1.0)`` is a domain error rather than a bad sample.
+    """
+    import random
+
+    from backend.app.datasources import sampling
+
+    assert sampling._skip(random.Random(7), 1.0) >= 1

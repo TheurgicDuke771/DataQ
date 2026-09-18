@@ -207,8 +207,13 @@ def _positive_uniform(rng: random.Random) -> float:
             return value
 
 
+#: `exp(log(u) / rows)` rounds to exactly 1.0 for u within ~rows·eps of 1; log1p(-1.0) is -inf.
+_MAX_WEIGHT = math.nextafter(1.0, 0.0)
+
+
 def _skip(rng: random.Random, weight: float) -> int:
     """Rows to skip before the next replacement (Algorithm L's geometric jump)."""
+    weight = min(weight, _MAX_WEIGHT)
     return int(math.log(_positive_uniform(rng)) / math.log1p(-weight)) + 1
 
 
