@@ -24,7 +24,7 @@ from backend.app.db.models import (
 )
 from backend.app.lineage.edges import downstream_assets
 from backend.app.orchestration import markers
-from backend.app.services import run_service
+from backend.app.services import asset_view_service, run_service
 from backend.app.services.rollup import AGGREGATABLE_RUN_STATUSES
 
 log = get_logger(__name__)
@@ -450,14 +450,50 @@ def _delay_vs_history(session: Session, pipeline_run: PipelineRun) -> float | No
     return this_duration - baseline
 
 
-def _blast_radius_layer(session: Session, *, asset: Asset | None) -> list[dict[str, Any]]:
+def _blast_radius_layer(session: Session, *, asset: Asset | None) -> dict[str, Any]:
     """The downstream assets reachable from the failing one (lineage §2) — the
-    "what breaks downstream" answer. Empty when the asset is unknown or a lineage
-    leaf; ``downstream_assets`` is itself depth-capped + cycle-safe.
+    "what breaks downstream" answer — plus the SAME lineage-source qualification
+    `get_asset`'s `lineage.qualified_by` carries (#1990). Without it, this figure
+    answered "what breaks if this is wrong?" with equal confidence whether the
+    graph behind it is current or produced by a source that stopped refreshing
+    weeks ago — or, since #1236, one whose prune has been suspended, which risks
+    naming a downstream asset that no longer depends on this one at all.
+
+    ``assets`` is ``[]`` when the asset is unknown or a lineage leaf;
+    ``downstream_assets`` is itself depth-capped + cycle-safe. ``qualified_by`` is
+    workspace-wide lineage-source health, the same scope `get_asset` reports —
+    NOT filtered to sources that actually fed this asset's specific edges.
     """
-    if asset is None:
-        return []
-    return [
-        {"id": str(a.id), "namespace": a.namespace, "name": a.name, "env": a.env}
-        for a in downstream_assets(session, asset.id)
-    ]
+    assets = (
+        []
+        if asset is None
+        else [
+            {"id": str(a.id), "namespace": a.namespace, "name": a.name, "env": a.env}
+            for a in downstream_assets(session, asset.id)
+        ]
+    )
+    qualifiers = asset_view_service.lineage_qualifiers(
+        asset_view_service.failing_lineage_sources(session),
+        asset_view_service.warehouse_lineage_status(session),
+    )
+    return {"assets": assets, "qualified_by": qualifiers}
+
+
+def blast_radius_assets_and_qualifiers(blast: Any) -> tuple[list[Any], list[str]]:
+    """Normalize `downstream_blast_radius` across the #1990 shape change: an
+    incident synced before this fix stored a bare list (assets only, forever —
+    evidence is a write-time snapshot, never rewritten in place); one synced
+    after stores ``{"assets": [...], "qualified_by": [...]}``. Every reader of
+    this layer (RCA blind spots, the alert clause, the MCP docstring) goes
+    through this rather than assuming either shape.
+    """
+    if isinstance(blast, dict):
+        assets = blast.get("assets")
+        qualifiers = blast.get("qualified_by")
+        return (
+            assets if isinstance(assets, list) else [],
+            qualifiers if isinstance(qualifiers, list) else [],
+        )
+    if isinstance(blast, list):
+        return blast, []
+    return [], []

@@ -1,4 +1,14 @@
-"""Scale-aware execution: the sampling spec + the scan guardrail (#595, G-b)."""
+"""Scale-aware execution: the sampling spec + the scan guardrail (#595, G-b).
+
+Two layering decisions, both recorded as "leave it" (#1330). The
+sample / probe-and-refuse / read policy stays written once per runner: what it
+probes differs (flat-file bytes off a stat, UC rows off a COUNT) and so does what
+a sample IS (a local stream walk vs a pushed-down TABLESAMPLE), so a shared
+skeleton would be a three-line shape with two divergent bodies. And the runners
+read `get_settings()` for the caps at the point of use rather than taking them as
+constructor arguments — a cap then applies to the next run with nothing to thread
+through the registry, and tests override it with the settings fixture.
+"""
 
 from __future__ import annotations
 
@@ -17,6 +27,7 @@ from backend.app.datasources.base import (
     CheckSpec,
     SampleSpec,
     SuiteOutcome,
+    parse_whole_number,
 )
 
 #: Structural bound only (the memory guardrail is ``RUN_MAX_SCAN_ROWS``) —
@@ -62,10 +73,11 @@ def is_row_count_expectation(expectation_type: str) -> bool:
     return expectation_type in ROW_COUNT_EXPECTATION_TYPES
 
 
-def parse_sample_spec(raw: Any) -> SampleSpec | None:
-    """Validate a target's ``sampling`` block, or ``None`` when it has none."""
-    if raw is None:
-        return None
+def parse_sample_spec(raw: Any) -> SampleSpec:
+    """Validate a target's ``sampling`` block. The absent-block case belongs to
+    the caller: `registry._target_sampling` answers it before deciding whether the
+    datasource may be sampled at all.
+    """
     if not isinstance(raw, dict):
         raise SamplingConfigError(f"target 'sampling' must be an object: {raw!r}")
     strategy = raw.get("strategy")
@@ -91,13 +103,7 @@ def parse_sample_spec(raw: Any) -> SampleSpec | None:
 def _whole_number(value: Any, field: str) -> int | None:
     if value is None:
         return None
-    if isinstance(value, bool):
-        raise SamplingConfigError(f"sampling {field} must be an integer, not a boolean")
-    if isinstance(value, float) and value.is_integer():
-        value = int(value)
-    if not isinstance(value, int):
-        raise SamplingConfigError(f"sampling {field} must be an integer: {value!r}")
-    return value
+    return parse_whole_number(value, what=f"sampling {field}", error=SamplingConfigError)
 
 
 def sample_row_indices(*, total: int, rows: int, seed: int | None) -> list[int] | None:
@@ -123,35 +129,52 @@ def sampling_record(
     return record
 
 
+def _enforce_cap(amount: int, *, cap: int, message: str) -> None:
+    """The one over-cap refusal (``cap <= 0`` disables) — the three public caps
+    differ only in what they measure and what they tell the user to do (#1330).
+    """
+    if cap > 0 and amount > cap:
+        raise ScanTooLargeError(message)
+
+
 def enforce_row_cap(count: int, *, cap: int, target: str) -> None:
     """Refuse a read of ``count`` rows when it exceeds ``cap`` (``cap <= 0`` disables)."""
-    if cap > 0 and count > cap:
-        raise ScanTooLargeError(
+    _enforce_cap(
+        count,
+        cap=cap,
+        message=(
             f"{target} has {count:,} rows, over the scan cap of {cap:,}. DataQ refuses to "
             "load it rather than risk an out-of-memory worker: set a sampling strategy on "
             "the suite's run target, narrow the target, or raise RUN_MAX_SCAN_ROWS "
             "deliberately."
-        )
+        ),
+    )
 
 
 def enforce_byte_cap(size: int, *, cap: int, target: str) -> None:
     """Refuse a read of ``size`` bytes when it exceeds ``cap`` (``cap <= 0`` disables)."""
-    if cap > 0 and size > cap:
-        raise ScanTooLargeError(
+    _enforce_cap(
+        size,
+        cap=cap,
+        message=(
             f"{target} is {size:,} bytes, over the scan cap of {cap:,}. DataQ refuses to "
             "load it rather than risk an out-of-memory worker: set a sampling strategy on "
             "the suite's run target, target a smaller file, or raise RUN_MAX_SCAN_BYTES "
             "deliberately."
-        )
+        ),
+    )
 
 
 def enforce_sample_cap(spec: SampleSpec, *, cap: int) -> None:
     """Refuse a *sample* that is itself over the row cap (``cap <= 0`` disables)."""
-    if cap > 0 and spec.rows > cap:
-        raise ScanTooLargeError(
+    _enforce_cap(
+        spec.rows,
+        cap=cap,
+        message=(
             f"the run target's sample of {spec.rows:,} rows is itself over the scan cap of "
             f"{cap:,}. Lower the sample size, or raise RUN_MAX_SCAN_ROWS deliberately."
-        )
+        ),
+    )
 
 
 # ─────────────────── batch-stream selection (pure, IO-free) ───────────────────

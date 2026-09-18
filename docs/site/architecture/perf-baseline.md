@@ -506,11 +506,105 @@ on three high-write tables is not worth a case nothing asks for.
 1. **The `X-Total-Count` COUNT now dominates page 1.** It has no `ORDER BY`, so
    these indexes cannot serve it: `/runs` 20.5 ms, `/incidents` 13.6 ms,
    `/pipeline_runs` 6.6 ms — against a list that is now 0.03–0.10 ms. Page 1 of
-   `/runs` is ~250× more COUNT than list.
+   `/runs` is ~250× more COUNT than list. *Addressed below.*
 2. **`OFFSET` is still linear.** At offset 90k the database walks and discards
    90,000 index entries: `/runs` 32.1 ms, `/incidents` 25.1 ms. The ordering is
    already total, which is the precondition for keyset/seek paging, but that
    changes the request contract and is tracked separately.
+
+## v1.2 — the suite-visibility predicate
+
+Same scratch database and method. Every `/runs` and `/incidents` read — page
+*and* `X-Total-Count` — is scoped to the caller's accessible suites. That
+predicate was `suite_id IN (SELECT id FROM suites WHERE …)`, which PostgreSQL
+plans as a **hash join evaluated against every candidate row**. On `/runs` the
+index-only scan of 150,000 entries costs 4.6 ms; the join on top of it costs
+another 10 ms, so the visibility check — not the counting — was most of the
+total.
+
+Rewriting it as `suite_id = ANY (ARRAY(SELECT id FROM suites WHERE …))` makes
+the suite set an **InitPlan evaluated once**, and the predicate an index
+condition. The population selected is identical, so the count stays exact and
+the response contract is untouched.
+
+| COUNT (`X-Total-Count`) | before | after |
+|---|---|---|
+| `/runs` unfiltered | 20.4 ms | **8.9 ms** |
+| `/runs` workspace-admin | 16.8 ms | **8.7 ms** |
+| `/runs` `?status=failed` | 4.7 ms | 3.8 ms |
+| `/runs` `?suite_id=` | 1.5 ms | 0.9 ms |
+| `/incidents` unfiltered | 14.0 ms | **7.8 ms** |
+| `/incidents` workspace-admin | 14.1 ms | **7.0 ms** |
+| `/incidents` `?state=open` | 4.7 ms | 3.6 ms |
+| `/incidents` `?suite_id=` | 1.2 ms | 0.8 ms |
+| `/pipeline_runs` unfiltered | 6.5 ms | 6.8 ms (unchanged — no suite scoping) |
+
+For a workspace-admin the predicate is skipped entirely rather than rewritten:
+`suite_id` is a `NOT NULL` foreign key to `suites.id`, so "every suite" excludes
+nothing, and building the array would make the one caller who sees the most rows
+pay for a filter that does no filtering.
+
+Multi-predicate shapes were measured too, because an array whose contents the
+planner cannot see changes its row estimate, and a bare `COUNT(*)` has only one
+plan to choose from and so cannot expose that. Every combination the filter
+helpers actually build improves:
+
+| combined filters | before | after |
+|---|---|---|
+| `/runs` `?status=` + 30-day window, COUNT | 6.35 ms | 4.87 ms |
+| `/runs` 7-day window, COUNT | 13.36 ms | 10.15 ms |
+| `/runs` 30-day window with an exclusion, COUNT | 13.68 ms | 10.13 ms |
+| `/incidents` `?asset_id=` + `?state=`, COUNT | 0.064 ms | 0.049 ms |
+| `/incidents` `?state=` + 7-day window, COUNT | 2.79 ms | 2.51 ms |
+| `/incidents` `?state=` + 7-day window, page | 0.109 ms | 0.085 ms |
+
+The page shares the predicate with its total, so it improves too — including at
+depth, which is the one part of the `OFFSET` problem this reaches:
+
+| list page | before | after |
+|---|---|---|
+| `/runs` offset 0 | 0.11 ms | 0.05 ms |
+| `/runs` offset 10k | 2.47 ms | 1.02 ms |
+| `/runs` offset 90k | 22.0 ms | **9.2 ms** |
+| `/incidents` offset 0 | 0.08 ms | 0.05 ms |
+| `/incidents` offset 10k | 3.24 ms | 1.56 ms |
+
+`/pipeline_runs` is orchestration monitoring with no suite scoping at all; its
+COUNT was already a bare index-only scan over the whole table, which is the
+floor for an exact count and is left alone.
+
+### Alternatives measured and rejected
+
+- **One statement via `count(*) OVER ()`.** Sharing a single scan between the
+  page and its total sounds cheaper and is not: the window function must consume
+  every matching row before `LIMIT` applies, which discards the ordering index
+  entirely — **48.9 ms** against 8.9 ms for the separate count plus 0.05 ms for
+  the page.
+- **A better index for the COUNT.** There is none to find. The count was already
+  an index-only scan with zero heap fetches; an exact count is `O(matching
+  rows)` and 150,000 narrow index entries cost 4.6 ms, which is the floor.
+- **Counting only on the first page.** The SPA reads the total on *every* fetch —
+  the pagination control's row count and the "loaded N of M" truncation banner
+  both depend on it — so dropping it on deeper pages is a client-visible change,
+  not an optimisation.
+- **An estimated count above a threshold.** Rejected while an exact count is
+  affordable: a header named `X-Total-Count` that sometimes holds an estimate is
+  the confident-wrong-answer shape, and labelling it honestly is a contract
+  change.
+
+### Sensitivity to workspace size
+
+The array is built from however many suites the caller can see. Measured with
+decoy suites added to the accessible set, the array form stays at or ahead of
+the subquery form throughout — there is no crossover where the old shape wins:
+
+| accessible suites | `= ANY (ARRAY(…))` | `IN (SELECT …)` |
+|---|---|---|
+| 10 | 8.3 ms | 11.3 ms |
+| 100 | 8.7 ms | 11.3 ms |
+| 1,000 | 9.4 ms | 12.9 ms |
+| 5,000 | 12.6 ms | 15.2 ms |
+| 20,000 | 26.0 ms | 27.6 ms |
 
 ---
 

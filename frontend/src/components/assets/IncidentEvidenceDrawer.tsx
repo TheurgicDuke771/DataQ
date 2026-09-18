@@ -1,8 +1,9 @@
-import { Descriptions, Drawer, Empty, Flex, Table, Tag, Typography } from 'antd';
+import { Alert, Descriptions, Drawer, Empty, Flex, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import type { ReactNode } from 'react';
 
 import {
+  blastRadiusAssetsAndQualifiers,
   type EvidenceAssetLayer,
   type EvidenceCheckLayer,
   type EvidenceFailingResultLayer,
@@ -10,6 +11,7 @@ import {
   type EvidenceTrendPoint,
   type EvidenceUpstreamPipelineRun,
   getIncident,
+  type IncidentEvidence,
 } from '../../api/incidents';
 import type { ResultStatus } from '../../api/runs';
 import { useAsyncData } from '../../hooks/useAsyncData';
@@ -93,7 +95,7 @@ function EvidenceBody({ incidentId }: { incidentId: string }) {
             <MetricTrendSection trend={evidence.metric_trend} />
             <SiblingChecksSection siblings={evidence.sibling_checks} />
             <UpstreamPipelineSection pipeline={evidence.upstream_pipeline_run} />
-            <BlastRadiusSection assets={evidence.downstream_blast_radius} />
+            <BlastRadiusSection blast={evidence.downstream_blast_radius} />
             <ProfileDiffSection diff={evidence.profile_diff} />
           </Flex>
         );
@@ -290,9 +292,28 @@ function UpstreamPipelineSection({ pipeline }: { pipeline: EvidenceUpstreamPipel
   );
 }
 
-function BlastRadiusSection({ assets }: { assets: EvidenceAssetLayer[] | null }) {
+function BlastRadiusSection({ blast }: { blast: IncidentEvidence['downstream_blast_radius'] }) {
+  const { assets, qualified_by: qualifiers } = blastRadiusAssetsAndQualifiers(blast);
   return (
     <Section title="Downstream blast radius">
+      {/* Same wording, same weight as the lineage banner (`LineageGraph`'s prune-suspension
+       *  note) — a prune suspension risks EXTRA edges (a listed asset that no longer really
+       *  depends on this one), the opposite direction from every other qualifier below it. */}
+      {qualifiers.length > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          title="Lineage source may be unreliable"
+          description={
+            <Flex vertical gap={4}>
+              {qualifiers.map((q) => (
+                <Typography.Text key={q}>{q}</Typography.Text>
+              ))}
+            </Flex>
+          }
+        />
+      )}
       {assets === null ? (
         <NotAvailable />
       ) : assets.length === 0 ? (

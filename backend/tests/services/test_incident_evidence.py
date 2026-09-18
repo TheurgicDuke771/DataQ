@@ -211,8 +211,76 @@ def test_blast_radius_layer(db_session: Any, world: dict[str, Any]) -> None:
     card = build_evidence(
         db_session, run=run, result=result, check=world["check"], asset=world["asset"]
     )
-    names = {n["name"] for n in card["downstream_blast_radius"]}
+    blast = card["downstream_blast_radius"]
+    names = {n["name"] for n in blast["assets"]}
     assert "ANALYTICS.MART.REVENUE" in names
+    # No lineage source is failing/stale/coarse/prune-suspended in this fixture (#1990).
+    assert blast["qualified_by"] == []
+
+
+def test_blast_radius_carries_a_prune_suspension_qualifier_through_a_real_incident(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    """#1990: `get_asset`'s `lineage.qualified_by` is not the only reader of lineage-source
+    health — `downstream_blast_radius` reads the SAME graph through a different path
+    (`incident_evidence` → `incident_service` → REST/MCP `get_incident`, the RCA prompt, and
+    outbound alert rendering) and must carry the same qualification. Exercised end-to-end
+    through a real synced incident, not just `build_evidence` in isolation.
+    """
+    from sqlalchemy import select
+
+    from backend.app.db.models import Incident
+    from backend.app.services import incident_service
+
+    downstream = Asset(namespace="snowflake://ab12345.eu-west-1", name="ANALYTICS.MART.REVENUE")
+    db_session.add(downstream)
+    db_session.flush()
+    db_session.add(
+        LineageEdge(
+            upstream_asset_id=world["asset"].id,
+            downstream_asset_id=downstream.id,
+            source="dbt",
+            connection_id=world["conn"].id,
+        )
+    )
+    # The connection's warehouse-native lineage refresh has run at least once but has NEVER
+    # pruned stale edges — a suspended prune (#1236), which risks EXTRA edges (a downstream
+    # asset shown here that no longer really depends on this one), the opposite direction from
+    # every other qualifier.
+    world["conn"].lineage_last_refresh_at = datetime.now(UTC)
+    world["conn"].lineage_last_authoritative_refresh_at = None
+    db_session.commit()
+
+    run = _run(db_session, world["suite"])
+    result = Result(run_id=run.id, check_id=world["check"].id, status="fail")
+    db_session.add(result)
+    db_session.commit()
+    incident_service.sync_incidents_for_run(db_session, run_id=run.id)
+
+    incident = db_session.scalars(
+        select(Incident).where(Incident.suite_id == world["suite"].id)
+    ).one()
+    blast = incident.evidence["downstream_blast_radius"]
+    assert any("ANALYTICS.MART.REVENUE" == a["name"] for a in blast["assets"])
+    assert any("EXTRA edges" in q for q in blast["qualified_by"])
+    assert any(world["conn"].name in q for q in blast["qualified_by"])
+
+
+def test_blast_radius_qualified_by_is_empty_when_the_lineage_source_is_healthy(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    """The counterpart to the prune-suspension test above: a connection that has never even
+    attempted a lineage refresh reports no qualifier at all, rather than a false-positive
+    "unreliable" warning (#1990).
+    """
+    run = _run(db_session, world["suite"])
+    result = Result(run_id=run.id, check_id=world["check"].id, status="fail")
+    db_session.add(result)
+    db_session.commit()
+    card = build_evidence(
+        db_session, run=run, result=result, check=world["check"], asset=world["asset"]
+    )
+    assert card["downstream_blast_radius"]["qualified_by"] == []
 
 
 def test_upstream_pipeline_layer_with_delay(db_session: Any, world: dict[str, Any]) -> None:
@@ -379,7 +447,7 @@ def test_card_degrades_with_none_check_and_asset(db_session: Any, world: dict[st
     card = build_evidence(db_session, run=run, result=result, check=None, asset=None)
     assert card["check"] is None
     assert card["asset"] is None
-    assert card["downstream_blast_radius"] == []
+    assert card["downstream_blast_radius"] == {"assets": [], "qualified_by": []}
 
 
 # ── fix batch (PR #775 review): layer isolation + observed_value stripping ────
@@ -894,7 +962,7 @@ def test_raising_redaction_degrades_failing_result_layer_only(
     assert card["check"]["name"] == "orders_not_null"  # neighbours intact
     assert isinstance(card["metric_trend"], list)
     assert isinstance(card["sibling_checks"], list)
-    assert card["downstream_blast_radius"] == []
+    assert card["downstream_blast_radius"] == {"assets": [], "qualified_by": []}
 
 
 def test_pre_resolved_context_is_used_verbatim(db_session: Any, world: dict[str, Any]) -> None:

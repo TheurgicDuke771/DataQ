@@ -117,6 +117,18 @@ def sniff_from_reader(reader: RangeReader) -> str:
     return sniff_delimiter(head)
 
 
+def open_csv_stream(reader: RangeReader) -> Any:
+    """The ONE Arrow CSV stream configuration over a `RangeReader` (#1330).
+
+    Counting a CSV and taking rows from it walk separate streams; if their parse
+    options ever differed, the positions drawn against one numbering would be read
+    out of another — an off-by-N sample with no symptom.
+    """
+    import pyarrow.csv as pv
+
+    return pv.open_csv(reader, parse_options=pv.ParseOptions(delimiter=sniff_from_reader(reader)))
+
+
 def trim_to_row_boundary(raw: bytes) -> bytes:
     """Cut ``raw`` at the last quote-safe newline (#595 C4)."""
     end = len(raw)
@@ -278,10 +290,9 @@ def object_size(
         known = ses.sizes.get(path)
         if known is not None:
             return known
-        if conn_type == "s3":
-            size: int = ses.s3.head_object(Bucket=ses.s3_config.bucket, Key=path)["ContentLength"]
-        else:
-            size = ses.blob(path).get_blob_properties().size
+        size = _head_stat(ses, path).size
+        if size is None:
+            raise FlatFileReadError(f"the store reported no byte length for {path!r}")
         ses.sizes[path] = size
         return size
 
@@ -446,8 +457,6 @@ def csv_row_count(
     session: StoreSession | None = None,
 ) -> int:
     """Row count of a CSV, streamed in batches — never a full DataFrame (#942)."""
-    import pyarrow.csv as pv
-
     # Big window: this walks end to end; the seeking default would mean
     # thousands of range requests.
     reader = RangeReader(
@@ -459,10 +468,31 @@ def csv_row_count(
         session=session,
     )
     with closing(reader):
-        sep = sniff_from_reader(reader)
-        with pv.open_csv(reader, parse_options=pv.ParseOptions(delimiter=sep)) as batches:
+        with open_csv_stream(reader) as batches:
             # The header is consumed by the reader, so batch rows are data rows.
             return sum(batch.num_rows for batch in batches)
+
+
+def _extend_window(reader_args: dict[str, Any], buffered: bytearray, *, span: int) -> bool:
+    """Grow ``buffered`` to ``span`` bytes, fetching only the delta (#1329), and
+    report whether the store returned less than asked — i.e. EOF.
+    """
+    if span <= len(buffered):
+        return False
+    asked = span - len(buffered)
+    got = read_range(**reader_args, start=len(buffered), length=asked)
+    buffered += got
+    return len(got) < asked
+
+
+def _window_frame(buffered: bytearray, *, limit: int, reached_eof: bool) -> Any:
+    """Parse at most ``limit`` rows out of a head window, dropping the trailing
+    partial row unless the window reached EOF (#595 C4).
+    """
+    raw = bytes(buffered)
+    if not reached_eof:
+        raw = trim_to_row_boundary(raw)
+    return read_csv_bytes(io.BytesIO(raw), nrows=limit)
 
 
 def read_csv_head(
@@ -474,21 +504,24 @@ def read_csv_head(
     rows: int,
     session: StoreSession | None = None,
 ) -> Any:
-    """Parse the first ``rows`` data rows of a CSV from a bounded head read (#882)."""
+    """Parse the first ``rows`` data rows of a CSV from a bounded head read (#882).
+
+    One fixed window of `_csv_head_frame`'s growing walk (#1330): same delta fetch,
+    same short-read-is-EOF rule, same quote-aware trim — they were two copies of
+    one read and #1325 had to fix the same defect in both.
+    """
+    reader_args = {
+        "conn_type": conn_type,
+        "config": config,
+        "path": path,
+        "secret": secret,
+        "session": session,
+    }
+    buffered = bytearray()
     # One byte MORE than the window, so a short read unambiguously means EOF —
     # a file of exactly window size must not be mistaken for a cut one.
-    head = read_range(
-        conn_type=conn_type,
-        config=config,
-        path=path,
-        secret=secret,
-        start=0,
-        length=_CSV_HEAD_BYTES + 1,
-        session=session,
-    )
-    if len(head) > _CSV_HEAD_BYTES:
-        head = trim_to_row_boundary(head)
-    return read_csv_bytes(io.BytesIO(head), nrows=rows)
+    reached_eof = _extend_window(reader_args, buffered, span=_CSV_HEAD_BYTES + 1)
+    return _window_frame(buffered, limit=rows, reached_eof=reached_eof)
 
 
 def row_count(
@@ -542,10 +575,7 @@ def _open_batch_stream(
         return close
 
     if fmt == "csv":
-        import pyarrow.csv as pv
-
-        sep = sniff_from_reader(reader)
-        stream = pv.open_csv(reader, parse_options=pv.ParseOptions(delimiter=sep))
+        stream = open_csv_stream(reader)
         return stream, stream.schema, False, _closer(stream.close)
 
     import pyarrow.parquet as pq
@@ -559,30 +589,23 @@ def _open_batch_stream(
     )
 
 
-def _csv_head_frame(reader_args: dict[str, Any], *, limit: int) -> tuple[Any, bool]:
+def _csv_head_frame(reader_args: dict[str, Any], *, limit: int) -> Any:
     """The first ``limit`` rows of a CSV via a doubling byte range (#595).
 
     Each growth fetches only the bytes past what is already buffered (#1329):
-    re-reading the prefix made reaching 4 MB cost 1 + 2 + 4 = 7 MB.
+    re-reading the prefix made reaching 4 MB cost 1 + 2 + 4 = 7 MB. A frame
+    SHORTER than ``limit`` therefore means the walk reached EOF — the only other
+    way out of the loop is a full one.
     """
     size = object_size(**reader_args)
     buffered = bytearray()
     window = _CSV_HEAD_BYTES
     while True:
         span = min(window, size)
-        short = False
-        if span > len(buffered):
-            asked = span - len(buffered)
-            got = read_range(**reader_args, start=len(buffered), length=asked)
-            buffered += got
-            short = len(got) < asked
-        reached_eof = short or span >= size
-        raw = bytes(buffered)
-        if not reached_eof:
-            raw = trim_to_row_boundary(raw)
-        frame = read_csv_bytes(io.BytesIO(raw), nrows=limit)
+        reached_eof = _extend_window(reader_args, buffered, span=span) or span >= size
+        frame = _window_frame(buffered, limit=limit, reached_eof=reached_eof)
         if len(frame) >= limit or reached_eof:
-            return frame, reached_eof
+            return frame
         window *= 2
 
 
@@ -625,12 +648,12 @@ def _sampled_frame(
 ) -> tuple[Any, dict[str, Any]]:
     """`read_sampled_dataframe`'s body, over an already-open store session."""
     if sample.strategy == SAMPLE_HEAD and fmt == "csv":
-        frame, reached_eof = _csv_head_frame(reader_args, limit=sample.rows + 1)
+        frame = _csv_head_frame(reader_args, limit=sample.rows + 1)
         truncated = len(frame) > sample.rows
         if truncated:
             frame = frame.head(sample.rows)
-        # Not truncated implies the range reached EOF, so the size is known free.
-        csv_total = None if truncated else (len(frame) if reached_eof else None)
+        # Not truncated implies the walk reached EOF, so the size is known free.
+        csv_total = None if truncated else len(frame)
         return frame, sampling_record(
             sample, rows=len(frame), total_rows=csv_total, sampled=truncated
         )
@@ -750,6 +773,18 @@ class FileStat:
     size: int | None = None
 
 
+def _head_stat(ses: StoreSession, path: str) -> FileStat:
+    """The ONE metadata call behind both `file_stat` and `object_size` (#1330) —
+    they asked the same store API for overlapping halves of one answer. A missing
+    object raises here; `file_stat` is the caller that maps that to an empty stat.
+    """
+    if ses.conn_type == "s3":
+        head = ses.s3.head_object(Bucket=ses.s3_config.bucket, Key=path)
+        return FileStat(last_modified=head.get("LastModified"), size=head.get("ContentLength"))
+    properties = ses.blob(path).get_blob_properties()
+    return FileStat(last_modified=properties.last_modified, size=properties.size)
+
+
 def file_stat(
     *,
     conn_type: str,
@@ -760,31 +795,25 @@ def file_stat(
 ) -> FileStat:
     """The store's metadata for exactly ``path`` (live seam, #520/#595)."""
     with _session(session, conn_type=conn_type, config=config, secret=secret) as ses:
-        if conn_type == "s3":
+        # `ses.conn_type`, not the parameter: `_session` yields a caller-supplied
+        # session as-is, and the store API and its not-found mapping must be
+        # chosen off the same source or a missing blob escapes the wrong `except`.
+        if ses.conn_type == "s3":
             from botocore.exceptions import ClientError
 
             try:
-                head = ses.s3.head_object(Bucket=ses.s3_config.bucket, Key=path)
+                return _head_stat(ses, path)
             except ClientError as exc:
                 if exc.response.get("Error", {}).get("Code") in {"404", "NoSuchKey", "NotFound"}:
                     return FileStat()
                 raise
-            return FileStat(last_modified=head.get("LastModified"), size=head.get("ContentLength"))
 
         from azure.core.exceptions import ResourceNotFoundError
 
         try:
-            properties = ses.blob(path).get_blob_properties()
+            return _head_stat(ses, path)
         except ResourceNotFoundError:
             return FileStat()
-        return FileStat(last_modified=properties.last_modified, size=properties.size)
-
-
-def file_last_modified(
-    *, conn_type: str, config: dict[str, Any], path: str, secret: str
-) -> datetime | None:
-    """Just the arrival time from `file_stat` — the pre-#595 shape of this seam."""
-    return file_stat(conn_type=conn_type, config=config, path=path, secret=secret).last_modified
 
 
 class FlatFileCheckRunner:
@@ -817,12 +846,16 @@ class FlatFileCheckRunner:
             self._stats[path] = stat
         return stat
 
-    def _guard_object_size(self, path: str, *, stat: FileStat | None = None) -> None:
-        """Refuse a full-object read exceeding ``RUN_MAX_SCAN_BYTES`` (#595)."""
+    def _guard_object_size(self, path: str) -> None:
+        """Refuse a full-object read exceeding ``RUN_MAX_SCAN_BYTES`` (#595).
+
+        Re-probing is prevented by `_stat`'s memo alone (#1330) — a second
+        don't-re-probe mechanism beside it was one too many.
+        """
         cap = get_settings().run_max_scan_bytes
         if cap <= 0:
             return
-        size = (stat or self._stat(path)).size
+        size = self._stat(path).size
         if size is not None:
             enforce_byte_cap(size, cap=cap, target=f"file {path!r}")
 
@@ -893,7 +926,7 @@ class FlatFileCheckRunner:
         def dataframe() -> Any:
             # Guardrail raised OUTSIDE `_memoized` — its except would fold the actionable over-cap
             # message into the vague FlatFileReadError.
-            self._guard_object_size(table, stat=stat)
+            self._guard_object_size(table)
             return _memoized(
                 attempt,
                 lambda: read_dataframe(

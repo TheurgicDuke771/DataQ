@@ -3301,35 +3301,11 @@ def get_asset(asset_id: str) -> dict[str, Any]:
         detail = asset_view_service.get_visible_asset(
             session, aid, user_id=user.id, include_all=is_workspace_admin(user)
         )
-        qualifiers: list[str] = []
-        for src in detail.failing_lineage_sources:
-            qualifiers.append(
-                f"lineage poll failing on connection '{src.name}' "
-                f"({src.consecutive_failures} consecutive failures)"
-            )
-        for wh in detail.warehouse_lineage_status:
-            if wh.last_error:
-                qualifiers.append(f"warehouse lineage refresh failing on '{wh.name}'")
-            if wh.stale:
-                qualifiers.append(f"warehouse lineage on '{wh.name}' has not refreshed recently")
-            if wh.degraded_reason:
-                qualifiers.append(
-                    f"warehouse lineage on '{wh.name}' is coarse: {wh.degraded_reason}"
-                )
-            if wh.prune_suspended:
-                # Stated as accretion, not staleness: the edges below may include removed
-                # dependencies, which is the opposite failure from a missing one.
-                since = wh.prune_suspended_since
-                when = (
-                    f"has not pruned removed edges since {since.isoformat()}"
-                    if since
-                    else "has never pruned removed edges"
-                )
-                qualifiers.append(
-                    f"warehouse lineage on '{wh.name}' {when} — edges below may include "
-                    "dependencies that no longer exist (new edges are still discovered "
-                    "normally, so this is a risk of EXTRA edges, not missing ones)"
-                )
+        # Shared seam (#1990): `downstream_blast_radius` on `get_incident` reuses this
+        # exact wording via `asset_view_service.lineage_qualifiers`.
+        qualifiers = asset_view_service.lineage_qualifiers(
+            detail.failing_lineage_sources, detail.warehouse_lineage_status
+        )
         scorecard = detail.scorecard
         return {
             "summary": _asset_summary_payload(detail.summary),
@@ -3604,12 +3580,28 @@ def get_incident(incident_id: str) -> dict[str, Any]:
     not that the field is missing — so don't report "no other checks touch this
     asset" from an empty list without also checking that count is `0`.
 
-    ``downstream_blast_radius`` is ``[]`` for three reasons that look
-    identical: the failing asset was never resolved, the asset is a genuine
-    lineage leaf, or **this workspace has no lineage recorded at all**. It is
-    also depth-capped, so a non-empty list is a floor rather than a complete
-    inventory. Never report "nothing downstream is affected" from an empty
-    radius — confirm lineage exists with ``get_asset`` first.
+    ``downstream_blast_radius`` is ``{"assets": [...], "qualified_by": [...]}``.
+    ``assets`` is ``[]`` for three reasons that look identical: the failing
+    asset was never resolved, the asset is a genuine lineage leaf, or **this
+    workspace has no lineage recorded at all**. It is also depth-capped, so a
+    non-empty list is a floor rather than a complete inventory. Never report
+    "nothing downstream is affected" from an empty ``assets`` — confirm
+    lineage exists with ``get_asset`` first.
+
+    ``qualified_by`` (#1990) carries the SAME lineage-source-health wording
+    `get_asset`'s `lineage.qualified_by` does, non-empty whenever a source
+    feeding this workspace's lineage is failing, stale, coarse, or has a
+    suspended prune. It is workspace-wide, not narrowed to whatever source(s)
+    actually produced the edges below — treat any non-empty list as reason to
+    hedge the whole `assets` answer, not just part of it. A suspended-prune
+    qualifier names the OPPOSITE risk from the rest: the graph can only grow,
+    so a listed asset may be a dependency already removed from the warehouse
+    — do not read it as "this list may be missing something", the direction
+    every other qualifier means. An incident synced before this field existed
+    stores ``downstream_blast_radius`` as a bare list of assets (no
+    ``{"assets": ..., "qualified_by": ...}`` wrapper at all) — treat that
+    older shape as "not evaluated at snapshot time", never as "confirmed
+    clean".
 
     ``check_name``, ``asset_name`` and ``latest_severity`` are read from the same
     snapshot, so a check renamed since the last occurrence still reports its old

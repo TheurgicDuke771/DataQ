@@ -483,7 +483,7 @@ def _run_filters(
 ) -> list[Any]:
     """The ONE `WHERE` chain shared by :func:`list_runs` and :func:`count_runs`."""
     conditions: list[Any] = [
-        Run.suite_id.in_(suite_service.accessible_suite_ids(user_id, include_all=include_all))
+        suite_service.accessible_suite_filter(Run.suite_id, user_id, include_all=include_all)
     ]
     if suite_id is not None:
         conditions.append(Run.suite_id == suite_id)
