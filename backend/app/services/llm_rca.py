@@ -33,7 +33,7 @@ from backend.app.db.models import Incident, LlmInvocation
 from backend.app.llm.base import LLMOutputInvalidError, LLMRequestInvalidError
 from backend.app.services import check_service, incident_service, llm_service
 from backend.app.services.check_service import CheckNotFoundError
-from backend.app.services.incident_evidence import MONITOR_KINDS
+from backend.app.services.incident_evidence import MONITOR_KINDS, blast_radius_assets_and_qualifiers
 
 log = get_logger(__name__)
 
@@ -208,9 +208,19 @@ def _blind_spots(evidence: dict[str, Any], *, history_unavailable: bool) -> list
             "no upstream orchestration pipeline run is linked — either this run wasn't "
             "pipeline-triggered, or none could be matched"
         )
-    if not evidence.get("downstream_blast_radius"):
+    blast_assets, blast_qualifiers = blast_radius_assets_and_qualifiers(
+        evidence.get("downstream_blast_radius")
+    )
+    if not blast_assets:
         spots.append(
             "no downstream lineage is recorded for this asset — cannot rule out downstream impact"
+        )
+    if blast_qualifiers:
+        # #1990: stated separately from the empty-list case above — a prune-suspension risks
+        # EXTRA edges (a listed asset that no longer really depends on this one), the opposite
+        # direction from "missing lineage".
+        spots.append(
+            "the downstream lineage graph may be unreliable — " + "; ".join(blast_qualifiers)
         )
     if evidence.get("profile_diff") is None:
         spots.append("no before/after column profile — profile comparison isn't implemented yet")
@@ -321,11 +331,17 @@ def _render_evidence(evidence: dict[str, Any], history: list[Any], blind_spots: 
     if pipeline is not None:
         lines.append(f"upstream_pipeline_run: {_json(pipeline)}")
 
-    blast = evidence.get("downstream_blast_radius") or []
-    if blast:
-        rendered, omitted = _capped_json(blast)
+    blast_assets, blast_qualifiers = blast_radius_assets_and_qualifiers(
+        evidence.get("downstream_blast_radius")
+    )
+    if blast_assets:
+        rendered, omitted = _capped_json(blast_assets)
         suffix = f" ({omitted} more not shown)" if omitted else ""
         lines.append(f"downstream_blast_radius: {rendered}{suffix}")
+    if blast_qualifiers:
+        lines.append(
+            "downstream_blast_radius lineage-source caveat: " + "; ".join(blast_qualifiers)
+        )
 
     if blind_spots:
         lines.append(

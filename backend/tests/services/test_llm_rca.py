@@ -259,6 +259,26 @@ def test_blind_spots_empty_for_a_fully_populated_card() -> None:
     assert llm_rca._blind_spots(evidence, history_unavailable=False) == []
 
 
+def test_blind_spots_names_an_unreliable_lineage_source_behind_the_blast_radius() -> None:
+    """#1990: a non-empty `qualified_by` (the new dict shape) is its own blind spot,
+    separate from — and not suppressed by — a populated `assets` list.
+    """
+    evidence = {
+        "check": {"kind": "expectation"},
+        "kind_detail": None,
+        "same_asset_siblings_restricted_count": 0,
+        "upstream_pipeline_run": {"provider": "airflow"},
+        "downstream_blast_radius": {
+            "assets": [{"name": "x"}],
+            "qualified_by": ["warehouse lineage on 'wh' has never pruned removed edges"],
+        },
+        "profile_diff": "not-actually-null",
+    }
+    spots = llm_rca._blind_spots(evidence, history_unavailable=False)
+    assert any("downstream lineage graph may be unreliable" in s for s in spots)
+    assert any("never pruned removed edges" in s for s in spots)
+
+
 # ── validate_output ──────────────────────────────────────────────────────────
 
 
@@ -525,6 +545,30 @@ def test_render_evidence_caps_downstream_blast_radius_and_notes_the_omission() -
     assert "asset_0" in prompt
     assert f"asset_{llm_rca._MAX_RENDERED_ITEMS}" not in prompt
     assert "5 more not shown" in prompt
+
+
+def test_render_evidence_includes_the_lineage_qualifier_line() -> None:
+    """#1990: the qualifier renders as its own line in the prompt, distinct from the
+    asset list itself — a model must be able to see it even if it skims the JSON blob.
+    """
+    evidence = {
+        "downstream_blast_radius": {
+            "assets": [{"name": "mart.revenue"}],
+            "qualified_by": ["warehouse lineage on 'wh' has never pruned removed edges"],
+        }
+    }
+    prompt = llm_rca._render_evidence(evidence, [], [])
+    assert "mart.revenue" in prompt
+    assert "downstream_blast_radius lineage-source caveat:" in prompt
+    assert "never pruned removed edges" in prompt
+
+
+def test_render_evidence_omits_the_lineage_qualifier_line_when_absent() -> None:
+    evidence = {
+        "downstream_blast_radius": {"assets": [{"name": "mart.revenue"}], "qualified_by": []}
+    }
+    prompt = llm_rca._render_evidence(evidence, [], [])
+    assert "lineage-source caveat" not in prompt
 
 
 def test_render_evidence_omits_the_note_when_under_the_cap() -> None:

@@ -83,6 +83,20 @@ export interface EvidenceUpstreamPipelineRun {
   delay_seconds_vs_history: number | null;
 }
 
+/**
+ * The `downstream_blast_radius` layer since #1990. An incident synced BEFORE that fix stored a
+ * bare `EvidenceAssetLayer[]` (assets only, forever — evidence is a write-time snapshot, never
+ * rewritten in place); one synced after carries the same assets plus `qualified_by` — the SAME
+ * lineage-source-health wording `get_asset`'s `lineage.qualified_by` carries, non-empty whenever a
+ * source feeding this workspace's lineage is failing, stale, coarse, or has a suspended prune. A
+ * prune-suspension qualifier names the OPPOSITE risk from the others: the graph can only grow, so
+ * a listed asset may be a dependency already removed from the warehouse.
+ */
+export interface EvidenceBlastRadius {
+  assets: EvidenceAssetLayer[];
+  qualified_by: string[];
+}
+
 export interface IncidentEvidence {
   generated_at: string;
   check: EvidenceCheckLayer | null;
@@ -91,10 +105,22 @@ export interface IncidentEvidence {
   metric_trend: EvidenceTrendPoint[] | null;
   sibling_checks: EvidenceSiblingCheck[] | null;
   upstream_pipeline_run: EvidenceUpstreamPipelineRun | null;
-  downstream_blast_radius: EvidenceAssetLayer[] | null;
+  /** `EvidenceAssetLayer[]` is the legacy (pre-#1990) shape — see `EvidenceBlastRadius`. */
+  downstream_blast_radius: EvidenceBlastRadius | EvidenceAssetLayer[] | null;
   /** Always `null` today — a live datasource profile diff of both batches is
    *  not yet implemented (see the backend module docstring). */
   profile_diff: unknown | null;
+}
+
+/** Normalizes `downstream_blast_radius` across the #1990 shape change — mirrors the backend's own
+ *  `incident_evidence.blast_radius_assets_and_qualifiers`. `null` (the layer failed to build)
+ *  stays distinct from `{ assets: [], qualified_by: [] }` (built, nothing to show). */
+export function blastRadiusAssetsAndQualifiers(
+  blast: IncidentEvidence['downstream_blast_radius'],
+): { assets: EvidenceAssetLayer[] | null; qualified_by: string[] } {
+  if (blast === null) return { assets: null, qualified_by: [] };
+  if (Array.isArray(blast)) return { assets: blast, qualified_by: [] };
+  return { assets: blast.assets, qualified_by: blast.qualified_by };
 }
 
 /** Incident detail — mirrors `IncidentDetailRead` (summary + evidence + actors). */

@@ -12,12 +12,16 @@ from backend.app.alerting.base import (
     PollStalenessReport,
     RunReport,
 )
+from backend.app.services.incident_evidence import blast_radius_assets_and_qualifiers
 
 # Longer scalars (a big value_set, a stringified row) are truncated so one check
 # can't blow up a card; the full detail lives on the linked run-detail page.
 _MAX_SCALAR = 60
 # How many redacted failing-sample values to preview inline in an alert.
 _MAX_SAMPLE_VALUES = 3
+# The lineage-source qualifier clause is capped independently of `_MAX_SCALAR` — it can
+# name several sources, and this whole clause still has to fit a Slack block budget (#1990).
+_MAX_QUALIFIER_CLAUSE = 200
 
 # triggered_by is stored as "<provider>:<...>" (schedule/adf/airflow/dbt) or NULL
 # for a manual run. Map the prefix to a friendly source name for the alert.
@@ -146,14 +150,29 @@ def _blast_radius_clause(blast: Any) -> str:
     """An empty list here does NOT mean "nothing downstream is affected" — it
     can equally mean the asset was never resolved or this workspace has no
     lineage recorded at all (the #828 class); never claim the all-clear.
+
+    When the lineage source(s) behind the graph are failing, stale, coarse, or
+    have a suspended prune, that qualifier (#1990, the same wording
+    `get_asset`'s `lineage.qualified_by` carries) is appended — a prune
+    suspension names a risk of EXTRA edges, the opposite direction from the
+    rest, so it is never silently folded into "may be incomplete".
     """
     if blast is None:
         return "downstream impact: unavailable"
-    if not isinstance(blast, list):
+    if not isinstance(blast, dict | list):
         return "downstream impact: unavailable"
-    if not blast:
-        return "no downstream lineage recorded"
-    return f"{len(blast)} downstream asset(s) potentially affected"
+    assets, qualifiers = blast_radius_assets_and_qualifiers(blast)
+    base = (
+        "no downstream lineage recorded"
+        if not assets
+        else f"{len(assets)} downstream asset(s) potentially affected"
+    )
+    if qualifiers:
+        clause = "; ".join(qualifiers)
+        if len(clause) > _MAX_QUALIFIER_CLAUSE:
+            clause = clause[: _MAX_QUALIFIER_CLAUSE - 1] + "…"
+        base += f" — lineage source caveat: {clause}"
+    return base
 
 
 def evidence_summary_clause(evidence: dict[str, Any] | None) -> str:

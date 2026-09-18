@@ -16,15 +16,22 @@ function renderDrawer(incidentId: string | null, onClose = vi.fn()) {
   );
 }
 
-vi.mock('../../src/api/incidents', () => ({
-  getIncident: vi.fn(),
-  getIncidentNarrative: vi.fn().mockResolvedValue({
-    narrative: null,
-    invocation_id: null,
-    generated_at: null,
-    withheld_reason: null,
-  }),
-}));
+// `blastRadiusAssetsAndQualifiers` is a pure normalizer the component itself calls — real
+// implementation kept via `importOriginal` rather than re-mocked, so only the two network calls
+// are stubbed.
+vi.mock('../../src/api/incidents', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/api/incidents')>();
+  return {
+    ...actual,
+    getIncident: vi.fn(),
+    getIncidentNarrative: vi.fn().mockResolvedValue({
+      narrative: null,
+      invocation_id: null,
+      generated_at: null,
+      withheld_reason: null,
+    }),
+  };
+});
 const mockGetIncident = vi.mocked(getIncident);
 
 function fullEvidence(): IncidentEvidence {
@@ -167,6 +174,38 @@ describe('IncidentEvidenceDrawer', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('No other checks ran alongside this one.')).toBeInTheDocument();
     expect(screen.getByText('No downstream assets recorded.')).toBeInTheDocument();
+  });
+
+  // #1990: a suspended-prune (or failing/stale/coarse) lineage source qualifies the blast
+  // radius the same way `get_asset`'s `lineage.qualified_by` does.
+  it('warns when the blast radius carries a lineage-source qualifier', async () => {
+    mockGetIncident.mockResolvedValue(
+      detail({
+        ...fullEvidence(),
+        downstream_blast_radius: {
+          assets: [{ id: 'a2', namespace: 'snowflake://acct', name: 'ORDER_SUMMARY', env: 'prod' }],
+          qualified_by: [
+            "warehouse lineage on 'warehouse-dev' has never pruned removed edges — edges below " +
+              'may include dependencies that no longer exist (new edges are still discovered ' +
+              'normally, so this is a risk of EXTRA edges, not missing ones)',
+          ],
+        },
+      }),
+    );
+    renderDrawer('inc-1');
+
+    expect(await screen.findByText('Lineage source may be unreliable')).toBeInTheDocument();
+    expect(screen.getByText(/risk of EXTRA edges, not missing ones/)).toBeInTheDocument();
+    // The assets themselves still render — a qualifier hedges the answer, it doesn't hide it.
+    expect(screen.getByText(/ORDER_SUMMARY/)).toBeInTheDocument();
+  });
+
+  it('renders a legacy bare-array blast radius (pre-#1990) with no qualifier warning', async () => {
+    mockGetIncident.mockResolvedValue(detail(fullEvidence()));
+    renderDrawer('inc-1');
+
+    await screen.findByText(/ORDER_SUMMARY/);
+    expect(screen.queryByText('Lineage source may be unreliable')).not.toBeInTheDocument();
   });
 
   it('shows an explicit reason when delay_seconds_vs_history has no baseline', async () => {

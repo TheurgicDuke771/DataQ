@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
@@ -567,6 +568,52 @@ def _prune_suspended(connection: Connection, snapshot_types: tuple[str, ...]) ->
         return False
     last_pruned = connection.lineage_last_authoritative_refresh_at
     return last_pruned is None or connection.lineage_last_refresh_at > last_pruned
+
+
+def lineage_qualifiers(
+    failing_sources: Sequence[LineageSourceHealth],
+    warehouse_status: Sequence[WarehouseLineageStatus],
+) -> list[str]:
+    """The human/LLM-readable qualifier strings for a lineage graph fed by
+    ``failing_sources``/``warehouse_status`` — the SHARED SEAM behind `get_asset`'s
+    `lineage.qualified_by` **and** `downstream_blast_radius` (#1990). Any consumer
+    of the lineage graph reuses this rather than re-deriving its own wording, so a
+    prune-suspension is always stated the same way everywhere it appears.
+
+    A prune-suspension is the one qualifier that runs the OTHER direction from the
+    rest: a failing/stale/coarse source under-reports (missing edges), while a
+    suspended prune can only accrete (extra edges, some possibly removed from the
+    warehouse) — the wording says so explicitly rather than folding it into a
+    generic "may be incomplete".
+    """
+    qualifiers: list[str] = []
+    for src in failing_sources:
+        qualifiers.append(
+            f"lineage poll failing on connection '{src.name}' "
+            f"({src.consecutive_failures} consecutive failures)"
+        )
+    for wh in warehouse_status:
+        if wh.last_error:
+            qualifiers.append(f"warehouse lineage refresh failing on '{wh.name}'")
+        if wh.stale:
+            qualifiers.append(f"warehouse lineage on '{wh.name}' has not refreshed recently")
+        if wh.degraded_reason:
+            qualifiers.append(f"warehouse lineage on '{wh.name}' is coarse: {wh.degraded_reason}")
+        if wh.prune_suspended:
+            # Stated as accretion, not staleness: the edges may include removed
+            # dependencies, which is the opposite failure from a missing one.
+            since = wh.prune_suspended_since
+            when = (
+                f"has not pruned removed edges since {since.isoformat()}"
+                if since
+                else "has never pruned removed edges"
+            )
+            qualifiers.append(
+                f"warehouse lineage on '{wh.name}' {when} — edges below may include "
+                "dependencies that no longer exist (new edges are still discovered "
+                "normally, so this is a risk of EXTRA edges, not missing ones)"
+            )
+    return qualifiers
 
 
 def failing_lineage_sources(session: Session) -> list[LineageSourceHealth]:
