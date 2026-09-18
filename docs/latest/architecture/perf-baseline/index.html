@@ -2092,6 +2092,56 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#v12-the-dashboard-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.2 — the dashboard summary
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v1.2 — the dashboard summary">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#measured_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Measured
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#no-index-was-added-and-why" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        No index was added, and why
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-is-left-and-what-would-actually-fix-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is left, and what would actually fix it
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -3147,6 +3197,56 @@
     <span class="md-ellipsis">
       
         Running it
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v12-the-dashboard-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.2 — the dashboard summary
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v1.2 — the dashboard summary">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#measured_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Measured
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#no-index-was-added-and-why" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        No index was added, and why
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-is-left-and-what-would-actually-fix-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is left, and what would actually fix it
       
     </span>
   </a>
@@ -4749,10 +4849,10 @@ remain live options; that decision is tracked separately.</p>
 </tr>
 <tr>
 <td><strong><code>/dashboard/summary</code> (7 days)</strong></td>
-<td>15.12 / 16.51</td>
-<td>68.56 / 71.35</td>
-<td><strong>386.14 / 391.89</strong></td>
-<td><strong>10</strong></td>
+<td>8.75 / 9.60</td>
+<td>49.54 / 50.51</td>
+<td><strong>309.02 / 317.42</strong></td>
+<td><strong>6</strong></td>
 </tr>
 <tr>
 <td><code>/incidents</code> list (100)</td>
@@ -4787,10 +4887,12 @@ remain live options; that decision is tracked separately.</p>
 <p>Every <strong>list</strong> read is flat in table size — the newest-first ordering indexes
 doing exactly what the section above them predicted. Two reads are not:</p>
 <ul>
-<li><strong><code>/dashboard/summary</code> is linear and dominant</strong> — 25× the slowest list at 1M
-  rows, and the first thing a user loads. It issues ten statements: six window
-  aggregates, each computed twice for the period-over-period deltas, plus the
-  trend and per-suite queries. Filed separately.</li>
+<li><strong><code>/dashboard/summary</code> is linear and dominant</strong> — still 14× the slowest list at
+  1M rows, and the first thing a user loads. It originally issued <strong>ten</strong>
+  statements, because each of six window aggregates was computed twice for the
+  period-over-period deltas; collapsing those into one pass per aggregate took it
+  to six and the 1M number from 386 ms to 309 ms (see the section below). It is
+  still linear, and what remains needs a different shape, not a better query.</li>
 <li><strong><code>X-Total-Count</code> on <code>/runs</code> grows with the table</strong> (1.0 → 22.2 ms), which the
   index section above already called out as the new page-1 cost; this puts the
   1M-row number on it.</li>
@@ -4971,6 +5073,72 @@ yet, and building them is tracked separately.
 Refreshing the committed baseline is deliberate — <code>run --tag ci --repeat 7 --out
 backend/scripts/perf/baseline.json</code> — and a PR that does it should say why the
 number moved.</p>
+<h2 id="v12-the-dashboard-summary">v1.2 — the dashboard summary<a class="headerlink" href="#v12-the-dashboard-summary" title="Permanent link">¶</a></h2>
+<p>The summary is the one read the section above found <strong>linear in run count</strong> while
+every list endpoint stayed flat, and it is the first thing a user loads. It
+computed six window aggregates — the result-status histogram, the run count and
+the mean run duration — <strong>twice each</strong>, once for the trailing window and once for
+the previous equivalent window the period-over-period deltas compare against.</p>
+<p>The two windows are strictly adjacent, so one scan of <code>[now − 2 × window, ∞)</code>
+with a <code>FILTER</code> clause per bucket and window produces both. The run count and the
+mean duration aggregate the <em>same</em> rows, so they collapse into that pass as well.</p>
+<h3 id="measured_1">Measured<a class="headerlink" href="#measured_1" title="Permanent link">¶</a></h3>
+<p>Through the benchmark above (<code>db_read</code> family, same rig, same seeding), p50 /
+p95 in milliseconds with the statement count the budget gates:</p>
+<table>
+<thead>
+<tr>
+<th>rows in <code>runs</code></th>
+<th>before</th>
+<th>after</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>10,000</td>
+<td>15.12 / 16.51, <strong>10 statements</strong></td>
+<td><strong>8.75 / 9.60, 6</strong></td>
+</tr>
+<tr>
+<td>100,000</td>
+<td>68.56 / 71.35, <strong>10</strong></td>
+<td><strong>49.54 / 50.51, 6</strong></td>
+</tr>
+<tr>
+<td>1,000,000</td>
+<td>386.14 / 391.89, <strong>10</strong></td>
+<td><strong>309.02 / 317.42, 6</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Every KPI, delta, trend point and per-suite score is unchanged — asserted in the
+test suite against the previous per-window implementation, kept as the oracle
+rather than against transcribed numbers.</p>
+<p>The picture is the same on a heavier seed (three results per run over 36 days,
+so the histogram has three times the rows to aggregate): 64.1 → 37.5 ms p50 at
+100k, 459.7 → 345.2 ms at 1M.</p>
+<h3 id="no-index-was-added-and-why">No index was added, and why<a class="headerlink" href="#no-index-was-added-and-why" title="Permanent link">¶</a></h3>
+<p>Two candidates were built on a 1-million-row database and measured with
+<code>EXPLAIN (ANALYZE, BUFFERS)</code>: <code>results (created_at, run_id, status)</code> and
+<code>runs (suite_id, status, id)</code>.</p>
+<p>They <strong>do</strong> change the plan — the status histogram's parallel sequential scan of
+<code>results</code> and its bitmap heap scan of <code>runs</code> both become parallel index-only
+scans. The statement moves 240 ms → 207 ms and the whole summary 345 ms → 328 ms,
+because what dominates is the hash join and aggregation of ~1 million result
+rows, which no index removes. A ~2 % read gain does not pay for permanent write
+amplification on the two tables every single run writes to.</p>
+<p>The newest-first ordering indexes are no help either: these are aggregates over a
+window, not an ordered page, so there is nothing for a <code>DESC</code> index to serve.</p>
+<h3 id="what-is-left-and-what-would-actually-fix-it">What is left, and what would actually fix it<a class="headerlink" href="#what-is-left-and-what-would-actually-fix-it" title="Permanent link">¶</a></h3>
+<p>At 1 million runs the summary is still ~309 ms, and the single status histogram
+is most of it. It is linear because it genuinely aggregates every result row in a
+two-window span, and <strong>the join cannot be bounded from the <code>runs</code> side</strong>: a
+result is written <em>during</em> its run, so a result inside the window can belong to a
+run that started before it. Adding that predicate would be faster and wrong.</p>
+<p>The next step is a <strong>materialised per-day rollup</strong> — which the trend query
+already wants — read by the summary instead of the raw tables. That is a write
+path, a backfill and a staleness contract rather than a query rewrite, so it is
+tracked separately.</p>
 
 
 
