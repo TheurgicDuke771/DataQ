@@ -3839,12 +3839,20 @@ that would stamp "sampled" on a result that was not.</p>
 <li><strong>Unity Catalog needs a live run.</strong> The pushdown SQL is DataQ's own
   construction and is unit-pinned, but <code>TABLESAMPLE (x PERCENT) REPEATABLE (seed)</code>
   behaviour is a Databricks fact — only a live run is evidence.</li>
-<li><strong>Iceberg has neither a cap nor sampling.</strong> It is the third
-  runner that materialises a whole dataset, so the out-of-memory-reporting gap
-  stays open there. The probe is
-  cheap (<code>scan().count()</code> is snapshot metadata); what it needs first is its <strong>own
-  measurement</strong> — Iceberg passed at 2M rows where UC died, so inheriting
-  <code>RUN_MAX_SCAN_ROWS</code>'s 1.5M would refuse a rung measured to work.</li>
+<li><strong>Iceberg now has a cap; it does not have sampling, and its cap value is not yet
+  measured.</strong> The guardrail shipped: the probe plans the scan's files and sums
+  their manifest record counts — never a data read — and refuses an over-cap read
+  before <code>to_arrow()</code>, on the expectation path and on both monitor
+  scan-fallbacks; it is skipped entirely when the cap is disabled. It is
+  deliberately not the scan's own <code>count()</code>, which materialises a merge-on-read
+  task in full in order to count it, so counting to decide whether to materialise
+  would perform the very read being refused. The <strong>value</strong> lives in its own setting,
+  <code>RUN_MAX_SCAN_ROWS_ICEBERG</code>, defaulting to "inherit <code>RUN_MAX_SCAN_ROWS</code>" —
+  Iceberg passed at 2M rows where UC died at 2M, so the inherited 1.5M would
+  refuse a rung measured to work, and the real ceiling is somewhere between 2M
+  (passed) and 5M (killed the container). Until that curve is run on the
+  prod-parity rig the shared number is a placeholder, not a decision. Sampling
+  stays out of scope (<code>row_filter</code> + a scan limit is its own piece of work).</li>
 <li><strong>Comparison sources cannot sample — decided: not supported</strong>, see
   <a href="../../adr/0015-two-connection-comparison-check-model/#amendment-2026-09-16-comparison-sources-do-not-support-sampling">ADR 0015's 2026-09-16 amendment</a>.
   Coherent key-set sampling — draw a key set, then fetch exactly those keys

@@ -1928,14 +1928,16 @@ enough target on either of those paths runs the worker out of memory. Two things
 guard that.
 
 **A hard cap, on by default, on the DataFrame path.** Before a run materializes
-anything it checks the object's size (flat files) or the table's `COUNT(*)` (Unity
-Catalog, when the run isn't pushed down). Over the cap the run ends **failed** with
-a message naming the target, the two numbers, and what to do — never a
-half-finished run or a silent hang. Defaults are 128 MiB and 1.5M rows, tuned for
-the reference 2 GiB worker; an operator can change them (`RUN_MAX_SCAN_BYTES` /
-`RUN_MAX_SCAN_ROWS` — see `deploy/README.md`). A pushed-down Unity Catalog check is
-not subject to this cap — it has been run against 200M-row tables with flat worker
-memory.
+anything it checks the object's size (flat files), the table's `COUNT(*)` (Unity
+Catalog, when the run isn't pushed down) or the current snapshot's row count
+(Iceberg, which reads it straight from metadata). Over the cap the run ends
+**failed** with a message naming the target, the two numbers, and what to do —
+never a half-finished run or a silent hang. Defaults are 128 MiB and 1.5M rows,
+tuned for the reference 2 GiB worker; an operator can change them
+(`RUN_MAX_SCAN_BYTES` / `RUN_MAX_SCAN_ROWS`, and `RUN_MAX_SCAN_ROWS_ICEBERG` where
+Iceberg's own measured ceiling differs — see `deploy/README.md`). A pushed-down
+Unity Catalog check is not subject to this cap — it has been run against 200M-row
+tables with flat worker memory.
 
 **Sampling, opt-in per suite.** Add a `sampling` block to the suite's target and
 checks run against a bounded sample instead of the whole dataset:
@@ -5418,12 +5420,20 @@ that would stamp "sampled" on a result that was not.
 - **Unity Catalog needs a live run.** The pushdown SQL is DataQ's own
   construction and is unit-pinned, but `TABLESAMPLE (x PERCENT) REPEATABLE (seed)`
   behaviour is a Databricks fact — only a live run is evidence.
-- **Iceberg has neither a cap nor sampling.** It is the third
-  runner that materialises a whole dataset, so the out-of-memory-reporting gap
-  stays open there. The probe is
-  cheap (`scan().count()` is snapshot metadata); what it needs first is its **own
-  measurement** — Iceberg passed at 2M rows where UC died, so inheriting
-  `RUN_MAX_SCAN_ROWS`'s 1.5M would refuse a rung measured to work.
+- **Iceberg now has a cap; it does not have sampling, and its cap value is not yet
+  measured.** The guardrail shipped: the probe plans the scan's files and sums
+  their manifest record counts — never a data read — and refuses an over-cap read
+  before `to_arrow()`, on the expectation path and on both monitor
+  scan-fallbacks; it is skipped entirely when the cap is disabled. It is
+  deliberately not the scan's own `count()`, which materialises a merge-on-read
+  task in full in order to count it, so counting to decide whether to materialise
+  would perform the very read being refused. The **value** lives in its own setting,
+  `RUN_MAX_SCAN_ROWS_ICEBERG`, defaulting to "inherit `RUN_MAX_SCAN_ROWS`" —
+  Iceberg passed at 2M rows where UC died at 2M, so the inherited 1.5M would
+  refuse a rung measured to work, and the real ceiling is somewhere between 2M
+  (passed) and 5M (killed the container). Until that curve is run on the
+  prod-parity rig the shared number is a placeholder, not a decision. Sampling
+  stays out of scope (`row_filter` + a scan limit is its own piece of work).
 - **Comparison sources cannot sample — decided: not supported**, see
   [ADR 0015's 2026-09-16 amendment](../adr/0015-two-connection-comparison-check-model.md#amendment-2026-09-16-comparison-sources-do-not-support-sampling).
   Coherent key-set sampling — draw a key set, then fetch exactly those keys
