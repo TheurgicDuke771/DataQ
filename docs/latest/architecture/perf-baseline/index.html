@@ -2066,10 +2066,32 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#snowflake-tiers-measured" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Snowflake tiers — measured
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#what-is-explicitly-not-measured-here" class="md-nav__link">
     <span class="md-ellipsis">
       
         What is explicitly NOT measured here
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-iceberg-memory-curve-local-and-run-under-the-real-limit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Iceberg memory curve — local, and run under the real limit
       
     </span>
   </a>
@@ -3182,10 +3204,32 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#snowflake-tiers-measured" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Snowflake tiers — measured
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#what-is-explicitly-not-measured-here" class="md-nav__link">
     <span class="md-ellipsis">
       
         What is explicitly NOT measured here
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-iceberg-memory-curve-local-and-run-under-the-real-limit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Iceberg memory curve — local, and run under the real limit
       
     </span>
   </a>
@@ -3847,13 +3891,61 @@ that would stamp "sampled" on a result that was not.</p>
   deliberately not the scan's own <code>count()</code>, which materialises a merge-on-read
   task in full in order to count it, so counting to decide whether to materialise
   would perform the very read being refused. The <strong>value</strong> lives in its own setting,
-  <code>RUN_MAX_SCAN_ROWS_ICEBERG</code>, defaulting to "inherit <code>RUN_MAX_SCAN_ROWS</code>" —
-  Iceberg passed at 2M rows where UC died at 2M, so the inherited 1.5M would
-  refuse a rung measured to work, and the real ceiling is somewhere between 2M
-  (passed) and 5M (killed the container). Until that curve is run on the
-  prod-parity rig the shared number is a placeholder, not a decision. Sampling
-  stays out of scope (<code>row_filter</code> + a scan limit is its own piece of work).</li>
-<li><strong>Comparison sources cannot sample — decided: not supported</strong>, see
+  <code>RUN_MAX_SCAN_ROWS_ICEBERG</code>, which when unset tracks <code>RUN_MAX_SCAN_ROWS</code> at a
+  measured 2× ratio — <strong>3,000,000</strong> at the default, and still lowered or disabled
+  together with the shared cap — read off the curve below rather than inherited: Iceberg passed at 2M rows where UC died at 2M, so sharing UC's 1.5M
+  would refuse a rung measured to work. Sampling stays out of scope (<code>row_filter</code></li>
+<li>a scan limit is its own piece of work).</li>
+</ul>
+<p>The curve, on the container rig (2 GiB memory limit, swap off, 1 CPU; the real
+  <code>IcebergCheckRunner</code>, five expectations, one fresh process per rung, a local
+  SQL-catalog table with the flat-file tiers' column shape):</p>
+<table>
+<thead>
+<tr>
+<th>Rows</th>
+<th>Peak RSS</th>
+<th>Wall</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1M</td>
+<td>541 MiB</td>
+<td>1.9 s</td>
+</tr>
+<tr>
+<td>2M</td>
+<td>697 MiB</td>
+<td>2.4 s</td>
+</tr>
+<tr>
+<td>3M</td>
+<td>845 MiB</td>
+<td>2.9 s</td>
+</tr>
+<tr>
+<td>4M</td>
+<td>940 MiB</td>
+<td>3.4 s</td>
+</tr>
+<tr>
+<td>5M</td>
+<td>1,065 MiB</td>
+<td>3.8 s</td>
+</tr>
+</tbody>
+</table>
+<p>No rung died. The read is linear — about 130 MiB per million rows on a ~410 MiB
+  process baseline for this narrow schema — and that is <em>not</em> the deployed worker's
+  position: a deployed worker idles near 1 GiB before it reads anything, and the
+  wider table of the earlier deployed campaign cost about 190 MiB per million
+  (1,218 MiB at 1M, 1,408 MiB at 2M, replica killed at 5M). Both agree on the
+  ceiling: (2,048 − ~1,030) / 190 ≈ 5.3M rows. 3M projects to about 1,600 MiB on
+  the deployed worker — roughly 450 MiB of margin for a wider table or a
+  concurrent sibling — while still admitting the 2M rung measured to work. A row
+  count is a width-blind proxy for memory; the margin is what absorbs that.
+- <strong>Comparison sources cannot sample — decided: not supported</strong>, see
   <a href="../../adr/0015-two-connection-comparison-check-model/#amendment-2026-09-16-comparison-sources-do-not-support-sampling">ADR 0015's 2026-09-16 amendment</a>.
   Coherent key-set sampling — draw a key set, then fetch exactly those keys
   from both sides — is a different mechanism from the suite-target's
@@ -3861,20 +3953,19 @@ that would stamp "sampled" on a result that was not.</p>
   almost no keys and report everything as a mismatch, which is worse than
   refusing. The refusal at <code>check_service.validate_comparison_check</code> is the
   enforced contract; <code>COMPARISON_MAX_ROWS</code> fail-fast + narrowing the source
-  with a query filter are the sanctioned alternatives.</li>
-<li><strong>Column projection for flat-file monitors.</strong> A column-freshness monitor still
+  with a query filter are the sanctioned alternatives.
+- <strong>Column projection for flat-file monitors.</strong> A column-freshness monitor still
   reads every column to compute one <code>MAX</code>. Parquet could project a single column
-  off its footer, which would remove most of the remaining monitor-path memory.</li>
-<li><strong>Reuse in the sampled readers.</strong> The count and the take still construct
+  off its footer, which would remove most of the remaining monitor-path memory.
+- <strong>Reuse in the sampled readers.</strong> The count and the take still construct
   their CSV streams separately (consistent today by coincidence, not
   construction), and <code>object_size</code> remains a narrower second call to the same
-  store API <code>file_stat</code> already makes.</li>
-<li><strong>Incremental / delta-only validation</strong> stays out of scope by design:
+  store API <code>file_stat</code> already makes.
+- <strong>Incremental / delta-only validation</strong> stays out of scope by design:
   sampling bounds <em>how much</em> is read, not <em>which part is new</em>. Note for whoever
   builds it — a watermark belongs on the run target beside <code>sampling</code>, and its
   result record should be the same shape as <code>sampling</code>, so the run-detail surface
-  learns one vocabulary for "this verdict covers less than everything".</li>
-</ul>
+  learns one vocabulary for "this verdict covers less than everything".</p>
 <h3 id="closed-since-the-sampled-read-paths-do-less-io">Closed since: the sampled read paths do less IO<a class="headerlink" href="#closed-since-the-sampled-read-paths-do-less-io" title="Permanent link">¶</a></h3>
 <blockquote>
 <p>Captured <strong>2026-09-17</strong>, same method as above — the store seams pointed at a
@@ -5058,39 +5149,146 @@ with the sampled suite-run path and worth fixing once, not reworked here.
 (The warehouse profiler's batched rank-join, the post-optimisation number this
 page records elsewhere, is not measured here — see the not-measured table
 below.)</p>
-<h3 id="what-is-explicitly-not-measured-here">What is explicitly NOT measured here<a class="headerlink" href="#what-is-explicitly-not-measured-here" title="Permanent link">¶</a></h3>
-<p>A tier that simply does not appear in a result set reads as "nothing to report",
-so the warehouse tiers are registered as real cases and emit an explicit
-<code>not_measured</code> row carrying the reason:</p>
+<h3 id="snowflake-tiers-measured">Snowflake tiers — measured<a class="headerlink" href="#snowflake-tiers-measured" title="Permanent link">¶</a></h3>
+<p>Run live with a read-only role against Snowflake's TPC-H sample share (<code>LINEITEM</code>
+at scale factors 1 and 10), so nothing was created or dropped in the account. The
+suite keeps the standard shape — two not-null, two between, one uniqueness (here a
+compound key, since the table has no single-column one) — supplied through
+<code>PERF_SF_SUITE_JSON</code>, with <code>PERF_SF_SCHEMA_&lt;tier&gt;</code> and <code>PERF_SF_ROWS_&lt;tier&gt;</code> naming
+the per-tier schema and true row count. Medians of 3, development rig.</p>
 <table>
 <thead>
 <tr>
 <th>Tier</th>
-<th>Why not measured</th>
+<th>Rows</th>
+<th>Checks</th>
+<th>Run wall</th>
+<th>Worker peak RSS</th>
+<th>Statements</th>
+<th>Rows returned to the worker</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Snowflake 1M / 50M, pushdown</td>
-<td>needs a live warehouse; the harness compute is stopped by default (ADR 0021)</td>
+<td>Snowflake, pushdown</td>
+<td>6,001,215</td>
+<td>5 / 5 pass</td>
+<td>5.2 s</td>
+<td>378 MiB</td>
+<td>13</td>
+<td>28</td>
 </tr>
 <tr>
-<td>Unity Catalog 1M, pushdown <strong>and</strong> frame-load</td>
-<td>same, plus Databricks Free-Edition fair-use pausing</td>
+<td>Snowflake, pushdown</td>
+<td>59,986,052</td>
+<td>5 / 5 pass</td>
+<td>5.6 s</td>
+<td>383 MiB</td>
+<td>13</td>
+<td>28</td>
 </tr>
 <tr>
-<td>Iceberg 1M, native <code>pyiceberg</code> snapshot</td>
-<td>same</td>
-</tr>
-<tr>
-<td>Wide-table profiler on a warehouse (the batched rank-join)</td>
-<td>same — the flat-file profiler exercises a different reader and cannot stand in for it</td>
+<td>Profiler, 16 columns</td>
+<td>6,001,215</td>
+<td>—</td>
+<td>2.8 s</td>
+<td>383 MiB</td>
+<td>2</td>
+<td>—</td>
 </tr>
 </tbody>
 </table>
+<p>Ten times the rows costs 0.4 s of wall clock and 5 MiB of worker memory, and the
+same 28 rows come back either way: the worker holds a verdict, not the table. The
+wall clock is mostly the 13 round trips, not the scan. Peak RSS here is the
+process baseline (GX and the connector loaded), the same ~380 MiB an empty run
+costs.</p>
+<h3 id="what-is-explicitly-not-measured-here">What is explicitly NOT measured here<a class="headerlink" href="#what-is-explicitly-not-measured-here" title="Permanent link">¶</a></h3>
+<p>A tier that simply does not appear in a result set reads as "nothing to report",
+so the warehouse tiers are registered as real cases and emit an explicit
+<code>not_measured</code> row carrying the reason. Their bodies drive DataQ's own runners;
+what each one waits for is a live warehouse and the environment naming it:</p>
+<table>
+<thead>
+<tr>
+<th>Tier</th>
+<th>How it runs</th>
+<th>Environment it needs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Snowflake 1M / 50M, pushdown — <strong>measured above</strong></td>
+<td><code>SnowflakeCheckRunner.run_checks</code>, the same five expectations as every other rung (or <code>PERF_SF_SUITE_JSON</code> for a table the harness did not build)</td>
+<td><code>PERF_SF_ACCOUNT</code> <code>PERF_SF_USER</code> <code>PERF_SF_ROLE</code> <code>PERF_SF_DATABASE</code> <code>PERF_SF_SCHEMA</code> <code>PERF_SF_WAREHOUSE</code> <code>PERF_SF_TABLE_1M</code> / <code>PERF_SF_TABLE_50M</code>, secret in <code>PERF_SF_SECRET</code></td>
+</tr>
+<tr>
+<td>Unity Catalog 1M, pushdown <strong>and</strong> frame-load</td>
+<td><code>UnityCatalogCheckRunner.run_checks</code> twice over the same table, the two cases differing only in <code>UC_SQL_PUSHDOWN</code> — the clean isolated comparison</td>
+<td><code>PERF_UC_WORKSPACE_URL</code> <code>PERF_UC_WAREHOUSE_ID</code> <code>PERF_UC_CATALOG</code> <code>PERF_UC_SCHEMA</code> <code>PERF_UC_TABLE_1M</code>, secret in <code>PERF_UC_SECRET</code></td>
+</tr>
+<tr>
+<td>Iceberg 1M, native <code>pyiceberg</code> snapshot</td>
+<td><code>IcebergCheckRunner.run_checks</code> against a real catalog</td>
+<td><code>PERF_ICEBERG_CATALOG_JSON</code> (the connection config) <code>PERF_ICEBERG_TABLE</code>, optional secret in <code>PERF_ICEBERG_SECRET</code></td>
+</tr>
+<tr>
+<td>Wide-table profiler on a warehouse (the batched rank-join)</td>
+<td><code>profile_service.profile_table</code>; the column listing is done first and is outside the clock</td>
+<td>the Snowflake set above plus <code>PERF_SF_WIDE_TABLE</code></td>
+</tr>
+</tbody>
+</table>
+<p>Every one of them emits <code>statements</code> (gated: growth is a regression), wall clock,
+rows/s and the harness's own peak RSS. <code>frame_rows</code> — rows actually materialised
+into the worker, recorded by wrapping the runner's own reader — is emitted <strong>only
+where a reader seam exists</strong>: a pushdown lane has none, and reporting zero there
+would restate the claim under test as its own evidence. Peak RSS is what answers
+"did the worker hold the table".</p>
+<p>Secrets are read from the environment at run time only; a skip reason names the
+variable that is missing and never its value, and a test asserts no configured
+secret reaches an emitted row.</p>
 <p>The earlier sections of this page carry live warehouse numbers from the 2026-07
 and 2026-08 campaigns; what is missing is those tiers <em>inside the budget</em>, so a
 regression in them would be caught rather than re-measured by hand.</p>
+<h3 id="the-iceberg-memory-curve-local-and-run-under-the-real-limit">The Iceberg memory curve — local, and run under the real limit<a class="headerlink" href="#the-iceberg-memory-curve-local-and-run-under-the-real-limit" title="Permanent link">¶</a></h3>
+<p>Finding where the Iceberg runner dies needs no warehouse at all, so it does not
+wait on a harness window. <code>perf_baseline gen-iceberg</code> builds a local sqlite
+<code>SqlCatalog</code> over a <code>file://</code> warehouse under <code>PERF_DATA_DIR</code>, with the same
+six-column order-lines shape as the flat-file tiers, and the <code>iceberg_curve</code> tag
+registers rungs at 1M, 2M, 3M, 4M and 5M rows. Nothing is stood in for —
+pyiceberg plans, reads and materialises for real, because the ceiling is a
+pyiceberg fact rather than one of ours. Generation runs in its <strong>own</strong> process:
+<code>ru_maxrss</code> is a high-water mark for the whole process, so building a 5M-row
+fixture beside the measurement would be recorded as the measurement.</p>
+<p>The curve is deliberately <strong>not</strong> in the <code>ci</code> tag — each rung wants gigabytes and
+the point is that one of them dies.</p>
+<p>That last part is why the curve has to run under the deployed limit rather than
+on the dev box, which has tens of gigabytes and therefore measures how much
+memory a rung <em>wants</em>, never whether the worker survives it.
+<code>scripts/perf/run_in_rig.sh</code> runs a tag inside the backend image at the prod
+worker's shape (1 CPU / 2 GiB, swap disabled so the kernel kills rather than
+pages), with <code>PERF_DATA_DIR</code> bind-mounted so the fixtures are built once on the
+host:</p>
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>-m<span class="w"> </span>backend.scripts.perf_baseline<span class="w"> </span>gen-iceberg<span class="w">          </span><span class="c1"># every rung, own process</span>
+scripts/perf/run_in_rig.sh<span class="w"> </span>--build<span class="w"> </span>--<span class="w"> </span>--tag<span class="w"> </span>iceberg_curve<span class="w"> </span>--out<span class="w"> </span><span class="s2">"</span><span class="nv">$HOME</span><span class="s2">/.cache/dataq-perf/curve.json"</span>
+</code></pre></div>
+<p>The fixture directory is mounted at the <strong>same absolute path</strong> inside the
+container, because an Iceberg <code>SqlCatalog</code> stores absolute metadata and data-file
+locations — a warehouse built on the host and mounted somewhere else reads as
+absent, not as broken.</p>
+<p>A rung that is OOM-killed comes back as a <code>killed</code> row carrying the signal and
+exit status (both conventions decoded — a bare fork reports <code>-SIGKILL</code>, a
+container runtime reports <code>137</code>) and the run <strong>continues up the curve</strong>, because
+a rung that dies is the answer being looked for, not a broken run. A rung that
+merely runs past the timeout is recorded the same way: the ceiling arriving as
+time rather than as a signal is the same ceiling.</p>
+<p>An ordinary non-zero exit is <strong>not</strong> converted into a row. A traceback is a bad
+table name, an expired credential or a moved seam, and recording that as a
+ceiling would turn a misconfiguration into a finding. <code>check</code> additionally fails
+on any <code>killed</code> row: those rows carry the <code>observe</code> gate, so the budget skips
+them, and it would otherwise print "budget OK" about a case that produced no
+number at all.</p>
 <p>Also out of scope by construction: network/egress cost (the store seams read a
 local file), warehouse-side compute cost per check run, and anything that only
 appears under the production memory limit — a 2 GiB cgroup turns a peak into a
@@ -5108,8 +5306,8 @@ python<span class="w"> </span>-m<span class="w"> </span>backend.scripts.perf_bas
 </code></pre></div>
 <p>The fast subset (<code>--tag ci</code>) runs on every push inside the existing backend test
 job, so no required-check name changes. The full matrix is a manual run. The
-warehouse tiers appear in it as <code>not_measured</code> rows — their bodies are not built
-yet, and building them is tracked separately.
+warehouse tiers appear in it as <code>not_measured</code> rows until their environment is
+set — see the table above for what each one needs.
 Refreshing the committed baseline is deliberate — <code>run --tag ci --repeat 7 --out
 backend/scripts/perf/baseline.json</code> — and a PR that does it should say why the
 number moved.</p>

@@ -3029,8 +3029,9 @@ anything it checks the object's size (flat files), the table's <code>COUNT(*)</c
 Catalog, when the run isn't pushed down) or the current snapshot's row count
 (Iceberg, which reads it straight from metadata). Over the cap the run ends
 <strong>failed</strong> with a message naming the target, the two numbers, and what to do —
-never a half-finished run or a silent hang. Defaults are 128 MiB and 1.5M rows,
-tuned for the reference 2 GiB worker; an operator can change them
+never a half-finished run or a silent hang. Defaults are 128 MiB and 1.5M rows
+(3M rows for Iceberg, whose measured ceiling is higher), tuned for the reference
+2 GiB worker; an operator can change them
 (<code>RUN_MAX_SCAN_BYTES</code> / <code>RUN_MAX_SCAN_ROWS</code>, and <code>RUN_MAX_SCAN_ROWS_ICEBERG</code> where
 Iceberg's own measured ceiling differs — see <code>deploy/README.md</code>). A pushed-down
 Unity Catalog check is not subject to this cap — it has been run against 200M-row
