@@ -748,8 +748,60 @@ run was measured at 1,186 MiB per child (this machine's per-child figure is
 lower, and its idle baseline is lower too). Splitting the scheduler out of the
 worker protected *beat* from that; it did nothing about the task-execution side,
 so a schedule collision — or a manual run beside a scheduled one — can still
-exhaust the worker. A concurrency cap, a per-task memory guard or a larger worker
-remain live options; that decision is tracked separately.
+exhaust the worker. The decision that followed is the next section.
+
+#### The concurrency decision
+
+Two changes ship together, because neither is sufficient alone.
+
+**The pool is 2, not 4.** At the measured per-child peak, four children do not fit
+a 2 GiB container and two do not reliably either — so a pool size alone was never
+going to be the whole answer, and cutting it to 1 would have traded every bit of
+parallelism for a bound that the second change provides more cheaply. Pool size
+ships with the image (`WORKER_CONCURRENCY`), so it needs no infrastructure step.
+
+**Admission control bounds the sum, which is what the caps never did.**
+`RUN_MAX_SCAN_BYTES` / `RUN_MAX_SCAN_ROWS` bound *one* run's read; four runs each
+passing their cap still exceed the container. A run now claims its estimated
+resident cost from a worker-wide budget — held in Redis, so it is shared across
+the prefork children of one container — before it materialises anything, and
+releases it when it finishes. The estimate is not guessed from the data: it comes
+from the size probe the read path already performs, multiplied by the measured
+store-bytes-to-RSS expansion in the table above (~8× CSV, ~9× Parquet), and a
+sampled run is estimated from its sample rather than from the object, because
+sampling removes the volume axis entirely.
+
+The arithmetic, on the production rig's 1,186 MiB-per-child figure for a 1M-row
+CSV and a ~930 MiB idle worker:
+
+| | Per-child peak × pool | Plus idle baseline | Against 2,048 MiB |
+|---|---|---|---|
+| Before (pool 4) | 4,744 MiB | 5,674 MiB | **2.8× over** |
+| Before (pool 2) | 2,372 MiB | 3,302 MiB | **1.6× over** |
+| After (pool 2, budget 1 GiB) | ≤ 1,024 MiB reserved | 1,954 MiB | fits |
+
+The budget default is `RUN_MAX_SCAN_BYTES × 8`, i.e. **exactly one at-the-cap
+full-load flat-file read in flight**; the second concurrent large run waits while
+the other slot stays free for the pushdown and sampled work that costs nothing.
+
+Three properties are deliberate, and each is the answer to a way this could have
+been worse than the problem:
+
+- **Pressure never fails a run.** An over-budget run is re-queued with a bounded
+  wait, and past that wait it proceeds anyway rather than starving — the timeout
+  is logged, not silent. A run whose estimate exceeds the whole budget is admitted
+  when nothing else holds any, so a large target runs alone instead of never.
+- **Waiting is visible as waiting.** The run stays `queued` and carries
+  `queued_reason: awaiting_worker_memory`, so neither a user nor an LLM reading
+  `/runs` sees "running" for a run that has read nothing yet.
+- **The budget fails open, and a dead child does not leak it.** An unreachable
+  Redis admits (the same stance rate limiting takes), and every reservation is a
+  lease — because the OOM case is exactly the one where cleanup code does not run.
+
+Pushdown lanes bypass admission entirely: they hold no dataset in the worker, and
+charging them for one would serialise the cheapest work on the platform. Iceberg
+has no estimator yet — its `scan().count()` probe is tracked separately — and is
+logged as unmetered rather than counted as free.
 
 #### Database growth — the reads a user waits on
 

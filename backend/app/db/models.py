@@ -675,6 +675,9 @@ class Run(Base):
     # Redaction-safe classified reason for a `failed` run (#605) — never raw adapter text (can carry
     # DSN/credential fragments).
     failure_reason: Mapped[str | None] = mapped_column(String(500))
+    # Why a `queued` run is still queued (#1998) — `awaiting_worker_memory` when admission
+    # control is holding it back. NULL means the ordinary case: waiting on the broker.
+    queued_reason: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = _created_at()
 
 

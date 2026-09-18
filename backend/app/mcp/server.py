@@ -473,6 +473,8 @@ def _run_results_payload(
             # Explicit, so a client branches on a field rather than inferring
             # "no checks" means "nothing failed" (#318).
             "results_final": final,
+            # A `queued` run is not necessarily waiting on the broker (#1998).
+            "queued_reason": run.queued_reason,
         },
         "checks": [
             {
@@ -685,7 +687,10 @@ def get_suite_results(suite_id: str) -> dict[str, Any]:
     If the latest run has not finished successfully, `checks` is empty and
     `run.results_final` is false — the run is still executing, or it failed and
     never produced a complete account. Report the run's status in that case; do
-    not describe the suite's quality from it.
+    not describe the suite's quality from it. If it is ``queued``, read
+    ``run.queued_reason``: ``awaiting_worker_memory`` means worker-memory
+    admission control is holding it back, not that it is stuck (see
+    ``get_run_results`` for the full explanation).
     """
     sid = _parse_uuid(suite_id, field="suite_id")
     with _ctx() as (session, user), _service_errors():
@@ -1161,6 +1166,14 @@ def list_runs(
     failed without producing a complete account. Describe such a run by its
     status; it has no data-quality verdict yet.
 
+    ``queued`` does not mean "about to start". ``queued_reason`` says why a run is
+    still queued: ``awaiting_worker_memory`` means the worker is already holding
+    as much dataset in memory as it is allowed to and this run is being re-queued
+    until room frees up (it is not stuck, and it is not running — no check has
+    evaluated any data yet). It proceeds anyway once its wait budget runs out. A **null**
+    ``queued_reason`` on a queued run means the ordinary case, waiting on the
+    broker for a free worker slot — never that it has started.
+
     ``since_hours``/``until_hours`` scope by ``created_at`` and are relative
     offsets from now ("N hours ago"), not clock times — you don't need to know
     the server's current time to use them. For "what ran today", pass
@@ -1235,6 +1248,8 @@ def list_runs(
                     # A fixed category message from `failure_classifier`, never raw
                     # adapter text (which can carry DSN/credential fragments, #605).
                     "failure_reason": r.failure_reason,
+                    # Why a `queued` run is still queued (#1998).
+                    "queued_reason": r.queued_reason,
                     **_run_outcome_fields(r, outcomes.get(r.id)),
                 }
                 for r in runs
@@ -1265,8 +1280,11 @@ def get_run_results(run_id: str) -> dict[str, Any]:
     If the run has not finished successfully, ``checks`` is empty and
     ``run.results_final`` is false — it is still executing, or it failed and
     never produced a complete account. Report the run's status in that case; do
-    not describe the data's quality from it. Requires view access to the run's
-    suite.
+    not describe the data's quality from it. ``run.queued_reason`` distinguishes
+    the two shapes of ``queued``: ``awaiting_worker_memory`` means admission
+    control is re-queueing it until the worker has room to hold its dataset (no
+    check has evaluated any data yet, and it is not stuck), while null means it is
+    simply waiting on the broker. Requires view access to the run's suite.
     """
     rid = _parse_uuid(run_id, field="run_id")
     with _ctx() as (session, user), _service_errors():
@@ -1980,6 +1998,14 @@ def get_run_status(run_id: str) -> dict[str, Any]:
     of ordinary expectations is validated as one atomic batch, so its checks all
     resolve at once at the end. Read a rising ``elapsed_ms`` with
     ``status: running`` as "still working", not as "stuck".
+
+    ``queued_reason`` explains why a ``queued`` run has not started, which polling
+    alone cannot tell you: ``awaiting_worker_memory`` means admission control is
+    holding it back until the worker has room for its dataset, so it can sit at
+    ``queued`` with a **null** ``elapsed_ms`` for several minutes across repeated
+    polls without being stuck — no check has evaluated any data yet, and it starts
+    on its own once room frees up or its wait budget runs out. A null
+    ``queued_reason`` on a queued run is the ordinary case, waiting on the broker.
     """
     rid = _parse_uuid(run_id, field="run_id")
     with _ctx() as (session, user), _service_errors():
@@ -2001,6 +2027,9 @@ def get_run_status(run_id: str) -> dict[str, Any]:
             "completed_checks": progress.completed_checks,
             "counts": progress.counts,
             "elapsed_ms": progress.elapsed_ms,
+            # Why a `queued` run is still queued — `elapsed_ms` is null throughout
+            # the wait, so nothing else here distinguishes the two shapes (#1998).
+            "queued_reason": progress.run.queued_reason,
             "batched_pending": progress.batched_pending,
             "checks": [{"name": c.name, "status": c.status} for c in progress.checks],
         }

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import time
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Literal
+from typing import Any, Literal
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -48,6 +49,7 @@ from backend.app.services import (
     orchestration_service,
     otp_service,
     profile_service,
+    run_admission,
     run_dispatch,
     run_service,
     run_target,
@@ -222,12 +224,29 @@ def _run_suite(session: Session, *, run_id: uuid.UUID) -> str:
             return str(run.status)
 
 
-@celery_app.task(name="run_suite")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
-def run_suite(run_id: str) -> str:
-    """Worker entry point. ``run_id`` is a string so it serialises over JSON."""
+@celery_app.task(  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
+    name="run_suite", bind=True, max_retries=None
+)
+def run_suite(
+    self: Any,
+    run_id: str,
+    admission: dict[str, Any] | None = None,
+    admission_deadline: float | None = None,
+) -> str:
+    """Worker entry point. ``run_id`` is a string so it serialises over JSON.
+
+    ``admission``/``admission_deadline`` are carried across the task's own re-queues (#1998)
+    so a run waiting for worker memory neither re-probes the store nor waits without end;
+    a first dispatch never sets them.
+    """
     rid = uuid.UUID(run_id)
     session = get_session()
     try:
+        decision = _admit_run(
+            self, session, run_id=rid, admission=admission, deadline=admission_deadline
+        )
+        if decision is not None:
+            return decision
         # OpenLineage START/terminal brackets the run (ADR 0034, #758) — fail-open, dark by default.
         lineage_dispatch.emit_run_lineage_start(session, run_id=rid)
         try:
@@ -243,7 +262,57 @@ def run_suite(run_id: str) -> str:
         _alert_datasource_health_for_run(session, run_id=rid)
         return outcome
     finally:
+        run_admission.release(rid)
         session.close()
+
+
+def _admit_run(
+    task: Any,
+    session: Session,
+    *,
+    run_id: uuid.UUID,
+    admission: dict[str, Any] | None,
+    deadline: float | None,
+) -> str | None:
+    """Reserve worker memory for the run, or re-queue it. Returns a terminal outcome string
+    when the caller must stop (only a cancel), otherwise ``None`` to proceed.
+
+    Memory pressure never fails a run: it defers, and past the wait budget it proceeds anyway
+    rather than starving — logged, and visible on the run as `awaiting_worker_memory` in the
+    meantime so "waiting for the worker" is never rendered as "running".
+    """
+    run = session.get(Run, run_id)
+    if run is None:
+        return None  # `_run_suite` logs and classifies the missing run
+    if run.status == "cancelled":
+        # A cancel during a wait must end the wait, not keep re-queueing forever.
+        run_admission.set_queued_reason(session, run=run, reason=None)
+        log.info("run_suite_already_cancelled", run_id=str(run_id))
+        return "cancelled"
+
+    estimate = (
+        run_admission.from_carry(admission)
+        if admission
+        else run_admission.estimate_run_memory(session, run)
+    )
+    settings = get_settings()
+    # Wall clock, deliberately: the deadline is serialised into the retry and read back in a
+    # DIFFERENT process, where a monotonic epoch means nothing.
+    now = time.time()
+    deadline = deadline if deadline is not None else now + settings.run_admission_max_wait_seconds
+    outcome = run_admission.admit(session, run=run, estimate=estimate, waited_out=now >= deadline)
+    if outcome.defer:
+        run_admission.set_queued_reason(session, run=run, reason=run_admission.AWAITING_MEMORY)
+        raise task.retry(
+            countdown=settings.run_admission_retry_seconds,
+            kwargs={
+                "run_id": str(run_id),
+                "admission": run_admission.carry(estimate),
+                "admission_deadline": deadline,
+            },
+        )
+    run_admission.set_queued_reason(session, run=run, reason=None)
+    return None
 
 
 def _alert_datasource_health_for_run(session: Session, *, run_id: uuid.UUID) -> None:
