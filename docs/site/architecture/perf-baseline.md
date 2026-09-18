@@ -905,13 +905,27 @@ host:
 
 ```bash
 python -m backend.scripts.perf_baseline gen-iceberg          # every rung, own process
-scripts/perf/run_in_rig.sh --build -- --tag iceberg_curve --out /perf-data/curve.json
+scripts/perf/run_in_rig.sh --build -- --tag iceberg_curve --out "$HOME/.cache/dataq-perf/curve.json"
 ```
+
+The fixture directory is mounted at the **same absolute path** inside the
+container, because an Iceberg `SqlCatalog` stores absolute metadata and data-file
+locations — a warehouse built on the host and mounted somewhere else reads as
+absent, not as broken.
 
 A rung that is OOM-killed comes back as a `killed` row carrying the signal and
 exit status (both conventions decoded — a bare fork reports `-SIGKILL`, a
 container runtime reports `137`) and the run **continues up the curve**, because
-a rung that dies is the answer being looked for, not a broken run.
+a rung that dies is the answer being looked for, not a broken run. A rung that
+merely runs past the timeout is recorded the same way: the ceiling arriving as
+time rather than as a signal is the same ceiling.
+
+An ordinary non-zero exit is **not** converted into a row. A traceback is a bad
+table name, an expired credential or a moved seam, and recording that as a
+ceiling would turn a misconfiguration into a finding. `check` additionally fails
+on any `killed` row: those rows carry the `observe` gate, so the budget skips
+them, and it would otherwise print "budget OK" about a case that produced no
+number at all.
 
 Also out of scope by construction: network/egress cost (the store seams read a
 local file), warehouse-side compute cost per check run, and anything that only

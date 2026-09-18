@@ -334,14 +334,17 @@ def _run_unity_catalog(rows: int) -> list[Metric]:
         catalog=catalog,
     )
     specs = _check_specs()
-    # `_read_table` is the frame lane's own reader: wrapping it is what tells the
-    # two lanes apart by MEASUREMENT rather than by the flag the case sets.
-    with _counted() as counters, _measured_frames(runner, ("_read_table",), counters):
-        started = time.perf_counter()
-        outcome = runner.run_checks(
-            table=os.environ["PERF_UC_TABLE_1M"], schema=_env("PERF_UC_SCHEMA"), checks=specs
-        )
-        elapsed = time.perf_counter() - started
+    try:
+        # `_read_table` is the frame lane's own reader: wrapping it is what tells
+        # the two lanes apart by MEASUREMENT rather than by the flag the case sets.
+        with _counted() as counters, _measured_frames(runner, ("_read_table",), counters):
+            started = time.perf_counter()
+            outcome = runner.run_checks(
+                table=os.environ["PERF_UC_TABLE_1M"], schema=_env("PERF_UC_SCHEMA"), checks=specs
+            )
+            elapsed = time.perf_counter() - started
+    finally:
+        runner.close()
     return _run_metrics(
         elapsed=elapsed,
         rows=rows,
@@ -363,9 +366,13 @@ def _iceberg_metrics(config: dict[str, Any], secret: str | None, identifier: str
         config=iceberg_mod.IcebergConfig.model_validate(config), secret=secret
     )
     specs = _check_specs()
-    counters = _Counters()
     planned = iceberg_mod.planned_row_count(runner._load_table(identifier))
-    with _measured_frames(iceberg_mod, ("_to_arrow_backed_pandas",), counters):
+    # A SQL catalog IS SQLAlchemy, so `statements` is genuinely instrumented here
+    # — emitting it uncounted would be the zero `frame_rows` is withheld to avoid.
+    with (
+        _counted() as counters,
+        _measured_frames(iceberg_mod, ("_to_arrow_backed_pandas",), counters),
+    ):
         started = time.perf_counter()
         outcome = runner.run_checks(table=identifier, schema=None, checks=specs)
         elapsed = time.perf_counter() - started

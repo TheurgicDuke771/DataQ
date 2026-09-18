@@ -32,7 +32,12 @@ def data_dir() -> Path:
     return root
 
 
-def _frame(rows: int, *, seed: int = 7) -> Any:
+def _frame(rows: int, *, seed: int = 7, first_line_id: int = 0) -> Any:
+    """`rows` order-lines. `first_line_id` continues the key across chunked
+    appends — restarting it would make `line_id` duplicate, so the uniqueness
+    expectation would evaluate its FAILING branch and the tier would no longer be
+    doing the same work as the flat-file tiers it is compared with.
+    """
     import numpy as np
     import pandas as pd
 
@@ -40,7 +45,7 @@ def _frame(rows: int, *, seed: int = 7) -> Any:
     start = np.datetime64("2026-01-01T00:00:00")
     return pd.DataFrame(
         {
-            "line_id": np.arange(rows, dtype="int64"),
+            "line_id": np.arange(first_line_id, first_line_id + rows, dtype="int64"),
             "order_id": rng.integers(0, max(rows // 4, 1), size=rows, dtype="int64"),
             "sku_id": rng.integers(0, 10_000, size=rows, dtype="int64"),
             "qty": rng.integers(1, 21, size=rows, dtype="int64"),
@@ -126,15 +131,24 @@ def iceberg_catalog_db() -> Path:
     return data_root() / "iceberg" / "catalog.db"
 
 
+def iceberg_complete_marker(rows: int) -> Path:
+    return data_root() / "iceberg" / f".complete-{rows}"
+
+
 def iceberg_table_exists(rows: int) -> bool:
-    """Whether the fixture is already built. Called at REGISTRATION time, so it
-    must not create the warehouse it is asking about — opening a sqlite catalog
-    creates the database file, which would leave the mere act of listing cases
-    scattering directories around someone's home.
+    """Whether the fixture is built AND FINISHED.
+
+    Called at REGISTRATION time, so it must not create the warehouse it is asking
+    about — opening a sqlite catalog creates the database file, which would leave
+    the mere act of listing cases scattering directories around someone's home.
+
+    The marker is what makes it "finished": the table exists after the first
+    append, so a build interrupted at 500k of 5M would otherwise be reused
+    forever, measured and labelled as the 5M rung.
     """
     from pyiceberg.exceptions import NoSuchTableError
 
-    if not iceberg_catalog_db().exists():
+    if not (iceberg_catalog_db().exists() and iceberg_complete_marker(rows).exists()):
         return False
     try:
         _iceberg_catalog().load_table(iceberg_identifier(rows))
@@ -158,11 +172,14 @@ def build_iceberg_dataset(rows: int, *, echo: Any = print) -> str:
         echo(f"{identifier} already exists")
         return identifier
     catalog = _iceberg_catalog()
+    _drop_iceberg_table(catalog, identifier)  # a half-built leftover is not a fixture
     table = None
     written = 0
     while written < rows:
         chunk = min(ICEBERG_APPEND_CHUNK, rows - written)
-        arrow = pa.Table.from_pandas(_frame(chunk, seed=7 + written), preserve_index=False)
+        arrow = pa.Table.from_pandas(
+            _frame(chunk, seed=7 + written, first_line_id=written), preserve_index=False
+        )
         if table is None:
             table = catalog.create_table(identifier, schema=arrow.schema)
         table.append(arrow)
@@ -170,7 +187,19 @@ def build_iceberg_dataset(rows: int, *, echo: Any = print) -> str:
         echo(f"{identifier}: {written:,}/{rows:,}")
     if table is None:  # rows == 0 — a schema with no snapshot is still a table
         catalog.create_table(identifier, schema=pa.Table.from_pandas(_frame(1)).schema)
+    # Written LAST: the marker is the only thing that distinguishes a finished
+    # fixture from an interrupted one.
+    iceberg_complete_marker(rows).write_text(f"{rows}\n")
     return identifier
+
+
+def _drop_iceberg_table(catalog: Any, identifier: str) -> None:
+    from pyiceberg.exceptions import NoSuchTableError
+
+    try:
+        catalog.drop_table(identifier)
+    except NoSuchTableError:
+        pass  # the normal case — nothing was there
 
 
 def _write(frame: Any, path: Path, fmt: str) -> None:

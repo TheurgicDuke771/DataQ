@@ -125,7 +125,11 @@ def _killed_row(case: Case, exc: CaseFailedError, sha: str, stamp: str) -> dict[
         "returncode": exc.returncode,
         "signal": exc.signal,
         "oom_killed": exc.oom_killed,
-        "reason": exc.stderr.strip().splitlines()[-1] if exc.stderr.strip() else "no output",
+        "timed_out": exc.timed_out,
+        # A classification, never the child's own output: stderr can carry a
+        # connection URL with a credential in it, and this row is written to a
+        # file and pasted into a document.
+        "reason": exc.describe(),
         "git_sha": sha,
         "timestamp": stamp,
     }
@@ -143,9 +147,14 @@ def run_cases(cases: list[Case], *, repeat: int) -> dict[str, Any]:
         try:
             payloads = [run_in_subprocess(case) for _ in range(repeat)]
         except CaseFailedError as exc:
+            # Only a LIMIT becomes a row. An ordinary non-zero exit is a traceback
+            # — a bad table name, an expired credential, a moved seam — and
+            # recording that as a ceiling would turn a misconfiguration into a
+            # finding, silently, with the run still reporting success.
+            if not exc.is_ceiling:
+                raise
             rows.append(_killed_row(case, exc, sha, stamp))
-            how = f"signal {exc.signal}" if exc.signal else f"rc {exc.returncode}"
-            print(f"KILLED {case.id}: {how}", file=sys.stderr)
+            print(f"KILLED {case.id}: {exc.describe()}", file=sys.stderr)
             continue
         rows.extend(_rows_for_case(case, payloads, sha, stamp))
     return {"generated_at": stamp, "git_sha": sha, "rig": rig(), "rows": rows}
@@ -214,6 +223,16 @@ def _cmd_check(args: argparse.Namespace) -> int:
     fresh = run_cases(cases, repeat=args.repeat)
     if args.out:
         _write(fresh, args.out, "json")
+
+    # A killed case carries the `observe` gate, so the budget skips it and would
+    # otherwise print "budget OK" about a case that never produced a number.
+    killed = [row["case"] for row in fresh["rows"] if row.get("status") == "killed"]
+    if killed:
+        print(f"BUDGET FAILED — {len(killed)} case(s) produced no measurement:")
+        for row in fresh["rows"]:
+            if row.get("status") == "killed":
+                print(f"  {row['case']}: {row['reason']}")
+        return 1
 
     gates = set(args.gate) if args.gate else None
     result = budget.compare(baseline["rows"], fresh["rows"], gates=gates)

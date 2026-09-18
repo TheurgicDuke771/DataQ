@@ -61,6 +61,11 @@ while IFS= read -r name; do
   [ -n "$name" ] && ENV_FLAGS+=(-e "$name")
 done < <(env | grep -E '^PERF_(SF|UC|ICEBERG)_[A-Z0-9_]*=' | cut -d= -f1 || true)
 
+# The fixture mount lands at the SAME absolute path inside the container. An
+# Iceberg SqlCatalog stores absolute metadata and data-file locations, so a
+# warehouse built on the host at ~/.cache/dataq-perf is unreadable at a different
+# mount point — every rung would report "fixture absent — build it first".
+#
 # --user: the image runs as uid 10001, which cannot write the host-owned fixture
 # mount. /workspace and the venv are world-readable, so any uid can run the code.
 # HOME must be writable — libraries treat it as cache space.
@@ -71,10 +76,10 @@ done < <(env | grep -E '^PERF_(SF|UC|ICEBERG)_[A-Z0-9_]*=' | cut -d= -f1 || true
 exec docker run --rm \
   --memory="$MEMORY" --memory-swap="$MEMORY" --cpus="$CPUS" \
   --user "$(id -u):$(id -g)" \
-  --env PERF_DATA_DIR=/perf-data \
-  --env HOME=/perf-data \
+  --env PERF_DATA_DIR="$DATA_DIR" \
+  --env HOME="$DATA_DIR" \
   ${ENV_FLAGS[@]+"${ENV_FLAGS[@]}"} \
-  --volume "$DATA_DIR:/perf-data" \
+  --volume "$DATA_DIR:$DATA_DIR" \
   --workdir /workspace \
   "$IMAGE" \
   python -m backend.scripts.perf_baseline run "${ARGS[@]}"

@@ -140,6 +140,10 @@ def child_command(case_id: str) -> list[str]:
     return [sys.executable, "-m", "backend.scripts.perf_baseline", "exec", "--case", case_id]
 
 
+#: The exit status a timeout is recorded under (the conventional one).
+TIMEOUT_RETURNCODE = 124
+
+
 class CaseFailedError(RuntimeError):
     """A case's child process did not produce a measurement.
 
@@ -149,10 +153,14 @@ class CaseFailedError(RuntimeError):
     "where is the ceiling", not a harness malfunction.
     """
 
-    def __init__(self, case_id: str, returncode: int, stderr: str) -> None:
+    def __init__(
+        self, case_id: str, returncode: int, stderr: str, *, timeout_s: float | None = None
+    ) -> None:
         self.case_id = case_id
         self.returncode = returncode
         self.stderr = stderr
+        self.timeout_s = timeout_s
+        self.timed_out = timeout_s is not None
         super().__init__(f"case {case_id} failed (rc={returncode}):\n{stderr[-4000:]}")
 
     @property
@@ -168,6 +176,27 @@ class CaseFailedError(RuntimeError):
     def oom_killed(self) -> bool:
         return self.signal == 9
 
+    @property
+    def is_ceiling(self) -> bool:
+        """Whether this is the tier hitting a LIMIT rather than the case being broken.
+
+        Only a signal kill or a timeout qualifies. An ordinary non-zero exit is a
+        traceback — a bad table name, an expired credential, a moved seam — and
+        recording that as a ceiling would turn a misconfiguration into a finding.
+        """
+        return self.timed_out or self.signal is not None
+
+    def describe(self) -> str:
+        """A one-line classification. Deliberately NOT the child's output: stderr
+        can carry a connection URL with a credential in it, and these rows are
+        written to files and pasted into documents.
+        """
+        if self.timed_out:
+            return f"timed out after {self.timeout_s:g}s with no measurement"
+        if self.signal is not None:
+            return f"child killed by signal {self.signal}"
+        return f"child exited {self.returncode}"
+
 
 def run_in_subprocess(case: Case, *, timeout: float = 3600.0) -> dict[str, Any]:
     """Run `case` in a fresh interpreter and return its measurement payload."""
@@ -179,15 +208,20 @@ def spawn(case_id: str, *, env: dict[str, str], timeout: float = 3600.0) -> dict
     child = dict(os.environ)
     child.update(env)
     child.setdefault("PYTHONPATH", repo_root())
-    proc = subprocess.run(  # noqa: S603  # nosec B603 - this interpreter, a registered case id
-        child_command(case_id),
-        capture_output=True,
-        text=True,
-        env=child,
-        cwd=repo_root(),
-        timeout=timeout,
-        check=False,
-    )
+    try:
+        proc = subprocess.run(  # noqa: S603  # nosec B603 - this interpreter, a registered case
+            child_command(case_id),
+            capture_output=True,
+            text=True,
+            env=child,
+            cwd=repo_root(),
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as expired:
+        # A rung that thrashes for an hour is the ceiling arriving as time rather
+        # than as a SIGKILL — the same answer, so it must not abort the curve.
+        raise CaseFailedError(case_id, TIMEOUT_RETURNCODE, "", timeout_s=timeout) from expired
     if proc.returncode != 0:
         raise CaseFailedError(case_id, proc.returncode, proc.stderr)
     return last_json_line(proc.stdout, case_id)
