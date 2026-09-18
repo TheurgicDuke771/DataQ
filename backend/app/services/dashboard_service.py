@@ -8,7 +8,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import ColumnElement, Select, and_, func, select
 from sqlalchemy.orm import Session
 
 from backend.app.db.models import Result, Run, Suite
@@ -86,33 +86,94 @@ def _window_start(window_days: int) -> datetime:
 
 def _status_counts(
     session: Session,
-    accessible: Select[tuple[uuid.UUID]],
+    runs_visible: ColumnElement[bool],
     since: datetime,
-    until: datetime | None = None,
-) -> dict[str, int]:
-    """Histogram of result statuses across accessible suites in ``[since, until)``
-    (open-ended when ``until`` is None).
+    prev_since: datetime,
+) -> tuple[dict[str, int], dict[str, int]]:
+    """Histograms of result statuses across accessible suites for the current
+    window ``[since, ∞)`` and the adjacent previous one ``[prev_since, since)``,
+    from ONE scan of ``[prev_since, ∞)`` (#1997).
+
+    A status absent from a window is absent from its dict, as it was when the two
+    windows were separate statements — a zero-count key is not the same evidence
+    as no key.
     """
+    current = Result.created_at >= since
     stmt = (
-        select(Result.status, func.count())
+        select(
+            Result.status,
+            func.count().filter(current),
+            func.count().filter(Result.created_at < since),
+        )
         .join(Run, Result.run_id == Run.id)
         .where(
-            Run.suite_id.in_(accessible),
+            runs_visible,
             Run.status.in_(AGGREGATABLE_RUN_STATUSES),
-            Result.created_at >= since,
+            Result.created_at >= prev_since,
         )
         .group_by(Result.status)
     )
-    if until is not None:
-        stmt = stmt.where(Result.created_at < until)
     counts: dict[str, int] = {}
-    for status, count in session.execute(stmt):
-        counts[status] = count
-    return counts
+    prev_counts: dict[str, int] = {}
+    for status, n_current, n_prev in session.execute(stmt):
+        if n_current:
+            counts[status] = n_current
+        if n_prev:
+            prev_counts[status] = n_prev
+    return counts, prev_counts
+
+
+@dataclass(frozen=True)
+class _RunWindow:
+    total_runs: int
+    avg_duration_ms: float | None
+
+
+def _run_windows(
+    session: Session,
+    runs_visible: ColumnElement[bool],
+    since: datetime,
+    prev_since: datetime,
+) -> tuple[_RunWindow, _RunWindow]:
+    """Run count + mean duration for the current and previous windows, from ONE
+    scan of ``[prev_since, ∞)`` (#1997).
+
+    Mean duration is over runs that finished; runs still in flight / never started
+    are excluded, and so are runs whose clock skew or backfill left
+    ``finished < started`` (a negative interval poisons the mean and renders as
+    junk). ``None`` when nothing in a window finished — an honest blank, not 0.
+    """
+    current = Run.created_at >= since
+    previous = Run.created_at < since
+    duration_s = func.extract("epoch", Run.finished_at - Run.started_at)
+    finished = and_(
+        Run.started_at.is_not(None),
+        Run.finished_at.is_not(None),
+        Run.finished_at >= Run.started_at,
+    )
+    stmt = (
+        select(
+            func.count().filter(current),
+            func.count().filter(previous),
+            func.avg(duration_s).filter(and_(current, finished)),
+            func.avg(duration_s).filter(and_(previous, finished)),
+        )
+        .select_from(Run)
+        .where(runs_visible, Run.created_at >= prev_since)
+    )
+    total, prev_total, avg_s, prev_avg_s = session.execute(stmt).one()
+    return (
+        _RunWindow(total_runs=total or 0, avg_duration_ms=_to_ms(avg_s)),
+        _RunWindow(total_runs=prev_total or 0, avg_duration_ms=_to_ms(prev_avg_s)),
+    )
+
+
+def _to_ms(avg_s: float | None) -> float | None:
+    return None if avg_s is None else round(float(avg_s) * 1000.0, 1)
 
 
 def _run_trend(
-    session: Session, accessible: Select[tuple[uuid.UUID]], since: datetime
+    session: Session, runs_visible: ColumnElement[bool], since: datetime
 ) -> list[TrendPoint]:
     """Per-day succeeded/failed run counts, zero-filled across the window so the
     chart has a contiguous x-axis even on quiet days.
@@ -120,7 +181,7 @@ def _run_trend(
     day = func.date(func.timezone("UTC", Run.created_at))
     stmt = (
         select(day, Run.status, func.count())
-        .where(Run.suite_id.in_(accessible), Run.created_at >= since)
+        .where(runs_visible, Run.created_at >= since)
         .group_by(day, Run.status)
     )
     by_day: dict[date, dict[str, int]] = {}
@@ -187,52 +248,6 @@ def _active_connections(session: Session, accessible: Select[tuple[uuid.UUID]]) 
     return session.scalar(stmt) or 0
 
 
-def _total_runs(
-    session: Session,
-    accessible: Select[tuple[uuid.UUID]],
-    since: datetime,
-    until: datetime | None = None,
-) -> int:
-    stmt = (
-        select(func.count())
-        .select_from(Run)
-        .where(Run.suite_id.in_(accessible), Run.created_at >= since)
-    )
-    if until is not None:
-        stmt = stmt.where(Run.created_at < until)
-    return session.scalar(stmt) or 0
-
-
-def _avg_duration_ms(
-    session: Session,
-    accessible: Select[tuple[uuid.UUID]],
-    since: datetime,
-    until: datetime | None = None,
-) -> float | None:
-    """Mean run duration (finished - started, ms) over runs created in the
-    window. Runs still in flight / never started are excluded; ``None`` when
-    nothing in the window finished (an honest blank, not 0).
-    """
-    duration_s = func.extract("epoch", Run.finished_at - Run.started_at)
-    stmt = (
-        select(func.avg(duration_s))
-        .select_from(Run)
-        .where(
-            Run.suite_id.in_(accessible),
-            Run.created_at >= since,
-            Run.started_at.is_not(None),
-            Run.finished_at.is_not(None),
-            # Clock skew / backfill can leave finished < started; a negative
-            # interval would poison the mean (and the card renders it as junk).
-            Run.finished_at >= Run.started_at,
-        )
-    )
-    if until is not None:
-        stmt = stmt.where(Run.created_at < until)
-    avg_s = session.scalar(stmt)
-    return None if avg_s is None else round(float(avg_s) * 1000.0, 1)
-
-
 def _delta_points(current: float | None, previous: float | None) -> float | None:
     """current - previous, for metrics that are already percentages."""
     if current is None or previous is None:
@@ -257,35 +272,36 @@ def dashboard_summary(
     workspace-admin view, ADR 0027).
     """
     accessible = suite_service.accessible_suite_ids(user_id, include_all=include_all)
+    # The #1986 array form: the suite set is resolved once as an InitPlan rather than
+    # semi-joined against every row of the window.
+    runs_visible = suite_service.accessible_suite_filter(
+        Run.suite_id, user_id, include_all=include_all
+    )
     since = _window_start(window_days)
     # Previous equivalent window, for period-over-period deltas (#352):
     # [now-2w, now-w) against the current [now-w, now].
     prev_since = since - timedelta(days=window_days)
 
     weights = scoring_settings_service.weights(session)
-    counts = _status_counts(session, accessible, since)
-    prev_counts = _status_counts(session, accessible, prev_since, until=since)
+    counts, prev_counts = _status_counts(session, runs_visible, since, prev_since)
     score = health_score(counts, weights)
     rate = pass_rate(counts)
-    total_runs = _total_runs(session, accessible, since)
-    prev_total_runs = _total_runs(session, accessible, prev_since, until=since)
-    avg_duration = _avg_duration_ms(session, accessible, since)
-    prev_avg_duration = _avg_duration_ms(session, accessible, prev_since, until=since)
+    window, prev_window = _run_windows(session, runs_visible, since, prev_since)
     kpis = Kpis(
         health_score=score,
         pass_rate=rate,
-        total_runs=total_runs,
+        total_runs=window.total_runs,
         active_connections=_active_connections(session, accessible),
-        avg_duration_ms=avg_duration,
+        avg_duration_ms=window.avg_duration_ms,
         health_score_delta=_delta_points(score, health_score(prev_counts, weights)),
         pass_rate_delta=_delta_points(rate, pass_rate(prev_counts)),
-        total_runs_delta_pct=_delta_pct(float(total_runs), float(prev_total_runs)),
-        avg_duration_delta_pct=_delta_pct(avg_duration, prev_avg_duration),
+        total_runs_delta_pct=_delta_pct(float(window.total_runs), float(prev_window.total_runs)),
+        avg_duration_delta_pct=_delta_pct(window.avg_duration_ms, prev_window.avg_duration_ms),
     )
     return DashboardSummary(
         window_days=window_days,
         weights=weights,
         kpis=kpis,
-        trend=_run_trend(session, accessible, since),
+        trend=_run_trend(session, runs_visible, since),
         suite_performance=_suite_performance(session, accessible, weights),
     )
