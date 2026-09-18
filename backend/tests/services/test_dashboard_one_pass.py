@@ -192,8 +192,15 @@ def _seed_both_windows(db: Any) -> User:
         age_days=3,
         duration_s=6.0,
     )
+    # Deliberately NOT age_days=1: that is exactly the `window_days=1` boundary, and a
+    # row sitting on it classifies by which of the two `_window_start` calls ran first.
     _run(
-        db, shared, run_status="succeeded", result_statuses=["critical"], age_days=1, duration_s=4.0
+        db,
+        shared,
+        run_status="succeeded",
+        result_statuses=["critical"],
+        age_days=1.2,
+        duration_s=4.0,
     )
     _run(db, mine, run_status="failed", result_statuses=[], age_days=2)
     _run(db, mine, run_status="running", result_statuses=[], age_days=0.1)
