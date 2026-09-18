@@ -1771,6 +1771,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#closed-since-the-sampled-read-paths-do-less-io" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Closed since: the sampled read paths do less IO
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2632,6 +2643,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#closed-since-the-sampled-read-paths-do-less-io" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Closed since: the sampled read paths do less IO
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3347,15 +3369,100 @@ that would stamp "sampled" on a result that was not.</p>
 <li><strong>Column projection for flat-file monitors.</strong> A column-freshness monitor still
   reads every column to compute one <code>MAX</code>. Parquet could project a single column
   off its footer, which would remove most of the remaining monitor-path memory.</li>
-<li><strong>Efficiency and reuse.</strong> The sampled CSV
-  <code>random</code> path reads the object twice, and the count and take construct their CSV
-  streams separately (consistent today by coincidence, not construction).</li>
+<li><strong>Reuse in the sampled readers.</strong> The count and the take still construct
+  their CSV streams separately (consistent today by coincidence, not
+  construction), and <code>object_size</code> remains a narrower second call to the same
+  store API <code>file_stat</code> already makes.</li>
 <li><strong>Incremental / delta-only validation</strong> stays out of scope by design:
   sampling bounds <em>how much</em> is read, not <em>which part is new</em>. Note for whoever
   builds it — a watermark belongs on the run target beside <code>sampling</code>, and its
   result record should be the same shape as <code>sampling</code>, so the run-detail surface
   learns one vocabulary for "this verdict covers less than everything".</li>
 </ul>
+<h3 id="closed-since-the-sampled-read-paths-do-less-io">Closed since: the sampled read paths do less IO<a class="headerlink" href="#closed-since-the-sampled-read-paths-do-less-io" title="Permanent link">¶</a></h3>
+<blockquote>
+<p>Captured <strong>2026-09-17</strong>, same method as above — the store seams pointed at a
+local file, so the readers execute for real and only the network is stood in
+for. A ~250 MB, 2.97M-row CSV; the <code>random</code> scenario draws 10,000 rows, the
+<code>head</code> one asks for 150,000 (enough to grow the head window twice).</p>
+</blockquote>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>random 10k</th>
+<th></th>
+<th>head 150k</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td></td>
+<td>before</td>
+<td>after</td>
+<td>before</td>
+<td>after</td>
+</tr>
+<tr>
+<td>MB fetched</td>
+<td>500.1</td>
+<td><strong>250.0</strong></td>
+<td>32.5</td>
+<td><strong>16.8</strong></td>
+</tr>
+<tr>
+<td>Store requests</td>
+<td>64</td>
+<td><strong>31</strong></td>
+<td>6</td>
+<td>6</td>
+</tr>
+<tr>
+<td>Clients constructed</td>
+<td>64</td>
+<td><strong>1</strong></td>
+<td>6</td>
+<td><strong>1</strong></td>
+</tr>
+<tr>
+<td>Wall time (s)</td>
+<td>0.67</td>
+<td>0.44</td>
+<td>0.19</td>
+<td>0.20</td>
+</tr>
+<tr>
+<td>Peak RSS (MiB)</td>
+<td>~587</td>
+<td>~550</td>
+<td>~672</td>
+<td>~701</td>
+</tr>
+</tbody>
+</table>
+<p>Four changes, each asserted on the seam rather than on the frame — every one of
+them is invisible in the returned rows, which is why they survived the review of
+the behaviour:</p>
+<ul>
+<li><strong>The CSV <code>random</code> draw is one pass.</strong> Counting the object and then taking the
+  drawn positions streamed it twice; a reservoir draw (Vitter's Algorithm L)
+  samples and counts together. <code>total_rows</code> now means <em>the rows walked by the
+  read that produced this sample</em>, so it is measured closer to the take than the
+  count it replaced. Parquet is unaffected — its count is a footer read, not a
+  pass.</li>
+<li><strong>The growing head window fetches deltas.</strong> It re-read <code>[0, window)</code> on each
+  doubling, so reaching 4 MB cost 1 + 2 + 4 = 7 MB.</li>
+<li><strong>The delimiter sniff costs no request of its own.</strong> It is read off the
+  stream's own first chunk, which covered those bytes anyway.</li>
+<li><strong>One store client per logical read</strong>, seeded with the runner's already-fetched
+  file metadata, so a checks-then-monitors run HEADs the object once instead of
+  three times.</li>
+</ul>
+<p>Wall time understates the gain: against a local file a request costs no round
+trip, so the halved request count is free here and is not in a deployment. Peak
+RSS is unchanged by design — what moved is IO, not what the reservoir holds,
+which is bounded by the sample.</p>
 <hr>
 <h2 id="v12-uc-sql-pushdown-for-ordinary-expectations">v1.2 — UC SQL pushdown for ordinary expectations<a class="headerlink" href="#v12-uc-sql-pushdown-for-ordinary-expectations" title="Permanent link">¶</a></h2>
 <blockquote>
