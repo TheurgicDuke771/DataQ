@@ -12,7 +12,7 @@ import os
 import platform
 import resource
 import statistics
-import subprocess
+import subprocess  # nosec B404 - benchmark children + a read-only sha lookup
 import sys
 import time
 from collections.abc import Callable, Iterable
@@ -231,7 +231,7 @@ def rig() -> dict[str, Any]:
 
 
 def git_sha() -> str:
-    out = subprocess.run(  # nosec B607 - fixed args, no shell
+    out = subprocess.run(  # nosec B603 B607
         ["git", "rev-parse", "--short", "HEAD"],  # noqa: S607
         capture_output=True,
         text=True,

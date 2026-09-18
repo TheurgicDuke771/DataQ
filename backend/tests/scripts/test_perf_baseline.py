@@ -80,10 +80,16 @@ class TestBudget:
         assert violations == []
         assert notes == ["c:store_calls is new — no baseline to compare against"]
 
-    def test_a_gated_metric_missing_from_the_run_is_reported(self) -> None:
-        violations, notes = budget.compare([_row("c", "store_calls", 1.0)], [])
+    def test_a_gated_metric_missing_from_a_case_that_ran_is_reported(self) -> None:
+        base = [_row("c", "store_calls", 1.0), _row("c", "rows_read", 5.0)]
+        violations, notes = budget.compare(base, [_row("c", "rows_read", 5.0)])
         assert violations == []
         assert notes == ["c:store_calls is in the baseline but was not measured in this run"]
+
+    def test_a_case_the_selection_skipped_is_not_reported_as_missing(self) -> None:
+        base = [_row("other", "store_calls", 1.0), _row("c", "rows_read", 5.0)]
+        violations, notes = budget.compare(base, [_row("c", "rows_read", 5.0)])
+        assert (violations, notes) == ([], [])
 
     def test_not_measured_rows_are_skipped_on_both_sides(self) -> None:
         skipped = _row("w", "not_measured", 0.0, status="not_measured")

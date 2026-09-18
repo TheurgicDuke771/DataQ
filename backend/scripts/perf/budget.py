@@ -83,9 +83,12 @@ def compare(
                 )
             )
 
+    # Only for cases this run actually exercised: a narrowed selection is not a
+    # missing metric, and saying so for every unselected case buries the real one.
+    ran = {case for case, _ in fresh}
     for key, row in base.items():
         if row.get("gate", "observe") not in enforced or row.get("status") == "not_measured":
             continue
-        if key not in fresh:
+        if key[0] in ran and key not in fresh:
             notes.append(f"{key[0]}:{key[1]} is in the baseline but was not measured in this run")
     return violations, notes
