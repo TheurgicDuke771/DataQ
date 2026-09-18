@@ -607,3 +607,342 @@ the subquery form throughout — there is no crossover where the old shape wins:
 | 20,000 | 26.0 ms | 27.6 ms |
 
 ---
+
+## v1.2 — regression baseline & budget
+
+> Captured **2026-09-17** by `backend/scripts/perf_baseline.py`. Every section
+> above is a *campaign* — measured once, at the moment something was fixed. This
+> one is the durable part: a parameterized benchmark, a committed baseline, and a
+> budget that fails a build when a gated number moves.
+
+### What it measures, and how
+
+Axes are **datasource tier × volume tier × checks-per-suite**. Each case drives
+the real code path — `FlatFileCheckRunner.run_checks`, the service-layer reads
+behind `/runs`, `/results`, `/dashboard/summary`, `/incidents` and
+`/pipeline_runs`, `profile_service.profile_file`, and the schedule dispatcher —
+and runs in a **fresh subprocess**, so its peak RSS (`ru_maxrss`) is
+attributable to that case rather than to whatever ran before it. Output is one
+structured row per `(metric, value, unit, tier, datasource, git_sha, timestamp)`
+as JSON or CSV.
+
+Only the network is stood in for: the four object-store seams (`file_stat` /
+`object_size` / `download_bytes` / `read_range`) read a local file, the same
+substitution the v1.1 section above used. The database cases run against a
+**scratch** database seeded with `generate_series`, never the application one.
+
+**The rig is a development machine, not the production rig.** Production is 1
+CPU / 2 GiB per worker container with Celery prefork concurrency 4; these
+numbers were taken on a 14-core / 48 GiB laptop. Absolute wall clock therefore
+says nothing about production latency — the value here is the *shape* (how a
+number moves with volume) and the *deterministic* counters, which do not depend
+on the machine at all.
+
+### What is gated, and what is only recorded
+
+| Gate | Metrics | Tolerance | Enforced |
+|---|---|---|---|
+| `exact` | the **work** a case reports doing — rows read, frames loaded, checks evaluated, objects listed, columns profiled, schedules claimed, whether the read was sampled | none, **in either direction** | CI, on every push |
+| `strict` | the **cost** it incurred — statements per service-layer read, calls to the store | none — only growth fails | CI, on every push |
+| `band` | platform-dependent sizes — peak RSS, bytes read from the store | 20% | manual runs only |
+| `observe` | wall clock, rows/s, p50/p95 latency, calibration | never fails | recorded in every run |
+
+The `exact`/`strict` split matters: a one-sided gate is right for a cost (fewer
+statements is a win) and blind for work (a runner that evaluates 0 of 5 checks,
+or a dispatcher that claims 0 of 10 due schedules, would otherwise pass).
+
+**Wall clock is deliberately not gated.** Measured run-to-run on the same
+machine, the wall metrics' coefficient of variation is several times larger than
+the regression a budget would want to catch, so a wall-clock gate on a shared
+runner produces false failures faster than it produces true ones — and a flaky
+gate is worse than none. What replaces it is deterministic: an N+1 shows up as a
+statement count, a new full read shows up as bytes asked of the store, a lost
+projection shows up as rows read. Each run also records `wall_calibrated` (wall
+divided by a fixed CPU micro-benchmark executed in the same process), so wall
+numbers from different machines can at least be compared.
+
+**Sizes are gated only in manual runs.** `ru_maxrss` depends on the platform's
+allocator and shared libraries, and the byte count of a generated fixture depends
+on the pandas/pyarrow version that wrote it — so a band measured on one machine
+says nothing about another, and a dependency bump would otherwise fail a required
+check as a phantom regression. CI runs `--gate exact --gate strict`.
+
+### The baseline
+
+Medians of 5 runs per tier, each in its own process. The suites are the same
+5 expectations every campaign on this page has used (not-null ×2, between ×2,
+unique ×1, all passing) and a 25-expectation extension in which **8 checks fail
+widely** — that second column is a data property, not a suite-size property, and
+the difference between the two is the most expensive finding here. The tables
+are a snapshot from the first capture on the development rig; the committed
+machine-readable baseline is the authoritative copy and is refreshed whenever a
+gated metric changes on purpose (its `git_sha` says which commit it measured).
+
+#### Flat-file runs — volume × checks × sampling
+
+| Object | Rows | Mode | Wall, 5 checks | Peak RSS | Wall, 25 checks (8 failing) | Peak RSS |
+|---|---|---|---|---|---|---|
+| CSV | 100k (4.6 MB) | full | 0.08 s | 387 MiB | 1.29 s | 461 MiB |
+| CSV | 1M (48 MB) | full | 0.63 s | 745 MiB | **12.59 s** | **1,578 MiB** |
+| CSV | 5M (245 MB) | full | 4.02 s | 2,118 MiB | **63.75 s** | **4,890 MiB** |
+| CSV | 1M | `head` 100k | 0.15 s | 425 MiB | 1.35 s | 492 MiB |
+| CSV | 5M | `head` 100k | 0.14 s | 419 MiB | 1.36 s | 512 MiB |
+| CSV | 5M | `random` 100k | 3.40 s | 564 MiB | 4.61 s | 643 MiB |
+| Parquet | 100k (2.4 MB) | full | 0.12 s | 368 MiB | 1.47 s | 450 MiB |
+| Parquet | 1M (21 MB) | full | 0.47 s | 554 MiB | **13.12 s** | **1,467 MiB** |
+| Parquet | 5M (105 MB) | full | 2.01 s | 1,279 MiB | **65.08 s** | **4,733 MiB** |
+| Parquet | 1M | `head` 100k | 0.09 s | 396 MiB | 1.38 s | 477 MiB |
+| Parquet | 5M | `head` 100k | 0.09 s | 403 MiB | 1.38 s | 483 MiB |
+| Parquet | 5M | `random` 100k | 0.17 s | 501 MiB | 1.46 s | 560 MiB |
+
+The floor — interpreter, GX and pyarrow with a 100k-row frame — is ~370 MiB on
+this rig, so read the deltas, not the absolutes.
+
+1. **Throughput is flat in row count and collapses on failing checks.** All-passing,
+   the runner sustains 1.2–2.5M rows/s at every tier. With 8 widely-failing checks
+   it drops to ~77k rows/s *at every tier* — the same number for 100k and 5M rows,
+   which is the signature of per-failing-row work rather than per-row work.
+   Isolated on the same 1M-row file with the same 25 expectations, an all-passing
+   suite runs in 0.55 s / 751 MiB and an 8-failing one in **12.40 s / 1,525 MiB**.
+   The frame lanes ask GX for the `COMPLETE` result format on the reasoning that
+   pandas already holds the batch; what that costs is a full unexpected-value list
+   built per failing check. Filed separately.
+2. **Sampling removes the volume axis entirely.** `head` is 0.09–0.15 s and
+   ~400–500 MiB regardless of whether the object holds 1M or 5M rows, because it
+   stops reading. That is the same conclusion the v1.1 section reached, now
+   attached to a budget that would notice if it stopped being true.
+3. **`random` on CSV is the one sampled path that still scales with the object**:
+   3.40 s at 5M against `head`'s 0.14 s, because it streams the file to learn the
+   population size and then streams it again to take the draw. Parquet pays
+   almost nothing for the same mode (footer read).
+
+#### What each mode asks the store for
+
+Deterministic, and therefore the part the budget gates:
+
+| Object | Mode | Bytes read | Store calls |
+|---|---|---|---|
+| CSV 5M (245 MB) | full | 245,055,978 | 1 |
+| CSV 5M | `head` 100k | 15,728,640 | 5 |
+| CSV 5M | `random` 100k | **490,243,028** | 64 |
+| Parquet 5M (105 MB) | full | 104,861,528 | 1 |
+| Parquet 5M | `head` 100k | 31,920,512 | 3 |
+| Parquet 5M | `random` 100k | 104,985,982 | 8 |
+
+The CSV `random` row reads **twice the object** — the count pass and the take
+pass — which is a known single-pass follow-up, now with a number on it.
+
+#### Concurrent peak — what four prefork children want at once
+
+| Overlapping 1M-row CSV runs | Sum of child peak RSS | Largest child | Wall |
+|---|---|---|---|
+| 2 | **1,485 MiB** | 774 MiB | 3.03 s |
+| 4 | **3,096 MiB** | 802 MiB | 3.31 s |
+
+This is the number the beat-split work asked for and did not have. Four
+overlapping 1M-row flat-file runs want ~3.1 GiB of child resident memory; the
+deployed worker container has **2 GiB total**, and on the production rig the same
+run was measured at 1,186 MiB per child (this machine's per-child figure is
+lower, and its idle baseline is lower too). Splitting the scheduler out of the
+worker protected *beat* from that; it did nothing about the task-execution side,
+so a schedule collision — or a manual run beside a scheduled one — can still
+exhaust the worker. A concurrency cap, a per-task memory guard or a larger worker
+remain live options; that decision is tracked separately.
+
+#### Database growth — the reads a user waits on
+
+p50 / p95 in milliseconds, page 1, over a scratch PostgreSQL 16 seeded with
+`generate_series`. The statement count beside each is what the budget gates.
+
+| Service-layer read | 10k runs | 100k runs | 1M runs | Statements |
+|---|---|---|---|---|
+| `/runs` list (50) | 1.10 / 1.27 | 1.23 / 1.34 | 1.14 / 1.29 | 1 |
+| `/runs` `X-Total-Count` | 1.04 / 1.35 | 6.10 / 7.90 | **22.20 / 23.66** | 1 |
+| run detail (`list_results`) | 0.57 / 0.61 | 0.56 / 0.60 | 0.96 / 1.10 | 1 |
+| **`/dashboard/summary` (7 days)** | 8.75 / 9.60 | 49.54 / 50.51 | **309.02 / 317.42** | **6** |
+| `/incidents` list (100) | 2.08 / 2.29 | 2.19 / 2.54 | 2.24 / 2.46 | 1 |
+| `/incidents` `X-Total-Count` | 1.35 / 1.43 | 5.88 / 6.10 | 7.02 / 7.16 | 1 |
+| `/pipeline_runs` list (50) | 0.95 / 1.05 | 1.07 / 1.23 | 1.71 / 1.80 | 1 |
+| `/pipeline_runs` `X-Total-Count` | 0.57 / 0.70 | 2.51 / 2.58 | 3.29 / 3.37 | 1 |
+
+Every **list** read is flat in table size — the newest-first ordering indexes
+doing exactly what the section above them predicted. Two reads are not:
+
+- **`/dashboard/summary` is linear and dominant** — still 14× the slowest list at
+  1M rows, and the first thing a user loads. It originally issued **ten**
+  statements, because each of six window aggregates was computed twice for the
+  period-over-period deltas; collapsing those into one pass per aggregate took it
+  to six and the 1M number from 386 ms to 309 ms (see the section below). It is
+  still linear, and what remains needs a different shape, not a better query.
+- **`X-Total-Count` on `/runs` grows with the table** (1.0 → 22.2 ms), which the
+  index section above already called out as the new page-1 cost; this puts the
+  1M-row number on it.
+
+Incident and pipeline-run counts stop growing because those tables are capped at
+120k rows in the seed, not because the query is bounded.
+
+#### Scheduler dispatch
+
+`dispatch_due_schedules`, claiming under `FOR UPDATE SKIP LOCKED`, with the
+enqueue seam stubbed so the measurement is the database side only:
+
+| Due schedules | Wall | Per schedule |
+|---|---|---|
+| 10 | 0.04 s | 4.17 ms |
+| 1,000 | 2.15 s | 2.15 ms |
+| 10,000 | **23.59 s** | 2.36 ms |
+
+The dispatcher is **serial**: one `SELECT … LIMIT 1 FOR UPDATE SKIP LOCKED`, one
+cron advance, one run INSERT, one commit, per schedule, in a loop. The cost per
+schedule is flat, so the ceiling is arithmetic — at ~2.4 ms each, the 60-second
+beat tick is fully consumed at roughly 25,000 due schedules **on this machine**,
+with a local database and no network. A deployed worker on 1 CPU with a network
+round-trip per statement will reach that far sooner. Filed separately.
+
+#### Flat-file batch resolution
+
+Latest-batch resolution (listing + regex + rank) against a list-backed store:
+
+| Object keys | Wall |
+|---|---|
+| 1,000 | 0.4 ms |
+| 10,000 | 3.3 ms |
+| 100,000 | 33.7 ms |
+
+Linear at ~3M keys/s, with no knee below the 500,000-object hard refusal. Note
+what this does *not* measure: the store's own paging latency, which is the real
+cost of a 100k-object listing against S3 or ADLS — this measures only what DataQ
+does with the keys once it has them.
+
+#### Profiler on a wide table
+
+200,000 rows, profiling every column (the flat-file profiler samples the first
+100k rows). The CSV path used to `download_bytes` the whole object before
+applying its row/column limits; it now shares the same doubling-window bounded
+head read the sampled suite-run path uses (`read_csv_projected_sample` over
+`_csv_head_frame`), growing only until it holds the sample or hits EOF:
+
+| Object | Columns | Wall | Peak RSS | Bytes read (was) | Store calls (was) |
+|---|---|---|---|---|---|
+| CSV (39 MB) | 50 | 0.35 s | 757 MiB | **33,554,432** (38,902,153) | 7 (1) |
+| CSV (156 MB) | 200 | 1.35 s | 1898 MiB | **134,217,728** (155,606,664) | 9 (1) |
+| Parquet (13 MB) | 50 | 0.12 s | 412 MiB | 12,828,601 | 3 |
+| Parquet (51 MB) | 200 | 0.39 s | 606 MiB | 51,211,169 | 5 |
+
+The Parquet path is unchanged (it already projected columns and streamed range
+requests). The CSV path now reads a bounded prefix instead of the whole
+object — the store-egress reduction the fix targets — but the doubling window
+reparses its whole buffered prefix from byte 0 on every growth step, so on a
+wide/dense file (many small store round trips, each a full CPU-bound reparse)
+wall time and peak RSS both went *up* on this local-disk harness, where store
+latency is near zero and the reparse cost dominates. Against a real S3/ADLS
+store the egress reduction is the one that matters in production cost terms;
+the RSS/CPU trade-off is tracked separately as a follow-up, since it is shared
+with the sampled suite-run path and worth fixing once, not reworked here.
+(The warehouse profiler's batched rank-join, the post-optimisation number this
+page records elsewhere, is not measured here — see the not-measured table
+below.)
+
+### What is explicitly NOT measured here
+
+A tier that simply does not appear in a result set reads as "nothing to report",
+so the warehouse tiers are registered as real cases and emit an explicit
+`not_measured` row carrying the reason:
+
+| Tier | Why not measured |
+|---|---|
+| Snowflake 1M / 50M, pushdown | needs a live warehouse; the harness compute is stopped by default (ADR 0021) |
+| Unity Catalog 1M, pushdown **and** frame-load | same, plus Databricks Free-Edition fair-use pausing |
+| Iceberg 1M, native `pyiceberg` snapshot | same |
+| Wide-table profiler on a warehouse (the batched rank-join) | same — the flat-file profiler exercises a different reader and cannot stand in for it |
+
+The earlier sections of this page carry live warehouse numbers from the 2026-07
+and 2026-08 campaigns; what is missing is those tiers *inside the budget*, so a
+regression in them would be caught rather than re-measured by hand.
+
+Also out of scope by construction: network/egress cost (the store seams read a
+local file), warehouse-side compute cost per check run, and anything that only
+appears under the production memory limit — a 2 GiB cgroup turns a peak into a
+SIGKILL, and this rig has 48 GiB, so it measures *how much* memory a tier wants,
+never *whether the deployed worker survives it*.
+
+### Running it
+
+```bash
+export PERF_DATABASE_URL=postgresql+psycopg2://<user>:<pw>@localhost:5432/dataq_perf   # a SCRATCH database
+python -m backend.scripts.perf_baseline create-db
+(cd backend && DATABASE_URL="$PERF_DATABASE_URL" alembic upgrade head)
+
+python -m backend.scripts.perf_baseline list                       # the case matrix
+python -m backend.scripts.perf_baseline run --tag full --repeat 5 --out /tmp/perf.json
+python -m backend.scripts.perf_baseline check                           # the budget, all gates
+python -m backend.scripts.perf_baseline check --gate exact --gate strict  # what CI runs
+```
+
+The fast subset (`--tag ci`) runs on every push inside the existing backend test
+job, so no required-check name changes. The full matrix is a manual run. The
+warehouse tiers appear in it as `not_measured` rows — their bodies are not built
+yet, and building them is tracked separately.
+Refreshing the committed baseline is deliberate — `run --tag ci --repeat 7 --out
+backend/scripts/perf/baseline.json` — and a PR that does it should say why the
+number moved.
+
+## v1.2 — the dashboard summary
+
+The summary is the one read the section above found **linear in run count** while
+every list endpoint stayed flat, and it is the first thing a user loads. It
+computed six window aggregates — the result-status histogram, the run count and
+the mean run duration — **twice each**, once for the trailing window and once for
+the previous equivalent window the period-over-period deltas compare against.
+
+The two windows are strictly adjacent, so one scan of `[now − 2 × window, ∞)`
+with a `FILTER` clause per bucket and window produces both. The run count and the
+mean duration aggregate the *same* rows, so they collapse into that pass as well.
+
+### Measured
+
+Through the benchmark above (`db_read` family, same rig, same seeding), p50 /
+p95 in milliseconds with the statement count the budget gates:
+
+| rows in `runs` | before | after |
+|---|---|---|
+| 10,000 | 15.12 / 16.51, **10 statements** | **8.75 / 9.60, 6** |
+| 100,000 | 68.56 / 71.35, **10** | **49.54 / 50.51, 6** |
+| 1,000,000 | 386.14 / 391.89, **10** | **309.02 / 317.42, 6** |
+
+Every KPI, delta, trend point and per-suite score is unchanged — asserted in the
+test suite against the previous per-window implementation, kept as the oracle
+rather than against transcribed numbers.
+
+The picture is the same on a heavier seed (three results per run over 36 days,
+so the histogram has three times the rows to aggregate): 64.1 → 37.5 ms p50 at
+100k, 459.7 → 345.2 ms at 1M.
+
+### No index was added, and why
+
+Two candidates were built on a 1-million-row database and measured with
+`EXPLAIN (ANALYZE, BUFFERS)`: `results (created_at, run_id, status)` and
+`runs (suite_id, status, id)`.
+
+They **do** change the plan — the status histogram's parallel sequential scan of
+`results` and its bitmap heap scan of `runs` both become parallel index-only
+scans. The statement moves 240 ms → 207 ms and the whole summary 345 ms → 328 ms,
+because what dominates is the hash join and aggregation of ~1 million result
+rows, which no index removes. A ~2 % read gain does not pay for permanent write
+amplification on the two tables every single run writes to.
+
+The newest-first ordering indexes are no help either: these are aggregates over a
+window, not an ordered page, so there is nothing for a `DESC` index to serve.
+
+### What is left, and what would actually fix it
+
+At 1 million runs the summary is still ~309 ms, and the single status histogram
+is most of it. It is linear because it genuinely aggregates every result row in a
+two-window span, and **the join cannot be bounded from the `runs` side**: a
+result is written *during* its run, so a result inside the window can belong to a
+run that started before it. Adding that predicate would be faster and wrong.
+
+The next step is a **materialised per-day rollup** — which the trend query
+already wants — read by the summary instead of the raw tables. That is a write
+path, a backfill and a staleness contract rather than a query rewrite, so it is
+tracked separately.
