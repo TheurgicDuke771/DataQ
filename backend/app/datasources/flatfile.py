@@ -813,13 +813,6 @@ def file_stat(
             return FileStat()
 
 
-def file_last_modified(
-    *, conn_type: str, config: dict[str, Any], path: str, secret: str
-) -> datetime | None:
-    """Just the arrival time from `file_stat` — the pre-#595 shape of this seam."""
-    return file_stat(conn_type=conn_type, config=config, path=path, secret=secret).last_modified
-
-
 class FlatFileCheckRunner:
     """`CheckRunner` for flat files — loads the file into pandas, runs GX on it."""
 

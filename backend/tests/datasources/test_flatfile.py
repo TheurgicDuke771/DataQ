@@ -901,7 +901,12 @@ _S3_CONFIG = {"bucket": "raw", "region": "us-west-2", "access_key_id": "AKIAX"}
 _ADLS_CONFIG = {"account_url": "https://acct.blob.core.windows.net", "container": "raw"}
 
 
-# ── file_last_modified (live seam) ──
+def _last_modified(**kwargs: Any) -> datetime | None:
+    """`file_stat`'s arrival time — what the removed `file_last_modified` returned."""
+    return flatfile.file_stat(**kwargs).last_modified
+
+
+# ── file_stat arrival time (live seam) ──
 
 
 class _HeadS3Stub:
@@ -921,7 +926,7 @@ class _HeadS3Stub:
         return {"LastModified": self._modified}
 
 
-def test_file_last_modified_s3_heads_the_exact_key(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_file_stat_last_modified_s3_heads_the_exact_key(monkeypatch: pytest.MonkeyPatch) -> None:
     """A single metadata call, not a prefix listing: this runs on every scheduled
     monitor run, and `data/orders.csv` among dated siblings would otherwise drain
     every page each time — the unbounded-read-on-a-scheduled-path defect (#854).
@@ -929,15 +934,13 @@ def test_file_last_modified_s3_heads_the_exact_key(monkeypatch: pytest.MonkeyPat
     """
     stub = _HeadS3Stub()
     monkeypatch.setattr(flatfile, "_s3_client", lambda cfg, secret: stub)
-    got = flatfile.file_last_modified(
-        conn_type="s3", config=_S3_CONFIG, path="orders/a.csv", secret="s"
-    )
+    got = _last_modified(conn_type="s3", config=_S3_CONFIG, path="orders/a.csv", secret="s")
     assert got == _LANDED
     assert stub.calls == [(_S3_CONFIG["bucket"], "orders/a.csv")]
 
 
 @pytest.mark.parametrize("code", ["404", "NoSuchKey", "NotFound"])
-def test_file_last_modified_s3_missing_object_is_none(
+def test_file_stat_last_modified_s3_missing_object_is_none(
     monkeypatch: pytest.MonkeyPatch, code: str
 ) -> None:
     """Absent → None, which the caller turns into a per-check error. A missing file
@@ -945,14 +948,12 @@ def test_file_last_modified_s3_missing_object_is_none(
     """
     monkeypatch.setattr(flatfile, "_s3_client", lambda cfg, secret: _HeadS3Stub(error_code=code))
     assert (
-        flatfile.file_last_modified(
-            conn_type="s3", config=_S3_CONFIG, path="orders/gone.csv", secret="s"
-        )
+        _last_modified(conn_type="s3", config=_S3_CONFIG, path="orders/gone.csv", secret="s")
         is None
     )
 
 
-def test_file_last_modified_s3_other_errors_propagate(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_file_stat_last_modified_s3_other_errors_propagate(monkeypatch: pytest.MonkeyPatch) -> None:
     """This call is also the store-reachability probe, so an auth/permission failure
     must fail the whole run rather than be mistaken for a missing file.
     """
@@ -962,9 +963,7 @@ def test_file_last_modified_s3_other_errors_propagate(monkeypatch: pytest.Monkey
     from botocore.exceptions import ClientError
 
     with pytest.raises(ClientError):
-        flatfile.file_last_modified(
-            conn_type="s3", config=_S3_CONFIG, path="orders/a.csv", secret="s"
-        )
+        _last_modified(conn_type="s3", config=_S3_CONFIG, path="orders/a.csv", secret="s")
 
 
 class _HeadBlobStub:
@@ -995,24 +994,24 @@ class _HeadBlobStub:
         self.closed = True
 
 
-def test_file_last_modified_adls_reads_blob_properties_and_closes(
+def test_file_stat_last_modified_adls_reads_blob_properties_and_closes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     stub = _HeadBlobStub()
     monkeypatch.setattr(flatfile, "_blob_service", lambda acfg, secret: stub)
-    got = flatfile.file_last_modified(
+    got = _last_modified(
         conn_type="adls_gen2", config=_ADLS_CONFIG, path="orders/a.csv", secret="sas"
     )
     assert got == _LANDED
     assert stub.closed
 
 
-def test_file_last_modified_adls_missing_blob_is_none_and_still_closes(
+def test_file_stat_last_modified_adls_missing_blob_is_none_and_still_closes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     stub = _HeadBlobStub(missing=True)
     monkeypatch.setattr(flatfile, "_blob_service", lambda acfg, secret: stub)
-    got = flatfile.file_last_modified(
+    got = _last_modified(
         conn_type="adls_gen2", config=_ADLS_CONFIG, path="orders/gone.csv", secret="sas"
     )
     assert got is None
