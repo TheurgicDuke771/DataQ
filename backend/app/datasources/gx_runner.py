@@ -51,6 +51,22 @@ _SQL_PARTIAL_UNEXPECTED_COUNT = _sql_partial_unexpected_count()
 # the per-cell regex/entropy work is O(rows x columns) inside the Celery run path.
 _VALUE_SIGNAL_SUMMARY_ROW_CAP = 5_000
 
+
+def _frame_partial_unexpected_count() -> int:
+    """The `partial_unexpected_count` the frame lanes ask GX for (#1995).
+
+    The deepest read of the locator list is `_value_signal_summary_by_column`, not the
+    `SAMPLE_ROW_CAP` sample — so anything below `_VALUE_SIGNAL_SUMMARY_ROW_CAP` would
+    change the summary this cap exists to preserve. Deliberately NOT clamped to GX's
+    `MAX_RESULT_RECORDS` the way the SQL cap is: on pandas that constant bounds only the
+    unexpected-VALUES metric, and the locator metric — the one that costs — honours this
+    number unclamped.
+    """
+    return max(SAMPLE_ROW_CAP, _VALUE_SIGNAL_SUMMARY_ROW_CAP)
+
+
+_FRAME_PARTIAL_UNEXPECTED_COUNT = _frame_partial_unexpected_count()
+
 # GX injects internal bookkeeping keys into kwargs at run time; strip them.
 _GX_INTERNAL_KWARGS = frozenset({"batch_id"})
 
@@ -102,8 +118,8 @@ def _to_gx_expectation(spec: CheckSpec, index: int | None = None) -> Any:
 
 
 def _is_identifier_index_list(value: Any) -> bool:
-    """True for a non-empty list of row dicts; a plain COMPLETE run returns bare
-    positional indices, which are not locators and are dropped.
+    """True for a non-empty list of row dicts; with no identifier column configured GX
+    returns bare positional indices, which are not locators and are dropped.
     """
     return (
         isinstance(value, list) and len(value) > 0 and all(isinstance(row, dict) for row in value)
@@ -129,9 +145,9 @@ def _value_signal_summary_by_column(rows: list[Any]) -> dict[str, dict[str, int]
 def _locator_rows(result: dict[str, Any]) -> tuple[bool, Any]:
     """The locator rows in a GX result, under whichever key this result format used.
 
-    ``COMPLETE`` (the frame lanes) names them `unexpected_index_list`; ``SUMMARY`` (the SQL
-    lanes, #1534) names the same rows, from the same LIMIT-ed locator query, as
-    `partial_unexpected_index_list`.
+    ``SUMMARY`` (every lane since #1534 / #1995) names them `partial_unexpected_index_list`;
+    ``COMPLETE`` names the same rows, unbounded, as `unexpected_index_list`. Both are read so
+    a hand-built or legacy COMPLETE result still maps.
     """
     for key in (_INDEX_LIST_KEY, _PARTIAL_INDEX_LIST_KEY):
         if key in result:
@@ -308,9 +324,10 @@ def _execute(
 def _is_sql_batch(batch_definition: Any) -> bool:
     """Does this batch definition run on a SQLAlchemy execution engine?
 
-    Undetermined resolves to False (the frame lane) — a wrong SUMMARY on a pandas batch
-    would silently truncate the locator list — but never silently: losing this attribute
-    chain reverts every SQL run to the unbounded fetch #1534 closed, with identical results.
+    Both lanes run SUMMARY; this only picks the cap. Undetermined resolves to False (the
+    frame lane, the wider cap), but never silently: losing this attribute chain would fetch
+    `_FRAME_PARTIAL_UNEXPECTED_COUNT` locator rows out of a warehouse instead of
+    `_SQL_PARTIAL_UNEXPECTED_COUNT`, with identical results.
     """
     from great_expectations.datasource.fluent import SQLDatasource
 
@@ -323,22 +340,23 @@ def _is_sql_batch(batch_definition: Any) -> bool:
 
 
 def _result_format(*, sql_batch: bool, index_columns: list[str] | None) -> Any:
-    """The GX result format for this lane.
+    """The GX result format for this lane: SUMMARY on both, at different caps.
 
-    COMPLETE on a SQL engine fetches the unexpected VALUES with no ``LIMIT`` — the locator
-    query is already bounded by `partial_unexpected_count`, the values query is not, so a
-    widely-failing check on a large table makes the warehouse materialise every failing row
-    (#1534). SUMMARY pushes the same bound onto both queries and returns the identical rows
-    under `partial_unexpected_index_list`. The frame lanes keep COMPLETE: pandas holds the
-    batch in memory already, and its locator list is capped at capture (#1196).
+    COMPLETE builds the whole failing set before anything is capped at capture (#1196), which
+    bounds only what we persist. On a SQL engine that means the unexpected-VALUES query goes
+    out with no ``LIMIT`` and the warehouse materialises every failing row (#1534). On a
+    pandas batch it means GX builds a locator entry per failing row — a dict per row, via
+    per-cell ``.at`` lookups, when an identifier column is configured — so a check failing on
+    1M of 1M rows cost 22x the wall and +774 MiB of a passing one (#1995).
+
+    SUMMARY pushes `partial_unexpected_count` onto the construction itself and returns the
+    same leading rows under `partial_unexpected_index_list`.
     """
-    if not sql_batch:
-        if not index_columns:
-            return "COMPLETE"
-        return {"result_format": "COMPLETE", "unexpected_index_column_names": index_columns}
     result_format: dict[str, Any] = {
         "result_format": "SUMMARY",
-        "partial_unexpected_count": _SQL_PARTIAL_UNEXPECTED_COUNT,
+        "partial_unexpected_count": (
+            _SQL_PARTIAL_UNEXPECTED_COUNT if sql_batch else _FRAME_PARTIAL_UNEXPECTED_COUNT
+        ),
     }
     if index_columns:
         result_format["unexpected_index_column_names"] = index_columns

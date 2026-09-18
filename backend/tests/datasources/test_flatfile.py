@@ -644,10 +644,10 @@ def test_run_checks_index_columns_capture_identifier(monkeypatch: pytest.MonkeyP
 
 
 def test_run_checks_index_list_is_capped_at_capture(monkeypatch: pytest.MonkeyPatch) -> None:
-    """#1196: the pandas execution engine returns `unexpected_index_list` FULL under
-    `result_format="COMPLETE"` (unlike `partial_unexpected_list`, capped at 20 on every engine).
-    Real GX end to end over a frame with hundreds of failing rows: the captured sample must be
-    bounded, while the aggregate counts still report the true totals.
+    """#1196: the pandas engine returns locator rows up to the lane's
+    `partial_unexpected_count` (#1995), far above the sample cap. Real GX end to end over a
+    frame with hundreds of failing rows: the captured sample must be bounded, while the
+    aggregate counts still report the true totals.
     """
     failing = 500
     df = pd.DataFrame(

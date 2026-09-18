@@ -209,9 +209,9 @@ def test_undetermined_lane_falls_back_loudly() -> None:
     assert any(entry["event"] == "gx_batch_lane_undetermined" for entry in logs)
 
 
-def test_frame_batch_keeps_the_complete_lane() -> None:
-    """The pandas lanes are untouched: they hold the batch in memory already, and `COMPLETE` is
-    the only format that returns their full `unexpected_index_list` for #1196 to cap.
+def test_frame_batch_is_not_the_sql_lane() -> None:
+    """A pandas batch takes the frame cap, not the SQL one — and still reports the true total
+    with a sample bounded at capture (#1196). The frame lane's own bound is #1995.
     """
     context = gx.get_context(mode="ephemeral")
     asset = context.data_sources.add_pandas(name="p").add_dataframe_asset(name="t")
