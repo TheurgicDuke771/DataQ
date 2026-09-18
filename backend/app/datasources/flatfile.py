@@ -589,11 +589,13 @@ def _open_batch_stream(
     )
 
 
-def _csv_head_frame(reader_args: dict[str, Any], *, limit: int) -> tuple[Any, bool]:
+def _csv_head_frame(reader_args: dict[str, Any], *, limit: int) -> Any:
     """The first ``limit`` rows of a CSV via a doubling byte range (#595).
 
     Each growth fetches only the bytes past what is already buffered (#1329):
-    re-reading the prefix made reaching 4 MB cost 1 + 2 + 4 = 7 MB.
+    re-reading the prefix made reaching 4 MB cost 1 + 2 + 4 = 7 MB. A frame
+    SHORTER than ``limit`` therefore means the walk reached EOF — the only other
+    way out of the loop is a full one.
     """
     size = object_size(**reader_args)
     buffered = bytearray()
@@ -603,7 +605,7 @@ def _csv_head_frame(reader_args: dict[str, Any], *, limit: int) -> tuple[Any, bo
         reached_eof = _extend_window(reader_args, buffered, span=span) or span >= size
         frame = _window_frame(buffered, limit=limit, reached_eof=reached_eof)
         if len(frame) >= limit or reached_eof:
-            return frame, reached_eof
+            return frame
         window *= 2
 
 
@@ -646,12 +648,12 @@ def _sampled_frame(
 ) -> tuple[Any, dict[str, Any]]:
     """`read_sampled_dataframe`'s body, over an already-open store session."""
     if sample.strategy == SAMPLE_HEAD and fmt == "csv":
-        frame, reached_eof = _csv_head_frame(reader_args, limit=sample.rows + 1)
+        frame = _csv_head_frame(reader_args, limit=sample.rows + 1)
         truncated = len(frame) > sample.rows
         if truncated:
             frame = frame.head(sample.rows)
-        # Not truncated implies the range reached EOF, so the size is known free.
-        csv_total = None if truncated else (len(frame) if reached_eof else None)
+        # Not truncated implies the walk reached EOF, so the size is known free.
+        csv_total = None if truncated else len(frame)
         return frame, sampling_record(
             sample, rows=len(frame), total_rows=csv_total, sampled=truncated
         )
