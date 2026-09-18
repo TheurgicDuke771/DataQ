@@ -5,8 +5,8 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from sqlalchemy import Select, func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy import ColumnElement, Select, any_, func, or_, select
+from sqlalchemy.orm import InstrumentedAttribute, Session
 
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
@@ -41,6 +41,25 @@ def accessible_suite_ids(
         return select(Suite.id)
     shared = select(Share.suite_id).where(Share.user_id == user_id)
     return select(Suite.id).where(or_(Suite.created_by == user_id, Suite.id.in_(shared)))
+
+
+def accessible_suite_filter(
+    column: InstrumentedAttribute[uuid.UUID],
+    user_id: uuid.UUID,
+    *,
+    include_all: bool = False,
+) -> ColumnElement[bool]:
+    """`column = ANY (ARRAY(<accessible suite ids>))` — the same population as
+    :func:`accessible_suite_ids`, shaped so the planner evaluates the suite set **once**
+    as an InitPlan instead of semi-joining it against every candidate row.
+
+    On a 100k+ row table (`runs`, `incidents`) the `IN (subquery)` form costs a hash
+    join per row, which dominates both the page and its `X-Total-Count` (#1986); the
+    array form turns the same predicate into an index condition. Equivalent for any
+    NOT NULL FK column, which is what every caller passes.
+    """
+    accessible = accessible_suite_ids(user_id, include_all=include_all)
+    return column == any_(func.array(accessible.scalar_subquery()))
 
 
 class SuiteNotFoundError(DataQError):

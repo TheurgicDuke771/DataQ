@@ -584,7 +584,7 @@ def _incident_filters(
     `X-Total-Count` quietly disagree with the page it describes (#1108).
     """
     conditions: list[Any] = [
-        Incident.suite_id.in_(suite_service.accessible_suite_ids(user_id, include_all=include_all))
+        suite_service.accessible_suite_filter(Incident.suite_id, user_id, include_all=include_all)
     ]
     if asset_id is not None:
         conditions.append(Incident.asset_id == asset_id)
