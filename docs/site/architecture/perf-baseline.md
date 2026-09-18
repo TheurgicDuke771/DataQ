@@ -895,6 +895,27 @@ with the sampled suite-run path and worth fixing once, not reworked here.
 page records elsewhere, is not measured here — see the not-measured table
 below.)
 
+### Snowflake tiers — measured
+
+Run live with a read-only role against Snowflake's TPC-H sample share (`LINEITEM`
+at scale factors 1 and 10), so nothing was created or dropped in the account. The
+suite keeps the standard shape — two not-null, two between, one uniqueness (here a
+compound key, since the table has no single-column one) — supplied through
+`PERF_SF_SUITE_JSON`, with `PERF_SF_SCHEMA_<tier>` and `PERF_SF_ROWS_<tier>` naming
+the per-tier schema and true row count. Medians of 3, development rig.
+
+| Tier | Rows | Checks | Run wall | Worker peak RSS | Statements | Rows returned to the worker |
+|---|---|---|---|---|---|---|
+| Snowflake, pushdown | 6,001,215 | 5 / 5 pass | 5.2 s | 378 MiB | 13 | 28 |
+| Snowflake, pushdown | 59,986,052 | 5 / 5 pass | 5.6 s | 383 MiB | 13 | 28 |
+| Profiler, 16 columns | 6,001,215 | — | 2.8 s | 383 MiB | 2 | — |
+
+Ten times the rows costs 0.4 s of wall clock and 5 MiB of worker memory, and the
+same 28 rows come back either way: the worker holds a verdict, not the table. The
+wall clock is mostly the 13 round trips, not the scan. Peak RSS here is the
+process baseline (GX and the connector loaded), the same ~380 MiB an empty run
+costs.
+
 ### What is explicitly NOT measured here
 
 A tier that simply does not appear in a result set reads as "nothing to report",
@@ -904,7 +925,7 @@ what each one waits for is a live warehouse and the environment naming it:
 
 | Tier | How it runs | Environment it needs |
 |---|---|---|
-| Snowflake 1M / 50M, pushdown | `SnowflakeCheckRunner.run_checks`, the same five expectations as every other rung | `PERF_SF_ACCOUNT` `PERF_SF_USER` `PERF_SF_ROLE` `PERF_SF_DATABASE` `PERF_SF_SCHEMA` `PERF_SF_WAREHOUSE` `PERF_SF_TABLE_1M` / `PERF_SF_TABLE_50M`, secret in `PERF_SF_SECRET` |
+| Snowflake 1M / 50M, pushdown — **measured above** | `SnowflakeCheckRunner.run_checks`, the same five expectations as every other rung (or `PERF_SF_SUITE_JSON` for a table the harness did not build) | `PERF_SF_ACCOUNT` `PERF_SF_USER` `PERF_SF_ROLE` `PERF_SF_DATABASE` `PERF_SF_SCHEMA` `PERF_SF_WAREHOUSE` `PERF_SF_TABLE_1M` / `PERF_SF_TABLE_50M`, secret in `PERF_SF_SECRET` |
 | Unity Catalog 1M, pushdown **and** frame-load | `UnityCatalogCheckRunner.run_checks` twice over the same table, the two cases differing only in `UC_SQL_PUSHDOWN` — the clean isolated comparison | `PERF_UC_WORKSPACE_URL` `PERF_UC_WAREHOUSE_ID` `PERF_UC_CATALOG` `PERF_UC_SCHEMA` `PERF_UC_TABLE_1M`, secret in `PERF_UC_SECRET` |
 | Iceberg 1M, native `pyiceberg` snapshot | `IcebergCheckRunner.run_checks` against a real catalog | `PERF_ICEBERG_CATALOG_JSON` (the connection config) `PERF_ICEBERG_TABLE`, optional secret in `PERF_ICEBERG_SECRET` |
 | Wide-table profiler on a warehouse (the batched rank-join) | `profile_service.profile_table`; the column listing is done first and is outside the clock | the Snowflake set above plus `PERF_SF_WIDE_TABLE` |

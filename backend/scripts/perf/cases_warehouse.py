@@ -16,6 +16,8 @@ Environment, per tier:
   Snowflake   PERF_SF_ACCOUNT PERF_SF_USER PERF_SF_ROLE PERF_SF_DATABASE
               PERF_SF_SCHEMA PERF_SF_WAREHOUSE PERF_SF_TABLE_1M PERF_SF_TABLE_50M
               PERF_SF_WIDE_TABLE (the profiler tier)   secret: PERF_SF_SECRET
+              optional, for a table the harness did not build (e.g. a sample share):
+              PERF_SF_SUITE_JSON  PERF_SF_SCHEMA_1M/_50M  PERF_SF_ROWS_1M/_50M
   Unity Cat.  PERF_UC_WORKSPACE_URL PERF_UC_WAREHOUSE_ID PERF_UC_CATALOG
               PERF_UC_SCHEMA PERF_UC_TABLE_1M          secret: PERF_UC_SECRET
   Iceberg     PERF_ICEBERG_CATALOG_JSON PERF_ICEBERG_TABLE
@@ -61,10 +63,29 @@ ICEBERG_CURVE_ROWS = (1_000_000, 2_000_000, 3_000_000, 4_000_000, 5_000_000)
 _SECRET_REF = "perf-secret-ref"  # noqa: S105  # nosec B105
 
 
-def _check_specs() -> list[Any]:
+def _check_specs(override_var: str | None = None) -> list[Any]:
+    """The standard five, or — for a tier pointed at a table the harness did not
+    build (a vendor sample share, say) — the JSON suite named by ``override_var``:
+    ``[["expect_…", {kwargs}], …]``. Column names differ; the work should not.
+    """
+    import json
+
     from backend.app.datasources.base import CheckSpec
 
-    return [CheckSpec(expectation_type=name, kwargs=dict(kwargs)) for name, kwargs in _CHECK_SHAPES]
+    shapes: Any = _CHECK_SHAPES
+    raw = os.environ.get(override_var, "").strip() if override_var else ""
+    if raw:
+        shapes = json.loads(raw)
+    return [CheckSpec(expectation_type=name, kwargs=dict(kwargs)) for name, kwargs in shapes]
+
+
+def _outcome_metrics(outcome: Any) -> list[Metric]:
+    """A suite that ERRORS measures the error path, not the tier — make it visible."""
+    checks = list(outcome.checks)
+    return [
+        Metric("checks_passed", float(sum(1 for c in checks if c.success)), "checks", "observe"),
+        Metric("checks_errored", float(sum(1 for c in checks if c.errored)), "checks", "exact"),
+    ]
 
 
 def _env(name: str) -> str | None:
@@ -229,23 +250,27 @@ def _run_snowflake(table_var: str, rows: int) -> list[Metric]:
     so `frame_rows` is deliberately absent here, and `peak_rss_mib` carries the
     "the worker holds nothing" claim."""
     runner = _snowflake_runner()
-    specs = _check_specs()
+    specs = _check_specs("PERF_SF_SUITE_JSON")
+    tier = table_var.removeprefix("PERF_SF_TABLE_")
+    schema = _env(f"PERF_SF_SCHEMA_{tier}") or _env("PERF_SF_SCHEMA")
+    rows = int(_env(f"PERF_SF_ROWS_{tier}") or rows)
     try:
         with _counted() as counters:
             started = time.perf_counter()
-            outcome = runner.run_checks(
-                table=os.environ[table_var], schema=_env("PERF_SF_SCHEMA"), checks=specs
-            )
+            outcome = runner.run_checks(table=os.environ[table_var], schema=schema, checks=specs)
             elapsed = time.perf_counter() - started
     finally:
         runner.close()
-    return _run_metrics(
-        elapsed=elapsed,
-        rows=rows,
-        checks=len(outcome.checks),
-        counters=counters,
-        frame_seam=False,
-    )
+    return [
+        *_run_metrics(
+            elapsed=elapsed,
+            rows=rows,
+            checks=len(outcome.checks),
+            counters=counters,
+            frame_seam=False,
+        ),
+        *_outcome_metrics(outcome),
+    ]
 
 
 def _profile_snowflake_wide() -> list[Metric]:
