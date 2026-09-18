@@ -2545,7 +2545,14 @@ class _FakeS3Client:
         first, last = Range.removeprefix("bytes=").split("-")
         start, end = int(first), int(last)
         self._log["ranges"].append((start, end - start + 1))
+        if start >= len(self._content):
+            raise RuntimeError("InvalidRange 416")
         return {"Body": io.BytesIO(self._content[start : end + 1])}
+
+    def replace(self, content: bytes) -> None:
+        """The object is re-uploaded (shrunk or grown) mid-run — for every client."""
+        self._content = content
+        self._log["content"] = content
 
     def close(self) -> None:
         self.closed = True
@@ -2558,10 +2565,16 @@ def _fake_s3(monkeypatch: pytest.MonkeyPatch, content: bytes) -> dict[str, Any]:
     construction by definition, which is how a client per range request survived
     every review of the behaviour.
     """
-    log: dict[str, Any] = {"clients": [], "heads": 0, "downloads": 0, "ranges": []}
+    log: dict[str, Any] = {
+        "clients": [],
+        "heads": 0,
+        "downloads": 0,
+        "ranges": [],
+        "content": content,
+    }
 
     def _factory(_cfg: Any, _secret: str) -> _FakeS3Client:
-        client = _FakeS3Client(content, log)
+        client = _FakeS3Client(log["content"], log)
         log["clients"].append(client)
         return client
 
@@ -2744,7 +2757,90 @@ def test_a_sampled_run_probes_the_objects_metadata_once(
     assert outcome.checks[0].success is True
     assert monitors[0].errored is False
     assert (monitors[0].observed_value or {})["row_count"] == 500
-    assert log["heads"] == 1, "the run re-probed metadata it already held"
+    # One HEAD for the runner's stat, reused by the sampled read; one fresh HEAD for the
+    # volume count, whose whole job is to be current (a grown file must count fully).
+    assert log["heads"] == 2, "the checks read re-probed metadata it already held"
+
+
+def test_a_stale_oversized_stat_ends_the_head_window_at_the_real_eof(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The runner's stat can predate the read by a whole checks phase. When the
+    object shrank in between, the delta fetch must stop at the short read rather
+    than ask the store for bytes past its end (S3/ADLS answer 416, not empty).
+    """
+    content = _csv_bytes(30)
+    log = _fake_s3(monkeypatch, content)
+
+    frame, record = flatfile.read_sampled_dataframe(
+        conn_type="s3",
+        config=_S3_CONFIG,
+        path="raw/big.csv",
+        secret="s",
+        sample=SampleSpec(strategy="head", rows=1_000),
+        stat=flatfile.FileStat(_LANDED, len(content) + 5_000_000),
+    )
+
+    assert len(frame) == 30
+    assert record["sampled"] is False
+    assert all(start < len(content) for start, _ in log["ranges"])
+
+
+def test_a_parquet_object_that_shrinks_between_count_and_take_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The take must size the object afresh — served from the count's memo it
+    would read against a length the object no longer has and hand pyarrow a
+    truncated tail instead of the actionable refusal.
+    """
+    big = _parquet(2_000)
+    log = _fake_s3(monkeypatch, big)
+    real_count = flatfile.parquet_row_count
+
+    def _count_then_shrink(**kwargs: Any) -> int:
+        total = real_count(**kwargs)
+        for client in log["clients"]:
+            client.replace(_parquet(50))
+        return total
+
+    monkeypatch.setattr(flatfile, "parquet_row_count", _count_then_shrink)
+
+    with pytest.raises(SamplingDrawError):
+        flatfile.read_sampled_dataframe(
+            conn_type="s3",
+            config=_S3_CONFIG,
+            path="raw/big.parquet",
+            secret="s",
+            sample=SampleSpec(strategy="random", rows=100, seed=1),
+        )
+
+
+def test_the_volume_count_sees_rows_appended_after_the_checks_phase(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The runner's stat is memoised for the whole run; the count must not be."""
+    log = _fake_s3(monkeypatch, _csv_bytes(100))
+
+    runner = flatfile.FlatFileCheckRunner(
+        conn_type="s3",
+        config=_S3_CONFIG,
+        secret="x",
+        sampling=SampleSpec(strategy="head", rows=10),
+    )
+    runner.run_checks(
+        table="raw/big.csv",
+        schema=None,
+        checks=[CheckSpec("expect_column_values_to_not_be_null", {"column": "id"})],
+    )
+    for client in log["clients"]:
+        client.replace(_csv_bytes(400))
+
+    monitors = runner.run_monitors(
+        table="raw/big.csv", schema=None, monitors=[_spec("volume", min_rows=1, max_rows=10_000)]
+    )
+
+    assert monitors[0].errored is False
+    assert (monitors[0].observed_value or {})["row_count"] == 400
 
 
 def test_one_sampled_read_heads_the_object_once(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2898,3 +2994,35 @@ def test_a_random_csv_sample_survives_adversarial_values(
     )
     assert record["total_rows"] == len(frame), name
     assert len(sampled) == min(len(frame), 2), name
+
+
+def test_the_profiler_and_drift_readers_release_their_store_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A ``RangeReader`` built without a session owns a live client; a reader that
+    is never closed leaves the pool to ``__del__`` — a slow leak in a long-lived
+    worker once ``pq.ParquetFile`` lands in a reference cycle.
+    """
+    from types import SimpleNamespace
+
+    from backend.app.services import profile_service, schema_drift
+
+    # Refcounting would close an abandoned reader on function exit and mask the
+    # leak; only an explicit close may count.
+    monkeypatch.setattr(flatfile.RangeReader, "__del__", lambda self: None)
+    log = _fake_s3(monkeypatch, _parquet(20))
+    connection = SimpleNamespace(type="s3", config=_S3_CONFIG, secret_ref="ref")
+    secrets = SimpleNamespace(get=lambda _ref: "s")
+
+    frame = profile_service._read_parquet_sample(
+        conn_type="s3", config=_S3_CONFIG, path="raw/x.parquet", secret="s", columns=["id"]
+    )
+    names = profile_service.list_file_columns(
+        connection, path="raw/x.parquet", file_format=None, secret_store=secrets  # type: ignore[arg-type]
+    )
+    schema = schema_drift._file_columns(
+        connection, path="raw/x.parquet", file_format=None, secret_store=secrets  # type: ignore[arg-type]
+    )
+
+    assert len(frame) == 20 and names == ["id", "load_ts"] and len(schema) == 2
+    assert log["clients"] and all(client.closed for client in log["clients"])

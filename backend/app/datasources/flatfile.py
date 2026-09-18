@@ -414,6 +414,8 @@ class RangeReader(io.RawIOBase):
         )
         self._window_start = start
         self.requests += 1
+        if len(self._window) < span:
+            self._size = start + len(self._window)
 
 
 def parquet_row_count(
@@ -568,9 +570,13 @@ def _csv_head_frame(reader_args: dict[str, Any], *, limit: int) -> tuple[Any, bo
     window = _CSV_HEAD_BYTES
     while True:
         span = min(window, size)
+        short = False
         if span > len(buffered):
-            buffered += read_range(**reader_args, start=len(buffered), length=span - len(buffered))
-        reached_eof = span >= size
+            asked = span - len(buffered)
+            got = read_range(**reader_args, start=len(buffered), length=asked)
+            buffered += got
+            short = len(got) < asked
+        reached_eof = short or span >= size
         raw = bytes(buffered)
         if not reached_eof:
             raw = trim_to_row_boundary(raw)
@@ -642,6 +648,8 @@ def _sampled_frame(
         # than materialise an identity index list (~40 MB at 1.4M rows).
         indices = sample_row_indices(total=total, rows=sample.rows, seed=sample.seed)
 
+    if indices is not None:
+        reader_args["session"].sizes.pop(path, None)
     batches, schema, arrow_backed, close = _open_batch_stream(reader_args, fmt)
     try:
         if single_pass:
@@ -818,15 +826,14 @@ class FlatFileCheckRunner:
         if size is not None:
             enforce_byte_cap(size, cap=cap, target=f"file {path!r}")
 
-    def _counted_rows(self, path: str, stat: FileStat) -> int:
-        """`row_count` over one store session seeded with ``stat`` (#1329) — the
-        CSV walk behind a volume monitor is many range reads, not one download.
+    def _counted_rows(self, path: str) -> int:
+        """`row_count` over one store session (#1329) — the CSV walk behind a volume
+        monitor is many range reads, not one download. Deliberately NOT seeded with
+        the runner's stat: the count is the one number whose job is to be current.
         """
         with StoreSession(
             conn_type=self._conn_type, config=self._config, secret=self._secret
         ) as session:
-            if stat.size is not None:
-                session.sizes[path] = stat.size
             return row_count(
                 conn_type=self._conn_type,
                 config=self._config,
@@ -915,7 +922,7 @@ class FlatFileCheckRunner:
             if frame_is_needed:
                 return len(dataframe())
             # Memoized like the frame: no per-monitor re-scans or read retries.
-            return int(_memoized(counted, lambda: self._counted_rows(table, stat)))
+            return int(_memoized(counted, lambda: self._counted_rows(table)))
 
         def scalar_for(spec: MonitorSpec) -> Any:
             if spec.kind == VOLUME:
