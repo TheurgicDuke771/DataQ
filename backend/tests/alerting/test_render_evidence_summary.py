@@ -99,6 +99,28 @@ def test_blast_radius_clause_populated() -> None:
     assert render._blast_radius_clause(blast) == "3 downstream asset(s) potentially affected"
 
 
+def test_blast_radius_clause_appends_a_lineage_source_caveat() -> None:
+    """#1990: the same qualifier `get_asset`'s `lineage.qualified_by` carries reaches the
+    outbound alert clause too, appended rather than replacing the asset-count clause.
+    """
+    blast = {
+        "assets": [{"name": "a"}],
+        "qualified_by": ["warehouse lineage on 'wh' has never pruned removed edges"],
+    }
+    clause = render._blast_radius_clause(blast)
+    assert clause.startswith("1 downstream asset(s) potentially affected")
+    assert "lineage source caveat" in clause
+    assert "never pruned removed edges" in clause
+
+
+def test_blast_radius_clause_legacy_bare_list_has_no_caveat() -> None:
+    """An incident synced before #1990 carries no `qualified_by` at all — the clause must
+    not invent one.
+    """
+    clause = render._blast_radius_clause([{"name": "a"}])
+    assert "lineage source caveat" not in clause
+
+
 # ── evidence_summary_clause ──────────────────────────────────────────────────
 
 
