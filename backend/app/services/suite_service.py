@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from sqlalchemy import ColumnElement, Select, any_, func, or_, select
+from sqlalchemy import ColumnElement, Select, any_, func, or_, select, true
 from sqlalchemy.orm import InstrumentedAttribute, Session
 
 from backend.app.core.errors import DataQError
@@ -57,8 +57,16 @@ def accessible_suite_filter(
     join per row, which dominates both the page and its `X-Total-Count` (#1986); the
     array form turns the same predicate into an index condition. Equivalent for any
     NOT NULL FK column, which is what every caller passes.
+
+    `include_all` (workspace-admin) is that same FK tested against every suite id, so it
+    is tautologically true for a NOT NULL column — emitted as `true` rather than built
+    into an array the planner then has to apply. A nullable column gets `IS NOT NULL`,
+    which is what `IN (<every suite id>)` means there; the precondition is enforced
+    rather than documented, because it is what keeps the two branches equivalent.
     """
-    accessible = accessible_suite_ids(user_id, include_all=include_all)
+    if include_all:
+        return true() if not column.expression.nullable else column.is_not(None)
+    accessible = accessible_suite_ids(user_id)
     return column == any_(func.array(accessible.scalar_subquery()))
 
 

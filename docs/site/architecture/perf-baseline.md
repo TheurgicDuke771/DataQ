@@ -499,6 +499,25 @@ the response contract is untouched.
 | `/incidents` `?suite_id=` | 1.2 ms | 0.8 ms |
 | `/pipeline_runs` unfiltered | 6.5 ms | 6.8 ms (unchanged — no suite scoping) |
 
+For a workspace-admin the predicate is skipped entirely rather than rewritten:
+`suite_id` is a `NOT NULL` foreign key to `suites.id`, so "every suite" excludes
+nothing, and building the array would make the one caller who sees the most rows
+pay for a filter that does no filtering.
+
+Multi-predicate shapes were measured too, because an array whose contents the
+planner cannot see changes its row estimate, and a bare `COUNT(*)` has only one
+plan to choose from and so cannot expose that. Every combination the filter
+helpers actually build improves:
+
+| combined filters | before | after |
+|---|---|---|
+| `/runs` `?status=` + 30-day window, COUNT | 6.35 ms | 4.87 ms |
+| `/runs` 7-day window, COUNT | 13.36 ms | 10.15 ms |
+| `/runs` 30-day window with an exclusion, COUNT | 13.68 ms | 10.13 ms |
+| `/incidents` `?asset_id=` + `?state=`, COUNT | 0.064 ms | 0.049 ms |
+| `/incidents` `?state=` + 7-day window, COUNT | 2.79 ms | 2.51 ms |
+| `/incidents` `?state=` + 7-day window, page | 0.109 ms | 0.085 ms |
+
 The page shares the predicate with its total, so it improves too — including at
 depth, which is the one part of the `OFFSET` problem this reaches:
 

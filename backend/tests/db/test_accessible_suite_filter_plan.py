@@ -89,14 +89,18 @@ def test_visibility_predicate_renders_as_an_array_not_a_subquery_membership() ->
 
 def test_runs_count_plan_has_no_row_wise_suite_join(db_session: Any) -> None:
     """The accessible-suite set is resolved once as an InitPlan; nothing joins `suites`
-    against `runs`. `enable_seqscan = off` gives the assertion teeth on an empty table —
-    without it the planner has no reason to pick any join shape at all.
+    against `runs`. The assertion names the join *condition* rather than the word "Join",
+    which would also match a join inside the InitPlan subtree — harmless there, and a
+    rewrite of `accessible_suite_ids` would turn it red on a correct change.
+
+    `enable_seqscan = off` gives the assertion teeth on an empty table — without it the
+    planner has no reason to pick any join shape at all.
     """
     connection = db_session.connection()
     connection.execute(text("SET LOCAL enable_seqscan = off"))
     plan = _plan(connection, _runs_count_statement(uuid.uuid4()))
     assert "InitPlan" in plan, plan
-    assert "Join" not in plan, plan
+    assert "runs.suite_id = suites.id" not in plan, plan
 
 
 def test_incidents_count_plan_has_no_row_wise_suite_join(db_session: Any) -> None:
@@ -104,7 +108,7 @@ def test_incidents_count_plan_has_no_row_wise_suite_join(db_session: Any) -> Non
     connection.execute(text("SET LOCAL enable_seqscan = off"))
     plan = _plan(connection, _incidents_count_statement(uuid.uuid4()))
     assert "InitPlan" in plan, plan
-    assert "Join" not in plan, plan
+    assert "incidents.suite_id = suites.id" not in plan, plan
 
 
 def test_runs_list_plan_has_no_row_wise_suite_join(db_session: Any) -> None:
@@ -124,7 +128,7 @@ def test_runs_list_plan_has_no_row_wise_suite_join(db_session: Any) -> None:
     )
     plan = _plan(connection, statement)
     assert "ix_runs_created_id" in plan, plan
-    assert "Join" not in plan, plan
+    assert "runs.suite_id = suites.id" not in plan, plan
 
 
 def test_population_matches_the_subquery_form_for_owner_sharee_and_outsider(
@@ -181,4 +185,25 @@ def test_empty_accessible_set_selects_nothing(db_session: Any) -> None:
     stranger = uuid.uuid4()
     assert (
         _count(db_session, Run, suite_service.accessible_suite_filter(Run.suite_id, stranger)) == 0
+    )
+
+
+def test_workspace_admin_short_circuits_instead_of_materialising_every_suite(
+    db_session: Any,
+) -> None:
+    """`suite_id` is a NOT NULL FK to `suites.id`, so "every suite" is no filter at all.
+    Building the array anyway would make an admin pay for a predicate that excludes
+    nothing, on the page *and* the total, on every poll.
+    """
+    owner = _user(db_session)
+    suite = _suite(db_session, owner)
+    db_session.add(Run(suite_id=suite.id, status="queued", triggered_by="a"))
+    db_session.commit()
+    stranger = uuid.uuid4()
+    predicate = suite_service.accessible_suite_filter(Run.suite_id, stranger, include_all=True)
+    assert str(predicate) == "true"
+    assert _count(db_session, Run, predicate) == _count(
+        db_session,
+        Run,
+        Run.suite_id.in_(suite_service.accessible_suite_ids(stranger, include_all=True)),
     )
