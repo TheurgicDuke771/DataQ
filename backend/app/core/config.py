@@ -237,10 +237,9 @@ class Settings(BaseSettings):
     # run may materialise, checked by a cheap probe BEFORE the read.
     run_max_scan_bytes: int = Field(default=134_217_728, ge=0)
     run_max_scan_rows: int = Field(default=1_500_000, ge=0)
-    # Iceberg's own row cap (#1328). `None` = inherit `run_max_scan_rows`; the two datasources
-    # have separately-measured ceilings, so one number is shared only while it refuses no rung
-    # either is measured to survive.
-    run_max_scan_rows_iceberg: int | None = Field(default=None, ge=0)
+    # Iceberg's own row cap (#1328), measured separately: Iceberg survives 2M rows where the UC
+    # frame lane dies, so sharing 1.5M would refuse a working rung. `None` = inherit.
+    run_max_scan_rows_iceberg: int | None = Field(default=3_000_000, ge=0)
 
     # UC SQL pushdown (#1532).
     uc_sql_pushdown: bool = True

@@ -262,12 +262,32 @@ that would stamp "sampled" on a result that was not.
   deliberately not the scan's own `count()`, which materialises a merge-on-read
   task in full in order to count it, so counting to decide whether to materialise
   would perform the very read being refused. The **value** lives in its own setting,
-  `RUN_MAX_SCAN_ROWS_ICEBERG`, defaulting to "inherit `RUN_MAX_SCAN_ROWS`" —
-  Iceberg passed at 2M rows where UC died at 2M, so the inherited 1.5M would
-  refuse a rung measured to work, and the real ceiling is somewhere between 2M
-  (passed) and 5M (killed the container). Until that curve is run on the
-  prod-parity rig the shared number is a placeholder, not a decision. Sampling
-  stays out of scope (`row_filter` + a scan limit is its own piece of work).
+  `RUN_MAX_SCAN_ROWS_ICEBERG` = **3,000,000**, read off the curve below rather than
+  inherited: Iceberg passed at 2M rows where UC died at 2M, so sharing UC's 1.5M
+  would refuse a rung measured to work. Sampling stays out of scope (`row_filter`
+  + a scan limit is its own piece of work).
+
+  The curve, on the container rig (2 GiB memory limit, swap off, 1 CPU; the real
+  `IcebergCheckRunner`, five expectations, one fresh process per rung, a local
+  SQL-catalog table with the flat-file tiers' column shape):
+
+  | Rows | Peak RSS | Wall |
+  |---|---|---|
+  | 1M | 541 MiB | 1.9 s |
+  | 2M | 697 MiB | 2.4 s |
+  | 3M | 845 MiB | 2.9 s |
+  | 4M | 940 MiB | 3.4 s |
+  | 5M | 1,065 MiB | 3.8 s |
+
+  No rung died. The read is linear — about 130 MiB per million rows on a ~410 MiB
+  process baseline for this narrow schema — and that is *not* the deployed worker's
+  position: a deployed worker idles near 1 GiB before it reads anything, and the
+  wider table of the earlier deployed campaign cost about 190 MiB per million
+  (1,218 MiB at 1M, 1,408 MiB at 2M, replica killed at 5M). Both agree on the
+  ceiling: (2,048 − ~1,030) / 190 ≈ 5.3M rows. 3M projects to about 1,600 MiB on
+  the deployed worker — roughly 450 MiB of margin for a wider table or a
+  concurrent sibling — while still admitting the 2M rung measured to work. A row
+  count is a width-blind proxy for memory; the margin is what absorbs that.
 - **Comparison sources cannot sample — decided: not supported**, see
   [ADR 0015's 2026-09-16 amendment](../adr/0015-two-connection-comparison-check-model.md#amendment-2026-09-16-comparison-sources-do-not-support-sampling).
   Coherent key-set sampling — draw a key set, then fetch exactly those keys
