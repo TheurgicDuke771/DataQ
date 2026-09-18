@@ -154,7 +154,8 @@ def _file_columns(
         return [{"name": str(col), "type": str(dtype)} for col, dtype in df.dtypes.items()]
     import pyarrow.parquet as pq
 
-    arrow_schema = pq.ParquetFile(RangeReader(**reader_args)).schema_arrow
+    with RangeReader(**reader_args) as reader:
+        arrow_schema = pq.ParquetFile(reader).schema_arrow
     return [{"name": field.name, "type": str(field.type)} for field in arrow_schema]
 
 

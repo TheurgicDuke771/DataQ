@@ -694,35 +694,35 @@ def _read_parquet_sample(
     import pyarrow as pa
     import pyarrow.parquet as pq
 
-    reader = RangeReader(
+    with RangeReader(
         conn_type=conn_type, config=config, path=path, secret=secret, chunk=STREAM_CHUNK
-    )
-    parquet_file = pq.ParquetFile(reader)
-    available = set(parquet_file.schema.names)
-    present = [c for c in columns if c in available]
-    if not present:
-        # No requested column exists in the file — `profile_dataframe` reports the missing names as
-        # a clean 422 off `columns`, not off this frame.
-        return pd.DataFrame()
+    ) as reader:
+        parquet_file = pq.ParquetFile(reader)
+        available = set(parquet_file.schema.names)
+        present = [c for c in columns if c in available]
+        if not present:
+            # No requested column exists in the file — `profile_dataframe` reports the missing
+            # names as a clean 422 off `columns`, not off this frame.
+            return pd.DataFrame()
 
-    schema = parquet_file.schema_arrow
-    batches = []
-    rows = 0
-    for batch in parquet_file.iter_batches(batch_size=_SAMPLE_ROWS, columns=present):
-        batches.append(batch)
-        rows += batch.num_rows
-        if rows >= _SAMPLE_ROWS:
-            break
+        schema = parquet_file.schema_arrow
+        batches = []
+        rows = 0
+        for batch in parquet_file.iter_batches(batch_size=_SAMPLE_ROWS, columns=present):
+            batches.append(batch)
+            rows += batch.num_rows
+            if rows >= _SAMPLE_ROWS:
+                break
 
-    if batches:
-        table = pa.Table.from_batches(batches)
-    else:
-        # A real, correctly-typed empty table (e.g. a header-only file) rather than an untyped
-        # `pd.DataFrame(columns=present)`.
-        table = pa.table({c: pa.array([], type=schema.field(c).type) for c in present})
-    # Parquet is already Arrow on disk; dtype_backend="pyarrow" keeps the buffers zero-copy instead
-    # of materialising a numpy copy.
-    return table.to_pandas(types_mapper=pd.ArrowDtype).head(_SAMPLE_ROWS)
+        if batches:
+            table = pa.Table.from_batches(batches)
+        else:
+            # A real, correctly-typed empty table (e.g. a header-only file) rather than an untyped
+            # `pd.DataFrame(columns=present)`.
+            table = pa.table({c: pa.array([], type=schema.field(c).type) for c in present})
+        # Parquet is already Arrow on disk; dtype_backend="pyarrow" keeps the buffers zero-copy
+        # instead of materialising a numpy copy.
+        return table.to_pandas(types_mapper=pd.ArrowDtype).head(_SAMPLE_ROWS)
 
 
 def profile_file(
@@ -983,7 +983,8 @@ def list_file_columns(
             return [str(c) for c in read_csv_head(**reader_args, rows=0).columns]
         import pyarrow.parquet as pq
 
-        return [str(name) for name in pq.ParquetFile(RangeReader(**reader_args)).schema.names]
+        with RangeReader(**reader_args) as reader:
+            return [str(name) for name in pq.ParquetFile(reader).schema.names]
     except Exception as exc:
         log.warning(
             "column_list_failed", connection_type=connection.type, error_type=type(exc).__name__
