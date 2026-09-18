@@ -2769,16 +2769,20 @@ def test_a_growing_head_window_fetches_only_the_delta(
     assert sum(length for _, length in ranges) == cursor
 
 
-def test_a_sampled_run_probes_the_objects_metadata_once(
+def test_a_sampled_run_probes_the_objects_metadata_per_read(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`run_service` drives ONE runner through checks then monitors, and
-    `FlatFileCheckRunner._stat` already holds the object's size for the whole run.
-    The sampled read and the volume count each re-probed it because both are
-    module functions with no access to that memo.
+    `FlatFileCheckRunner._stat` memoises the object's size for the whole run —
+    but the sampled read no longer trusts that memo (#2004): a stat taken before
+    the checks phase can predate a file that grew during it, so the checks read
+    now HEADs fresh just like the volume count always has.
 
-    Counted at the CLIENT, not at `object_size`: patching the function under test
-    is exactly what cannot see a memo that lives inside it.
+    Three HEADs, not two: one when `run_monitors` establishes `arrived_at` via
+    `_stat` (memoised for the rest of that call only), one for the checks
+    phase's own sampled read, and one for the volume count — the two reads are
+    deliberately never unified, since each one's job is to describe the object
+    as it stands AT THAT READ, not at some earlier probe.
     """
     log = _fake_s3(monkeypatch, _csv_bytes(500))
 
@@ -2800,20 +2804,30 @@ def test_a_sampled_run_probes_the_objects_metadata_once(
     assert outcome.checks[0].success is True
     assert monitors[0].errored is False
     assert (monitors[0].observed_value or {})["row_count"] == 500
-    # One HEAD for the runner's stat, reused by the sampled read; one fresh HEAD for the
-    # volume count, whose whole job is to be current (a grown file must count fully).
-    assert log["heads"] == 2, "the checks read re-probed metadata it already held"
+    assert log["heads"] == 3, "a sampled read must probe fresh, not reuse the runner's own memo"
 
 
 def test_a_stale_oversized_stat_ends_the_head_window_at_the_real_eof(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The runner's stat can predate the read by a whole checks phase. When the
-    object shrank in between, the delta fetch must stop at the short read rather
-    than ask the store for bytes past its end (S3/ADLS answer 416, not empty).
+    """A concurrent external shrink between a read's OWN HEAD and its first
+    range GET must not turn into a request past the new EOF (S3/ADLS answer
+    416, not empty) — the short-read-is-EOF rule in `_extend_window` protects
+    against this regardless of where the (now stale) size came from. #2004
+    removed the caller-supplied `stat` this test used to poison directly, so
+    the race is reproduced against the read's own internal probe instead.
     """
     content = _csv_bytes(30)
     log = _fake_s3(monkeypatch, content)
+    real_object_size = flatfile.object_size
+
+    def _stat_then_shrink(**kwargs: Any) -> int:
+        size = real_object_size(**kwargs)
+        for client in log["clients"]:
+            client.replace(content)  # already shrunk to `content`'s real length
+        return size + 5_000_000  # report the pre-shrink (oversized) length
+
+    monkeypatch.setattr(flatfile, "object_size", _stat_then_shrink)
 
     frame, record = flatfile.read_sampled_dataframe(
         conn_type="s3",
@@ -2821,12 +2835,108 @@ def test_a_stale_oversized_stat_ends_the_head_window_at_the_real_eof(
         path="raw/big.csv",
         secret="s",
         sample=SampleSpec(strategy="head", rows=1_000),
-        stat=flatfile.FileStat(_LANDED, len(content) + 5_000_000),
     )
 
     assert len(frame) == 30
     assert record["sampled"] is False
     assert all(start < len(content) for start, _ in log["ranges"])
+
+
+def test_a_grown_head_sample_is_walked_past_the_runners_old_stat(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`FlatFileCheckRunner._stat` is memoised per instance and can predate a
+    later sampled read by a whole checks phase. Before #2004 the checks read
+    seeded its session from that memo, so rows appended after it were invisible
+    to a `head` sample and `total_rows` under-reported the population.
+    """
+    log = _fake_s3(monkeypatch, _csv_bytes(100))
+    runner = flatfile.FlatFileCheckRunner(
+        conn_type="s3",
+        config=_S3_CONFIG,
+        secret="x",
+        sampling=SampleSpec(strategy="head", rows=1_000),
+    )
+    runner._stat("raw/big.csv")  # establishes an old, small memo
+    for client in log["clients"]:
+        client.replace(_csv_bytes(400))
+
+    outcome = runner.run_checks(
+        table="raw/big.csv",
+        schema=None,
+        checks=[CheckSpec("expect_column_values_to_not_be_null", {"column": "id"})],
+    )
+
+    assert outcome.checks[0].success is True
+    sampling = outcome.checks[0].sampling
+    assert sampling is not None
+    assert sampling["rows"] == 400
+    assert sampling["total_rows"] == 400
+    assert sampling["sampled"] is False
+
+
+def test_a_grown_random_csv_sample_is_walked_past_the_runners_old_stat(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Same growth scenario as the `head` test, over the single-pass reservoir
+    path (#1329): the reservoir's own walked count is `total`, so a stale-small
+    runner memo must not cap it below the grown object's real population.
+    """
+    log = _fake_s3(monkeypatch, _csv_bytes(100))
+    runner = flatfile.FlatFileCheckRunner(
+        conn_type="s3",
+        config=_S3_CONFIG,
+        secret="x",
+        sampling=SampleSpec(strategy="random", rows=50, seed=3),
+    )
+    runner._stat("raw/big.csv")  # establishes an old, small memo
+    for client in log["clients"]:
+        client.replace(_csv_bytes(400))
+
+    outcome = runner.run_checks(
+        table="raw/big.csv",
+        schema=None,
+        checks=[CheckSpec("expect_column_values_to_not_be_null", {"column": "id"})],
+    )
+
+    assert outcome.checks[0].success is True
+    sampling = outcome.checks[0].sampling
+    assert sampling is not None
+    assert sampling["rows"] == 50
+    assert sampling["total_rows"] == 400
+    assert sampling["sampled"] is True
+
+
+def test_a_grown_random_parquet_sample_is_walked_past_the_runners_old_stat(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Parquet keeps the count-then-take shape, so this exercises the OTHER
+    reader `_open_batch_stream` opens: the take's footer must reflect the grown
+    object, not the runner's earlier, now-stale, HEAD.
+    """
+    log = _fake_s3(monkeypatch, _parquet(100))
+    runner = flatfile.FlatFileCheckRunner(
+        conn_type="s3",
+        config=_S3_CONFIG,
+        secret="x",
+        sampling=SampleSpec(strategy="random", rows=50, seed=3),
+    )
+    runner._stat("raw/big.parquet")  # establishes an old, small memo
+    for client in log["clients"]:
+        client.replace(_parquet(400))
+
+    outcome = runner.run_checks(
+        table="raw/big.parquet",
+        schema=None,
+        checks=[CheckSpec("expect_column_values_to_not_be_null", {"column": "id"})],
+    )
+
+    assert outcome.checks[0].success is True
+    sampling = outcome.checks[0].sampling
+    assert sampling is not None
+    assert sampling["rows"] == 50
+    assert sampling["total_rows"] == 400
+    assert sampling["sampled"] is True
 
 
 def test_a_parquet_object_that_shrinks_between_count_and_take_is_refused(

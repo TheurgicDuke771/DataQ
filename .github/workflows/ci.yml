@@ -189,6 +189,21 @@ jobs:
           REDIS_URL: redis://localhost:6379/0
         run: python -m backend.scripts.export_docs_reference --check
 
+      # Scale-baseline regression budget, deterministic metrics only: the work each case
+      # reports doing (exact) and the statements + store calls it costs (strict). Peak RSS
+      # and encoded byte counts are platform-dependent, so their band is NOT enforced here;
+      # wall clock is measured and recorded but never gated — a shared runner cannot hold it
+      # steady, and a flaky gate is worse than none. Runs inside this job so the branch
+      # ruleset's required-check names do not change.
+      - name: Perf regression budget (deterministic subset)
+        env:
+          PERF_DATABASE_URL: postgresql+psycopg2://dataq:dataq@localhost:5432/dataq_perf_ci
+          PERF_DATA_DIR: ${{ runner.temp }}/perf-data
+        run: |
+          python -m backend.scripts.perf_baseline create-db
+          (cd backend && DATABASE_URL="$PERF_DATABASE_URL" alembic upgrade head)
+          python -m backend.scripts.perf_baseline check --gate exact --gate strict
+
   # ── Leak prevention: secrets (betterleaks) + identifiers (#1472) ───────────── The job keeps its
   # original NAME because that string is the required-status-check context in the `main` ruleset.
   secrets:
