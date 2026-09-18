@@ -7,7 +7,9 @@ four overlapping 1M-row flat-file runs want ~3.1 GiB of child resident memory ag
 
 A run reserves its estimate before materialising anything, and the estimate comes from the
 size probe the read path already has to do — so nothing is guessed from the data. Lanes that
-push work down to the warehouse hold no dataset in the worker and bypass admission entirely.
+push work down to the warehouse hold no dataset in the worker and bypass admission for the
+suite's own batch — but not for a comparison check, whose two sides materialise here whatever
+the datasource is.
 """
 
 from __future__ import annotations
@@ -34,7 +36,7 @@ log = get_logger(__name__)
 AWAITING_MEMORY = "awaiting_worker_memory"
 
 #: Datasource types that push their work down and hold no dataset in the worker. A bypass
-#: here is a claim about the runner, not a gap — see `_estimate` for the unmetered case.
+#: here is a claim about the runner, not a gap — see `_dataset_estimate` for the unmetered case.
 PUSHDOWN_TYPES: frozenset[str] = frozenset({"snowflake"})
 
 
