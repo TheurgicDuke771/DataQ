@@ -140,6 +140,35 @@ def child_command(case_id: str) -> list[str]:
     return [sys.executable, "-m", "backend.scripts.perf_baseline", "exec", "--case", case_id]
 
 
+class CaseFailedError(RuntimeError):
+    """A case's child process did not produce a measurement.
+
+    Carries the exit status rather than only a message because the interesting
+    case is the one that produced no output at all: a kernel OOM kill is
+    ``-SIGKILL`` (or 137 under a container runtime), which is the *answer* to
+    "where is the ceiling", not a harness malfunction.
+    """
+
+    def __init__(self, case_id: str, returncode: int, stderr: str) -> None:
+        self.case_id = case_id
+        self.returncode = returncode
+        self.stderr = stderr
+        super().__init__(f"case {case_id} failed (rc={returncode}):\n{stderr[-4000:]}")
+
+    @property
+    def signal(self) -> int | None:
+        """The signal that killed the child, by either convention, or ``None``."""
+        if self.returncode < 0:
+            return -self.returncode
+        if 128 < self.returncode < 192:
+            return self.returncode - 128
+        return None
+
+    @property
+    def oom_killed(self) -> bool:
+        return self.signal == 9
+
+
 def run_in_subprocess(case: Case, *, timeout: float = 3600.0) -> dict[str, Any]:
     """Run `case` in a fresh interpreter and return its measurement payload."""
     return spawn(case.id, env=case.env, timeout=timeout)
@@ -160,7 +189,7 @@ def spawn(case_id: str, *, env: dict[str, str], timeout: float = 3600.0) -> dict
         check=False,
     )
     if proc.returncode != 0:
-        raise RuntimeError(f"case {case_id} failed (rc={proc.returncode}):\n{proc.stderr[-4000:]}")
+        raise CaseFailedError(case_id, proc.returncode, proc.stderr)
     return last_json_line(proc.stdout, case_id)
 
 

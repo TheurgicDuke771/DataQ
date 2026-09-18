@@ -855,18 +855,63 @@ below.)
 
 A tier that simply does not appear in a result set reads as "nothing to report",
 so the warehouse tiers are registered as real cases and emit an explicit
-`not_measured` row carrying the reason:
+`not_measured` row carrying the reason. Their bodies drive DataQ's own runners;
+what each one waits for is a live warehouse and the environment naming it:
 
-| Tier | Why not measured |
-|---|---|
-| Snowflake 1M / 50M, pushdown | needs a live warehouse; the harness compute is stopped by default (ADR 0021) |
-| Unity Catalog 1M, pushdown **and** frame-load | same, plus Databricks Free-Edition fair-use pausing |
-| Iceberg 1M, native `pyiceberg` snapshot | same |
-| Wide-table profiler on a warehouse (the batched rank-join) | same — the flat-file profiler exercises a different reader and cannot stand in for it |
+| Tier | How it runs | Environment it needs |
+|---|---|---|
+| Snowflake 1M / 50M, pushdown | `SnowflakeCheckRunner.run_checks`, the same five expectations as every other rung | `PERF_SF_ACCOUNT` `PERF_SF_USER` `PERF_SF_ROLE` `PERF_SF_DATABASE` `PERF_SF_SCHEMA` `PERF_SF_WAREHOUSE` `PERF_SF_TABLE_1M` / `PERF_SF_TABLE_50M`, secret in `PERF_SF_SECRET` |
+| Unity Catalog 1M, pushdown **and** frame-load | `UnityCatalogCheckRunner.run_checks` twice over the same table, the two cases differing only in `UC_SQL_PUSHDOWN` — the clean isolated comparison | `PERF_UC_WORKSPACE_URL` `PERF_UC_WAREHOUSE_ID` `PERF_UC_CATALOG` `PERF_UC_SCHEMA` `PERF_UC_TABLE_1M`, secret in `PERF_UC_SECRET` |
+| Iceberg 1M, native `pyiceberg` snapshot | `IcebergCheckRunner.run_checks` against a real catalog | `PERF_ICEBERG_CATALOG_JSON` (the connection config) `PERF_ICEBERG_TABLE`, optional secret in `PERF_ICEBERG_SECRET` |
+| Wide-table profiler on a warehouse (the batched rank-join) | `profile_service.profile_table`; the column listing is done first and is outside the clock | the Snowflake set above plus `PERF_SF_WIDE_TABLE` |
+
+Every one of them emits `statements` (gated: growth is a regression), wall clock,
+rows/s and the harness's own peak RSS. `frame_rows` — rows actually materialised
+into the worker, recorded by wrapping the runner's own reader — is emitted **only
+where a reader seam exists**: a pushdown lane has none, and reporting zero there
+would restate the claim under test as its own evidence. Peak RSS is what answers
+"did the worker hold the table".
+
+Secrets are read from the environment at run time only; a skip reason names the
+variable that is missing and never its value, and a test asserts no configured
+secret reaches an emitted row.
 
 The earlier sections of this page carry live warehouse numbers from the 2026-07
 and 2026-08 campaigns; what is missing is those tiers *inside the budget*, so a
 regression in them would be caught rather than re-measured by hand.
+
+### The Iceberg memory curve — local, and run under the real limit
+
+Finding where the Iceberg runner dies needs no warehouse at all, so it does not
+wait on a harness window. `perf_baseline gen-iceberg` builds a local sqlite
+`SqlCatalog` over a `file://` warehouse under `PERF_DATA_DIR`, with the same
+six-column order-lines shape as the flat-file tiers, and the `iceberg_curve` tag
+registers rungs at 1M, 2M, 3M, 4M and 5M rows. Nothing is stood in for —
+pyiceberg plans, reads and materialises for real, because the ceiling is a
+pyiceberg fact rather than one of ours. Generation runs in its **own** process:
+`ru_maxrss` is a high-water mark for the whole process, so building a 5M-row
+fixture beside the measurement would be recorded as the measurement.
+
+The curve is deliberately **not** in the `ci` tag — each rung wants gigabytes and
+the point is that one of them dies.
+
+That last part is why the curve has to run under the deployed limit rather than
+on the dev box, which has tens of gigabytes and therefore measures how much
+memory a rung *wants*, never whether the worker survives it.
+`scripts/perf/run_in_rig.sh` runs a tag inside the backend image at the prod
+worker's shape (1 CPU / 2 GiB, swap disabled so the kernel kills rather than
+pages), with `PERF_DATA_DIR` bind-mounted so the fixtures are built once on the
+host:
+
+```bash
+python -m backend.scripts.perf_baseline gen-iceberg          # every rung, own process
+scripts/perf/run_in_rig.sh --build -- --tag iceberg_curve --out /perf-data/curve.json
+```
+
+A rung that is OOM-killed comes back as a `killed` row carrying the signal and
+exit status (both conventions decoded — a bare fork reports `-SIGKILL`, a
+container runtime reports `137`) and the run **continues up the curve**, because
+a rung that dies is the answer being looked for, not a broken run.
 
 Also out of scope by construction: network/egress cost (the store seams read a
 local file), warehouse-side compute cost per check run, and anything that only
@@ -889,8 +934,8 @@ python -m backend.scripts.perf_baseline check --gate exact --gate strict  # what
 
 The fast subset (`--tag ci`) runs on every push inside the existing backend test
 job, so no required-check name changes. The full matrix is a manual run. The
-warehouse tiers appear in it as `not_measured` rows — their bodies are not built
-yet, and building them is tracked separately.
+warehouse tiers appear in it as `not_measured` rows until their environment is
+set — see the table above for what each one needs.
 Refreshing the committed baseline is deliberate — `run --tag ci --repeat 7 --out
 backend/scripts/perf/baseline.json` — and a PR that does it should say why the
 number moved.
