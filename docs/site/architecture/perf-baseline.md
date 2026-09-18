@@ -473,3 +473,98 @@ on three high-write tables is not worth a case nothing asks for.
    changes the request contract and is tracked separately.
 
 ---
+
+## v1.2 — regression baseline & budget
+
+> Captured **2026-09-17** by `backend/scripts/perf_baseline.py`. Every section
+> above is a *campaign* — measured once, at the moment something was fixed. This
+> one is the durable part: a parameterized benchmark, a committed baseline, and a
+> budget that fails a build when a gated number moves.
+
+### What it measures, and how
+
+Axes are **datasource tier × volume tier × checks-per-suite**. Each case drives
+the real code path — `FlatFileCheckRunner.run_checks`, the service-layer reads
+behind `/runs`, `/results`, `/dashboard/summary`, `/incidents` and
+`/pipeline_runs`, `profile_service.profile_file`, and the schedule dispatcher —
+and runs in a **fresh subprocess**, so its peak RSS (`ru_maxrss`) is
+attributable to that case rather than to whatever ran before it. Output is one
+structured row per `(metric, value, unit, tier, datasource, git_sha, timestamp)`
+as JSON or CSV.
+
+Only the network is stood in for: the four object-store seams (`file_stat` /
+`object_size` / `download_bytes` / `read_range`) read a local file, the same
+substitution the v1.1 section above used. The database cases run against a
+**scratch** database seeded with `generate_series`, never the application one.
+
+**The rig is a development machine, not the production rig.** Production is 1
+CPU / 2 GiB per worker container with Celery prefork concurrency 4; these
+numbers were taken on a 14-core / 48 GiB laptop. Absolute wall clock therefore
+says nothing about production latency — the value here is the *shape* (how a
+number moves with volume) and the *deterministic* counters, which do not depend
+on the machine at all.
+
+### What is gated, and what is only recorded
+
+| Gate | Metrics | Tolerance | Enforced |
+|---|---|---|---|
+| `strict` | statements per service-layer read · store calls and bytes per runner read · rows read · objects listed · columns profiled | none — any increase fails | CI, on every push |
+| `band` | peak RSS per case | 20% | manual runs only |
+| `observe` | wall clock, rows/s, p50/p95 latency, calibration | never fails | recorded in every run |
+
+**Wall clock is deliberately not gated.** Measured run-to-run on the same
+machine, the wall metrics' coefficient of variation is several times larger than
+the regression a budget would want to catch, so a wall-clock gate on a shared
+runner produces false failures faster than it produces true ones — and a flaky
+gate is worse than none. What replaces it is deterministic: an N+1 shows up as a
+statement count, a new full read shows up as bytes asked of the store, a lost
+projection shows up as rows read. Each run also records `wall_calibrated` (wall
+divided by a fixed CPU micro-benchmark executed in the same process), so wall
+numbers from different machines can at least be compared.
+
+**Peak RSS is gated only in manual runs.** `ru_maxrss` depends on the platform's
+allocator and shared libraries, so a band measured on one machine says nothing
+about another; CI runs `--gate strict`.
+
+### What is explicitly NOT measured here
+
+A tier that simply does not appear in a result set reads as "nothing to report",
+so the warehouse tiers are registered as real cases and emit an explicit
+`not_measured` row carrying the reason:
+
+| Tier | Why not measured |
+|---|---|
+| Snowflake 1M / 50M, pushdown | needs a live warehouse; the harness compute is stopped by default (ADR 0021) |
+| Unity Catalog 1M, pushdown **and** frame-load | same, plus Databricks Free-Edition fair-use pausing |
+| Iceberg 1M, native `pyiceberg` snapshot | same |
+| Wide-table profiler on a warehouse (the batched rank-join) | same — the flat-file profiler exercises a different reader and cannot stand in for it |
+
+The earlier sections of this page carry live warehouse numbers from the 2026-07
+and 2026-08 campaigns; what is missing is those tiers *inside the budget*, so a
+regression in them would be caught rather than re-measured by hand.
+
+Also out of scope by construction: network/egress cost (the store seams read a
+local file), warehouse-side compute cost per check run, and anything that only
+appears under the production memory limit — a 2 GiB cgroup turns a peak into a
+SIGKILL, and this rig has 48 GiB, so it measures *how much* memory a tier wants,
+never *whether the deployed worker survives it*.
+
+### Running it
+
+```bash
+export PERF_DATABASE_URL=postgresql+psycopg2://<user>:<pw>@localhost:5432/dataq_perf   # a SCRATCH database
+python -m backend.scripts.perf_baseline create-db
+(cd backend && DATABASE_URL="$PERF_DATABASE_URL" alembic upgrade head)
+
+python -m backend.scripts.perf_baseline list                       # the case matrix
+python -m backend.scripts.perf_baseline run --tag full --repeat 5 --out /tmp/perf.json
+python -m backend.scripts.perf_baseline check                      # the budget, full gates
+python -m backend.scripts.perf_baseline check --gate strict        # what CI runs
+```
+
+The fast subset (`--tag ci`) runs on every push inside the existing backend test
+job, so no required-check name changes. The full matrix is a manual run; the
+warehouse tiers additionally need `--include-warehouse` inside a harness window.
+Refreshing the committed baseline is deliberate — `run --tag ci --repeat 7 --out
+backend/scripts/perf/baseline.json` — and a PR that does it should say why the
+number moved.
