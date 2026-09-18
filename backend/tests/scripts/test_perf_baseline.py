@@ -365,3 +365,23 @@ class TestCli:
         baseline = json.loads(perf_baseline.BASELINE_PATH.read_text())
         skipped = {r["case"] for r in baseline["rows"] if r.get("status") == "not_measured"}
         assert {case.id for case in catalog.select(families=["warehouse_run"])} <= skipped
+
+
+def test_git_sha_prefers_the_pinned_value_and_survives_a_missing_git(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The container rig has neither git nor a checkout; the run must not die on
+    provenance it can be handed instead.
+    """
+    from backend.scripts.perf import harness
+
+    monkeypatch.setenv("PERF_GIT_SHA", "abc1234")
+    assert harness.git_sha() == "abc1234"
+
+    monkeypatch.delenv("PERF_GIT_SHA")
+
+    def _no_git(*_a: object, **_k: object) -> None:
+        raise FileNotFoundError("git")
+
+    monkeypatch.setattr("subprocess.run", _no_git)
+    assert harness.git_sha() == "unknown"
