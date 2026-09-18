@@ -137,16 +137,26 @@ def _enforce_cap(amount: int, *, cap: int, message: str) -> None:
         raise ScanTooLargeError(message)
 
 
-def enforce_row_cap(count: int, *, cap: int, target: str) -> None:
-    """Refuse a read of ``count`` rows when it exceeds ``cap`` (``cap <= 0`` disables)."""
+#: What to do about it, for a datasource that CAN be sampled.
+ROW_CAP_REMEDY = (
+    "set a sampling strategy on the suite's run target, narrow the target, or raise "
+    "RUN_MAX_SCAN_ROWS deliberately"
+)
+
+
+def enforce_row_cap(count: int, *, cap: int, target: str, remedy: str = ROW_CAP_REMEDY) -> None:
+    """Refuse a read of ``count`` rows when it exceeds ``cap`` (``cap <= 0`` disables).
+
+    ``remedy`` is the way out, which is datasource-specific: a type outside
+    ``SAMPLING_CAPABLE_TYPES`` must not be told to sample, since that spec is
+    refused at save time and the advice would send the reader in a circle.
+    """
     _enforce_cap(
         count,
         cap=cap,
         message=(
             f"{target} has {count:,} rows, over the scan cap of {cap:,}. DataQ refuses to "
-            "load it rather than risk an out-of-memory worker: set a sampling strategy on "
-            "the suite's run target, narrow the target, or raise RUN_MAX_SCAN_ROWS "
-            "deliberately."
+            f"load it rather than risk an out-of-memory worker: {remedy}."
         ),
     )
 

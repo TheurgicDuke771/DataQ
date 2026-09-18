@@ -9,6 +9,7 @@ from typing import Any, ClassVar, Literal
 import great_expectations as gx
 from pydantic import BaseModel, ConfigDict, model_validator
 
+from backend.app.core.config import get_settings
 from backend.app.core.credential_expiry import azure_sas_expiry
 from backend.app.core.secrets import SecretStore
 from backend.app.core.uri_credentials import inject_uri_password, uri_password
@@ -21,6 +22,7 @@ from backend.app.datasources.monitors import (
     run_monitor_specs,
     validate_monitor_config,
 )
+from backend.app.datasources.sampling import enforce_row_cap
 
 # Catalog backends pyiceberg's ``load_catalog`` understands.
 IcebergCatalogType = Literal["rest", "sql", "glue", "hive"]
@@ -143,6 +145,55 @@ def load_iceberg_table(
     return catalog.load_table(identifier)
 
 
+#: Iceberg is outside `SAMPLING_CAPABLE_TYPES`, so the shared remedy's "set a sampling strategy"
+#: would send the reader at a spec the save-time gate refuses.
+ICEBERG_ROW_CAP_REMEDY = (
+    "narrow the target to a smaller table (Iceberg targets cannot be sampled), or raise "
+    "RUN_MAX_SCAN_ROWS_ICEBERG deliberately"
+)
+
+
+def scan_row_count(table: Any) -> int:
+    """LIVE rows in the table's current snapshot — exact, and not always cheap.
+
+    ``DataScan.count()`` sums per-file record counts from metadata only while a
+    task's filter is fully satisfied and it carries no delete files; a
+    merge-on-read task is instead materialised in full to be counted. Callers
+    that are guarding a materialisation want `planned_row_count`, which cannot
+    read data.
+
+    ``int()`` because the value crosses a driver boundary.
+    """
+    return int(table.scan().count())
+
+
+def planned_row_count(table: Any) -> int:
+    """Rows the scan will READ from data files — manifest metadata, never a data read.
+
+    An upper bound on the live count, and the right number for a memory guard:
+    row-level deletes are applied *after* the files are read, so a deleted row
+    still costs its memory. A snapshot-less table plans no files and answers 0.
+    """
+    return sum(int(task.file.record_count) for task in table.scan().plan_files())
+
+
+def enforce_iceberg_row_cap(table: Any, *, target: str) -> None:
+    """Probe the snapshot from metadata and refuse an over-cap materialisation (#1328).
+
+    Skipped entirely when the cap is disabled — an operator who turns it off does
+    not keep paying for a probe nobody reads.
+    """
+    cap = get_settings().iceberg_scan_row_cap
+    if cap <= 0:
+        return
+    enforce_row_cap(
+        planned_row_count(table),
+        cap=cap,
+        target=f"the current snapshot of table {target!r}",
+        remedy=ICEBERG_ROW_CAP_REMEDY,
+    )
+
+
 def _to_arrow_backed_pandas(arrow: Any) -> Any:
     """Materialise an Arrow table as Arrow-backed pandas (``pd.ArrowDtype``)."""
     import pandas as pd
@@ -249,8 +300,9 @@ class IcebergCheckRunner:
         return load_iceberg_table(self._config, self._secret, identifier, self._catalog_secret)
 
     def _read_dataframe(self, identifier: str) -> Any:
-        """Materialise the whole current snapshot as Arrow-backed pandas."""
+        """Materialise the whole current snapshot as Arrow-backed pandas, over-cap refused."""
         table = self._load_table(identifier)
+        enforce_iceberg_row_cap(table, target=identifier)
         return _to_arrow_backed_pandas(table.scan().to_arrow())
 
     def run_checks(
@@ -284,7 +336,7 @@ class IcebergCheckRunner:
 
         def scalar_for(spec: MonitorSpec) -> Any:
             i = next(index)
-            scalar, detail = self._monitor_scalar(loaded, spec)
+            scalar, detail = self._monitor_scalar(loaded, spec, target=table)
             sources[i] = detail
             return scalar
 
@@ -300,7 +352,9 @@ class IcebergCheckRunner:
             for i, oc in enumerate(outcomes)
         ]
 
-    def _monitor_scalar(self, table: Any, spec: MonitorSpec) -> tuple[Any, dict[str, Any]]:
+    def _monitor_scalar(
+        self, table: Any, spec: MonitorSpec, *, target: str
+    ) -> tuple[Any, dict[str, Any]]:
         """The scalar a monitor bands plus a source detail dict (#859)."""
         validate_monitor_config(spec.kind, spec.config)  # structural gate (bad column/range)
         if spec.kind == VOLUME:
@@ -312,7 +366,10 @@ class IcebergCheckRunner:
                 }
             if total is not None:
                 return total, {"source": "snapshot-summary", **delta}
-            return table.scan().count(), {"source": "scan-fallback", **delta}
+            # `scan_row_count` is exact — which is what a volume monitor needs — and on a
+            # merge-on-read table pyiceberg counts by materialising, so it is capped like a read.
+            enforce_iceberg_row_cap(table, target=target)
+            return scan_row_count(table), {"source": "scan-fallback", **delta}
         if spec.kind == FRESHNESS:
             column = spec.config["column"]
             try:
@@ -325,6 +382,8 @@ class IcebergCheckRunner:
                 return bound, {"source": "file-bounds"}
             import pyarrow.compute as pc
 
+            # One column of every row is still every row — the same guard as run_checks'.
+            enforce_iceberg_row_cap(table, target=target)
             arrow = table.scan(selected_fields=(column,)).to_arrow()
             if arrow.num_rows == 0:
                 # empty table → monitor_outcome maps to an operational error
