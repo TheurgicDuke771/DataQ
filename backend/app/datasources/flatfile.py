@@ -7,7 +7,7 @@ import io
 import re
 import time
 from collections.abc import Callable, Generator, Iterable, Iterator
-from contextlib import closing
+from contextlib import closing, contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, ClassVar
@@ -43,6 +43,7 @@ from backend.app.datasources.sampling import (
     enforce_byte_cap,
     enforce_sample_cap,
     merge_by_position,
+    reservoir_sample,
     sample_row_indices,
     sampling_record,
     split_row_count_checks,
@@ -105,6 +106,17 @@ def sniff_delimiter(sample: bytes) -> str:
         return _DEFAULT_DELIMITER
 
 
+def sniff_from_reader(reader: RangeReader) -> str:
+    """Sniff a CSV's delimiter off ``reader``'s first chunk and rewind it (#1329).
+
+    The stream's own first window already covers these bytes, so reading them
+    here costs no request where a separate `read_range` cost one per read.
+    """
+    head = reader.read(_SNIFF_BYTES)
+    reader.seek(0)
+    return sniff_delimiter(head)
+
+
 def trim_to_row_boundary(raw: bytes) -> bytes:
     """Cut ``raw`` at the last quote-safe newline (#595 C4)."""
     end = len(raw)
@@ -155,68 +167,149 @@ def _blob_service(acfg: AdlsConfig, secret: str) -> Any:
     return BlobServiceClient(account_url=acfg.account_url, credential=secret)
 
 
-def download_bytes(*, conn_type: str, config: dict[str, Any], path: str, secret: str) -> bytes:
+class StoreSession:
+    """One store client, reused across the reads of a single logical operation (#1329).
+
+    A range-read walk issues many requests where the pre-#882 code issued one
+    download, and a client per request is pure overhead on that pattern. The
+    session is request-scoped and NOT thread-safe: it is created inside the read
+    that uses it and closed with it, so no client is ever module state a Celery
+    prefork child could inherit.
+    """
+
+    def __init__(self, *, conn_type: str, config: dict[str, Any], secret: str) -> None:
+        self.conn_type = conn_type
+        self._config = config
+        self._secret = secret
+        self._client: Any = None
+        self._s3_config: S3Config | None = None
+        self._adls_config: AdlsConfig | None = None
+        #: Clients constructed by this session — asserted by the seam tests.
+        self.clients_created = 0
+        #: Byte sizes already known per path. The runner's `FileStat` memo seeds
+        #: this, so a sampled read never re-HEADs an object already stat'd (#1329).
+        self.sizes: dict[str, int] = {}
+
+    @property
+    def s3_config(self) -> S3Config:
+        if self._s3_config is None:
+            self._s3_config = S3Config.model_validate(self._config)
+        return self._s3_config
+
+    @property
+    def adls_config(self) -> AdlsConfig:
+        if self._adls_config is None:
+            self._adls_config = AdlsConfig.model_validate(self._config)
+        return self._adls_config
+
+    @property
+    def s3(self) -> Any:
+        if self._client is None:
+            self._client = _s3_client(self.s3_config, self._secret)
+            self.clients_created += 1
+        return self._client
+
+    @property
+    def blob_service(self) -> Any:
+        if self._client is None:
+            self._client = _blob_service(self.adls_config, self._secret)
+            self.clients_created += 1
+        return self._client
+
+    def blob(self, path: str) -> Any:
+        """A blob client for ``path`` on this session's service client."""
+        return self.blob_service.get_blob_client(container=self.adls_config.container, blob=path)
+
+    def close(self) -> None:
+        client, self._client = self._client, None
+        closer = getattr(client, "close", None)
+        if closer is not None:
+            closer()
+
+    def __enter__(self) -> StoreSession:
+        return self
+
+    def __exit__(self, *_exc: Any) -> None:
+        self.close()
+
+
+@contextmanager
+def _session(
+    session: StoreSession | None, *, conn_type: str, config: dict[str, Any], secret: str
+) -> Iterator[StoreSession]:
+    """Yield ``session``, or a throwaway one closed on the way out."""
+    if session is not None:
+        yield session
+        return
+    with StoreSession(conn_type=conn_type, config=config, secret=secret) as own:
+        yield own
+
+
+def download_bytes(
+    *,
+    conn_type: str,
+    config: dict[str, Any],
+    path: str,
+    secret: str,
+    session: StoreSession | None = None,
+) -> bytes:
     """Fetch the object/blob bytes from S3 or ADLS Gen2 (live seam)."""
-    if conn_type == "s3":
-        cfg = S3Config.model_validate(config)
-        body: bytes = _s3_client(cfg, secret).get_object(Bucket=cfg.bucket, Key=path)["Body"].read()
-        return body
-
-    acfg = AdlsConfig.model_validate(config)
-    client_az = _blob_service(acfg, secret)
-    try:
-        blob = client_az.get_blob_client(container=acfg.container, blob=path)
-        downloaded: bytes = blob.download_blob().readall()
+    with _session(session, conn_type=conn_type, config=config, secret=secret) as ses:
+        if conn_type == "s3":
+            body: bytes = ses.s3.get_object(Bucket=ses.s3_config.bucket, Key=path)["Body"].read()
+            return body
+        downloaded: bytes = ses.blob(path).download_blob().readall()
         return downloaded
-    finally:
-        client_az.close()
 
 
-def object_size(*, conn_type: str, config: dict[str, Any], path: str, secret: str) -> int:
-    """Byte length of exactly ``path`` — one metadata call (live seam, #882)."""
-    if conn_type == "s3":
-        cfg = S3Config.model_validate(config)
-        length: int = _s3_client(cfg, secret).head_object(Bucket=cfg.bucket, Key=path)[
-            "ContentLength"
-        ]
-        return length
+def object_size(
+    *,
+    conn_type: str,
+    config: dict[str, Any],
+    path: str,
+    secret: str,
+    session: StoreSession | None = None,
+) -> int:
+    """Byte length of exactly ``path`` — one metadata call (live seam, #882).
 
-    acfg = AdlsConfig.model_validate(config)
-    client_az = _blob_service(acfg, secret)
-    try:
-        blob = client_az.get_blob_client(container=acfg.container, blob=path)
-        size: int = blob.get_blob_properties().size
+    Answered from the session's size memo when it already holds ``path``.
+    """
+    with _session(session, conn_type=conn_type, config=config, secret=secret) as ses:
+        known = ses.sizes.get(path)
+        if known is not None:
+            return known
+        if conn_type == "s3":
+            size: int = ses.s3.head_object(Bucket=ses.s3_config.bucket, Key=path)["ContentLength"]
+        else:
+            size = ses.blob(path).get_blob_properties().size
+        ses.sizes[path] = size
         return size
-    finally:
-        client_az.close()
 
 
 def read_range(
-    *, conn_type: str, config: dict[str, Any], path: str, secret: str, start: int, length: int
+    *,
+    conn_type: str,
+    config: dict[str, Any],
+    path: str,
+    secret: str,
+    start: int,
+    length: int,
+    session: StoreSession | None = None,
 ) -> bytes:
     """``length`` bytes of ``path`` from offset ``start`` (live seam, #882)."""
     if length <= 0:
         return b""
-    if conn_type == "s3":
-        cfg = S3Config.model_validate(config)
-        # Inclusive end, per RFC 7233 — `bytes=0-1023` is the first 1024 bytes.
-        body: bytes = (
-            _s3_client(cfg, secret)
-            .get_object(Bucket=cfg.bucket, Key=path, Range=f"bytes={start}-{start + length - 1}")[
-                "Body"
-            ]
-            .read()
-        )
-        return body
-
-    acfg = AdlsConfig.model_validate(config)
-    client_az = _blob_service(acfg, secret)
-    try:
-        blob = client_az.get_blob_client(container=acfg.container, blob=path)
-        downloaded: bytes = blob.download_blob(offset=start, length=length).readall()
+    with _session(session, conn_type=conn_type, config=config, secret=secret) as ses:
+        if conn_type == "s3":
+            # Inclusive end, per RFC 7233 — `bytes=0-1023` is the first 1024 bytes.
+            body: bytes = ses.s3.get_object(
+                Bucket=ses.s3_config.bucket,
+                Key=path,
+                Range=f"bytes={start}-{start + length - 1}",
+            )["Body"].read()
+            return body
+        downloaded: bytes = ses.blob(path).download_blob(offset=start, length=length).readall()
         return downloaded
-    finally:
-        client_az.close()
 
 
 class RangeReader(io.RawIOBase):
@@ -233,13 +326,18 @@ class RangeReader(io.RawIOBase):
         path: str,
         secret: str,
         chunk: int | None = None,
+        session: StoreSession | None = None,
     ) -> None:
         self._conn_type = conn_type
         self._config = config
         self._path = path
         self._secret = secret
         self._chunk = chunk or self._CHUNK
-        self._size = object_size(conn_type=conn_type, config=config, path=path, secret=secret)
+        self._owns_session = session is None
+        self._session = session or StoreSession(conn_type=conn_type, config=config, secret=secret)
+        self._size = object_size(
+            conn_type=conn_type, config=config, path=path, secret=secret, session=self._session
+        )
         self._pos = 0
         self._window = b""
         self._window_start = 0
@@ -255,6 +353,13 @@ class RangeReader(io.RawIOBase):
 
     def writable(self) -> bool:
         return False
+
+    def close(self) -> None:
+        try:
+            if self._owns_session:
+                self._session.close()
+        finally:
+            super().close()
 
     def tell(self) -> int:
         return self._pos
@@ -305,46 +410,69 @@ class RangeReader(io.RawIOBase):
             secret=self._secret,
             start=start,
             length=span,
+            session=self._session,
         )
         self._window_start = start
         self.requests += 1
+        if len(self._window) < span:
+            self._size = start + len(self._window)
 
 
-def parquet_row_count(*, conn_type: str, config: dict[str, Any], path: str, secret: str) -> int:
+def parquet_row_count(
+    *,
+    conn_type: str,
+    config: dict[str, Any],
+    path: str,
+    secret: str,
+    session: StoreSession | None = None,
+) -> int:
     """Row count from the Parquet footer — a couple of range GETs, no data read (#942)."""
     import pyarrow.parquet as pq
 
-    reader = RangeReader(conn_type=conn_type, config=config, path=path, secret=secret)
-    rows: int = pq.ParquetFile(reader).metadata.num_rows
+    reader = RangeReader(
+        conn_type=conn_type, config=config, path=path, secret=secret, session=session
+    )
+    with closing(reader):
+        rows: int = pq.ParquetFile(reader).metadata.num_rows
     return rows
 
 
-def csv_row_count(*, conn_type: str, config: dict[str, Any], path: str, secret: str) -> int:
+def csv_row_count(
+    *,
+    conn_type: str,
+    config: dict[str, Any],
+    path: str,
+    secret: str,
+    session: StoreSession | None = None,
+) -> int:
     """Row count of a CSV, streamed in batches — never a full DataFrame (#942)."""
     import pyarrow.csv as pv
 
     # Big window: this walks end to end; the seeking default would mean
     # thousands of range requests.
     reader = RangeReader(
-        conn_type=conn_type, config=config, path=path, secret=secret, chunk=STREAM_CHUNK
+        conn_type=conn_type,
+        config=config,
+        path=path,
+        secret=secret,
+        chunk=STREAM_CHUNK,
+        session=session,
     )
-    sep = sniff_delimiter(
-        read_range(
-            conn_type=conn_type,
-            config=config,
-            path=path,
-            secret=secret,
-            start=0,
-            length=_SNIFF_BYTES,
-        )
-    )
-    with pv.open_csv(reader, parse_options=pv.ParseOptions(delimiter=sep)) as batches:
-        # The header is consumed by the reader, so batch rows are data rows.
-        return sum(batch.num_rows for batch in batches)
+    with closing(reader):
+        sep = sniff_from_reader(reader)
+        with pv.open_csv(reader, parse_options=pv.ParseOptions(delimiter=sep)) as batches:
+            # The header is consumed by the reader, so batch rows are data rows.
+            return sum(batch.num_rows for batch in batches)
 
 
 def read_csv_head(
-    *, conn_type: str, config: dict[str, Any], path: str, secret: str, rows: int
+    *,
+    conn_type: str,
+    config: dict[str, Any],
+    path: str,
+    secret: str,
+    rows: int,
+    session: StoreSession | None = None,
 ) -> Any:
     """Parse the first ``rows`` data rows of a CSV from a bounded head read (#882)."""
     # One byte MORE than the window, so a short read unambiguously means EOF —
@@ -356,20 +484,27 @@ def read_csv_head(
         secret=secret,
         start=0,
         length=_CSV_HEAD_BYTES + 1,
+        session=session,
     )
     if len(head) > _CSV_HEAD_BYTES:
         head = trim_to_row_boundary(head)
     return read_csv_bytes(io.BytesIO(head), nrows=rows)
 
 
-def row_count(*, conn_type: str, config: dict[str, Any], path: str, secret: str) -> int:
+def row_count(
+    *,
+    conn_type: str,
+    config: dict[str, Any],
+    path: str,
+    secret: str,
+    session: StoreSession | None = None,
+) -> int:
     """Rows in a flat file by the cheapest route: Parquet footer or CSV stream (#942)."""
     fmt = format_from_path(path)
     if fmt is None:
         raise ValueError(f"unsupported flat-file format for path {path!r}")
-    if fmt == "csv":
-        return csv_row_count(conn_type=conn_type, config=config, path=path, secret=secret)
-    return parquet_row_count(conn_type=conn_type, config=config, path=path, secret=secret)
+    counter = csv_row_count if fmt == "csv" else parquet_row_count
+    return counter(conn_type=conn_type, config=config, path=path, secret=secret, session=session)
 
 
 def read_dataframe(*, conn_type: str, config: dict[str, Any], path: str, secret: str) -> Any:
@@ -395,35 +530,54 @@ def _open_batch_stream(
     reader_args: dict[str, Any], fmt: str
 ) -> tuple[Any, Any, bool, Callable[[], None]]:
     """A forward stream of Arrow record batches over a flat file (live seam, #595)."""
+    reader = RangeReader(**reader_args, chunk=STREAM_CHUNK)
+
+    def _closer(inner: Callable[[], None]) -> Callable[[], None]:
+        def close() -> None:
+            try:
+                inner()
+            finally:
+                reader.close()
+
+        return close
+
     if fmt == "csv":
         import pyarrow.csv as pv
 
-        sep = sniff_delimiter(read_range(**reader_args, start=0, length=_SNIFF_BYTES))
-        stream = pv.open_csv(
-            RangeReader(**reader_args, chunk=STREAM_CHUNK),
-            parse_options=pv.ParseOptions(delimiter=sep),
-        )
-        return stream, stream.schema, False, stream.close
+        sep = sniff_from_reader(reader)
+        stream = pv.open_csv(reader, parse_options=pv.ParseOptions(delimiter=sep))
+        return stream, stream.schema, False, _closer(stream.close)
 
     import pyarrow.parquet as pq
 
-    parquet = pq.ParquetFile(RangeReader(**reader_args, chunk=STREAM_CHUNK))
+    parquet = pq.ParquetFile(reader)
     return (
         parquet.iter_batches(batch_size=_SAMPLE_BATCH_ROWS),
         parquet.schema_arrow,
         True,
-        parquet.close,
+        _closer(parquet.close),
     )
 
 
 def _csv_head_frame(reader_args: dict[str, Any], *, limit: int) -> tuple[Any, bool]:
-    """The first ``limit`` rows of a CSV via a doubling byte range (#595)."""
+    """The first ``limit`` rows of a CSV via a doubling byte range (#595).
+
+    Each growth fetches only the bytes past what is already buffered (#1329):
+    re-reading the prefix made reaching 4 MB cost 1 + 2 + 4 = 7 MB.
+    """
     size = object_size(**reader_args)
+    buffered = bytearray()
     window = _CSV_HEAD_BYTES
     while True:
         span = min(window, size)
-        raw = read_range(**reader_args, start=0, length=span)
-        reached_eof = span >= size
+        short = False
+        if span > len(buffered):
+            asked = span - len(buffered)
+            got = read_range(**reader_args, start=len(buffered), length=asked)
+            buffered += got
+            short = len(got) < asked
+        reached_eof = short or span >= size
+        raw = bytes(buffered)
         if not reached_eof:
             raw = trim_to_row_boundary(raw)
         frame = read_csv_bytes(io.BytesIO(raw), nrows=limit)
@@ -433,19 +587,43 @@ def _csv_head_frame(reader_args: dict[str, Any], *, limit: int) -> tuple[Any, bo
 
 
 def read_sampled_dataframe(
-    *, conn_type: str, config: dict[str, Any], path: str, secret: str, sample: SampleSpec
+    *,
+    conn_type: str,
+    config: dict[str, Any],
+    path: str,
+    secret: str,
+    sample: SampleSpec,
+    stat: FileStat | None = None,
 ) -> tuple[Any, dict[str, Any]]:
-    """A bounded sample of a flat file, plus the record of what was sampled (#595)."""
+    """A bounded sample of a flat file, plus the record of what was sampled (#595).
+
+    ``stat`` is the caller's already-fetched metadata for ``path``; passing it
+    spares the readers a second HEAD of the same object (#1329).
+    """
     fmt = format_from_path(path)
     if fmt is None:
         raise ValueError(f"unsupported flat-file format for path {path!r}")
-    reader_args: dict[str, Any] = {
-        "conn_type": conn_type,
-        "config": config,
-        "path": path,
-        "secret": secret,
-    }
+    with StoreSession(conn_type=conn_type, config=config, secret=secret) as session:
+        if stat is not None and stat.size is not None:
+            session.sizes[path] = stat.size
+        return _sampled_frame(
+            {
+                "conn_type": conn_type,
+                "config": config,
+                "path": path,
+                "secret": secret,
+                "session": session,
+            },
+            fmt=fmt,
+            path=path,
+            sample=sample,
+        )
 
+
+def _sampled_frame(
+    reader_args: dict[str, Any], *, fmt: str, path: str, sample: SampleSpec
+) -> tuple[Any, dict[str, Any]]:
+    """`read_sampled_dataframe`'s body, over an already-open store session."""
     if sample.strategy == SAMPLE_HEAD and fmt == "csv":
         frame, reached_eof = _csv_head_frame(reader_args, limit=sample.rows + 1)
         truncated = len(frame) > sample.rows
@@ -458,17 +636,25 @@ def read_sampled_dataframe(
         )
 
     want_head = sample.strategy == SAMPLE_HEAD
+    # A CSV has no cheap count, so counting it first meant walking the object
+    # twice for one sample; the reservoir draws and counts in the same pass
+    # (#1329). Parquet keeps the count — its footer read is not a pass.
+    single_pass = not want_head and fmt == "csv"
     total: int | None = None
     indices: list[int] | None = None
-    if not want_head:
+    if not want_head and not single_pass:
         total = row_count(**reader_args)
         # `None` = sample covers the whole dataset — read straight through rather
         # than materialise an identity index list (~40 MB at 1.4M rows).
         indices = sample_row_indices(total=total, rows=sample.rows, seed=sample.seed)
 
+    if indices is not None:
+        reader_args["session"].sizes.pop(path, None)
     batches, schema, arrow_backed, close = _open_batch_stream(reader_args, fmt)
     try:
-        if indices is not None:
+        if single_pass:
+            taken, total = reservoir_sample(batches, rows=sample.rows, seed=sample.seed)
+        elif indices is not None:
             taken = take_indices(batches, indices)
         else:
             # `rows + 1` for head (probe row); the counted total for an
@@ -478,7 +664,11 @@ def read_sampled_dataframe(
         close()
 
     read_rows = sum(batch.num_rows for batch in taken)
-    if indices is not None:
+    if single_pass:
+        # `total` is the rows walked in this pass — the population as of the read
+        # that produced the sample, not of an earlier counting pass.
+        truncated = read_rows < (total or 0)
+    elif indices is not None:
         # `total` is set on every path that produces indices.
         assert total is not None
         _require_complete_draw(read_rows, len(indices), path=path, total=total)
@@ -560,33 +750,34 @@ class FileStat:
     size: int | None = None
 
 
-def file_stat(*, conn_type: str, config: dict[str, Any], path: str, secret: str) -> FileStat:
+def file_stat(
+    *,
+    conn_type: str,
+    config: dict[str, Any],
+    path: str,
+    secret: str,
+    session: StoreSession | None = None,
+) -> FileStat:
     """The store's metadata for exactly ``path`` (live seam, #520/#595)."""
-    if conn_type == "s3":
-        from botocore.exceptions import ClientError
+    with _session(session, conn_type=conn_type, config=config, secret=secret) as ses:
+        if conn_type == "s3":
+            from botocore.exceptions import ClientError
 
-        cfg = S3Config.model_validate(config)
+            try:
+                head = ses.s3.head_object(Bucket=ses.s3_config.bucket, Key=path)
+            except ClientError as exc:
+                if exc.response.get("Error", {}).get("Code") in {"404", "NoSuchKey", "NotFound"}:
+                    return FileStat()
+                raise
+            return FileStat(last_modified=head.get("LastModified"), size=head.get("ContentLength"))
+
+        from azure.core.exceptions import ResourceNotFoundError
+
         try:
-            head = _s3_client(cfg, secret).head_object(Bucket=cfg.bucket, Key=path)
-        except ClientError as exc:
-            if exc.response.get("Error", {}).get("Code") in {"404", "NoSuchKey", "NotFound"}:
-                return FileStat()
-            raise
-        return FileStat(last_modified=head.get("LastModified"), size=head.get("ContentLength"))
-
-    from azure.core.exceptions import ResourceNotFoundError
-
-    acfg = AdlsConfig.model_validate(config)
-    client_az = _blob_service(acfg, secret)
-    try:
-        properties = client_az.get_blob_client(
-            container=acfg.container, blob=path
-        ).get_blob_properties()
+            properties = ses.blob(path).get_blob_properties()
+        except ResourceNotFoundError:
+            return FileStat()
         return FileStat(last_modified=properties.last_modified, size=properties.size)
-    except ResourceNotFoundError:
-        return FileStat()
-    finally:
-        client_az.close()
 
 
 def file_last_modified(
@@ -635,6 +826,22 @@ class FlatFileCheckRunner:
         if size is not None:
             enforce_byte_cap(size, cap=cap, target=f"file {path!r}")
 
+    def _counted_rows(self, path: str) -> int:
+        """`row_count` over one store session (#1329) — the CSV walk behind a volume
+        monitor is many range reads, not one download. Deliberately NOT seeded with
+        the runner's stat: the count is the one number whose job is to be current.
+        """
+        with StoreSession(
+            conn_type=self._conn_type, config=self._config, secret=self._secret
+        ) as session:
+            return row_count(
+                conn_type=self._conn_type,
+                config=self._config,
+                path=path,
+                secret=self._secret,
+                session=session,
+            )
+
     def _load_frame(self, path: str) -> tuple[Any, dict[str, Any] | None]:
         """The frame the checks run against, plus its sampling record (or ``None``)."""
         if self._sampling is not None:
@@ -645,6 +852,7 @@ class FlatFileCheckRunner:
                 path=path,
                 secret=self._secret,
                 sample=self._sampling,
+                stat=self._stat(path),
             )
         self._guard_object_size(path)
         frame = read_dataframe(
@@ -714,17 +922,7 @@ class FlatFileCheckRunner:
             if frame_is_needed:
                 return len(dataframe())
             # Memoized like the frame: no per-monitor re-scans or read retries.
-            return int(
-                _memoized(
-                    counted,
-                    lambda: row_count(
-                        conn_type=self._conn_type,
-                        config=self._config,
-                        path=table,
-                        secret=self._secret,
-                    ),
-                )
-            )
+            return int(_memoized(counted, lambda: self._counted_rows(table)))
 
         def scalar_for(spec: MonitorSpec) -> Any:
             if spec.kind == VOLUME:

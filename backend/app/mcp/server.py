@@ -3282,9 +3282,19 @@ def get_asset(asset_id: str) -> dict[str, Any]:
     is neither 0 nor 100. `unclassified_checks` are checks with no dimension
     (custom SQL, or never classified) and are deliberately not bucketed anywhere.
 
-    `lineage.qualified_by` is non-empty when a lineage source is failing, stale or
-    coarse. In that case an empty or thin neighbour list proves nothing about the
-    real graph — report the qualification rather than "nothing feeds this table".
+    `lineage.qualified_by` is non-empty when a lineage source is failing, stale,
+    coarse, or has stopped pruning. In that case an empty or thin neighbour list
+    proves nothing about the real graph — report the qualification rather than
+    "nothing feeds this table".
+
+    One qualification runs the OTHER way and must not be reported as staleness:
+    when a source has stopped pruning, its edges only ever accumulate, so a
+    neighbour shown here may be a dependency that was REMOVED from the warehouse
+    and never cleaned up. An accreting graph is over-complete, not out of date —
+    do not tell the user "this may be missing edges" when the risk is extra ones.
+    The paragraph above therefore does NOT apply to a prune-suspension on its own:
+    such a source still discovers new edges normally, so a thin neighbour list is
+    still trustworthy. Only removal of dead edges has stalled.
     """
     aid = _parse_uuid(asset_id, field="asset_id")
     with _ctx() as (session, user), _service_errors():
@@ -3305,6 +3315,20 @@ def get_asset(asset_id: str) -> dict[str, Any]:
             if wh.degraded_reason:
                 qualifiers.append(
                     f"warehouse lineage on '{wh.name}' is coarse: {wh.degraded_reason}"
+                )
+            if wh.prune_suspended:
+                # Stated as accretion, not staleness: the edges below may include removed
+                # dependencies, which is the opposite failure from a missing one.
+                since = wh.prune_suspended_since
+                when = (
+                    f"has not pruned removed edges since {since.isoformat()}"
+                    if since
+                    else "has never pruned removed edges"
+                )
+                qualifiers.append(
+                    f"warehouse lineage on '{wh.name}' {when} — edges below may include "
+                    "dependencies that no longer exist (new edges are still discovered "
+                    "normally, so this is a risk of EXTRA edges, not missing ones)"
                 )
         scorecard = detail.scorecard
         return {
@@ -3356,9 +3380,9 @@ def get_asset(asset_id: str) -> dict[str, Any]:
                     {"source": str(e.source), "target": str(e.target), "columns": e.columns}
                     for e in detail.lineage_edges
                 ],
-                # Empty ⇒ the graph is as complete as DataQ can make it. Non-empty
-                # ⇒ absence of an edge is not evidence of absence of a dependency
-                # (#828 — a broken poller must never read as "no lineage").
+                # Empty ⇒ the graph is as complete as DataQ can make it. Non-empty ⇒ absence of
+                # an edge is not evidence of absence of a dependency (#828), EXCEPT for a
+                # prune-suspension (#1236), which risks extra edges rather than missing ones.
                 "qualified_by": qualifiers,
             },
         }

@@ -196,3 +196,99 @@ def test_non_warehouse_type_is_noop(db_session: Session, monkeypatch: pytest.Mon
     )
     db_session.refresh(adls)
     assert adls.lineage_last_refresh_at is None  # no state written
+
+
+def test_a_healthy_pruning_connection_is_not_reported_as_suspended(
+    sf_connection: Connection, db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The full path, both layers: refresh -> persisted state -> `warehouse_lineage_status`.
+
+    The suspension is DERIVED by comparing `lineage_last_refresh_at` against the prune
+    marker, and the two used to come from different clocks — `clock_timestamp()` inside
+    `_persist` for the marker, then a strictly-later `datetime.now(UTC)` for the refresh
+    stamp — so a perfectly healthy, fully-pruning connection compared as permanently
+    suspended. Every unit fixture set the two timestamps exactly EQUAL, a state the writer
+    never produced, so the defect was invisible to them by construction.
+    """
+    from backend.app.services.asset_view_service import warehouse_lineage_status
+
+    provider = _StubProvider(
+        WarehouseLineageResult(
+            edges=(LineageEdgePair(_ident("A"), _ident("B")),),
+            tier=LineageTier.SNOWFLAKE_GET_LINEAGE,
+        ),
+        source="snowflake",
+        is_incremental=False,
+    )
+    _patch(monkeypatch, provider)
+
+    outcome = warehouse_refresh.refresh_connection_lineage(
+        db_session,
+        connection=sf_connection,
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
+    )
+    assert outcome is not None and outcome.prune_suspended is False
+    db_session.refresh(sf_connection)
+    assert sf_connection.lineage_last_authoritative_refresh_at is not None
+    assert sf_connection.lineage_last_refresh_at is not None
+    assert (
+        sf_connection.lineage_last_refresh_at <= sf_connection.lineage_last_authoritative_refresh_at
+    )
+
+    reported = [
+        s for s in warehouse_lineage_status(db_session) if s.connection_id == sf_connection.id
+    ]
+    assert reported == [], f"a healthy pruning connection was reported: {reported}"
+
+
+def test_a_partial_refresh_is_reported_as_suspended_end_to_end(
+    sf_connection: Connection, db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The other half of the same path — the surface must still fire when it should, or
+    the fix above could have been "never report anything".
+    """
+    from backend.app.services.asset_view_service import warehouse_lineage_status
+
+    clean = _StubProvider(
+        WarehouseLineageResult(
+            edges=(LineageEdgePair(_ident("A"), _ident("B")),),
+            tier=LineageTier.SNOWFLAKE_GET_LINEAGE,
+        ),
+        source="snowflake",
+        is_incremental=False,
+    )
+    _patch(monkeypatch, clean)
+    warehouse_refresh.refresh_connection_lineage(
+        db_session,
+        connection=sf_connection,
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
+    )
+    db_session.refresh(sf_connection)
+    pruned_at = sf_connection.lineage_last_authoritative_refresh_at
+    assert pruned_at is not None
+
+    partial = _StubProvider(
+        WarehouseLineageResult(
+            edges=(LineageEdgePair(_ident("A"), _ident("B")),),
+            tier=LineageTier.SNOWFLAKE_OBJECT_DEPENDENCIES,
+            degraded_reason="view-level lineage only — get_lineage: call failed (RuntimeError)",
+            prunable=False,
+        ),
+        source="snowflake",
+        is_incremental=False,
+    )
+    _patch(monkeypatch, partial)
+    outcome = warehouse_refresh.refresh_connection_lineage(
+        db_session,
+        connection=sf_connection,
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
+    )
+    assert outcome is not None and outcome.prune_suspended is True
+    db_session.refresh(sf_connection)
+
+    reported = [
+        s for s in warehouse_lineage_status(db_session) if s.connection_id == sf_connection.id
+    ]
+    assert len(reported) == 1
+    assert reported[0].prune_suspended is True
+    assert reported[0].prune_suspended_since == pruned_at

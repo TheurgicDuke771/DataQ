@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import random
 from collections.abc import Iterable
 from dataclasses import replace
@@ -196,6 +197,97 @@ def take_indices(batches: Iterable[Any], indices: list[int]) -> list[Any]:
             taken.append(batch.take(pa.array(selected, type=pa.int64())))
         offset = end
     return taken
+
+
+def _positive_uniform(rng: random.Random) -> float:
+    """A draw in the open interval (0, 1) — `log` is undefined at both ends."""
+    while True:
+        value = rng.random()  # nosec B311
+        if value > 0.0:
+            return value
+
+
+#: `exp(log(u) / rows)` rounds to exactly 1.0 for u within ~rows·eps of 1; log1p(-1.0) is -inf.
+_MAX_WEIGHT = math.nextafter(1.0, 0.0)
+
+
+def _skip(rng: random.Random, weight: float) -> int:
+    """Rows to skip before the next replacement (Algorithm L's geometric jump)."""
+    weight = min(weight, _MAX_WEIGHT)
+    return int(math.log(_positive_uniform(rng)) / math.log1p(-weight)) + 1
+
+
+def _write_slots(held: Any, batch: Any, local: list[int], slots: list[int]) -> Any:
+    """Put ``batch``'s ``local`` rows into the reservoir's ``slots``."""
+    import pyarrow as pa
+
+    addition = pa.Table.from_batches([batch.take(pa.array(local, type=pa.int64()))])
+    base = 0 if held is None else len(held)
+    keep = list(range(base))
+    for row, slot in enumerate(slots):
+        if slot < len(keep):
+            keep[slot] = base + row
+        else:
+            # Slots grow contiguously while the reservoir is still filling.
+            keep.append(base + row)
+    combined = addition if held is None else pa.concat_tables([held, addition])
+    return combined.take(pa.array(keep, type=pa.int64())).combine_chunks()
+
+
+def reservoir_sample(
+    batches: Iterable[Any], *, rows: int, seed: int | None
+) -> tuple[list[Any], int]:
+    """``rows`` rows drawn uniformly in ONE pass, plus the number of rows walked.
+
+    Vitter's Algorithm L: the reservoir holds the first ``rows`` rows, then each
+    later row replaces a random slot with probability ``rows/i`` — reached by
+    skipping ahead rather than drawing per row. The rows come back in FILE ORDER
+    (callers and row locators read positionally), and the walked count is the
+    population as of this very pass, measured by the read that produced the
+    sample rather than by an earlier one.
+    """
+    import pyarrow as pa
+
+    rng = random.Random(seed)  # noqa: S311  # nosec B311
+    held: Any = None
+    positions: list[int] = []
+    walked = 0
+    weight = 1.0
+    next_take = -1
+
+    for batch in batches:
+        offset, count = walked, batch.num_rows
+        walked += count
+        if count == 0:
+            continue
+        local: list[int] = []
+        slots: list[int] = []
+
+        if rows > len(positions):
+            fill = min(rows - len(positions), count)
+            local.extend(range(fill))
+            slots.extend(range(len(positions), len(positions) + fill))
+            positions.extend(range(offset, offset + fill))
+            if len(positions) == rows:
+                weight = math.exp(math.log(_positive_uniform(rng)) / rows)
+                next_take = rows - 1 + _skip(rng, weight)
+
+        while offset <= next_take < offset + count:
+            slot = rng.randrange(rows)  # nosec B311
+            local.append(next_take - offset)
+            slots.append(slot)
+            positions[slot] = next_take
+            weight *= math.exp(math.log(_positive_uniform(rng)) / rows)
+            next_take += _skip(rng, weight)
+
+        if local:
+            held = _write_slots(held, batch, local, slots)
+
+    if held is None:
+        return [], walked
+    order = sorted(range(len(positions)), key=positions.__getitem__)
+    ordered = held.take(pa.array(order, type=pa.int64()))
+    return list(ordered.combine_chunks().to_batches()), walked
 
 
 def batches_to_frame(batches: list[Any], *, schema: Any, arrow_backed: bool) -> Any:

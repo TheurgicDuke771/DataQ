@@ -2458,29 +2458,36 @@ def test_a_row_count_expectation_runs_normally_on_an_unsampled_flat_file(
 def test_a_file_that_shrank_between_the_count_and_the_take_is_refused(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """J1. A random sample is inherently two passes — count, then take — and a landing zone is
-    exactly where an object is re-uploaded between them.
+    """J1. Parquet's random sample is still two passes — a footer count, then a
+    take — and a landing zone is exactly where an object is re-uploaded between
+    them. (CSV no longer has this failure mode at all: its draw and its count are
+    the same pass since #1329, which is why this test moved off CSV.)
     """
-    big = _csv_bytes(1_000)
-    small = _csv_bytes(20)
-    calls: list[int] = []
+    big = _parquet(rows=1_000)
+    small = _parquet(rows=20)
+    live = {"content": big}
+    counted = flatfile.row_count
 
-    def _counting_read_range(*, start: int, length: int, **_k: Any) -> bytes:
-        # First pass (the row count) sees the big file; every later read sees the
-        # replacement — the re-upload, reproduced deterministically.
-        calls.append(1)
-        content = big if len(calls) <= 2 else small
-        return content[start : start + length]
+    def _shrink_after_the_count(**kwargs: Any) -> int:
+        # The re-upload lands between the count and the take, reproduced by
+        # INTENT rather than by a call tally.
+        total = counted(**kwargs)
+        live["content"] = small
+        return total
+
+    def _read_range(*, start: int, length: int, **_k: Any) -> bytes:
+        return live["content"][start : start + length]
 
     monkeypatch.setattr(flatfile, "file_stat", lambda **k: flatfile.FileStat(_LANDED, len(big)))
-    monkeypatch.setattr(flatfile, "read_range", _counting_read_range)
-    monkeypatch.setattr(flatfile, "object_size", lambda **k: len(big))
+    monkeypatch.setattr(flatfile, "read_range", _read_range)
+    monkeypatch.setattr(flatfile, "object_size", lambda **k: len(live["content"]))
+    monkeypatch.setattr(flatfile, "row_count", _shrink_after_the_count)
 
     with pytest.raises(SamplingDrawError, match="changed while it was being sampled"):
         flatfile.read_sampled_dataframe(
             conn_type="s3",
             config={},
-            path="raw/moving.csv",
+            path="raw/moving.parquet",
             secret="s",
             sample=SampleSpec(strategy="random", rows=100, seed=1),
         )
@@ -2510,3 +2517,512 @@ def test_a_random_sample_covering_the_whole_file_never_builds_an_index_list(
     )
     assert len(frame) == 30
     assert record["sampled"] is False and record["total_rows"] == 30
+
+
+# ── efficiency seams (#1329) ─────────────────────────────────────────────────
+# Every assertion here is on the SEAM — clients constructed, requests issued,
+# bytes fetched — because none of it is visible in the returned frame.
+
+
+class _FakeS3Client:
+    """A boto3 S3 client over one canned object, counting what it is asked for."""
+
+    def __init__(self, content: bytes, log: dict[str, Any]) -> None:
+        self._content = content
+        self._log = log
+        self.closed = False
+
+    def head_object(self, **_kwargs: Any) -> dict[str, Any]:
+        self._log["heads"] += 1
+        return {"ContentLength": len(self._content), "LastModified": _LANDED}
+
+    def get_object(
+        self, *, Range: str | None = None, **_kwargs: Any  # noqa: N803 — boto3 kwargs
+    ) -> dict[str, Any]:
+        if Range is None:
+            self._log["downloads"] += 1
+            return {"Body": io.BytesIO(self._content)}
+        first, last = Range.removeprefix("bytes=").split("-")
+        start, end = int(first), int(last)
+        self._log["ranges"].append((start, end - start + 1))
+        if start >= len(self._content):
+            raise RuntimeError("InvalidRange 416")
+        return {"Body": io.BytesIO(self._content[start : end + 1])}
+
+    def replace(self, content: bytes) -> None:
+        """The object is re-uploaded (shrunk or grown) mid-run — for every client."""
+        self._content = content
+        self._log["content"] = content
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _fake_s3(monkeypatch: pytest.MonkeyPatch, content: bytes) -> dict[str, Any]:
+    """Patch the CLIENT FACTORY, leaving the real `read_range`/`object_size` in play.
+
+    Patching `read_range` — what every other test here does — is blind to client
+    construction by definition, which is how a client per range request survived
+    every review of the behaviour.
+    """
+    log: dict[str, Any] = {
+        "clients": [],
+        "heads": 0,
+        "downloads": 0,
+        "ranges": [],
+        "content": content,
+    }
+
+    def _factory(_cfg: Any, _secret: str) -> _FakeS3Client:
+        client = _FakeS3Client(log["content"], log)
+        log["clients"].append(client)
+        return client
+
+    monkeypatch.setattr(flatfile, "_s3_client", _factory)
+    return log
+
+
+def test_one_sampled_read_builds_one_store_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A range walk issues many requests where the pre-#882 code issued one
+    download, so a client per request is pure overhead on exactly the access
+    pattern sampling introduced.
+    """
+    log = _fake_s3(monkeypatch, _csv_bytes(400_000))
+
+    frame, _ = flatfile.read_sampled_dataframe(
+        conn_type="s3",
+        config=_S3_CONFIG,
+        path="raw/big.csv",
+        secret="s",
+        sample=SampleSpec(strategy="head", rows=200_000),
+    )
+
+    assert len(frame) == 200_000
+    assert len(log["ranges"]) > 1, "one request only — this test would pass trivially"
+    assert len(log["clients"]) == 1
+
+
+def test_a_random_sampled_read_builds_one_store_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The random path opens more seams than head (count/stream/metadata), so it
+    is the one most likely to leak a client per stage.
+    """
+    log = _fake_s3(monkeypatch, _csv_bytes(50_000))
+
+    frame, _ = flatfile.read_sampled_dataframe(
+        conn_type="s3",
+        config=_S3_CONFIG,
+        path="raw/big.csv",
+        secret="s",
+        sample=SampleSpec(strategy="random", rows=100, seed=3),
+    )
+
+    assert len(frame) == 100
+    assert len(log["clients"]) == 1
+
+
+def test_a_sampled_read_closes_the_client_it_opened(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A session that outlives its read is a leaked connection pool in a worker
+    that runs thousands of them.
+    """
+    log = _fake_s3(monkeypatch, _csv_bytes(5_000))
+
+    flatfile.read_sampled_dataframe(
+        conn_type="s3",
+        config=_S3_CONFIG,
+        path="raw/big.csv",
+        secret="s",
+        sample=SampleSpec(strategy="head", rows=10),
+    )
+
+    assert [client.closed for client in log["clients"]] == [True]
+
+
+def test_separate_reads_never_share_a_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Amortising WITHIN one read, never across reads: a module-level cache would
+    hand a Celery prefork child a client its parent opened, and boto3 clients are
+    not fork-safe.
+    """
+    log = _fake_s3(monkeypatch, _csv_bytes(1_000))
+    for _ in range(2):
+        flatfile.read_sampled_dataframe(
+            conn_type="s3",
+            config=_S3_CONFIG,
+            path="raw/big.csv",
+            secret="s",
+            sample=SampleSpec(strategy="head", rows=10),
+        )
+
+    assert len(log["clients"]) == 2
+    assert log["clients"][0] is not log["clients"][1]
+
+
+def _semicolon_csv(rows: int) -> bytes:
+    return b"id;name\n" + b"".join(f"{i};n{i}\n".encode() for i in range(rows))
+
+
+def test_the_delimiter_sniff_costs_no_request_of_its_own(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The sniff used to issue its own `_SNIFF_BYTES` range GET immediately before
+    opening a stream whose first window covers those same bytes — one wasted round
+    trip per sampled CSV read, invisible in the frame.
+    """
+    ranges: list[tuple[int, int]] = []
+    _patch_store(monkeypatch, content=_semicolon_csv(5_000), ranges=ranges)
+
+    frame, _ = flatfile.read_sampled_dataframe(
+        conn_type="s3",
+        config={},
+        path="raw/semi.csv",
+        secret="s",
+        sample=SampleSpec(strategy="random", rows=20, seed=2),
+    )
+
+    # The sniff still WORKS — a `;` file parsed with the pandas default comma is
+    # one column named after the whole header (#476).
+    assert list(frame.columns) == ["id", "name"]
+    assert [r for r in ranges if r[1] == flatfile._SNIFF_BYTES] == []
+
+
+def test_counting_a_csv_sniffs_without_a_second_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`row_count` backs the volume monitor, which runs on every scheduled suite —
+    the same wasted round trip, on the hottest flat-file path there is.
+    """
+    ranges: list[tuple[int, int]] = []
+    _patch_store(monkeypatch, content=_semicolon_csv(300), ranges=ranges)
+
+    assert flatfile.row_count(conn_type="s3", config={}, path="raw/semi.csv", secret="s") == 300
+    assert [r for r in ranges if r[1] == flatfile._SNIFF_BYTES] == []
+    assert len(ranges) == 1, "the whole small file is one window — anything more is the sniff"
+
+
+def test_a_growing_head_window_fetches_only_the_delta(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Re-reading `[0, window)` on every doubling made reaching 4 MB cost
+    1 + 2 + 4 = 7 MB. Bounded, and pure waste — asserted on the ranges, since the
+    frame is byte-identical either way.
+    """
+    ranges: list[tuple[int, int]] = []
+    _patch_store(monkeypatch, content=_csv_bytes(400_000), ranges=ranges)
+
+    frame, _ = flatfile.read_sampled_dataframe(
+        conn_type="s3",
+        config={},
+        path="raw/big.csv",
+        secret="s",
+        sample=SampleSpec(strategy="head", rows=200_000),
+    )
+
+    assert len(frame) == 200_000
+    assert len(ranges) > 1, "the window never grew — this test would pass trivially"
+    # Contiguous and disjoint: every request starts where the last one ended.
+    cursor = 0
+    for start, length in ranges:
+        assert start == cursor
+        cursor += length
+    assert sum(length for _, length in ranges) == cursor
+
+
+def test_a_sampled_run_probes_the_objects_metadata_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`run_service` drives ONE runner through checks then monitors, and
+    `FlatFileCheckRunner._stat` already holds the object's size for the whole run.
+    The sampled read and the volume count each re-probed it because both are
+    module functions with no access to that memo.
+
+    Counted at the CLIENT, not at `object_size`: patching the function under test
+    is exactly what cannot see a memo that lives inside it.
+    """
+    log = _fake_s3(monkeypatch, _csv_bytes(500))
+
+    runner = flatfile.FlatFileCheckRunner(
+        conn_type="s3",
+        config=_S3_CONFIG,
+        secret="x",
+        sampling=SampleSpec(strategy="head", rows=10),
+    )
+    outcome = runner.run_checks(
+        table="raw/big.csv",
+        schema=None,
+        checks=[CheckSpec("expect_column_values_to_not_be_null", {"column": "id"})],
+    )
+    monitors = runner.run_monitors(
+        table="raw/big.csv", schema=None, monitors=[_spec("volume", min_rows=1, max_rows=10_000)]
+    )
+
+    assert outcome.checks[0].success is True
+    assert monitors[0].errored is False
+    assert (monitors[0].observed_value or {})["row_count"] == 500
+    # One HEAD for the runner's stat, reused by the sampled read; one fresh HEAD for the
+    # volume count, whose whole job is to be current (a grown file must count fully).
+    assert log["heads"] == 2, "the checks read re-probed metadata it already held"
+
+
+def test_a_stale_oversized_stat_ends_the_head_window_at_the_real_eof(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The runner's stat can predate the read by a whole checks phase. When the
+    object shrank in between, the delta fetch must stop at the short read rather
+    than ask the store for bytes past its end (S3/ADLS answer 416, not empty).
+    """
+    content = _csv_bytes(30)
+    log = _fake_s3(monkeypatch, content)
+
+    frame, record = flatfile.read_sampled_dataframe(
+        conn_type="s3",
+        config=_S3_CONFIG,
+        path="raw/big.csv",
+        secret="s",
+        sample=SampleSpec(strategy="head", rows=1_000),
+        stat=flatfile.FileStat(_LANDED, len(content) + 5_000_000),
+    )
+
+    assert len(frame) == 30
+    assert record["sampled"] is False
+    assert all(start < len(content) for start, _ in log["ranges"])
+
+
+def test_a_parquet_object_that_shrinks_between_count_and_take_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The take must size the object afresh — served from the count's memo it
+    would read against a length the object no longer has and hand pyarrow a
+    truncated tail instead of the actionable refusal.
+    """
+    big = _parquet(2_000)
+    log = _fake_s3(monkeypatch, big)
+    real_count = flatfile.parquet_row_count
+
+    def _count_then_shrink(**kwargs: Any) -> int:
+        total = real_count(**kwargs)
+        for client in log["clients"]:
+            client.replace(_parquet(50))
+        return total
+
+    monkeypatch.setattr(flatfile, "parquet_row_count", _count_then_shrink)
+
+    with pytest.raises(SamplingDrawError):
+        flatfile.read_sampled_dataframe(
+            conn_type="s3",
+            config=_S3_CONFIG,
+            path="raw/big.parquet",
+            secret="s",
+            sample=SampleSpec(strategy="random", rows=100, seed=1),
+        )
+
+
+def test_the_volume_count_sees_rows_appended_after_the_checks_phase(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The runner's stat is memoised for the whole run; the count must not be."""
+    log = _fake_s3(monkeypatch, _csv_bytes(100))
+
+    runner = flatfile.FlatFileCheckRunner(
+        conn_type="s3",
+        config=_S3_CONFIG,
+        secret="x",
+        sampling=SampleSpec(strategy="head", rows=10),
+    )
+    runner.run_checks(
+        table="raw/big.csv",
+        schema=None,
+        checks=[CheckSpec("expect_column_values_to_not_be_null", {"column": "id"})],
+    )
+    for client in log["clients"]:
+        client.replace(_csv_bytes(400))
+
+    monitors = runner.run_monitors(
+        table="raw/big.csv", schema=None, monitors=[_spec("volume", min_rows=1, max_rows=10_000)]
+    )
+
+    assert monitors[0].errored is False
+    assert (monitors[0].observed_value or {})["row_count"] == 400
+
+
+def test_one_sampled_read_heads_the_object_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Without a caller-supplied stat the read must still HEAD once, not once per
+    reader it opens — the random path opens a counting stream and a taking one.
+    """
+    log = _fake_s3(monkeypatch, _csv_bytes(20_000))
+
+    flatfile.read_sampled_dataframe(
+        conn_type="s3",
+        config=_S3_CONFIG,
+        path="raw/big.csv",
+        secret="s",
+        sample=SampleSpec(strategy="random", rows=50, seed=7),
+    )
+
+    assert log["heads"] == 1
+
+
+def test_a_random_csv_sample_walks_the_object_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The headline: a CSV has no cheap count, so counting it and then taking the
+    drawn positions streamed the whole object TWICE for one sample. Asserted in
+    BYTES, because the returned frame is a valid sample either way.
+    """
+    content = _csv_bytes(200_000)
+    ranges: list[tuple[int, int]] = []
+    _patch_store(monkeypatch, content=content, ranges=ranges)
+
+    frame, record = flatfile.read_sampled_dataframe(
+        conn_type="s3",
+        config={},
+        path="raw/big.csv",
+        secret="s",
+        sample=SampleSpec(strategy="random", rows=100, seed=5),
+    )
+
+    fetched = sum(length for _, length in ranges)
+    assert len(frame) == 100
+    assert record["total_rows"] == 200_000
+    # It really did walk the file (a short read would be a broken sample), and
+    # walked it once — two passes is >= 2x, one is ~1x.
+    assert len(content) <= fetched < len(content) * 1.5
+
+
+def test_a_random_csv_sample_reads_the_rows_in_file_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A reservoir is unordered; the frame handed to GX and to the row locator is
+    read positionally, so the ordering contract the two-pass take had must hold.
+    """
+    _patch_store(monkeypatch, content=_csv_bytes(5_000))
+    frame, _ = flatfile.read_sampled_dataframe(
+        conn_type="s3",
+        config={},
+        path="raw/big.csv",
+        secret="s",
+        sample=SampleSpec(strategy="random", rows=40, seed=8),
+    )
+    ids = list(frame["id"])
+    assert ids == sorted(ids)
+    assert len(set(ids)) == 40
+
+
+def test_a_random_csv_sample_of_a_quoted_file_keeps_whole_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An embedded newline inside a quoted field is data, not a row break — and
+    the single-pass draw counts rows as the PARSER sees them, so a sampler that
+    counted newlines would draw positions that do not exist.
+    """
+    _patch_store(monkeypatch, content=_quoted_csv(3_000))
+    frame, record = flatfile.read_sampled_dataframe(
+        conn_type="s3",
+        config={},
+        path="raw/quoted.csv",
+        secret="s",
+        sample=SampleSpec(strategy="random", rows=25, seed=6),
+    )
+    assert record["total_rows"] == 3_000
+    assert len(frame) == 25
+    assert all("line one\nline two" in note for note in frame["note"])
+    assert list(frame["id"]) == sorted(frame["id"])
+
+
+@pytest.mark.parametrize(
+    ("name", "content", "rows"),
+    [
+        ("header_only", b"id,name\n", 0),
+        ("crlf", b"id,name\r\n" + b"".join(f"{i},n{i}\r\n".encode() for i in range(40)), 40),
+        ("semicolons", b"id;name\n" + b"".join(f"{i};n{i}\n".encode() for i in range(40)), 40),
+        ("tabs", b"id\tname\n" + b"".join(f"{i}\tn{i}\n".encode() for i in range(40)), 40),
+        ("pipes", b"id|name\n" + b"".join(f"{i}|n{i}\n".encode() for i in range(40)), 40),
+        ("no_trailing_newline", b"id,name\n0,a\n1,b", 2),
+        ("under_the_sniff_window", b"id,name\n0,a\n", 1),
+    ],
+)
+def test_a_random_csv_sample_survives_awkward_csv_shapes(
+    name: str, content: bytes, rows: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every one of these is a real landing-zone file, and each one either changes
+    where a row boundary is or how wide a row is.
+    """
+    _patch_store(monkeypatch, content=content)
+    frame, record = flatfile.read_sampled_dataframe(
+        conn_type="s3",
+        config={},
+        path=f"raw/{name}.csv",
+        secret="s",
+        sample=SampleSpec(strategy="random", rows=10, seed=1),
+    )
+    assert list(frame.columns) == ["id", "name"], name
+    assert record["total_rows"] == rows, name
+    assert len(frame) == min(rows, 10), name
+    assert record["sampled"] is (rows > 10), name
+
+
+def test_a_random_csv_sample_of_an_empty_object_is_refused_like_any_other_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A zero-byte object has no header, so it has no columns to check — the read
+    must fail loudly rather than hand GX a frame with no schema.
+    """
+    import pyarrow.lib
+
+    _patch_store(monkeypatch, content=b"")
+    with pytest.raises(pyarrow.lib.ArrowInvalid, match="Empty CSV file"):
+        flatfile.read_sampled_dataframe(
+            conn_type="s3",
+            config={},
+            path="raw/empty.csv",
+            secret="s",
+            sample=SampleSpec(strategy="random", rows=10, seed=1),
+        )
+
+
+@pytest.mark.parametrize(("name", "frame"), ADVERSARIAL_FRAMES)
+def test_a_random_csv_sample_survives_adversarial_values(
+    name: str, frame: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The values a real landing zone carries — mixed types, NaN/Inf, unicode,
+    unhashables — through the CSV writer and back out of a single-pass draw.
+    """
+    content = frame.to_csv(index=False).encode()
+    _patch_store(monkeypatch, content=content)
+    sampled, record = flatfile.read_sampled_dataframe(
+        conn_type="s3",
+        config={},
+        path=f"raw/{name}.csv",
+        secret="s",
+        sample=SampleSpec(strategy="random", rows=2, seed=1),
+    )
+    assert record["total_rows"] == len(frame), name
+    assert len(sampled) == min(len(frame), 2), name
+
+
+def test_the_profiler_and_drift_readers_release_their_store_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A ``RangeReader`` built without a session owns a live client; a reader that
+    is never closed leaves the pool to ``__del__`` — a slow leak in a long-lived
+    worker once ``pq.ParquetFile`` lands in a reference cycle.
+    """
+    from types import SimpleNamespace
+
+    from backend.app.services import profile_service, schema_drift
+
+    # Refcounting would close an abandoned reader on function exit and mask the
+    # leak; only an explicit close may count.
+    monkeypatch.setattr(flatfile.RangeReader, "__del__", lambda self: None)
+    log = _fake_s3(monkeypatch, _parquet(20))
+    connection = SimpleNamespace(type="s3", config=_S3_CONFIG, secret_ref="ref")
+    secrets = SimpleNamespace(get=lambda _ref: "s")
+
+    frame = profile_service._read_parquet_sample(
+        conn_type="s3", config=_S3_CONFIG, path="raw/x.parquet", secret="s", columns=["id"]
+    )
+    names = profile_service.list_file_columns(
+        connection, path="raw/x.parquet", file_format=None, secret_store=secrets  # type: ignore[arg-type]
+    )
+    schema = schema_drift._file_columns(
+        connection, path="raw/x.parquet", file_format=None, secret_store=secrets  # type: ignore[arg-type]
+    )
+
+    assert len(frame) == 20 and names == ["id", "load_ts"] and len(schema) == 2
+    assert log["clients"] and all(client.closed for client in log["clients"])

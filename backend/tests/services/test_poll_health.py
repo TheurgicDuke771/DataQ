@@ -216,6 +216,10 @@ class TestWarehouseLineageStatusStopsLying:
 
         conn = _warehouse_connection(db_session)
         conn.lineage_last_refresh_at = datetime.now(UTC)
+        # A healthy snapshot source has PRUNED (#1236) — without the marker this fixture
+        # describes a connection that has never once removed a stale edge, which is a
+        # reportable state in its own right, not the healthy one this test names.
+        conn.lineage_last_authoritative_refresh_at = conn.lineage_last_refresh_at
         conn.lineage_last_tier = "snowflake_get_lineage"
         conn.lineage_degraded_reason = None
         conn.lineage_last_error = None
@@ -298,6 +302,7 @@ class TestWarehouseLineageStalenessSurface:
         self._enable(monkeypatch)
         conn = _warehouse_connection(db_session)
         conn.lineage_last_refresh_at = datetime.now(UTC) - timedelta(hours=20)
+        conn.lineage_last_authoritative_refresh_at = conn.lineage_last_refresh_at  # pruned (#1236)
         db_session.flush()
         assert warehouse_lineage_status(db_session) == []
 
@@ -321,6 +326,7 @@ class TestWarehouseLineageStalenessSurface:
 
         conn = _warehouse_connection(db_session)
         conn.lineage_last_refresh_at = datetime.now(UTC) - timedelta(days=30)
+        conn.lineage_last_authoritative_refresh_at = conn.lineage_last_refresh_at  # pruned (#1236)
         db_session.flush()
         assert warehouse_lineage_status(db_session) == []
 
@@ -352,6 +358,7 @@ class TestWarehouseLineageStalenessSurface:
         self._enable(monkeypatch, hours="0")
         conn = _warehouse_connection(db_session)
         conn.lineage_last_refresh_at = datetime.now(UTC) - timedelta(days=30)
+        conn.lineage_last_authoritative_refresh_at = conn.lineage_last_refresh_at  # pruned (#1236)
         db_session.flush()
         assert warehouse_lineage_status(db_session) == []
 
@@ -401,3 +408,114 @@ class TestPollReasonSpeaksOrchestration:
             assert noun not in stored, f"{noun!r} in an orchestration poll reason: {stored}"
         # …and it still says something actionable about what DID fail.
         assert "pipeline/dag" in stored
+
+
+class TestWarehouseLineagePruneSuspensionSurface:
+    """#1236: a source that has stopped pruning must be REPORTABLE, with an age — the
+    difference between "blipped once last night" and "has not pruned in three weeks".
+    """
+
+    def test_a_suspended_prune_is_surfaced_with_its_age(self, db_session: Any) -> None:
+        from datetime import UTC, datetime, timedelta
+
+        from backend.app.services.asset_view_service import warehouse_lineage_status
+
+        conn = _warehouse_connection(db_session)
+        pruned_at = datetime.now(UTC) - timedelta(days=21)
+        conn.lineage_last_authoritative_refresh_at = pruned_at
+        conn.lineage_last_refresh_at = datetime.now(UTC)
+        db_session.flush()
+
+        status = warehouse_lineage_status(db_session)
+        assert len(status) == 1
+        assert status[0].prune_suspended is True
+        assert status[0].prune_suspended_since == pruned_at
+        # It is a suspension, NOT a failure or a staleness — those must stay distinct.
+        assert status[0].last_error is None
+        assert status[0].stale is False
+
+    def test_a_never_pruned_source_reports_a_null_age_rather_than_a_recent_one(
+        self, db_session: Any
+    ) -> None:
+        """NULL means never. Defaulting it to the refresh time would answer "how long has
+        this been suspended?" with "a moment ago" about a graph that has never been cleaned.
+        """
+        from datetime import UTC, datetime
+
+        from backend.app.services.asset_view_service import warehouse_lineage_status
+
+        conn = _warehouse_connection(db_session)
+        conn.lineage_last_refresh_at = datetime.now(UTC)
+        db_session.flush()
+
+        status = warehouse_lineage_status(db_session)
+        assert len(status) == 1
+        assert status[0].prune_suspended is True
+        assert status[0].prune_suspended_since is None
+
+    def test_an_incremental_source_is_never_reported_as_suspended(self, db_session: Any) -> None:
+        """Unity Catalog is a log source: it prunes nothing by design, so "has not pruned"
+        would put a permanent warning on a connection that is working correctly.
+        """
+        from datetime import UTC, datetime
+
+        from backend.app.services.asset_view_service import warehouse_lineage_status
+
+        conn = _warehouse_connection(db_session, "unity_catalog")
+        conn.lineage_last_refresh_at = datetime.now(UTC)
+        db_session.flush()
+
+        assert warehouse_lineage_status(db_session) == []
+
+    def test_a_pruning_source_is_not_reported(self, db_session: Any) -> None:
+        from datetime import UTC, datetime, timedelta
+
+        from backend.app.services.asset_view_service import warehouse_lineage_status
+
+        conn = _warehouse_connection(db_session)
+        conn.lineage_last_refresh_at = datetime.now(UTC) - timedelta(hours=1)
+        conn.lineage_last_authoritative_refresh_at = conn.lineage_last_refresh_at
+        db_session.flush()
+
+        assert warehouse_lineage_status(db_session) == []
+
+    def test_a_failing_and_suspended_source_reports_both(self, db_session: Any) -> None:
+        """The #987 shape: a failing source is also a non-pruning one, and folding either
+        into the other hides a real qualifier behind another real qualifier.
+        """
+        from datetime import UTC, datetime, timedelta
+
+        from backend.app.services.asset_view_service import warehouse_lineage_status
+
+        conn = _warehouse_connection(db_session)
+        conn.lineage_last_authoritative_refresh_at = datetime.now(UTC) - timedelta(days=5)
+        conn.lineage_last_refresh_at = datetime.now(UTC)
+        conn.lineage_last_error = "The run failed to execute."
+        db_session.flush()
+
+        status = warehouse_lineage_status(db_session)
+        assert len(status) == 1
+        assert status[0].prune_suspended is True
+        assert status[0].last_error == "The run failed to execute."
+
+    def test_an_incremental_source_listed_for_another_reason_still_reports_no_suspension(
+        self, db_session: Any
+    ) -> None:
+        """The row-level guard, not the query-level one. A degraded Unity Catalog source IS
+        listed — and must carry `prune_suspended=False`, because it prunes nothing by design.
+        Without a listed incremental row, the two guards are indistinguishable and deleting
+        the row-level one leaves the suite green.
+        """
+        from datetime import UTC, datetime
+
+        from backend.app.services.asset_view_service import warehouse_lineage_status
+
+        conn = _warehouse_connection(db_session, "unity_catalog")
+        conn.lineage_last_refresh_at = datetime.now(UTC)
+        conn.lineage_degraded_reason = "column pairs unavailable"
+        db_session.flush()
+
+        status = warehouse_lineage_status(db_session)
+        assert len(status) == 1
+        assert status[0].prune_suspended is False
+        assert status[0].prune_suspended_since is None
