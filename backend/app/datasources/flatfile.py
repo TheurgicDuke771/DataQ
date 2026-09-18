@@ -485,14 +485,21 @@ def _extend_window(reader_args: dict[str, Any], buffered: bytearray, *, span: in
     return len(got) < asked
 
 
-def _window_frame(buffered: bytearray, *, limit: int, reached_eof: bool) -> Any:
+def _window_frame(
+    buffered: bytearray, *, limit: int, reached_eof: bool, usecols: Any = None
+) -> Any:
     """Parse at most ``limit`` rows out of a head window, dropping the trailing
-    partial row unless the window reached EOF (#595 C4).
+    partial row unless the window reached EOF (#595 C4). ``usecols`` — anything
+    `pandas.read_csv` accepts, e.g. a membership callable — projects at parse
+    time (#2000), same as the profiler's old full-download read did.
     """
     raw = bytes(buffered)
     if not reached_eof:
         raw = trim_to_row_boundary(raw)
-    return read_csv_bytes(io.BytesIO(raw), nrows=limit)
+    kwargs: dict[str, Any] = {"nrows": limit}
+    if usecols is not None:
+        kwargs["usecols"] = usecols
+    return read_csv_bytes(io.BytesIO(raw), **kwargs)
 
 
 def read_csv_head(
@@ -589,13 +596,24 @@ def _open_batch_stream(
     )
 
 
-def _csv_head_frame(reader_args: dict[str, Any], *, limit: int) -> Any:
+def _csv_head_frame(
+    reader_args: dict[str, Any],
+    *,
+    limit: int,
+    usecols: Any = None,
+    max_window_bytes: int | None = None,
+) -> Any:
     """The first ``limit`` rows of a CSV via a doubling byte range (#595).
 
     Each growth fetches only the bytes past what is already buffered (#1329):
     re-reading the prefix made reaching 4 MB cost 1 + 2 + 4 = 7 MB. A frame
     SHORTER than ``limit`` therefore means the walk reached EOF — the only other
-    way out of the loop is a full one.
+    way out of the loop is a full one, UNLESS ``max_window_bytes`` is set and the
+    window reaches it without a single complete row parsing yet (#2000) — a
+    malformed or pathologically-wide row would otherwise force the window all
+    the way to the object's own size, which is exactly the unbounded read this
+    function exists to avoid. A frame that already holds rows keeps growing
+    past the cap: that is normal progress toward ``limit``, not the pathology.
     """
     size = object_size(**reader_args)
     buffered = bytearray()
@@ -603,10 +621,55 @@ def _csv_head_frame(reader_args: dict[str, Any], *, limit: int) -> Any:
     while True:
         span = min(window, size)
         reached_eof = _extend_window(reader_args, buffered, span=span) or span >= size
-        frame = _window_frame(buffered, limit=limit, reached_eof=reached_eof)
+        frame = _window_frame(buffered, limit=limit, reached_eof=reached_eof, usecols=usecols)
         if len(frame) >= limit or reached_eof:
             return frame
+        if (
+            max_window_bytes is not None
+            and max_window_bytes > 0
+            and span >= max_window_bytes
+            and len(frame) == 0
+        ):
+            raise FlatFileReadError(
+                f"a CSV row did not fit within the {max_window_bytes:,}-byte sample "
+                "window — the file may have a malformed or unterminated row"
+            )
         window *= 2
+
+
+def read_csv_projected_sample(
+    *,
+    conn_type: str,
+    config: dict[str, Any],
+    path: str,
+    secret: str,
+    rows: int,
+    usecols: Any = None,
+    session: StoreSession | None = None,
+) -> Any:
+    """The column profiler's bounded CSV read (#2000): the first ``rows`` data
+    rows, projected to ``usecols`` at parse time, via the same doubling head
+    window `read_sampled_dataframe` uses for a suite run — never the whole
+    object, which the profiler used to download just to keep a handful of
+    columns from its first 100k rows.
+
+    ``RUN_MAX_SCAN_BYTES`` caps the window growth: a file whose first row
+    doesn't fit even that budget raises a classified `FlatFileReadError`
+    instead of silently walking the window out to the object's own size.
+    """
+    reader_args = {
+        "conn_type": conn_type,
+        "config": config,
+        "path": path,
+        "secret": secret,
+        "session": session,
+    }
+    return _csv_head_frame(
+        reader_args,
+        limit=rows,
+        usecols=usecols,
+        max_window_bytes=get_settings().run_max_scan_bytes,
+    )
 
 
 def read_sampled_dataframe(

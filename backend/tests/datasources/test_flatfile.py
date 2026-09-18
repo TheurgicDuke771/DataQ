@@ -2413,6 +2413,100 @@ def test_the_bounded_schema_head_read_is_quote_aware_too(
     assert len(frame) == 5
 
 
+# ── read_csv_projected_sample (#2000 — the profiler's bounded CSV read) ─────
+
+
+def _wide_csv_bytes(rows: int, cols: int) -> bytes:
+    """A CSV wide enough that reaching ``rows`` needs more than one head window."""
+    header = ",".join(f"c{i}" for i in range(cols)) + "\n"
+    body = b"".join(
+        (",".join(str(r * cols + i) for i in range(cols)) + "\n").encode() for r in range(rows)
+    )
+    return header.encode() + body
+
+
+def test_read_csv_projected_sample_never_downloads_the_whole_object(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#2000: the profiler used to `download_bytes` the entire object before
+    applying `nrows`/`usecols` — proven here on the SEAM (bytes actually
+    fetched via `read_range`), not on the returned frame, which would pass
+    just as well against the unfixed whole-object read.
+    """
+    ranges: list[tuple[int, int]] = []
+    content = _wide_csv_bytes(rows=300_000, cols=20)
+    _patch_store(monkeypatch, content=content, ranges=ranges)
+
+    frame = flatfile.read_csv_projected_sample(
+        conn_type="s3",
+        config={},
+        path="raw/wide.csv",
+        secret="s",
+        rows=100_000,
+        usecols=lambda name: name in {"c0", "c1"},
+    )
+
+    assert list(frame.columns) == ["c0", "c1"]
+    assert len(frame) == 100_000
+    total_read = sum(length for _, length in ranges)
+    assert total_read < len(content) * 0.7, "bounded read must not approach the full object"
+    assert len(ranges) > 1, "the window never grew — this test would pass trivially"
+
+
+def test_read_csv_projected_sample_respects_a_non_comma_delimiter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#934: the bounded read shares the sniffing seam, so a `;`-delimited file
+    doesn't parse as one column named after the whole header.
+    """
+    content = b"id;name\n" + b"".join(f"{i};n{i}\n".encode() for i in range(50))
+    _patch_store(monkeypatch, content=content)
+
+    frame = flatfile.read_csv_projected_sample(
+        conn_type="s3", config={}, path="raw/semi.csv", secret="s", rows=10
+    )
+
+    assert list(frame.columns) == ["id", "name"]
+    assert len(frame) == 10
+
+
+def test_read_csv_projected_sample_never_splits_a_row_across_the_window_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Quote-aware trimming at the window boundary applies to the profiler's
+    bounded read too, not only the run path's `_sampled_frame`.
+    """
+    wide = b"id,payload\n" + b"".join(f"{i},{'x' * 500}\n".encode() for i in range(10_000))
+    _patch_store(monkeypatch, content=wide)
+
+    frame = flatfile.read_csv_projected_sample(
+        conn_type="s3", config={}, path="raw/wide2.csv", secret="s", rows=100
+    )
+
+    assert len(frame) == 100
+    assert list(frame["id"]) == list(range(100))
+    assert set(frame["payload"].str.len()) == {500}
+
+
+def test_read_csv_projected_sample_raises_a_classified_error_on_an_oversized_row(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A malformed/pathological row that never terminates within the configured
+    scan-byte cap must fail loudly and classified — not silently keep doubling
+    the window out toward the object's own size (defeating the bound), and not
+    silently return a truncated, incomplete profile.
+    """
+    _set_cap(monkeypatch, "RUN_MAX_SCAN_BYTES", 4 * 1024 * 1024)
+    # One giant unterminated "row" with no further newline, well past the cap.
+    content = b"id,payload\n" + (b"x" * (8 * 1024 * 1024))
+    _patch_store(monkeypatch, content=content)
+
+    with pytest.raises(flatfile.FlatFileReadError, match="did not fit"):
+        flatfile.read_csv_projected_sample(
+            conn_type="s3", config={}, path="raw/huge_row.csv", secret="s", rows=100
+        )
+
+
 def test_a_row_count_expectation_is_refused_on_a_sampled_flat_file(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -815,22 +815,31 @@ does with the keys once it has them.
 #### Profiler on a wide table
 
 200,000 rows, profiling every column (the flat-file profiler samples the first
-100k rows):
+100k rows). The CSV path used to `download_bytes` the whole object before
+applying its row/column limits; it now shares the same doubling-window bounded
+head read the sampled suite-run path uses (`read_csv_projected_sample` over
+`_csv_head_frame`), growing only until it holds the sample or hits EOF:
 
-| Object | Columns | Wall | Peak RSS | Bytes read | Store calls |
+| Object | Columns | Wall | Peak RSS | Bytes read (was) | Store calls (was) |
 |---|---|---|---|---|---|
-| CSV (39 MB) | 50 | 0.12 s | 479 MiB | **38,902,153** | 1 |
-| CSV (156 MB) | 200 | 0.48 s | 850 MiB | **155,606,664** | 1 |
+| CSV (39 MB) | 50 | 0.35 s | 757 MiB | **33,554,432** (38,902,153) | 7 (1) |
+| CSV (156 MB) | 200 | 1.35 s | 1898 MiB | **134,217,728** (155,606,664) | 9 (1) |
 | Parquet (13 MB) | 50 | 0.12 s | 412 MiB | 12,828,601 | 3 |
 | Parquet (51 MB) | 200 | 0.39 s | 606 MiB | 51,211,169 | 5 |
 
-Wall scales with column count as expected. The asymmetry is in the reads: the
-Parquet path projects the requested columns and streams batches through range
-requests, while **the CSV path downloads the entire object** to parse its first
-100k rows — so profiling four columns of a multi-gigabyte CSV transfers the whole
-file. Filed separately. (The warehouse profiler's batched rank-join, the
-post-optimisation number this page records elsewhere, is not measured here — see
-the not-measured table below.)
+The Parquet path is unchanged (it already projected columns and streamed range
+requests). The CSV path now reads a bounded prefix instead of the whole
+object — the store-egress reduction the fix targets — but the doubling window
+reparses its whole buffered prefix from byte 0 on every growth step, so on a
+wide/dense file (many small store round trips, each a full CPU-bound reparse)
+wall time and peak RSS both went *up* on this local-disk harness, where store
+latency is near zero and the reparse cost dominates. Against a real S3/ADLS
+store the egress reduction is the one that matters in production cost terms;
+the RSS/CPU trade-off is tracked separately as a follow-up, since it is shared
+with the sampled suite-run path and worth fixing once, not reworked here.
+(The warehouse profiler's batched rank-join, the post-optimisation number this
+page records elsewhere, is not measured here — see the not-measured table
+below.)
 
 ### What is explicitly NOT measured here
 

@@ -654,6 +654,7 @@ def _conn(*, conn_type: str, config: dict[str, Any], secret_ref: str | None = "r
 def _patch_object(monkeypatch: pytest.MonkeyPatch, content: bytes) -> list[tuple[int, int]]:
     """Serve ``content`` over the BOUNDED read seam (#882) and record the ranges."""
     from backend.app.datasources import flatfile
+    from backend.app.services import profile_service as svc
 
     ranges: list[tuple[int, int]] = []
 
@@ -663,6 +664,11 @@ def _patch_object(monkeypatch: pytest.MonkeyPatch, content: bytes) -> list[tuple
 
     monkeypatch.setattr(flatfile, "object_size", lambda **k: len(content))
     monkeypatch.setattr(flatfile, "read_range", _read_range)
+    # Only reached by an unbounded (whole-object) read — present on both bindings so a
+    # regression back to it produces a clean, seam-visible failure (however it's imported)
+    # rather than a real network call erroring out on a missing credential.
+    monkeypatch.setattr(flatfile, "download_bytes", lambda **k: content)
+    monkeypatch.setattr(svc, "download_bytes", lambda **k: content, raising=False)
     return ranges
 
 
@@ -671,7 +677,7 @@ def test_read_dataframe_csv_projects_only_requested_columns(
 ) -> None:
     from backend.app.services import profile_service as svc
 
-    monkeypatch.setattr(svc, "download_bytes", lambda **k: b"a,b,c\n1,2,3\n4,5,6\n")
+    _patch_object(monkeypatch, b"a,b,c\n1,2,3\n4,5,6\n")
     df = svc._read_dataframe(
         _flatfile_conn(),
         path="x.csv",
@@ -692,7 +698,7 @@ def test_read_dataframe_csv_projects_columns_from_a_semicolon_file(
     """
     from backend.app.services import profile_service as svc
 
-    monkeypatch.setattr(svc, "download_bytes", lambda **k: b"a;b;c\n1;2;3\n4;5;6\n")
+    _patch_object(monkeypatch, b"a;b;c\n1;2;3\n4;5;6\n")
     df = svc._read_dataframe(
         _flatfile_conn(),
         path="x.csv",
@@ -702,6 +708,57 @@ def test_read_dataframe_csv_projects_columns_from_a_semicolon_file(
     )
     assert list(df.columns) == ["a", "c"]
     assert len(df) == 2
+
+
+def test_read_dataframe_csv_does_not_download_the_whole_object(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#2000: `_read_dataframe`'s CSV branch used to `download_bytes` the whole
+    object before applying `nrows`/`usecols`. Proven on the SEAM — bytes
+    actually fetched via `read_range`, and that the whole-object `download_bytes`
+    route is never called at all — not on the returned frame, which the old
+    whole-object read would satisfy just as well.
+    """
+    from backend.app.datasources import flatfile
+    from backend.app.services import profile_service as svc
+
+    header = ",".join(f"c{i}" for i in range(20)) + "\n"
+    body = "".join(",".join(str(r) for _ in range(20)) + "\n" for r in range(300_000))
+    content = (header + body).encode()
+
+    ranges: list[tuple[int, int]] = []
+    download_calls: list[int] = []
+
+    def _read_range(*, start: int, length: int, **_k: object) -> bytes:
+        ranges.append((start, length))
+        return content[start : start + length]
+
+    def _download_whole_object(**_k: object) -> bytes:
+        download_calls.append(1)
+        return content
+
+    monkeypatch.setattr(flatfile, "object_size", lambda **k: len(content))
+    monkeypatch.setattr(flatfile, "read_range", _read_range)
+    # Present on BOTH names so a regression back to the old whole-object read is
+    # caught whichever binding it calls through, rather than erroring on an
+    # unrelated missing-credential validation failure.
+    monkeypatch.setattr(flatfile, "download_bytes", _download_whole_object)
+    monkeypatch.setattr(svc, "download_bytes", _download_whole_object, raising=False)
+
+    df = svc._read_dataframe(
+        _flatfile_conn(),
+        path="x.csv",
+        file_format="csv",
+        columns=["c0", "c1"],
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
+    )
+
+    assert list(df.columns) == ["c0", "c1"]
+    assert len(df) == svc._SAMPLE_ROWS
+    assert not download_calls, "must never fetch the whole object"
+    assert len(ranges) > 1, "the window never grew — this test would pass trivially"
+    total_read = sum(length for _, length in ranges)
+    assert total_read < len(content) * 0.7, "bounded read must not approach the full object"
 
 
 def test_read_dataframe_parquet_projects_only_requested_columns(
