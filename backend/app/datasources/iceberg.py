@@ -154,16 +154,31 @@ ICEBERG_ROW_CAP_REMEDY = (
 
 
 def scan_row_count(table: Any) -> int:
-    """Rows in the table's current snapshot — snapshot metadata, no data files read.
+    """LIVE rows in the table's current snapshot — exact, and not always cheap.
 
-    ``int()`` because the count crosses a driver boundary: pyiceberg is free to
-    hand back a numpy/arrow scalar, and a snapshot-less table answers 0.
+    ``DataScan.count()`` sums per-file record counts from metadata only while a
+    task's filter is fully satisfied and it carries no delete files; a
+    merge-on-read task is instead materialised in full to be counted. Callers
+    that are guarding a materialisation want `planned_row_count`, which cannot
+    read data.
+
+    ``int()`` because the value crosses a driver boundary.
     """
     return int(table.scan().count())
 
 
+def planned_row_count(table: Any) -> int:
+    """Rows the scan will READ from data files — manifest metadata, never a data read.
+
+    An upper bound on the live count, and the right number for a memory guard:
+    row-level deletes are applied *after* the files are read, so a deleted row
+    still costs its memory. A snapshot-less table plans no files and answers 0.
+    """
+    return sum(int(task.file.record_count) for task in table.scan().plan_files())
+
+
 def enforce_iceberg_row_cap(table: Any, *, target: str) -> None:
-    """Probe the snapshot's row count and refuse an over-cap materialisation (#1328).
+    """Probe the snapshot from metadata and refuse an over-cap materialisation (#1328).
 
     Skipped entirely when the cap is disabled — an operator who turns it off does
     not keep paying for a probe nobody reads.
@@ -172,7 +187,10 @@ def enforce_iceberg_row_cap(table: Any, *, target: str) -> None:
     if cap <= 0:
         return
     enforce_row_cap(
-        scan_row_count(table), cap=cap, target=f"table {target!r}", remedy=ICEBERG_ROW_CAP_REMEDY
+        planned_row_count(table),
+        cap=cap,
+        target=f"the current snapshot of table {target!r}",
+        remedy=ICEBERG_ROW_CAP_REMEDY,
     )
 
 
@@ -348,7 +366,9 @@ class IcebergCheckRunner:
                 }
             if total is not None:
                 return total, {"source": "snapshot-summary", **delta}
-            # The count itself materialises nothing, so it needs no cap.
+            # `scan_row_count` is exact — which is what a volume monitor needs — and on a
+            # merge-on-read table pyiceberg counts by materialising, so it is capped like a read.
+            enforce_iceberg_row_cap(table, target=target)
             return scan_row_count(table), {"source": "scan-fallback", **delta}
         if spec.kind == FRESHNESS:
             column = spec.config["column"]

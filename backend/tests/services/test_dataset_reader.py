@@ -299,8 +299,13 @@ class FakeIcebergTable:
         count = self._count
 
         class _Scan:
-            def count(self) -> int:
-                return count
+            def count(self) -> int:  # pragma: no cover — the preflight plans, it never counts
+                raise AssertionError("the preflight must not count through the driver")
+
+            def plan_files(self) -> Any:
+                from types import SimpleNamespace
+
+                return [SimpleNamespace(file=SimpleNamespace(record_count=count))]
 
         return _Scan()
 

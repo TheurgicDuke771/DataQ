@@ -691,10 +691,12 @@ _NO_DELETES = {
 }
 
 
-def _bounds_file(field_id: int, raw: bytes | None) -> Any:
+def _bounds_file(field_id: int, raw: bytes | None, *, record_count: int = 1) -> Any:
     from types import SimpleNamespace
 
-    return SimpleNamespace(file=SimpleNamespace(upper_bounds={field_id: raw} if raw else {}))
+    return SimpleNamespace(
+        file=SimpleNamespace(upper_bounds={field_id: raw} if raw else {}, record_count=record_count)
+    )
 
 
 def test_volume_answers_from_snapshot_summary_without_scanning(
@@ -809,8 +811,8 @@ def test_freshness_falls_back_when_row_level_deletes_present(
     assert outcome.observed_value is not None
     assert outcome.observed_value["source"] == "scan-fallback"
     assert "total-delete-files=3" in outcome.observed_value["fallback_reason"]
-    # Two: the scan-cap probe's count, then the column scan it cleared (#1328).
-    assert fake.scan_calls == 2
+    # Still one: the #1328 cap probe plans files, it does not scan (see the test below).
+    assert fake.scan_calls == 1
 
 
 def test_freshness_falls_back_when_a_file_lacks_bounds(
@@ -920,7 +922,10 @@ def test_freshness_falls_back_when_scan_tasks_carry_delete_files(
     recent = datetime.now(UTC) - timedelta(hours=2)
     task = SimpleNamespace(
         file=SimpleNamespace(
-            upper_bounds={field_id: to_bytes(TimestamptzType(), int(stale.timestamp() * 1_000_000))}
+            upper_bounds={
+                field_id: to_bytes(TimestamptzType(), int(stale.timestamp() * 1_000_000))
+            },
+            record_count=1,
         ),
         delete_files=[object()],  # live row-level deletes on this task
     )
@@ -1086,6 +1091,66 @@ def test_a_snapshot_less_iceberg_table_counts_zero_and_runs(
     assert outcome.success is True
 
 
+def test_the_probe_never_counts_through_the_driver(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`DataScan.count()` sums record counts from metadata ONLY while a task carries
+    no delete files; a merge-on-read task is materialised in full to be counted. So
+    counting to decide whether to materialise would, on exactly the tables this
+    guard exists for, perform the read it is refusing. The probe plans files and
+    sums `record_count` instead — manifests, never data.
+
+    pyiceberg cannot WRITE a delete file (0.11.1 falls back to copy-on-write), so no
+    local catalog can produce the adversarial table; what is pinned here is that the
+    guard never reaches `count()` at all.
+    """
+    monkeypatch.setenv("RUN_MAX_SCAN_ROWS_ICEBERG", "2")
+    get_settings.cache_clear()
+    monkeypatch.setattr(
+        _FakeScan, "count", lambda _self: pytest.fail("the cap probe must not call count()")
+    )
+    schema, field_id = _tz_field_schema()
+    fake = _FakeTable(
+        pd.DataFrame({"loaded_at": [datetime.now(UTC)]}),
+        snapshot=_FakeSnapshot({"total-delete-files": "3"}),
+        schema=schema,
+        files=[_bounds_file(field_id, None, record_count=3)],
+    )
+    with pytest.raises(ScanTooLargeError, match="3 rows, over the scan cap of 2"):
+        iceberg_mod.enforce_iceberg_row_cap(fake, target="sales.orders")
+    assert fake.scan_calls == 0  # planning is metadata — no data path touched
+
+
+def test_planned_row_count_sums_the_manifests_of_a_real_table(tmp_path: Any) -> None:
+    catalog, _properties = _local_catalog(tmp_path)
+    table = _order_table(catalog, "sales.orders", 3)
+    table.append(pa.table({"id": pa.array([9, 10], pa.int64())}))  # a second data file
+    planned = iceberg_mod.planned_row_count(table)
+    assert planned == 5 and isinstance(planned, int)
+    assert iceberg_mod.planned_row_count(_order_table(catalog, "sales.empty", 0)) == 0
+
+
+def test_the_volume_scan_fallback_is_capped_too(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The exact count a volume monitor needs is the materialising one on a
+    merge-on-read table, so it is guarded like a read (#1328)."""
+    monkeypatch.setenv("RUN_MAX_SCAN_ROWS_ICEBERG", "2")
+    get_settings.cache_clear()
+    fake = _FakeTable(
+        pd.DataFrame({"id": [1, 2, 3]}),
+        snapshot=_FakeSnapshot({"op": "append"}),  # no total-records → scan fallback
+        files=[_bounds_file(1, None, record_count=3)],
+    )
+    runner = IcebergCheckRunner(config=IcebergConfig.model_validate(_REST_CONFIG), secret="tok")
+    monkeypatch.setattr(runner, "_load_table", lambda identifier: fake)
+    [outcome] = runner.run_monitors(
+        table="sales.orders",
+        schema=None,
+        monitors=[MonitorSpec("volume", {"min_rows": 1, "max_rows": 100})],
+    )
+    assert outcome.errored is True
+    assert outcome.error_message is not None
+    assert "over the scan cap of 2" in outcome.error_message
+    assert fake.scan_calls == 0
+
+
 def test_the_cap_inherits_run_max_scan_rows_until_its_own_is_set(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1111,7 +1176,7 @@ def test_the_freshness_scan_fallback_is_capped_too(monkeypatch: pytest.MonkeyPat
         pd.DataFrame({"loaded_at": [datetime.now(UTC) - timedelta(hours=2)] * 3}),
         snapshot=_FakeSnapshot({"total-delete-files": "3"}),
         schema=schema,
-        files=[_bounds_file(field_id, None)],
+        files=[_bounds_file(field_id, None, record_count=3)],
     )
     runner = IcebergCheckRunner(config=IcebergConfig.model_validate(_REST_CONFIG), secret="tok")
     monkeypatch.setattr(runner, "_load_table", lambda identifier: fake)
@@ -1123,6 +1188,7 @@ def test_the_freshness_scan_fallback_is_capped_too(monkeypatch: pytest.MonkeyPat
     assert outcome.errored is True
     assert outcome.error_message is not None
     assert "over the scan cap of 2" in outcome.error_message
+    assert fake.scan_calls == 0  # refused before the column scan
 
 
 def test_the_comparison_dataset_reader_is_unaffected_by_the_run_cap(

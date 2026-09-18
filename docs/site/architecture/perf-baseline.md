@@ -255,10 +255,13 @@ that would stamp "sampled" on a result that was not.
   construction and is unit-pinned, but `TABLESAMPLE (x PERCENT) REPEATABLE (seed)`
   behaviour is a Databricks fact — only a live run is evidence.
 - **Iceberg now has a cap; it does not have sampling, and its cap value is not yet
-  measured.** The guardrail shipped: a `scan().count()` probe (snapshot metadata,
-  no data files read) refuses an over-cap read before `to_arrow()`, on both the
-  expectation path and the freshness scan-fallback, and is skipped entirely when
-  the cap is disabled. The **value** lives in its own setting,
+  measured.** The guardrail shipped: the probe plans the scan's files and sums
+  their manifest record counts — never a data read — and refuses an over-cap read
+  before `to_arrow()`, on the expectation path and on both monitor
+  scan-fallbacks; it is skipped entirely when the cap is disabled. It is
+  deliberately not the scan's own `count()`, which materialises a merge-on-read
+  task in full in order to count it, so counting to decide whether to materialise
+  would perform the very read being refused. The **value** lives in its own setting,
   `RUN_MAX_SCAN_ROWS_ICEBERG`, defaulting to "inherit `RUN_MAX_SCAN_ROWS`" —
   Iceberg passed at 2M rows where UC died at 2M, so the inherited 1.5M would
   refuse a rung measured to work, and the real ceiling is somewhere between 2M
