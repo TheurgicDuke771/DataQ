@@ -46,8 +46,13 @@ _CHECKS = [
 ]
 
 
-def _frame(failing: int) -> pd.DataFrame:
-    return pd.DataFrame(
+def _frame(failing: int, *, arrow_backed: bool = False) -> pd.DataFrame:
+    """A numpy-backed frame, or the Arrow-backed shape `read_parquet(dtype_backend="pyarrow")`
+    and `iceberg._to_arrow_backed_pandas` hand the runner in production. GX's per-cell `.at`
+    locator assembly takes a different path on `ArrowDtype` columns, and a numpy-only fixture
+    would prove the bound only for the CSV/SQL-frame lanes (the #520 shape).
+    """
+    frame = pd.DataFrame(
         {
             "order_number": [None] * failing + ["OK"] * 7,
             "customer_id": np.arange(1000, 1000 + failing + 7),
@@ -55,6 +60,7 @@ def _frame(failing: int) -> pd.DataFrame:
             "sku": [f"SKU-{i % 37}" for i in range(failing)] + ["SKU-OK"] * 7,
         }
     )
+    return frame.convert_dtypes(dtype_backend="pyarrow") if arrow_backed else frame
 
 
 def _frame_batch_definition(name: str) -> tuple[Any, Any]:
@@ -84,15 +90,18 @@ def _raw_results(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[dict[str, Any
     yield captured
 
 
+@pytest.mark.parametrize("arrow_backed", [False, True])
 @pytest.mark.parametrize("index_columns", [None, _INDEX_COLUMNS])
 @pytest.mark.parametrize("failing", [3, SAMPLE_ROW_CAP, 200, _VALUE_SIGNAL_SUMMARY_ROW_CAP + 1_000])
-def test_frame_sample_output_is_unchanged(failing: int, index_columns: list[str] | None) -> None:
+def test_frame_sample_output_is_unchanged(
+    failing: int, index_columns: list[str] | None, arrow_backed: bool
+) -> None:
     """Byte-compatibility across every result-shape family: the mapped outcome — sample keys,
     identifier locators (#415), the value-signal summary (#1230) and the bounded
     `observed_value` (#1229) — is identical to what the unbounded COMPLETE run produced, at,
     below and above both the sample cap and the summary scan cap.
     """
-    frame = _frame(failing)
+    frame = _frame(failing, arrow_backed=arrow_backed)
     context, batch_definition = _frame_batch_definition("new")
     bounded = run_expectations(
         context,
@@ -151,15 +160,15 @@ def test_the_frame_result_format_carries_the_cap() -> None:
     assert _FRAME_PARTIAL_UNEXPECTED_COUNT >= _VALUE_SIGNAL_SUMMARY_ROW_CAP
 
 
+@pytest.mark.parametrize("arrow_backed", [False, True])
 def test_a_widely_failing_frame_never_builds_a_row_per_failure(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, arrow_backed: bool
 ) -> None:
     """A check failing on every row of a 200k-row frame, with an identifier column so the
-    locator entries are dicts. GX must never hand back a list proportional to the failure
-    count — nor allocate one on the way.
+    locator entries are dicts. GX must never hand back a list proportional to the failure count.
     """
     rows = 200_000
-    frame = _frame(rows)
+    frame = _frame(rows, arrow_backed=arrow_backed)
     context, batch_definition = _frame_batch_definition("wide")
 
     with _raw_results(monkeypatch) as raw:
@@ -186,6 +195,9 @@ def test_a_widely_failing_frame_never_builds_a_row_per_failure(
     assert sample["unexpected_count"] == rows
     assert len(sample["unexpected_index_list"]) == SAMPLE_ROW_CAP
 
-    # measured on the development rig: 215 MiB under COMPLETE against 57 MiB here. The ceiling
-    # sits between the two regimes, not on either — it is a shape assertion, not a budget.
+    # A ceiling, honestly: GX still assembles the full locator list inside
+    # `compute_unexpected_pandas_indices` before `_pandas_map_condition_index` slices it, so
+    # this bounds what is RETAINED, not every transient allocation. Measured on the development
+    # rig at 215 MiB under COMPLETE against 57 MiB (numpy) / 52 MiB (Arrow) here; 120 sits
+    # between the two regimes rather than on either.
     assert peak < 120 * 2**20, f"{peak / 2**20:.0f} MiB peaked during the run"

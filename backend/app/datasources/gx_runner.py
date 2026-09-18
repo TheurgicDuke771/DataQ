@@ -327,7 +327,8 @@ def _is_sql_batch(batch_definition: Any) -> bool:
     Both lanes run SUMMARY; this only picks the cap. Undetermined resolves to False (the
     frame lane, the wider cap), but never silently: losing this attribute chain would fetch
     `_FRAME_PARTIAL_UNEXPECTED_COUNT` locator rows out of a warehouse instead of
-    `_SQL_PARTIAL_UNEXPECTED_COUNT`, with identical results.
+    `_SQL_PARTIAL_UNEXPECTED_COUNT` — same sample, same totals, but a wider fetch and a
+    `value_signal_summary` the SQL lanes never emit at their own cap.
     """
     from great_expectations.datasource.fluent import SQLDatasource
 

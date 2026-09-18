@@ -199,8 +199,8 @@ def test_custom_sql_still_reports_its_unexpected_row_count(tmp_path: Path) -> No
 
 
 def test_undetermined_lane_falls_back_loudly() -> None:
-    """A GX rename of the `data_asset` / `datasource` chain reverts the SQL lanes to the
-    unbounded COMPLETE fetch with identical results — invisible unless it says so.
+    """A GX rename of the `data_asset` / `datasource` chain drops the SQL lanes onto the frame
+    lane's wider cap — a larger locator fetch out of the warehouse, invisible unless it says so.
     """
     from structlog.testing import capture_logs
 
