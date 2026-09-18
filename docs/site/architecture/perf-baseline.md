@@ -607,3 +607,60 @@ the subquery form throughout — there is no crossover where the old shape wins:
 | 20,000 | 26.0 ms | 27.6 ms |
 
 ---
+
+## v1.2 — the dashboard summary
+
+Captured on PostgreSQL 16 against a seeded scratch database — 36 days of runs
+across 20 suites and 5 connections, three results per succeeded run — measured
+at the service layer through the same code path the API calls, with statement
+counts taken from the SQLAlchemy engine rather than inferred.
+
+The dashboard summary was the slowest read in the product by an order of
+magnitude, and the only one that was **linear in run count** while every list
+endpoint stayed flat. It computed six window aggregates — the result-status
+histogram, the run count and the mean run duration — **twice each**, once for
+the trailing window and once for the previous equivalent window that the
+period-over-period deltas compare against.
+
+The two windows are strictly adjacent, so one scan of `[now − 2 × window, ∞)`
+with a `FILTER` clause per bucket and window produces both. The run count and the
+mean duration are aggregates over the *same* rows, so they collapse into the same
+pass as well.
+
+### Measured
+
+p50 / p95 over the whole summary, statement count per call:
+
+| rows in `runs` | before | after |
+|---|---|---|
+| 100,000 | 64.1 ms / 67.8 ms, **10 statements** | **37.5 ms / 39.3 ms, 6 statements** |
+| 1,000,000 | 459.7 ms / 474.6 ms, **10 statements** | **345.2 ms / 353.2 ms, 6 statements** |
+
+Every KPI, delta, trend point and per-suite score is unchanged at both scales —
+asserted in the test suite against the previous per-window implementation, kept
+as the oracle rather than against transcribed numbers.
+
+### No index was added, and why
+
+Two candidate indexes were built on the 1-million-row database and measured:
+`results (created_at, run_id, status)` and `runs (suite_id, status, id)`.
+
+They **do** change the plan — the status histogram's parallel sequential scan of
+`results` and its bitmap heap scan of `runs` both become parallel index-only
+scans. But the statement moves only 240 ms → 207 ms and the end-to-end summary
+345 ms → 328 ms, because what dominates is the hash join and aggregation of ~1
+million result rows, which no index removes. A 2 % read gain is not worth
+permanent write amplification on the two tables every single run writes to.
+
+### What is left, and what would actually fix it
+
+At 1 million runs the summary is still ~345 ms, and ~185 ms of that is the one
+status histogram. It is linear because it genuinely aggregates every result in a
+two-window span, and the join cannot be bounded from the `runs` side: a result is
+written *during* its run, so a result inside the window can belong to a run that
+started before it.
+
+The honest next step is a **materialised per-day rollup** — which the trend
+query already wants — read by the summary instead of the raw tables. That is a
+different shape (a write path, a backfill and a staleness contract), so it is
+tracked separately rather than folded in here.
