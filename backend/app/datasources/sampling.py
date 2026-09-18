@@ -1,4 +1,14 @@
-"""Scale-aware execution: the sampling spec + the scan guardrail (#595, G-b)."""
+"""Scale-aware execution: the sampling spec + the scan guardrail (#595, G-b).
+
+Two layering decisions, both recorded as "leave it" (#1330). The
+sample / probe-and-refuse / read policy stays written once per runner: what it
+probes differs (flat-file bytes off a stat, UC rows off a COUNT) and so does what
+a sample IS (a local stream walk vs a pushed-down TABLESAMPLE), so a shared
+skeleton would be a three-line shape with two divergent bodies. And the runners
+read `get_settings()` for the caps at the point of use rather than taking them as
+constructor arguments — a cap then applies to the next run with nothing to thread
+through the registry, and tests override it with the settings fixture.
+"""
 
 from __future__ import annotations
 
