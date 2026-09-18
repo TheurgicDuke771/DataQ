@@ -2501,10 +2501,94 @@ def test_read_csv_projected_sample_raises_a_classified_error_on_an_oversized_row
     content = b"id,payload\n" + (b"x" * (8 * 1024 * 1024))
     _patch_store(monkeypatch, content=content)
 
-    with pytest.raises(flatfile.FlatFileReadError, match="did not fit"):
+    with pytest.raises(flatfile.FlatFileReadError, match="scan cap"):
         flatfile.read_csv_projected_sample(
             conn_type="s3", config={}, path="raw/huge_row.csv", secret="s", rows=100
         )
+
+
+def _wide_ok_csv(rows: int) -> bytes:
+    """Well-formed (never malformed) but wide enough that reaching a large
+    ``rows`` target costs more bytes than a small scan cap allows.
+    """
+    return b"id,payload\n" + b"".join(f"{i},{'x' * 50}\n".encode() for i in range(rows))
+
+
+def test_read_csv_projected_sample_raises_when_the_target_needs_more_than_the_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Rows here are entirely well-formed — the failure is that REACHING the
+    requested sample size costs more bytes than the configured cap, not that
+    any single row is broken. Before the cap became unconditional, a frame
+    that already held some rows was treated as "making progress" and the
+    window kept doubling past the cap toward the object's own size — silently
+    reintroducing the exact unbounded read #2000 exists to fix.
+    """
+    _set_cap(monkeypatch, "RUN_MAX_SCAN_BYTES", 2 * 1024 * 1024)
+    content = _wide_ok_csv(200_000)
+    _patch_store(monkeypatch, content=content)
+
+    with pytest.raises(flatfile.FlatFileReadError, match="scan cap"):
+        flatfile.read_csv_projected_sample(
+            conn_type="s3", config={}, path="raw/wide_ok.csv", secret="s", rows=50_000
+        )
+
+
+def test_read_csv_projected_sample_scan_cap_disabled_allows_growth_past_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``RUN_MAX_SCAN_BYTES=0`` disables the scan cap entirely, matching the
+    existing `enforce_byte_cap`/`enforce_sample_cap` convention elsewhere in
+    this module — the SAME wide file the capped test above refuses is read to
+    completion here.
+    """
+    _set_cap(monkeypatch, "RUN_MAX_SCAN_BYTES", 0)
+    content = _wide_ok_csv(200_000)
+    _patch_store(monkeypatch, content=content)
+
+    frame = flatfile.read_csv_projected_sample(
+        conn_type="s3", config={}, path="raw/wide_ok.csv", secret="s", rows=50_000
+    )
+    assert len(frame) == 50_000
+
+
+def test_a_sampled_run_is_bounded_by_the_scan_cap_too(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The scan-byte cap defaults onto every `_csv_head_frame` caller, not just
+    the profiler's — a suite-run sample of a legitimately wide CSV must not
+    silently walk the window out toward the whole object either.
+    """
+    _set_cap(monkeypatch, "RUN_MAX_SCAN_BYTES", 2 * 1024 * 1024)
+    content = _wide_ok_csv(200_000)
+    _patch_store(monkeypatch, content=content)
+
+    with pytest.raises(flatfile.FlatFileReadError, match="scan cap"):
+        flatfile.read_sampled_dataframe(
+            conn_type="s3",
+            config={},
+            path="raw/wide_ok.csv",
+            secret="s",
+            sample=SampleSpec(strategy="head", rows=50_000),
+        )
+
+
+def test_read_csv_projected_sample_builds_one_store_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#2000 review: threading ``session=None`` through every doubling read let
+    each `_extend_window` call open and tear down its own throwaway client —
+    N+1 client constructions per profile where the old whole-object read made
+    exactly one. Patches the CLIENT FACTORY (`_fake_s3`), not `read_range`,
+    which is blind to client construction by definition.
+    """
+    log = _fake_s3(monkeypatch, _csv_bytes(400_000))
+
+    frame = flatfile.read_csv_projected_sample(
+        conn_type="s3", config=_S3_CONFIG, path="raw/big.csv", secret="s", rows=200_000
+    )
+
+    assert len(frame) == 200_000
+    assert len(log["ranges"]) > 1, "one request only — this test would pass trivially"
+    assert len(log["clients"]) == 1
 
 
 def test_a_row_count_expectation_is_refused_on_a_sampled_flat_file(
