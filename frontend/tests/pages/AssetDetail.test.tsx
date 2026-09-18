@@ -16,7 +16,8 @@ vi.mock('../../src/api/assets', () => ({ getAsset: vi.fn(), updateAsset: vi.fn()
 vi.mock('../../src/api/admin', () => ({ listAdminUsers: vi.fn() }));
 // The AssetDetail now renders the IncidentsPanel, which fetches incidents on
 // mount — stub it out here (its own behaviour is covered in IncidentsPanel.test).
-vi.mock('../../src/api/incidents', () => ({
+vi.mock('../../src/api/incidents', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/api/incidents')>()),
   listIncidents: vi.fn().mockResolvedValue([]),
   acknowledgeIncident: vi.fn(),
   resolveIncident: vi.fn(),

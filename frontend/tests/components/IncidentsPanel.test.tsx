@@ -13,7 +13,8 @@ import {
 } from '../../src/api/incidents';
 import { IncidentsPanel } from '../../src/components/assets/IncidentsPanel';
 
-vi.mock('../../src/api/incidents', () => ({
+vi.mock('../../src/api/incidents', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/api/incidents')>()),
   listIncidents: vi.fn(),
   acknowledgeIncident: vi.fn(),
   resolveIncident: vi.fn(),
