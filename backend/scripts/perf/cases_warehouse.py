@@ -370,13 +370,16 @@ def _run_unity_catalog(rows: int) -> list[Metric]:
             elapsed = time.perf_counter() - started
     finally:
         runner.close()
-    return _run_metrics(
-        elapsed=elapsed,
-        rows=rows,
-        checks=len(outcome.checks),
-        counters=counters,
-        frame_seam=True,
-    )
+    return [
+        *_run_metrics(
+            elapsed=elapsed,
+            rows=rows,
+            checks=len(outcome.checks),
+            counters=counters,
+            frame_seam=True,
+        ),
+        *_outcome_metrics(outcome),
+    ]
 
 
 # ──────────────────────────────── iceberg ────────────────────────────────
@@ -409,7 +412,7 @@ def _iceberg_metrics(config: dict[str, Any], secret: str | None, identifier: str
         frame_seam=True,
     )
     metrics.append(Metric("planned_rows", float(planned), "rows", "exact"))
-    return metrics
+    return [*metrics, *_outcome_metrics(outcome)]
 
 
 def _run_iceberg_live() -> list[Metric]:

@@ -1151,19 +1151,22 @@ def test_the_volume_scan_fallback_is_capped_too(monkeypatch: pytest.MonkeyPatch)
     assert fake.scan_calls == 0
 
 
-def test_the_iceberg_cap_is_its_own_measured_number_not_the_shared_one(
+def test_the_iceberg_cap_tracks_the_shared_one_at_the_measured_ratio(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from backend.app.core.config import Settings
-
-    monkeypatch.setenv("RUN_MAX_SCAN_ROWS", "700")
+    monkeypatch.delenv("RUN_MAX_SCAN_ROWS", raising=False)
     monkeypatch.delenv("RUN_MAX_SCAN_ROWS_ICEBERG", raising=False)
     get_settings.cache_clear()
-    # Unset is the measured default — it must admit the 2M rung Iceberg survives.
+    # The defaults must admit the 2M rung Iceberg is measured to survive.
     assert get_settings().iceberg_scan_row_cap == 3_000_000
-    assert (
-        Settings(run_max_scan_rows=700, run_max_scan_rows_iceberg=None).iceberg_scan_row_cap == 700
-    )
+    # Unset TRACKS the shared cap: an operator sizing down a smaller worker, or turning
+    # the guardrail off, must move Iceberg with it rather than leave 3M in force.
+    monkeypatch.setenv("RUN_MAX_SCAN_ROWS", "700")
+    get_settings.cache_clear()
+    assert get_settings().iceberg_scan_row_cap == 1_400
+    monkeypatch.setenv("RUN_MAX_SCAN_ROWS", "0")
+    get_settings.cache_clear()
+    assert get_settings().iceberg_scan_row_cap == 0
     monkeypatch.setenv("RUN_MAX_SCAN_ROWS_ICEBERG", "900")
     get_settings.cache_clear()
     assert get_settings().iceberg_scan_row_cap == 900

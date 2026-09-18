@@ -262,8 +262,9 @@ that would stamp "sampled" on a result that was not.
   deliberately not the scan's own `count()`, which materialises a merge-on-read
   task in full in order to count it, so counting to decide whether to materialise
   would perform the very read being refused. The **value** lives in its own setting,
-  `RUN_MAX_SCAN_ROWS_ICEBERG` = **3,000,000**, read off the curve below rather than
-  inherited: Iceberg passed at 2M rows where UC died at 2M, so sharing UC's 1.5M
+  `RUN_MAX_SCAN_ROWS_ICEBERG`, which when unset tracks `RUN_MAX_SCAN_ROWS` at a
+  measured 2× ratio — **3,000,000** at the default, and still lowered or disabled
+  together with the shared cap — read off the curve below rather than inherited: Iceberg passed at 2M rows where UC died at 2M, so sharing UC's 1.5M
   would refuse a rung measured to work. Sampling stays out of scope (`row_filter`
   + a scan limit is its own piece of work).
 
