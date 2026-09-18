@@ -254,12 +254,20 @@ that would stamp "sampled" on a result that was not.
 - **Unity Catalog needs a live run.** The pushdown SQL is DataQ's own
   construction and is unit-pinned, but `TABLESAMPLE (x PERCENT) REPEATABLE (seed)`
   behaviour is a Databricks fact — only a live run is evidence.
-- **Iceberg has neither a cap nor sampling.** It is the third
-  runner that materialises a whole dataset, so the out-of-memory-reporting gap
-  stays open there. The probe is
-  cheap (`scan().count()` is snapshot metadata); what it needs first is its **own
-  measurement** — Iceberg passed at 2M rows where UC died, so inheriting
-  `RUN_MAX_SCAN_ROWS`'s 1.5M would refuse a rung measured to work.
+- **Iceberg now has a cap; it does not have sampling, and its cap value is not yet
+  measured.** The guardrail shipped: the probe plans the scan's files and sums
+  their manifest record counts — never a data read — and refuses an over-cap read
+  before `to_arrow()`, on the expectation path and on both monitor
+  scan-fallbacks; it is skipped entirely when the cap is disabled. It is
+  deliberately not the scan's own `count()`, which materialises a merge-on-read
+  task in full in order to count it, so counting to decide whether to materialise
+  would perform the very read being refused. The **value** lives in its own setting,
+  `RUN_MAX_SCAN_ROWS_ICEBERG`, defaulting to "inherit `RUN_MAX_SCAN_ROWS`" —
+  Iceberg passed at 2M rows where UC died at 2M, so the inherited 1.5M would
+  refuse a rung measured to work, and the real ceiling is somewhere between 2M
+  (passed) and 5M (killed the container). Until that curve is run on the
+  prod-parity rig the shared number is a placeholder, not a decision. Sampling
+  stays out of scope (`row_filter` + a scan limit is its own piece of work).
 - **Comparison sources cannot sample — decided: not supported**, see
   [ADR 0015's 2026-09-16 amendment](../adr/0015-two-connection-comparison-check-model.md#amendment-2026-09-16-comparison-sources-do-not-support-sampling).
   Coherent key-set sampling — draw a key set, then fetch exactly those keys
@@ -420,7 +428,7 @@ Snowflake ramp above.
 - **Widening the pushdown allowlist** stays a per-type audited decision
   (unity_catalog.py:168-182) — each additional expectation type needs its own
   live-verification pass before joining `SQL_PUSHDOWN_EXPECTATION_TYPES`.
-- **The failing-row fetch is now bounded in SQL, not after the fact.**
+- **The failing-row fetch is now bounded where it is built, on every lane.**
   Every rung above was measured on a suite whose checks mostly *passed*, which is
   the case the old result format survived. Under `COMPLETE`, GX LIMITs the
   locator query to `partial_unexpected_count` but emits the unexpected-*values*
@@ -430,11 +438,26 @@ Snowflake ramp above.
   `MAX_RESULT_RECORDS` (200), the warehouse-side work was not. Both SQL lanes
   (Snowflake, UC pushdown + custom SQL) now run `SUMMARY` with
   `partial_unexpected_count = SAMPLE_ROW_CAP`, which puts the same `LIMIT` on
-  both queries and returns the identical rows; the frame lanes keep `COMPLETE`.
+  both queries and returns the identical rows.
+  The **frame lanes** (flat file, Iceberg, the UC DataFrame batch) were left on
+  `COMPLETE` on the reasoning that pandas holds the batch anyway and the locator
+  list is capped at capture. The measurement in the flat-file section below
+  contradicts the first half: the cap at capture bounds what is *persisted*, and
+  `COMPLETE` is the one format whose pandas locator metric is never sliced, so a
+  check failing on 1M of 1M rows built a million-element list — a dict per
+  failing row, assembled by per-cell lookups, when an identifier column is
+  configured. They now run `SUMMARY` too, at a wider cap: the deepest reader of
+  that list is not the 20-row sample but the value-signal summary, which scans
+  the first 5,000 rows, so the cap is 5,000 and the summary reads exactly the
+  rows it read before.
   **Residual:** an `observed_value` that is itself a list (the distinct-values
   expectations) is still bounded only at capture, and a custom-SQL check is the
   user's own statement — GX reads at most 200 rows of it, but the warehouse-side
-  cost of the query is theirs.
+  cost of the query is theirs. On the frame lanes, two costs survive the result
+  format because they are inside GX: the boolean-mask filter copies the failing
+  subset of the frame per failing check, and with an identifier column configured
+  the full locator list is still assembled before it is sliced. A widely-failing
+  check is therefore ~2.6x a passing one at 1M rows, down from ~20x.
 - **Beyond 200M** was not measured — this campaign matched Snowflake's tested
   ceiling rather than exceeding it. Nothing in the pushdown/custom-SQL mechanism
   (both are pure warehouse-side SQL, same as Snowflake's path) suggests a
@@ -675,8 +698,9 @@ Medians of 5 runs per tier, each in its own process. The suites are the same
 5 expectations every campaign on this page has used (not-null ×2, between ×2,
 unique ×1, all passing) and a 25-expectation extension in which **8 checks fail
 widely** — that second column is a data property, not a suite-size property, and
-the difference between the two is the most expensive finding here. The tables
-are a snapshot from the first capture on the development rig; the committed
+the gap between the two was the most expensive finding here until the frame
+lanes' result format was bounded. The tables
+are a snapshot of a capture on the development rig; the committed
 machine-readable baseline is the authoritative copy and is refreshed whenever a
 gated metric changes on purpose (its `git_sha` says which commit it measured).
 
@@ -684,39 +708,47 @@ gated metric changes on purpose (its `git_sha` says which commit it measured).
 
 | Object | Rows | Mode | Wall, 5 checks | Peak RSS | Wall, 25 checks (8 failing) | Peak RSS |
 |---|---|---|---|---|---|---|
-| CSV | 100k (4.6 MB) | full | 0.08 s | 387 MiB | 1.29 s | 461 MiB |
-| CSV | 1M (48 MB) | full | 0.63 s | 745 MiB | **12.59 s** | **1,578 MiB** |
-| CSV | 5M (245 MB) | full | 4.02 s | 2,118 MiB | **63.75 s** | **4,890 MiB** |
-| CSV | 1M | `head` 100k | 0.15 s | 425 MiB | 1.35 s | 492 MiB |
-| CSV | 5M | `head` 100k | 0.14 s | 419 MiB | 1.36 s | 512 MiB |
-| CSV | 5M | `random` 100k | 3.40 s | 564 MiB | 4.61 s | 643 MiB |
-| Parquet | 100k (2.4 MB) | full | 0.12 s | 368 MiB | 1.47 s | 450 MiB |
-| Parquet | 1M (21 MB) | full | 0.47 s | 554 MiB | **13.12 s** | **1,467 MiB** |
-| Parquet | 5M (105 MB) | full | 2.01 s | 1,279 MiB | **65.08 s** | **4,733 MiB** |
-| Parquet | 1M | `head` 100k | 0.09 s | 396 MiB | 1.38 s | 477 MiB |
-| Parquet | 5M | `head` 100k | 0.09 s | 403 MiB | 1.38 s | 483 MiB |
-| Parquet | 5M | `random` 100k | 0.17 s | 501 MiB | 1.46 s | 560 MiB |
+| CSV | 100k (4.6 MB) | full | 0.09 s | 392 MiB | 0.29 s | 410 MiB |
+| CSV | 1M (48 MB) | full | 0.64 s | 754 MiB | **1.54 s** | **990 MiB** |
+| CSV | 5M (245 MB) | full | 4.26 s | 2,109 MiB | **8.74 s** | **2,563 MiB** |
+| CSV | 1M | `head` 100k | 0.15 s | 444 MiB | 0.35 s | 472 MiB |
+| CSV | 5M | `head` 100k | 0.15 s | 463 MiB | 0.36 s | 483 MiB |
+| CSV | 5M | `random` 100k | 1.73 s | 563 MiB | 2.00 s | 611 MiB |
+| Parquet | 100k (2.4 MB) | full | 0.12 s | 369 MiB | 0.41 s | 391 MiB |
+| Parquet | 1M (21 MB) | full | 0.48 s | 557 MiB | **2.23 s** | **808 MiB** |
+| Parquet | 5M (105 MB) | full | 2.06 s | 1,274 MiB | **10.14 s** | **1,858 MiB** |
+| Parquet | 1M | `head` 100k | 0.10 s | 401 MiB | 0.38 s | 409 MiB |
+| Parquet | 5M | `head` 100k | 0.10 s | 406 MiB | 0.38 s | 432 MiB |
+| Parquet | 5M | `random` 100k | 0.18 s | 501 MiB | 0.46 s | 512 MiB |
+
+The bolded column is the one that moved: it is a **post-fix** capture. Before the
+frame lanes' result format was bounded the same rows read 12.50 s / 1,527 MiB
+(CSV 1M) and 63.75 s / 5,457 MiB (CSV 5M) — see finding 1 below.
 
 The floor — interpreter, GX and pyarrow with a 100k-row frame — is ~370 MiB on
 this rig, so read the deltas, not the absolutes.
 
-1. **Throughput is flat in row count and collapses on failing checks.** All-passing,
-   the runner sustains 1.2–2.5M rows/s at every tier. With 8 widely-failing checks
-   it drops to ~77k rows/s *at every tier* — the same number for 100k and 5M rows,
-   which is the signature of per-failing-row work rather than per-row work.
-   Isolated on the same 1M-row file with the same 25 expectations, an all-passing
-   suite runs in 0.55 s / 751 MiB and an 8-failing one in **12.40 s / 1,525 MiB**.
-   The frame lanes ask GX for the `COMPLETE` result format on the reasoning that
-   pandas already holds the batch; what that costs is a full unexpected-value list
-   built per failing check. Filed separately.
+1. **Throughput is flat in row count, and failing checks no longer collapse it.**
+   All-passing, the runner sustains 1.2–2.5M rows/s at every tier. The first
+   capture measured 8 widely-failing checks at ~77k rows/s *at every tier* — the
+   same number for 100k and 5M rows, which is the signature of per-failing-row
+   work rather than per-row work, and on the same 1M-row file an all-passing
+   suite ran in 0.55 s / 751 MiB against an 8-failing one at **12.40 s /
+   1,525 MiB**. The cause was the `COMPLETE` result format on the frame lanes,
+   which asks GX for a locator entry per failing row; bounding it where GX
+   *builds* it took the same 1M case to **1.59 s / 1,018 MiB** and the 5M case
+   from 65.70 s / 5,364 MiB to **9.26 s / 2,586 MiB** — the difference between a
+   run and a SIGKILL on a 2 GiB worker. The rows in the table above are the
+   post-fix capture; the residual gap to an all-passing suite is measured in the
+   Unity-Catalog section's "Still open" list.
 2. **Sampling removes the volume axis entirely.** `head` is 0.09–0.15 s and
    ~400–500 MiB regardless of whether the object holds 1M or 5M rows, because it
    stops reading. That is the same conclusion the v1.1 section reached, now
    attached to a budget that would notice if it stopped being true.
 3. **`random` on CSV is the one sampled path that still scales with the object**:
-   3.40 s at 5M against `head`'s 0.14 s, because it streams the file to learn the
-   population size and then streams it again to take the draw. Parquet pays
-   almost nothing for the same mode (footer read).
+   1.73 s at 5M against `head`'s 0.15 s, because it has to stream the whole file
+   to take a uniform draw — one pass now, not two. Parquet pays almost nothing
+   for the same mode (footer read).
 
 #### What each mode asks the store for
 
@@ -725,14 +757,14 @@ Deterministic, and therefore the part the budget gates:
 | Object | Mode | Bytes read | Store calls |
 |---|---|---|---|
 | CSV 5M (245 MB) | full | 245,055,978 | 1 |
-| CSV 5M | `head` 100k | 15,728,640 | 5 |
-| CSV 5M | `random` 100k | **490,243,028** | 64 |
+| CSV 5M | `head` 100k | 8,388,608 | 6 |
+| CSV 5M | `random` 100k | **245,055,978** | 32 |
 | Parquet 5M (105 MB) | full | 104,861,528 | 1 |
-| Parquet 5M | `head` 100k | 31,920,512 | 3 |
-| Parquet 5M | `random` 100k | 104,985,982 | 8 |
+| Parquet 5M | `head` 100k | 31,920,512 | 4 |
+| Parquet 5M | `random` 100k | 104,985,982 | 9 |
 
-The CSV `random` row reads **twice the object** — the count pass and the take
-pass — which is a known single-pass follow-up, now with a number on it.
+The CSV `random` row reads **the whole object once** — it has to, to draw
+uniformly without knowing the row count up front. It used to read it twice.
 
 #### Concurrent peak — what four prefork children want at once
 

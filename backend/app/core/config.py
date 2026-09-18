@@ -240,6 +240,10 @@ class Settings(BaseSettings):
     # run may materialise, checked by a cheap probe BEFORE the read.
     run_max_scan_bytes: int = Field(default=134_217_728, ge=0)
     run_max_scan_rows: int = Field(default=1_500_000, ge=0)
+    # Iceberg's own row cap (#1328). `None` = inherit `run_max_scan_rows`; the two datasources
+    # have separately-measured ceilings, so one number is shared only while it refuses no rung
+    # either is measured to survive.
+    run_max_scan_rows_iceberg: int | None = Field(default=None, ge=0)
 
     # ── Worker memory admission control (#1998) ─────────────────────────────── The caps above
     # bound ONE run's read; this bounds the SUM across the prefork children of one worker
@@ -411,6 +415,13 @@ class Settings(BaseSettings):
         """
         normalized = (email or "").strip().lower()
         return bool(normalized) and normalized in self.workspace_admin_email_set
+
+    @property
+    def iceberg_scan_row_cap(self) -> int:
+        """The Iceberg row cap in force — its own setting, or `run_max_scan_rows`."""
+        if self.run_max_scan_rows_iceberg is None:
+            return self.run_max_scan_rows
+        return self.run_max_scan_rows_iceberg
 
     @property
     def cors_allow_origin_list(self) -> list[str]:

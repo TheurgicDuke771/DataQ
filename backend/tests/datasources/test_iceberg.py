@@ -10,6 +10,7 @@ import pyarrow as pa
 import pytest
 from pydantic import ValidationError
 
+from backend.app.core.config import get_settings
 from backend.app.datasources import iceberg as iceberg_mod
 from backend.app.datasources.base import CheckSpec, MonitorSpec
 from backend.app.datasources.iceberg import (
@@ -21,6 +22,7 @@ from backend.app.datasources.iceberg import (
     list_iceberg_columns,
     read_iceberg_dataframe,
 )
+from backend.app.datasources.sampling import ScanTooLargeError
 from backend.tests.support.fake_secret_store import FakeSecretStore
 
 _REST_CONFIG = {
@@ -689,10 +691,12 @@ _NO_DELETES = {
 }
 
 
-def _bounds_file(field_id: int, raw: bytes | None) -> Any:
+def _bounds_file(field_id: int, raw: bytes | None, *, record_count: int = 1) -> Any:
     from types import SimpleNamespace
 
-    return SimpleNamespace(file=SimpleNamespace(upper_bounds={field_id: raw} if raw else {}))
+    return SimpleNamespace(
+        file=SimpleNamespace(upper_bounds={field_id: raw} if raw else {}, record_count=record_count)
+    )
 
 
 def test_volume_answers_from_snapshot_summary_without_scanning(
@@ -807,6 +811,7 @@ def test_freshness_falls_back_when_row_level_deletes_present(
     assert outcome.observed_value is not None
     assert outcome.observed_value["source"] == "scan-fallback"
     assert "total-delete-files=3" in outcome.observed_value["fallback_reason"]
+    # Still one: the #1328 cap probe plans files, it does not scan (see the test below).
     assert fake.scan_calls == 1
 
 
@@ -917,7 +922,10 @@ def test_freshness_falls_back_when_scan_tasks_carry_delete_files(
     recent = datetime.now(UTC) - timedelta(hours=2)
     task = SimpleNamespace(
         file=SimpleNamespace(
-            upper_bounds={field_id: to_bytes(TimestamptzType(), int(stale.timestamp() * 1_000_000))}
+            upper_bounds={
+                field_id: to_bytes(TimestamptzType(), int(stale.timestamp() * 1_000_000))
+            },
+            record_count=1,
         ),
         delete_files=[object()],  # live row-level deletes on this task
     )
@@ -968,3 +976,238 @@ def test_supported_monitor_kinds_is_explicit() -> None:
     # #880 review: NEVER frozenset(MONITOR_KINDS) — that would auto-advertise every future registry
     # kind and self-defeat the per-kind gate.
     assert IcebergCheckRunner.supported_monitor_kinds == frozenset({"freshness", "volume"})
+
+
+# ───────────────────────── scan cap (#1328), over a REAL local catalog ─
+
+
+def _local_catalog(tmp_path: Any) -> tuple[Any, dict[str, Any]]:
+    """A real `pyiceberg` SQL catalog over sqlite + a `file://` warehouse.
+
+    What this guard branches on — `scan().count()`'s type, what a snapshot-less
+    table answers — comes from the driver, so a mocked table would only confirm
+    the fixture (#953).
+    """
+    from pyiceberg.catalog.sql import SqlCatalog
+
+    warehouse = tmp_path / "warehouse"
+    warehouse.mkdir()
+    properties = {
+        "catalog_name": "local",
+        "catalog_type": "sql",
+        "catalog_uri": f"sqlite:///{tmp_path}/catalog.db",
+        "warehouse": f"file://{warehouse}",
+    }
+    catalog = SqlCatalog("local", uri=properties["catalog_uri"], warehouse=properties["warehouse"])
+    catalog.create_namespace("sales")
+    return catalog, properties
+
+
+def _local_runner(properties: dict[str, Any]) -> IcebergCheckRunner:
+    return IcebergCheckRunner(config=IcebergConfig.model_validate(properties), secret=None)
+
+
+def _order_table(catalog: Any, name: str, rows: int) -> Any:
+    table = catalog.create_table(name, schema=pa.schema([("id", pa.int64())]))
+    if rows:
+        table.append(pa.table({"id": pa.array(range(rows), pa.int64())}))
+    return table
+
+
+_NOT_NULL_ID = CheckSpec("expect_column_values_to_not_be_null", {"column": "id"})
+
+
+def test_an_oversized_iceberg_table_is_refused_before_the_read(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#755 on the third materialising runner: a sentence naming the knob rather
+    than a SIGKILLed child and a run stuck `running`."""
+    monkeypatch.setenv("RUN_MAX_SCAN_ROWS_ICEBERG", "2")
+    get_settings.cache_clear()
+    catalog, properties = _local_catalog(tmp_path)
+    _order_table(catalog, "sales.orders", 3)
+    monkeypatch.setattr(
+        iceberg_mod,
+        "_to_arrow_backed_pandas",
+        lambda _arrow: pytest.fail("the snapshot must not be materialised"),
+    )
+    with pytest.raises(ScanTooLargeError) as raised:
+        _local_runner(properties).run_checks(
+            table="sales.orders", schema=None, checks=[_NOT_NULL_ID]
+        )
+    message = str(raised.value)
+    assert "3 rows, over the scan cap of 2" in message
+    assert "RUN_MAX_SCAN_ROWS_ICEBERG" in message
+    # Iceberg is outside SAMPLING_CAPABLE_TYPES — advising a sample would send the
+    # reader at a spec the save-time gate refuses.
+    assert "sampling strategy" not in message
+
+
+def test_an_under_cap_iceberg_table_runs(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RUN_MAX_SCAN_ROWS_ICEBERG", "10")
+    get_settings.cache_clear()
+    catalog, properties = _local_catalog(tmp_path)
+    _order_table(catalog, "sales.orders", 3)
+    outcome = _local_runner(properties).run_checks(
+        table="sales.orders", schema=None, checks=[_NOT_NULL_ID]
+    )
+    assert outcome.success is True
+
+
+def test_a_disabled_cap_skips_the_iceberg_count_probe_entirely(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The off-switch has to be genuinely off: no probe when nobody reads it."""
+    monkeypatch.setenv("RUN_MAX_SCAN_ROWS_ICEBERG", "0")
+    get_settings.cache_clear()
+    catalog, properties = _local_catalog(tmp_path)
+    _order_table(catalog, "sales.orders", 3)
+    monkeypatch.setattr(
+        iceberg_mod,
+        "scan_row_count",
+        lambda _table: pytest.fail("no count probe when the cap is off"),
+    )
+    outcome = _local_runner(properties).run_checks(
+        table="sales.orders", schema=None, checks=[_NOT_NULL_ID]
+    )
+    assert outcome.success is True
+
+
+def test_a_snapshot_less_iceberg_table_counts_zero_and_runs(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A table created but never written has no current snapshot — the probe must
+    answer 0 rather than raise, or an empty table would be unrunnable."""
+    monkeypatch.setenv("RUN_MAX_SCAN_ROWS_ICEBERG", "2")
+    get_settings.cache_clear()
+    catalog, properties = _local_catalog(tmp_path)
+    table = _order_table(catalog, "sales.empty", 0)
+    assert table.current_snapshot() is None
+    count = iceberg_mod.scan_row_count(table)
+    assert count == 0 and isinstance(count, int)
+    outcome = _local_runner(properties).run_checks(
+        table="sales.empty", schema=None, checks=[_NOT_NULL_ID]
+    )
+    assert outcome.success is True
+
+
+def test_the_probe_never_counts_through_the_driver(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`DataScan.count()` sums record counts from metadata ONLY while a task carries
+    no delete files; a merge-on-read task is materialised in full to be counted. So
+    counting to decide whether to materialise would, on exactly the tables this
+    guard exists for, perform the read it is refusing. The probe plans files and
+    sums `record_count` instead — manifests, never data.
+
+    pyiceberg cannot WRITE a delete file (0.11.1 falls back to copy-on-write), so no
+    local catalog can produce the adversarial table; what is pinned here is that the
+    guard never reaches `count()` at all.
+    """
+    monkeypatch.setenv("RUN_MAX_SCAN_ROWS_ICEBERG", "2")
+    get_settings.cache_clear()
+    monkeypatch.setattr(
+        _FakeScan, "count", lambda _self: pytest.fail("the cap probe must not call count()")
+    )
+    schema, field_id = _tz_field_schema()
+    fake = _FakeTable(
+        pd.DataFrame({"loaded_at": [datetime.now(UTC)]}),
+        snapshot=_FakeSnapshot({"total-delete-files": "3"}),
+        schema=schema,
+        files=[_bounds_file(field_id, None, record_count=3)],
+    )
+    with pytest.raises(ScanTooLargeError, match="3 rows, over the scan cap of 2"):
+        iceberg_mod.enforce_iceberg_row_cap(fake, target="sales.orders")
+    assert fake.scan_calls == 0  # planning is metadata — no data path touched
+
+
+def test_planned_row_count_sums_the_manifests_of_a_real_table(tmp_path: Any) -> None:
+    catalog, _properties = _local_catalog(tmp_path)
+    table = _order_table(catalog, "sales.orders", 3)
+    table.append(pa.table({"id": pa.array([9, 10], pa.int64())}))  # a second data file
+    planned = iceberg_mod.planned_row_count(table)
+    assert planned == 5 and isinstance(planned, int)
+    assert iceberg_mod.planned_row_count(_order_table(catalog, "sales.empty", 0)) == 0
+
+
+def test_the_volume_scan_fallback_is_capped_too(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The exact count a volume monitor needs is the materialising one on a
+    merge-on-read table, so it is guarded like a read (#1328)."""
+    monkeypatch.setenv("RUN_MAX_SCAN_ROWS_ICEBERG", "2")
+    get_settings.cache_clear()
+    fake = _FakeTable(
+        pd.DataFrame({"id": [1, 2, 3]}),
+        snapshot=_FakeSnapshot({"op": "append"}),  # no total-records → scan fallback
+        files=[_bounds_file(1, None, record_count=3)],
+    )
+    runner = IcebergCheckRunner(config=IcebergConfig.model_validate(_REST_CONFIG), secret="tok")
+    monkeypatch.setattr(runner, "_load_table", lambda identifier: fake)
+    [outcome] = runner.run_monitors(
+        table="sales.orders",
+        schema=None,
+        monitors=[MonitorSpec("volume", {"min_rows": 1, "max_rows": 100})],
+    )
+    assert outcome.errored is True
+    assert outcome.error_message is not None
+    assert "over the scan cap of 2" in outcome.error_message
+    assert fake.scan_calls == 0
+
+
+def test_the_cap_inherits_run_max_scan_rows_until_its_own_is_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RUN_MAX_SCAN_ROWS", "700")
+    monkeypatch.delenv("RUN_MAX_SCAN_ROWS_ICEBERG", raising=False)
+    get_settings.cache_clear()
+    assert get_settings().iceberg_scan_row_cap == 700
+    monkeypatch.setenv("RUN_MAX_SCAN_ROWS_ICEBERG", "900")
+    get_settings.cache_clear()
+    assert get_settings().iceberg_scan_row_cap == 900
+    # 0 is a VALUE (the cap is off), never "unset" — the two must not collapse.
+    monkeypatch.setenv("RUN_MAX_SCAN_ROWS_ICEBERG", "0")
+    get_settings.cache_clear()
+    assert get_settings().iceberg_scan_row_cap == 0
+
+
+def test_the_freshness_scan_fallback_is_capped_too(monkeypatch: pytest.MonkeyPatch) -> None:
+    """One column of every row is still every row — the sibling door (#1328)."""
+    monkeypatch.setenv("RUN_MAX_SCAN_ROWS_ICEBERG", "2")
+    get_settings.cache_clear()
+    schema, field_id = _tz_field_schema()
+    fake = _FakeTable(
+        pd.DataFrame({"loaded_at": [datetime.now(UTC) - timedelta(hours=2)] * 3}),
+        snapshot=_FakeSnapshot({"total-delete-files": "3"}),
+        schema=schema,
+        files=[_bounds_file(field_id, None, record_count=3)],
+    )
+    runner = IcebergCheckRunner(config=IcebergConfig.model_validate(_REST_CONFIG), secret="tok")
+    monkeypatch.setattr(runner, "_load_table", lambda identifier: fake)
+    [outcome] = runner.run_monitors(
+        table="sales.orders",
+        schema=None,
+        monitors=[MonitorSpec("freshness", {"column": "loaded_at"})],
+    )
+    assert outcome.errored is True
+    assert outcome.error_message is not None
+    assert "over the scan cap of 2" in outcome.error_message
+    assert fake.scan_calls == 0  # refused before the column scan
+
+
+def test_the_comparison_dataset_reader_is_unaffected_by_the_run_cap(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The comparison side has its own bound (`COMPARISON_MAX_ROWS`); the run cap
+    must not silently become a second, tighter one."""
+    from backend.app.db.models import Connection
+    from backend.app.services.dataset_reader import DatasetSpec, read_dataset
+
+    monkeypatch.setenv("RUN_MAX_SCAN_ROWS_ICEBERG", "1")
+    get_settings.cache_clear()
+    catalog, properties = _local_catalog(tmp_path)
+    _order_table(catalog, "sales.orders", 3)
+    connection = Connection(name="ice", type="iceberg", env="dev", config=properties)
+    frame = read_dataset(
+        connection,
+        DatasetSpec(table="sales.orders"),
+        max_rows=100,
+        secret_store=FakeSecretStore(),
+    )
+    assert len(frame) == 3
