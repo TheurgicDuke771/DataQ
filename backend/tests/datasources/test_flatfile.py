@@ -1413,6 +1413,23 @@ def test_object_size_adls_reads_size_and_closes(monkeypatch: pytest.MonkeyPatch)
     assert stub.closed  # the finally must release the connection pool
 
 
+def test_object_size_refuses_a_stat_that_carries_no_length(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`file_stat` models a length-less stat (`size=None`); sharing its one HEAD
+    means `object_size` can now be handed one. It must refuse, not hand a `None`
+    back to a `RangeReader` that would arithmetic on it.
+    """
+    stub = _RangeBlobStub()
+    monkeypatch.setattr(flatfile, "_blob_service", lambda acfg, secret: stub)
+    monkeypatch.setattr(flatfile, "_head_stat", lambda ses, path: flatfile.FileStat(_LANDED, None))
+
+    with pytest.raises(flatfile.FlatFileReadError):
+        flatfile.object_size(
+            conn_type="adls_gen2", config=_ADLS_CONFIG, path="orders/a.csv", secret="sas"
+        )
+
+
 def test_read_range_of_nothing_asks_the_store_for_nothing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

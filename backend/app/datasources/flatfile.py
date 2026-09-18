@@ -290,10 +290,9 @@ def object_size(
         known = ses.sizes.get(path)
         if known is not None:
             return known
-        if conn_type == "s3":
-            size: int = ses.s3.head_object(Bucket=ses.s3_config.bucket, Key=path)["ContentLength"]
-        else:
-            size = ses.blob(path).get_blob_properties().size
+        size = _head_stat(ses, path).size
+        if size is None:
+            raise FlatFileReadError(f"the store reported no byte length for {path!r}")
         ses.sizes[path] = size
         return size
 
@@ -756,6 +755,18 @@ class FileStat:
     size: int | None = None
 
 
+def _head_stat(ses: StoreSession, path: str) -> FileStat:
+    """The ONE metadata call behind both `file_stat` and `object_size` (#1330) —
+    they asked the same store API for overlapping halves of one answer. A missing
+    object raises here; `file_stat` is the caller that maps that to an empty stat.
+    """
+    if ses.conn_type == "s3":
+        head = ses.s3.head_object(Bucket=ses.s3_config.bucket, Key=path)
+        return FileStat(last_modified=head.get("LastModified"), size=head.get("ContentLength"))
+    properties = ses.blob(path).get_blob_properties()
+    return FileStat(last_modified=properties.last_modified, size=properties.size)
+
+
 def file_stat(
     *,
     conn_type: str,
@@ -770,20 +781,18 @@ def file_stat(
             from botocore.exceptions import ClientError
 
             try:
-                head = ses.s3.head_object(Bucket=ses.s3_config.bucket, Key=path)
+                return _head_stat(ses, path)
             except ClientError as exc:
                 if exc.response.get("Error", {}).get("Code") in {"404", "NoSuchKey", "NotFound"}:
                     return FileStat()
                 raise
-            return FileStat(last_modified=head.get("LastModified"), size=head.get("ContentLength"))
 
         from azure.core.exceptions import ResourceNotFoundError
 
         try:
-            properties = ses.blob(path).get_blob_properties()
+            return _head_stat(ses, path)
         except ResourceNotFoundError:
             return FileStat()
-        return FileStat(last_modified=properties.last_modified, size=properties.size)
 
 
 def file_last_modified(
