@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
@@ -15,6 +16,26 @@ SAMPLE_ROW_CAP = 20
 # Sub-key inside a persisted `sample_failures` payload holding the capture-time, full-population
 # value-signal summary (#1230).
 VALUE_SIGNAL_SUMMARY_KEY = "value_signal_summary"
+
+
+def parse_whole_number(
+    value: Any,
+    *,
+    what: str,
+    error: Callable[[str], Exception],
+    echo: Callable[[Any], str] = repr,
+) -> int:
+    """One integer-from-config rule for every config parser in this layer (#1330):
+    ``bool`` rejected (an int subclass — ``True`` would pass as 1), integral floats
+    accepted (JSON clients). Callers supply their own error type and wording.
+    """
+    if isinstance(value, bool):
+        raise error(f"{what} must be an integer, not a boolean")
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    if not isinstance(value, int):
+        raise error(f"{what} must be an integer: {echo(value)}")
+    return value
 
 
 @dataclass(frozen=True)

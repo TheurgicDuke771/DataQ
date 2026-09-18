@@ -17,6 +17,7 @@ from backend.app.datasources.base import (
     CheckSpec,
     SampleSpec,
     SuiteOutcome,
+    parse_whole_number,
 )
 
 #: Structural bound only (the memory guardrail is ``RUN_MAX_SCAN_ROWS``) —
@@ -92,13 +93,7 @@ def parse_sample_spec(raw: Any) -> SampleSpec:
 def _whole_number(value: Any, field: str) -> int | None:
     if value is None:
         return None
-    if isinstance(value, bool):
-        raise SamplingConfigError(f"sampling {field} must be an integer, not a boolean")
-    if isinstance(value, float) and value.is_integer():
-        value = int(value)
-    if not isinstance(value, int):
-        raise SamplingConfigError(f"sampling {field} must be an integer: {value!r}")
-    return value
+    return parse_whole_number(value, what=f"sampling {field}", error=SamplingConfigError)
 
 
 def sample_row_indices(*, total: int, rows: int, seed: int | None) -> list[int] | None:
