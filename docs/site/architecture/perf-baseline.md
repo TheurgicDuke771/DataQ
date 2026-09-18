@@ -783,7 +783,7 @@ p50 / p95 in milliseconds, page 1, over a scratch PostgreSQL 16 seeded with
 | `/runs` list (50) | 1.10 / 1.27 | 1.23 / 1.34 | 1.14 / 1.29 | 1 |
 | `/runs` `X-Total-Count` | 1.04 / 1.35 | 6.10 / 7.90 | **22.20 / 23.66** | 1 |
 | run detail (`list_results`) | 0.57 / 0.61 | 0.56 / 0.60 | 0.96 / 1.10 | 1 |
-| **`/dashboard/summary` (7 days)** | 15.12 / 16.51 | 68.56 / 71.35 | **386.14 / 391.89** | **10** |
+| **`/dashboard/summary` (7 days)** | 8.75 / 9.60 | 49.54 / 50.51 | **309.02 / 317.42** | **6** |
 | `/incidents` list (100) | 2.08 / 2.29 | 2.19 / 2.54 | 2.24 / 2.46 | 1 |
 | `/incidents` `X-Total-Count` | 1.35 / 1.43 | 5.88 / 6.10 | 7.02 / 7.16 | 1 |
 | `/pipeline_runs` list (50) | 0.95 / 1.05 | 1.07 / 1.23 | 1.71 / 1.80 | 1 |
@@ -792,10 +792,12 @@ p50 / p95 in milliseconds, page 1, over a scratch PostgreSQL 16 seeded with
 Every **list** read is flat in table size — the newest-first ordering indexes
 doing exactly what the section above them predicted. Two reads are not:
 
-- **`/dashboard/summary` is linear and dominant** — 25× the slowest list at 1M
-  rows, and the first thing a user loads. It issues ten statements: six window
-  aggregates, each computed twice for the period-over-period deltas, plus the
-  trend and per-suite queries. Filed separately.
+- **`/dashboard/summary` is linear and dominant** — still 14× the slowest list at
+  1M rows, and the first thing a user loads. It originally issued **ten**
+  statements, because each of six window aggregates was computed twice for the
+  period-over-period deltas; collapsing those into one pass per aggregate took it
+  to six and the 1M number from 386 ms to 309 ms (see the section below). It is
+  still linear, and what remains needs a different shape, not a better query.
 - **`X-Total-Count` on `/runs` grows with the table** (1.0 → 22.2 ms), which the
   index section above already called out as the new page-1 cost; this puts the
   1M-row number on it.
@@ -839,22 +841,31 @@ does with the keys once it has them.
 #### Profiler on a wide table
 
 200,000 rows, profiling every column (the flat-file profiler samples the first
-100k rows):
+100k rows). The CSV path used to `download_bytes` the whole object before
+applying its row/column limits; it now shares the same doubling-window bounded
+head read the sampled suite-run path uses (`read_csv_projected_sample` over
+`_csv_head_frame`), growing only until it holds the sample or hits EOF:
 
-| Object | Columns | Wall | Peak RSS | Bytes read | Store calls |
+| Object | Columns | Wall | Peak RSS | Bytes read (was) | Store calls (was) |
 |---|---|---|---|---|---|
-| CSV (39 MB) | 50 | 0.12 s | 479 MiB | **38,902,153** | 1 |
-| CSV (156 MB) | 200 | 0.48 s | 850 MiB | **155,606,664** | 1 |
+| CSV (39 MB) | 50 | 0.35 s | 757 MiB | **33,554,432** (38,902,153) | 7 (1) |
+| CSV (156 MB) | 200 | 1.35 s | 1898 MiB | **134,217,728** (155,606,664) | 9 (1) |
 | Parquet (13 MB) | 50 | 0.12 s | 412 MiB | 12,828,601 | 3 |
 | Parquet (51 MB) | 200 | 0.39 s | 606 MiB | 51,211,169 | 5 |
 
-Wall scales with column count as expected. The asymmetry is in the reads: the
-Parquet path projects the requested columns and streams batches through range
-requests, while **the CSV path downloads the entire object** to parse its first
-100k rows — so profiling four columns of a multi-gigabyte CSV transfers the whole
-file. Filed separately. (The warehouse profiler's batched rank-join, the
-post-optimisation number this page records elsewhere, is not measured here — see
-the not-measured table below.)
+The Parquet path is unchanged (it already projected columns and streamed range
+requests). The CSV path now reads a bounded prefix instead of the whole
+object — the store-egress reduction the fix targets — but the doubling window
+reparses its whole buffered prefix from byte 0 on every growth step, so on a
+wide/dense file (many small store round trips, each a full CPU-bound reparse)
+wall time and peak RSS both went *up* on this local-disk harness, where store
+latency is near zero and the reparse cost dominates. Against a real S3/ADLS
+store the egress reduction is the one that matters in production cost terms;
+the RSS/CPU trade-off is tracked separately as a follow-up, since it is shared
+with the sampled suite-run path and worth fixing once, not reworked here.
+(The warehouse profiler's batched rank-join, the post-optimisation number this
+page records elsewhere, is not measured here — see the not-measured table
+below.)
 
 ### What is explicitly NOT measured here
 
@@ -899,3 +910,63 @@ yet, and building them is tracked separately.
 Refreshing the committed baseline is deliberate — `run --tag ci --repeat 7 --out
 backend/scripts/perf/baseline.json` — and a PR that does it should say why the
 number moved.
+
+## v1.2 — the dashboard summary
+
+The summary is the one read the section above found **linear in run count** while
+every list endpoint stayed flat, and it is the first thing a user loads. It
+computed six window aggregates — the result-status histogram, the run count and
+the mean run duration — **twice each**, once for the trailing window and once for
+the previous equivalent window the period-over-period deltas compare against.
+
+The two windows are strictly adjacent, so one scan of `[now − 2 × window, ∞)`
+with a `FILTER` clause per bucket and window produces both. The run count and the
+mean duration aggregate the *same* rows, so they collapse into that pass as well.
+
+### Measured
+
+Through the benchmark above (`db_read` family, same rig, same seeding), p50 /
+p95 in milliseconds with the statement count the budget gates:
+
+| rows in `runs` | before | after |
+|---|---|---|
+| 10,000 | 15.12 / 16.51, **10 statements** | **8.75 / 9.60, 6** |
+| 100,000 | 68.56 / 71.35, **10** | **49.54 / 50.51, 6** |
+| 1,000,000 | 386.14 / 391.89, **10** | **309.02 / 317.42, 6** |
+
+Every KPI, delta, trend point and per-suite score is unchanged — asserted in the
+test suite against the previous per-window implementation, kept as the oracle
+rather than against transcribed numbers.
+
+The picture is the same on a heavier seed (three results per run over 36 days,
+so the histogram has three times the rows to aggregate): 64.1 → 37.5 ms p50 at
+100k, 459.7 → 345.2 ms at 1M.
+
+### No index was added, and why
+
+Two candidates were built on a 1-million-row database and measured with
+`EXPLAIN (ANALYZE, BUFFERS)`: `results (created_at, run_id, status)` and
+`runs (suite_id, status, id)`.
+
+They **do** change the plan — the status histogram's parallel sequential scan of
+`results` and its bitmap heap scan of `runs` both become parallel index-only
+scans. The statement moves 240 ms → 207 ms and the whole summary 345 ms → 328 ms,
+because what dominates is the hash join and aggregation of ~1 million result
+rows, which no index removes. A ~2 % read gain does not pay for permanent write
+amplification on the two tables every single run writes to.
+
+The newest-first ordering indexes are no help either: these are aggregates over a
+window, not an ordered page, so there is nothing for a `DESC` index to serve.
+
+### What is left, and what would actually fix it
+
+At 1 million runs the summary is still ~309 ms, and the single status histogram
+is most of it. It is linear because it genuinely aggregates every result row in a
+two-window span, and **the join cannot be bounded from the `runs` side**: a
+result is written *during* its run, so a result inside the window can belong to a
+run that started before it. Adding that predicate would be faster and wrong.
+
+The next step is a **materialised per-day rollup** — which the trend query
+already wants — read by the summary instead of the raw tables. That is a write
+path, a backfill and a staleness contract rather than a query rewrite, so it is
+tracked separately.
