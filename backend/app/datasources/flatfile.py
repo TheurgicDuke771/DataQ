@@ -850,12 +850,16 @@ class FlatFileCheckRunner:
             self._stats[path] = stat
         return stat
 
-    def _guard_object_size(self, path: str, *, stat: FileStat | None = None) -> None:
-        """Refuse a full-object read exceeding ``RUN_MAX_SCAN_BYTES`` (#595)."""
+    def _guard_object_size(self, path: str) -> None:
+        """Refuse a full-object read exceeding ``RUN_MAX_SCAN_BYTES`` (#595).
+
+        Re-probing is prevented by `_stat`'s memo alone (#1330) — a second
+        don't-re-probe mechanism beside it was one too many.
+        """
         cap = get_settings().run_max_scan_bytes
         if cap <= 0:
             return
-        size = (stat or self._stat(path)).size
+        size = self._stat(path).size
         if size is not None:
             enforce_byte_cap(size, cap=cap, target=f"file {path!r}")
 
@@ -926,7 +930,7 @@ class FlatFileCheckRunner:
         def dataframe() -> Any:
             # Guardrail raised OUTSIDE `_memoized` — its except would fold the actionable over-cap
             # message into the vague FlatFileReadError.
-            self._guard_object_size(table, stat=stat)
+            self._guard_object_size(table)
             return _memoized(
                 attempt,
                 lambda: read_dataframe(
