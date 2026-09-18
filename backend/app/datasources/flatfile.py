@@ -198,8 +198,9 @@ class StoreSession:
         self._adls_config: AdlsConfig | None = None
         #: Clients constructed by this session — asserted by the seam tests.
         self.clients_created = 0
-        #: Byte sizes already known per path. The runner's `FileStat` memo seeds
-        #: this, so a sampled read never re-HEADs an object already stat'd (#1329).
+        #: Byte sizes already known per path, for THIS session's lifetime only —
+        #: it dedups the count→take pair of one sampled read (#1329), never
+        #: seeded from a caller's own, possibly stale, stat (#2004).
         self.sizes: dict[str, int] = {}
 
     @property
@@ -616,19 +617,20 @@ def read_sampled_dataframe(
     path: str,
     secret: str,
     sample: SampleSpec,
-    stat: FileStat | None = None,
 ) -> tuple[Any, dict[str, Any]]:
     """A bounded sample of a flat file, plus the record of what was sampled (#595).
 
-    ``stat`` is the caller's already-fetched metadata for ``path``; passing it
-    spares the readers a second HEAD of the same object (#1329).
+    Always probes the object's OWN metadata fresh rather than accepting a
+    caller's already-fetched stat — a runner's stat memo can predate this read
+    by a whole checks phase, and seeding from it silently bounded a sample (and
+    its `total_rows`) to a size the object may have long since grown past
+    (#2004). Uniform with `_counted_rows`: the read's whole job is to describe
+    the object as it stands now.
     """
     fmt = format_from_path(path)
     if fmt is None:
         raise ValueError(f"unsupported flat-file format for path {path!r}")
     with StoreSession(conn_type=conn_type, config=config, secret=secret) as session:
-        if stat is not None and stat.size is not None:
-            session.sizes[path] = stat.size
         return _sampled_frame(
             {
                 "conn_type": conn_type,
@@ -885,7 +887,6 @@ class FlatFileCheckRunner:
                 path=path,
                 secret=self._secret,
                 sample=self._sampling,
-                stat=self._stat(path),
             )
         self._guard_object_size(path)
         frame = read_dataframe(
