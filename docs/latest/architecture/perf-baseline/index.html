@@ -1898,6 +1898,45 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#v12-the-suite-visibility-predicate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.2 — the suite-visibility predicate
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v1.2 — the suite-visibility predicate">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#alternatives-measured-and-rejected" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Alternatives measured and rejected
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sensitivity-to-workspace-size" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sensitivity to workspace size
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2759,6 +2798,45 @@
     <span class="md-ellipsis">
       
         Two findings this leaves open
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v12-the-suite-visibility-predicate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.2 — the suite-visibility predicate
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v1.2 — the suite-visibility predicate">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#alternatives-measured-and-rejected" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Alternatives measured and rejected
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sensitivity-to-workspace-size" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sensitivity to workspace size
       
     </span>
   </a>
@@ -3780,12 +3858,229 @@ on three high-write tables is not worth a case nothing asks for.</p>
 <li><strong>The <code>X-Total-Count</code> COUNT now dominates page 1.</strong> It has no <code>ORDER BY</code>, so
    these indexes cannot serve it: <code>/runs</code> 20.5 ms, <code>/incidents</code> 13.6 ms,
    <code>/pipeline_runs</code> 6.6 ms — against a list that is now 0.03–0.10 ms. Page 1 of
-   <code>/runs</code> is ~250× more COUNT than list.</li>
+   <code>/runs</code> is ~250× more COUNT than list. <em>Addressed below.</em></li>
 <li><strong><code>OFFSET</code> is still linear.</strong> At offset 90k the database walks and discards
    90,000 index entries: <code>/runs</code> 32.1 ms, <code>/incidents</code> 25.1 ms. The ordering is
    already total, which is the precondition for keyset/seek paging, but that
    changes the request contract and is tracked separately.</li>
 </ol>
+<h2 id="v12-the-suite-visibility-predicate">v1.2 — the suite-visibility predicate<a class="headerlink" href="#v12-the-suite-visibility-predicate" title="Permanent link">¶</a></h2>
+<p>Same scratch database and method. Every <code>/runs</code> and <code>/incidents</code> read — page
+<em>and</em> <code>X-Total-Count</code> — is scoped to the caller's accessible suites. That
+predicate was <code>suite_id IN (SELECT id FROM suites WHERE …)</code>, which PostgreSQL
+plans as a <strong>hash join evaluated against every candidate row</strong>. On <code>/runs</code> the
+index-only scan of 150,000 entries costs 4.6 ms; the join on top of it costs
+another 10 ms, so the visibility check — not the counting — was most of the
+total.</p>
+<p>Rewriting it as <code>suite_id = ANY (ARRAY(SELECT id FROM suites WHERE …))</code> makes
+the suite set an <strong>InitPlan evaluated once</strong>, and the predicate an index
+condition. The population selected is identical, so the count stays exact and
+the response contract is untouched.</p>
+<table>
+<thead>
+<tr>
+<th>COUNT (<code>X-Total-Count</code>)</th>
+<th>before</th>
+<th>after</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/runs</code> unfiltered</td>
+<td>20.4 ms</td>
+<td><strong>8.9 ms</strong></td>
+</tr>
+<tr>
+<td><code>/runs</code> workspace-admin</td>
+<td>16.8 ms</td>
+<td><strong>8.7 ms</strong></td>
+</tr>
+<tr>
+<td><code>/runs</code> <code>?status=failed</code></td>
+<td>4.7 ms</td>
+<td>3.8 ms</td>
+</tr>
+<tr>
+<td><code>/runs</code> <code>?suite_id=</code></td>
+<td>1.5 ms</td>
+<td>0.9 ms</td>
+</tr>
+<tr>
+<td><code>/incidents</code> unfiltered</td>
+<td>14.0 ms</td>
+<td><strong>7.8 ms</strong></td>
+</tr>
+<tr>
+<td><code>/incidents</code> workspace-admin</td>
+<td>14.1 ms</td>
+<td><strong>7.0 ms</strong></td>
+</tr>
+<tr>
+<td><code>/incidents</code> <code>?state=open</code></td>
+<td>4.7 ms</td>
+<td>3.6 ms</td>
+</tr>
+<tr>
+<td><code>/incidents</code> <code>?suite_id=</code></td>
+<td>1.2 ms</td>
+<td>0.8 ms</td>
+</tr>
+<tr>
+<td><code>/pipeline_runs</code> unfiltered</td>
+<td>6.5 ms</td>
+<td>6.8 ms (unchanged — no suite scoping)</td>
+</tr>
+</tbody>
+</table>
+<p>For a workspace-admin the predicate is skipped entirely rather than rewritten:
+<code>suite_id</code> is a <code>NOT NULL</code> foreign key to <code>suites.id</code>, so "every suite" excludes
+nothing, and building the array would make the one caller who sees the most rows
+pay for a filter that does no filtering.</p>
+<p>Multi-predicate shapes were measured too, because an array whose contents the
+planner cannot see changes its row estimate, and a bare <code>COUNT(*)</code> has only one
+plan to choose from and so cannot expose that. Every combination the filter
+helpers actually build improves:</p>
+<table>
+<thead>
+<tr>
+<th>combined filters</th>
+<th>before</th>
+<th>after</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/runs</code> <code>?status=</code> + 30-day window, COUNT</td>
+<td>6.35 ms</td>
+<td>4.87 ms</td>
+</tr>
+<tr>
+<td><code>/runs</code> 7-day window, COUNT</td>
+<td>13.36 ms</td>
+<td>10.15 ms</td>
+</tr>
+<tr>
+<td><code>/runs</code> 30-day window with an exclusion, COUNT</td>
+<td>13.68 ms</td>
+<td>10.13 ms</td>
+</tr>
+<tr>
+<td><code>/incidents</code> <code>?asset_id=</code> + <code>?state=</code>, COUNT</td>
+<td>0.064 ms</td>
+<td>0.049 ms</td>
+</tr>
+<tr>
+<td><code>/incidents</code> <code>?state=</code> + 7-day window, COUNT</td>
+<td>2.79 ms</td>
+<td>2.51 ms</td>
+</tr>
+<tr>
+<td><code>/incidents</code> <code>?state=</code> + 7-day window, page</td>
+<td>0.109 ms</td>
+<td>0.085 ms</td>
+</tr>
+</tbody>
+</table>
+<p>The page shares the predicate with its total, so it improves too — including at
+depth, which is the one part of the <code>OFFSET</code> problem this reaches:</p>
+<table>
+<thead>
+<tr>
+<th>list page</th>
+<th>before</th>
+<th>after</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/runs</code> offset 0</td>
+<td>0.11 ms</td>
+<td>0.05 ms</td>
+</tr>
+<tr>
+<td><code>/runs</code> offset 10k</td>
+<td>2.47 ms</td>
+<td>1.02 ms</td>
+</tr>
+<tr>
+<td><code>/runs</code> offset 90k</td>
+<td>22.0 ms</td>
+<td><strong>9.2 ms</strong></td>
+</tr>
+<tr>
+<td><code>/incidents</code> offset 0</td>
+<td>0.08 ms</td>
+<td>0.05 ms</td>
+</tr>
+<tr>
+<td><code>/incidents</code> offset 10k</td>
+<td>3.24 ms</td>
+<td>1.56 ms</td>
+</tr>
+</tbody>
+</table>
+<p><code>/pipeline_runs</code> is orchestration monitoring with no suite scoping at all; its
+COUNT was already a bare index-only scan over the whole table, which is the
+floor for an exact count and is left alone.</p>
+<h3 id="alternatives-measured-and-rejected">Alternatives measured and rejected<a class="headerlink" href="#alternatives-measured-and-rejected" title="Permanent link">¶</a></h3>
+<ul>
+<li><strong>One statement via <code>count(*) OVER ()</code>.</strong> Sharing a single scan between the
+  page and its total sounds cheaper and is not: the window function must consume
+  every matching row before <code>LIMIT</code> applies, which discards the ordering index
+  entirely — <strong>48.9 ms</strong> against 8.9 ms for the separate count plus 0.05 ms for
+  the page.</li>
+<li><strong>A better index for the COUNT.</strong> There is none to find. The count was already
+  an index-only scan with zero heap fetches; an exact count is <code>O(matching
+  rows)</code> and 150,000 narrow index entries cost 4.6 ms, which is the floor.</li>
+<li><strong>Counting only on the first page.</strong> The SPA reads the total on <em>every</em> fetch —
+  the pagination control's row count and the "loaded N of M" truncation banner
+  both depend on it — so dropping it on deeper pages is a client-visible change,
+  not an optimisation.</li>
+<li><strong>An estimated count above a threshold.</strong> Rejected while an exact count is
+  affordable: a header named <code>X-Total-Count</code> that sometimes holds an estimate is
+  the confident-wrong-answer shape, and labelling it honestly is a contract
+  change.</li>
+</ul>
+<h3 id="sensitivity-to-workspace-size">Sensitivity to workspace size<a class="headerlink" href="#sensitivity-to-workspace-size" title="Permanent link">¶</a></h3>
+<p>The array is built from however many suites the caller can see. Measured with
+decoy suites added to the accessible set, the array form stays at or ahead of
+the subquery form throughout — there is no crossover where the old shape wins:</p>
+<table>
+<thead>
+<tr>
+<th>accessible suites</th>
+<th><code>= ANY (ARRAY(…))</code></th>
+<th><code>IN (SELECT …)</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>10</td>
+<td>8.3 ms</td>
+<td>11.3 ms</td>
+</tr>
+<tr>
+<td>100</td>
+<td>8.7 ms</td>
+<td>11.3 ms</td>
+</tr>
+<tr>
+<td>1,000</td>
+<td>9.4 ms</td>
+<td>12.9 ms</td>
+</tr>
+<tr>
+<td>5,000</td>
+<td>12.6 ms</td>
+<td>15.2 ms</td>
+</tr>
+<tr>
+<td>20,000</td>
+<td>26.0 ms</td>
+<td>27.6 ms</td>
+</tr>
+</tbody>
+</table>
 <hr>
 
 
