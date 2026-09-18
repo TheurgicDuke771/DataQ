@@ -4964,7 +4964,10 @@ cost of a 100k-object listing against S3 or ADLS — this measures only what Dat
 does with the keys once it has them.</p>
 <h4 id="profiler-on-a-wide-table">Profiler on a wide table<a class="headerlink" href="#profiler-on-a-wide-table" title="Permanent link">¶</a></h4>
 <p>200,000 rows, profiling every column (the flat-file profiler samples the first
-100k rows):</p>
+100k rows). The CSV path used to <code>download_bytes</code> the whole object before
+applying its row/column limits; it now shares the same doubling-window bounded
+head read the sampled suite-run path uses (<code>read_csv_projected_sample</code> over
+<code>_csv_head_frame</code>), growing only until it holds the sample or hits EOF:</p>
 <table>
 <thead>
 <tr>
@@ -4972,26 +4975,26 @@ does with the keys once it has them.</p>
 <th>Columns</th>
 <th>Wall</th>
 <th>Peak RSS</th>
-<th>Bytes read</th>
-<th>Store calls</th>
+<th>Bytes read (was)</th>
+<th>Store calls (was)</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>CSV (39 MB)</td>
 <td>50</td>
-<td>0.12 s</td>
-<td>479 MiB</td>
-<td><strong>38,902,153</strong></td>
-<td>1</td>
+<td>0.35 s</td>
+<td>757 MiB</td>
+<td><strong>33,554,432</strong> (38,902,153)</td>
+<td>7 (1)</td>
 </tr>
 <tr>
 <td>CSV (156 MB)</td>
 <td>200</td>
-<td>0.48 s</td>
-<td>850 MiB</td>
-<td><strong>155,606,664</strong></td>
-<td>1</td>
+<td>1.35 s</td>
+<td>1898 MiB</td>
+<td><strong>134,217,728</strong> (155,606,664)</td>
+<td>9 (1)</td>
 </tr>
 <tr>
 <td>Parquet (13 MB)</td>
@@ -5011,13 +5014,19 @@ does with the keys once it has them.</p>
 </tr>
 </tbody>
 </table>
-<p>Wall scales with column count as expected. The asymmetry is in the reads: the
-Parquet path projects the requested columns and streams batches through range
-requests, while <strong>the CSV path downloads the entire object</strong> to parse its first
-100k rows — so profiling four columns of a multi-gigabyte CSV transfers the whole
-file. Filed separately. (The warehouse profiler's batched rank-join, the
-post-optimisation number this page records elsewhere, is not measured here — see
-the not-measured table below.)</p>
+<p>The Parquet path is unchanged (it already projected columns and streamed range
+requests). The CSV path now reads a bounded prefix instead of the whole
+object — the store-egress reduction the fix targets — but the doubling window
+reparses its whole buffered prefix from byte 0 on every growth step, so on a
+wide/dense file (many small store round trips, each a full CPU-bound reparse)
+wall time and peak RSS both went <em>up</em> on this local-disk harness, where store
+latency is near zero and the reparse cost dominates. Against a real S3/ADLS
+store the egress reduction is the one that matters in production cost terms;
+the RSS/CPU trade-off is tracked separately as a follow-up, since it is shared
+with the sampled suite-run path and worth fixing once, not reworked here.
+(The warehouse profiler's batched rank-join, the post-optimisation number this
+page records elsewhere, is not measured here — see the not-measured table
+below.)</p>
 <h3 id="what-is-explicitly-not-measured-here">What is explicitly NOT measured here<a class="headerlink" href="#what-is-explicitly-not-measured-here" title="Permanent link">¶</a></h3>
 <p>A tier that simply does not appear in a result set reads as "nothing to report",
 so the warehouse tiers are registered as real cases and emit an explicit
