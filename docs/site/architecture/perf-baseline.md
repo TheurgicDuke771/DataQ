@@ -747,14 +747,14 @@ Deterministic, and therefore the part the budget gates:
 | Object | Mode | Bytes read | Store calls |
 |---|---|---|---|
 | CSV 5M (245 MB) | full | 245,055,978 | 1 |
-| CSV 5M | `head` 100k | 15,728,640 | 5 |
-| CSV 5M | `random` 100k | **490,243,028** | 64 |
+| CSV 5M | `head` 100k | 8,388,608 | 6 |
+| CSV 5M | `random` 100k | **245,055,978** | 32 |
 | Parquet 5M (105 MB) | full | 104,861,528 | 1 |
-| Parquet 5M | `head` 100k | 31,920,512 | 3 |
-| Parquet 5M | `random` 100k | 104,985,982 | 8 |
+| Parquet 5M | `head` 100k | 31,920,512 | 4 |
+| Parquet 5M | `random` 100k | 104,985,982 | 9 |
 
-The CSV `random` row reads **twice the object** — the count pass and the take
-pass — which is a known single-pass follow-up, now with a number on it.
+The CSV `random` row reads **the whole object once** — it has to, to draw
+uniformly without knowing the row count up front. It used to read it twice.
 
 #### Concurrent peak — what four prefork children want at once
 
