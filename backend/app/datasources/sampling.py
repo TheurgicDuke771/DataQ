@@ -62,10 +62,11 @@ def is_row_count_expectation(expectation_type: str) -> bool:
     return expectation_type in ROW_COUNT_EXPECTATION_TYPES
 
 
-def parse_sample_spec(raw: Any) -> SampleSpec | None:
-    """Validate a target's ``sampling`` block, or ``None`` when it has none."""
-    if raw is None:
-        return None
+def parse_sample_spec(raw: Any) -> SampleSpec:
+    """Validate a target's ``sampling`` block. The absent-block case belongs to
+    the caller: `registry._target_sampling` answers it before deciding whether the
+    datasource may be sampled at all.
+    """
     if not isinstance(raw, dict):
         raise SamplingConfigError(f"target 'sampling' must be an object: {raw!r}")
     strategy = raw.get("strategy")
