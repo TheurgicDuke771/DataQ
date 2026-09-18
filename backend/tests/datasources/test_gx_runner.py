@@ -190,8 +190,8 @@ def test_to_gx_expectation_non_dict_meta_surfaces_gx_error() -> None:
 
 
 def test_bounded_observed_value_caps_a_set_oriented_expectations_list() -> None:
-    # `expect_column_distinct_values_to_be_in_set` and siblings report the FULL observed distinct-
-    # value set under result_format="COMPLETE" — no upper bound.
+    # `expect_column_distinct_values_to_be_in_set` and siblings report the FULL observed
+    # distinct-value set on every result format — no upper bound.
     values = [f"user{i}@example.com" for i in range(5_000)]
     observed = _bounded_observed_value({"observed_value": values})
     assert observed is not None
@@ -345,8 +345,7 @@ def test_of_type_rewrite_never_fires_for_other_expectation_types() -> None:
 
 
 def test_extract_sample_failures_caps_row_lists() -> None:
-    # Under `result_format="COMPLETE"` the pandas engine hands back an untruncated
-    # `unexpected_index_list`.
+    # A legacy / hand-built COMPLETE result hands back an untruncated `unexpected_index_list`.
     rows: list[Any] = [{"customer_id": i, "order_number": None} for i in range(5_000)]
     sample = _extract_sample_failures(
         {
