@@ -78,6 +78,7 @@ exec docker run --rm \
   --user "$(id -u):$(id -g)" \
   --env PERF_DATA_DIR="$DATA_DIR" \
   --env HOME="$DATA_DIR" \
+  --env PERF_GIT_SHA="${PERF_GIT_SHA:-$(git rev-parse --short HEAD 2>/dev/null || echo unknown)}" \
   ${ENV_FLAGS[@]+"${ENV_FLAGS[@]}"} \
   --volume "$DATA_DIR:$DATA_DIR" \
   --workdir /workspace \

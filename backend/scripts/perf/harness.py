@@ -275,13 +275,20 @@ def rig() -> dict[str, Any]:
 
 
 def git_sha() -> str:
-    out = subprocess.run(  # nosec B603 B607
-        ["git", "rev-parse", "--short", "HEAD"],  # noqa: S607
-        capture_output=True,
-        text=True,
-        cwd=repo_root(),
-        check=False,
-    )
+    """`PERF_GIT_SHA` wins — the container rig has no git and no checkout."""
+    pinned = os.environ.get("PERF_GIT_SHA", "").strip()
+    if pinned:
+        return pinned
+    try:
+        out = subprocess.run(  # nosec B603 B607
+            ["git", "rev-parse", "--short", "HEAD"],  # noqa: S607
+            capture_output=True,
+            text=True,
+            cwd=repo_root(),
+            check=False,
+        )
+    except FileNotFoundError:
+        return "unknown"
     return out.stdout.strip() or "unknown"
 
 
