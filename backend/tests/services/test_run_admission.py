@@ -72,19 +72,25 @@ def _graph(
     return run, FakeSession(suite, connection, checks)
 
 
+class StubSecretStore:
+    def get(self, _ref: str) -> str:
+        return "sec"
+
+
+def _stub_secret_store(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(run_admission, "get_secret_store", StubSecretStore)
+
+
 @pytest.fixture
 def stub_flat_file(monkeypatch: pytest.MonkeyPatch) -> Any:
     """Stand in for the store's metadata call and the credential read."""
 
     def _stub(size: int | None) -> None:
-        import backend.app.datasources.flatfile as flatfile
+        def _stat(**_kw: Any) -> FileStat:
+            return FileStat(size=size)
 
-        monkeypatch.setattr(flatfile, "file_stat", lambda **_kw: FileStat(size=size))
-        monkeypatch.setattr(
-            run_admission,
-            "get_secret_store",
-            lambda: type("S", (), {"get": staticmethod(lambda _r: "sec")})(),
-        )
+        monkeypatch.setattr("backend.app.datasources.flatfile.file_stat", _stat)
+        _stub_secret_store(monkeypatch)
 
     return _stub
 
@@ -133,17 +139,11 @@ def test_an_unknown_object_size_reads_as_unknown_not_as_zero(stub_flat_file: Any
 
 
 def test_a_failed_probe_never_fails_the_run(monkeypatch: pytest.MonkeyPatch) -> None:
-    import backend.app.datasources.flatfile as flatfile
-
     def _boom(**_kw: Any) -> FileStat:
         raise RuntimeError("store unreachable")
 
-    monkeypatch.setattr(flatfile, "file_stat", _boom)
-    monkeypatch.setattr(
-        run_admission,
-        "get_secret_store",
-        lambda: type("S", (), {"get": staticmethod(lambda _r: "sec")})(),
-    )
+    monkeypatch.setattr("backend.app.datasources.flatfile.file_stat", _boom)
+    _stub_secret_store(monkeypatch)
     run, session = _graph("s3", target={"path": "raw/orders.csv"})
 
     assert run_admission.estimate_run_memory(_sess(session), run) is None
