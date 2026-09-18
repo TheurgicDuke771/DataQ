@@ -5,7 +5,7 @@ lazy engine lifecycle (#427), and the statement-echo strip (#1203).
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any, Final
 
 from backend.app.datasources.base import CheckSpec
@@ -55,7 +55,7 @@ def _quote_namespace_part(name: str, dialect: Dialect) -> str:
     return str(dialect.identifier_preparer.quote_identifier(name))
 
 
-def _require_identifiers(parts: Iterable[tuple[str | None, str]]) -> None:
+def _require_identifiers(parts: Sequence[tuple[str | None, str]]) -> None:
     """Allowlist-check each ``(part, label)`` in the caller's own order (#1330) —
     the order is the error the user sees first, so it stays with the caller.
     """

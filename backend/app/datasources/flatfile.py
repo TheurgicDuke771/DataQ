@@ -795,7 +795,10 @@ def file_stat(
 ) -> FileStat:
     """The store's metadata for exactly ``path`` (live seam, #520/#595)."""
     with _session(session, conn_type=conn_type, config=config, secret=secret) as ses:
-        if conn_type == "s3":
+        # `ses.conn_type`, not the parameter: `_session` yields a caller-supplied
+        # session as-is, and the store API and its not-found mapping must be
+        # chosen off the same source or a missing blob escapes the wrong `except`.
+        if ses.conn_type == "s3":
             from botocore.exceptions import ClientError
 
             try:
