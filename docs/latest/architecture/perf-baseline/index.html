@@ -4111,7 +4111,7 @@ Snowflake ramp above.</p>
 <li><strong>Widening the pushdown allowlist</strong> stays a per-type audited decision
   (unity_catalog.py:168-182) — each additional expectation type needs its own
   live-verification pass before joining <code>SQL_PUSHDOWN_EXPECTATION_TYPES</code>.</li>
-<li><strong>The failing-row fetch is now bounded in SQL, not after the fact.</strong>
+<li><strong>The failing-row fetch is now bounded where it is built, on every lane.</strong>
   Every rung above was measured on a suite whose checks mostly <em>passed</em>, which is
   the case the old result format survived. Under <code>COMPLETE</code>, GX LIMITs the
   locator query to <code>partial_unexpected_count</code> but emits the unexpected-<em>values</em>
@@ -4121,11 +4121,26 @@ Snowflake ramp above.</p>
   <code>MAX_RESULT_RECORDS</code> (200), the warehouse-side work was not. Both SQL lanes
   (Snowflake, UC pushdown + custom SQL) now run <code>SUMMARY</code> with
   <code>partial_unexpected_count = SAMPLE_ROW_CAP</code>, which puts the same <code>LIMIT</code> on
-  both queries and returns the identical rows; the frame lanes keep <code>COMPLETE</code>.
+  both queries and returns the identical rows.
+  The <strong>frame lanes</strong> (flat file, Iceberg, the UC DataFrame batch) were left on
+  <code>COMPLETE</code> on the reasoning that pandas holds the batch anyway and the locator
+  list is capped at capture. The measurement in the flat-file section below
+  contradicts the first half: the cap at capture bounds what is <em>persisted</em>, and
+  <code>COMPLETE</code> is the one format whose pandas locator metric is never sliced, so a
+  check failing on 1M of 1M rows built a million-element list — a dict per
+  failing row, assembled by per-cell lookups, when an identifier column is
+  configured. They now run <code>SUMMARY</code> too, at a wider cap: the deepest reader of
+  that list is not the 20-row sample but the value-signal summary, which scans
+  the first 5,000 rows, so the cap is 5,000 and the summary reads exactly the
+  rows it read before.
   <strong>Residual:</strong> an <code>observed_value</code> that is itself a list (the distinct-values
   expectations) is still bounded only at capture, and a custom-SQL check is the
   user's own statement — GX reads at most 200 rows of it, but the warehouse-side
-  cost of the query is theirs.</li>
+  cost of the query is theirs. On the frame lanes, two costs survive the result
+  format because they are inside GX: the boolean-mask filter copies the failing
+  subset of the frame per failing check, and with an identifier column configured
+  the full locator list is still assembled before it is sliced. A widely-failing
+  check is therefore ~2.6x a passing one at 1M rows, down from ~20x.</li>
 <li><strong>Beyond 200M</strong> was not measured — this campaign matched Snowflake's tested
   ceiling rather than exceeding it. Nothing in the pushdown/custom-SQL mechanism
   (both are pure warehouse-side SQL, same as Snowflake's path) suggests a
@@ -4577,8 +4592,9 @@ check as a phantom regression. CI runs <code>--gate exact --gate strict</code>.<
 5 expectations every campaign on this page has used (not-null ×2, between ×2,
 unique ×1, all passing) and a 25-expectation extension in which <strong>8 checks fail
 widely</strong> — that second column is a data property, not a suite-size property, and
-the difference between the two is the most expensive finding here. The tables
-are a snapshot from the first capture on the development rig; the committed
+the gap between the two was the most expensive finding here until the frame
+lanes' result format was bounded. The tables
+are a snapshot of a capture on the development rig; the committed
 machine-readable baseline is the authoritative copy and is refreshed whenever a
 gated metric changes on purpose (its <code>git_sha</code> says which commit it measured).</p>
 <h4 id="flat-file-runs-volume-checks-sampling">Flat-file runs — volume × checks × sampling<a class="headerlink" href="#flat-file-runs-volume-checks-sampling" title="Permanent link">¶</a></h4>
@@ -4599,132 +4615,139 @@ gated metric changes on purpose (its <code>git_sha</code> says which commit it m
 <td>CSV</td>
 <td>100k (4.6 MB)</td>
 <td>full</td>
-<td>0.08 s</td>
-<td>387 MiB</td>
-<td>1.29 s</td>
-<td>461 MiB</td>
+<td>0.09 s</td>
+<td>392 MiB</td>
+<td>0.29 s</td>
+<td>410 MiB</td>
 </tr>
 <tr>
 <td>CSV</td>
 <td>1M (48 MB)</td>
 <td>full</td>
-<td>0.63 s</td>
-<td>745 MiB</td>
-<td><strong>12.59 s</strong></td>
-<td><strong>1,578 MiB</strong></td>
+<td>0.64 s</td>
+<td>754 MiB</td>
+<td><strong>1.54 s</strong></td>
+<td><strong>990 MiB</strong></td>
 </tr>
 <tr>
 <td>CSV</td>
 <td>5M (245 MB)</td>
 <td>full</td>
-<td>4.02 s</td>
-<td>2,118 MiB</td>
-<td><strong>63.75 s</strong></td>
-<td><strong>4,890 MiB</strong></td>
+<td>4.26 s</td>
+<td>2,109 MiB</td>
+<td><strong>8.74 s</strong></td>
+<td><strong>2,563 MiB</strong></td>
 </tr>
 <tr>
 <td>CSV</td>
 <td>1M</td>
 <td><code>head</code> 100k</td>
 <td>0.15 s</td>
-<td>425 MiB</td>
-<td>1.35 s</td>
-<td>492 MiB</td>
+<td>444 MiB</td>
+<td>0.35 s</td>
+<td>472 MiB</td>
 </tr>
 <tr>
 <td>CSV</td>
 <td>5M</td>
 <td><code>head</code> 100k</td>
-<td>0.14 s</td>
-<td>419 MiB</td>
-<td>1.36 s</td>
-<td>512 MiB</td>
+<td>0.15 s</td>
+<td>463 MiB</td>
+<td>0.36 s</td>
+<td>483 MiB</td>
 </tr>
 <tr>
 <td>CSV</td>
 <td>5M</td>
 <td><code>random</code> 100k</td>
-<td>3.40 s</td>
-<td>564 MiB</td>
-<td>4.61 s</td>
-<td>643 MiB</td>
+<td>1.73 s</td>
+<td>563 MiB</td>
+<td>2.00 s</td>
+<td>611 MiB</td>
 </tr>
 <tr>
 <td>Parquet</td>
 <td>100k (2.4 MB)</td>
 <td>full</td>
 <td>0.12 s</td>
-<td>368 MiB</td>
-<td>1.47 s</td>
-<td>450 MiB</td>
+<td>369 MiB</td>
+<td>0.41 s</td>
+<td>391 MiB</td>
 </tr>
 <tr>
 <td>Parquet</td>
 <td>1M (21 MB)</td>
 <td>full</td>
-<td>0.47 s</td>
-<td>554 MiB</td>
-<td><strong>13.12 s</strong></td>
-<td><strong>1,467 MiB</strong></td>
+<td>0.48 s</td>
+<td>557 MiB</td>
+<td><strong>2.23 s</strong></td>
+<td><strong>808 MiB</strong></td>
 </tr>
 <tr>
 <td>Parquet</td>
 <td>5M (105 MB)</td>
 <td>full</td>
-<td>2.01 s</td>
-<td>1,279 MiB</td>
-<td><strong>65.08 s</strong></td>
-<td><strong>4,733 MiB</strong></td>
+<td>2.06 s</td>
+<td>1,274 MiB</td>
+<td><strong>10.14 s</strong></td>
+<td><strong>1,858 MiB</strong></td>
 </tr>
 <tr>
 <td>Parquet</td>
 <td>1M</td>
 <td><code>head</code> 100k</td>
-<td>0.09 s</td>
-<td>396 MiB</td>
-<td>1.38 s</td>
-<td>477 MiB</td>
+<td>0.10 s</td>
+<td>401 MiB</td>
+<td>0.38 s</td>
+<td>409 MiB</td>
 </tr>
 <tr>
 <td>Parquet</td>
 <td>5M</td>
 <td><code>head</code> 100k</td>
-<td>0.09 s</td>
-<td>403 MiB</td>
-<td>1.38 s</td>
-<td>483 MiB</td>
+<td>0.10 s</td>
+<td>406 MiB</td>
+<td>0.38 s</td>
+<td>432 MiB</td>
 </tr>
 <tr>
 <td>Parquet</td>
 <td>5M</td>
 <td><code>random</code> 100k</td>
-<td>0.17 s</td>
+<td>0.18 s</td>
 <td>501 MiB</td>
-<td>1.46 s</td>
-<td>560 MiB</td>
+<td>0.46 s</td>
+<td>512 MiB</td>
 </tr>
 </tbody>
 </table>
+<p>The bolded column is the one that moved: it is a <strong>post-fix</strong> capture. Before the
+frame lanes' result format was bounded the same rows read 12.50 s / 1,527 MiB
+(CSV 1M) and 63.75 s / 5,457 MiB (CSV 5M) — see finding 1 below.</p>
 <p>The floor — interpreter, GX and pyarrow with a 100k-row frame — is ~370 MiB on
 this rig, so read the deltas, not the absolutes.</p>
 <ol>
-<li><strong>Throughput is flat in row count and collapses on failing checks.</strong> All-passing,
-   the runner sustains 1.2–2.5M rows/s at every tier. With 8 widely-failing checks
-   it drops to ~77k rows/s <em>at every tier</em> — the same number for 100k and 5M rows,
-   which is the signature of per-failing-row work rather than per-row work.
-   Isolated on the same 1M-row file with the same 25 expectations, an all-passing
-   suite runs in 0.55 s / 751 MiB and an 8-failing one in <strong>12.40 s / 1,525 MiB</strong>.
-   The frame lanes ask GX for the <code>COMPLETE</code> result format on the reasoning that
-   pandas already holds the batch; what that costs is a full unexpected-value list
-   built per failing check. Filed separately.</li>
+<li><strong>Throughput is flat in row count, and failing checks no longer collapse it.</strong>
+   All-passing, the runner sustains 1.2–2.5M rows/s at every tier. The first
+   capture measured 8 widely-failing checks at ~77k rows/s <em>at every tier</em> — the
+   same number for 100k and 5M rows, which is the signature of per-failing-row
+   work rather than per-row work, and on the same 1M-row file an all-passing
+   suite ran in 0.55 s / 751 MiB against an 8-failing one at <strong>12.40 s /
+   1,525 MiB</strong>. The cause was the <code>COMPLETE</code> result format on the frame lanes,
+   which asks GX for a locator entry per failing row; bounding it where GX
+   <em>builds</em> it took the same 1M case to <strong>1.59 s / 1,018 MiB</strong> and the 5M case
+   from 65.70 s / 5,364 MiB to <strong>9.26 s / 2,586 MiB</strong> — the difference between a
+   run and a SIGKILL on a 2 GiB worker. The rows in the table above are the
+   post-fix capture; the residual gap to an all-passing suite is measured in the
+   Unity-Catalog section's "Still open" list.</li>
 <li><strong>Sampling removes the volume axis entirely.</strong> <code>head</code> is 0.09–0.15 s and
    ~400–500 MiB regardless of whether the object holds 1M or 5M rows, because it
    stops reading. That is the same conclusion the v1.1 section reached, now
    attached to a budget that would notice if it stopped being true.</li>
 <li><strong><code>random</code> on CSV is the one sampled path that still scales with the object</strong>:
-   3.40 s at 5M against <code>head</code>'s 0.14 s, because it streams the file to learn the
-   population size and then streams it again to take the draw. Parquet pays
-   almost nothing for the same mode (footer read).</li>
+   1.73 s at 5M against <code>head</code>'s 0.15 s, because it has to stream the whole file
+   to take a uniform draw — one pass now, not two. Parquet pays almost nothing
+   for the same mode (footer read).</li>
 </ol>
 <h4 id="what-each-mode-asks-the-store-for">What each mode asks the store for<a class="headerlink" href="#what-each-mode-asks-the-store-for" title="Permanent link">¶</a></h4>
 <p>Deterministic, and therefore the part the budget gates:</p>
@@ -4747,14 +4770,14 @@ this rig, so read the deltas, not the absolutes.</p>
 <tr>
 <td>CSV 5M</td>
 <td><code>head</code> 100k</td>
-<td>15,728,640</td>
-<td>5</td>
+<td>8,388,608</td>
+<td>6</td>
 </tr>
 <tr>
 <td>CSV 5M</td>
 <td><code>random</code> 100k</td>
-<td><strong>490,243,028</strong></td>
-<td>64</td>
+<td><strong>245,055,978</strong></td>
+<td>32</td>
 </tr>
 <tr>
 <td>Parquet 5M (105 MB)</td>
@@ -4766,18 +4789,18 @@ this rig, so read the deltas, not the absolutes.</p>
 <td>Parquet 5M</td>
 <td><code>head</code> 100k</td>
 <td>31,920,512</td>
-<td>3</td>
+<td>4</td>
 </tr>
 <tr>
 <td>Parquet 5M</td>
 <td><code>random</code> 100k</td>
 <td>104,985,982</td>
-<td>8</td>
+<td>9</td>
 </tr>
 </tbody>
 </table>
-<p>The CSV <code>random</code> row reads <strong>twice the object</strong> — the count pass and the take
-pass — which is a known single-pass follow-up, now with a number on it.</p>
+<p>The CSV <code>random</code> row reads <strong>the whole object once</strong> — it has to, to draw
+uniformly without knowing the row count up front. It used to read it twice.</p>
 <h4 id="concurrent-peak-what-four-prefork-children-want-at-once">Concurrent peak — what four prefork children want at once<a class="headerlink" href="#concurrent-peak-what-four-prefork-children-want-at-once" title="Permanent link">¶</a></h4>
 <table>
 <thead>
