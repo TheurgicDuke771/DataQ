@@ -45,10 +45,10 @@
    conda run -n dataq python -m backend.scripts.perf_baseline create-db                  # then: cd backend && alembic upgrade head
    conda run -n dataq python -m backend.scripts.perf_baseline list                       # the case matrix
    conda run -n dataq python -m backend.scripts.perf_baseline run --tag full --repeat 5 --out /tmp/perf.json
-   conda run -n dataq python -m backend.scripts.perf_baseline check                      # the budget (CI subset)
+   conda run -n dataq python -m backend.scripts.perf_baseline check                      # the budget (CI subset, all gates)
    ```
 
-   - **What is gated is deterministic, never wall clock.** Statements per service-layer read (the N+1 tripwire), store calls + bytes per runner read, rows read, and peak RSS within a 20% band. Wall clock is measured, reported and carries the `observe` gate: on a shared runner its coefficient of variation is several times the regression a budget would want to catch, and a flaky gate is worse than none. `wall_calibrated` (wall ÷ a fixed CPU micro-benchmark run in the same process) is recorded so wall numbers stay comparable across machines.
+   - **What is gated is deterministic, never wall clock.** Two gates fail a build: `exact` for the *work* a case reports doing (rows read, checks evaluated, schedules claimed — a change in **either** direction fails, since doing less is a defect) and `strict` for the *cost* (statements per service-layer read — the N+1 tripwire — and calls to the store). Peak RSS and encoded byte counts sit on a 20% `band` enforced in manual runs only, because both depend on the platform. Wall clock is measured, reported and carries the `observe` gate: on a shared runner its coefficient of variation is several times the regression a budget would want to catch, and a flaky gate is worse than none. `wall_calibrated` (wall ÷ a fixed CPU micro-benchmark run in the same process) is recorded so wall numbers stay comparable across machines.
    - **The fast subset runs in CI**, inside the existing `Backend — tests` job (no new required-check name). The full matrix is manual.
    - **A tier that cannot run here is SKIPPED with a reason, not omitted** — the warehouse tiers (Snowflake / Unity Catalog / Iceberg) emit a `not_measured` row naming why, because an absent row reads as "nothing to report".
    - **Refresh the baseline deliberately** (`run --tag ci --repeat 5 --out backend/scripts/perf/baseline.json`) and say in the PR why the number moved. A budget quietly re-baselined to make a red run green measures nothing.

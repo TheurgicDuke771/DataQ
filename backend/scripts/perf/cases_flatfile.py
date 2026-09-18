@@ -9,15 +9,19 @@ from __future__ import annotations
 
 import concurrent.futures
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import Any
 
 from backend.scripts.perf import datagen
-from backend.scripts.perf.harness import Case, Metric, register, run_in_subprocess
+from backend.scripts.perf.harness import Case, Metric, register, spawn
 
 ROW_TIERS = {"100k": 100_000, "1m": 1_000_000, "5m": 5_000_000}
 #: Sampled tiers draw this many rows, the shipped default sample size.
 SAMPLE_ROWS = 100_000
+#: The shipped scan caps exist to REFUSE the reads these cases measure.
+_UNCAPPED = {"RUN_MAX_SCAN_BYTES": "0", "RUN_MAX_SCAN_ROWS": "0"}
 #: The seams read local files, so no credential is involved anywhere in this module.
 _NO_CREDENTIAL = "local-file-seam"  # nosec B105
 
@@ -54,31 +58,67 @@ def _sample_spec(mode: str) -> Any:
     return SampleSpec(strategy=mode, rows=SAMPLE_ROWS, seed=42)
 
 
+@contextmanager
+def _measured_frame() -> Iterator[list[int]]:
+    """Record the row count of whatever frame the runner actually loaded.
+
+    Without this the `full`-mode row count would be the tier constant handed in
+    by the case — a gate on a number that cannot move, which is worse than no
+    gate because it reads like coverage.
+    """
+    from backend.app.datasources import flatfile
+
+    seen: list[int] = []
+    originals = {
+        name: getattr(flatfile, name) for name in ("read_dataframe", "read_sampled_dataframe")
+    }
+
+    def wrap(name: str) -> Any:
+        original = originals[name]
+
+        def measured(**kwargs: Any) -> Any:
+            result = original(**kwargs)
+            frame = result[0] if isinstance(result, tuple) else result
+            seen.append(len(frame))
+            return result
+
+        return measured
+
+    for name in originals:
+        setattr(flatfile, name, wrap(name))
+    try:
+        yield seen
+    finally:
+        for name, original in originals.items():
+            setattr(flatfile, name, original)
+
+
 def _run_flatfile(*, fmt: str, rows: int, checks: int, mode: str) -> list[Metric]:
+    import time
+
     from backend.app.datasources.flatfile import FlatFileCheckRunner
 
     path = str(datagen.dataset(rows, fmt))
     specs = _check_specs(checks)
-    with datagen.local_store() as counters:
+    with datagen.local_store() as counters, _measured_frame() as frame_rows:
         runner = FlatFileCheckRunner(
             conn_type="s3", config={}, secret=_NO_CREDENTIAL, sampling=_sample_spec(mode)
         )
-        import time
-
         started = time.perf_counter()
         outcome = runner.run_checks(table=path, schema=None, checks=specs)
         elapsed = time.perf_counter() - started
 
     sampling = next((c.sampling for c in outcome.checks if c.sampling), None)
-    rows_seen = int(sampling["rows"]) if sampling else rows
+    rows_seen = sum(frame_rows)
     return [
         Metric("run_wall_s", elapsed, "s", "observe"),
         Metric("rows_per_s", rows_seen / elapsed if elapsed else 0.0, "rows/s", "observe"),
-        Metric("rows_read", float(rows_seen), "rows", "strict"),
-        Metric("checks_evaluated", float(len(outcome.checks)), "checks", "strict"),
+        Metric("rows_read", float(rows_seen), "rows", "exact"),
+        Metric("frames_loaded", float(len(frame_rows)), "frames", "exact"),
+        Metric("checks_evaluated", float(len(outcome.checks)), "checks", "exact"),
         Metric("store_calls", float(counters.calls), "calls", "strict"),
-        Metric("store_bytes_read", float(counters.bytes_read), "bytes", "strict"),
-        Metric("sampled", 1.0 if sampling and sampling.get("sampled") else 0.0, "bool", "strict"),
+        Metric("store_bytes_read", float(counters.bytes_read), "bytes", "band"),
+        Metric("sampled", 1.0 if sampling and sampling.get("sampled") else 0.0, "bool", "exact"),
     ]
 
 
@@ -88,9 +128,6 @@ def _register_run_scaling() -> None:
             for checks in (5, 25):
                 for mode in ("full", "head", "random"):
                     case_id = f"flatfile.{fmt}.{tier}.{checks}checks.{mode}"
-                    # The shipped scan caps exist to REFUSE these reads; a
-                    # measurement of the ceiling has to be allowed past them.
-                    env = {"RUN_MAX_SCAN_BYTES": "0", "RUN_MAX_SCAN_ROWS": "0"}
                     tags: tuple[str, ...] = ("full",)
                     if tier == "100k" and checks == 5 and mode in ("full", "head"):
                         tags = ("full", "ci")
@@ -102,7 +139,7 @@ def _register_run_scaling() -> None:
                             tier=f"{tier}x{checks}checks/{mode}",
                             fn=_bind_run(fmt=fmt, rows=rows, checks=checks, mode=mode),
                             tags=tags,
-                            env=env,
+                            env=dict(_UNCAPPED),
                         )
                     )
 
@@ -118,28 +155,26 @@ def _bind_run(*, fmt: str, rows: int, checks: int, mode: str) -> Any:
 
 
 def _concurrent(children: int, case_id: str) -> list[Metric]:
-    """N overlapping runs in separate processes — the #1811 residual.
+    """N overlapping runs in separate processes — the concurrent-peak question.
 
     Each child reports its own peak RSS; the sum is what a 4-way prefork worker
-    would have to hold at once.
+    would have to hold at once. Children are spawned BY ID, so this module never
+    needs to read the registry it is itself registering into.
     """
     import time
 
-    from backend.scripts.perf.harness import registry
-
-    case = registry()[case_id]
     # Materialise the fixture BEFORE the children start: generating it N times
     # in parallel would measure fixture generation, not the run.
     datagen.dataset(ROW_TIERS["1m"], "csv")
     started = time.perf_counter()
     with concurrent.futures.ThreadPoolExecutor(max_workers=children) as pool:
-        payloads = list(pool.map(lambda _: run_in_subprocess(case), range(children)))
+        payloads = list(pool.map(lambda _: spawn(case_id, env=_UNCAPPED), range(children)))
     elapsed = time.perf_counter() - started
 
     peaks = [_metric_value(p, "peak_rss_mib") for p in payloads]
     walls = [_metric_value(p, "run_wall_s") for p in payloads]
     return [
-        Metric("children", float(children), "processes", "strict"),
+        Metric("children", float(children), "processes", "exact"),
         Metric("child_peak_rss_sum_mib", sum(peaks), "MiB", "band"),
         Metric("child_peak_rss_max_mib", max(peaks), "MiB", "band"),
         Metric("concurrent_wall_s", elapsed, "s", "observe"),
@@ -165,7 +200,7 @@ def _register_concurrent() -> None:
                 tier=f"{children} overlapping 1M-row runs",
                 fn=_bind_concurrent(children, base),
                 tags=("full",),
-                env={"RUN_MAX_SCAN_BYTES": "0", "RUN_MAX_SCAN_ROWS": "0"},
+                env=dict(_UNCAPPED),
             )
         )
 
@@ -216,10 +251,10 @@ def _batch_resolution(objects: int) -> list[Metric]:
         flatfile.iter_files = original
 
     return [
-        Metric("objects_listed", float(scanned["n"]), "objects", "strict"),
+        Metric("objects_listed", float(scanned["n"]), "objects", "exact"),
         Metric("resolve_wall_s", elapsed, "s", "observe"),
         Metric("objects_per_s", objects / elapsed if elapsed else 0.0, "objects/s", "observe"),
-        Metric("resolved", 1.0 if path else 0.0, "bool", "strict"),
+        Metric("resolved", 1.0 if path else 0.0, "bool", "exact"),
     ]
 
 
@@ -284,9 +319,9 @@ def _profile_wide(columns: int, fmt: str, rows: int = 200_000) -> list[Metric]:
 
     return [
         Metric("profile_wall_s", elapsed, "s", "observe"),
-        Metric("columns_profiled", float(len(result.columns)), "columns", "strict"),
+        Metric("columns_profiled", float(len(result.columns)), "columns", "exact"),
         Metric("store_calls", float(counters.calls), "calls", "strict"),
-        Metric("store_bytes_read", float(counters.bytes_read), "bytes", "strict"),
+        Metric("store_bytes_read", float(counters.bytes_read), "bytes", "band"),
     ]
 
 

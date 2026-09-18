@@ -18,9 +18,10 @@ so its peak RSS is attributable.
     conda run -n dataq python -m backend.scripts.perf_baseline run --tag ci \
         --repeat 5 --out backend/scripts/perf/baseline.json
 
-Warehouse tiers (Snowflake / Unity Catalog / Iceberg) are registered and emit an
-explicit ``not_measured`` row with the reason unless ``--include-warehouse`` is
-passed during a harness window.
+Warehouse tiers (Snowflake / Unity Catalog / Iceberg) are registered and always
+emit an explicit ``not_measured`` row carrying the reason: their bodies are not
+built yet, and a tier that is merely absent from a result set reads as "nothing
+to report".
 """
 
 from __future__ import annotations
@@ -34,15 +35,14 @@ from pathlib import Path
 from typing import Any
 
 from backend.scripts.perf import budget
+from backend.scripts.perf.catalog import registry, select
 from backend.scripts.perf.harness import (
     Case,
     execute,
     git_sha,
     now_iso,
-    registry,
     rig,
     run_in_subprocess,
-    select,
     summarise,
 )
 
@@ -101,11 +101,11 @@ def _skip_row(case: Case, sha: str, stamp: str) -> dict[str, Any]:
     }
 
 
-def run_cases(cases: list[Case], *, repeat: int, include_warehouse: bool) -> dict[str, Any]:
+def run_cases(cases: list[Case], *, repeat: int) -> dict[str, Any]:
     sha, stamp = git_sha(), now_iso()
     rows: list[dict[str, Any]] = []
     for case in sorted(cases, key=lambda c: c.id):
-        if case.skip_reason and not include_warehouse:
+        if case.skip_reason:
             rows.append(_skip_row(case, sha, stamp))
             print(f"SKIP {case.id}: {case.skip_reason}", file=sys.stderr)
             continue
@@ -154,7 +154,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
     if not cases:
         print("no cases matched", file=sys.stderr)
         return 2
-    report = run_cases(cases, repeat=args.repeat, include_warehouse=args.include_warehouse)
+    report = run_cases(cases, repeat=args.repeat)
     _write(report, args.out, args.format)
     return 0
 
@@ -175,22 +175,35 @@ def _cmd_list(args: argparse.Namespace) -> int:
 def _cmd_check(args: argparse.Namespace) -> int:
     baseline = json.loads(Path(args.baseline).read_text())
     cases = select(families=args.family, tags=args.tag, ids=args.case)
-    fresh = run_cases(cases, repeat=args.repeat, include_warehouse=False)
+    fresh = run_cases(cases, repeat=args.repeat)
     if args.out:
         _write(fresh, args.out, "json")
 
     gates = set(args.gate) if args.gate else None
-    violations, notes = budget.compare(baseline["rows"], fresh["rows"], gates=gates)
-    for note in notes:
+    result = budget.compare(baseline["rows"], fresh["rows"], gates=gates)
+    for note in result.notes:
         print(f"note: {note}")
-    if not violations:
-        enforced = gates if gates is not None else set(budget.TOLERANCES)
-        gated = sum(1 for r in fresh["rows"] if r.get("gate") in enforced)
-        print(f"budget OK — {gated} gated metrics within tolerance of {args.baseline}")
+    if result.ok:
+        print(f"budget OK — {result.compared} metrics compared against {args.baseline}")
         return 0
-    print(f"BUDGET FAILED — {len(violations)} metric(s) regressed:")
-    for violation in violations:
-        print(f"  {violation.describe()}")
+    if result.violations:
+        print(f"BUDGET FAILED — {len(result.violations)} metric(s) regressed:")
+        for violation in result.violations:
+            print(f"  {violation.describe()}")
+    if result.unmatched:
+        if args.allow_new:
+            for entry in result.unmatched:
+                print(f"note: {entry} (allowed by --allow-new)")
+            if not result.violations:
+                print(f"budget OK — {result.compared} metrics compared against {args.baseline}")
+                return 0
+        else:
+            print(
+                f"BUDGET FAILED — {len(result.unmatched)} gated metric(s) could not be compared "
+                "(rename the baseline's case, or re-run with --allow-new):"
+            )
+            for entry in result.unmatched:
+                print(f"  {entry}")
     return 1
 
 
@@ -229,7 +242,6 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--repeat", type=int, default=1)
     run.add_argument("--out")
     run.add_argument("--format", choices=("json", "csv"), default="json")
-    run.add_argument("--include-warehouse", action="store_true")
 
     execute_cmd = sub.add_parser("exec", help="run ONE case in this process (child entry point)")
     execute_cmd.add_argument("--case", required=True)
@@ -240,6 +252,11 @@ def build_parser() -> argparse.ArgumentParser:
     add_selection(check)
     check.add_argument("--baseline", default=str(BASELINE_PATH))
     check.add_argument("--repeat", type=int, default=1)
+    check.add_argument(
+        "--allow-new",
+        action="store_true",
+        help="treat a gated metric with no baseline row as a note rather than a failure",
+    )
     check.add_argument(
         "--gate",
         action="append",

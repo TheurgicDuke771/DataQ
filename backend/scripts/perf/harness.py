@@ -15,16 +15,20 @@ import statistics
 import subprocess  # nosec B404 - benchmark children + a read-only sha lookup
 import sys
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
 #: How `--check` treats a metric.
-#:   ``strict``  — deterministic counter; any increase fails.
-#:   ``band``    — bounded resource (peak RSS); fails past a tolerance.
+#:   ``exact``   — WORK done (rows read, checks evaluated, schedules claimed);
+#:                 a change in EITHER direction fails, because doing less is a
+#:                 defect rather than a saving.
+#:   ``strict``  — COST incurred (statements, store calls); only growth fails.
+#:   ``band``    — platform-dependent size (peak RSS, encoded bytes); growth
+#:                 past a margin fails.
 #:   ``observe`` — recorded, never gated (wall clock on a shared machine).
-GATES = ("strict", "band", "observe")
+GATES = ("exact", "strict", "band", "observe")
 
 
 @dataclass(frozen=True)
@@ -66,35 +70,11 @@ def register(case: Case) -> Case:
     return case
 
 
-def load_cases() -> None:
-    """Import the case modules for their registration side effects."""
-    from backend.scripts.perf import cases_db, cases_flatfile, cases_warehouse  # noqa: F401
-
-
-def registry() -> dict[str, Case]:
-    # Always: importing ONE case module (a test, a direct import) leaves the
-    # registry non-empty but incomplete, and an emptiness check would accept it.
-    load_cases()
+def registered() -> dict[str, Case]:
+    """Whatever has registered SO FAR — `catalog.registry()` is the entry point
+    that guarantees every case module has been imported first.
+    """
     return _REGISTRY
-
-
-def select(
-    *,
-    families: Iterable[str] | None = None,
-    tags: Iterable[str] | None = None,
-    ids: Iterable[str] | None = None,
-) -> list[Case]:
-    cases = list(registry().values())
-    if ids:
-        wanted = set(ids)
-        cases = [c for c in cases if c.id in wanted]
-    if families:
-        fams = set(families)
-        cases = [c for c in cases if c.family in fams]
-    if tags:
-        tagset = set(tags)
-        cases = [c for c in cases if tagset & set(c.tags)]
-    return cases
 
 
 # ────────────────────────────── measurement ──────────────────────────────
@@ -160,27 +140,28 @@ def child_command(case_id: str) -> list[str]:
     return [sys.executable, "-m", "backend.scripts.perf_baseline", "exec", "--case", case_id]
 
 
-def child_env(case: Case) -> dict[str, str]:
-    env = dict(os.environ)
-    env.update(case.env)
-    env.setdefault("PYTHONPATH", repo_root())
-    return env
-
-
 def run_in_subprocess(case: Case, *, timeout: float = 3600.0) -> dict[str, Any]:
     """Run `case` in a fresh interpreter and return its measurement payload."""
+    return spawn(case.id, env=case.env, timeout=timeout)
+
+
+def spawn(case_id: str, *, env: dict[str, str], timeout: float = 3600.0) -> dict[str, Any]:
+    """Run a case BY ID in a fresh interpreter — the child resolves it itself."""
+    child = dict(os.environ)
+    child.update(env)
+    child.setdefault("PYTHONPATH", repo_root())
     proc = subprocess.run(  # noqa: S603  # nosec B603 - this interpreter, a registered case id
-        child_command(case.id),
+        child_command(case_id),
         capture_output=True,
         text=True,
-        env=child_env(case),
+        env=child,
         cwd=repo_root(),
         timeout=timeout,
         check=False,
     )
     if proc.returncode != 0:
-        raise RuntimeError(f"case {case.id} failed (rc={proc.returncode}):\n{proc.stderr[-4000:]}")
-    return last_json_line(proc.stdout, case.id)
+        raise RuntimeError(f"case {case_id} failed (rc={proc.returncode}):\n{proc.stderr[-4000:]}")
+    return last_json_line(proc.stdout, case_id)
 
 
 def last_json_line(stdout: str, case_id: str) -> dict[str, Any]:

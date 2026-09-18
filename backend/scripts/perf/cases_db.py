@@ -17,6 +17,7 @@ from contextlib import contextmanager
 from typing import Any
 
 from sqlalchemy import create_engine, event, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
 from backend.scripts.perf.harness import Case, Metric, register
@@ -34,14 +35,29 @@ class PerfDatabaseUnsetError(RuntimeError):
     pass
 
 
+#: Databases this harness must never touch — it TRUNCATEs what it seeds.
+PROTECTED_DATABASES = frozenset({"dataq", "dataq_test", "postgres"})
+
+
+def database_name(url: str) -> str | None:
+    """The database a URL addresses — parsed, not split.
+
+    A bare ``rsplit("/")`` leaves the query string attached, so
+    ``…/dataq?sslmode=require`` (the shape of the deployed `DATABASE_URL`)
+    would not match the protected name and would reach the TRUNCATE.
+    """
+    return make_url(url).database
+
+
 def database_url() -> str:
     url = os.environ.get("PERF_DATABASE_URL")
     if not url:
         raise PerfDatabaseUnsetError(
             "set PERF_DATABASE_URL to a SCRATCH database (never the app database)"
         )
-    if url.rsplit("/", 1)[-1] in {"dataq", "dataq_test"}:
-        raise PerfDatabaseUnsetError(f"refusing to benchmark against {url.rsplit('/', 1)[-1]!r}")
+    name = database_name(url)
+    if name is None or name in PROTECTED_DATABASES:
+        raise PerfDatabaseUnsetError(f"refusing to benchmark against database {name!r}")
     return url
 
 
@@ -177,12 +193,15 @@ def seed(rows: int, *, echo: Callable[[str], None] = print) -> None:
             session.execute(text(_RUNS_SQL), {"rows": rows - have})
             session.commit()
         have_results = session.scalar(text("SELECT count(*) FROM results")) or 0
-        want_results = rows
-        if have_results < want_results:
-            echo(f"seeding results {have_results} -> {want_results}")
+        if have_results != rows:
+            # Replaced, not topped up: the insert attaches a fixed number of results
+            # to the newest N runs, so adding the shortfall would double up on runs
+            # that already have some and overshoot the tier it claims to be.
+            echo(f"seeding results {have_results} -> {rows}")
+            session.execute(text("DELETE FROM results"))
             session.execute(
                 text(_RESULTS_SQL),
-                {"per_run": RESULTS_PER_RUN, "run_count": want_results // RESULTS_PER_RUN},
+                {"per_run": RESULTS_PER_RUN, "run_count": rows // RESULTS_PER_RUN},
             )
             session.commit()
         have_incidents = session.scalar(text("SELECT count(*) FROM incidents")) or 0
@@ -211,7 +230,8 @@ def seed(rows: int, *, echo: Callable[[str], None] = print) -> None:
 def create_database(*, echo: Callable[[str], None] = print) -> None:
     """Create the scratch database named by `PERF_DATABASE_URL` if it is absent."""
     url = database_url()
-    name = url.rsplit("/", 1)[-1]
+    name = database_name(url)
+    assert name is not None  # database_url refuses a URL with no database
     engine = create_engine(f"{url.rsplit('/', 1)[0]}/postgres", isolation_level="AUTOCOMMIT")
     try:
         with engine.connect() as conn:
@@ -385,7 +405,7 @@ def _dispatch(due: int) -> list[Metric]:
             run_dispatch.dispatch_or_fail = original
 
     return [
-        Metric("schedules_due", float(summary["due"]), "schedules", "strict"),
+        Metric("schedules_due", float(summary["due"]), "schedules", "exact"),
         Metric("dispatch_wall_s", elapsed, "s", "observe"),
         Metric(
             "schedules_per_s",

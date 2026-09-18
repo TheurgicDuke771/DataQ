@@ -548,9 +548,14 @@ on the machine at all.
 
 | Gate | Metrics | Tolerance | Enforced |
 |---|---|---|---|
-| `strict` | statements per service-layer read · store calls and bytes per runner read · rows read · objects listed · columns profiled | none — any increase fails | CI, on every push |
-| `band` | peak RSS per case | 20% | manual runs only |
+| `exact` | the **work** a case reports doing — rows read, frames loaded, checks evaluated, objects listed, columns profiled, schedules claimed, whether the read was sampled | none, **in either direction** | CI, on every push |
+| `strict` | the **cost** it incurred — statements per service-layer read, calls to the store | none — only growth fails | CI, on every push |
+| `band` | platform-dependent sizes — peak RSS, bytes read from the store | 20% | manual runs only |
 | `observe` | wall clock, rows/s, p50/p95 latency, calibration | never fails | recorded in every run |
+
+The `exact`/`strict` split matters: a one-sided gate is right for a cost (fewer
+statements is a win) and blind for work (a runner that evaluates 0 of 5 checks,
+or a dispatcher that claims 0 of 10 due schedules, would otherwise pass).
 
 **Wall clock is deliberately not gated.** Measured run-to-run on the same
 machine, the wall metrics' coefficient of variation is several times larger than
@@ -562,9 +567,11 @@ projection shows up as rows read. Each run also records `wall_calibrated` (wall
 divided by a fixed CPU micro-benchmark executed in the same process), so wall
 numbers from different machines can at least be compared.
 
-**Peak RSS is gated only in manual runs.** `ru_maxrss` depends on the platform's
-allocator and shared libraries, so a band measured on one machine says nothing
-about another; CI runs `--gate strict`.
+**Sizes are gated only in manual runs.** `ru_maxrss` depends on the platform's
+allocator and shared libraries, and the byte count of a generated fixture depends
+on the pandas/pyarrow version that wrote it — so a band measured on one machine
+says nothing about another, and a dependency bump would otherwise fail a required
+check as a phantom regression. CI runs `--gate exact --gate strict`.
 
 ### The baseline
 
@@ -760,13 +767,14 @@ python -m backend.scripts.perf_baseline create-db
 
 python -m backend.scripts.perf_baseline list                       # the case matrix
 python -m backend.scripts.perf_baseline run --tag full --repeat 5 --out /tmp/perf.json
-python -m backend.scripts.perf_baseline check                      # the budget, full gates
-python -m backend.scripts.perf_baseline check --gate strict        # what CI runs
+python -m backend.scripts.perf_baseline check                           # the budget, all gates
+python -m backend.scripts.perf_baseline check --gate exact --gate strict  # what CI runs
 ```
 
 The fast subset (`--tag ci`) runs on every push inside the existing backend test
-job, so no required-check name changes. The full matrix is a manual run; the
-warehouse tiers additionally need `--include-warehouse` inside a harness window.
+job, so no required-check name changes. The full matrix is a manual run. The
+warehouse tiers appear in it as `not_measured` rows — their bodies are not built
+yet, and building them is tracked separately.
 Refreshing the committed baseline is deliberate — `run --tag ci --repeat 7 --out
 backend/scripts/perf/baseline.json` — and a PR that does it should say why the
 number moved.

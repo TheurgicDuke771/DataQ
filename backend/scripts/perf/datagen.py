@@ -96,7 +96,7 @@ class StoreCounters:
     bytes_read: int = 0
 
 
-def _local_file_stat(*, conn_type: str, config: dict[str, Any], path: str, secret: str) -> Any:
+def _local_file_stat(*, path: str, **_: Any) -> Any:
     from backend.app.datasources.flatfile import FileStat
 
     _COUNTERS.calls += 1
@@ -104,14 +104,12 @@ def _local_file_stat(*, conn_type: str, config: dict[str, Any], path: str, secre
     return FileStat(last_modified=datetime.fromtimestamp(stat.st_mtime, UTC), size=stat.st_size)
 
 
-def _local_object_size(*, conn_type: str, config: dict[str, Any], path: str, secret: str) -> int:
+def _local_object_size(*, path: str, **_: Any) -> int:
     _COUNTERS.calls += 1
     return os.stat(path).st_size
 
 
-def _local_download_bytes(
-    *, conn_type: str, config: dict[str, Any], path: str, secret: str
-) -> bytes:
+def _local_download_bytes(*, path: str, **_: Any) -> bytes:
     _COUNTERS.calls += 1
     with open(path, "rb") as handle:
         raw = handle.read()
@@ -119,9 +117,7 @@ def _local_download_bytes(
     return raw
 
 
-def _local_read_range(
-    *, conn_type: str, config: dict[str, Any], path: str, secret: str, start: int, length: int
-) -> bytes:
+def _local_read_range(*, path: str, start: int, length: int, **_: Any) -> bytes:
     if length <= 0:
         return b""
     _COUNTERS.calls += 1
@@ -134,7 +130,7 @@ def _local_read_range(
 
 _COUNTERS = StoreCounters()
 
-_SEAMS = {
+_SEAMS: dict[str, Any] = {
     "file_stat": _local_file_stat,
     "object_size": _local_object_size,
     "download_bytes": _local_download_bytes,
@@ -142,17 +138,37 @@ _SEAMS = {
 }
 
 
+class SeamMissingError(RuntimeError):
+    """A seam this harness stands in for is not where it used to be."""
+
+
 @contextmanager
 def local_store() -> Iterator[StoreCounters]:
-    """Point the object-store seams at the local filesystem for the duration."""
+    """Point the object-store seams at the local filesystem for the duration.
+
+    The stubs take ``**_`` on purpose: they stand in for live functions whose
+    signature is the app's to change (a `session` argument arrived that way),
+    and a benchmark must not be the reason an unrelated change goes red.
+    A seam that has *moved*, though, is fatal — silently skipping it would let
+    the case reach the real boto3 client with a fake credential.
+    """
     from backend.app.datasources import flatfile
-    from backend.app.services import profile_service
 
     global _COUNTERS
     _COUNTERS = StoreCounters()
-    modules = (flatfile, profile_service)
+    missing = [name for name in _SEAMS if not hasattr(flatfile, name)]
+    if missing:
+        # Before importing anything downstream: a moved seam breaks its importers
+        # too, and that ImportError would bury the reason.
+        raise SeamMissingError(
+            f"flatfile no longer exposes {missing}; the perf harness stands in for these seams "
+            "and would otherwise open a real store connection"
+        )
+
+    from backend.app.services import profile_service
+
     saved: list[tuple[Any, str, Any]] = []
-    for module in modules:
+    for module in (flatfile, profile_service):
         for name, impl in _SEAMS.items():
             if hasattr(module, name):
                 saved.append((module, name, getattr(module, name)))

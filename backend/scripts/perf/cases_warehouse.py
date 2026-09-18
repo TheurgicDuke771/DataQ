@@ -13,7 +13,7 @@ from backend.scripts.perf.harness import Case, Metric, register
 #: Set per deployment/harness window; a tier runs only when its gate is lifted.
 _HARNESS_GATE = (
     "needs a live warehouse — harness compute is stopped by default (ADR 0021); "
-    "run it inside a harness window with --include-warehouse"
+    "these tiers have no implementation yet — the follow-up issue builds them"
 )
 
 WAREHOUSE_TIERS: tuple[tuple[str, str, str, str], ...] = (
