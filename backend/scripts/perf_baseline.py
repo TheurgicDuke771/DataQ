@@ -18,10 +18,16 @@ so its peak RSS is attributable.
     conda run -n dataq python -m backend.scripts.perf_baseline run --tag ci \
         --repeat 5 --out backend/scripts/perf/baseline.json
 
-Warehouse tiers (Snowflake / Unity Catalog / Iceberg) are registered and always
-emit an explicit ``not_measured`` row carrying the reason: their bodies are not
-built yet, and a tier that is merely absent from a result set reads as "nothing
-to report".
+Warehouse tiers (Snowflake / Unity Catalog / Iceberg) drive the real runners and
+emit an explicit ``not_measured`` row naming the environment variables they are
+missing when no live warehouse is configured — a tier that is merely absent from
+a result set reads as "nothing to report".
+
+The Iceberg memory curve needs no warehouse: build its local fixtures once, then
+run it under the deployed worker's limit, where a peak becomes a SIGKILL.
+
+    python -m backend.scripts.perf_baseline gen-iceberg
+    scripts/perf/run_in_rig.sh --build -- --tag iceberg_curve --out /perf-data/curve.json
 """
 
 from __future__ import annotations
@@ -38,6 +44,7 @@ from backend.scripts.perf import budget
 from backend.scripts.perf.catalog import registry, select
 from backend.scripts.perf.harness import (
     Case,
+    CaseFailedError,
     execute,
     git_sha,
     now_iso,
@@ -101,6 +108,33 @@ def _skip_row(case: Case, sha: str, stamp: str) -> dict[str, Any]:
     }
 
 
+def _killed_row(case: Case, exc: CaseFailedError, sha: str, stamp: str) -> dict[str, Any]:
+    """A case whose child died is the ceiling being measured, not a broken run —
+    so it is a ROW, and the rest of the curve still gets measured.
+    """
+    return {
+        "metric": "killed",
+        "value": None,
+        "unit": "",
+        "gate": "observe",
+        "tier": case.tier,
+        "datasource": case.datasource,
+        "family": case.family,
+        "case": case.id,
+        "status": "killed",
+        "returncode": exc.returncode,
+        "signal": exc.signal,
+        "oom_killed": exc.oom_killed,
+        "timed_out": exc.timed_out,
+        # A classification, never the child's own output: stderr can carry a
+        # connection URL with a credential in it, and this row is written to a
+        # file and pasted into a document.
+        "reason": exc.describe(),
+        "git_sha": sha,
+        "timestamp": stamp,
+    }
+
+
 def run_cases(cases: list[Case], *, repeat: int) -> dict[str, Any]:
     sha, stamp = git_sha(), now_iso()
     rows: list[dict[str, Any]] = []
@@ -110,7 +144,18 @@ def run_cases(cases: list[Case], *, repeat: int) -> dict[str, Any]:
             print(f"SKIP {case.id}: {case.skip_reason}", file=sys.stderr)
             continue
         print(f"RUN  {case.id} x{repeat}", file=sys.stderr)
-        payloads = [run_in_subprocess(case) for _ in range(repeat)]
+        try:
+            payloads = [run_in_subprocess(case) for _ in range(repeat)]
+        except CaseFailedError as exc:
+            # Only a LIMIT becomes a row. An ordinary non-zero exit is a traceback
+            # — a bad table name, an expired credential, a moved seam — and
+            # recording that as a ceiling would turn a misconfiguration into a
+            # finding, silently, with the run still reporting success.
+            if not exc.is_ceiling:
+                raise
+            rows.append(_killed_row(case, exc, sha, stamp))
+            print(f"KILLED {case.id}: {exc.describe()}", file=sys.stderr)
+            continue
         rows.extend(_rows_for_case(case, payloads, sha, stamp))
     return {"generated_at": stamp, "git_sha": sha, "rig": rig(), "rows": rows}
 
@@ -179,6 +224,16 @@ def _cmd_check(args: argparse.Namespace) -> int:
     if args.out:
         _write(fresh, args.out, "json")
 
+    # A killed case carries the `observe` gate, so the budget skips it and would
+    # otherwise print "budget OK" about a case that never produced a number.
+    killed = [row["case"] for row in fresh["rows"] if row.get("status") == "killed"]
+    if killed:
+        print(f"BUDGET FAILED — {len(killed)} case(s) produced no measurement:")
+        for row in fresh["rows"]:
+            if row.get("status") == "killed":
+                print(f"  {row['case']}: {row['reason']}")
+        return 1
+
     gates = set(args.gate) if args.gate else None
     result = budget.compare(baseline["rows"], fresh["rows"], gates=gates)
     for note in result.notes:
@@ -211,6 +266,14 @@ def _cmd_seed_db(args: argparse.Namespace) -> int:
     from backend.scripts.perf import cases_db
 
     cases_db.seed(args.rows)
+    return 0
+
+
+def _cmd_gen_iceberg(args: argparse.Namespace) -> int:
+    from backend.scripts.perf import datagen
+
+    for rows in args.rows:
+        print(datagen.build_iceberg_dataset(rows), file=sys.stderr)
     return 0
 
 
@@ -269,6 +332,17 @@ def build_parser() -> argparse.ArgumentParser:
     seed = sub.add_parser("seed-db", help="seed the scratch database")
     seed.add_argument("--rows", type=int, default=100_000)
 
+    gen = sub.add_parser(
+        "gen-iceberg",
+        help="build the local Iceberg curve fixtures under PERF_DATA_DIR (own process)",
+    )
+    gen.add_argument(
+        "--rows",
+        type=int,
+        action="append",
+        help="row count to build; repeatable. Default: every curve rung.",
+    )
+
     sub.add_parser("create-db", help="create the scratch database named by PERF_DATABASE_URL")
 
     sub.add_parser("reset-db", help="truncate the scratch database")
@@ -280,6 +354,7 @@ COMMANDS = {
     "exec": _cmd_exec,
     "list": _cmd_list,
     "check": _cmd_check,
+    "gen-iceberg": _cmd_gen_iceberg,
     "seed-db": _cmd_seed_db,
     "create-db": _cmd_create_db,
     "reset-db": _cmd_reset_db,
@@ -290,6 +365,10 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "check" and not (args.tag or args.family or args.case):
         args.tag = ["ci"]
+    if args.command == "gen-iceberg" and not args.rows:
+        from backend.scripts.perf.cases_warehouse import ICEBERG_CURVE_ROWS
+
+        args.rows = list(ICEBERG_CURVE_ROWS)
     return COMMANDS[args.command](args)
 
 
