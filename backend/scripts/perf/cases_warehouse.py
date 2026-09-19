@@ -68,8 +68,6 @@ def _check_specs(override_var: str | None = None) -> list[Any]:
     build (a vendor sample share, say) — the JSON suite named by ``override_var``:
     ``[["expect_…", {kwargs}], …]``. Column names differ; the work should not.
     """
-    import json
-
     from backend.app.datasources.base import CheckSpec
 
     shapes: Any = _CHECK_SHAPES
