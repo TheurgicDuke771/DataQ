@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.6",
+  "checkpoint_id": "edd4316f9ef6",
+  "strategy": "manual-commit",
+  "branch": "chore/frontend-deps-batch-2026-09b",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/ed/d4316f9ef6/0/metadata.json",
+      "transcript": "/ed/d4316f9ef6/0/full.jsonl",
+      "compact_transcript": "/ed/d4316f9ef6/0/transcript.jsonl",
+      "content_hash": "/ed/d4316f9ef6/0/content_hash.txt",
+      "prompt": "/ed/d4316f9ef6/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 42,
+    "cache_creation_tokens": 29583,
+    "cache_read_tokens": 14895766,
+    "output_tokens": 15460,
+    "api_call_count": 19
+  }
+}
