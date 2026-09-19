@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any, ClassVar
 from urllib.parse import quote_plus, urlparse
 
@@ -158,6 +159,25 @@ SQL_PUSHDOWN_EXPECTATION_TYPES: frozenset[str] = frozenset(
         "expect_compound_columns_to_be_unique",
     }
 )
+
+
+def frame_lane_required(expectation_types: Iterable[str]) -> bool:
+    """Whether a suite of these expectation types will materialise a pandas frame (#1998).
+
+    Routing-only, from the same two inputs `_routes_to_sql` uses. It deliberately does NOT
+    see the runner's live target check (`_sql_target_problem`), so an unresolvable SQL target
+    reads here as pushdown and the frame it actually falls back to goes unmetered; the scan
+    caps still bound that read.
+    """
+    pushdown_on = get_settings().uc_sql_pushdown
+    for expectation_type in expectation_types:
+        if is_custom_sql(expectation_type):
+            continue
+        if pushdown_on and expectation_type in SQL_PUSHDOWN_EXPECTATION_TYPES:
+            continue
+        return True
+    return False
+
 
 # This metric indexes REFLECTED columns, whose keys the Databricks dialect rewrites via its
 # own `normalize_name` — fold authored names to match, or an all-caps spelling KeyErrors.

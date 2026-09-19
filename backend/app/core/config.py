@@ -158,7 +158,10 @@ class Settings(BaseSettings):
     # worker baseline (#755). 0 disables.
     worker_max_memory_per_child_kb: int = 1_500_000
     # Prefork pool size. Celery's default is the HOST's core count, not the container's (#1790).
-    worker_concurrency: int = 4
+    # 2, not 4: four overlapping 1M-row flat-file runs were measured wanting ~3.1 GiB of child
+    # resident memory against a 2 GiB worker — see the concurrency section of
+    # docs/site/architecture/perf-baseline.md.
+    worker_concurrency: int = 2
 
     # Orphan-asset sweep (#770).
     asset_orphan_retention_days: int = 30
@@ -245,6 +248,25 @@ class Settings(BaseSettings):
     # Iceberg's own row cap (#1328). Unset = `run_max_scan_rows` x the measured ratio below, so an
     # operator who lowers or disables the shared cap moves Iceberg with it.
     run_max_scan_rows_iceberg: int | None = Field(default=None, ge=0)
+
+    # ── Worker memory admission control (#1998) ─────────────────────────────── The caps above
+    # bound ONE run's read; this bounds the SUM across the prefork children of one worker
+    # container. 1 GiB = RUN_MAX_SCAN_BYTES x the CSV expansion factor, i.e. exactly one
+    # at-the-cap full-load flat-file run in flight at a time. 0 disables admission entirely.
+    run_admission_budget_bytes: int = Field(default=1_073_741_824, ge=0)
+    # Measured store-bytes -> worker-RSS expansion (docs/site/architecture/perf-baseline.md).
+    run_admission_expansion_csv: float = Field(default=8.0, gt=0)
+    run_admission_expansion_parquet: float = Field(default=9.0, gt=0)
+    run_admission_expansion_default: float = Field(default=9.0, gt=0)
+    # Row-shaped estimates (a sampled read, the Unity Catalog frame lane).
+    run_admission_row_bytes: int = Field(default=1024, gt=0)
+    # A reservation outlives the child holding it by at most this long: an OOM SIGKILL never
+    # runs the release, so the lease is what frees the budget.
+    run_admission_lease_seconds: int = Field(default=1800, gt=0)
+    # Deliberately well under `stuck_run_threshold_minutes` — a waiting run must proceed long
+    # before the reaper would call it stuck.
+    run_admission_max_wait_seconds: int = Field(default=600, ge=0)
+    run_admission_retry_seconds: int = Field(default=15, gt=0)
 
     # UC SQL pushdown (#1532).
     uc_sql_pushdown: bool = True

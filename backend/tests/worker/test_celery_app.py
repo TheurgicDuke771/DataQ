@@ -83,11 +83,11 @@ def test_worker_concurrency_is_pinned_from_settings(monkeypatch: pytest.MonkeyPa
     """
     from backend.app.core import config
 
-    assert create_celery_app().conf.worker_concurrency == 4
-    monkeypatch.setenv("WORKER_CONCURRENCY", "2")
+    assert create_celery_app().conf.worker_concurrency == 2
+    monkeypatch.setenv("WORKER_CONCURRENCY", "3")
     config.get_settings.cache_clear()
     try:
-        assert create_celery_app().conf.worker_concurrency == 2
+        assert create_celery_app().conf.worker_concurrency == 3
     finally:
         config.get_settings.cache_clear()
 

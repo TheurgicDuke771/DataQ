@@ -162,7 +162,8 @@ resource "azurerm_container_app" "worker" {
       memory = "2Gi"
       # -Q celery,llm (#1777): llm_invoke has its own queue now — must be listed or this worker
       # never consumes it. NO -B (#1811): beat is a separate Container App below, so a worker OOM
-      # under concurrency=4 (overlapping large suites, #1790) can never take the scheduler with it.
+      # (overlapping large suites, #1790) can never take the scheduler with it. Pool size is not a
+      # flag here — WORKER_CONCURRENCY ships with the image.
       command = ["celery", "-A", "backend.app.worker.celery_app", "worker", "-Q", "celery,llm", "--loglevel=INFO"]
       dynamic "env" {
         for_each = local.worker_env
@@ -186,8 +187,8 @@ resource "azurerm_container_app" "worker" {
 }
 
 # ── Beat (Celery schedule dispatcher — ONLY this one, #1811) ─────────────────
-# Split out of the worker so a worker OOM (concurrency=4 prefork children under the 2 GiB hard
-# limit, overlapping large suites — #1790) can never take the scheduler down with it (the #405
+# Split out of the worker so a worker OOM (prefork children under the 2 GiB hard limit,
+# overlapping large suites — #1790) can never take the scheduler down with it (the #405
 # class: orchestration polling, scheduled-suite dispatch, and every sweep going silently dark).
 # min = max = 1: beat must run EXACTLY ONE instance or every periodic task fires twice.
 resource "azurerm_container_app" "beat" {
