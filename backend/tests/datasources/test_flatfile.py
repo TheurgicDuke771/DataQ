@@ -2284,8 +2284,9 @@ def test_a_csv_head_sample_keeps_the_unsampled_readers_dtypes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Turning sampling on must not change a check's verdict through a DTYPE
-    change. CSV head goes through `read_csv_bytes` exactly like a full read, so
-    the two frames must type identically over the same rows.
+    change. The head read parses its own bounded window (`_window_frame`, not the
+    full read's `read_csv_bytes`, since #2011), so this equivalence is asserted
+    rather than inherited from a shared call.
     """
     content = _csv_bytes(50)
     _patch_store(monkeypatch, content=content)
@@ -2370,8 +2371,14 @@ def _quoted_csv(rows: int) -> bytes:
 def test_the_row_boundary_is_quote_aware(raw: bytes, expected: bytes) -> None:
     """C4. A newline is NOT a row boundary — a quoted field may contain one, and cutting there
     leaves an unterminated quote that pandas rejects outright with "EOF inside string".
+
+    Asserted on `row_boundary_end` itself, the function the read actually calls: it
+    used to be reached through a slicing `trim_to_row_boundary` wrapper, and once
+    #2011 stopped slicing, testing through that wrapper would have left the live
+    index convention covered only indirectly.
     """
-    assert flatfile.trim_to_row_boundary(raw) == expected
+    assert raw[: flatfile.row_boundary_end(raw)] == expected
+    assert raw[: flatfile.row_boundary_end(bytearray(raw))] == expected
 
 
 def test_a_head_sample_of_a_quoted_csv_parses_instead_of_raising(
@@ -2633,6 +2640,34 @@ def test_the_head_window_projects_its_target_instead_of_only_doubling(
     assert len(parses) <= 3
 
 
+def test_a_wide_first_window_does_not_project_an_unbounded_jump(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The projection is an estimate off the FIRST window, and a file whose opening
+    rows are far wider than its rest makes that estimate wildly high — with only the
+    object's own size to stop it, the growth would fetch and buffer the whole thing
+    where doubling needed a fraction of it. Capped at a fixed multiple per step.
+    """
+    content = (
+        b"id,payload\n"
+        + b"".join(f"{i},{'w' * 5_000}\n".encode() for i in range(200))
+        + b"".join(f"{i},{'n' * 10}\n".encode() for i in range(1_000_000))
+    )
+    ceiling = flatfile._CSV_HEAD_BYTES * flatfile._WINDOW_GROWTH_LIMIT
+    assert len(content) > ceiling, "the object must be bigger than one capped step"
+    ranges: list[tuple[int, int]] = []
+    _patch_store(monkeypatch, content=content, ranges=ranges)
+
+    frame = flatfile.read_csv_projected_sample(
+        conn_type="s3", config={}, path="raw/front_loaded.csv", secret="s", rows=100_000
+    )
+
+    assert len(frame) == 100_000
+    fetched = sum(length for _, length in ranges)
+    assert fetched <= ceiling, "the wide opening rows projected a window past the ceiling"
+    assert fetched < len(content), "the whole object was pulled on a first-window estimate"
+
+
 def test_the_head_window_sniffs_the_delimiter_once_per_read(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2669,6 +2704,21 @@ def test_the_window_is_parsed_through_a_view_never_a_copy_of_it() -> None:
     assert stream.read() == b"a,b\n9,z\n"
 
 
+def test_the_buffer_view_keeps_the_io_seek_contract() -> None:
+    """A stream handed to a third-party parser must fail the way `io` says it does:
+    an unknown ``whence`` is a `ValueError` (not the raw `KeyError` a dict lookup
+    gives), and a negative position is an error rather than a silent clamp to 0 —
+    which would re-read the window from the top and look like valid data.
+    """
+    view = flatfile._BufferView(memoryview(bytearray(b"abcdef")))
+
+    with pytest.raises(ValueError, match="whence"):
+        view.seek(0, 99)
+    with pytest.raises(OSError, match="negative seek"):
+        view.seek(-5)
+    assert view.seek(100) == 6 and view.read() == b""
+
+
 def test_the_window_can_still_grow_after_a_parse_released_its_view() -> None:
     """A bytearray cannot be resized while a memoryview of it is alive, so a view
     left unreleased turns the next fetch into `BufferError` — the growth path's
@@ -2702,33 +2752,60 @@ def test_a_bounded_head_read_equals_the_whole_buffer_parse(
     pd.testing.assert_frame_equal(frame, expected)
 
 
-def _quoted_newline_csv(rows: int) -> bytes:
-    """Every row carries a quoted field containing a newline, so a window boundary
-    lands inside quotes no matter where it falls.
-    """
-    body = b"".join(f'{i},"line one\nline two {i}"\n'.encode() for i in range(rows))
-    return b"id,note\n" + body
+#: Row templates whose framing is hostile to a window boundary, scaled up so the
+#: read must actually grow. The `ADVERSARIAL_CSV_BODIES` battery above is bytes,
+#: not megabytes, so every one of those reaches EOF inside the FIRST window — it
+#: covers the single-window path only, which is not the path #2011 changed.
+_HOSTILE_ROW_SHAPES = {
+    # A newline inside quotes is a row boundary to a naive scan and not to the parser.
+    "quoted_newline": (b"id,note\n", '{i},"line one\nline two {i}"\n'),
+    # A cut at "\n" leaves the preceding "\r" in the kept prefix.
+    "crlf": (b"id,note\r\n", "{i},note {i}\r\n"),
+    # The delimiter inside quotes must not be counted as one.
+    "quoted_delimiter": (b"id,amount\n", '{i},"1,000,{i}"\n'),
+    # "" escapes interact with the quote-parity count the boundary scan uses.
+    "doubled_quotes": (b"id,note\n", '{i},"he said ""hi"" {i}"\n'),
+}
 
 
-def test_a_grown_head_read_equals_the_whole_buffer_parse_with_quoted_newlines(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize("shape", sorted(_HOSTILE_ROW_SHAPES), ids=lambda v: v)
+def test_a_grown_head_read_equals_the_whole_buffer_parse(
+    monkeypatch: pytest.MonkeyPatch, shape: str
 ) -> None:
-    """The same equivalence over a read that actually GROWS, on the input the
-    growth is most likely to split wrongly: a quoted newline is a row boundary to
-    a naive scan and not one to the parser, so every window edge is a trap.
+    """The same equivalence over a read that actually GROWS, on the framings the
+    growth is most likely to split wrongly. Parametrized over four of them rather
+    than the quoted-newline case alone: three of these were only ever exercised at
+    single-window size, where the growth path this covers never runs at all.
     """
-    content = _quoted_newline_csv(120_000)
+    header, row = _HOSTILE_ROW_SHAPES[shape]
+    content = header + b"".join(row.format(i=i).encode() for i in range(120_000))
     assert len(content) > 2 * 1024 * 1024, "the read must need more than one window"
     _patch_store(monkeypatch, content=content)
     parses = _count_parses(monkeypatch)
 
     frame = flatfile.read_csv_projected_sample(
-        conn_type="s3", config={}, path="raw/quoted.csv", secret="s", rows=100_000
+        conn_type="s3", config={}, path="raw/hostile.csv", secret="s", rows=100_000
     )
 
     assert len(parses) > 1, "one window only — this test would prove nothing"
     expected = flatfile.read_csv_bytes(io.BytesIO(content), nrows=100_000)
     pd.testing.assert_frame_equal(frame, expected)
+
+
+def test_an_empty_object_fails_the_same_way_a_whole_buffer_parse_does(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A zero-byte object has no header to parse, so pandas refuses it. The bounded
+    read must refuse it the SAME way — not as a scan-cap error (nothing was
+    over-read) and not as an empty frame, which would profile as a real, columnless
+    file.
+    """
+    _patch_store(monkeypatch, content=b"")
+
+    with pytest.raises(pd.errors.EmptyDataError):
+        flatfile.read_csv_projected_sample(
+            conn_type="s3", config={}, path="raw/empty.csv", secret="s", rows=100
+        )
 
 
 def test_a_grown_head_reads_dtypes_match_the_whole_buffer_parse(

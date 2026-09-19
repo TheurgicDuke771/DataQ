@@ -132,8 +132,10 @@ def open_csv_stream(reader: RangeReader) -> Any:
 def row_boundary_end(raw: bytes | bytearray) -> int:
     """Index of the last quote-safe newline in ``raw``, or its length if it has none.
 
-    The index, not a slice: slicing a multi-hundred-megabyte head window copies it
-    (#2011), and the parse can read the prefix through a view instead.
+    A newline is NOT a row boundary on its own — a quoted field may contain one,
+    and cutting there leaves an unterminated quote pandas rejects outright (#595
+    C4). The index, not a slice: slicing a multi-hundred-megabyte head window
+    copies it (#2011), and the parse reads the prefix through a view instead.
     """
     end = len(raw)
     while True:
@@ -143,11 +145,6 @@ def row_boundary_end(raw: bytes | bytearray) -> int:
         if raw.count(b'"', 0, cut) % 2 == 0:
             return cut
         end = cut
-
-
-def trim_to_row_boundary(raw: bytes) -> bytes:
-    """Cut ``raw`` at the last quote-safe newline (#595 C4)."""
-    return raw[: row_boundary_end(raw)]
 
 
 def read_csv_bytes(raw: io.BytesIO, **kwargs: Any) -> Any:
@@ -519,8 +516,15 @@ class _BufferView(io.RawIOBase):
         return self._pos
 
     def seek(self, offset: int, whence: int = io.SEEK_SET) -> int:
-        base = {io.SEEK_SET: 0, io.SEEK_CUR: self._pos, io.SEEK_END: len(self._view)}[whence]
-        self._pos = max(0, min(len(self._view), base + offset))
+        bases = {io.SEEK_SET: 0, io.SEEK_CUR: self._pos, io.SEEK_END: len(self._view)}
+        if whence not in bases:
+            raise ValueError(f"invalid whence ({whence}, should be 0, 1 or 2)")
+        target = bases[whence] + offset
+        # Clamping a negative seek would silently re-read from byte 0 (#2011 review);
+        # past the end is legal on a real stream and just reads empty.
+        if target < 0:
+            raise OSError("negative seek position")
+        self._pos = min(len(self._view), target)
         return self._pos
 
     def readinto(self, buffer: Any) -> int:
@@ -683,21 +687,28 @@ def _open_batch_stream(
 #: Slack on the projected window, for rows past the sample wider than those in it.
 _WINDOW_ESTIMATE_SLACK = 1.15
 
+#: Ceiling on one growth step, as a multiple of the current window. Bounds what an
+#: UNREPRESENTATIVE first window can cost: a file whose first rows are far wider
+#: than its rest projects a window it does not need, and the projection is only an
+#: estimate — the only other thing stopping it is the object's own size.
+_WINDOW_GROWTH_LIMIT = 8
+
 
 def _next_window(window: int, *, buffered: int, rows: int, limit: int) -> int:
     """Where to grow the head window to, from the bytes-per-row the walk has
-    already observed — never less than a doubling (#2011).
+    already observed — between a doubling and `_WINDOW_GROWTH_LIMIT` times it (#2011).
 
     Doubling alone re-parses the whole prefix once per step, so reaching 128 MiB
     cost eight parses of a growing buffer; one projection off the first window
-    normally ends the walk in two. A file whose later rows are wider than its
-    first ones simply takes another iteration, with a better estimate each time.
+    normally ends the walk in two. A file whose rows past the first window are
+    wider takes another iteration with a better estimate; one whose first rows
+    are wider is stopped by the ceiling from over-fetching on their evidence.
     """
     doubled = window * 2
     if rows <= 0:
         return doubled
     projected = int(buffered / rows * limit * _WINDOW_ESTIMATE_SLACK) + _CSV_HEAD_BYTES
-    return max(doubled, projected)
+    return min(max(doubled, projected), window * _WINDOW_GROWTH_LIMIT)
 
 
 #: Sentinel distinguishing "use the configured scan-byte cap" (the default, every
@@ -731,6 +742,13 @@ def _csv_head_frame(
     `FlatFileReadError` instead of a) growing without limit or b) returning a
     partial frame that a caller (e.g. the suite-run sample's ``truncated``
     flag) would then have no way to distinguish from a legitimate EOF.
+
+    The cap bounds the FETCH, not just the decision to grow (#2011): no window is
+    requested larger than it. That tightened one case — a cap that is not a whole
+    number of doublings of `_CSV_HEAD_BYTES` (128 MiB is; 100,000,000 is not) used
+    to let a window overshoot it and then reach EOF, so an object sitting between
+    the cap and the next doubling was read in full despite the cap. Such a read is
+    now refused, because a bound that only sometimes binds is not a bound.
 
     ``max_window_bytes <= 0`` (default `RUN_MAX_SCAN_BYTES`, so 0 only via an
     explicit override) disables the check entirely — the walk is then bounded
@@ -782,7 +800,7 @@ def read_csv_projected_sample(
     usecols: CsvUseCols = None,
 ) -> Any:
     """The column profiler's bounded CSV read (#2000): the first ``rows`` data
-    rows, projected to ``usecols`` at parse time, via the same doubling head
+    rows, projected to ``usecols`` at parse time, via the same growing head
     window `read_sampled_dataframe` uses for a suite run — never the whole
     object, which the profiler used to download just to keep a handful of
     columns from its first 100k rows.
