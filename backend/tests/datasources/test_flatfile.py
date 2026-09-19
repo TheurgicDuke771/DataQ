@@ -2755,7 +2755,7 @@ class _FakeS3Client:
 
     def head_object(self, **_kwargs: Any) -> dict[str, Any]:
         self._log["heads"] += 1
-        return {"ContentLength": len(self._content), "LastModified": _LANDED}
+        return {"ContentLength": len(self._content), "LastModified": self._log["last_modified"]}
 
     def get_object(
         self, *, Range: str | None = None, **_kwargs: Any  # noqa: N803 — boto3 kwargs
@@ -2770,10 +2770,16 @@ class _FakeS3Client:
             raise RuntimeError("InvalidRange 416")
         return {"Body": io.BytesIO(self._content[start : end + 1])}
 
-    def replace(self, content: bytes) -> None:
-        """The object is re-uploaded (shrunk or grown) mid-run — for every client."""
+    def replace(self, content: bytes, *, last_modified: datetime | None = None) -> None:
+        """The object is re-uploaded (shrunk or grown) mid-run — for every client.
+
+        ``last_modified`` re-stamps the arrival time the store reports, which a real
+        re-upload always does; it lands on the log so every client sees it (#2007).
+        """
         self._content = content
         self._log["content"] = content
+        if last_modified is not None:
+            self._log["last_modified"] = last_modified
 
     def close(self) -> None:
         self.closed = True
@@ -2792,6 +2798,7 @@ def _fake_s3(monkeypatch: pytest.MonkeyPatch, content: bytes) -> dict[str, Any]:
         "downloads": 0,
         "ranges": [],
         "content": content,
+        "last_modified": _LANDED,
     }
 
     def _factory(_cfg: Any, _secret: str) -> _FakeS3Client:
@@ -2951,16 +2958,15 @@ def test_a_sampled_run_probes_the_objects_metadata_per_read(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`run_service` drives ONE runner through checks then monitors, and
-    `FlatFileCheckRunner._stat` memoises the object's size for the whole run —
-    but the sampled read no longer trusts that memo (#2004): a stat taken before
-    the checks phase can predate a file that grew during it, so the checks read
-    now HEADs fresh just like the volume count always has.
+    `FlatFileCheckRunner._stat` memoises the object's metadata for the rest of
+    THAT PHASE (#2007) — and the sampled read does not trust even that memo
+    (#2004): a stat taken before the read can predate a file that grew, so the
+    checks read HEADs fresh just like the volume count always has.
 
     Three HEADs, not two: one when `run_monitors` establishes `arrived_at` via
-    `_stat` (memoised for the rest of that call only), one for the checks
-    phase's own sampled read, and one for the volume count — the two reads are
-    deliberately never unified, since each one's job is to describe the object
-    as it stands AT THAT READ, not at some earlier probe.
+    `_stat`, one for the checks phase's own sampled read, and one for the volume
+    count — the reads are deliberately never unified, since each one's job is to
+    describe the object as it stands AT THAT READ, not at some earlier probe.
     """
     log = _fake_s3(monkeypatch, _csv_bytes(500))
 
@@ -3023,8 +3029,8 @@ def test_a_stale_oversized_stat_ends_the_head_window_at_the_real_eof(
 def test_a_grown_head_sample_is_walked_past_the_runners_old_stat(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`FlatFileCheckRunner._stat` is memoised per instance and can predate a
-    later sampled read by a whole checks phase. Before #2004 the checks read
+    """`FlatFileCheckRunner._stat` is memoised per phase and can predate a
+    later read within it. Before #2004 the checks read
     seeded its session from that memo, so rows appended after it were invisible
     to a `head` sample and `total_rows` under-reported the population.
     """
@@ -3146,10 +3152,115 @@ def test_a_parquet_object_that_shrinks_between_count_and_take_is_refused(
         )
 
 
+def _ts_csv_bytes(rows: int) -> bytes:
+    header = b"id,load_ts\n"
+    body = b"".join(f"{i},2026-06-29T00:00:00\n".encode() for i in range(rows))
+    return header + body
+
+
+def test_freshness_reports_a_file_re_uploaded_after_the_checks_phase(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Arrival-time freshness answers "when did the producer last deliver?", and
+    `run_service` drives ONE runner through checks and then monitors. A memo taken
+    by the checks phase predates anything that landed during it, so a producer that
+    JUST delivered read as hours late — the exact incident this monitor exists to
+    catch, inverted (#2007).
+    """
+    log = _fake_s3(monkeypatch, _csv_bytes(100))
+    runner = flatfile.FlatFileCheckRunner(conn_type="s3", config=_S3_CONFIG, secret="x")
+    runner.run_checks(
+        table="raw/big.csv",
+        schema=None,
+        checks=[CheckSpec("expect_column_values_to_not_be_null", {"column": "id"})],
+    )
+    delivered = datetime(2026, 7, 2, 12, 0, tzinfo=UTC)
+    for client in log["clients"]:
+        client.replace(_csv_bytes(400), last_modified=delivered)
+
+    out = runner.run_monitors(table="raw/big.csv", schema=None, monitors=[_spec("freshness")])
+
+    assert out[0].errored is False
+    assert (out[0].observed_value or {})["max_timestamp"].startswith("2026-07-02T12:00")
+
+
+def test_freshness_reports_a_stale_copy_restored_after_the_checks_phase(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The other direction, and the worse one: the checks phase memoised a RECENT
+    arrival time, then the object was overwritten by an older copy. Reading the memo
+    reports the stale file as fresh — a freshness monitor that misses a violation is
+    worse than one that manufactures it (#2007).
+    """
+    log = _fake_s3(monkeypatch, _csv_bytes(100))
+    runner = flatfile.FlatFileCheckRunner(conn_type="s3", config=_S3_CONFIG, secret="x")
+    runner.run_checks(
+        table="raw/big.csv",
+        schema=None,
+        checks=[CheckSpec("expect_column_values_to_not_be_null", {"column": "id"})],
+    )
+    restored = datetime(2026, 1, 3, 0, 0, tzinfo=UTC)
+    for client in log["clients"]:
+        client.replace(_csv_bytes(100), last_modified=restored)
+
+    out = runner.run_monitors(table="raw/big.csv", schema=None, monitors=[_spec("freshness")])
+
+    assert out[0].errored is False
+    assert (out[0].observed_value or {})["max_timestamp"].startswith("2026-01-03")
+
+
+def test_the_monitor_byte_cap_sees_a_file_grown_past_it_after_the_checks_phase(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The guardrail exists to refuse a whole-object load that would OOM the worker,
+    so it has to weigh the object as it stands at the read it is guarding. Off the
+    checks phase's memo, a file that has since grown past the cap is waved straight
+    through into `read_dataframe` (#2007).
+    """
+    _set_cap(monkeypatch, "RUN_MAX_SCAN_BYTES", 4096)
+    log = _fake_s3(monkeypatch, _ts_csv_bytes(50))
+    runner = flatfile.FlatFileCheckRunner(conn_type="s3", config=_S3_CONFIG, secret="x")
+    runner.run_checks(
+        table="raw/big.csv",
+        schema=None,
+        checks=[CheckSpec("expect_column_values_to_not_be_null", {"column": "id"})],
+    )
+    grown = _ts_csv_bytes(5_000)
+    assert len(grown) > 4096, "the replacement must actually cross the cap"
+    for client in log["clients"]:
+        client.replace(grown)
+
+    out = runner.run_monitors(
+        table="raw/big.csv", schema=None, monitors=[_spec("freshness", column="load_ts")]
+    )
+
+    assert out[0].errored is True
+    assert "over the scan cap" in (out[0].error_message or "")
+    assert log["downloads"] == 1, "the grown object must be refused, not downloaded"
+
+
+def test_the_checks_phase_still_probes_the_objects_metadata_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The per-phase rule must not cost the checks phase a second HEAD: a full-object
+    run still guards off ONE probe, as it did when the memo was runner-lifetime.
+    """
+    log = _fake_s3(monkeypatch, _csv_bytes(100))
+    runner = flatfile.FlatFileCheckRunner(conn_type="s3", config=_S3_CONFIG, secret="x")
+
+    runner.run_checks(
+        table="raw/big.csv",
+        schema=None,
+        checks=[CheckSpec("expect_column_values_to_not_be_null", {"column": "id"})],
+    )
+
+    assert log["heads"] == 1
+
+
 def test_the_volume_count_sees_rows_appended_after_the_checks_phase(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The runner's stat is memoised for the whole run; the count must not be."""
+    """The count is never memoised at all — not even within the monitors phase."""
     log = _fake_s3(monkeypatch, _csv_bytes(100))
 
     runner = flatfile.FlatFileCheckRunner(

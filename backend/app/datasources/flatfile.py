@@ -930,11 +930,32 @@ class FlatFileCheckRunner:
         self._config = config
         self._secret = secret
         self._sampling = sampling
-        #: Per-path metadata memo (#595) — the guard can be reached twice per run.
+        #: Per-path metadata memo (#595) — the guard can be reached twice per phase.
         self._stats: dict[str, FileStat] = {}
 
+    def _begin_phase(self) -> None:
+        """Drop the stat memo, so this phase probes the object as it stands now (#2007)."""
+        self._stats.clear()
+
     def _stat(self, path: str) -> FileStat:
-        """`file_stat` for ``path``, once per runner instance."""
+        """`file_stat` for ``path``, once per RUN PHASE — never across two (#2007).
+
+        The rule: no decision about *now* — arrival-time freshness, a byte-cap
+        verdict — may read a probe taken in an earlier phase, so every phase
+        that can follow another opens with `_begin_phase`. Within one phase the
+        establishment probe's answer IS shared, which is what keeps the scan
+        guardrail free of a second call.
+
+        `run_service` drives ONE runner through `run_checks` and then, when the
+        suite holds monitor-kind checks, `run_monitors`. Before #2007 a
+        runner-lifetime memo answered that second phase with the object as it
+        stood before the first: an `arrived_at` from before the write that
+        actually landed, and a byte-cap verdict on a size the object had already
+        grown past. `run_checks` never runs second — asserted in
+        `test_run_outcomes_drives_checks_before_monitors_on_one_runner`, since
+        reordering the phases would silently reinstate the bug — so its own guard
+        establishes the memo and has nothing stale to inherit.
+        """
         stat = self._stats.get(path)
         if stat is None:
             stat = file_stat(
@@ -946,8 +967,10 @@ class FlatFileCheckRunner:
     def _guard_object_size(self, path: str) -> None:
         """Refuse a full-object read exceeding ``RUN_MAX_SCAN_BYTES`` (#595).
 
-        Re-probing is prevented by `_stat`'s memo alone (#1330) — a second
-        don't-re-probe mechanism beside it was one too many.
+        Re-probing within the phase is prevented by `_stat`'s memo alone (#1330)
+        — a second don't-re-probe mechanism beside it was one too many. The memo
+        never crosses a phase boundary, so the size weighed here is the object's
+        as of this phase, not an earlier one's (#2007).
         """
         cap = get_settings().run_max_scan_bytes
         if cap <= 0:
@@ -995,6 +1018,8 @@ class FlatFileCheckRunner:
         """Evaluate freshness/volume monitors on a flat file — no SQL (#520)."""
         # Establishment probe — fails loudly before the per-monitor loop; also
         # carries the size, so the scan guardrail costs no second call (#595).
+        # Fresh for this phase (#2007): both decisions it feeds are about now.
+        self._begin_phase()
         stat = self._stat(table)
         arrived_at = stat.last_modified
         # One-slot memo of the READ ATTEMPT, failures included — otherwise each monitor retries the
