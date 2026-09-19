@@ -13,6 +13,7 @@ from backend.app.core.config import get_settings
 from backend.app.datasources import flatfile
 from backend.app.datasources.base import SAMPLE_ROW_CAP, CheckSpec, SampleSpec
 from backend.app.datasources.sampling import SamplingDrawError, ScanTooLargeError
+from backend.tests.support.adversarial import ADVERSARIAL_CSV_BODIES
 from backend.tests.support.fake_secret_store import FakeSecretStore
 
 # ── format_from_path ──
@@ -2589,6 +2590,187 @@ def test_read_csv_projected_sample_builds_one_store_client(
     assert len(frame) == 200_000
     assert len(log["ranges"]) > 1, "one request only — this test would pass trivially"
     assert len(log["clients"]) == 1
+
+
+# ── the head window's growth (#2011) ────────────────────────────────────────
+# The window used to double and re-parse its WHOLE buffered prefix at every step,
+# so reaching 100k rows on a wide CSV cost O(n log n) parse work plus a peak of
+# buffer + two full copies of it. These assert the new growth and the absence of
+# those copies ON THE SEAM, since the returned frame is identical either way —
+# which is exactly why the cost survived #2000's review of the behaviour.
+
+
+def _count_parses(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """Count `_window_frame` calls — one parse of the buffered prefix each."""
+    parses: list[int] = []
+    real = flatfile._window_frame
+
+    def _counted(*args: Any, **kwargs: Any) -> Any:
+        parses.append(1)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(flatfile, "_window_frame", _counted)
+    return parses
+
+
+def test_the_head_window_projects_its_target_instead_of_only_doubling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The headline. Doubling from 1 MiB to the ~24 MiB a 200k-row sample of this
+    file needs takes five steps, each re-parsing everything buffered so far; the
+    bytes-per-row the first window already revealed gets there in two.
+    """
+    content = _wide_csv_bytes(400_000, 10)
+    assert len(content) > 16 * 1024 * 1024, "the target must need several doublings"
+    _patch_store(monkeypatch, content=content)
+    parses = _count_parses(monkeypatch)
+
+    frame = flatfile.read_csv_projected_sample(
+        conn_type="s3", config={}, path="raw/wide.csv", secret="s", rows=200_000
+    )
+
+    assert len(frame) == 200_000
+    assert len(parses) <= 3
+
+
+def test_the_head_window_sniffs_the_delimiter_once_per_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The sniff decoded 64 KiB of the buffer again on every growth step, because
+    it sat inside the per-iteration parse. It is a property of the file, not of
+    the window, so it is taken once and passed down.
+    """
+    _patch_store(monkeypatch, content=_wide_csv_bytes(400_000, 10))
+    sniffs: list[int] = []
+    real = flatfile.sniff_delimiter
+
+    def _counted(sample: bytes) -> str:
+        sniffs.append(1)
+        return real(sample)
+
+    monkeypatch.setattr(flatfile, "sniff_delimiter", _counted)
+
+    flatfile.read_csv_projected_sample(
+        conn_type="s3", config={}, path="raw/wide.csv", secret="s", rows=200_000
+    )
+
+    assert sniffs == [1]
+
+
+def test_the_window_is_parsed_through_a_view_never_a_copy_of_it() -> None:
+    """`_BufferView` borrows the window's bytes rather than copying them — the
+    copy is what a `bytes(buffered)` plus a slicing trim cost twice over on a
+    128 MiB window. Proved by mutating the source AFTER the stream exists.
+    """
+    buffered = bytearray(b"a,b\n1,x\n")
+    stream = flatfile._BufferView(memoryview(buffered))
+    buffered[4:8] = b"9,z\n"
+
+    assert stream.read() == b"a,b\n9,z\n"
+
+
+def test_the_window_can_still_grow_after_a_parse_released_its_view() -> None:
+    """A bytearray cannot be resized while a memoryview of it is alive, so a view
+    left unreleased turns the next fetch into `BufferError` — the growth path's
+    one hard constraint, asserted rather than trusted.
+    """
+    buffered = bytearray(b"a,b\n1,x\n")
+    flatfile._window_frame(buffered, limit=10, reached_eof=True, delimiter=",")
+
+    buffered += b"2,y\n"  # BufferError if the parse's view outlived it
+
+    assert len(buffered) == 12
+
+
+@pytest.mark.parametrize(("name", "content"), ADVERSARIAL_CSV_BODIES, ids=lambda v: v)
+def test_a_bounded_head_read_equals_the_whole_buffer_parse(
+    monkeypatch: pytest.MonkeyPatch, name: str, content: bytes
+) -> None:
+    """Equivalence is the acceptance bar: whatever the bounded read does to reach
+    its target, the frame must be what ONE `read_csv` of the whole body yields.
+    These bodies carry the hazards a DataFrame fixture cannot — quoted newlines
+    and delimiters, doubled quotes, CRLF, a BOM, blank lines, a missing trailing
+    newline, and columns whose type changes partway down.
+    """
+    _patch_store(monkeypatch, content=content)
+
+    frame = flatfile.read_csv_projected_sample(
+        conn_type="s3", config={}, path="raw/adversarial.csv", secret="s", rows=1_000
+    )
+
+    expected = flatfile.read_csv_bytes(io.BytesIO(content), nrows=1_000)
+    pd.testing.assert_frame_equal(frame, expected)
+
+
+def _quoted_newline_csv(rows: int) -> bytes:
+    """Every row carries a quoted field containing a newline, so a window boundary
+    lands inside quotes no matter where it falls.
+    """
+    body = b"".join(f'{i},"line one\nline two {i}"\n'.encode() for i in range(rows))
+    return b"id,note\n" + body
+
+
+def test_a_grown_head_read_equals_the_whole_buffer_parse_with_quoted_newlines(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The same equivalence over a read that actually GROWS, on the input the
+    growth is most likely to split wrongly: a quoted newline is a row boundary to
+    a naive scan and not one to the parser, so every window edge is a trap.
+    """
+    content = _quoted_newline_csv(120_000)
+    assert len(content) > 2 * 1024 * 1024, "the read must need more than one window"
+    _patch_store(monkeypatch, content=content)
+    parses = _count_parses(monkeypatch)
+
+    frame = flatfile.read_csv_projected_sample(
+        conn_type="s3", config={}, path="raw/quoted.csv", secret="s", rows=100_000
+    )
+
+    assert len(parses) > 1, "one window only — this test would prove nothing"
+    expected = flatfile.read_csv_bytes(io.BytesIO(content), nrows=100_000)
+    pd.testing.assert_frame_equal(frame, expected)
+
+
+def test_a_grown_head_reads_dtypes_match_the_whole_buffer_parse(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A column that is all-integer for the first window and gains a float and a
+    blank later must end up with the dtype a single whole-buffer parse gives it —
+    otherwise the profiler's type inference silently changes with the file's size.
+    """
+    rows = b"".join(f"{i},{i}\n".encode() for i in range(200_000))
+    content = b"id,amount\n" + rows + b"200000,3.5\n200001,\n"
+    assert len(rows) > 2 * 1024 * 1024, "the type change must fall past the first window"
+    _patch_store(monkeypatch, content=content)
+
+    frame = flatfile.read_csv_projected_sample(
+        conn_type="s3", config={}, path="raw/types.csv", secret="s", rows=200_002
+    )
+
+    expected = flatfile.read_csv_bytes(io.BytesIO(content), nrows=200_002)
+    assert frame["amount"].dtype == expected["amount"].dtype
+    pd.testing.assert_frame_equal(frame, expected)
+
+
+def test_the_head_window_never_fetches_past_the_scan_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A projected jump must be clamped to the cap BEFORE the fetch. Doubling could
+    only overshoot a cap that is not a power-of-two multiple of the window; a
+    projection can overshoot any cap, and fetching 24 MiB to then refuse the read
+    is the unbounded read the cap exists to prevent.
+    """
+    cap = 3 * 1024 * 1024
+    _set_cap(monkeypatch, "RUN_MAX_SCAN_BYTES", cap)
+    ranges: list[tuple[int, int]] = []
+    _patch_store(monkeypatch, content=_wide_csv_bytes(400_000, 10), ranges=ranges)
+
+    with pytest.raises(flatfile.FlatFileReadError, match="scan cap"):
+        flatfile.read_csv_projected_sample(
+            conn_type="s3", config={}, path="raw/wide.csv", secret="s", rows=200_000
+        )
+
+    assert sum(length for _, length in ranges) <= cap
 
 
 def test_a_row_count_expectation_is_refused_on_a_sampled_flat_file(
