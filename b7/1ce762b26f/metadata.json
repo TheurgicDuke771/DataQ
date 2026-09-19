@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.10.6",
+  "checkpoint_id": "b71ce762b26f",
+  "strategy": "manual-commit",
+  "branch": "chore/codeql-repeated-import",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/b7/1ce762b26f/0/metadata.json",
+      "transcript": "/b7/1ce762b26f/0/full.jsonl",
+      "compact_transcript": "/b7/1ce762b26f/0/transcript.jsonl",
+      "content_hash": "/b7/1ce762b26f/0/content_hash.txt",
+      "prompt": "/b7/1ce762b26f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 3364,
+    "cache_creation_tokens": 4042100,
+    "cache_read_tokens": 176484222,
+    "output_tokens": 267754,
+    "api_call_count": 403
+  }
+}

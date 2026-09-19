@@ -1,0 +1,9 @@
+okay, check the current status of the repo, close 2005 [as of current state].
+
+---
+
+Okay once the #2005 merged, let's pickup the dependabot PRs and CodeQL isuues, triage them, and then decide what to be done with them.
+
+---
+
+Sounds good. Go ahead with the plan. Bump both OTel and databricks sql.
