@@ -6182,6 +6182,17 @@
             "title": "Id",
             "type": "string"
           },
+          "queued_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queued Reason"
+          },
           "results": {
             "items": {
               "$ref": "#/components/schemas/ResultRead"
@@ -6377,6 +6388,17 @@
             ],
             "title": "Finished At"
           },
+          "queued_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queued Reason"
+          },
           "run_id": {
             "format": "uuid",
             "title": "Run Id",
@@ -6479,6 +6501,17 @@
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "queued_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queued Reason"
           },
           "started_at": {
             "anyOf": [

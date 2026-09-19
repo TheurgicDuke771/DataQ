@@ -66,6 +66,9 @@ class RunRead(ApiModel):
     # A redaction-safe reason for a `failed` run (#605) — a fixed classified
     # message (never raw adapter text). NULL for non-failed runs and older rows.
     failure_reason: str | None = None
+    # Why a `queued` run is still queued (#1998): `awaiting_worker_memory` when worker memory
+    # admission control is holding it back. NULL = the ordinary case, waiting on the broker.
+    queued_reason: str | None = None
 
 
 class ResultRead(ApiModel):
@@ -126,6 +129,9 @@ class RunProgressRead(ApiModel):
     started_at: datetime | None
     finished_at: datetime | None
     elapsed_ms: int | None = None
+    #: Why a `queued` run is still queued (#1998) — `awaiting_worker_memory` while admission
+    #: control holds it back; NULL means it is simply waiting on the broker.
+    queued_reason: str | None = None
     #: True when at least one unresolved check belongs to a kind that resolves as a GROUP rather
     #: than one at a time (everything but `comparison`).
     batched_pending: bool = False
@@ -405,6 +411,7 @@ def get_run_progress(
             CheckProgressRead(check_id=c.check_id, name=c.name, status=c.status)
             for c in progress.checks
         ],
+        queued_reason=run.queued_reason,
         started_at=run.started_at,
         finished_at=run.finished_at,
         elapsed_ms=progress.elapsed_ms,
