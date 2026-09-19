@@ -61,7 +61,7 @@ boto3==1.43.82                    # S3, AWS Secrets Manager (SecretStore)
 databricks-sql-connector==4.5.0   # Unity Catalog
 databricks-sqlalchemy==2.0.10      # the SQLAlchemy 'databricks' dialect — SPLIT OUT of the connector in 4.x (#535); bump the pair together
 pyarrow==25.0.1                   # Parquet flat-file IO (read_parquet/profiler) — was a databricks-sql-connector transitive until its 4.x dropped it (#201)
-pyiceberg[pyarrow]==0.12.0        # native Iceberg read (ADR 0030, #716) — v2 baseline; spike-verified compatible with pyarrow 24 + GX 1.17.2 (#286); its rich<15/cachetools<7 transitives were unpinned, CVE-clean per pip-audit
+pyiceberg[pyarrow]==0.12.0        # native Iceberg read (ADR 0030, #716) — v2 baseline; verified against pyarrow 25.0.1 + GX 1.17.2, CVE-clean per pip-audit. 0.12.0 needs pyarrow>=18 and drops pyiceberg-core from the [pyarrow] extra (write/datafusion only, never the read path). Two silent behaviour changes for a BYO catalog: a REST catalog's `rest-scan-planning-enabled` is renamed `scan-planning-mode` (client|server) and the old key is IGNORED, so a deployment that set it true loses server-side planning; a SqlCatalog whose DB predates 0.12.0 runs in "v0 mode" and WARNs per construction (#2032) — migrating means schema_version='v1', which is a DDL write
 openpyxl==3.1.5                   # XLSX comparison-report download (ADR 0015 §4, #795) — derived on demand, never stored. MIT (rule 40); lazy-imported on the download path only
 adlfs==2026.8.0                   # pyiceberg FileIO for abfss:// (ADLS) warehouses — [pyarrow] covers S3 natively but resolves ADLS via fsspec/adlfs; without it any ADLS-warehouse iceberg table load dies ModuleNotFoundError (#749). BSD-3 (rule 40)
 
