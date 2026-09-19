@@ -164,6 +164,8 @@ class FakeMonitorRunner:
         self._check_outcomes = check_outcomes
         self._monitor_outcomes = monitor_outcomes
         self.monitors_called_with: list[object] | None = None
+        #: Phase call order — the flat-file runner's stat memo depends on it (#2007).
+        self.calls: list[str] = []
 
     def run_checks(
         self,
@@ -173,11 +175,13 @@ class FakeMonitorRunner:
         checks: list[CheckSpec],
         index_columns: list[str] | None = None,
     ) -> SuiteOutcome:
+        self.calls.append("checks")
         return SuiteOutcome(success=True, checks=self._check_outcomes)
 
     def run_monitors(
         self, *, table: str, schema: str | None, monitors: list[object]
     ) -> list[CheckOutcome]:
+        self.calls.append("monitors")
         self.monitors_called_with = monitors
         return self._monitor_outcomes
 
@@ -198,6 +202,24 @@ def test_run_outcomes_routes_by_kind_and_keeps_check_order() -> None:
 
     assert [o.expectation_type for o in outcomes] == ["e1", "monitor:freshness", "e2"]
     assert runner.monitors_called_with is not None and len(runner.monitors_called_with) == 1
+
+
+def test_run_outcomes_drives_checks_before_monitors_on_one_runner() -> None:
+    """A load-bearing ordering, not an incidental one: `FlatFileCheckRunner` clears
+    its metadata memo when `run_monitors` opens and NOT when `run_checks` does,
+    because the checks phase is first and so has nothing stale to inherit (#2007).
+    Reordering these two phases silently reinstates the bug, so the order is
+    asserted here rather than left as prose in that runner's docstring.
+    """
+    checks = [_checks(1)[0], _monitor_check("volume", {"min_rows": 1, "max_rows": 9})]
+    runner = FakeMonitorRunner(
+        check_outcomes=[CheckOutcome("e1", success=True)],
+        monitor_outcomes=[CheckOutcome("monitor:volume", success=True, metric_value=1.0)],
+    )
+
+    collect_outcomes(cast(CheckRunner, runner), table="T", schema=None, checks=checks)
+
+    assert runner.calls == ["checks", "monitors"]
 
 
 def test_run_outcomes_monitor_on_non_sql_runner_raises() -> None:

@@ -946,13 +946,15 @@ class FlatFileCheckRunner:
         establishment probe's answer IS shared, which is what keeps the scan
         guardrail free of a second call.
 
-        `run_service` drives ONE runner through `run_checks` and then always
-        `run_monitors`, so before #2007 a runner-lifetime memo answered the
-        monitors phase with the object as it stood before the checks phase: an
-        `arrived_at` from before the write that actually landed, and a byte-cap
-        verdict on a size the object had already grown past. `run_checks` is
-        first by construction (that order is fixed in `run_service`), so its own
-        guard establishes the memo and has nothing stale to inherit.
+        `run_service` drives ONE runner through `run_checks` and then, when the
+        suite holds monitor-kind checks, `run_monitors`. Before #2007 a
+        runner-lifetime memo answered that second phase with the object as it
+        stood before the first: an `arrived_at` from before the write that
+        actually landed, and a byte-cap verdict on a size the object had already
+        grown past. `run_checks` never runs second — asserted in
+        `test_run_outcomes_drives_checks_before_monitors_on_one_runner`, since
+        reordering the phases would silently reinstate the bug — so its own guard
+        establishes the memo and has nothing stale to inherit.
         """
         stat = self._stats.get(path)
         if stat is None:
