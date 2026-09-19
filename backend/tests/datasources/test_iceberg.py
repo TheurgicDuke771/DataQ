@@ -1098,9 +1098,10 @@ def test_the_probe_never_counts_through_the_driver(monkeypatch: pytest.MonkeyPat
     guard exists for, perform the read it is refusing. The probe plans files and
     sums `record_count` instead — manifests, never data.
 
-    pyiceberg cannot WRITE a delete file (0.11.1 falls back to copy-on-write), so no
-    local catalog can produce the adversarial table; what is pinned here is that the
-    guard never reaches `count()` at all.
+    pyiceberg cannot WRITE a delete file (0.12.0 still falls back to copy-on-write —
+    `Table.delete` warns and rewrites whole data files), so no local catalog can
+    produce the adversarial table; what is pinned here is that the guard never
+    reaches `count()` at all.
     """
     monkeypatch.setenv("RUN_MAX_SCAN_ROWS_ICEBERG", "2")
     get_settings.cache_clear()
