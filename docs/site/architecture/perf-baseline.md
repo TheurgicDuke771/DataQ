@@ -37,7 +37,7 @@ Two sentences of conclusion:
 | | |
 |---|---|
 | App code | `main`, during v1.1 development |
-| Measurement rig | docker-compose stack pinned to **production parity**: worker at 1 CPU / 2 GiB / `celery --concurrency=4` (the value the worker now pins in its Celery config, `WORKER_CONCURRENCY` — the prefork default reads the *host's* core count, not the container's, and had silently differed between the two reference deployments), driven through the real REST API |
+| Measurement rig | docker-compose stack pinned to **production parity**: worker at 1 CPU / 2 GiB / `celery --concurrency=4` (the pool size at the time of this campaign; the worker pins it in its Celery config from `WORKER_CONCURRENCY`, and the value is **now 2** — see "The concurrency decision" below), driven through the real REST API |
 | Iceberg leg | run against the deployed stack (the native catalog wasn't reachable from the local rig) — wall via REST, worker memory via the platform metric |
 | Worker memory sampling | `docker stats` at 1 Hz (local); 1-min max metric (prod) |
 | Checks per rung | 5 expectations (not-null ×2, between ×2, unique ×1) + volume & freshness monitors on the SQL/UC/Iceberg rungs (flat files also support freshness/volume, incl. arrival-time freshness, but weren't run through this particular campaign) |
@@ -367,7 +367,8 @@ Same shape as every prior rung: a 6-col order-lines table (`line_id`, `order_id`
 `sku_id`, `qty`, `unit_price`, `line_ts`), created via
 `CREATE TABLE … AS SELECT … FROM range(n)` on the harness's Databricks Free
 Edition serverless SQL warehouse, run through the **real** `UnityCatalogCheckRunner`
-via the prod-parity rig (worker capped 1 CPU / 2 GiB, `celery --concurrency=4`),
+via the prod-parity rig (worker capped 1 CPU / 2 GiB, `celery --concurrency=4`,
+the pool size at the time of this campaign),
 driven through the real REST API. Suite: the same 5 expectations as every other
 rung (not-null ×2, between ×2, unique ×1) — all five are in the audited pushdown
 allowlist. Worker memory sampled via `docker stats` at ~1 Hz; "wall" is
@@ -676,7 +677,8 @@ substitution the v1.1 section above used. The database cases run against a
 **scratch** database seeded with `generate_series`, never the application one.
 
 **The rig is a development machine, not the production rig.** Production is 1
-CPU / 2 GiB per worker container with Celery prefork concurrency 4; these
+CPU / 2 GiB per worker container with Celery prefork concurrency 2 (it was 4
+when the concurrent-peak rows below were captured); these
 numbers were taken on a 14-core / 48 GiB laptop. Absolute wall clock therefore
 says nothing about production latency — the value here is the *shape* (how a
 number moves with volume) and the *deterministic* counters, which do not depend
@@ -799,8 +801,69 @@ run was measured at 1,186 MiB per child (this machine's per-child figure is
 lower, and its idle baseline is lower too). Splitting the scheduler out of the
 worker protected *beat* from that; it did nothing about the task-execution side,
 so a schedule collision — or a manual run beside a scheduled one — can still
-exhaust the worker. A concurrency cap, a per-task memory guard or a larger worker
-remain live options; that decision is tracked separately.
+exhaust the worker. The decision that followed is the next section.
+
+#### The concurrency decision
+
+Two changes ship together, because neither is sufficient alone.
+
+**The pool is 2, not 4.** At the measured per-child peak, four children do not fit
+a 2 GiB container and two do not reliably either — so a pool size alone was never
+going to be the whole answer, and cutting it to 1 would have traded every bit of
+parallelism for a bound that the second change provides more cheaply. Pool size
+ships with the image (`WORKER_CONCURRENCY`), so it needs no infrastructure step.
+
+**Admission control bounds the sum, which is what the caps never did.**
+`RUN_MAX_SCAN_BYTES` / `RUN_MAX_SCAN_ROWS` bound *one* run's read; four runs each
+passing their cap still exceed the container. A run now claims its estimated
+resident cost from a worker-wide budget — held in Redis, so it is shared across
+the prefork children of one container — before it materialises anything, and
+releases it when it finishes. The estimate is not guessed from the data: it comes
+from the size probe the read path already performs, multiplied by the measured
+store-bytes-to-RSS expansion in the table above (~8× CSV, ~9× Parquet), and a
+sampled run is estimated from its sample rather than from the object, because
+sampling removes the volume axis entirely.
+
+The arithmetic, on the production rig's 1,186 MiB-per-child figure for a 1M-row
+CSV and a ~930 MiB idle worker:
+
+| | Per-child peak × pool | Plus idle baseline | Against 2,048 MiB |
+|---|---|---|---|
+| Before (pool 4) | 4,744 MiB | 5,674 MiB | **2.8× over** |
+| Before (pool 2) | 2,372 MiB | 3,302 MiB | **1.6× over** |
+| After (pool 2, budget 1 GiB) | ≤ 1,024 MiB reserved | 1,954 MiB | fits |
+
+The budget default is `RUN_MAX_SCAN_BYTES × 8`, which admits one at-the-cap CSV
+read and leaves the second slot for the pushdown and sampled work that costs
+nothing. The other cap-bounded estimates — an at-the-cap Parquet read, a batch
+target, the Unity Catalog frame lane at its row cap — come out *above* the whole
+budget, so they are admitted only when nothing else holds any. That is the
+intended answer rather than a mis-tuned default: the measured peaks for exactly
+those cases (1,278 MiB Parquet at 5M rows, 1,681 MiB for a 1M-row UC frame) do
+not fit beside anything on a 2 GiB worker either. Large reads are serialised;
+they are not refused.
+
+Three properties are deliberate, and each is the answer to a way this could have
+been worse than the problem:
+
+- **Pressure never fails a run.** An over-budget run is re-queued with a bounded
+  wait, and past that wait it proceeds anyway rather than starving — the timeout
+  is logged, not silent. A run whose estimate exceeds the whole budget is admitted
+  when nothing else holds any, so a large target runs alone instead of never.
+- **Waiting is visible as waiting.** The run stays `queued` and carries
+  `queued_reason: awaiting_worker_memory`, so neither a user nor an LLM reading
+  `/runs` sees "running" for a run that has read nothing yet.
+- **The budget fails open, and a dead child does not leak it.** An unreachable
+  Redis admits (the same stance rate limiting takes), and every reservation is a
+  lease — because the OOM case is exactly the one where cleanup code does not run.
+
+Pushdown lanes bypass admission for the suite's own batch: they hold no dataset in
+the worker, and charging them for one would serialise the cheapest work on the
+platform. They are **not** exempt from a comparison check, whose two sides
+materialise in the worker on every datasource — that estimate is added on top, and
+is the whole estimate on an otherwise-pushdown suite. Iceberg has no estimator yet
+— its `scan().count()` probe is tracked separately — and is logged as unmetered
+rather than counted as free.
 
 #### Database growth — the reads a user waits on
 
@@ -871,27 +934,29 @@ does with the keys once it has them.
 
 200,000 rows, profiling every column (the flat-file profiler samples the first
 100k rows). The CSV path used to `download_bytes` the whole object before
-applying its row/column limits; it now shares the same doubling-window bounded
-head read the sampled suite-run path uses (`read_csv_projected_sample` over
-`_csv_head_frame`), growing only until it holds the sample or hits EOF:
+applying its row/column limits; it now shares the bounded head read the sampled
+suite-run path uses (`read_csv_projected_sample` over `_csv_head_frame`), growing
+only until it holds the sample or hits EOF:
 
-| Object | Columns | Wall | Peak RSS | Bytes read (was) | Store calls (was) |
+| Object | Columns | Wall | Peak RSS | Bytes read | Store calls |
 |---|---|---|---|---|---|
-| CSV (39 MB) | 50 | 0.35 s | 757 MiB | **33,554,432** (38,902,153) | 7 (1) |
-| CSV (156 MB) | 200 | 1.35 s | 1898 MiB | **134,217,728** (155,606,664) | 9 (1) |
-| Parquet (13 MB) | 50 | 0.12 s | 412 MiB | 12,828,601 | 3 |
-| Parquet (51 MB) | 200 | 0.39 s | 606 MiB | 51,211,169 | 5 |
+| CSV (39 MB) | 50 | 0.14 s | 510 MiB | **23,424,942** | 3 |
+| CSV (156 MB) | 200 | 0.52 s | 903 MiB | **90,637,164** | 3 |
+| Parquet (13 MB) | 50 | 0.10 s | 427 MiB | 12,828,601 | 3 |
+| Parquet (51 MB) | 200 | 0.38 s | 625 MiB | 51,211,169 | 5 |
 
 The Parquet path is unchanged (it already projected columns and streamed range
-requests). The CSV path now reads a bounded prefix instead of the whole
-object — the store-egress reduction the fix targets — but the doubling window
-reparses its whole buffered prefix from byte 0 on every growth step, so on a
-wide/dense file (many small store round trips, each a full CPU-bound reparse)
-wall time and peak RSS both went *up* on this local-disk harness, where store
-latency is near zero and the reparse cost dominates. Against a real S3/ADLS
-store the egress reduction is the one that matters in production cost terms;
-the RSS/CPU trade-off is tracked separately as a follow-up, since it is shared
-with the sampled suite-run path and worth fixing once, not reworked here.
+requests). The CSV path reads a bounded prefix instead of the whole object — the
+store-egress reduction that motivated the change — and the window's growth is
+projected from the bytes-per-row its first window reveals rather than doubled
+blindly. That matters because every growth step re-parses the prefix buffered so
+far, so the step count is parse work, not just round trips: the 200-column case
+reaches its sample in **3 store calls** where doubling took 9, and the prefix is
+parsed through a view of the buffer rather than a `bytes` copy plus a second copy
+for the row-boundary trim. Against the whole-object download this replaced, the
+200-column case reads **42% fewer bytes** at roughly the same peak RSS (903 MiB
+vs 877 MiB) and less wall time; against the first, blindly-doubling version of
+the bounded read it is **half the peak RSS** (903 vs 1847 MiB) and **2.4× faster**.
 (The warehouse profiler's batched rank-join, the post-optimisation number this
 page records elsewhere, is not measured here — see the not-measured table
 below.)

@@ -100,8 +100,8 @@ def create_celery_app() -> Celery:
         # fresh child (#755 poison pill).
         task_acks_late=False,
         # Beat runs as its OWN process/service (`celery ... beat`, no `-B`) in dev AND prod since
-        # #1811 — split out so a worker OOM (overlapping large suites under the concurrency=4 /
-        # 2 GiB rig, #1790) can never take the scheduler down with it (the #405 class). Beat state
+        # #1811 — split out so a worker OOM (overlapping large suites under the 2 GiB rig, #1790)
+        # can never take the scheduler down with it (the #405 class). Beat state
         # does not survive a restart either way.
         beat_schedule_filename=os.path.join(tempfile.gettempdir(), "dataq-celerybeat-schedule"),
         beat_schedule={
