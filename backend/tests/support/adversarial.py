@@ -47,6 +47,37 @@ def assert_json_safe(value: Any) -> None:
     json.dumps(value, allow_nan=False)
 
 
+#: CSV bodies whose *bytes* are hostile to a bounded, incremental read (#2011) —
+#: the hazards live in the framing (quoting, line endings, ragged shape) and in
+#: type inference, neither of which a DataFrame fixture can express. Every one is
+#: a body `pandas.read_csv` parses without raising, so a bounded read of it can be
+#: compared against the whole-buffer parse it must equal.
+ADVERSARIAL_CSV_BODIES: list[tuple[str, bytes]] = [
+    ("plain", b"a,b\n1,x\n2,y\n"),
+    ("no_trailing_newline", b"a,b\n1,x\n2,y"),
+    ("crlf", b"a,b\r\n1,x\r\n2,y\r\n"),
+    ("utf8_bom", b"\xef\xbb\xbfa,b\n1,x\n2,y\n"),
+    ("quoted_newline", b'a,b\n"line1\nline2",x\n2,y\n'),
+    ("quoted_delimiter", b'a,b\n"1,000",x\n2,y\n'),
+    ("doubled_quotes", b'a,b\n"he said ""hi""",x\n2,y\n'),
+    ("quoted_crlf", b'a,b\r\n"line1\r\nline2",x\r\n2,y\r\n'),
+    ("blank_line_between_rows", b"a,b\n1,x\n\n2,y\n"),
+    ("empty_fields", b"a,b\n,\n2,y\n"),
+    ("int_then_float", b"a\n1\n2\n3.5\n"),
+    ("int_then_blank", b"a,b\n1,2\n3,\n"),
+    ("int_then_text", b"a\n1\n2\nN/A\n"),
+    ("bools_then_text", b"a\ntrue\nfalse\nmaybe\n"),
+    ("big_ints", b"a\n1\n1000000000000000000000000000000\n"),
+    ("semicolons", b"a;b\n1;x\n2;y\n"),
+    ("tabs", b"a\tb\n1\tx\n2\ty\n"),
+    ("pipes", b"a|b\n1|x\n2|y\n"),
+    ("unicode", "a,b\ncafé,naïve\n🦄,x\n".encode()),
+    ("quotes_in_header", b'"a,1",b\n1,x\n2,y\n'),
+    ("one_column", b"a\n1\n2\n"),
+    ("header_only", b"a,b\n"),
+]
+
+
 #: Prompt-injection strings for warehouse-controlled LLM-context slots (#1632).
 #: Output validation is the security boundary, not prompt hygiene — these prove
 #: a hostile string reaches the prompt as inert DATA, never SQL/config.
