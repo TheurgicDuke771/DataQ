@@ -2640,21 +2640,23 @@ def test_the_head_window_projects_its_target_instead_of_only_doubling(
     assert len(parses) <= 3
 
 
-def test_a_wide_first_window_does_not_project_an_unbounded_jump(
+def test_a_wide_first_window_over_projects_but_stays_correct_and_bounded(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The projection is an estimate off the FIRST window, and a file whose opening
-    rows are far wider than its rest makes that estimate wildly high — with only the
-    object's own size to stop it, the growth would fetch and buffer the whole thing
-    where doubling needed a fraction of it. Capped at a fixed multiple per step.
+    """The projection's known limit, pinned rather than left to be rediscovered: a
+    file whose OPENING rows are far wider than its rest makes the average estimate
+    high, so the read fetches more than a doubling walk would have. What must hold
+    is that it stays correct and inside the budget — the right rows, and never past
+    the object or `RUN_MAX_SCAN_BYTES`. Fixing the over-fetch needs evidence the
+    first window does not contain; the bound is what makes it tolerable.
     """
+    cap = 8 * 1024 * 1024
+    _set_cap(monkeypatch, "RUN_MAX_SCAN_BYTES", cap)
     content = (
         b"id,payload\n"
         + b"".join(f"{i},{'w' * 5_000}\n".encode() for i in range(200))
         + b"".join(f"{i},{'n' * 10}\n".encode() for i in range(1_000_000))
     )
-    ceiling = flatfile._CSV_HEAD_BYTES * flatfile._WINDOW_GROWTH_LIMIT
-    assert len(content) > ceiling, "the object must be bigger than one capped step"
     ranges: list[tuple[int, int]] = []
     _patch_store(monkeypatch, content=content, ranges=ranges)
 
@@ -2663,9 +2665,10 @@ def test_a_wide_first_window_does_not_project_an_unbounded_jump(
     )
 
     assert len(frame) == 100_000
+    assert list(frame["id"][:3]) == [0, 1, 2]
     fetched = sum(length for _, length in ranges)
-    assert fetched <= ceiling, "the wide opening rows projected a window past the ceiling"
-    assert fetched < len(content), "the whole object was pulled on a first-window estimate"
+    assert fetched <= cap, "an over-projection must still be clamped to the scan cap"
+    assert fetched <= len(content)
 
 
 def test_the_head_window_sniffs_the_delimiter_once_per_read(

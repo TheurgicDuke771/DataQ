@@ -687,28 +687,30 @@ def _open_batch_stream(
 #: Slack on the projected window, for rows past the sample wider than those in it.
 _WINDOW_ESTIMATE_SLACK = 1.15
 
-#: Ceiling on one growth step, as a multiple of the current window. Bounds what an
-#: UNREPRESENTATIVE first window can cost: a file whose first rows are far wider
-#: than its rest projects a window it does not need, and the projection is only an
-#: estimate — the only other thing stopping it is the object's own size.
-_WINDOW_GROWTH_LIMIT = 8
-
 
 def _next_window(window: int, *, buffered: int, rows: int, limit: int) -> int:
     """Where to grow the head window to, from the bytes-per-row the walk has
-    already observed — between a doubling and `_WINDOW_GROWTH_LIMIT` times it (#2011).
+    already observed — never less than a doubling (#2011).
 
     Doubling alone re-parses the whole prefix once per step, so reaching 128 MiB
     cost eight parses of a growing buffer; one projection off the first window
     normally ends the walk in two. A file whose rows past the first window are
-    wider takes another iteration with a better estimate; one whose first rows
-    are wider is stopped by the ceiling from over-fetching on their evidence.
+    wider simply takes another iteration, with a better estimate each time.
+
+    The estimate is an average over what has been read, so a file whose OPENING
+    rows are far wider than its rest projects a window it does not need — bounded
+    by the object's size and `RUN_MAX_SCAN_BYTES`, so the read stays correct and
+    inside the operator's budget, but it can cost bytes a doubling walk would not
+    have. Nothing in a prefix of uniformly wide rows distinguishes that file from
+    one that is wide throughout, and the guards that would bound it (a step
+    ceiling, a minimum-rows floor) were measured to cost the ordinary wide-CSV
+    case far more than they save here.
     """
     doubled = window * 2
     if rows <= 0:
         return doubled
     projected = int(buffered / rows * limit * _WINDOW_ESTIMATE_SLACK) + _CSV_HEAD_BYTES
-    return min(max(doubled, projected), window * _WINDOW_GROWTH_LIMIT)
+    return max(doubled, projected)
 
 
 #: Sentinel distinguishing "use the configured scan-byte cap" (the default, every
