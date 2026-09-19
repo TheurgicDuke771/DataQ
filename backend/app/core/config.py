@@ -45,6 +45,11 @@ def _allowed_domain_set(raw: str) -> frozenset[str]:
     )
 
 
+#: Iceberg survives twice the rows the UC frame lane does on the reference 2 GiB worker (the
+#: measured curve is in the perf baseline) — so its cap tracks the shared one at this ratio.
+ICEBERG_SCAN_ROW_RATIO = 2
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         # App config lives in .env.app; the root .env is compose/infra-only and NOT read here — the
@@ -237,6 +242,9 @@ class Settings(BaseSettings):
     # run may materialise, checked by a cheap probe BEFORE the read.
     run_max_scan_bytes: int = Field(default=134_217_728, ge=0)
     run_max_scan_rows: int = Field(default=1_500_000, ge=0)
+    # Iceberg's own row cap (#1328). Unset = `run_max_scan_rows` x the measured ratio below, so an
+    # operator who lowers or disables the shared cap moves Iceberg with it.
+    run_max_scan_rows_iceberg: int | None = Field(default=None, ge=0)
 
     # UC SQL pushdown (#1532).
     uc_sql_pushdown: bool = True
@@ -389,6 +397,14 @@ class Settings(BaseSettings):
         """
         normalized = (email or "").strip().lower()
         return bool(normalized) and normalized in self.workspace_admin_email_set
+
+    @property
+    def iceberg_scan_row_cap(self) -> int:
+        """The Iceberg row cap in force — its own setting, else the shared cap scaled by the
+        measured ratio (3M at the 1.5M default; 0 stays 0, i.e. disabled)."""
+        if self.run_max_scan_rows_iceberg is None:
+            return self.run_max_scan_rows * ICEBERG_SCAN_ROW_RATIO
+        return self.run_max_scan_rows_iceberg
 
     @property
     def cors_allow_origin_list(self) -> list[str]:

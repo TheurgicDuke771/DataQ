@@ -190,14 +190,17 @@ enough target on either of those paths runs the worker out of memory. Two things
 guard that.
 
 **A hard cap, on by default, on the DataFrame path.** Before a run materializes
-anything it checks the object's size (flat files) or the table's `COUNT(*)` (Unity
-Catalog, when the run isn't pushed down). Over the cap the run ends **failed** with
-a message naming the target, the two numbers, and what to do — never a
-half-finished run or a silent hang. Defaults are 128 MiB and 1.5M rows, tuned for
-the reference 2 GiB worker; an operator can change them (`RUN_MAX_SCAN_BYTES` /
-`RUN_MAX_SCAN_ROWS` — see `deploy/README.md`). A pushed-down Unity Catalog check is
-not subject to this cap — it has been run against 200M-row tables with flat worker
-memory.
+anything it checks the object's size (flat files), the table's `COUNT(*)` (Unity
+Catalog, when the run isn't pushed down) or the current snapshot's row count
+(Iceberg, which reads it straight from metadata). Over the cap the run ends
+**failed** with a message naming the target, the two numbers, and what to do —
+never a half-finished run or a silent hang. Defaults are 128 MiB and 1.5M rows
+(3M rows for Iceberg, whose measured ceiling is higher), tuned for the reference
+2 GiB worker; an operator can change them
+(`RUN_MAX_SCAN_BYTES` / `RUN_MAX_SCAN_ROWS`, and `RUN_MAX_SCAN_ROWS_ICEBERG` where
+Iceberg's own measured ceiling differs — see `deploy/README.md`). A pushed-down
+Unity Catalog check is not subject to this cap — it has been run against 200M-row
+tables with flat worker memory.
 
 **Sampling, opt-in per suite.** Add a `sampling` block to the suite's target and
 checks run against a bounded sample instead of the whole dataset:

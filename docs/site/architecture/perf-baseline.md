@@ -254,12 +254,41 @@ that would stamp "sampled" on a result that was not.
 - **Unity Catalog needs a live run.** The pushdown SQL is DataQ's own
   construction and is unit-pinned, but `TABLESAMPLE (x PERCENT) REPEATABLE (seed)`
   behaviour is a Databricks fact — only a live run is evidence.
-- **Iceberg has neither a cap nor sampling.** It is the third
-  runner that materialises a whole dataset, so the out-of-memory-reporting gap
-  stays open there. The probe is
-  cheap (`scan().count()` is snapshot metadata); what it needs first is its **own
-  measurement** — Iceberg passed at 2M rows where UC died, so inheriting
-  `RUN_MAX_SCAN_ROWS`'s 1.5M would refuse a rung measured to work.
+- **Iceberg now has a cap; it does not have sampling, and its cap value is not yet
+  measured.** The guardrail shipped: the probe plans the scan's files and sums
+  their manifest record counts — never a data read — and refuses an over-cap read
+  before `to_arrow()`, on the expectation path and on both monitor
+  scan-fallbacks; it is skipped entirely when the cap is disabled. It is
+  deliberately not the scan's own `count()`, which materialises a merge-on-read
+  task in full in order to count it, so counting to decide whether to materialise
+  would perform the very read being refused. The **value** lives in its own setting,
+  `RUN_MAX_SCAN_ROWS_ICEBERG`, which when unset tracks `RUN_MAX_SCAN_ROWS` at a
+  measured 2× ratio — **3,000,000** at the default, and still lowered or disabled
+  together with the shared cap — read off the curve below rather than inherited: Iceberg passed at 2M rows where UC died at 2M, so sharing UC's 1.5M
+  would refuse a rung measured to work. Sampling stays out of scope (`row_filter`
+  + a scan limit is its own piece of work).
+
+  The curve, on the container rig (2 GiB memory limit, swap off, 1 CPU; the real
+  `IcebergCheckRunner`, five expectations, one fresh process per rung, a local
+  SQL-catalog table with the flat-file tiers' column shape):
+
+  | Rows | Peak RSS | Wall |
+  |---|---|---|
+  | 1M | 541 MiB | 1.9 s |
+  | 2M | 697 MiB | 2.4 s |
+  | 3M | 845 MiB | 2.9 s |
+  | 4M | 940 MiB | 3.4 s |
+  | 5M | 1,065 MiB | 3.8 s |
+
+  No rung died. The read is linear — about 130 MiB per million rows on a ~410 MiB
+  process baseline for this narrow schema — and that is *not* the deployed worker's
+  position: a deployed worker idles near 1 GiB before it reads anything, and the
+  wider table of the earlier deployed campaign cost about 190 MiB per million
+  (1,218 MiB at 1M, 1,408 MiB at 2M, replica killed at 5M). Both agree on the
+  ceiling: (2,048 − ~1,030) / 190 ≈ 5.3M rows. 3M projects to about 1,600 MiB on
+  the deployed worker — roughly 450 MiB of margin for a wider table or a
+  concurrent sibling — while still admitting the 2M rung measured to work. A row
+  count is a width-blind proxy for memory; the margin is what absorbs that.
 - **Comparison sources cannot sample — decided: not supported**, see
   [ADR 0015's 2026-09-16 amendment](../adr/0015-two-connection-comparison-check-model.md#amendment-2026-09-16-comparison-sources-do-not-support-sampling).
   Coherent key-set sampling — draw a key set, then fetch exactly those keys
@@ -419,7 +448,7 @@ Snowflake ramp above.
 - **Widening the pushdown allowlist** stays a per-type audited decision
   (unity_catalog.py:168-182) — each additional expectation type needs its own
   live-verification pass before joining `SQL_PUSHDOWN_EXPECTATION_TYPES`.
-- **The failing-row fetch is now bounded in SQL, not after the fact.**
+- **The failing-row fetch is now bounded where it is built, on every lane.**
   Every rung above was measured on a suite whose checks mostly *passed*, which is
   the case the old result format survived. Under `COMPLETE`, GX LIMITs the
   locator query to `partial_unexpected_count` but emits the unexpected-*values*
@@ -429,11 +458,26 @@ Snowflake ramp above.
   `MAX_RESULT_RECORDS` (200), the warehouse-side work was not. Both SQL lanes
   (Snowflake, UC pushdown + custom SQL) now run `SUMMARY` with
   `partial_unexpected_count = SAMPLE_ROW_CAP`, which puts the same `LIMIT` on
-  both queries and returns the identical rows; the frame lanes keep `COMPLETE`.
+  both queries and returns the identical rows.
+  The **frame lanes** (flat file, Iceberg, the UC DataFrame batch) were left on
+  `COMPLETE` on the reasoning that pandas holds the batch anyway and the locator
+  list is capped at capture. The measurement in the flat-file section below
+  contradicts the first half: the cap at capture bounds what is *persisted*, and
+  `COMPLETE` is the one format whose pandas locator metric is never sliced, so a
+  check failing on 1M of 1M rows built a million-element list — a dict per
+  failing row, assembled by per-cell lookups, when an identifier column is
+  configured. They now run `SUMMARY` too, at a wider cap: the deepest reader of
+  that list is not the 20-row sample but the value-signal summary, which scans
+  the first 5,000 rows, so the cap is 5,000 and the summary reads exactly the
+  rows it read before.
   **Residual:** an `observed_value` that is itself a list (the distinct-values
   expectations) is still bounded only at capture, and a custom-SQL check is the
   user's own statement — GX reads at most 200 rows of it, but the warehouse-side
-  cost of the query is theirs.
+  cost of the query is theirs. On the frame lanes, two costs survive the result
+  format because they are inside GX: the boolean-mask filter copies the failing
+  subset of the frame per failing check, and with an identifier column configured
+  the full locator list is still assembled before it is sliced. A widely-failing
+  check is therefore ~2.6x a passing one at 1M rows, down from ~20x.
 - **Beyond 200M** was not measured — this campaign matched Snowflake's tested
   ceiling rather than exceeding it. Nothing in the pushdown/custom-SQL mechanism
   (both are pure warehouse-side SQL, same as Snowflake's path) suggests a
@@ -673,8 +717,9 @@ Medians of 5 runs per tier, each in its own process. The suites are the same
 5 expectations every campaign on this page has used (not-null ×2, between ×2,
 unique ×1, all passing) and a 25-expectation extension in which **8 checks fail
 widely** — that second column is a data property, not a suite-size property, and
-the difference between the two is the most expensive finding here. The tables
-are a snapshot from the first capture on the development rig; the committed
+the gap between the two was the most expensive finding here until the frame
+lanes' result format was bounded. The tables
+are a snapshot of a capture on the development rig; the committed
 machine-readable baseline is the authoritative copy and is refreshed whenever a
 gated metric changes on purpose (its `git_sha` says which commit it measured).
 
@@ -682,39 +727,47 @@ gated metric changes on purpose (its `git_sha` says which commit it measured).
 
 | Object | Rows | Mode | Wall, 5 checks | Peak RSS | Wall, 25 checks (8 failing) | Peak RSS |
 |---|---|---|---|---|---|---|
-| CSV | 100k (4.6 MB) | full | 0.08 s | 387 MiB | 1.29 s | 461 MiB |
-| CSV | 1M (48 MB) | full | 0.63 s | 745 MiB | **12.59 s** | **1,578 MiB** |
-| CSV | 5M (245 MB) | full | 4.02 s | 2,118 MiB | **63.75 s** | **4,890 MiB** |
-| CSV | 1M | `head` 100k | 0.15 s | 425 MiB | 1.35 s | 492 MiB |
-| CSV | 5M | `head` 100k | 0.14 s | 419 MiB | 1.36 s | 512 MiB |
-| CSV | 5M | `random` 100k | 3.40 s | 564 MiB | 4.61 s | 643 MiB |
-| Parquet | 100k (2.4 MB) | full | 0.12 s | 368 MiB | 1.47 s | 450 MiB |
-| Parquet | 1M (21 MB) | full | 0.47 s | 554 MiB | **13.12 s** | **1,467 MiB** |
-| Parquet | 5M (105 MB) | full | 2.01 s | 1,279 MiB | **65.08 s** | **4,733 MiB** |
-| Parquet | 1M | `head` 100k | 0.09 s | 396 MiB | 1.38 s | 477 MiB |
-| Parquet | 5M | `head` 100k | 0.09 s | 403 MiB | 1.38 s | 483 MiB |
-| Parquet | 5M | `random` 100k | 0.17 s | 501 MiB | 1.46 s | 560 MiB |
+| CSV | 100k (4.6 MB) | full | 0.09 s | 392 MiB | 0.29 s | 410 MiB |
+| CSV | 1M (48 MB) | full | 0.64 s | 754 MiB | **1.54 s** | **990 MiB** |
+| CSV | 5M (245 MB) | full | 4.26 s | 2,109 MiB | **8.74 s** | **2,563 MiB** |
+| CSV | 1M | `head` 100k | 0.15 s | 444 MiB | 0.35 s | 472 MiB |
+| CSV | 5M | `head` 100k | 0.15 s | 463 MiB | 0.36 s | 483 MiB |
+| CSV | 5M | `random` 100k | 1.73 s | 563 MiB | 2.00 s | 611 MiB |
+| Parquet | 100k (2.4 MB) | full | 0.12 s | 369 MiB | 0.41 s | 391 MiB |
+| Parquet | 1M (21 MB) | full | 0.48 s | 557 MiB | **2.23 s** | **808 MiB** |
+| Parquet | 5M (105 MB) | full | 2.06 s | 1,274 MiB | **10.14 s** | **1,858 MiB** |
+| Parquet | 1M | `head` 100k | 0.10 s | 401 MiB | 0.38 s | 409 MiB |
+| Parquet | 5M | `head` 100k | 0.10 s | 406 MiB | 0.38 s | 432 MiB |
+| Parquet | 5M | `random` 100k | 0.18 s | 501 MiB | 0.46 s | 512 MiB |
+
+The bolded column is the one that moved: it is a **post-fix** capture. Before the
+frame lanes' result format was bounded the same rows read 12.50 s / 1,527 MiB
+(CSV 1M) and 63.75 s / 5,457 MiB (CSV 5M) — see finding 1 below.
 
 The floor — interpreter, GX and pyarrow with a 100k-row frame — is ~370 MiB on
 this rig, so read the deltas, not the absolutes.
 
-1. **Throughput is flat in row count and collapses on failing checks.** All-passing,
-   the runner sustains 1.2–2.5M rows/s at every tier. With 8 widely-failing checks
-   it drops to ~77k rows/s *at every tier* — the same number for 100k and 5M rows,
-   which is the signature of per-failing-row work rather than per-row work.
-   Isolated on the same 1M-row file with the same 25 expectations, an all-passing
-   suite runs in 0.55 s / 751 MiB and an 8-failing one in **12.40 s / 1,525 MiB**.
-   The frame lanes ask GX for the `COMPLETE` result format on the reasoning that
-   pandas already holds the batch; what that costs is a full unexpected-value list
-   built per failing check. Filed separately.
+1. **Throughput is flat in row count, and failing checks no longer collapse it.**
+   All-passing, the runner sustains 1.2–2.5M rows/s at every tier. The first
+   capture measured 8 widely-failing checks at ~77k rows/s *at every tier* — the
+   same number for 100k and 5M rows, which is the signature of per-failing-row
+   work rather than per-row work, and on the same 1M-row file an all-passing
+   suite ran in 0.55 s / 751 MiB against an 8-failing one at **12.40 s /
+   1,525 MiB**. The cause was the `COMPLETE` result format on the frame lanes,
+   which asks GX for a locator entry per failing row; bounding it where GX
+   *builds* it took the same 1M case to **1.59 s / 1,018 MiB** and the 5M case
+   from 65.70 s / 5,364 MiB to **9.26 s / 2,586 MiB** — the difference between a
+   run and a SIGKILL on a 2 GiB worker. The rows in the table above are the
+   post-fix capture; the residual gap to an all-passing suite is measured in the
+   Unity-Catalog section's "Still open" list.
 2. **Sampling removes the volume axis entirely.** `head` is 0.09–0.15 s and
    ~400–500 MiB regardless of whether the object holds 1M or 5M rows, because it
    stops reading. That is the same conclusion the v1.1 section reached, now
    attached to a budget that would notice if it stopped being true.
 3. **`random` on CSV is the one sampled path that still scales with the object**:
-   3.40 s at 5M against `head`'s 0.14 s, because it streams the file to learn the
-   population size and then streams it again to take the draw. Parquet pays
-   almost nothing for the same mode (footer read).
+   1.73 s at 5M against `head`'s 0.15 s, because it has to stream the whole file
+   to take a uniform draw — one pass now, not two. Parquet pays almost nothing
+   for the same mode (footer read).
 
 #### What each mode asks the store for
 
@@ -723,14 +776,14 @@ Deterministic, and therefore the part the budget gates:
 | Object | Mode | Bytes read | Store calls |
 |---|---|---|---|
 | CSV 5M (245 MB) | full | 245,055,978 | 1 |
-| CSV 5M | `head` 100k | 15,728,640 | 5 |
-| CSV 5M | `random` 100k | **490,243,028** | 64 |
+| CSV 5M | `head` 100k | 8,388,608 | 6 |
+| CSV 5M | `random` 100k | **245,055,978** | 32 |
 | Parquet 5M (105 MB) | full | 104,861,528 | 1 |
-| Parquet 5M | `head` 100k | 31,920,512 | 3 |
-| Parquet 5M | `random` 100k | 104,985,982 | 8 |
+| Parquet 5M | `head` 100k | 31,920,512 | 4 |
+| Parquet 5M | `random` 100k | 104,985,982 | 9 |
 
-The CSV `random` row reads **twice the object** — the count pass and the take
-pass — which is a known single-pass follow-up, now with a number on it.
+The CSV `random` row reads **the whole object once** — it has to, to draw
+uniformly without knowing the row count up front. It used to read it twice.
 
 #### Concurrent peak — what four prefork children want at once
 
@@ -843,22 +896,102 @@ with the sampled suite-run path and worth fixing once, not reworked here.
 page records elsewhere, is not measured here — see the not-measured table
 below.)
 
+### Snowflake tiers — measured
+
+Run live with a read-only role against Snowflake's TPC-H sample share (`LINEITEM`
+at scale factors 1 and 10), so nothing was created or dropped in the account. The
+suite keeps the standard shape — two not-null, two between, one uniqueness (here a
+compound key, since the table has no single-column one) — supplied through
+`PERF_SF_SUITE_JSON`, with `PERF_SF_SCHEMA_<tier>` and `PERF_SF_ROWS_<tier>` naming
+the per-tier schema and true row count. Medians of 3, development rig.
+
+| Tier | Rows | Checks | Run wall | Worker peak RSS | Statements | Rows returned to the worker |
+|---|---|---|---|---|---|---|
+| Snowflake, pushdown | 6,001,215 | 5 / 5 pass | 5.2 s | 378 MiB | 13 | 28 |
+| Snowflake, pushdown | 59,986,052 | 5 / 5 pass | 5.6 s | 383 MiB | 13 | 28 |
+| Profiler, 16 columns | 6,001,215 | — | 2.8 s | 383 MiB | 2 | — |
+
+Ten times the rows costs 0.4 s of wall clock and 5 MiB of worker memory, and the
+same 28 rows come back either way: the worker holds a verdict, not the table. The
+wall clock is mostly the 13 round trips, not the scan. Peak RSS here is the
+process baseline (GX and the connector loaded), the same ~380 MiB an empty run
+costs.
+
 ### What is explicitly NOT measured here
 
 A tier that simply does not appear in a result set reads as "nothing to report",
 so the warehouse tiers are registered as real cases and emit an explicit
-`not_measured` row carrying the reason:
+`not_measured` row carrying the reason. Their bodies drive DataQ's own runners;
+what each one waits for is a live warehouse and the environment naming it:
 
-| Tier | Why not measured |
-|---|---|
-| Snowflake 1M / 50M, pushdown | needs a live warehouse; the harness compute is stopped by default (ADR 0021) |
-| Unity Catalog 1M, pushdown **and** frame-load | same, plus Databricks Free-Edition fair-use pausing |
-| Iceberg 1M, native `pyiceberg` snapshot | same |
-| Wide-table profiler on a warehouse (the batched rank-join) | same — the flat-file profiler exercises a different reader and cannot stand in for it |
+| Tier | How it runs | Environment it needs |
+|---|---|---|
+| Snowflake 1M / 50M, pushdown — **measured above** | `SnowflakeCheckRunner.run_checks`, the same five expectations as every other rung (or `PERF_SF_SUITE_JSON` for a table the harness did not build) | `PERF_SF_ACCOUNT` `PERF_SF_USER` `PERF_SF_ROLE` `PERF_SF_DATABASE` `PERF_SF_SCHEMA` `PERF_SF_WAREHOUSE` `PERF_SF_TABLE_1M` / `PERF_SF_TABLE_50M`, secret in `PERF_SF_SECRET` |
+| Unity Catalog 1M, pushdown **and** frame-load | `UnityCatalogCheckRunner.run_checks` twice over the same table, the two cases differing only in `UC_SQL_PUSHDOWN` — the clean isolated comparison | `PERF_UC_WORKSPACE_URL` `PERF_UC_WAREHOUSE_ID` `PERF_UC_CATALOG` `PERF_UC_SCHEMA` `PERF_UC_TABLE_1M`, secret in `PERF_UC_SECRET` |
+| Iceberg 1M, native `pyiceberg` snapshot | `IcebergCheckRunner.run_checks` against a real catalog | `PERF_ICEBERG_CATALOG_JSON` (the connection config) `PERF_ICEBERG_TABLE`, optional secret in `PERF_ICEBERG_SECRET` |
+| Wide-table profiler on a warehouse (the batched rank-join) | `profile_service.profile_table`; the column listing is done first and is outside the clock | the Snowflake set above plus `PERF_SF_WIDE_TABLE` |
+
+Every one of them emits `statements` (gated: growth is a regression), wall clock,
+rows/s and the harness's own peak RSS. `frame_rows` — rows actually materialised
+into the worker, recorded by wrapping the runner's own reader — is emitted **only
+where a reader seam exists**: a pushdown lane has none, and reporting zero there
+would restate the claim under test as its own evidence. Peak RSS is what answers
+"did the worker hold the table".
+
+Secrets are read from the environment at run time only; a skip reason names the
+variable that is missing and never its value, and a test asserts no configured
+secret reaches an emitted row.
 
 The earlier sections of this page carry live warehouse numbers from the 2026-07
 and 2026-08 campaigns; what is missing is those tiers *inside the budget*, so a
 regression in them would be caught rather than re-measured by hand.
+
+### The Iceberg memory curve — local, and run under the real limit
+
+Finding where the Iceberg runner dies needs no warehouse at all, so it does not
+wait on a harness window. `perf_baseline gen-iceberg` builds a local sqlite
+`SqlCatalog` over a `file://` warehouse under `PERF_DATA_DIR`, with the same
+six-column order-lines shape as the flat-file tiers, and the `iceberg_curve` tag
+registers rungs at 1M, 2M, 3M, 4M and 5M rows. Nothing is stood in for —
+pyiceberg plans, reads and materialises for real, because the ceiling is a
+pyiceberg fact rather than one of ours. Generation runs in its **own** process:
+`ru_maxrss` is a high-water mark for the whole process, so building a 5M-row
+fixture beside the measurement would be recorded as the measurement.
+
+The curve is deliberately **not** in the `ci` tag — each rung wants gigabytes and
+the point is that one of them dies.
+
+That last part is why the curve has to run under the deployed limit rather than
+on the dev box, which has tens of gigabytes and therefore measures how much
+memory a rung *wants*, never whether the worker survives it.
+`scripts/perf/run_in_rig.sh` runs a tag inside the backend image at the prod
+worker's shape (1 CPU / 2 GiB, swap disabled so the kernel kills rather than
+pages), with `PERF_DATA_DIR` bind-mounted so the fixtures are built once on the
+host:
+
+```bash
+python -m backend.scripts.perf_baseline gen-iceberg          # every rung, own process
+scripts/perf/run_in_rig.sh --build -- --tag iceberg_curve --out "$HOME/.cache/dataq-perf/curve.json"
+```
+
+The fixture directory is mounted at the **same absolute path** inside the
+container, because an Iceberg `SqlCatalog` stores absolute metadata and data-file
+locations — a warehouse built on the host and mounted somewhere else reads as
+absent, not as broken.
+
+A rung that is OOM-killed comes back as a `killed` row carrying the signal and
+exit status (both conventions decoded — a bare fork reports `-SIGKILL`, a
+container runtime reports `137`) and the run **continues up the curve**, because
+a rung that dies is the answer being looked for, not a broken run. A rung that
+merely runs past the timeout is recorded the same way: the ceiling arriving as
+time rather than as a signal is the same ceiling.
+
+An ordinary non-zero exit is **not** converted into a row. A traceback is a bad
+table name, an expired credential or a moved seam, and recording that as a
+ceiling would turn a misconfiguration into a finding. `check` additionally fails
+on any `killed` row: those rows carry the `observe` gate, so the budget skips
+them, and it would otherwise print "budget OK" about a case that produced no
+number at all.
 
 Also out of scope by construction: network/egress cost (the store seams read a
 local file), warehouse-side compute cost per check run, and anything that only
@@ -881,8 +1014,8 @@ python -m backend.scripts.perf_baseline check --gate exact --gate strict  # what
 
 The fast subset (`--tag ci`) runs on every push inside the existing backend test
 job, so no required-check name changes. The full matrix is a manual run. The
-warehouse tiers appear in it as `not_measured` rows — their bodies are not built
-yet, and building them is tracked separately.
+warehouse tiers appear in it as `not_measured` rows until their environment is
+set — see the table above for what each one needs.
 Refreshing the committed baseline is deliberate — `run --tag ci --repeat 7 --out
 backend/scripts/perf/baseline.json` — and a PR that does it should say why the
 number moved.
