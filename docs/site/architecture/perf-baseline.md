@@ -877,8 +877,8 @@ only until it holds the sample or hits EOF:
 
 | Object | Columns | Wall | Peak RSS | Bytes read | Store calls |
 |---|---|---|---|---|---|
-| CSV (39 MB) | 50 | 0.14 s | 524 MiB | **23,424,942** | 3 |
-| CSV (156 MB) | 200 | 0.52 s | 931 MiB | **90,637,164** | 3 |
+| CSV (39 MB) | 50 | 0.14 s | 510 MiB | **23,424,942** | 3 |
+| CSV (156 MB) | 200 | 0.52 s | 903 MiB | **90,637,164** | 3 |
 | Parquet (13 MB) | 50 | 0.10 s | 427 MiB | 12,828,601 | 3 |
 | Parquet (51 MB) | 200 | 0.38 s | 625 MiB | 51,211,169 | 5 |
 
@@ -891,9 +891,9 @@ far, so the step count is parse work, not just round trips: the 200-column case
 reaches its sample in **3 store calls** where doubling took 9, and the prefix is
 parsed through a view of the buffer rather than a `bytes` copy plus a second copy
 for the row-boundary trim. Against the whole-object download this replaced, the
-200-column case reads **42% fewer bytes** at roughly the same peak RSS (931 MiB
+200-column case reads **42% fewer bytes** at roughly the same peak RSS (903 MiB
 vs 877 MiB) and less wall time; against the first, blindly-doubling version of
-the bounded read it is **half the peak RSS** (931 vs 1898 MiB) and **2.6× faster**.
+the bounded read it is **half the peak RSS** (903 vs 1847 MiB) and **2.4× faster**.
 (The warehouse profiler's batched rank-join, the post-optimisation number this
 page records elsewhere, is not measured here — see the not-measured table
 below.)
