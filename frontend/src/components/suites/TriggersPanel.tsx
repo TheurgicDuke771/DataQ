@@ -300,6 +300,7 @@ function AddTrigger({ suiteId, onAdded }: { suiteId: string; onAdded: () => void
         value={pipelineId}
         onChange={(e) => setPipelineId(e.target.value)}
         placeholder="Pipeline / DAG id"
+        aria-label="Pipeline / DAG id"
         style={{ flex: 1, minWidth: 160 }}
         onPressEnter={onAdd}
       />

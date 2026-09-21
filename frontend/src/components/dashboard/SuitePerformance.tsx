@@ -52,6 +52,7 @@ export function SuitePerformance({ suites }: SuitePerformanceProps) {
                 </Typography.Text>
               </Flex>
               <Progress
+                aria-label={`${s.name} health score`}
                 percent={s.score ?? 0}
                 showInfo={s.score !== null}
                 format={(p) => `${p}`}

@@ -191,7 +191,9 @@ function LiveRunProgressBody({
           </Typography.Text>
         </Flex>
       ) : (
-        !queued && <Progress percent={percent} status={RUN_BAR_STATUS[status]} />
+        !queued && (
+          <Progress aria-label="Run progress" percent={percent} status={RUN_BAR_STATUS[status]} />
+        )
       )}
 
       {tallies.length > 0 && (
