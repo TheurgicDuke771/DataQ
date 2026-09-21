@@ -215,7 +215,7 @@ const LOGIN_CSS = `
 }
 .dqlogin-card-sub { margin: 0 0 28px; font-size: 14.5px; color: #6b7280; line-height: 1.55; }
 .dqlogin-btn { height: 46px; font-weight: 600; }
-.dqlogin-foot { margin: 22px 0 0; font-size: 12.5px; line-height: 1.5; color: #9098a4; }
+.dqlogin-foot { margin: 22px 0 0; font-size: 12.5px; line-height: 1.5; color: #616875; }
 
 /* Email-OTP form (ADR 0032). The card centres its text for the single-button
    OIDC card; a labelled form needs its labels and validation messages on the
