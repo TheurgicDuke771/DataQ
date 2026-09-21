@@ -58,7 +58,7 @@ export function ScorecardPanel({ scorecard }: { scorecard?: Scorecard | null }) 
                   percent={row.score}
                   size="small"
                   strokeColor={scoreColour(row.score)}
-                  format={(p) => `${p}%`}
+                  format={(p) => <span style={{ color: 'var(--dq-ink)' }}>{p}%</span>}
                   style={{ flex: 1, marginBottom: 0 }}
                 />
               )}

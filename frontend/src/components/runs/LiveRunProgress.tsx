@@ -1,4 +1,4 @@
-import { App, Alert, Button, Drawer, Empty, Flex, Progress, Spin, Tag, Typography } from 'antd';
+import { App, Alert, Button, Drawer, Empty, Flex, Progress, Spin, Typography } from 'antd';
 import SimpleList from '../SimpleList';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -10,13 +10,9 @@ import {
   type RunProgress,
   type RunStatus,
 } from '../../api/runs';
-import {
-  formatDurationMs,
-  RESULT_STATUS_COLORS,
-  RUN_BAR_STATUS,
-  RUN_STATUS_COLORS,
-} from '../results/resultsFormat';
+import { formatDurationMs, RUN_BAR_STATUS } from '../results/resultsFormat';
 import { errorMessage } from '../../utils/errors';
+import { ResultStatusTag, RunStatusTag } from '../shared/StatusTag';
 
 /** Run lifecycle states past which polling stops. */
 const TERMINAL: readonly RunStatus[] = ['succeeded', 'failed', 'cancelled'];
@@ -151,7 +147,7 @@ function LiveRunProgressBody({
   return (
     <Flex vertical gap={16}>
       <Flex gap={12} align="center" wrap>
-        <Tag color={RUN_STATUS_COLORS[status]}>{status}</Tag>
+        <RunStatusTag status={status} />
         <Typography.Text type="secondary">
           {completed_checks} / {total_checks} checks
         </Typography.Text>
@@ -199,9 +195,9 @@ function LiveRunProgressBody({
       {tallies.length > 0 && (
         <Flex gap={6} wrap>
           {tallies.map(([s, n]) => (
-            <Tag key={s} color={RESULT_STATUS_COLORS[s]}>
+            <ResultStatusTag key={s} status={s}>
               {s} · {n}
-            </Tag>
+            </ResultStatusTag>
           ))}
         </Flex>
       )}
@@ -251,5 +247,5 @@ function CheckStatus({ status, terminal }: { status: ResultStatus | null; termin
       </Flex>
     );
   }
-  return <Tag color={RESULT_STATUS_COLORS[status]}>{status}</Tag>;
+  return <ResultStatusTag status={status} />;
 }

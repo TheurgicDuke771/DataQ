@@ -1,12 +1,12 @@
-import { Alert, Button, Descriptions, type FormInstance, Flex, Tag, Typography } from 'antd';
+import { Alert, Button, Descriptions, type FormInstance, Flex, Typography } from 'antd';
 import { useState } from 'react';
 
 import type { ResultStatus } from '../../api/runs';
 import { type CheckDryRunResult, dryRunCheck, targetString } from '../../api/suites';
-import { RESULT_STATUS_COLORS } from '../results/resultsFormat';
 import { ScalarValue } from '../results/ScalarValue';
 import { buildCheckPayload } from './checkForm';
 import { errorMessage } from '../../utils/errors';
+import { ResultStatusTag } from '../shared/StatusTag';
 
 /**
  * Inline "preview before saving" affordance for the check editor: runs the in-progress check
@@ -101,9 +101,7 @@ function DryRunResultView({ result }: { result: CheckDryRunResult }) {
         {
           key: 'status',
           label: 'Result',
-          children: (
-            <Tag color={RESULT_STATUS_COLORS[result.status as ResultStatus]}>{result.status}</Tag>
-          ),
+          children: <ResultStatusTag status={result.status as ResultStatus} />,
         },
         {
           key: 'metric',

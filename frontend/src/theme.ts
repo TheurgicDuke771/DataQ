@@ -50,6 +50,14 @@ export const SEVERITY_SCALE = {
   neutral: 'var(--dq-severity-neutral)',
 } as const;
 
+/** Text counterparts of SEVERITY_SCALE — the fill colours are 1.8–3.3:1 as text. */
+export const SEVERITY_TEXT = {
+  good: 'var(--dq-severity-good-text)',
+  warning: 'var(--dq-severity-warning-text)',
+  bad: 'var(--dq-severity-bad-text)',
+  neutral: 'var(--dq-severity-neutral-text)',
+} as const;
+
 export type AppThemeMode = 'light' | 'dark';
 
 export function getAppTheme(mode: AppThemeMode): ThemeConfig {
