@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.10.6",
+  "checkpoint_id": "b35a5c61bf5a",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1980-a11y-labels-progress",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/components/shared/Filter.tsx",
+    "frontend/tests/components/Filter.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b3/5a5c61bf5a/0/metadata.json",
+      "transcript": "/b3/5a5c61bf5a/0/full.jsonl",
+      "compact_transcript": "/b3/5a5c61bf5a/0/transcript.jsonl",
+      "content_hash": "/b3/5a5c61bf5a/0/content_hash.txt",
+      "prompt": "/b3/5a5c61bf5a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12,
+    "cache_creation_tokens": 8614,
+    "cache_read_tokens": 1317748,
+    "output_tokens": 5335,
+    "api_call_count": 5
+  }
+}
