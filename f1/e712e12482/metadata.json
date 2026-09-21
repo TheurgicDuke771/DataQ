@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.10.6",
+  "checkpoint_id": "f1e712e12482",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2049-page-titles",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/e2e/keyboard.spec.ts",
+    "frontend/src/App.tsx",
+    "frontend/src/utils/pageTitle.ts",
+    "frontend/tests/utils/pageTitle.test.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f1/e712e12482/0/metadata.json",
+      "transcript": "/f1/e712e12482/0/full.jsonl",
+      "compact_transcript": "/f1/e712e12482/0/transcript.jsonl",
+      "content_hash": "/f1/e712e12482/0/content_hash.txt",
+      "prompt": "/f1/e712e12482/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12,
+    "cache_creation_tokens": 7912,
+    "cache_read_tokens": 3001476,
+    "output_tokens": 6457,
+    "api_call_count": 6
+  }
+}
