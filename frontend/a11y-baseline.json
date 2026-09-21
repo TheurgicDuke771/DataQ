@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-09-17T14:00:00.708Z",
-  "count": 91,
+  "generatedAt": "2026-09-21T14:39:26.542Z",
+  "count": 101,
   "violations": [
     {
       "surface": "component:Results",
@@ -144,14 +144,6 @@
       "impact": "serious",
       "ancestry": "[\"html > body > div:nth-child(1) > div > div > div:nth-child(2) > main:nth-child(2) > div:nth-child(2) > div > div:nth-child(2)\"]",
       "selector": "[\".ant-typography-secondary\"]",
-      "help": "Elements must meet minimum color contrast ratio thresholds"
-    },
-    {
-      "surface": "route:/connections",
-      "ruleId": "color-contrast",
-      "impact": "serious",
-      "ancestry": "[\"html > body > div:nth-child(1) > div > div > div:nth-child(2) > main:nth-child(2) > div:nth-child(2) > div > div:nth-child(1) > div:nth-child(2) > button:nth-child(1) > span\"]",
-      "selector": "[\".ant-flex-wrap-wrap.ant-flex-justify-space-between.ant-flex-align-center > .ant-flex-align-center.ant-flex > .ant-btn-default.ant-btn-variant-outlined.ant-btn-color-default > span\"]",
       "help": "Elements must meet minimum color contrast ratio thresholds"
     },
     {
@@ -343,7 +335,7 @@
       "ruleId": "color-contrast",
       "impact": "serious",
       "ancestry": "[\"html > body > div:nth-child(1) > div > div > div:nth-child(2) > main:nth-child(2) > div:nth-child(2) > div > div:nth-child(3) > div:nth-child(5) > div > div > div > div:nth-child(2) > span:nth-child(2)\"]",
-      "selector": "[\".ant-col-xl-12.ant-col-sm-12.ant-col:nth-child(5) > .ant-card.ant-card-bordered.ant-card-small > .ant-card-body > .ant-flex-align-stretch.ant-flex-vertical.ant-flex > .ant-flex-align-baseline.ant-flex.css-dev-only-do-not-override-wgezi7 > .ant-typography-secondary.ant-typography\"]",
+      "selector": "[\".ant-col-xl-12.ant-col-sm-12.ant-col:nth-child(5) > .ant-card.ant-card-bordered.ant-card-small > .ant-card-body > .ant-flex-align-stretch.ant-flex-vertical.ant-flex > .ant-flex-align-baseline.ant-flex.css-dev-only-do-not-override-19u5a7b > .ant-typography-secondary.ant-typography\"]",
       "help": "Elements must meet minimum color contrast ratio thresholds"
     },
     {
@@ -475,27 +467,115 @@
       "help": "Form elements must have labels"
     },
     {
+      "surface": "route:/results/:id",
+      "ruleId": "color-contrast",
+      "impact": "serious",
+      "ancestry": "[\"html > body > div:nth-child(1) > div > div > div:nth-child(2) > main:nth-child(2) > div:nth-child(2) > div:nth-child(1) > div > div:nth-child(2) > div:nth-child(2) > div:nth-child(1) > div > div > span:nth-child(1)\"]",
+      "selector": "[\".ant-card.ant-card-bordered.ant-card-small:nth-child(1) > .ant-card-body > .ant-flex-align-stretch.ant-flex-vertical.ant-flex > .ant-typography-secondary.ant-typography.css-dev-only-do-not-override-19u5a7b\"]",
+      "help": "Elements must meet minimum color contrast ratio thresholds"
+    },
+    {
+      "surface": "route:/results/:id",
+      "ruleId": "color-contrast",
+      "impact": "serious",
+      "ancestry": "[\"html > body > div:nth-child(1) > div > div > div:nth-child(2) > main:nth-child(2) > div:nth-child(2) > div:nth-child(1) > div > div:nth-child(2) > div:nth-child(2) > div:nth-child(1) > div > div > span:nth-child(2) > span\"]",
+      "selector": "[\"span:nth-child(2) > .ant-tag-success.ant-tag.ant-tag-filled\"]",
+      "help": "Elements must meet minimum color contrast ratio thresholds"
+    },
+    {
+      "surface": "route:/results/:id",
+      "ruleId": "color-contrast",
+      "impact": "serious",
+      "ancestry": "[\"html > body > div:nth-child(1) > div > div > div:nth-child(2) > main:nth-child(2) > div:nth-child(2) > div:nth-child(1) > div > div:nth-child(2) > div:nth-child(2) > div:nth-child(2) > div > div > span:nth-child(1)\"]",
+      "selector": "[\".ant-card.ant-card-bordered.ant-card-small:nth-child(2) > .ant-card-body > .ant-flex-align-stretch.ant-flex-vertical.ant-flex > .ant-typography-secondary.ant-typography.css-dev-only-do-not-override-19u5a7b\"]",
+      "help": "Elements must meet minimum color contrast ratio thresholds"
+    },
+    {
+      "surface": "route:/results/:id",
+      "ruleId": "color-contrast",
+      "impact": "serious",
+      "ancestry": "[\"html > body > div:nth-child(1) > div > div > div:nth-child(2) > main:nth-child(2) > div:nth-child(2) > div:nth-child(1) > div > div:nth-child(2) > div:nth-child(2) > div:nth-child(3) > div > div > span:nth-child(1)\"]",
+      "selector": "[\".ant-card.ant-card-bordered.ant-card-small:nth-child(3) > .ant-card-body > .ant-flex-align-stretch.ant-flex-vertical.ant-flex > .ant-typography-secondary.ant-typography.css-dev-only-do-not-override-19u5a7b\"]",
+      "help": "Elements must meet minimum color contrast ratio thresholds"
+    },
+    {
+      "surface": "route:/results/:id",
+      "ruleId": "color-contrast",
+      "impact": "serious",
+      "ancestry": "[\"html > body > div:nth-child(1) > div > div > div:nth-child(2) > main:nth-child(2) > div:nth-child(2) > div:nth-child(1) > div > div:nth-child(2) > div:nth-child(2) > div:nth-child(4) > div > div > span:nth-child(1)\"]",
+      "selector": "[\".ant-card.ant-card-bordered.ant-card-small:nth-child(4) > .ant-card-body > .ant-flex-align-stretch.ant-flex-vertical.ant-flex > .ant-typography-secondary.ant-typography.css-dev-only-do-not-override-19u5a7b\"]",
+      "help": "Elements must meet minimum color contrast ratio thresholds"
+    },
+    {
+      "surface": "route:/results/:id",
+      "ruleId": "color-contrast",
+      "impact": "serious",
+      "ancestry": "[\"html > body > div:nth-child(1) > div > div > div:nth-child(2) > main:nth-child(2) > div:nth-child(2) > div:nth-child(1) > div > div:nth-child(2) > div:nth-child(2) > div:nth-child(5) > div > div > span:nth-child(1)\"]",
+      "selector": "[\".ant-card.ant-card-bordered.ant-card-small:nth-child(5) > .ant-card-body > .ant-flex-align-stretch.ant-flex-vertical.ant-flex > .ant-typography-secondary.ant-typography.css-dev-only-do-not-override-19u5a7b\"]",
+      "help": "Elements must meet minimum color contrast ratio thresholds"
+    },
+    {
+      "surface": "route:/results/:id",
+      "ruleId": "color-contrast",
+      "impact": "serious",
+      "ancestry": "[\"html > body > div:nth-child(1) > div > div > div:nth-child(2) > main:nth-child(2) > div:nth-child(2) > div:nth-child(1) > div > div:nth-child(2) > div:nth-child(3) > div > div > div > div > div > table > tbody:nth-child(3) > tr:nth-child(2) > td:nth-child(3) > span\"]",
+      "selector": "[\".ant-table-row.ant-table-row-level-0:nth-child(2) > .ant-table-cell:nth-child(3) > .ant-typography-secondary.ant-typography.css-dev-only-do-not-override-19u5a7b\"]",
+      "help": "Elements must meet minimum color contrast ratio thresholds"
+    },
+    {
+      "surface": "route:/results/:id",
+      "ruleId": "color-contrast",
+      "impact": "serious",
+      "ancestry": "[\"html > body > div:nth-child(1) > div > div > div:nth-child(2) > main:nth-child(2) > div:nth-child(2) > div:nth-child(1) > div > div:nth-child(2) > div:nth-child(3) > div > div > div > div > div > table > tbody:nth-child(3) > tr:nth-child(2) > td:nth-child(5) > span\"]",
+      "selector": "[\".ant-table-cell:nth-child(5) > .ant-tag-success.ant-tag.ant-tag-filled\"]",
+      "help": "Elements must meet minimum color contrast ratio thresholds"
+    },
+    {
+      "surface": "route:/results/:id",
+      "ruleId": "color-contrast",
+      "impact": "serious",
+      "ancestry": "[\"html > body > div:nth-child(1) > div > div > div:nth-child(2) > main:nth-child(2) > div:nth-child(2) > div:nth-child(1) > div > div:nth-child(2) > div:nth-child(3) > div > div > div > div > div > table > tbody:nth-child(3) > tr:nth-child(3) > td:nth-child(3) > span\"]",
+      "selector": "[\".ant-table-cell-row-hover.ant-table-cell:nth-child(3) > .ant-typography-secondary.ant-typography.css-dev-only-do-not-override-19u5a7b\"]",
+      "help": "Elements must meet minimum color contrast ratio thresholds"
+    },
+    {
+      "surface": "route:/results/:id",
+      "ruleId": "color-contrast",
+      "impact": "serious",
+      "ancestry": "[\"html > body > div:nth-child(1) > div > div > div:nth-child(2) > main:nth-child(2) > div:nth-child(2) > div:nth-child(1) > div > div:nth-child(2) > div:nth-child(3) > div > div > div > div > div > table > tbody:nth-child(3) > tr:nth-child(4) > td:nth-child(3) > span\"]",
+      "selector": "[\".ant-table-row.ant-table-row-level-0:nth-child(4) > .ant-table-cell:nth-child(3) > .ant-typography-secondary.ant-typography.css-dev-only-do-not-override-19u5a7b\"]",
+      "help": "Elements must meet minimum color contrast ratio thresholds"
+    },
+    {
+      "surface": "route:/results/:id",
+      "ruleId": "color-contrast",
+      "impact": "serious",
+      "ancestry": "[\"html > body > div:nth-child(1) > div > div > div:nth-child(2) > main:nth-child(2) > div:nth-child(2) > div:nth-child(1) > div > div:nth-child(2) > div:nth-child(3) > div > div > div > div > div > table > tbody:nth-child(3) > tr:nth-child(4) > td:nth-child(5) > span\"]",
+      "selector": "[\".ant-table-cell:nth-child(5) > .ant-tag-volcano.ant-tag.ant-tag-filled\"]",
+      "help": "Elements must meet minimum color contrast ratio thresholds"
+    },
+    {
+      "surface": "route:/results/:id",
+      "ruleId": "color-contrast",
+      "impact": "serious",
+      "ancestry": "[\"html > body > div:nth-child(1) > div > div > div:nth-child(2) > main:nth-child(2) > div:nth-child(2) > div:nth-child(1) > div > div:nth-child(2) > div:nth-child(3) > div > div > div > div > div > table > tbody:nth-child(3) > tr:nth-child(5) > td:nth-child(2) > div > span\"]",
+      "selector": "[\".ant-flex-wrap-wrap.ant-flex-align-center.ant-flex > .ant-tag-volcano.ant-tag.ant-tag-filled\"]",
+      "help": "Elements must meet minimum color contrast ratio thresholds"
+    },
+    {
+      "surface": "route:/results/:id",
+      "ruleId": "color-contrast",
+      "impact": "serious",
+      "ancestry": "[\"html > body > div:nth-child(1) > div > div > div:nth-child(2) > main:nth-child(2) > div:nth-child(2) > div:nth-child(1) > div > div:nth-child(2) > div:nth-child(3) > div > div > div > div > div > table > tbody:nth-child(3) > tr:nth-child(5) > td:nth-child(3) > span\"]",
+      "selector": "[\".ant-table-row.ant-table-row-level-0:nth-child(5) > .ant-table-cell:nth-child(3) > .ant-typography-secondary.ant-typography.css-dev-only-do-not-override-19u5a7b\"]",
+      "help": "Elements must meet minimum color contrast ratio thresholds"
+    },
+    {
       "surface": "route:/sign-in",
       "ruleId": "color-contrast",
       "impact": "serious",
       "ancestry": "[\"html > body > div:nth-child(1) > div > div > section:nth-child(3) > div > p:nth-child(5)\"]",
       "selector": "[\".dqlogin-foot\"]",
-      "help": "Elements must meet minimum color contrast ratio thresholds"
-    },
-    {
-      "surface": "route:/suites",
-      "ruleId": "color-contrast",
-      "impact": "serious",
-      "ancestry": "[\"html > body > div:nth-child(1) > div > div > div:nth-child(2) > main:nth-child(2) > div:nth-child(2) > div > div:nth-child(1) > div:nth-child(2) > button:nth-child(1) > span:nth-child(2)\"]",
-      "selector": "[\".ant-btn-default > span:nth-child(2)\"]",
-      "help": "Elements must meet minimum color contrast ratio thresholds"
-    },
-    {
-      "surface": "route:/suites",
-      "ruleId": "color-contrast",
-      "impact": "serious",
-      "ancestry": "[\"html > body > div:nth-child(1) > div > div > div:nth-child(2) > main:nth-child(2) > div:nth-child(2) > div > div:nth-child(1) > div:nth-child(2) > button:nth-child(2) > span:nth-child(2)\"]",
-      "selector": "[\".ant-btn-primary > span:nth-child(2)\"]",
       "help": "Elements must meet minimum color contrast ratio thresholds"
     },
     {
