@@ -1,0 +1,76 @@
+{
+  "cli_version": "0.10.6",
+  "checkpoint_id": "669e795c45b9",
+  "session_id": "2b4ab81d-fb44-4302-9017-825c59914870",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-21T14:50:48.877657Z",
+  "branch": "fix/issue-1980-a11y-contrast-tokens",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "frontend/src/auth/LoginPage.tsx",
+    "frontend/src/styles.css",
+    "frontend/src/theme.ts"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-fable-5-1",
+  "turn_id": "1bd7a7b6b6de",
+  "checkpoint_transcript_start": 352,
+  "transcript_lines_at_start": 352,
+  "compact_transcript_start": 67,
+  "token_usage": {
+    "input_tokens": 30,
+    "cache_creation_tokens": 18237,
+    "cache_read_tokens": 2966891,
+    "output_tokens": 10125,
+    "api_call_count": 15
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01AdRr4fMbnC9hn4TAb8TLBs",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review:code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "ab289b600e84",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 199,
+        "end": 200,
+        "entry_ids": [
+          "2659894f-f8dd-46a4-acb2-ce23e9588e5b"
+        ],
+        "tool_use_id": "toolu_01AdRr4fMbnC9hn4TAb8TLBs"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01AdRr4fMbnC9hn4TAb8TLBs"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review:code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 5
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-21T14:50:48.815284Z",
+    "agent_lines": 31,
+    "agent_removed": 3,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 31,
+    "total_lines_changed": 34,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.10.6",
+  "checkpoint_id": "669e795c45b9",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1980-a11y-contrast-tokens",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "frontend/src/auth/LoginPage.tsx",
+    "frontend/src/styles.css",
+    "frontend/src/theme.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/66/9e795c45b9/0/metadata.json",
+      "transcript": "/66/9e795c45b9/0/full.jsonl",
+      "compact_transcript": "/66/9e795c45b9/0/transcript.jsonl",
+      "content_hash": "/66/9e795c45b9/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 30,
+    "cache_creation_tokens": 18237,
+    "cache_read_tokens": 2966891,
+    "output_tokens": 10125,
+    "api_call_count": 15
+  }
+}
