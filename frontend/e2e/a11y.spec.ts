@@ -10,6 +10,7 @@ import {
   ratchet,
   toRecords,
 } from '../scripts/a11y/ratchet';
+import { settle } from '../scripts/a11y/settle';
 
 // Automated a11y floor, Playwright half (#1670 item 1): scans the app's main routes with
 // axe-core (via @axe-core/playwright) under the real dev-bypass stack this lane already
@@ -31,6 +32,7 @@ const CAPTURE = process.env.A11Y_BASELINE === '1';
  * invocation must run this spec with `--workers=1` (documented in the `a11y:baseline`
  * script) to avoid a write race across routes. */
 async function checkRoute(page: import('@playwright/test').Page, surface: string): Promise<void> {
+  await settle(page);
   const results = await new AxeBuilder({ page }).options({ ancestry: true }).analyze();
   const gated = filterGated(results.violations as AxeViolationLike[]);
   const records = toRecords(surface, gated);
