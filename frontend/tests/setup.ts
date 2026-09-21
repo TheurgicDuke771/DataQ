@@ -20,6 +20,8 @@ if (!window.matchMedia) {
 // jsdom. A no-op stub lets dropdown options render in tests.
 if (!window.ResizeObserver) {
   window.ResizeObserver = class {
+    // Same arity as the real constructor; the callback is kept but never invoked.
+    constructor(readonly callback: ResizeObserverCallback) {}
     observe(): void {}
     unobserve(): void {}
     disconnect(): void {}
