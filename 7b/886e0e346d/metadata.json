@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.10.6",
+  "checkpoint_id": "7b886e0e346d",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1672-keyboard-navigation",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "frontend/e2e/keyboard.spec.ts",
+    "frontend/src/App.tsx",
+    "frontend/src/components/dashboard/RecentRuns.tsx",
+    "frontend/src/components/shared/RowLink.tsx",
+    "frontend/src/pages/Assets.tsx",
+    "frontend/src/pages/Results.tsx",
+    "frontend/src/styles.css"
+  ],
+  "sessions": [
+    {
+      "metadata": "/7b/886e0e346d/0/metadata.json",
+      "transcript": "/7b/886e0e346d/0/full.jsonl",
+      "compact_transcript": "/7b/886e0e346d/0/transcript.jsonl",
+      "content_hash": "/7b/886e0e346d/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 22,
+    "cache_creation_tokens": 12514,
+    "cache_read_tokens": 4989222,
+    "output_tokens": 9808,
+    "api_call_count": 11
+  }
+}
