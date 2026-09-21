@@ -14,6 +14,8 @@ import { ResponsiveChart } from '../charts/ResponsiveChart';
  * Quality Trends (prototype `QualityTrends`): succeeded vs failed runs per day over the selected
  * window, as a stacked bar.
  */
+const FAILED_HATCH_ID = 'dq-hatch-failed';
+
 interface QualityTrendsProps {
   trend: TrendPoint[];
 }
@@ -44,7 +46,25 @@ export function QualityTrends({ trend }: QualityTrendsProps) {
           <XAxis dataKey="label" tick={AXIS_TICK} tickLine={false} minTickGap={24} />
           <YAxis tick={AXIS_TICK} tickLine={false} allowDecimals={false} width={36} />
           <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'rgba(0,0,0,0.04)' }} />
-          <Legend iconType="circle" wrapperStyle={{ fontSize: 13 }} />
+          {/* Failed is hatched, not just red: red-on-green is the pair most colour-vision
+              deficiencies merge. The legend swatch inherits the hatch from the bar's fill. */}
+          <defs>
+            <pattern
+              id={FAILED_HATCH_ID}
+              width={6}
+              height={6}
+              patternUnits="userSpaceOnUse"
+              patternTransform="rotate(45)"
+            >
+              <rect width={6} height={6} fill={RUN_STATUS_CHART_COLORS.failed} />
+              <rect width={2.5} height={6} fill="var(--dq-surface)" fillOpacity={0.75} />
+            </pattern>
+          </defs>
+          <Legend
+            iconType="square"
+            wrapperStyle={{ fontSize: 13 }}
+            formatter={(value: string) => <span style={{ color: 'var(--dq-ink)' }}>{value}</span>}
+          />
           <Bar
             dataKey="succeeded"
             stackId="runs"
@@ -56,7 +76,8 @@ export function QualityTrends({ trend }: QualityTrendsProps) {
             dataKey="failed"
             stackId="runs"
             name="Failed"
-            fill={RUN_STATUS_CHART_COLORS.failed}
+            fill={`url(#${FAILED_HATCH_ID})`}
+            stroke={RUN_STATUS_CHART_COLORS.failed}
             radius={[4, 4, 0, 0]}
           />
         </BarChart>

@@ -28,6 +28,7 @@ import {
 import type { ResultStatus } from '../../api/runs';
 import { formatTimestamp } from '../results/resultsFormat';
 import { ResponsiveChart } from '../charts/ResponsiveChart';
+import { StatusMarker } from '../charts/StatusMarker';
 
 /**
  * Per-check historical trend (#594, upgrading the Phase 2.6/ADR 0022 minimal chart): a check's
@@ -262,17 +263,7 @@ function MetricChart({ points, bands }: { points: CheckResultPoint[]; bands: Thr
               index: number;
               payload: { status: ResultStatus };
             };
-            return (
-              <circle
-                key={index}
-                cx={cx}
-                cy={cy}
-                r={3.5}
-                fill={severityColor(payload.status)}
-                stroke="#fff"
-                strokeWidth={1}
-              />
-            );
+            return <StatusMarker key={index} cx={cx} cy={cy} status={payload.status} />;
           }}
         />
       </LineChart>
