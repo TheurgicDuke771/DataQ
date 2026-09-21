@@ -288,7 +288,8 @@ a:focus-visible,
 
 /* ── Tag text contrast ─────────────────────────────────────────────────────
    antd's status tags and the warm/green presets put a -6/-7 shade on a -1 tint (2.0–4.4:1).
-   The dark algorithm's error / purple / geekblue pairs miss too (3.4–4.2:1). */
+   The dark algorithm's purple / geekblue pairs miss too (3.4 / 4.2:1); its error tag is
+   already lifted by the dark colorError seed in theme.ts. */
 :root:not([data-theme='dark']) .ant-tag.ant-tag-success,
 :root:not([data-theme='dark']) .ant-tag.ant-tag-green {
   color: #237804;
@@ -314,9 +315,6 @@ a:focus-visible,
 }
 :root:not([data-theme='dark']) .ant-tag.ant-tag-volcano {
   color: #ad2102;
-}
-:root[data-theme='dark'] .ant-tag.ant-tag-error {
-  color: #ff7875;
 }
 :root[data-theme='dark'] .ant-tag.ant-tag-purple {
   color: #b37feb;
