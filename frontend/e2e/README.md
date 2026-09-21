@@ -12,16 +12,17 @@ the React UI a user actually clicks: `browser → Vite proxy → api → DB`.
 
 ## Specs
 
-| Spec                       | Covers                                                                                                         |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `smoke.spec.ts`            | dev-bypass auth, app shell, sider nav                                                                          |
-| `connections.spec.ts`      | seeded connections grouped by type, "Test all" health path                                                     |
-| `suites.spec.ts`           | seeded suite → checks; check + suite authoring round-trips                                                     |
-| `results.spec.ts`          | seeded runs, run-detail drill-down, pipeline-runs feed                                                         |
-| `schedules.spec.ts`        | SchedulesPanel: add / pause / delete + invalid-cron 422 path                                                   |
-| `trigger-bindings.spec.ts` | TriggersPanel: bind pipeline / disable / remove (seeded ADF connection)                                        |
-| `notifications.spec.ts`    | NotificationsPanel: threshold routing persisted across reload; write-only webhook affordance                   |
-| `a11y.spec.ts`             | axe-core (`@axe-core/playwright`) scan of every route in both themes, ratcheted against a baseline — see below |
+| Spec                       | Covers                                                                                                                  |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `smoke.spec.ts`            | dev-bypass auth, app shell, sider nav                                                                                   |
+| `connections.spec.ts`      | seeded connections grouped by type, "Test all" health path                                                              |
+| `suites.spec.ts`           | seeded suite → checks; check + suite authoring round-trips                                                              |
+| `results.spec.ts`          | seeded runs, run-detail drill-down, pipeline-runs feed                                                                  |
+| `schedules.spec.ts`        | SchedulesPanel: add / pause / delete + invalid-cron 422 path                                                            |
+| `trigger-bindings.spec.ts` | TriggersPanel: bind pipeline / disable / remove (seeded ADF connection)                                                 |
+| `notifications.spec.ts`    | NotificationsPanel: threshold routing persisted across reload; write-only webhook affordance                            |
+| `a11y.spec.ts`             | axe-core (`@axe-core/playwright`) scan of every route in both themes, ratcheted against a baseline — see below          |
+| `keyboard.spec.ts`         | keyboard-only traversal in a real browser: skip link, focus follows navigation, runs/assets/suites open without a mouse |
 
 ## Accessibility floor (#1670)
 
