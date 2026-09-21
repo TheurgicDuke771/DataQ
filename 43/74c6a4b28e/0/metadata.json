@@ -1,0 +1,93 @@
+{
+  "cli_version": "0.10.6",
+  "checkpoint_id": "4374c6a4b28e",
+  "session_id": "2b4ab81d-fb44-4302-9017-825c59914870",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-21T15:14:24.077446Z",
+  "branch": "fix/issue-1980-a11y-labels-progress",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/components/assets/ScorecardPanel.tsx",
+    "frontend/src/components/dashboard/MetricCard.tsx",
+    "frontend/src/components/dashboard/SuitePerformance.tsx",
+    "frontend/src/components/runs/LiveRunProgress.tsx",
+    "frontend/src/components/shared/Filter.tsx",
+    "frontend/src/components/suites/SamplePolicyPanel.tsx",
+    "frontend/src/components/suites/TriggersPanel.tsx",
+    "frontend/tests/components/Filter.test.tsx"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-fable-5-1",
+  "turn_id": "e812a24f1a59",
+  "checkpoint_transcript_start": 573,
+  "transcript_lines_at_start": 573,
+  "compact_transcript_start": 111,
+  "token_usage": {
+    "input_tokens": 28,
+    "cache_creation_tokens": 13321,
+    "cache_read_tokens": 3431245,
+    "output_tokens": 7517,
+    "api_call_count": 14
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01AdRr4fMbnC9hn4TAb8TLBs",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review:code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "ab289b600e84",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 199,
+        "end": 200,
+        "entry_ids": [
+          "2659894f-f8dd-46a4-acb2-ce23e9588e5b"
+        ],
+        "tool_use_id": "toolu_01AdRr4fMbnC9hn4TAb8TLBs"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01AdRr4fMbnC9hn4TAb8TLBs"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review:code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 10
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-21T15:14:24.010767Z",
+    "agent_lines": 69,
+    "agent_removed": 18,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 69,
+    "total_lines_changed": 87,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 7,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 7
+      }
+    }
+  ]
+}

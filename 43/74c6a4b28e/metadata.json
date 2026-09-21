@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.10.6",
+  "checkpoint_id": "4374c6a4b28e",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1980-a11y-labels-progress",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/components/assets/ScorecardPanel.tsx",
+    "frontend/src/components/dashboard/MetricCard.tsx",
+    "frontend/src/components/dashboard/SuitePerformance.tsx",
+    "frontend/src/components/runs/LiveRunProgress.tsx",
+    "frontend/src/components/shared/Filter.tsx",
+    "frontend/src/components/suites/SamplePolicyPanel.tsx",
+    "frontend/src/components/suites/TriggersPanel.tsx",
+    "frontend/tests/components/Filter.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/43/74c6a4b28e/0/metadata.json",
+      "transcript": "/43/74c6a4b28e/0/full.jsonl",
+      "compact_transcript": "/43/74c6a4b28e/0/transcript.jsonl",
+      "content_hash": "/43/74c6a4b28e/0/content_hash.txt",
+      "prompt": "/43/74c6a4b28e/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 28,
+    "cache_creation_tokens": 13321,
+    "cache_read_tokens": 3431245,
+    "output_tokens": 7517,
+    "api_call_count": 14
+  }
+}
