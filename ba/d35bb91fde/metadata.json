@@ -1,0 +1,38 @@
+{
+  "cli_version": "0.10.6",
+  "checkpoint_id": "bad35bb91fde",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1671-remaining-status-tags",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/components/assets/IncidentEvidenceDrawer.tsx",
+    "frontend/src/components/assets/IncidentsPanel.tsx",
+    "frontend/src/components/charts/StatusMarker.tsx",
+    "frontend/src/components/checks/CheckTrend.tsx",
+    "frontend/src/components/results/resultsFormat.ts",
+    "frontend/src/components/shared/StatusTag.tsx",
+    "frontend/src/pages/Results.tsx",
+    "frontend/src/styles.css",
+    "frontend/src/theme.ts",
+    "frontend/tests/a11y/tokens.test.ts",
+    "frontend/tests/components/StatusMarker.test.tsx",
+    "frontend/tests/components/StatusTag.test.tsx",
+    "frontend/tests/components/resultsFormat.test.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ba/d35bb91fde/0/metadata.json",
+      "transcript": "/ba/d35bb91fde/0/full.jsonl",
+      "compact_transcript": "/ba/d35bb91fde/0/transcript.jsonl",
+      "content_hash": "/ba/d35bb91fde/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 34,
+    "cache_creation_tokens": 22196,
+    "cache_read_tokens": 6885905,
+    "output_tokens": 15192,
+    "api_call_count": 17
+  }
+}
