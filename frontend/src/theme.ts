@@ -66,6 +66,10 @@ export function getAppTheme(mode: AppThemeMode): ThemeConfig {
       colorInfo: brand.primary,
       colorLink: brand.primary,
       colorTextHeading: brand.ink,
+      // antd's 0.45 default is 3.4:1 on white and 4.48:1 on the dark surface.
+      // White on the dark theme's lighter indigo is 2.98:1 (primary buttons, avatars).
+      ...(mode === 'dark' ? { colorTextLightSolid: DARK_BRAND.canvas } : {}),
+      colorTextDescription: mode === 'dark' ? 'rgba(255, 255, 255, 0.6)' : 'rgba(0, 0, 0, 0.6)',
       colorBgLayout: brand.canvas,
       borderRadius: 8,
       fontFamily:
