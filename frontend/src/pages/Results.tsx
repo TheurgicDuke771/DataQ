@@ -50,11 +50,11 @@ import {
   formatDuration,
   formatTimestamp,
   isWithinWindowDays,
-  RUN_STATUS_COLORS,
 } from '../components/results/resultsFormat';
 import { PageError } from '../components/feedback/PageError';
 import { WINDOW_PRESETS } from '../components/shared/windowPresets';
 import { ChecksOutcomeTag, RunStatusTag } from '../components/shared/StatusTag';
+import { RowLink } from '../components/shared/RowLink';
 
 const LIST_LIMIT = 200;
 
@@ -223,8 +223,11 @@ function RunsTab({
     {
       title: 'Suite',
       dataIndex: 'suite_id',
-      render: (id: string) =>
-        suiteMeta.get(id)?.name ?? <Typography.Text code>{id.slice(0, 8)}</Typography.Text>,
+      render: (id: string, run: Run) => (
+        <RowLink to={`/results/${run.id}`}>
+          {suiteMeta.get(id)?.name ?? <Typography.Text code>{id.slice(0, 8)}</Typography.Text>}
+        </RowLink>
+      ),
     },
     {
       title: 'Status',
@@ -382,7 +385,6 @@ function PipelineRunsTab({
   reloadRuns: () => void;
   pollMs?: number;
 }) {
-  const navigate = useNavigate();
   // Pipeline runs fetched locally; the DQ runs they may have triggered come from the parent (shared
   // with RunsTab, #349).
   const { state, reload } = useAsyncData(() => listPipelineRuns({ limit: LIST_LIMIT }));
@@ -474,14 +476,9 @@ function PipelineRunsTab({
         return (
           <Flex gap={6} wrap="wrap">
             {triggered.map((r) => (
-              <Tag
-                key={r.id}
-                color={RUN_STATUS_COLORS[r.status]}
-                style={{ cursor: 'pointer', marginInlineEnd: 0 }}
-                onClick={() => navigate(`/results/${r.id}`)}
-              >
-                {r.status}
-              </Tag>
+              <RowLink key={r.id} to={`/results/${r.id}`}>
+                <RunStatusTag status={r.status} />
+              </RowLink>
             ))}
           </Flex>
         );

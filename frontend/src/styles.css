@@ -225,6 +225,38 @@ a:focus-visible,
 /* ── Reduced motion ────────────────────────────────────────────────────────
    Respect users who prefer reduced motion — keep the elevation/tint, drop every
    transform and transition so nothing slides or nudges. */
+/* Off-screen until it takes focus, then pinned top-left above the header. */
+.dq-skip-link {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 1100;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: var(--dq-surface);
+  color: var(--dq-primary);
+  box-shadow: var(--dq-shadow-hover);
+  transform: translateY(-200%);
+}
+.dq-skip-link:focus {
+  transform: translateY(0);
+}
+
+/* The link inside a click-to-open table row: reads as the row's text until hovered or focused. */
+.dq-row-link {
+  color: inherit;
+}
+.dq-row-link--block {
+  display: block;
+  min-width: 0;
+  border-radius: 4px;
+}
+.dq-row-link:hover,
+.dq-row-link:focus-visible {
+  color: var(--dq-primary);
+  text-decoration: underline;
+}
+
 /* Text for assistive tech only. */
 .dq-sr-only {
   position: absolute;
