@@ -12,23 +12,28 @@ the React UI a user actually clicks: `browser → Vite proxy → api → DB`.
 
 ## Specs
 
-| Spec                       | Covers                                                                                              |
-| -------------------------- | --------------------------------------------------------------------------------------------------- |
-| `smoke.spec.ts`            | dev-bypass auth, app shell, sider nav                                                               |
-| `connections.spec.ts`      | seeded connections grouped by type, "Test all" health path                                          |
-| `suites.spec.ts`           | seeded suite → checks; check + suite authoring round-trips                                          |
-| `results.spec.ts`          | seeded runs, run-detail drill-down, pipeline-runs feed                                              |
-| `schedules.spec.ts`        | SchedulesPanel: add / pause / delete + invalid-cron 422 path                                        |
-| `trigger-bindings.spec.ts` | TriggersPanel: bind pipeline / disable / remove (seeded ADF connection)                             |
-| `notifications.spec.ts`    | NotificationsPanel: threshold routing persisted across reload; write-only webhook affordance        |
-| `a11y.spec.ts`             | axe-core (`@axe-core/playwright`) scan of the main routes, ratcheted against a baseline — see below |
+| Spec                       | Covers                                                                                                         |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `smoke.spec.ts`            | dev-bypass auth, app shell, sider nav                                                                          |
+| `connections.spec.ts`      | seeded connections grouped by type, "Test all" health path                                                     |
+| `suites.spec.ts`           | seeded suite → checks; check + suite authoring round-trips                                                     |
+| `results.spec.ts`          | seeded runs, run-detail drill-down, pipeline-runs feed                                                         |
+| `schedules.spec.ts`        | SchedulesPanel: add / pause / delete + invalid-cron 422 path                                                   |
+| `trigger-bindings.spec.ts` | TriggersPanel: bind pipeline / disable / remove (seeded ADF connection)                                        |
+| `notifications.spec.ts`    | NotificationsPanel: threshold routing persisted across reload; write-only webhook affordance                   |
+| `a11y.spec.ts`             | axe-core (`@axe-core/playwright`) scan of every route in both themes, ratcheted against a baseline — see below |
 
 ## Accessibility floor (#1670)
 
-`a11y.spec.ts` runs axe-core over dashboard/connections/suites (list + detail)/results/run-detail/
-assets/admin (the sign-in screen has no dev-bypass equivalent — it's covered by
-`e2e-otp/a11y.spec.ts` instead) and keeps only `serious`/`critical` violations. It **ratchets**
-against the committed `frontend/a11y-baseline.json` (shared with the Vitest component lane in
+`a11y.spec.ts` runs axe-core over **every route** — the list pages, the six admin sub-pages,
+profile, 404, and the id-addressed authoring/detail routes (ids resolved through the API) — once
+per theme. Dark surfaces are keyed `route:/…@dark`, and each scan asserts `data-theme` first, so a
+dark scan that silently rendered light cannot pass. Add a route to `App.tsx` and it belongs here
+too. (The sign-in screen has no dev-bypass equivalent — `e2e-otp/a11y.spec.ts` covers it; its card
+is white in both themes.) Each scan waits for the page to finish loading (`scripts/a11y/settle.ts`)
+— a scan that lands mid-load sees fewer violations and the ratchet cannot tell. Only
+`serious`/`critical` violations are kept. It **ratchets** against the committed
+`frontend/a11y-baseline.json` (shared with the Vitest component lane in
 `tests/a11y/components.a11y.test.tsx` via `frontend/scripts/a11y/ratchet.ts`) rather than requiring
 every existing violation fixed first — a run fails only on a violation NOT already in the baseline.
 
