@@ -37,4 +37,27 @@ describe('Filter', () => {
     const [a, b] = screen.getAllByLabelText('Date');
     expect(a.id).not.toBe(b.id);
   });
+
+  it('labels the control when a hint is rendered beside it', () => {
+    const showHint = true as boolean;
+    render(
+      <Filter label="Actor user ID">
+        <Input />
+        {showHint && <span>Not a valid ID</span>}
+      </Filter>,
+    );
+    expect(screen.getByLabelText('Actor user ID')).toBeInstanceOf(HTMLInputElement);
+    expect(screen.getByText('Not a valid ID')).toBeInTheDocument();
+  });
+
+  it('still labels the control when the conditional hint is absent', () => {
+    const showHint = false as boolean;
+    render(
+      <Filter label="Actor user ID">
+        <Input />
+        {showHint && <span>Not a valid ID</span>}
+      </Filter>,
+    );
+    expect(screen.getByLabelText('Actor user ID')).toBeInstanceOf(HTMLInputElement);
+  });
 });
