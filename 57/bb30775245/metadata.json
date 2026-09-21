@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.10.6",
+  "checkpoint_id": "57bb30775245",
+  "strategy": "manual-commit",
+  "branch": "docs/progress-a11y-track-close-2026-09-21",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CONTRIBUTING.md",
+    "frontend/e2e/README.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/57/bb30775245/0/metadata.json",
+      "transcript": "/57/bb30775245/0/full.jsonl",
+      "compact_transcript": "/57/bb30775245/0/transcript.jsonl",
+      "content_hash": "/57/bb30775245/0/content_hash.txt",
+      "prompt": "/57/bb30775245/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 4,
+    "cache_creation_tokens": 3434,
+    "cache_read_tokens": 493141,
+    "output_tokens": 1235,
+    "api_call_count": 1
+  }
+}
