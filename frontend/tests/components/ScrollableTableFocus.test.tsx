@@ -23,7 +23,7 @@ describe('ScrollableTableFocus', () => {
     render(<ScrollableTableFocus />);
 
     await waitFor(() => expect(wide.tabIndex).toBe(0));
-    expect(wide).toHaveAttribute('role', 'region');
+    expect(wide).toHaveAttribute('role', 'group');
     expect(wide).toHaveAccessibleName('Scrollable table');
     expect(fits).not.toHaveAttribute('tabindex');
 

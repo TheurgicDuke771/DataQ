@@ -66,6 +66,8 @@ export function getAppTheme(mode: AppThemeMode): ThemeConfig {
       colorInfo: brand.primary,
       // The dark algorithm dims the indigo to #717ad6 for links — 4.36:1 on the dark surface.
       colorLink: mode === 'dark' ? '#a5b4fc' : brand.primary,
+      // Derived hover/active land at 2.6 / 4.3:1 on the dark surface.
+      ...(mode === 'dark' ? { colorLinkHover: '#c7d2fe', colorLinkActive: '#a5b4fc' } : {}),
       colorTextHeading: brand.ink,
       // red-6 danger text is 3.3:1 on white and, after the dark algorithm, 4.3:1 on dark.
       colorError: mode === 'dark' ? '#ff7875' : '#cf1322',
