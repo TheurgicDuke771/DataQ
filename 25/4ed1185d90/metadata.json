@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.6",
+  "checkpoint_id": "254ed1185d90",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1980-a11y-contrast-tokens",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "frontend/src/theme.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/25/4ed1185d90/0/metadata.json",
+      "transcript": "/25/4ed1185d90/0/full.jsonl",
+      "compact_transcript": "/25/4ed1185d90/0/transcript.jsonl",
+      "content_hash": "/25/4ed1185d90/0/content_hash.txt",
+      "prompt": "/25/4ed1185d90/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 16,
+    "cache_creation_tokens": 8199,
+    "cache_read_tokens": 1147415,
+    "output_tokens": 3081,
+    "api_call_count": 5
+  }
+}
