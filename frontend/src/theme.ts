@@ -69,8 +69,6 @@ export function getAppTheme(mode: AppThemeMode): ThemeConfig {
       // red-6 danger text is 3.0:1 on white and, after the dark algorithm, 4.3:1 on dark.
       colorError: mode === 'dark' ? '#ff7875' : '#cf1322',
       // antd's 0.45 default is 3.4:1 on white and 4.48:1 on the dark surface.
-      // White on the dark theme's lighter indigo is 2.98:1 (primary buttons, avatars).
-      ...(mode === 'dark' ? { colorTextLightSolid: DARK_BRAND.canvas } : {}),
       colorTextDescription: mode === 'dark' ? 'rgba(255, 255, 255, 0.6)' : 'rgba(0, 0, 0, 0.6)',
       colorBgLayout: brand.canvas,
       borderRadius: 8,
@@ -101,6 +99,14 @@ export function getAppTheme(mode: AppThemeMode): ThemeConfig {
       Card: {
         borderRadiusLG: 12,
       },
+      // White on the dark theme's lighter indigo is 2.98:1. Scoped per component: the global
+      // colorTextLightSolid is also Tooltip's text, which sits on a dark surface.
+      ...(mode === 'dark'
+        ? {
+            Button: { primaryColor: DARK_BRAND.canvas, dangerColor: DARK_BRAND.canvas },
+            Avatar: { colorTextLightSolid: DARK_BRAND.canvas },
+          }
+        : {}),
       Table: {
         headerBg: tableHeaderBg,
       },
