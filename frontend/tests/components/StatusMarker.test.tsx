@@ -14,7 +14,7 @@ const STATUSES = Object.keys({
 } satisfies Record<ResultStatus, 0>) as ResultStatus[];
 
 /** Everything about a marker EXCEPT its colour: element, outline path, filled-or-hollow. */
-function silhouette(status: ResultStatus): string {
+function silhouette(status: string): string {
   const { container } = render(
     <svg>
       <StatusMarker cx={10} cy={10} status={status} />
@@ -31,5 +31,9 @@ describe('StatusMarker', () => {
   it('gives every result status a silhouette that differs without colour', () => {
     const shapes = STATUSES.map(silhouette);
     expect(new Set(shapes).size).toBe(STATUSES.length);
+  });
+
+  it('degrades to a hollow ring for a status it does not know, instead of throwing', () => {
+    expect(silhouette('quarantined')).toBe(silhouette('skip'));
   });
 });

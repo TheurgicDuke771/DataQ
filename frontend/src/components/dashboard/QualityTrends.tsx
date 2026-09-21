@@ -45,7 +45,12 @@ export function QualityTrends({ trend }: QualityTrendsProps) {
           <CartesianGrid {...GRID_PROPS} vertical={false} />
           <XAxis dataKey="label" tick={AXIS_TICK} tickLine={false} minTickGap={24} />
           <YAxis tick={AXIS_TICK} tickLine={false} allowDecimals={false} width={36} />
-          <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'rgba(0,0,0,0.04)' }} />
+          <Tooltip
+            contentStyle={TOOLTIP_STYLE}
+            // recharts colours each row with the bar's fill, which for Failed is `url(#…)`.
+            itemStyle={{ color: 'var(--dq-ink)' }}
+            cursor={{ fill: 'rgba(0,0,0,0.04)' }}
+          />
           {/* Failed is hatched, not just red: red-on-green is the pair most colour-vision
               deficiencies merge. The legend swatch inherits the hatch from the bar's fill. */}
           <defs>

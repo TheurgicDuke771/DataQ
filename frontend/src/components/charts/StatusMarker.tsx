@@ -20,12 +20,17 @@ export function StatusMarker({
 }: {
   cx: number;
   cy: number;
-  status: ResultStatus;
+  /** Typed loosely on purpose: the API carries `status` as a plain string. */
+  status: ResultStatus | (string & {});
   r?: number;
 }) {
-  const color = severityColor(status);
-  if (status === 'pass' || status === 'skip') {
-    const hollow = status === 'skip';
+  const shape = SHAPE[status as ResultStatus] as ((r: number) => string) | undefined;
+  const known = shape !== undefined;
+  const color = known ? severityColor(status as ResultStatus) : 'var(--dq-severity-neutral)';
+  // An unrecognised status degrades to the hollow ring rather than throwing: the app's only
+  // error boundary wraps the whole tree.
+  if (!known || status === 'pass' || status === 'skip') {
+    const hollow = status !== 'pass';
     return (
       <circle
         cx={cx}
@@ -41,7 +46,7 @@ export function StatusMarker({
   const big = r * 1.3;
   return (
     <path
-      d={SHAPE[status](big)}
+      d={shape(big)}
       transform={`translate(${cx},${cy})`}
       fill={status === 'error' ? 'none' : color}
       stroke={status === 'error' ? color : 'var(--dq-surface)'}
