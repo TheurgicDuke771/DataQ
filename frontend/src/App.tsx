@@ -29,6 +29,7 @@ import { ProfileCompletionPrompt } from './components/profile/ProfileCompletionP
 import { ScrollableTableFocus } from './components/shared/ScrollableTableFocus';
 import { ADMIN_ROUTES, SETTINGS_REDIRECT_ROUTE } from './pages/admin/routes';
 import { SHELL } from './theme';
+import { PageTitle } from './components/shared/PageTitle';
 
 // Route components are code-split so the initial bundle doesn't ship every page
 // (and antd-heavy pages only load on navigation). Named exports → map to default.
@@ -136,6 +137,7 @@ export function App() {
         >
           Skip to content
         </a>
+        <PageTitle />
         <ScrollableTableFocus />
         <Header
           style={{

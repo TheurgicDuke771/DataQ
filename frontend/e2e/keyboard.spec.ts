@@ -96,4 +96,21 @@ test.describe('Keyboard navigation', () => {
     });
     expect(clipped).toBeNull();
   });
+
+  test('every navigation retitles the document, and a run keeps its own richer title', async ({
+    page,
+  }) => {
+    await page.goto('/dashboard');
+    await expect(page).toHaveTitle('Dashboard · DataQ');
+    await page.getByRole('link', { name: 'Results' }).click();
+    await expect(page).toHaveTitle('Results · DataQ');
+    await page.locator('tr.ant-table-row a.dq-row-link').first().click();
+    await expect(page.getByTestId('rd-screen')).toBeVisible();
+    // RunDetail names the suite (it doubles as the Save-as-PDF filename) — more specific wins.
+    await expect(page).toHaveTitle(/Orders/);
+    await page.goBack();
+    await expect(page).toHaveTitle('Results · DataQ');
+    await page.goto('/admin/members');
+    await expect(page).toHaveTitle('Members · Admin · DataQ');
+  });
 });
