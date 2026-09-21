@@ -8,6 +8,7 @@ import { listSuites } from '../../api/suites';
 import { useAsyncData } from '../../hooks/useAsyncData';
 import { formatDuration, formatTimestamp } from '../results/resultsFormat';
 import { ChecksOutcomeTag, RunStatusTag } from '../shared/StatusTag';
+import { RowLink } from '../shared/RowLink';
 
 /**
  * Recent Runs (prototype `RecentRuns`) — a cross-suite feed of the latest runs on the dashboard,
@@ -34,8 +35,11 @@ export function RecentRuns() {
     {
       title: 'Suite',
       dataIndex: 'suite_id',
-      render: (suiteId: string) =>
-        suiteNames.get(suiteId) ?? <Typography.Text code>{suiteId.slice(0, 8)}</Typography.Text>,
+      render: (suiteId: string, run: Run) => (
+        <RowLink to={`/results/${run.id}`}>
+          {suiteNames.get(suiteId) ?? <Typography.Text code>{suiteId.slice(0, 8)}</Typography.Text>}
+        </RowLink>
+      ),
     },
     {
       title: 'Status',

@@ -55,6 +55,7 @@ import {
 import { PageError } from '../components/feedback/PageError';
 import { WINDOW_PRESETS } from '../components/shared/windowPresets';
 import { ChecksOutcomeTag, RunStatusTag } from '../components/shared/StatusTag';
+import { RowLink } from '../components/shared/RowLink';
 
 const LIST_LIMIT = 200;
 
@@ -223,8 +224,11 @@ function RunsTab({
     {
       title: 'Suite',
       dataIndex: 'suite_id',
-      render: (id: string) =>
-        suiteMeta.get(id)?.name ?? <Typography.Text code>{id.slice(0, 8)}</Typography.Text>,
+      render: (id: string, run: Run) => (
+        <RowLink to={`/results/${run.id}`}>
+          {suiteMeta.get(id)?.name ?? <Typography.Text code>{id.slice(0, 8)}</Typography.Text>}
+        </RowLink>
+      ),
     },
     {
       title: 'Status',
