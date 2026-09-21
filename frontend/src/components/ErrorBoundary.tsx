@@ -24,6 +24,8 @@ export class ErrorBoundary extends Component<Props, State> {
   componentDidCatch(error: Error, info: ErrorInfo): void {
     // Surfaced to the console (and, once wired, App Insights) — fail loud.
     console.error('Unhandled render error', error, info.componentStack);
+    // The whole tree is gone, so nothing else will retitle the tab.
+    document.title = 'Something went wrong · DataQ';
   }
 
   render(): ReactNode {

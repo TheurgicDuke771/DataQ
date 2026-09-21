@@ -1,5 +1,5 @@
 import { Button } from 'antd';
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 
 import { BrandMark } from '../components/BrandMark';
 import { RESULT_STATUS_CHART_COLORS } from '../components/charts/chartTheme';
@@ -42,6 +42,10 @@ export function LoginShell({
   children: ReactNode;
   footer: ReactNode;
 }) {
+  // Both sign-in screens render through here, whatever deep link the visitor arrived on.
+  useEffect(() => {
+    document.title = 'Sign in · DataQ';
+  }, []);
   return (
     <div className="dqlogin-root">
       <style>{LOGIN_CSS}</style>

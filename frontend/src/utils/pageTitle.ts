@@ -26,6 +26,8 @@ const ROUTES: [RegExp, string][] = [
   [/^\/results\/[^/]+$/, 'Run'],
   [/^\/results$/, 'Results'],
   [/^\/profile$/, 'Profile'],
+  // Redirects admins to /admin/settings; a non-admin stays here on the Forbidden page.
+  [/^\/settings$/, 'Settings'],
 ];
 
 /** The document title for a path: `Results · DataQ`. Every route gets a distinct one, so a

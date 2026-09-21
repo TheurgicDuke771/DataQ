@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { pageTitleFor } from '../../src/utils/pageTitle';
@@ -21,6 +23,7 @@ const ROUTES: [string, string][] = [
   ['/results', 'Results · DataQ'],
   [`/results/${ID}`, 'Run · DataQ'],
   ['/profile', 'Profile · DataQ'],
+  ['/settings', 'Settings · DataQ'],
   ['/admin', 'Overview · Admin · DataQ'],
   ['/admin/overview', 'Overview · Admin · DataQ'],
   ['/admin/members', 'Members · Admin · DataQ'],
@@ -49,5 +52,22 @@ describe('pageTitleFor', () => {
     expect(pageTitleFor('/no-such-route')).toBe('Not found · DataQ');
     expect(pageTitleFor('/admin/whatever')).toBe('Admin · DataQ');
     expect(pageTitleFor('/results/')).toBe('Results · DataQ');
+  });
+
+  // Tied to the routers themselves, not to the hand-written list above: a route added to either
+  // file without a title pattern fails here instead of shipping as "Not found".
+  it('titles every path declared in App.tsx and admin/routes.tsx', () => {
+    const read = (f: string) => readFileSync(resolve(__dirname, '../../src', f), 'utf8');
+    const paths = (src: string) =>
+      [...src.matchAll(/path=["']([^"']+)["']/g)].map((m) => m[1]).filter((p) => p !== '*');
+    const top = paths(read('App.tsx')).filter((p) => p !== '/');
+    const admin = paths(read('pages/admin/routes.tsx')).map((p) =>
+      p.startsWith('/') ? p : `/admin/${p}`,
+    );
+    const declared = [...top, ...admin].map((p) => p.replace(/:[A-Za-z]+/g, ID));
+    expect(declared.length).toBeGreaterThan(15);
+    const untitled = declared.filter((p) => pageTitleFor(p).startsWith('Not found'));
+    expect(untitled).toEqual([]);
+    expect(declared.filter((p) => pageTitleFor(p) === 'Admin · DataQ')).toEqual([]);
   });
 });

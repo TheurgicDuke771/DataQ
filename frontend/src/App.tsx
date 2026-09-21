@@ -29,7 +29,7 @@ import { ProfileCompletionPrompt } from './components/profile/ProfileCompletionP
 import { ScrollableTableFocus } from './components/shared/ScrollableTableFocus';
 import { ADMIN_ROUTES, SETTINGS_REDIRECT_ROUTE } from './pages/admin/routes';
 import { SHELL } from './theme';
-import { pageTitleFor } from './utils/pageTitle';
+import { PageTitle } from './components/shared/PageTitle';
 
 // Route components are code-split so the initial bundle doesn't ship every page
 // (and antd-heavy pages only load on navigation). Named exports → map to default.
@@ -96,9 +96,6 @@ export function App() {
   // possibly unmounted, and a screen reader announces no change. Move it to the page. Compared
   // against the last path rather than "skip the first run": StrictMode runs effects twice.
   useEffect(() => {
-    document.title = pageTitleFor(location.pathname);
-  }, [location.pathname]);
-  useEffect(() => {
     if (lastPath.current === location.pathname) return;
     lastPath.current = location.pathname;
     // …unless it is still on a live control inside the page — an admin tab, a suite in the
@@ -140,6 +137,7 @@ export function App() {
         >
           Skip to content
         </a>
+        <PageTitle />
         <ScrollableTableFocus />
         <Header
           style={{
