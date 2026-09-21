@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.10.6",
+  "checkpoint_id": "ade15b78e444",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2049-page-titles",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/e2e-otp/a11y.spec.ts",
+    "frontend/src/App.tsx",
+    "frontend/src/auth/LoginPage.tsx",
+    "frontend/src/components/ErrorBoundary.tsx",
+    "frontend/src/components/shared/PageTitle.tsx",
+    "frontend/src/utils/pageTitle.ts",
+    "frontend/tests/utils/pageTitle.test.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ad/e15b78e444/0/metadata.json",
+      "transcript": "/ad/e15b78e444/0/full.jsonl",
+      "compact_transcript": "/ad/e15b78e444/0/transcript.jsonl",
+      "content_hash": "/ad/e15b78e444/0/content_hash.txt",
+      "prompt": "/ad/e15b78e444/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 18,
+    "cache_creation_tokens": 11981,
+    "cache_read_tokens": 4121924,
+    "output_tokens": 8381,
+    "api_call_count": 8
+  }
+}
