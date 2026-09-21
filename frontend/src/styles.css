@@ -223,7 +223,7 @@ a:focus-visible,
 
 /* ── Tag text contrast ─────────────────────────────────────────────────────
    antd's status + gold/volcano tags put a -6/-7 shade on a -1 tint (2.2–4.4:1).
-   The dark algorithm's error + purple pairs miss too (4.0 / 3.4:1). */
+   The dark algorithm's error / purple / geekblue pairs miss too (3.4–4.2:1). */
 :root:not([data-theme='dark']) .ant-tag.ant-tag-success {
   color: #237804;
 }
@@ -242,4 +242,7 @@ a:focus-visible,
 }
 :root[data-theme='dark'] .ant-tag.ant-tag-purple {
   color: #b37feb;
+}
+:root[data-theme='dark'] .ant-tag.ant-tag-geekblue {
+  color: #85a5ff;
 }
