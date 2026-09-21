@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.10.6",
+  "checkpoint_id": "16b0ac990a64",
+  "strategy": "manual-commit",
+  "branch": "test/a11y-scan-coverage-tied-to-routers",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CONTRIBUTING.md",
+    "frontend/tests/a11y/scanCoverage.test.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/16/b0ac990a64/0/metadata.json",
+      "transcript": "/16/b0ac990a64/0/full.jsonl",
+      "compact_transcript": "/16/b0ac990a64/0/transcript.jsonl",
+      "content_hash": "/16/b0ac990a64/0/content_hash.txt",
+      "prompt": "/16/b0ac990a64/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12,
+    "cache_creation_tokens": 5261,
+    "cache_read_tokens": 2630720,
+    "output_tokens": 4685,
+    "api_call_count": 5
+  }
+}
