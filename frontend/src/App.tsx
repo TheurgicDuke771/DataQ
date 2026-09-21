@@ -97,6 +97,9 @@ export function App() {
   useEffect(() => {
     if (lastPath.current === location.pathname) return;
     lastPath.current = location.pathname;
+    // …unless it is still on a live control inside the page — an admin tab, a suite in the
+    // master list. Those navigate without going anywhere; taking focus would lose the user's place.
+    if (mainRef.current?.contains(document.activeElement)) return;
     mainRef.current?.focus();
   }, [location.pathname]);
   const isAdmin = useIsWorkspaceAdmin();

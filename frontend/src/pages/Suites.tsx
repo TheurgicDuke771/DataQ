@@ -65,6 +65,7 @@ import { useConfirmDelete } from '../hooks/useConfirmDelete';
 import { useRunTrigger } from '../hooks/useRunTrigger';
 import { errorMessage } from '../utils/errors';
 import { PageError } from '../components/feedback/PageError';
+import { RowLink } from '../components/shared/RowLink';
 
 /**
  * A suite's identity block — datasource avatar + name + connection/env — shared by the browse-grid
@@ -91,13 +92,15 @@ function SuiteIdentity({
     >
       {conn && <ConnectionTypeAvatar type={conn.type} size={size} />}
       <Flex vertical gap={2} style={{ minWidth: 0, flex: 1 }}>
-        <Typography.Text
-          strong
-          ellipsis
-          style={selected ? { color: 'var(--dq-primary)' } : undefined}
-        >
-          {suite.name}
-        </Typography.Text>
+        <RowLink to={`/suites/${suite.id}`} block current={selected}>
+          <Typography.Text
+            strong
+            ellipsis
+            style={selected ? { color: 'var(--dq-primary)' } : undefined}
+          >
+            {suite.name}
+          </Typography.Text>
+        </RowLink>
         {conn ? (
           <Flex gap={6} align="center">
             <Typography.Text type="secondary" style={{ fontSize: 12 }} ellipsis>
@@ -361,9 +364,11 @@ function SuiteBrowseCard({
           )}
         </Flex>
         <Flex vertical gap={2} style={{ minWidth: 0 }}>
-          <Typography.Text strong ellipsis style={{ fontSize: 15 }}>
-            {suite.name}
-          </Typography.Text>
+          <RowLink to={`/suites/${suite.id}`} block>
+            <Typography.Text strong ellipsis style={{ fontSize: 15 }}>
+              {suite.name}
+            </Typography.Text>
+          </RowLink>
           <Typography.Text type="secondary" style={{ fontSize: 13 }} ellipsis>
             {conn ? `${conn.name} · ${CONNECTION_TYPE_LABELS[conn.type]}` : 'No connection'}
           </Typography.Text>

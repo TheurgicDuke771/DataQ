@@ -291,9 +291,11 @@ function AssetsTable({
       dataIndex: 'name',
       render: (name: string, asset) => (
         <div style={{ minWidth: 0 }}>
-          <Typography.Text strong ellipsis style={{ display: 'block' }}>
-            <RowLink to={`/assets/${asset.id}`}>{name}</RowLink>
-          </Typography.Text>
+          <RowLink to={`/assets/${asset.id}`} block>
+            <Typography.Text strong ellipsis style={{ display: 'block' }}>
+              {name}
+            </Typography.Text>
+          </RowLink>
           <Tooltip title={asset.namespace}>
             <Typography.Text type="secondary" style={{ fontSize: 12 }} ellipsis>
               {namespaceLabel(asset.namespace)}

@@ -246,6 +246,11 @@ a:focus-visible,
 .dq-row-link {
   color: inherit;
 }
+.dq-row-link--block {
+  display: block;
+  min-width: 0;
+  border-radius: 4px;
+}
 .dq-row-link:hover,
 .dq-row-link:focus-visible {
   color: var(--dq-primary);
