@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.10.6",
+  "checkpoint_id": "25df78a9beb3",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1671-non-color-severity-cues",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "frontend/src/components/assets/ScorecardPanel.tsx",
+    "frontend/src/components/checks/DryRunPreview.tsx",
+    "frontend/src/components/dashboard/RecentRuns.tsx",
+    "frontend/src/components/dashboard/SuitePerformance.tsx",
+    "frontend/src/components/runs/LiveRunProgress.tsx",
+    "frontend/src/components/shared/StatusTag.tsx",
+    "frontend/src/pages/Results.tsx",
+    "frontend/src/pages/RunDetail.tsx",
+    "frontend/src/styles.css",
+    "frontend/src/theme.ts",
+    "frontend/tests/components/StatusTag.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/25/df78a9beb3/0/metadata.json",
+      "transcript": "/25/df78a9beb3/0/full.jsonl",
+      "compact_transcript": "/25/df78a9beb3/0/transcript.jsonl",
+      "content_hash": "/25/df78a9beb3/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 38,
+    "cache_creation_tokens": 26177,
+    "cache_read_tokens": 6044392,
+    "output_tokens": 15905,
+    "api_call_count": 19
+  }
+}
