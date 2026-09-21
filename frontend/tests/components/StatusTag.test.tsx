@@ -18,7 +18,11 @@ const RESULT_STATUSES = Object.keys({
   error: 0,
 } satisfies Record<ResultStatus, 0>) as ResultStatus[];
 
-const glyph = (el: HTMLElement) => el.querySelector('.anticon')?.getAttribute('aria-label');
+// The glyph is decorative to assistive tech, so it is identified by antd's per-icon class.
+const glyph = (el: HTMLElement) =>
+  [...(el.querySelector('.anticon')?.classList ?? [])].find(
+    (c) => c.startsWith('anticon-') && c !== 'anticon-spin',
+  );
 
 describe('status tags carry severity without colour', () => {
   it('gives every result status its own glyph', () => {
@@ -43,11 +47,15 @@ describe('status tags carry severity without colour', () => {
     expect(new Set(glyphs).size).toBe(RUN_STATUSES.length);
   });
 
-  it('names the worst severity on the checks chip, which shows only a ratio', () => {
-    render(<ChecksOutcomeTag passed={1} total={2} worst="critical" />);
-    expect(screen.getByLabelText('1 of 2 checks passed, worst result critical')).toHaveTextContent(
-      '1/2',
-    );
+  it('states the worst severity on the checks chip as text, since it shows only a ratio', () => {
+    const { container } = render(<ChecksOutcomeTag passed={1} total={2} worst="critical" />);
+    expect(container).toHaveTextContent('1/2 checks passed, worst result critical');
+  });
+
+  it('hides the glyph from assistive tech — antd would announce it by its icon name', () => {
+    const { container } = render(<ChecksOutcomeTag passed={1} total={2} worst="critical" />);
+    expect(container.querySelector('.anticon')).toHaveAttribute('aria-hidden', 'true');
+    expect(screen.queryByRole('img')).toBeNull();
   });
 
   it('distinguishes a critical chip from a failed one by glyph, not just colour', () => {
@@ -59,7 +67,7 @@ describe('status tags carry severity without colour', () => {
   });
 
   it('treats a run with no recorded severity as passing', () => {
-    render(<ChecksOutcomeTag passed={3} total={3} worst={null} />);
-    expect(screen.getByLabelText('3 of 3 checks passed, worst result pass')).toBeInTheDocument();
+    const { container } = render(<ChecksOutcomeTag passed={3} total={3} worst={null} />);
+    expect(container).toHaveTextContent('3/3 checks passed, worst result pass');
   });
 });

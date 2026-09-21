@@ -15,22 +15,23 @@ import type { ReactNode } from 'react';
 import type { ResultStatus, RunStatus } from '../../api/runs';
 import { RESULT_STATUS_COLORS, RUN_STATUS_COLORS } from '../results/resultsFormat';
 
-/** Each status has its own glyph, so severity reads without colour (WCAG 1.4.1). */
+/** Each status has its own glyph, so severity reads without colour (WCAG 1.4.1). Hidden from
+ *  assistive tech: antd names an icon after itself ("fire"), and the text beside it already says it. */
 const RESULT_STATUS_ICONS: Record<ResultStatus, ReactNode> = {
-  pass: <CheckCircleOutlined />,
-  warn: <WarningOutlined />,
-  fail: <CloseCircleOutlined />,
-  critical: <FireOutlined />,
-  skip: <MinusCircleOutlined />,
-  error: <ExclamationCircleOutlined />,
+  pass: <CheckCircleOutlined aria-hidden />,
+  warn: <WarningOutlined aria-hidden />,
+  fail: <CloseCircleOutlined aria-hidden />,
+  critical: <FireOutlined aria-hidden />,
+  skip: <MinusCircleOutlined aria-hidden />,
+  error: <ExclamationCircleOutlined aria-hidden />,
 };
 
 const RUN_STATUS_ICONS: Record<RunStatus, ReactNode> = {
-  queued: <ClockCircleOutlined />,
-  running: <SyncOutlined spin />,
-  succeeded: <CheckCircleOutlined />,
-  failed: <CloseCircleOutlined />,
-  cancelled: <StopOutlined />,
+  queued: <ClockCircleOutlined aria-hidden />,
+  running: <SyncOutlined spin aria-hidden />,
+  succeeded: <CheckCircleOutlined aria-hidden />,
+  failed: <CloseCircleOutlined aria-hidden />,
+  cancelled: <StopOutlined aria-hidden />,
 };
 
 export function ResultStatusTag({
@@ -56,7 +57,7 @@ export function RunStatusTag({ status }: { status: RunStatus }) {
 }
 
 /** The runs tables' `passed/total` chip. Its colour is the run's worst severity and used to be
- *  the only place that severity appeared; the glyph and the accessible name now carry it too. */
+ *  the only place that severity appeared; the glyph and a visually-hidden phrase now carry it too. */
 export function ChecksOutcomeTag({
   passed,
   total,
@@ -68,12 +69,10 @@ export function ChecksOutcomeTag({
 }) {
   const severity = worst ?? 'pass';
   return (
-    <Tag
-      color={RESULT_STATUS_COLORS[severity]}
-      icon={RESULT_STATUS_ICONS[severity]}
-      aria-label={`${passed} of ${total} checks passed, worst result ${severity}`}
-    >
+    <Tag color={RESULT_STATUS_COLORS[severity]} icon={RESULT_STATUS_ICONS[severity]}>
       {passed}/{total}
+      {/* Real text, not aria-label: a role-less span's aria-label is dropped (ARIA: name prohibited). */}
+      <span className="dq-sr-only"> checks passed, worst result {severity}</span>
     </Tag>
   );
 }
