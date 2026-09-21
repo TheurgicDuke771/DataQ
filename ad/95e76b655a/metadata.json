@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.6",
+  "checkpoint_id": "ad95e76b655a",
+  "strategy": "manual-commit",
+  "branch": "test/a11y-scan-connection-edit",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/e2e/a11y.spec.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ad/95e76b655a/0/metadata.json",
+      "transcript": "/ad/95e76b655a/0/full.jsonl",
+      "compact_transcript": "/ad/95e76b655a/0/transcript.jsonl",
+      "content_hash": "/ad/95e76b655a/0/content_hash.txt",
+      "prompt": "/ad/95e76b655a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 6,
+    "cache_creation_tokens": 4019,
+    "cache_read_tokens": 779518,
+    "output_tokens": 2706,
+    "api_call_count": 2
+  }
+}
