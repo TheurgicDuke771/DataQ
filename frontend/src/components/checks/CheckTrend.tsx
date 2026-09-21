@@ -1,4 +1,4 @@
-import { Alert, Empty, Segmented, Spin, Table, Tag, Typography } from 'antd';
+import { Alert, Empty, Segmented, Spin, Table, Typography } from 'antd';
 import { useState } from 'react';
 import {
   CartesianGrid,
@@ -28,7 +28,8 @@ import {
 import type { ResultStatus } from '../../api/runs';
 import { formatTimestamp } from '../results/resultsFormat';
 import { ResponsiveChart } from '../charts/ResponsiveChart';
-import { StatusMarker } from '../charts/StatusMarker';
+import { StatusMarker, StatusMarkerKey } from '../charts/StatusMarker';
+import { ResultStatusTag } from '../shared/StatusTag';
 
 /**
  * Per-check historical trend (#594, upgrading the Phase 2.6/ADR 0022 minimal chart): a check's
@@ -207,6 +208,11 @@ export function CheckTrend({ suiteId, check, limit = 90 }: CheckTrendProps) {
       {view === 'chart' ? (
         <>
           <MetricChart points={withMetric} bands={bands} />
+          {withMetric.length > 0 && (
+            <StatusMarkerKey
+              statuses={[...new Set(withMetric.map((p) => p.status as ResultStatus))]}
+            />
+          )}
           {isAnomaly && (
             <AnomalyBaselinePanel observations={observations} meta={anomalyMeta} check={check} />
           )}
@@ -396,7 +402,7 @@ function TrendTable({
           {
             title: 'Status',
             dataIndex: 'status',
-            render: (s: ResultStatus) => <Tag color={severityColor(s)}>{s}</Tag>,
+            render: (s: ResultStatus) => <ResultStatusTag status={s} />,
           },
         ]}
       />

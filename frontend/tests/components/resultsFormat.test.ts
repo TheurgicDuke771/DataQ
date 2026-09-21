@@ -7,7 +7,6 @@ import {
   formatScalar,
   formatTimestamp,
   isWithinWindowDays,
-  pipelineStatusColor,
   RESULT_STATUS_COLORS,
   RUN_BAR_STATUS,
   runReportTitle,
@@ -115,12 +114,6 @@ describe('status colour maps', () => {
       skip: 'default',
       error: 'volcano',
     });
-  });
-
-  it('maps pipeline statuses with a default fallback', () => {
-    expect(pipelineStatusColor('succeeded')).toBe('success');
-    expect(pipelineStatusColor('failed')).toBe('error');
-    expect(pipelineStatusColor('something-new')).toBe('default');
   });
 });
 

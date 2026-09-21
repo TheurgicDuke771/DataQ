@@ -38,11 +38,8 @@ export const SHELL = {
   siderWidth: 220,
 } as const;
 
-/**
- * Shared good/warning/bad/neutral scale — antd's green-6/gold-6/red-6/gray-5,
- * defined as CSS vars in styles.css (values intentionally unchanged across
- * themes — already legible against both the light and dark canvas).
- */
+/** Shared good/warning/bad/neutral FILL scale — CSS vars in styles.css, per theme, each 3:1+
+ *  against its surface. Use SEVERITY_TEXT for text. */
 export const SEVERITY_SCALE = {
   good: 'var(--dq-severity-good)',
   warning: 'var(--dq-severity-warning)',

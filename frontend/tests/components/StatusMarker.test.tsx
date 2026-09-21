@@ -1,8 +1,8 @@
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import type { ResultStatus } from '../../src/api/runs';
-import { StatusMarker } from '../../src/components/charts/StatusMarker';
+import { StatusMarker, StatusMarkerKey } from '../../src/components/charts/StatusMarker';
 
 const STATUSES = Object.keys({
   pass: 0,
@@ -35,5 +35,14 @@ describe('StatusMarker', () => {
 
   it('degrades to a hollow ring for a status it does not know, instead of throwing', () => {
     expect(silhouette('quarantined')).toBe(silhouette('skip'));
+  });
+
+  it('keys only the statuses on the chart, in severity order, with the marker hidden from AT', () => {
+    render(<StatusMarkerKey statuses={['fail', 'pass']} />);
+    const items = screen.getAllByRole('listitem');
+    expect(items.map((li) => li.textContent)).toEqual(['pass', 'fail']);
+    expect(items[1].querySelector('[data-status="fail"]')).not.toBeNull();
+    expect(items[1].querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+    expect(screen.getByRole('list', { name: 'Point shapes by result' })).toBeInTheDocument();
   });
 });
