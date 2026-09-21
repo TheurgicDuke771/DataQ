@@ -88,10 +88,64 @@ test.describe('Accessibility floor (axe-core, serious/critical, ratcheted)', () 
     await checkRoute(page, 'route:/assets');
   });
 
-  test('admin', async ({ page }) => {
-    // dev-bypass is workspace-admin in this lane (CI + compose parity, see e2e/README.md).
-    await page.goto('/admin');
-    await expect(page.getByRole('heading', { name: 'Admin', level: 3 })).toBeVisible();
-    await checkRoute(page, 'route:/admin');
+  // Every admin sub-page is its own route; `/admin` redirects to Overview.
+  for (const sub of ['overview', 'members', 'suites', 'integrations', 'settings', 'compliance']) {
+    test(`admin ${sub}`, async ({ page }) => {
+      // dev-bypass is workspace-admin in this lane (CI + compose parity, see e2e/README.md).
+      await page.goto(`/admin/${sub}`);
+      await expect(page.getByRole('heading', { name: 'Admin', level: 3 })).toBeVisible();
+      await checkRoute(page, `route:/admin/${sub}`);
+    });
+  }
+
+  test('profile', async ({ page }) => {
+    await page.goto('/profile');
+    await expect(page.getByRole('heading', { name: 'Profile', level: 3 })).toBeVisible();
+    await checkRoute(page, 'route:/profile');
+  });
+
+  test('not found', async ({ page }) => {
+    await page.goto('/no-such-route');
+    await expect(page.getByText('404')).toBeVisible();
+    await checkRoute(page, 'route:/404');
+  });
+
+  // The authoring + detail routes are id-addressed; resolve the seeded ids through the API
+  // rather than clicking through list pages the tests above already cover.
+  test.describe('id-addressed routes', () => {
+    let suiteId: string;
+    let checkId: string;
+    let assetId: string;
+
+    test.beforeAll(async ({ request }) => {
+      const suites: { id: string; name: string }[] = await (
+        await request.get('/api/v1/suites')
+      ).json();
+      const orders = suites.find((s) => s.name === 'Orders quality');
+      expect(orders, 'seeded "Orders quality" suite').toBeDefined();
+      suiteId = orders?.id ?? '';
+      const checks: { id: string }[] = await (
+        await request.get(`/api/v1/suites/${suiteId}/checks`)
+      ).json();
+      checkId = checks[0].id;
+      const assets: { id: string }[] = await (await request.get('/api/v1/assets')).json();
+      assetId = assets[0].id;
+    });
+
+    const routes: [string, () => string][] = [
+      ['route:/connections/new', () => '/connections/new'],
+      ['route:/suites/new', () => '/suites/new'],
+      ['route:/suites/:id/edit', () => `/suites/${suiteId}/edit`],
+      ['route:/suites/:id/checks/new', () => `/suites/${suiteId}/checks/new`],
+      ['route:/suites/:id/checks/:id/edit', () => `/suites/${suiteId}/checks/${checkId}/edit`],
+      ['route:/assets/:id', () => `/assets/${assetId}`],
+    ];
+    for (const [surface, url] of routes) {
+      test(surface, async ({ page }) => {
+        await page.goto(url());
+        await expect(page.getByRole('heading').first()).toBeVisible();
+        await checkRoute(page, surface);
+      });
+    }
   });
 });
