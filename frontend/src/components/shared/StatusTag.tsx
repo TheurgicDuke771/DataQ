@@ -34,23 +34,27 @@ const RUN_STATUS_ICONS: Record<RunStatus, ReactNode> = {
   cancelled: <StopOutlined aria-hidden />,
 };
 
+/** `status` is accepted as a plain string because several API shapes carry it that way
+ *  (incident evidence, pipeline runs). An unrecognised value renders as a neutral, glyph-less tag. */
 export function ResultStatusTag({
   status,
   children,
 }: {
-  status: ResultStatus;
+  status: ResultStatus | (string & {});
   children?: ReactNode;
 }) {
+  const known = status as ResultStatus;
   return (
-    <Tag color={RESULT_STATUS_COLORS[status]} icon={RESULT_STATUS_ICONS[status]}>
+    <Tag color={RESULT_STATUS_COLORS[known] ?? 'default'} icon={RESULT_STATUS_ICONS[known]}>
       {children ?? status}
     </Tag>
   );
 }
 
-export function RunStatusTag({ status }: { status: RunStatus }) {
+export function RunStatusTag({ status }: { status: RunStatus | (string & {}) }) {
+  const known = status as RunStatus;
   return (
-    <Tag color={RUN_STATUS_COLORS[status]} icon={RUN_STATUS_ICONS[status]}>
+    <Tag color={RUN_STATUS_COLORS[known] ?? 'default'} icon={RUN_STATUS_ICONS[known]}>
       {status}
     </Tag>
   );

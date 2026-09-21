@@ -11,9 +11,9 @@ import {
 import { useAsyncData } from '../../hooks/useAsyncData';
 import { errorMessage } from '../../utils/errors';
 import { AsyncBody } from '../AsyncBody';
-import type { ResultStatus } from '../../api/runs';
-import { RESULT_STATUS_COLORS, formatTimestamp } from '../results/resultsFormat';
+import { formatTimestamp } from '../results/resultsFormat';
 import { IncidentEvidenceDrawer } from './IncidentEvidenceDrawer';
+import { ResultStatusTag } from '../shared/StatusTag';
 
 /**
  * Incidents section on the asset page (ADR 0034 #761) — the *active* incidents (open /
@@ -126,7 +126,7 @@ function IncidentsTable({
         sev ? (
           // Shared severity→colour map (resultsFormat) so incidents can't drift
           // from the Results surface's tier colours.
-          <Tag color={RESULT_STATUS_COLORS[sev as ResultStatus] ?? 'default'}>{sev}</Tag>
+          <ResultStatusTag status={sev} />
         ) : (
           '—'
         ),
