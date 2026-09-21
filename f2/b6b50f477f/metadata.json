@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.6",
+  "checkpoint_id": "f2b6b50f477f",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1988-a11y-run-detail-determinism",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "frontend/scripts/a11y/settle.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f2/b6b50f477f/0/metadata.json",
+      "transcript": "/f2/b6b50f477f/0/full.jsonl",
+      "compact_transcript": "/f2/b6b50f477f/0/transcript.jsonl",
+      "content_hash": "/f2/b6b50f477f/0/content_hash.txt",
+      "prompt": "/f2/b6b50f477f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 46,
+    "cache_creation_tokens": 24905,
+    "cache_read_tokens": 3185345,
+    "output_tokens": 7080,
+    "api_call_count": 18
+  }
+}
