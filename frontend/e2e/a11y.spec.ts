@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
+import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -26,6 +27,18 @@ import { settle } from '../scripts/a11y/settle';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const BASELINE_PATH = resolve(__dirname, '../a11y-baseline.json');
 const CAPTURE = process.env.A11Y_BASELINE === '1';
+
+/** The Member PAT `seed_dev` mints (same file `roles.spec.ts` reads) — the ambient dev-bypass
+ *  identity is an admin, so it can never reach the Forbidden page. */
+function memberToken(): string | null {
+  try {
+    const raw = readFileSync(resolve(__dirname, '.role-tokens.json'), 'utf8');
+    return (JSON.parse(raw) as { member?: string }).member ?? null;
+  } catch {
+    return null;
+  }
+}
+const MEMBER_TOKEN = memberToken();
 
 /** Run axe over the current page, ratchet against (or capture into) the baseline for
  * `surface`. `CAPTURE` mode load-modify-saves the shared file per call, so the regen
@@ -118,6 +131,23 @@ function defineScans(mode: Theme): void {
       await page.goto('/profile');
       await expect(page.getByRole('heading', { name: 'Profile', level: 3 })).toBeVisible();
       await checkRoute(mode, page, 'route:/profile');
+    });
+
+    // What a non-admin sees at every admin URL, and at the retired /settings.
+    test.describe('as a member', () => {
+      // Skippable on a laptop that has not seeded; never in CI, where a silent skip would leave
+      // the coverage test satisfied by a scan that did not run.
+      test.skip(
+        MEMBER_TOKEN === null && !process.env.CI,
+        'run `python -m backend.scripts.seed_dev` first',
+      );
+      test.use({ extraHTTPHeaders: { Authorization: `Bearer ${MEMBER_TOKEN ?? 'unseeded'}` } });
+
+      test('forbidden', async ({ page }) => {
+        await page.goto('/settings');
+        await expect(page.getByText(/restricted to workspace admins/i)).toBeVisible();
+        await checkRoute(mode, page, 'route:/403');
+      });
     });
 
     test('not found', async ({ page }) => {

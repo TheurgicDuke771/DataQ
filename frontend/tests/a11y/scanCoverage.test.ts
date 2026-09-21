@@ -29,7 +29,8 @@ function scannedSurfaces(): Set<string> {
 // Declared, deliberately not scanned — each needs a reason.
 const EXEMPT: Record<string, string> = {
   '/admin': 'layout parent of the admin sub-routes; its index redirects to /admin/overview',
-  '/settings': 'redirects admins to /admin/settings (scanned); dev-bypass is an admin',
+  '/settings':
+    'an admin is redirected to /admin/settings; a non-admin gets the Forbidden page — both scanned, as /admin/settings and /403',
 };
 
 describe('a11y scan coverage', () => {
@@ -48,7 +49,9 @@ describe('a11y scan coverage', () => {
     expect(stale).toEqual([]);
   });
 
-  it('scans the not-found page, which has no path of its own', () => {
+  it('scans the states that have no path of their own', () => {
+    // Not found, and what a non-admin gets at every admin-gated URL.
     expect(scannedSurfaces().has('/404')).toBe(true);
+    expect(scannedSurfaces().has('/403')).toBe(true);
   });
 });
