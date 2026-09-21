@@ -1,0 +1,5 @@
+Hey, let's pickup the accessibility related issues. 
+Check the current state of repo. 
+Get the filled issues, do some research, add issues if required. 
+Plan the tasks. Create a TODO based on priority and dependencies. 
+Start execution.
