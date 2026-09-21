@@ -107,7 +107,12 @@ export function MetricCard({
         )}
 
         {progress != null && !loading && (
-          <Progress percent={Math.round(progress)} showInfo={false} size="small" />
+          <Progress
+            percent={Math.round(progress)}
+            showInfo={false}
+            size="small"
+            aria-label={label}
+          />
         )}
         {delta != null && !loading && value !== null && (
           <DeltaBadge delta={delta} unit={deltaUnit} goodWhen={deltaGoodWhen} />

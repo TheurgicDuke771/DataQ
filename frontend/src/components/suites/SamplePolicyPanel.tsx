@@ -10,6 +10,7 @@ import {
 import { type ColumnTarget, listColumns, type Suite, targetString } from '../../api/suites';
 import { useAsyncData } from '../../hooks/useAsyncData';
 import { errorMessage } from '../../utils/errors';
+import { Filter } from '../shared/Filter';
 
 /**
  * Suite-detail panel for the failing-sample redaction policy (#415): which column locates a
@@ -146,10 +147,7 @@ function SamplePolicyForm({
 
   return (
     <Flex vertical gap={12}>
-      <Flex vertical gap={4}>
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          Identifier column (shown to locate a failing row — must not be PII)
-        </Typography.Text>
+      <Filter label="Identifier column (shown to locate a failing row — must not be PII)">
         <Select
           mode="tags"
           maxCount={1}
@@ -162,11 +160,8 @@ function SamplePolicyForm({
           onOpenChange={(open) => open && loadColumns()}
           onChange={(v) => setIdentifier(v[0] ?? null)}
         />
-      </Flex>
-      <Flex vertical gap={4}>
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          PII columns (always masked)
-        </Typography.Text>
+      </Filter>
+      <Filter label="PII columns (always masked)">
         <Select
           mode="tags"
           allowClear
@@ -178,7 +173,7 @@ function SamplePolicyForm({
           onOpenChange={(open) => open && loadColumns()}
           onChange={setPii}
         />
-      </Flex>
+      </Filter>
       {identifierIsPii && (
         <Alert
           type="warning"
