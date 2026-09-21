@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.10.6",
+  "checkpoint_id": "9ad8bef379ef",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1671-chart-non-color-cues",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/components/charts/StatusMarker.tsx",
+    "frontend/src/components/dashboard/QualityTrends.tsx",
+    "frontend/tests/components/StatusMarker.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/9a/d8bef379ef/0/metadata.json",
+      "transcript": "/9a/d8bef379ef/0/full.jsonl",
+      "compact_transcript": "/9a/d8bef379ef/0/transcript.jsonl",
+      "content_hash": "/9a/d8bef379ef/0/content_hash.txt",
+      "prompt": "/9a/d8bef379ef/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 6561,
+    "cache_read_tokens": 1103038,
+    "output_tokens": 3628,
+    "api_call_count": 3
+  }
+}
