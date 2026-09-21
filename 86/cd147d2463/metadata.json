@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.6",
+  "checkpoint_id": "86cd147d2463",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1980-a11y-labels-progress",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/a11y-baseline.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/86/cd147d2463/0/metadata.json",
+      "transcript": "/86/cd147d2463/0/full.jsonl",
+      "compact_transcript": "/86/cd147d2463/0/transcript.jsonl",
+      "content_hash": "/86/cd147d2463/0/content_hash.txt",
+      "prompt": "/86/cd147d2463/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 10,
+    "cache_creation_tokens": 2650,
+    "cache_read_tokens": 1013849,
+    "output_tokens": 2738,
+    "api_call_count": 4
+  }
+}
