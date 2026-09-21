@@ -50,7 +50,6 @@ import {
   formatDuration,
   formatTimestamp,
   isWithinWindowDays,
-  pipelineStatusColor,
   RUN_STATUS_COLORS,
 } from '../components/results/resultsFormat';
 import { PageError } from '../components/feedback/PageError';
@@ -462,7 +461,7 @@ function PipelineRunsTab({
       title: 'Status',
       dataIndex: 'status',
       width: 110,
-      render: (s: string) => <Tag color={pipelineStatusColor(s)}>{s}</Tag>,
+      render: (s: string) => <RunStatusTag status={s} />,
     },
     {
       title: 'DQ run',

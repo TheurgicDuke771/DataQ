@@ -1,4 +1,4 @@
-import { Alert, Descriptions, Drawer, Empty, Flex, Table, Tag, Typography } from 'antd';
+import { Alert, Descriptions, Drawer, Empty, Flex, Table, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import type { ReactNode } from 'react';
 
@@ -13,17 +13,12 @@ import {
   getIncident,
   type IncidentEvidence,
 } from '../../api/incidents';
-import type { ResultStatus } from '../../api/runs';
 import { useAsyncData } from '../../hooks/useAsyncData';
 import { AsyncBody } from '../AsyncBody';
-import {
-  formatDurationMs,
-  formatScalar,
-  formatTimestamp,
-  RESULT_STATUS_COLORS,
-} from '../results/resultsFormat';
+import { formatDurationMs, formatScalar, formatTimestamp } from '../results/resultsFormat';
 import { AssetLink } from './AssetLink';
 import { IncidentNarrativeSection } from './IncidentNarrativeSection';
+import { ResultStatusTag } from '../shared/StatusTag';
 
 /**
  * The layer-1 evidence card (`services/incident_evidence.py`, ADR 0034 decision 4; #1634 —
@@ -52,10 +47,6 @@ export function IncidentEvidenceDrawer({
       {incidentId && <EvidenceBody key={incidentId} incidentId={incidentId} />}
     </Drawer>
   );
-}
-
-function statusColor(status: string): string {
-  return RESULT_STATUS_COLORS[status as ResultStatus] ?? 'default';
 }
 
 function NotAvailable({ reason }: { reason?: string }) {
@@ -173,7 +164,7 @@ function FailingResultSection({ result }: { result: EvidenceFailingResultLayer |
       {result ? (
         <EvidenceDescriptions>
           <Descriptions.Item label="Status">
-            <Tag color={statusColor(result.status)}>{result.status}</Tag>
+            <ResultStatusTag status={result.status} />
           </Descriptions.Item>
           <Descriptions.Item label="Metric">{formatScalar(result.metric_value)}</Descriptions.Item>
           <Descriptions.Item label="Observed">
@@ -196,7 +187,7 @@ function MetricTrendSection({ trend }: { trend: EvidenceTrendPoint[] | null }) {
     {
       title: 'Status',
       dataIndex: 'status',
-      render: (s: string) => <Tag color={statusColor(s)}>{s}</Tag>,
+      render: (s: string) => <ResultStatusTag status={s} />,
     },
     {
       title: 'Metric',
@@ -232,7 +223,7 @@ function SiblingChecksSection({ siblings }: { siblings: EvidenceSiblingCheck[] |
     {
       title: 'Status',
       dataIndex: 'status',
-      render: (s: string) => <Tag color={statusColor(s)}>{s}</Tag>,
+      render: (s: string) => <ResultStatusTag status={s} />,
     },
   ];
   return (

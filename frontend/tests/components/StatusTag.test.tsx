@@ -70,4 +70,12 @@ describe('status tags carry severity without colour', () => {
     const { container } = render(<ChecksOutcomeTag passed={3} total={3} worst={null} />);
     expect(container).toHaveTextContent('3/3 checks passed, worst result pass');
   });
+
+  it('renders a status it does not know as a neutral, glyph-less tag rather than throwing', () => {
+    const { container } = render(<RunStatusTag status="something-new" />);
+    expect(container).toHaveTextContent('something-new');
+    expect(container.querySelector('.anticon')).toBeNull();
+    const result = render(<ResultStatusTag status="quarantined" />);
+    expect(result.container).toHaveTextContent('quarantined');
+  });
 });

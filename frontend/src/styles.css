@@ -14,11 +14,13 @@
   --dq-ink: #1f2430;
   --dq-surface: #ffffff; /* card/panel background, distinct from --dq-canvas behind it */
   --dq-muted: #616875; /* secondary text/icons — 4.5:1+ on both --dq-surface and --dq-canvas */
-  --dq-severity-good: #52c41a; /* green-6 — legible on both themes unchanged */
-  --dq-severity-warning: #faad14; /* gold-6 */
-  --dq-severity-bad: #ff4d4f; /* red-6 */
-  --dq-severity-neutral: #bfbfbf; /* gray-5 */
-  /* The scale above is for fills (bars, dots). As TEXT it is 1.8–3.3:1 on white. */
+  /* Fills (bars, dots, marker shapes): 3:1+ against both --dq-surface and --dq-canvas, the bar
+     for graphical marks. antd's -6 shades are 1.8–3.3:1 on white. */
+  --dq-severity-good: #389e0d;
+  --dq-severity-warning: #c77d05;
+  --dq-severity-bad: #f5222d;
+  --dq-severity-neutral: #8c8c8c;
+  /* As TEXT the fills are still short of 4.5:1. */
   --dq-severity-good-text: #237804;
   --dq-severity-warning-text: #874d00;
   --dq-severity-bad-text: #cf1322;
@@ -28,7 +30,7 @@
   --dq-delta-good: #3f8600; /* metric-delta / attention-count text */
   --dq-delta-bad: #cf1322;
   --dq-critical: #eb2f96; /* chart severities beyond the good/warning/bad/neutral scale */
-  --dq-error: #fa541c;
+  --dq-error: #d4380d;
 
   /* Elevation — resting + interactive-hover (depth without heavy borders). */
   --dq-shadow-rest: 0 1px 3px rgba(16, 24, 40, 0.06);
@@ -52,6 +54,11 @@
   --dq-surface: #161b22;
   --dq-graph-line: #6b7280;
   --dq-muted: #8b949e;
+  --dq-severity-good: #52c41a;
+  --dq-severity-warning: #faad14;
+  --dq-severity-bad: #ff4d4f;
+  --dq-severity-neutral: #bfbfbf;
+  --dq-error: #fa541c;
   --dq-severity-good-text: #73d13d;
   --dq-severity-warning-text: #ffc53d;
   --dq-severity-bad-text: #ff7875;
@@ -59,7 +66,7 @@
   --dq-monitored: #69b1ff;
   --dq-delta-good: #73d13d;
   --dq-delta-bad: #ff7875;
-  /* --dq-critical/--dq-error/--dq-severity-* aren't redeclared here —
+  /* --dq-critical isn't redeclared here —
      they're unchanged across themes, so the :root value already inherits. */
 
   --dq-shadow-rest: 0 1px 3px rgba(0, 0, 0, 0.5);

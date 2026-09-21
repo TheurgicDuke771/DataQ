@@ -56,3 +56,34 @@ export function StatusMarker({
     />
   );
 }
+
+const KEY_ORDER: ResultStatus[] = ['pass', 'warn', 'fail', 'critical', 'skip', 'error'];
+
+/** The key for `StatusMarker` — without it the shapes are a code nobody was given. */
+export function StatusMarkerKey({ statuses = KEY_ORDER }: { statuses?: ResultStatus[] }) {
+  return (
+    <ul
+      aria-label="Point shapes by result"
+      style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '4px 14px',
+        justifyContent: 'center',
+        listStyle: 'none',
+        margin: '4px 0 0',
+        padding: 0,
+        fontSize: 12,
+        color: 'var(--dq-muted)',
+      }}
+    >
+      {KEY_ORDER.filter((s) => statuses.includes(s)).map((s) => (
+        <li key={s} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+          <svg width={14} height={14} aria-hidden focusable={false}>
+            <StatusMarker cx={7} cy={7} status={s} />
+          </svg>
+          {s}
+        </li>
+      ))}
+    </ul>
+  );
+}

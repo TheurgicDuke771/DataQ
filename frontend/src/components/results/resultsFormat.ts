@@ -34,26 +34,6 @@ export const RESULT_STATUS_COLORS: Record<ResultStatus, string> = {
 };
 
 /**
- * The `triggered_by` marker a pipeline run stamps on the DQ runs it triggers:
- * `<provider>:<pipeline_or_dag_id>:<provider_run_id>` (backend
- */
-/** Orchestrator pipeline-run status → colour (provider-agnostic value set). */
-export function pipelineStatusColor(status: string): string {
-  switch (status) {
-    case 'succeeded':
-      return 'success';
-    case 'failed':
-      return 'error';
-    case 'running':
-      return 'processing';
-    case 'cancelled':
-      return 'warning';
-    default:
-      return 'default';
-  }
-}
-
-/**
  * Anomaly's (#593) cold-start `observed_value` payload — `{insufficient_history: true, points,
  * min_points, ...}` — reads as a bare `skip` tag plus a raw JSON blob otherwise.
  */
