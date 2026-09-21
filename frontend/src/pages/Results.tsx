@@ -51,11 +51,11 @@ import {
   formatTimestamp,
   isWithinWindowDays,
   pipelineStatusColor,
-  RESULT_STATUS_COLORS,
   RUN_STATUS_COLORS,
 } from '../components/results/resultsFormat';
 import { PageError } from '../components/feedback/PageError';
 import { WINDOW_PRESETS } from '../components/shared/windowPresets';
+import { ChecksOutcomeTag, RunStatusTag } from '../components/shared/StatusTag';
 
 const LIST_LIMIT = 200;
 
@@ -231,7 +231,7 @@ function RunsTab({
       title: 'Status',
       dataIndex: 'status',
       width: 120,
-      render: (s: RunStatus) => <Tag color={RUN_STATUS_COLORS[s]}>{s}</Tag>,
+      render: (s: RunStatus) => <RunStatusTag status={s} />,
     },
     {
       // Data-quality outcome (passed/total), coloured by worst severity — distinct from the
@@ -242,9 +242,11 @@ function RunsTab({
         run.checks_total === 0 ? (
           <Typography.Text type="secondary">—</Typography.Text>
         ) : (
-          <Tag color={RESULT_STATUS_COLORS[run.worst_severity ?? 'pass']}>
-            {run.checks_passed}/{run.checks_total}
-          </Tag>
+          <ChecksOutcomeTag
+            passed={run.checks_passed}
+            total={run.checks_total}
+            worst={run.worst_severity}
+          />
         ),
     },
     { title: 'Triggered by', dataIndex: 'triggered_by', render: (t: string | null) => t ?? '—' },

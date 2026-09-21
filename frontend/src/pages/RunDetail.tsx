@@ -29,8 +29,6 @@ import {
   anomalyColdStartHint,
   formatDuration,
   formatTimestamp,
-  RESULT_STATUS_COLORS,
-  RUN_STATUS_COLORS,
   runReportTitle,
 } from '../components/results/resultsFormat';
 import { Page } from '../components/layout/Page';
@@ -42,6 +40,7 @@ import { boundedTextStyle } from '../components/shared/ellipsisColumn';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { downloadCsv, downloadJson, toFilenameStem } from '../utils/download';
 import { PageError } from '../components/feedback/PageError';
+import { ResultStatusTag, RunStatusTag } from '../components/shared/StatusTag';
 
 /** The four severity tiers that count as "evaluated" (ADR 0005) — skip/error don't. */
 const SEVERITY_STATUSES = new Set<ResultStatus>(['pass', 'warn', 'fail', 'critical']);
@@ -205,7 +204,7 @@ function RunDetailBody({
         }}
       >
         <Stat label="Status">
-          <Tag color={RUN_STATUS_COLORS[run.status]}>{run.status}</Tag>
+          <RunStatusTag status={run.status} />
         </Stat>
         <Stat label="Checks passed">
           {evaluated.length === 0 ? '—' : `${passed} / ${evaluated.length}`}
@@ -536,7 +535,7 @@ function ResultsTable({
       title: 'Status',
       dataIndex: 'status',
       width: 100,
-      render: (s: ResultStatus) => <Tag color={RESULT_STATUS_COLORS[s]}>{s}</Tag>,
+      render: (s: ResultStatus) => <ResultStatusTag status={s} />,
     },
     {
       title: 'Metric',

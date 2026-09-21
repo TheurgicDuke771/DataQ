@@ -1,4 +1,4 @@
-import { Alert, Card, Empty, Flex, Spin, Table, Tag, Typography } from 'antd';
+import { Alert, Card, Empty, Flex, Spin, Table, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -6,12 +6,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { listRuns, type Run, type RunStatus } from '../../api/runs';
 import { listSuites } from '../../api/suites';
 import { useAsyncData } from '../../hooks/useAsyncData';
-import {
-  formatDuration,
-  formatTimestamp,
-  RESULT_STATUS_COLORS,
-  RUN_STATUS_COLORS,
-} from '../results/resultsFormat';
+import { formatDuration, formatTimestamp } from '../results/resultsFormat';
+import { ChecksOutcomeTag, RunStatusTag } from '../shared/StatusTag';
 
 /**
  * Recent Runs (prototype `RecentRuns`) — a cross-suite feed of the latest runs on the dashboard,
@@ -45,7 +41,7 @@ export function RecentRuns() {
       title: 'Status',
       dataIndex: 'status',
       width: 120,
-      render: (s: RunStatus) => <Tag color={RUN_STATUS_COLORS[s]}>{s}</Tag>,
+      render: (s: RunStatus) => <RunStatusTag status={s} />,
     },
     {
       // DQ outcome (passed/total), coloured by worst severity — so a `succeeded`
@@ -56,9 +52,11 @@ export function RecentRuns() {
         run.checks_total === 0 ? (
           <Typography.Text type="secondary">—</Typography.Text>
         ) : (
-          <Tag color={RESULT_STATUS_COLORS[run.worst_severity ?? 'pass']}>
-            {run.checks_passed}/{run.checks_total}
-          </Tag>
+          <ChecksOutcomeTag
+            passed={run.checks_passed}
+            total={run.checks_total}
+            worst={run.worst_severity}
+          />
         ),
     },
     { title: 'Triggered by', dataIndex: 'triggered_by', render: (t: string | null) => t ?? '—' },
