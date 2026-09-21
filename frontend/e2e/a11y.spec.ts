@@ -116,6 +116,7 @@ test.describe('Accessibility floor (axe-core, serious/critical, ratcheted)', () 
     let suiteId: string;
     let checkId: string;
     let assetId: string;
+    let connectionId: string;
 
     test.beforeAll(async ({ request }) => {
       const suites: { id: string; name: string }[] = await (
@@ -130,10 +131,13 @@ test.describe('Accessibility floor (axe-core, serious/critical, ratcheted)', () 
       checkId = checks[0].id;
       const assets: { id: string }[] = await (await request.get('/api/v1/assets')).json();
       assetId = assets[0].id;
+      const connections: { id: string }[] = await (await request.get('/api/v1/connections')).json();
+      connectionId = connections[0].id;
     });
 
     const routes: [string, () => string][] = [
       ['route:/connections/new', () => '/connections/new'],
+      ['route:/connections/:id/edit', () => `/connections/${connectionId}/edit`],
       ['route:/suites/new', () => '/suites/new'],
       ['route:/suites/:id/edit', () => `/suites/${suiteId}/edit`],
       ['route:/suites/:id/checks/new', () => `/suites/${suiteId}/checks/new`],
