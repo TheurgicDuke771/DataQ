@@ -66,7 +66,7 @@ export function getAppTheme(mode: AppThemeMode): ThemeConfig {
       colorInfo: brand.primary,
       colorLink: brand.primary,
       colorTextHeading: brand.ink,
-      // red-6 danger text is 3.0:1 on white and, after the dark algorithm, 4.3:1 on dark.
+      // red-6 danger text is 3.3:1 on white and, after the dark algorithm, 4.3:1 on dark.
       colorError: mode === 'dark' ? '#ff7875' : '#cf1322',
       // antd's 0.45 default is 3.4:1 on white and 4.48:1 on the dark surface.
       colorTextDescription: mode === 'dark' ? 'rgba(255, 255, 255, 0.6)' : 'rgba(0, 0, 0, 0.6)',
