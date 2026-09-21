@@ -26,6 +26,7 @@ import { useOtpSession } from './auth/otpSessionContext';
 import { BrandMark } from './components/BrandMark';
 import { ThemeToggle } from './components/ThemeToggle';
 import { ProfileCompletionPrompt } from './components/profile/ProfileCompletionPrompt';
+import { ScrollableTableFocus } from './components/shared/ScrollableTableFocus';
 import { ADMIN_ROUTES, SETTINGS_REDIRECT_ROUTE } from './pages/admin/routes';
 import { SHELL } from './theme';
 
@@ -111,6 +112,7 @@ export function App() {
       {/* Fixed app shell: the Layout is exactly the viewport height and doesn't
           scroll — the header and sider stay put, and only <Content> scrolls. */}
       <Layout style={{ height: '100vh', overflow: 'hidden' }}>
+        <ScrollableTableFocus />
         <Header
           style={{
             display: 'flex',

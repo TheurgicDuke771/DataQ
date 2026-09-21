@@ -248,10 +248,23 @@ a:focus-visible,
 }
 
 /* ── Tag text contrast ─────────────────────────────────────────────────────
-   antd's status + gold/volcano tags put a -6/-7 shade on a -1 tint (2.2–4.4:1).
+   antd's status tags and the warm/green presets put a -6/-7 shade on a -1 tint (2.0–4.4:1).
    The dark algorithm's error / purple / geekblue pairs miss too (3.4–4.2:1). */
-:root:not([data-theme='dark']) .ant-tag.ant-tag-success {
+:root:not([data-theme='dark']) .ant-tag.ant-tag-success,
+:root:not([data-theme='dark']) .ant-tag.ant-tag-green {
   color: #237804;
+}
+:root:not([data-theme='dark']) .ant-tag.ant-tag-orange {
+  color: #ad4e00;
+}
+:root:not([data-theme='dark']) .ant-tag.ant-tag-cyan {
+  color: #006d75;
+}
+:root:not([data-theme='dark']) .ant-tag.ant-tag-lime {
+  color: #3f6600;
+}
+:root:not([data-theme='dark']) .ant-tag.ant-tag-yellow {
+  color: #614700;
 }
 :root:not([data-theme='dark']) .ant-tag.ant-tag-error {
   color: #cf1322;

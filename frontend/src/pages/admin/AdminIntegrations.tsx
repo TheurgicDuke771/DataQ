@@ -84,12 +84,18 @@ function WebhookRow({ webhook }: { webhook: AdminWebhook }) {
     >
       <Flex vertical gap={8}>
         <Flex align="center" gap={8}>
-          <Input readOnly value={display} style={{ fontFamily: 'monospace' }} />
+          <Input
+            readOnly
+            value={display}
+            aria-label={`${PROVIDER_LABELS[webhook.provider]} inbound webhook URL`}
+            style={{ fontFamily: 'monospace' }}
+          />
           {secretBearing && (
             <Button
               icon={revealed ? <EyeInvisibleOutlined /> : <EyeOutlined />}
               onClick={() => setRevealed((r) => !r)}
               title={revealed ? 'Hide token' : 'Reveal token'}
+              aria-label={revealed ? 'Hide token' : 'Reveal token'}
             />
           )}
           <Typography.Text copyable={{ text: webhook.inbound_url }} />
