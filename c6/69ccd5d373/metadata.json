@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.10.6",
+  "checkpoint_id": "c669ccd5d373",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2054-a11y-scan-coverage",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "frontend/src/components/shared/ScrollableTableFocus.tsx",
+    "frontend/src/theme.ts",
+    "frontend/tests/components/ScrollableTableFocus.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/c6/69ccd5d373/0/metadata.json",
+      "transcript": "/c6/69ccd5d373/0/full.jsonl",
+      "compact_transcript": "/c6/69ccd5d373/0/transcript.jsonl",
+      "content_hash": "/c6/69ccd5d373/0/content_hash.txt",
+      "prompt": "/c6/69ccd5d373/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 20,
+    "cache_creation_tokens": 14667,
+    "cache_read_tokens": 2358483,
+    "output_tokens": 9220,
+    "api_call_count": 8
+  }
+}

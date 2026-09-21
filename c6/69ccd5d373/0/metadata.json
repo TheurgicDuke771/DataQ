@@ -1,0 +1,95 @@
+{
+  "cli_version": "0.10.6",
+  "checkpoint_id": "c669ccd5d373",
+  "session_id": "2b4ab81d-fb44-4302-9017-825c59914870",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-21T15:51:10.900796Z",
+  "branch": "fix/issue-2054-a11y-scan-coverage",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "frontend/src/components/shared/ScrollableTableFocus.tsx",
+    "frontend/src/theme.ts",
+    "frontend/tests/components/ScrollableTableFocus.test.tsx"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-fable-5-1",
+  "turn_id": "7cbb7d45d02a",
+  "checkpoint_transcript_start": 828,
+  "transcript_lines_at_start": 828,
+  "compact_transcript_start": 157,
+  "token_usage": {
+    "input_tokens": 20,
+    "cache_creation_tokens": 14667,
+    "cache_read_tokens": 2358483,
+    "output_tokens": 9220,
+    "api_call_count": 8
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01AdRr4fMbnC9hn4TAb8TLBs",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "code-review:code-review"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "ab289b600e84",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 199,
+        "end": 200,
+        "entry_ids": [
+          "2659894f-f8dd-46a4-acb2-ce23e9588e5b"
+        ],
+        "tool_use_id": "toolu_01AdRr4fMbnC9hn4TAb8TLBs"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01AdRr4fMbnC9hn4TAb8TLBs"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: code-review:code-review",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 14
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-21T15:51:10.813782Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 20,
+    "total_committed": 0,
+    "total_lines_changed": 20,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 45,
+      "user_lines_removed": 20,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 7,
+        "frontend/src/components/shared/ScrollableTableFocus.tsx": 35,
+        "frontend/src/theme.ts": 2,
+        "frontend/tests/components/ScrollableTableFocus.test.tsx": 1
+      },
+      "user_removed_per_file": {
+        "frontend/src/components/shared/ScrollableTableFocus.tsx": 19,
+        "frontend/tests/components/ScrollableTableFocus.test.tsx": 1
+      }
+    }
+  ]
+}
