@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.10.6",
+  "checkpoint_id": "a7d8538f7477",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2054-a11y-scan-coverage",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/tests/setup.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/a7/d8538f7477/0/metadata.json",
+      "transcript": "/a7/d8538f7477/0/full.jsonl",
+      "compact_transcript": "/a7/d8538f7477/0/transcript.jsonl",
+      "content_hash": "/a7/d8538f7477/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 16,
+    "cache_creation_tokens": 5529,
+    "cache_read_tokens": 2993354,
+    "output_tokens": 3068,
+    "api_call_count": 8
+  }
+}
