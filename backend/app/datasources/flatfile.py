@@ -733,6 +733,13 @@ def _next_window(window: int, *, buffered: bytearray, rows: int, limit: int) -> 
     18.9 MB object where a doubling walk read ~4 MB. On a file of uniform width
     the two agree, so the ordinary wide-CSV case keeps its two-parse walk.
 
+    The window is an offset from the start of the file, so the projection is
+    what is already buffered plus the REMAINING rows at that rate — not the
+    whole target at it. Applying a tail rate to every row would re-price the
+    rows already read: a wide band just behind the tail inflated the projection
+    for the narrow prefix before it, and one just behind a narrow tail left the
+    rows inside it unpriced, falling back to a doubling step.
+
     What no estimate from the buffer can fix is a first window that is wide ALL
     the way through (a few very wide rows filling it entirely): nothing in it
     distinguishes that file from one that is wide throughout. That read stays
@@ -747,7 +754,8 @@ def _next_window(window: int, *, buffered: bytearray, rows: int, limit: int) -> 
     rate = _tail_bytes_per_row(buffered, rows=rows)
     if rate is None:
         return doubled
-    projected = int(rate * limit * _WINDOW_ESTIMATE_SLACK) + _CSV_HEAD_BYTES
+    remaining = max(limit - rows, 0)
+    projected = len(buffered) + int(rate * remaining * _WINDOW_ESTIMATE_SLACK) + _CSV_HEAD_BYTES
     return max(doubled, projected)
 
 

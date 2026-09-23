@@ -2670,6 +2670,38 @@ def test_a_front_loaded_file_fetches_no_more_than_a_doubling_walk(
     assert len(parses) == 2
 
 
+def test_the_projection_prices_only_the_rows_not_yet_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#2079 review: the window is an offset from the start of the file, so the
+    projection must be the bytes already buffered plus the REMAINING rows at the
+    tail rate. Multiplying the tail rate by the whole target re-priced the 60k
+    narrow rows already read at the rate of the wide band behind the tail —
+    26.4 MB fetched for a target that sits at ~9.2 MB. Bound: never more than
+    twice what the target row actually needs.
+    """
+    content = (
+        b"id,payload\n"
+        + b"".join(f"{i},{'n' * 10}\n".encode() for i in range(60_000))
+        + b"".join(f"{i},{'w' * 5_000}\n".encode() for i in range(1_500))
+        + b"".join(f"{i},{'n' * 10}\n".encode() for i in range(1_000_000))
+    )
+    limit = 100_000
+    needed = 0
+    for _ in range(limit + 1):  # the header line, then `limit` data rows
+        needed = content.index(b"\n", needed) + 1
+    ranges: list[tuple[int, int]] = []
+    _patch_store(monkeypatch, content=content, ranges=ranges)
+
+    frame = flatfile.read_csv_projected_sample(
+        conn_type="s3", config={}, path="raw/mid_band.csv", secret="s", rows=limit
+    )
+
+    assert len(frame) == limit
+    fetched = sum(length for _, length in ranges)
+    assert fetched <= 2 * needed, f"fetched {fetched:,} bytes for a target at {needed:,}"
+
+
 def test_a_first_window_wide_throughout_stays_correct_and_bounded(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
