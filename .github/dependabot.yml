@@ -36,6 +36,16 @@ updates:
         patterns:
           - vitest
           - "@vitest/*"
+    ignore:
+      # Vitest 5 is a deliberate migration, not a routine bump: it inlines the `expect` package, so
+      # @testing-library/jest-dom's matcher types stop augmenting vitest's Assertion (tsc fails).
+      # Closing the grouped PR (#2038) does not stop future 5.x PRs; remove this with #2070.
+      - dependency-name: vitest
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "@vitest/*"
+        update-types:
+          - version-update:semver-major
 
   - package-ecosystem: github-actions
     directory: /
