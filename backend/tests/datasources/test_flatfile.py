@@ -2640,18 +2640,16 @@ def test_the_head_window_projects_its_target_instead_of_only_doubling(
     assert len(parses) <= 3
 
 
-def test_a_wide_first_window_over_projects_but_stays_correct_and_bounded(
+def test_a_front_loaded_file_fetches_no_more_than_a_doubling_walk(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The projection's known limit, pinned rather than left to be rediscovered: a
-    file whose OPENING rows are far wider than its rest makes the average estimate
-    high, so the read fetches more than a doubling walk would have. What must hold
-    is that it stays correct and inside the budget — the right rows, and never past
-    the object or `RUN_MAX_SCAN_BYTES`. Fixing the over-fetch needs evidence the
-    first window does not contain; the bound is what makes it tolerable.
+    """#2022: a few very wide OPENING rows used to make the whole-buffer average
+    project a window many times what the file needed — this 22.9 MB object was
+    read in full, where doubling 1 → 2 → 4 MiB reaches the 100k rows in 4 MiB.
+    The rate now comes from the buffer's most recent rows, which are already the
+    narrow remainder. The walk must still take the two parses the projection
+    exists for, not fall back to the doubling it is being compared with.
     """
-    cap = 8 * 1024 * 1024
-    _set_cap(monkeypatch, "RUN_MAX_SCAN_BYTES", cap)
     content = (
         b"id,payload\n"
         + b"".join(f"{i},{'w' * 5_000}\n".encode() for i in range(200))
@@ -2659,6 +2657,7 @@ def test_a_wide_first_window_over_projects_but_stays_correct_and_bounded(
     )
     ranges: list[tuple[int, int]] = []
     _patch_store(monkeypatch, content=content, ranges=ranges)
+    parses = _count_parses(monkeypatch)
 
     frame = flatfile.read_csv_projected_sample(
         conn_type="s3", config={}, path="raw/front_loaded.csv", secret="s", rows=100_000
@@ -2667,8 +2666,82 @@ def test_a_wide_first_window_over_projects_but_stays_correct_and_bounded(
     assert len(frame) == 100_000
     assert list(frame["id"][:3]) == [0, 1, 2]
     fetched = sum(length for _, length in ranges)
+    assert fetched <= 4 * 1024 * 1024, f"fetched {fetched:,} bytes; doubling needs 4 MiB"
+    assert len(parses) == 2
+
+
+def test_a_first_window_wide_throughout_stays_correct_and_bounded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The limit #2022 leaves, pinned rather than left to be rediscovered: when
+    the very wide opening rows fill the ENTIRE first window, no row in it is
+    evidence of the narrow remainder, so the projection is high. What must hold is
+    that the read stays correct and inside the budget — the right rows, and never
+    past the object or `RUN_MAX_SCAN_BYTES`.
+    """
+    cap = 8 * 1024 * 1024
+    _set_cap(monkeypatch, "RUN_MAX_SCAN_BYTES", cap)
+    content = (
+        b"id,payload\n"
+        + b"".join(f"{i},{'w' * 20_000}\n".encode() for i in range(60))
+        + b"".join(f"{i},{'n' * 10}\n".encode() for i in range(1_000_000))
+    )
+    ranges: list[tuple[int, int]] = []
+    _patch_store(monkeypatch, content=content, ranges=ranges)
+
+    frame = flatfile.read_csv_projected_sample(
+        conn_type="s3", config={}, path="raw/thin_prefix.csv", secret="s", rows=100_000
+    )
+
+    assert len(frame) == 100_000
+    assert list(frame["id"][:3]) == [0, 1, 2]
+    fetched = sum(length for _, length in ranges)
     assert fetched <= cap, "an over-projection must still be clamped to the scan cap"
     assert fetched <= len(content)
+
+
+def test_the_growth_rate_is_measured_over_the_last_rows_not_the_last_bytes() -> None:
+    """Two hundred 5 KB rows then two hundred 10-byte ones: the last half of the
+    BYTES is all wide rows, the last half of the ROWS all narrow. The narrow width
+    is the one that predicts the rest of the file (#2022).
+    """
+    buffered = bytearray(b"id,payload\n")
+    buffered += b"".join(f"{i},{'w' * 5_000}\n".encode() for i in range(200))
+    buffered += b"".join(f"{i},nnnnnnn\n".encode() for i in range(100, 300))
+
+    rate = flatfile._tail_bytes_per_row(buffered, rows=400)
+
+    assert rate == pytest.approx(len(b"299,nnnnnnn\n"), abs=1)
+
+
+def test_the_growth_rate_ignores_the_trailing_partial_row() -> None:
+    """A window cut mid-row ends in a fragment that is not a row's width."""
+    buffered = bytearray(b"a,b\n1,2\n3,4\n5,6\n" + b"7," + b"x" * 10_000)
+
+    assert flatfile._tail_bytes_per_row(buffered, rows=3) == pytest.approx(4)
+
+
+def test_the_growth_rate_is_unknown_without_a_complete_row() -> None:
+    """No newline at all — nothing to measure, so the walk just doubles."""
+    buffered = bytearray(b"x" * 1024)
+
+    assert flatfile._tail_bytes_per_row(buffered, rows=1) is None
+    assert flatfile._next_window(1024, buffered=buffered, rows=1, limit=10) == 2048
+
+
+def test_a_quoted_newline_can_only_make_the_growth_rate_smaller() -> None:
+    """Embedded newlines split one row into several lines, so the tail measures
+    more lines than rows and UNDERestimates — the direction `_next_window`'s
+    never-less-than-doubling floor absorbs, never an over-fetch.
+    """
+    plain = bytearray(b"id,note\n" + b"".join(b'%d,"abcdefgh"\n' % i for i in range(100)))
+    quoted = bytearray(b"id,note\n" + b"".join(b'%d,"abcd\nefgh"\n' % i for i in range(100)))
+
+    plain_rate = flatfile._tail_bytes_per_row(plain, rows=100)
+    quoted_rate = flatfile._tail_bytes_per_row(quoted, rows=100)
+
+    assert plain_rate is not None and quoted_rate is not None
+    assert quoted_rate < plain_rate
 
 
 def test_the_head_window_sniffs_the_delimiter_once_per_read(

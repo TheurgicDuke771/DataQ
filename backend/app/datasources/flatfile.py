@@ -687,8 +687,38 @@ def _open_batch_stream(
 #: Slack on the projected window, for rows past the sample wider than those in it.
 _WINDOW_ESTIMATE_SLACK = 1.15
 
+#: Most trailing lines the growth estimate measures (#2022). Enough to average
+#: out row-to-row noise; small enough that the backwards scan stays ~1 ms even on
+#: a 90 MB buffer.
+_WINDOW_ESTIMATE_TAIL_LINES = 10_000
 
-def _next_window(window: int, *, buffered: int, rows: int, limit: int) -> int:
+
+def _tail_bytes_per_row(buffered: bytearray, *, rows: int) -> float | None:
+    """Mean width of the last ``min(rows // 2, _WINDOW_ESTIMATE_TAIL_LINES)``
+    complete lines of the buffer, or ``None`` when it holds no complete line.
+
+    Measured by ROW COUNT from the end, not by bytes (#2022): on a file whose
+    opening rows are far wider than its rest, the last half of the buffer's BYTES
+    is still mostly wide rows, while its last half of ROWS is already the narrow
+    remainder the walk is about to read. A quoted field with an embedded newline
+    splits one row into several lines, which can only make the estimate SMALLER —
+    and `_next_window` never grows by less than a doubling, so an underestimate
+    costs one more step, never a wrong frame.
+    """
+    end = buffered.rfind(b"\n")  # the trailing partial row is not evidence
+    if end < 0:
+        return None
+    wanted = min(max(rows // 2, 1), _WINDOW_ESTIMATE_TAIL_LINES)
+    start, seen = end, 0
+    while seen < wanted:
+        prev = buffered.rfind(b"\n", 0, start)
+        if prev < 0:
+            break
+        start, seen = prev, seen + 1
+    return (end - start) / seen if seen else None
+
+
+def _next_window(window: int, *, buffered: bytearray, rows: int, limit: int) -> int:
     """Where to grow the head window to, from the bytes-per-row the walk has
     already observed — never less than a doubling (#2011).
 
@@ -697,19 +727,27 @@ def _next_window(window: int, *, buffered: int, rows: int, limit: int) -> int:
     normally ends the walk in two. A file whose rows past the first window are
     wider simply takes another iteration, with a better estimate each time.
 
-    The estimate is an average over what has been read, so a file whose OPENING
-    rows are far wider than its rest projects a window it does not need — bounded
-    by the object's size and `RUN_MAX_SCAN_BYTES`, so the read stays correct and
-    inside the operator's budget, but it can cost bytes a doubling walk would not
-    have. Nothing in a prefix of uniformly wide rows distinguishes that file from
-    one that is wide throughout, and the guards that would bound it (a step
-    ceiling, a minimum-rows floor) were measured to cost the ordinary wide-CSV
-    case far more than they save here.
+    The rate is taken from the most recent rows (`_tail_bytes_per_row`, #2022),
+    not averaged over everything read: an average let a few very wide OPENING
+    rows project a window many times larger than the file needed — the whole
+    18.9 MB object where a doubling walk read ~4 MB. On a file of uniform width
+    the two agree, so the ordinary wide-CSV case keeps its two-parse walk.
+
+    What no estimate from the buffer can fix is a first window that is wide ALL
+    the way through (a few very wide rows filling it entirely): nothing in it
+    distinguishes that file from one that is wide throughout. That read stays
+    correct and bounded by the object's size and `RUN_MAX_SCAN_BYTES`, but may
+    fetch more than a doubling walk would; the guards that would cap it (a step
+    ceiling, a minimum-rows floor) were measured to cost the uniform wide-CSV
+    case far more than they save.
     """
     doubled = window * 2
     if rows <= 0:
         return doubled
-    projected = int(buffered / rows * limit * _WINDOW_ESTIMATE_SLACK) + _CSV_HEAD_BYTES
+    rate = _tail_bytes_per_row(buffered, rows=rows)
+    if rate is None:
+        return doubled
+    projected = int(rate * limit * _WINDOW_ESTIMATE_SLACK) + _CSV_HEAD_BYTES
     return max(doubled, projected)
 
 
@@ -789,7 +827,7 @@ def _csv_head_frame(
                 "scan cap — the file may have a malformed/unterminated row, or its rows are "
                 "wide enough that RUN_MAX_SCAN_BYTES needs raising for this target row count"
             )
-        window = _next_window(window, buffered=len(buffered), rows=len(frame), limit=limit)
+        window = _next_window(window, buffered=buffered, rows=len(frame), limit=limit)
 
 
 def read_csv_projected_sample(
