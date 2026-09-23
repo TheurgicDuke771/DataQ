@@ -38,16 +38,21 @@ export const SHELL = {
   siderWidth: 220,
 } as const;
 
-/**
- * Shared good/warning/bad/neutral scale — antd's green-6/gold-6/red-6/gray-5,
- * defined as CSS vars in styles.css (values intentionally unchanged across
- * themes — already legible against both the light and dark canvas).
- */
+/** Shared good/warning/bad/neutral FILL scale — CSS vars in styles.css, per theme, each 3:1+
+ *  against its surface. Use SEVERITY_TEXT for text. */
 export const SEVERITY_SCALE = {
   good: 'var(--dq-severity-good)',
   warning: 'var(--dq-severity-warning)',
   bad: 'var(--dq-severity-bad)',
   neutral: 'var(--dq-severity-neutral)',
+} as const;
+
+/** Text counterparts of SEVERITY_SCALE — the fill colours are 1.8–3.3:1 as text. */
+export const SEVERITY_TEXT = {
+  good: 'var(--dq-severity-good-text)',
+  warning: 'var(--dq-severity-warning-text)',
+  bad: 'var(--dq-severity-bad-text)',
+  neutral: 'var(--dq-severity-neutral-text)',
 } as const;
 
 export type AppThemeMode = 'light' | 'dark';
@@ -64,8 +69,19 @@ export function getAppTheme(mode: AppThemeMode): ThemeConfig {
     token: {
       colorPrimary: brand.primary,
       colorInfo: brand.primary,
-      colorLink: brand.primary,
+      // The dark algorithm dims the indigo to #717ad6 for links — 4.36:1 on the dark surface.
+      colorLink: mode === 'dark' ? '#a5b4fc' : brand.primary,
+      // Derived hover/active land at 2.6 / 4.3:1 on the dark surface.
+      ...(mode === 'dark' ? { colorLinkHover: '#c7d2fe', colorLinkActive: '#a5b4fc' } : {}),
       colorTextHeading: brand.ink,
+      // red-6 danger text is 3.3:1 on white and, after the dark algorithm, 4.3:1 on dark.
+      colorError: mode === 'dark' ? '#ff7875' : '#cf1322',
+      // antd's 0.45 default is 3.4:1 on white and 4.48:1 on the dark surface.
+      colorTextDescription: mode === 'dark' ? 'rgba(255, 255, 255, 0.6)' : 'rgba(0, 0, 0, 0.6)',
+      // Same 0.45 default: Descriptions labels, Statistic titles, table sorter captions.
+      colorTextTertiary: mode === 'dark' ? 'rgba(255, 255, 255, 0.6)' : 'rgba(0, 0, 0, 0.6)',
+      // 0.25 default is 1.8:1. Still visibly lighter than a 0.88 value.
+      colorTextPlaceholder: mode === 'dark' ? 'rgba(255, 255, 255, 0.5)' : 'rgba(0, 0, 0, 0.55)',
       colorBgLayout: brand.canvas,
       borderRadius: 8,
       fontFamily:
@@ -95,6 +111,14 @@ export function getAppTheme(mode: AppThemeMode): ThemeConfig {
       Card: {
         borderRadiusLG: 12,
       },
+      // White on the dark theme's lighter indigo is 2.98:1. Scoped per component: the global
+      // colorTextLightSolid is also Tooltip's text, which sits on a dark surface.
+      ...(mode === 'dark'
+        ? {
+            Button: { primaryColor: DARK_BRAND.canvas, dangerColor: DARK_BRAND.canvas },
+            Avatar: { colorTextLightSolid: DARK_BRAND.canvas },
+          }
+        : {}),
       Table: {
         headerBg: tableHeaderBg,
       },

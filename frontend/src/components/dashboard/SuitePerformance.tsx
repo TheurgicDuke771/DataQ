@@ -1,7 +1,7 @@
 import { Card, Empty, Flex, Progress, Typography } from 'antd';
 
 import type { PerformanceState, SuitePerformance as SuitePerf } from '../../api/dashboard';
-import { SEVERITY_SCALE } from '../../theme';
+import { SEVERITY_SCALE, SEVERITY_TEXT } from '../../theme';
 
 /**
  * Suite Performance (prototype `SuitePerformance`): per-suite health from each suite's latest run,
@@ -16,6 +16,13 @@ const STATE_COLOR: Record<PerformanceState, string> = {
   stable: SEVERITY_SCALE.warning,
   critical: SEVERITY_SCALE.bad,
   unknown: SEVERITY_SCALE.neutral,
+};
+
+const STATE_TEXT_COLOR: Record<PerformanceState, string> = {
+  optimal: SEVERITY_TEXT.good,
+  stable: SEVERITY_TEXT.warning,
+  critical: SEVERITY_TEXT.bad,
+  unknown: SEVERITY_TEXT.neutral,
 };
 
 const STATE_LABEL: Record<PerformanceState, string> = {
@@ -47,14 +54,16 @@ export function SuitePerformance({ suites }: SuitePerformanceProps) {
                 <Typography.Text strong ellipsis style={{ fontSize: 14 }}>
                   {s.name}
                 </Typography.Text>
-                <Typography.Text strong style={{ fontSize: 13, color: STATE_COLOR[s.state] }}>
+                <Typography.Text strong style={{ fontSize: 13, color: STATE_TEXT_COLOR[s.state] }}>
                   {STATE_LABEL[s.state]}
                 </Typography.Text>
               </Flex>
               <Progress
+                aria-label={`${s.name} health score`}
                 percent={s.score ?? 0}
                 showInfo={s.score !== null}
-                format={(p) => `${p}`}
+                // antd paints a 100% readout success-green (2.2:1); keep it ink.
+                format={(p) => <span style={{ color: 'var(--dq-ink)' }}>{p}</span>}
                 strokeColor={STATE_COLOR[s.state]}
                 size="small"
               />

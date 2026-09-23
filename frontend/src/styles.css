@@ -13,17 +13,24 @@
   --dq-border: #e6e8eb;
   --dq-ink: #1f2430;
   --dq-surface: #ffffff; /* card/panel background, distinct from --dq-canvas behind it */
-  --dq-muted: #8c8c8c; /* secondary text/icons — legible enough on both themes unchanged */
-  --dq-severity-good: #52c41a; /* green-6 — legible on both themes unchanged */
-  --dq-severity-warning: #faad14; /* gold-6 */
-  --dq-severity-bad: #ff4d4f; /* red-6 */
-  --dq-severity-neutral: #bfbfbf; /* gray-5 */
+  --dq-muted: #616875; /* secondary text/icons — 4.5:1+ on both --dq-surface and --dq-canvas */
+  /* Fills (bars, dots, marker shapes): 3:1+ against both --dq-surface and --dq-canvas, the bar
+     for graphical marks. antd's -6 shades are 1.8–3.3:1 on white. */
+  --dq-severity-good: #389e0d;
+  --dq-severity-warning: #c77d05;
+  --dq-severity-bad: #f5222d;
+  --dq-severity-neutral: #8c8c8c;
+  /* As TEXT the fills are still short of 4.5:1. */
+  --dq-severity-good-text: #237804;
+  --dq-severity-warning-text: #874d00;
+  --dq-severity-bad-text: #cf1322;
+  --dq-severity-neutral-text: #595959;
   --dq-graph-line: #c4c8cf; /* lineage-graph edges + arrowheads */
   --dq-monitored: #91caff; /* the lineage-graph "monitored node" border accent */
   --dq-delta-good: #3f8600; /* metric-delta / attention-count text */
   --dq-delta-bad: #cf1322;
   --dq-critical: #eb2f96; /* chart severities beyond the good/warning/bad/neutral scale */
-  --dq-error: #fa541c;
+  --dq-error: #d4380d;
 
   /* Elevation — resting + interactive-hover (depth without heavy borders). */
   --dq-shadow-rest: 0 1px 3px rgba(16, 24, 40, 0.06);
@@ -46,10 +53,20 @@
   --dq-ink: #e6edf3;
   --dq-surface: #161b22;
   --dq-graph-line: #6b7280;
+  --dq-muted: #8b949e;
+  --dq-severity-good: #52c41a;
+  --dq-severity-warning: #faad14;
+  --dq-severity-bad: #ff4d4f;
+  --dq-severity-neutral: #bfbfbf;
+  --dq-error: #fa541c;
+  --dq-severity-good-text: #73d13d;
+  --dq-severity-warning-text: #ffc53d;
+  --dq-severity-bad-text: #ff7875;
+  --dq-severity-neutral-text: #bfbfbf;
   --dq-monitored: #69b1ff;
   --dq-delta-good: #73d13d;
   --dq-delta-bad: #ff7875;
-  /* --dq-critical/--dq-error/--dq-muted/--dq-severity-* aren't redeclared here —
+  /* --dq-critical isn't redeclared here —
      they're unchanged across themes, so the :root value already inherits. */
 
   --dq-shadow-rest: 0 1px 3px rgba(0, 0, 0, 0.5);
@@ -208,7 +225,56 @@ a:focus-visible,
 /* ── Reduced motion ────────────────────────────────────────────────────────
    Respect users who prefer reduced motion — keep the elevation/tint, drop every
    transform and transition so nothing slides or nudges. */
+/* Off-screen until it takes focus, then pinned top-left above the header. */
+.dq-skip-link {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 1100;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: var(--dq-surface);
+  color: var(--dq-primary);
+  box-shadow: var(--dq-shadow-hover);
+  transform: translateY(-200%);
+}
+.dq-skip-link:focus {
+  transform: translateY(0);
+}
+
+/* The link inside a click-to-open table row: reads as the row's text until hovered or focused. */
+.dq-row-link {
+  color: inherit;
+}
+.dq-row-link--block {
+  display: block;
+  min-width: 0;
+  border-radius: 4px;
+}
+.dq-row-link:hover,
+.dq-row-link:focus-visible {
+  color: var(--dq-primary);
+  text-decoration: underline;
+}
+
+/* Text for assistive tech only. */
+.dq-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .anticon-spin,
+  .anticon-spin::before {
+    animation: none;
+  }
   .dq-card--interactive,
   .dq-suite-row {
     transition: none;
@@ -218,4 +284,41 @@ a:focus-visible,
   .ant-btn:not(.ant-btn-loading):active {
     transform: none;
   }
+}
+
+/* ── Tag text contrast ─────────────────────────────────────────────────────
+   antd's status tags and the warm/green presets put a -6/-7 shade on a -1 tint (2.0–4.4:1).
+   The dark algorithm's purple / geekblue pairs miss too (3.4 / 4.2:1); its error tag is
+   already lifted by the dark colorError seed in theme.ts. */
+:root:not([data-theme='dark']) .ant-tag.ant-tag-success,
+:root:not([data-theme='dark']) .ant-tag.ant-tag-green {
+  color: #237804;
+}
+:root:not([data-theme='dark']) .ant-tag.ant-tag-orange {
+  color: #ad4e00;
+}
+:root:not([data-theme='dark']) .ant-tag.ant-tag-cyan {
+  color: #006d75;
+}
+:root:not([data-theme='dark']) .ant-tag.ant-tag-lime {
+  color: #3f6600;
+}
+:root:not([data-theme='dark']) .ant-tag.ant-tag-yellow {
+  color: #614700;
+}
+:root:not([data-theme='dark']) .ant-tag.ant-tag-error {
+  color: #cf1322;
+}
+:root:not([data-theme='dark']) .ant-tag.ant-tag-warning,
+:root:not([data-theme='dark']) .ant-tag.ant-tag-gold {
+  color: #874d00;
+}
+:root:not([data-theme='dark']) .ant-tag.ant-tag-volcano {
+  color: #ad2102;
+}
+:root[data-theme='dark'] .ant-tag.ant-tag-purple {
+  color: #b37feb;
+}
+:root[data-theme='dark'] .ant-tag.ant-tag-geekblue {
+  color: #85a5ff;
 }

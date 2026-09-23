@@ -25,6 +25,7 @@ import { AsyncBody } from '../components/AsyncBody';
 import { Page } from '../components/layout/Page';
 import { formatTimestamp } from '../components/results/resultsFormat';
 import { useAsyncData } from '../hooks/useAsyncData';
+import { RowLink } from '../components/shared/RowLink';
 
 /**
  * Assets list (`/assets`, ADR 0034 gap G-d phase 2, #760; hierarchical browse #802; server-side
@@ -290,9 +291,11 @@ function AssetsTable({
       dataIndex: 'name',
       render: (name: string, asset) => (
         <div style={{ minWidth: 0 }}>
-          <Typography.Text strong ellipsis style={{ display: 'block' }}>
-            {name}
-          </Typography.Text>
+          <RowLink to={`/assets/${asset.id}`} block>
+            <Typography.Text strong ellipsis style={{ display: 'block' }}>
+              {name}
+            </Typography.Text>
+          </RowLink>
           <Tooltip title={asset.namespace}>
             <Typography.Text type="secondary" style={{ fontSize: 12 }} ellipsis>
               {namespaceLabel(asset.namespace)}
