@@ -10,7 +10,7 @@ mkdocs-glightbox==0.5.2
 # a MkDocs fork that installs beside mkdocs and prints upgrade adverts during
 # every build — an unreviewed second site generator on the docs supply chain
 # (CONTRIBUTING rule 39). 1.2.2 depends on mkdocs alone. Re-evaluate before bumping.
-mkdocs-redirects==1.2.2
+mkdocs-redirects==1.2.3
 # Versioned docs — deploys each version to the gh-pages branch (BSD-3-Clause).
 mike==2.2.0
 # Interactive API explorer (Swagger UI over the published OpenAPI spec).
