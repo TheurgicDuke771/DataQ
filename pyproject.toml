@@ -78,6 +78,11 @@ module = [
     "croniter",
 ]
 ignore_missing_imports = true
+# None of these are in the slim CI typecheck deps, so CI sees them as Any. Several do
+# ship py.typed (great_expectations, snowflake, databricks, azure.*, pyiceberg), so in
+# the conda env — where the pre-commit mypy hook runs (#2080) — mypy would follow them
+# and could disagree with CI. Skipping forces Any in both envs, as for pyarrow below.
+follow_imports = "skip"
 # These third-party libs expose public API via internal modules without an explicit
 # __all__ (e.g. great_expectations.expectations.ExpectColumnValuesToNotBeNull), so
 # strict mode's no-implicit-reexport would flag legitimate imports/attribute access.
