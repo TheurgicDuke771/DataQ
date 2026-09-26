@@ -4,9 +4,10 @@
 # requirements-dev.txt, and the CI lint / type-check / SAST jobs install this
 # file directly (it's lightweight, so installing all of it per job is cheap).
 #
-# Note: the pre-commit hooks pin their own versions via `rev:` tags in
-# .pre-commit-config.yaml (that's how pre-commit fetches them) — keep those in
-# step with these pins when bumping.
+# The ruff/black/mypy pre-commit hooks are `language: system`: they run the
+# conda env's copies of these pins rather than fetching their own by `rev:`, and
+# scripts/run-pinned-tool.py fails a hook whose env has drifted (#2080). So a
+# bump here (e.g. from Dependabot) is the only edit needed.
 
 black==26.5.1
 ruff==0.16.5

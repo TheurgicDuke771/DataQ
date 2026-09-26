@@ -138,7 +138,7 @@ These are locked on Day 1 of Week 1. Do not drift.
 18. **Python runtime:** `conda` only (`conda create -n dataq python=3.13`). Not venv, not poetry, not pyenv.
 19. **Python formatter:** Black. Config in `pyproject.toml`. CI rejects unformatted code.
 20. **Python linter:** Ruff. Replaces flake8 + isort + pyupgrade. Config in `pyproject.toml`.
-21. **Python type checker:** mypy (strict mode). Config in `pyproject.toml`. When adding a new runtime import to `backend/app/`, add the pinned package to **two** places that must agree: `backend/requirements-typecheck.txt` (the single source of truth — CI's mypy + pytest jobs install from it) and `.pre-commit-config.yaml`'s `mypy.additional_dependencies` list. The `typecheck-deps-sync` pre-commit hook (which also runs in CI) fails if they diverge, so drift is caught before push. Versions must also match `environment.yml`.
+21. **Python type checker:** mypy (strict mode). Config in `pyproject.toml`. When adding a new typed runtime import to `backend/app/`, pin the package in `backend/requirements.txt` and add the same pin to `backend/requirements-typecheck.txt` (the typed subset CI's mypy job installs). That is the whole list: the pre-commit ruff/black/mypy hooks are `language: system` and run the conda env's copies, so `.pre-commit-config.yaml` carries no versions of its own (#2080). `scripts/run-pinned-tool.py` refuses to run a hook whose env differs from those pins, and tells you to `conda env update`, so a local pass stays evidence of a CI pass.
 22. **Frontend package manager:** pnpm. Not npm, not yarn.
 23. **Frontend formatter:** Prettier. Config in `frontend/.prettierrc`.
 24. **Frontend linter:** ESLint with TypeScript rules. Config in `frontend/eslint.config.cjs`.

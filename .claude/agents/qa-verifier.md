@@ -23,11 +23,9 @@ Project rule (learned the hard way): **never use CI as the first feedback loop**
 |---|---|
 | Format | `black --check backend/` |
 | Lint | `ruff check backend/` |
-| Typecheck-deps sync | `python scripts/check-typecheck-deps.py` |
 | Types (app) | `mypy backend/app/` |
 | Types (tests) | `mypy backend/tests/` |
 | SAST | `bandit -c pyproject.toml -r backend/app/` |
-| Tooling sync | `python scripts/check-precommit-tooling-sync.py` |
 | Identifier hygiene | `python scripts/check-identifiers.py` |
 | Docs publication | `python scripts/check-docs-publication.py` |
 | Tests | `pytest backend/tests/` |
