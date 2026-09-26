@@ -9,9 +9,10 @@
 #
 # Consumers:
 #   - .github/workflows/ci.yml — the backend-types job installs from here.
-#   - .pre-commit-config.yaml — the mypy hook's additional_dependencies must
-#     match this file, enforced by scripts/check-typecheck-deps.py (run as the
-#     typecheck-deps-sync pre-commit hook AND in CI's backend-lint job).
+#   - .pre-commit-config.yaml — the mypy hook is `language: system`; it runs in
+#     the conda env (which installs this file via requirements-dev.txt), and
+#     scripts/run-pinned-tool.py fails it if the env's versions differ from these
+#     pins. No second list to keep in step (#2080).
 
 anthropic==1.3.0
 fastapi==0.141.1

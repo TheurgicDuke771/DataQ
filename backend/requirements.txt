@@ -9,9 +9,9 @@
 #   - requirements-typecheck.txt  — the minimal *typed* subset mypy needs (kept
 #                                   small so the type-check job stays fast and
 #                                   doesn't surface errors from heavy untyped
-#                                   deps). Dependabot updates both pip files, and
-#                                   the typecheck-deps-sync CI check guards the
-#                                   pre-commit mypy hook against this subset.
+#                                   deps). Dependabot updates both pip files; the
+#                                   pre-commit mypy hook reads this subset from the
+#                                   conda env, so there is no third copy (#2080).
 
 # ── Web framework ──
 fastapi==0.141.1
