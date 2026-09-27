@@ -187,6 +187,23 @@ remaining**), so one you disagree with costs a glance. A separate warning surfac
 pipeline trigger binding that *nearly* matched this suite (right pipeline, wrong
 environment) — a coverage gap no column profile could reveal either way.
 
+**Placement and dedup from column lineage.** Where recorded column lineage reaches the suggested
+column, each suggestion also says where that column comes from. There are two recommendations,
+each made only for a *pass-through* column (the same column name on every hop — a copy, not a
+derivation):
+
+- **An equivalent check already runs upstream** — the same check type on the same column in a
+  table this one copies from. A copy may not need its own check, though joins and filters can still
+  break uniqueness or nullability, so decide per table. Upstream checks in suites you can't view are
+  counted, never named.
+- **Place it at the origin** — nothing equivalent runs upstream yet, and checking the column where
+  it originates fires once per bad load instead of once per downstream copy.
+
+A derived column (`amount → daily_revenue`) gets its provenance shown and no recommendation,
+since an upstream check does not cover an aggregate. This is advice, not a filter: no suggestion
+is ever hidden because of it, and when the lineage walk hit a gap the note says the picture may be
+incomplete.
+
 ??? note "Scripted / MCP access"
     ```bash
     curl -X POST https://<your-dataq-host>/api/v1/llm/check_suggestions \
@@ -196,7 +213,9 @@ environment) — a coverage gap no column profile could reveal either way.
     The response is `{suggestions, rejected, coverage_warnings}` — each suggestion carries
     `expectation_type`, `name`, `rationale`, `config` and `dimension` (plus
     `fail_threshold_hours` instead of a threshold inside `config` for a freshness
-    suggestion).
+    suggestion), and a column-scoped one a `lineage` object — `origins` (each with
+    `pass_through` / `confirmed`), `equivalent_upstream_checks`, `restricted_equivalent_checks`,
+    `recommendation` (`already_covered_upstream` · `place_at_origin` · `null`) and `complete`.
 
 ## What is recorded, what it costs, who may call
 
