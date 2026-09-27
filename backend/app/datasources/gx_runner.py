@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import numbers
+import time
 from collections import defaultdict
 from collections.abc import Sequence
+from dataclasses import replace
+from decimal import Decimal
 from typing import Any
 
 import great_expectations as gx
@@ -12,10 +16,13 @@ import great_expectations.expectations as gxe
 from backend.app.core.logging import get_logger
 from backend.app.datasources.base import (
     SAMPLE_ROW_CAP,
+    VALUE_SIGNAL_SAMPLE_FAILED,
+    VALUE_SIGNAL_STATUS_KEY,
     VALUE_SIGNAL_SUMMARY_KEY,
     CheckOutcome,
     CheckSpec,
     SuiteOutcome,
+    ValueSignalGate,
 )
 from backend.app.services.column_classification import value_signal_summary
 
@@ -170,6 +177,11 @@ def _extract_sample_failures(result: dict[str, Any]) -> dict[str, Any] | None:
             continue
         if key == "unexpected_index_list" and not _is_identifier_index_list(value):
             continue
+        # Fires on the FRAME lanes only: the SQL lanes' locator list is capped at
+        # `_SQL_PARTIAL_UNEXPECTED_COUNT` (== SAMPLE_ROW_CAP, and GX's SQL locator query LIMITs
+        # unconditionally), so it is never longer than the cap. The SQL lanes get their
+        # population signal from a separate, gated, bounded query instead —
+        # `_attach_population_signal` (#2014 — decision: option 2).
         if (
             key == "unexpected_index_list"
             and isinstance(value, list)
@@ -180,6 +192,128 @@ def _extract_sample_failures(result: dict[str, Any]) -> dict[str, Any] | None:
                 sample[VALUE_SIGNAL_SUMMARY_KEY] = summary
         sample[key] = value[:SAMPLE_ROW_CAP] if isinstance(value, list) else value
     return sample or None
+
+
+def _needs_population_signal(
+    spec: CheckSpec,
+    outcome: CheckOutcome,
+    index_columns: list[str] | None,
+    gate: ValueSignalGate,
+) -> bool:
+    """Would the SQL lane's capped sample decide masking where the frame lane uses the
+    population (#2014)? Only for a column-map check with more unexpected rows than the capped
+    sample holds — passing under `mostly` included, since its sample is persisted and shown
+    just the same — and only when the gate says the value signal decides at least one of the
+    columns the summary covers; policy/tags/name-decided columns never pay the query.
+    """
+    if outcome.errored:
+        return False
+    sample = outcome.sample_failures
+    if not sample or VALUE_SIGNAL_SUMMARY_KEY in sample:
+        return False
+    count = sample.get("unexpected_count")
+    # Any numeric the driver hands GX (int, numpy int, Decimal) — a type narrowing here would
+    # silently skip the query on one warehouse only (#953).
+    if isinstance(count, bool) or not isinstance(count, (numbers.Real, Decimal)):
+        return False
+    if count <= SAMPLE_ROW_CAP:
+        return False
+    column = spec.kwargs.get("column")
+    if not isinstance(column, str) or not column:
+        return False
+    return any(gate(name) for name in (column, *(index_columns or ())))
+
+
+def _population_rows(validator: Any, spec: CheckSpec, index_columns: list[str] | None) -> Any:
+    """The first `_VALUE_SIGNAL_SUMMARY_ROW_CAP` failing rows of ONE check, as locator dicts.
+
+    GX's own `<map_metric>.unexpected_index_list` metric, resolved alone: the statement is GX's
+    locator query — a SQLAlchemy Core ``SELECT <index cols>, <column> ... WHERE <GX's unexpected
+    condition> LIMIT n`` compiled by the connection's dialect — so it samples exactly the
+    population the frame lane summarises, with no hand-built SQL or identifier quoting here.
+    Only this metric's dependency graph runs (column reflection, a ``COUNT(*)``, the LIMITed
+    select) — never the check's own unexpected-count scan again.
+    """
+    expectation = _to_gx_expectation(spec)
+    map_metric = getattr(expectation, "map_metric", None)
+    if not isinstance(map_metric, str):
+        raise TypeError(f"{spec.expectation_type} is not a column-map expectation")
+    result_format = {
+        "result_format": "SUMMARY",
+        "partial_unexpected_count": _VALUE_SIGNAL_SUMMARY_ROW_CAP,
+        "unexpected_index_column_names": list(index_columns or ()),
+    }
+    dependencies = expectation.get_validation_dependencies(
+        execution_engine=validator.execution_engine,
+        runtime_configuration={"result_format": result_format},
+    )
+    metric = dependencies.get_metric_configuration(f"{map_metric}.unexpected_index_list")
+    if metric is None:
+        raise LookupError(f"{spec.expectation_type} has no unexpected_index_list metric")
+    return validator.get_metric(metric)
+
+
+def _batch_validator(batch_definition: Any, batch_parameters: dict[str, Any] | None) -> Any:
+    from great_expectations.validator.validator import Validator
+
+    batch = batch_definition.get_batch(batch_parameters=batch_parameters)
+    return Validator(execution_engine=batch.data.execution_engine, batches=[batch])
+
+
+def _attach_population_signal(
+    outcome: SuiteOutcome,
+    *,
+    checks: list[CheckSpec],
+    batch_definition: Any,
+    batch_parameters: dict[str, Any] | None,
+    index_columns: list[str] | None,
+    gate: ValueSignalGate,
+) -> SuiteOutcome:
+    """Give the SQL lanes the `value_signal_summary` the frame lanes get for free (#2014).
+
+    Decision (#2014, option 2): the locator query stays at `_SQL_PARTIAL_UNEXPECTED_COUNT`; a
+    check whose masking the value signal would actually decide gets ONE extra bounded query.
+    A failed query keeps today's capped-sample classification and says so — a
+    `VALUE_SIGNAL_STATUS_KEY` marker on the persisted sample plus a WARNING — never silently.
+    """
+    pending = [
+        i
+        for i, (spec, check) in enumerate(zip(checks, outcome.checks, strict=True))
+        if _needs_population_signal(spec, check, index_columns, gate)
+    ]
+    if not pending:
+        return outcome
+    updated = list(outcome.checks)
+    validator: Any = None
+    for i in pending:
+        spec, check = checks[i], updated[i]
+        assert check.sample_failures is not None  # narrowed by `_needs_population_signal`
+        started = time.monotonic()
+        try:
+            if validator is None:
+                validator = _batch_validator(batch_definition, batch_parameters)
+            rows = _population_rows(validator, spec, index_columns)
+            summary = _value_signal_summary_by_column(rows if isinstance(rows, list) else [])
+        except Exception as exc:
+            log.warning(
+                "gx_value_signal_sample_failed",
+                expectation_type=spec.expectation_type,
+                error_type=type(exc).__name__,
+            )
+            sample = {**check.sample_failures, VALUE_SIGNAL_STATUS_KEY: VALUE_SIGNAL_SAMPLE_FAILED}
+        else:
+            log.info(
+                "gx_value_signal_sampled",
+                expectation_type=spec.expectation_type,
+                rows=len(rows) if isinstance(rows, list) else 0,
+                limit=_VALUE_SIGNAL_SUMMARY_ROW_CAP,
+                duration_ms=int((time.monotonic() - started) * 1000),
+            )
+            if not summary:
+                continue
+            sample = {**check.sample_failures, VALUE_SIGNAL_SUMMARY_KEY: summary}
+        updated[i] = replace(check, sample_failures=sample)
+    return SuiteOutcome(success=outcome.success, checks=updated)
 
 
 def _bounded_observed_value(detail: dict[str, Any]) -> dict[str, Any] | None:
@@ -384,28 +518,26 @@ def run_expectations(
     name: str,
     batch_parameters: dict[str, Any] | None = None,
     index_columns: list[str] | None = None,
+    value_signal_gate: ValueSignalGate | None = None,
 ) -> SuiteOutcome:
-    """Register the suite + validation definition for `batch_definition` and run."""
+    """Register the suite + validation definition for `batch_definition` and run.
+
+    `value_signal_gate` (SQL lanes only, #2014) enables the bounded population sample for the
+    checks whose masking the value signal would decide; ``None`` never issues it.
+    """
     sql_batch = _is_sql_batch(batch_definition)
-    if not index_columns:
-        return _execute(
-            context,
-            batch_definition=batch_definition,
-            checks=checks,
-            name=name,
-            batch_parameters=batch_parameters,
-            result_format=_result_format(sql_batch=sql_batch, index_columns=None),
-        )
     outcome = _execute(
         context,
         batch_definition=batch_definition,
         checks=checks,
         name=name,
         batch_parameters=batch_parameters,
-        result_format=_result_format(sql_batch=sql_batch, index_columns=index_columns),
+        result_format=_result_format(sql_batch=sql_batch, index_columns=index_columns or None),
     )
-    if outcome.checks and all(check.errored for check in outcome.checks):
-        return _execute(
+    used_index_columns = index_columns or None
+    if used_index_columns and outcome.checks and all(check.errored for check in outcome.checks):
+        used_index_columns = None
+        outcome = _execute(
             context,
             batch_definition=batch_definition,
             checks=checks,
@@ -413,4 +545,13 @@ def run_expectations(
             batch_parameters=batch_parameters,
             result_format=_result_format(sql_batch=sql_batch, index_columns=None),
         )
-    return outcome
+    if not sql_batch or value_signal_gate is None:
+        return outcome
+    return _attach_population_signal(
+        outcome,
+        checks=checks,
+        batch_definition=batch_definition,
+        batch_parameters=batch_parameters,
+        index_columns=used_index_columns,
+        gate=value_signal_gate,
+    )

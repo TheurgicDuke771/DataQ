@@ -17,6 +17,15 @@ SAMPLE_ROW_CAP = 20
 # value-signal summary (#1230).
 VALUE_SIGNAL_SUMMARY_KEY = "value_signal_summary"
 
+# Sibling sub-key recording that the SQL lanes' population sample (#2014) was needed and FAILED,
+# so the ladder classified from the capped values instead. Internal, like the summary itself.
+VALUE_SIGNAL_STATUS_KEY = "value_signal_status"
+VALUE_SIGNAL_SAMPLE_FAILED = "population_sample_failed"
+
+#: `column -> True` when the failing-row value signal could change that column's masking, i.e.
+#: the redaction ladder cannot already decide it from policy, tags or the column name (#2014).
+ValueSignalGate = Callable[[str], bool]
+
 
 def parse_whole_number(
     value: Any,

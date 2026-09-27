@@ -885,10 +885,21 @@ def test_run_checks_passes_index_columns_unfolded(monkeypatch: pytest.MonkeyPatc
         }
     )
     runner = SnowflakeCheckRunner(config, "pw")
+
+    def gate(_column: str) -> bool:
+        return True
+
     runner.run_checks(
-        table="ORDERS_HEADER", schema="RETAIL", checks=[], index_columns=["ORDER_NUMBER"]
+        table="ORDERS_HEADER",
+        schema="RETAIL",
+        checks=[],
+        index_columns=["ORDER_NUMBER"],
+        value_signal_gate=gate,
     )
     assert captured["index_columns"] == ["ORDER_NUMBER"]
+    # #2014: the SQL lane's population-sample gate reaches `run_expectations`.
+    assert captured["value_signal_gate"] is gate
+    assert SnowflakeCheckRunner.accepts_value_signal_gate is True
 
 
 def _sqlite_as_snowflake(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None:
