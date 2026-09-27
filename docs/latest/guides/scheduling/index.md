@@ -25,8 +25,19 @@ A suite can hold several schedules (e.g. hourly on weekdays + a daily deep pass)
 - **Minute granularity.** A dispatcher ticks every 60 s and fires schedules whose
   precomputed next-run time has passed — sub-minute cadences aren't supported.
 - **No backfill.** If the platform was down across N ticks, those runs are **not**
-  replayed on startup; the schedule simply resumes at its next occurrence. (Missed
-  *orchestration events* are different — those have gap recovery.)
+  replayed on startup: a schedule that missed any number of occurrences fires once,
+  then resumes at its next occurrence. (Missed *orchestration events* are
+  different — those have gap recovery.)
+- **Very large due sets spill over.** Schedules are fired in batches of up to 500;
+  once a tick has run 45 s it claims no further batch and logs
+  `schedules_dispatch_budget_exhausted` with the number of schedules still due; the
+  next tick fires them. Nothing is dropped or fired twice — the late ones are a minute
+  late. See the [performance baseline](../architecture/perf-baseline.md) for how many
+  schedules fit in a tick at a given database latency.
+- **A down broker ends the tick.** After three publishes in a row fail, the rest of
+  that batch's runs are marked failed without another attempt, the tick stops, and
+  `schedules_dispatch_stopped_broker_down` is logged; schedules not yet claimed stay
+  due for the next tick.
 - **Pause / resume** with the status switch — the schedule and its cadence are kept,
   delivery stops.
 - **Stuck-run safety net.** A run orphaned in `queued`/`running` (dead worker, broker
