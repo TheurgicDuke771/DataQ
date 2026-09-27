@@ -403,12 +403,17 @@ def test_probe_classifies_an_edition_failure() -> None:
     assert "Enterprise Edition" in result["reason"]
 
 
+# The #2112 shape itself: never again a column-type reason for a probe problem.
+_NULL_COUNT_TYPE_REJECTION = (
+    "001044 (42P13): SQL compilation error: error line 1 at position 7\n"
+    "Invalid argument types for function 'NULL_COUNT$V1': (BOOLEAN)"
+)
+
+
 @pytest.mark.parametrize(
     "error",
     [
-        # The #2112 shape itself: never again a column-type reason for a probe problem.
-        "001044 (42P13): SQL compilation error: error line 1 at position 7\n"
-        "Invalid argument types for function 'NULL_COUNT$V1': (BOOLEAN)",
+        _NULL_COUNT_TYPE_REJECTION,
         # A broken view: its "or not authorized" tail is about the view, not DMF.
         "002003 (42S02): SQL compilation error:\nObject 'R.V' does not exist or not authorized.",
         "connection failed: user=svc_dataq password=hunter2 unreachable",
