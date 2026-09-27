@@ -204,9 +204,12 @@ across 50k assets") needs an index — that would be a derived table rebuilt fro
 second source of truth.
 
 **2. Absence of pairs has a stated reason (the never-a-silent-empty rule, at column grain).** An edge without pairs
-used to be indistinguishable from "the columns are unrelated". Each warehouse pull now records
-whether it observed column grain (`connections.lineage_column_grain`: `captured` · `unavailable` ·
-`not_supported`; NULL = never recorded), and every edge reports a `column_coverage`:
+used to be indistinguishable from "the columns are unrelated". Each warehouse pull now stamps
+every edge it observed with whether it looked at column grain (`lineage_edges.column_grain`:
+`captured` · `unavailable` · `not_supported`; NULL = never recorded). The stamp is **per edge, not
+per connection**: an incremental source reads column lineage only for the window an edge was seen
+in, so a later successful pull over other edges must not relabel an edge nobody looked at; a merge
+keeps `captured` once any pull has looked. Every edge then reports a `column_coverage`:
 `recorded` · `none_recorded` (the source reads column lineage, recorded none here — still not proof
 of no dependency: a Snowflake view is never a DML write, and a write outside the window is gone) ·
 `unavailable` (the column read failed) · `unknown` (not refreshed since this was tracked) ·
@@ -222,7 +225,9 @@ traversal runs at `TABLE` domain, where the column fields are NULL. On an Enterp
 been recording **no column pairs at all**. `GET_LINEAGE`'s table edges are now refined with the
 `ACCESS_HISTORY` pairs (the existing live-tuned parser), as a refinement only: a DML-only edge the traversal did
 not return is not added, so the table-level prune observation is unchanged. A failed refinement
-leaves the table edges intact and records `unavailable`. *Live verification of this composition is
+leaves the table edges intact and records `unavailable`; a *transient* failure additionally stops
+the snapshot refresh from replacing stored pairs (it merges instead), while a confirmed denial
+still replaces — pairs clear rather than freeze once a grant is revoked. *Live verification of this composition is
 outstanding* (the test account's credentials had expired); the parser itself was live-tuned.
 
 **4. The column name is matched with its engine's unquoted-identifier fold** (§6's fold, applied to

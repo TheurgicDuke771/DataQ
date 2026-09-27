@@ -81,6 +81,10 @@ class WarehouseLineageResult:
     # incremental pull whose window held no table events never reads column lineage), so the
     # connection keeps whatever state it last recorded rather than being reset to "unknown".
     column_grain: ColumnGrain | None = None
+    # #1710: may a snapshot pull REPLACE the stored column pairs? False when the column read failed
+    # transiently — replacing then would wipe pairs a previous pull captured over a blip. (A
+    # confirmed denial still replaces: pairs must clear, not freeze, when a grant is revoked.)
+    columns_authoritative: bool = True
 
     @classmethod
     def empty(

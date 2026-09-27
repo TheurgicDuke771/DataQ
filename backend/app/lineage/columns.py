@@ -23,7 +23,7 @@ from sqlalchemy import ColumnElement, func, select, tuple_
 from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_logger
-from backend.app.db.models import Asset, Connection, LineageEdge
+from backend.app.db.models import Asset, LineageEdge
 from backend.app.lineage.identity import canonical_identity
 from backend.app.lineage.warehouse import WAREHOUSE_LINEAGE_CONNECTION_TYPES, ColumnGrain
 
@@ -86,10 +86,15 @@ class EdgeColumns:
     coverage: ColumnCoverage
 
 
-def _parse_pairs(cols: Any, *, up: uuid.UUID, down: uuid.UUID) -> list[tuple[str, str]]:
-    """`columns` is app-written JSONB, but a malformed value must degrade loudly, never 500."""
+def _parse_pairs(
+    cols: Any, *, up: uuid.UUID, down: uuid.UUID
+) -> tuple[list[tuple[str, str]], bool]:
+    """`columns` is app-written JSONB, but a malformed value must degrade loudly, never 500.
+
+    Returns ``(valid pairs, malformed)`` — corrupt data is "unknown", never "looked, found none".
+    """
     if cols is None:
-        return []
+        return [], False
     if not isinstance(cols, (list, tuple)):
         log.warning(
             "lineage_edge_columns_malformed",
@@ -97,7 +102,7 @@ def _parse_pairs(cols: Any, *, up: uuid.UUID, down: uuid.UUID) -> list[tuple[str
             downstream_asset_id=str(down),
             value_type=type(cols).__name__,
         )
-        return []
+        return [], True
     valid = [
         (str(entry[0]), str(entry[1]))
         for entry in cols
@@ -110,7 +115,7 @@ def _parse_pairs(cols: Any, *, up: uuid.UUID, down: uuid.UUID) -> list[tuple[str
             downstream_asset_id=str(down),
             dropped=len(cols) - len(valid),
         )
-    return valid
+    return valid, len(valid) != len(cols)
 
 
 def _load(
@@ -124,19 +129,19 @@ def _load(
             # JSON 'null' (#907) reads as no pairs, same as SQL NULL.
             func.nullif(func.jsonb_typeof(LineageEdge.columns), "null").label("kind"),
             LineageEdge.columns,
-            Connection.lineage_column_grain,
-        )
-        .outerjoin(Connection, Connection.id == LineageEdge.connection_id)
-        .where(where)
+            LineageEdge.column_grain,
+        ).where(where)
     ).all()
     pairs: dict[tuple[uuid.UUID, uuid.UUID], set[tuple[str, str]]] = {}
     coverages: dict[tuple[uuid.UUID, uuid.UUID], list[ColumnCoverage]] = {}
     for up, down, source, kind, cols, grain in rows:
-        parsed = _parse_pairs(cols if kind is not None else None, up=up, down=down)
+        parsed, malformed = _parse_pairs(cols if kind is not None else None, up=up, down=down)
         key = (up, down)
         pairs.setdefault(key, set()).update(parsed)
         coverages.setdefault(key, []).append(
-            row_coverage(source=str(source), has_pairs=bool(parsed), column_grain=grain)
+            ColumnCoverage.UNKNOWN
+            if malformed and not parsed
+            else row_coverage(source=str(source), has_pairs=bool(parsed), column_grain=grain)
         )
     return {
         key: EdgeColumns(pairs=tuple(sorted(pairs[key])), coverage=combine(coverages[key]))
@@ -285,10 +290,9 @@ def _walk(
     saw_any_edge = False
     saw_start_gap = False
     while frontier:
-        if depth >= max_depth or len(walk.nodes) >= MAX_TRACE_NODES:
-            walk.truncated = True
-            walk.frontier_at_cap = set(frontier)
-            break
+        # At the cap the frontier's edges are still READ — but only to learn whether anything lies
+        # beyond it (truncated) and which edges are gaps; no further node is admitted.
+        at_cap = depth >= max_depth
         assets = {aid for aid, _ in frontier}
         edges = _load(session, near.in_(list(assets)))
         namespaces.ensure({aid for key in edges for aid in key})
@@ -305,27 +309,31 @@ def _walk(
             if depth == 0:
                 saw_any_edge = True
             if info.coverage is not ColumnCoverage.RECORDED:
-                walk.gaps.append(CoverageGap(up, down, info.coverage))
+                walk.gaps.append(CoverageGap(up, down, info.coverage))  # deduped in trace_column
                 walk.gapped_assets.add(here)
                 if depth == 0:
                     saw_start_gap = True
                 continue
             for up_col, down_col in info.pairs:
                 here_col, there_col = (down_col, up_col) if upstream else (up_col, down_col)
-                if namespaces.fold(here, here_col) not in wanted[here]:
+                here_key = (here, namespaces.fold(here, here_col))
+                if here_key[1] not in wanted[here]:
                     continue
-                walk.hops.append(ColumnHop(up, up_col, down, down_col))
-                walk.fed.add((here, namespaces.fold(here, here_col)))
                 key = (there, namespaces.fold(there, there_col))
-                if key in visited:
-                    continue
-                visited.add(key)
-                if len(walk.nodes) >= MAX_TRACE_NODES:
-                    walk.truncated = True
-                    walk.frontier_at_cap.add(key)
-                    continue
-                walk.nodes.append(ColumnNode(there, there_col, depth + 1))
-                next_frontier[key] = None
+                if key not in visited:
+                    if at_cap or len(walk.nodes) >= MAX_TRACE_NODES:
+                        # Something lies beyond the cap: say so, and leave `here` unconfirmed
+                        # rather than pointing a hop at a node the result does not contain.
+                        walk.truncated = True
+                        walk.frontier_at_cap.add(here_key)
+                        continue
+                    visited.add(key)
+                    walk.nodes.append(ColumnNode(there, there_col, depth + 1))
+                    next_frontier[key] = None
+                walk.hops.append(ColumnHop(up, up_col, down, down_col))
+                walk.fed.add(here_key)
+        if at_cap:
+            break
         frontier = next_frontier
         depth += 1
     if walk.hops:
@@ -391,7 +399,13 @@ def trace_column(
         upstream=up.nodes if up else [],
         downstream=down.nodes if down else [],
         hops=[*(up.hops if up else []), *(down.hops if down else [])],
-        gaps=[*(up.gaps if up else []), *(down.gaps if down else [])],
+        # A cycle can surface the same edge as a gap from both directions — list it once.
+        gaps=list(
+            {
+                (g.upstream_asset_id, g.downstream_asset_id): g
+                for g in (*(up.gaps if up else []), *(down.gaps if down else []))
+            }.values()
+        ),
         origins=origins,
         upstream_status=up.status if up else None,
         downstream_status=down.status if down else None,

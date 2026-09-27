@@ -1,4 +1,4 @@
-"""Add connections.lineage_column_grain — did the last lineage pull observe column grain (#1710)
+"""Add lineage_edges.column_grain — did a pull look at this edge's column grain (#1710)
 
 Additive and nullable, so the running image (which never reads or writes it) is unaffected. NULL
 means "never recorded" and renders as unknown — never as "no column lineage exists".
@@ -20,10 +20,8 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "connections", sa.Column("lineage_column_grain", sa.String(length=32), nullable=True)
-    )
+    op.add_column("lineage_edges", sa.Column("column_grain", sa.String(length=32), nullable=True))
 
 
 def downgrade() -> None:
-    op.drop_column("connections", "lineage_column_grain")
+    op.drop_column("lineage_edges", "column_grain")

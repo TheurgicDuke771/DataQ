@@ -46,7 +46,6 @@ def world(db_session: Any) -> dict[str, Any]:
         config={"account": "ab12345.eu-west-1", "database": "DB"},
         secret_ref="kv-x",
         created_by=owner.id,
-        lineage_column_grain="captured",
     )
     db_session.add(conn)
     db_session.flush()
@@ -62,6 +61,7 @@ def world(db_session: Any) -> dict[str, Any]:
                 source=source,
                 connection_id=conn.id,
                 columns=columns,
+                column_grain="captured" if source == "snowflake" else None,
             )
         )
 
@@ -174,7 +174,6 @@ def test_asset_detail_unrecorded_grain_is_unknown_not_none_recorded(
     client: TestClient, world: dict[str, Any], db_session: Any
 ) -> None:
     a = world["a"]
-    world["conn"].lineage_column_grain = None
     extra = upsert_assets(db_session, [{"namespace": _NS, "name": "DB.MART.OTHER"}])
     other = extra[(_NS, "DB.MART.OTHER")]
     db_session.add(

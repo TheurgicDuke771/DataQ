@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import case, delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -157,6 +157,9 @@ def _persist(
         and _suspension_exhausted(connection.lineage_last_authoritative_refresh_at)
     )
     prune = authoritative_snapshot or prune_forced
+    # #1710: the verbatim `columns` replace also needs the COLUMN read to be authoritative — a
+    # transient column-read failure must not wipe pairs an earlier pull captured.
+    replace_columns = authoritative_snapshot and result.columns_authoritative
     # clock_timestamp() advances within the tx (unlike now()), captured BEFORE the edge upserts
     # stamp a strictly-later last_seen.
     refresh_started_at = session.execute(select(func.clock_timestamp())).scalar_one()
@@ -178,7 +181,7 @@ def _persist(
         # unions pairs with the persisted prior.
         existing_columns = (
             {}
-            if authoritative_snapshot
+            if replace_columns
             else _existing_columns(session, source=source, connection_id=connection.id)
         )
         edge_rows = _edge_rows(
@@ -188,7 +191,7 @@ def _persist(
             connection_id=connection.id,
             existing_columns=existing_columns,
         )
-        _upsert_edges(session, edge_rows, replace_columns=authoritative_snapshot)
+        _upsert_edges(session, edge_rows, replace_columns=replace_columns)
 
     # Prune ONLY a snapshot source, and only when the pull observed current state completely
     # enough (Snowflake OBJECT_DEPENDENCIES — a current-state view) or the backstop fired.
@@ -325,8 +328,6 @@ def refresh_connection_lineage(
     connection.lineage_last_error = None
     if outcome.new_watermark is not None:
         connection.lineage_watermark = outcome.new_watermark
-    if outcome.column_grain is not None:
-        connection.lineage_column_grain = str(outcome.column_grain)
     session.commit()
     return outcome
 
@@ -402,6 +403,8 @@ def _edge_rows(
                 "connection_id": connection_id,
                 "last_seen": func.clock_timestamp(),
                 "columns": merged,
+                # #1710: stamped on every edge this pull observed; None = the pull said nothing.
+                "column_grain": str(result.column_grain) if result.column_grain else None,
             }
         )
     return rows
@@ -423,9 +426,26 @@ def _upsert_edges(
             if replace_columns
             else func.coalesce(stmt.excluded.columns, LineageEdge.columns)
         )
+        # The grain follows the same regime: a replace takes this pull's observation; a merge keeps
+        # "captured" once any pull has looked (a later failed look does not unsee it).
+        grain_value = (
+            func.coalesce(stmt.excluded.column_grain, LineageEdge.column_grain)
+            if replace_columns
+            else case(
+                (
+                    stmt.excluded.column_grain == ColumnGrain.CAPTURED.value,
+                    ColumnGrain.CAPTURED.value,
+                ),
+                else_=func.coalesce(LineageEdge.column_grain, stmt.excluded.column_grain),
+            )
+        )
         session.execute(
             stmt.on_conflict_do_update(
                 constraint="uq_lineage_edges_up_down_source_conn",
-                set_={"last_seen": func.clock_timestamp(), "columns": columns_value},
+                set_={
+                    "last_seen": func.clock_timestamp(),
+                    "columns": columns_value,
+                    "column_grain": grain_value,
+                },
             )
         )
