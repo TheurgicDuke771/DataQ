@@ -34,8 +34,16 @@ export interface AuthOption {
   secretLabel: string;
   /** Secret is a multi-line PEM key rather than a single-line password. */
   multilineSecret?: boolean;
-  /** An extra config field this mode needs (e.g. Airflow basic → username). */
-  extraField?: TextField;
+  /**
+   * Extra config fields this mode needs (e.g. Airflow basic → username). Unmounted — and so not
+   * submitted — under any other mode.
+   */
+  extraFields?: TextField[];
+  /**
+   * Shown where the expiry badge would be: this mode's credential has an expiry DataQ cannot
+   * read, so the absence of a badge must never read as "does not expire".
+   */
+  expiryNotReadable?: string;
   /**
    * Present → the mode takes an optional second secret part (e.g. a key-pair private key's
    * passphrase) that rides the combined payload — see `composeSecret`.
@@ -108,12 +116,38 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
     destinationFields: ['account'],
   },
   adls_gen2: {
+    // Any ADLS-compatible Blob endpoint — e.g. Fabric OneLake (#1680), which needs a service
+    // principal (its SAS is short-lived by design).
     textFields: [
-      { name: 'account_url', label: 'Account URL' },
-      { name: 'container', label: 'Container' },
+      {
+        name: 'account_url',
+        label: 'Account URL',
+        extra:
+          'https://<account>.blob.core.windows.net, or an ADLS-compatible endpoint such as ' +
+          'https://onelake.blob.fabric.microsoft.com',
+      },
+      {
+        name: 'container',
+        label: 'Container',
+        extra: 'The container (for OneLake: the workspace name or ID)',
+      },
     ],
-    secretLabel: 'SAS token',
-    destinationFields: ['account_url'],
+    auth: [
+      { value: 'sas', label: 'SAS token', secretLabel: 'SAS token' },
+      {
+        value: 'service_principal',
+        label: 'Service principal (Entra ID)',
+        secretLabel: 'Client secret',
+        extraFields: [
+          { name: 'tenant_id', label: 'Tenant ID' },
+          { name: 'client_id', label: 'Client ID' },
+        ],
+        expiryNotReadable:
+          "DataQ cannot read a client secret's expiry — track it in Entra ID, where it was " +
+          'created, and re-authenticate before it lapses.',
+      },
+    ],
+    destinationFields: ['account_url', 'auth_type', 'tenant_id', 'client_id'],
   },
   s3: {
     // AWS by default; setting an endpoint points the same connection at any
@@ -292,7 +326,7 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
         value: 'basic',
         label: 'Basic auth',
         secretLabel: 'Password',
-        extraField: { name: 'username', label: 'Username' },
+        extraFields: [{ name: 'username', label: 'Username' }],
       },
     ],
     destinationFields: ['base_url'],
@@ -357,6 +391,19 @@ export function withToggleDefaults(
   return result;
 }
 
+/**
+ * The type's default auth_type for a stored config that carries none (connections created before
+ * the type had auth modes). Present keys are left untouched.
+ */
+export function withAuthDefault(
+  type: ConnectionType,
+  config: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const auth = CONNECTION_FORM_SPECS[type].auth;
+  if (!auth || config?.auth_type !== undefined) return { ...config };
+  return { ...config, auth_type: auth[0].value };
+}
+
 /** Initial `config` for a freshly-selected type — seeds the default auth_type
  * (if any) plus the type's own `defaultConfig` (e.g. Iceberg's `catalog_name`), and any
  * `toggle` field's default (e.g. `inventory_sync`). */
@@ -391,7 +438,10 @@ export function movedDestinationFields(
   stored: Record<string, unknown>,
 ): string[] {
   if (edited === undefined) return [];
+  // An absent auth_type IS the default one — the backend compares them the same way.
+  const was = withAuthDefault(type, stored);
+  const now = withAuthDefault(type, edited);
   return (CONNECTION_FORM_SPECS[type].destinationFields ?? []).filter(
-    (field) => JSON.stringify(edited[field] ?? null) !== JSON.stringify(stored[field] ?? null),
+    (field) => JSON.stringify(now[field] ?? null) !== JSON.stringify(was[field] ?? null),
   );
 }

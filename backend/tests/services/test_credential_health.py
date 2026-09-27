@@ -6,6 +6,11 @@ import uuid
 from typing import Any
 
 import pytest
+from azure.core.exceptions import (
+    ClientAuthenticationError,
+    HttpResponseError,
+    ResourceNotFoundError,
+)
 
 from backend.app.db.models import Connection, User
 from backend.app.services import credential_health
@@ -98,6 +103,23 @@ AUTH_ERRORS = [
     ),
     # Iceberg REST catalog.
     ("iceberg_rest_401", RuntimeError("Server error: 401 Unauthorized: invalid_client")),
+    # Entra service principal (ADLS `service_principal`, #1680) — text as azure-identity raised
+    # it live, trace/correlation ids dropped.
+    (
+        "entra_sp_invalid_secret",
+        ClientAuthenticationError(
+            "Authentication failed: AADSTS7000215: Invalid client secret provided. Ensure the "
+            "secret being sent in the request is the client secret value, not the client secret "
+            "ID, for a secret added to app '00000000-0000-0000-0000-000000000001'."
+        ),
+    ),
+    (
+        "entra_sp_expired_secret",
+        ClientAuthenticationError(
+            "Authentication failed: AADSTS7000222: The provided client secret keys for app "
+            "'00000000-0000-0000-0000-000000000001' are expired."
+        ),
+    ),
 ]
 
 # Failures that must NOT move the signal. Each says something real is wrong, and none
@@ -128,6 +150,38 @@ NON_AUTH_ERRORS = [
     (
         "no_warehouse",
         RuntimeError("000606 (57P03): No active warehouse selected in the current session."),
+    ),
+    # Entra / OneLake (#1680): a wrong tenant or client id is configuration, and a missing data
+    # role or workspace membership is a grant — none of them says the client secret is dead.
+    (
+        "entra_unknown_tenant",
+        ClientAuthenticationError(
+            "Authentication failed: Unable to get authority configuration for "
+            "https://login.microsoftonline.com/00000000-0000-0000-0000-000000000009. Also please "
+            "double check your tenant name or GUID is correct."
+        ),
+    ),
+    (
+        "entra_unknown_client",
+        ClientAuthenticationError(
+            "Authentication failed: AADSTS700016: Application with identifier "
+            "'00000000-0000-0000-0000-000000000002' was not found in the directory "
+            "'00000000-0000-0000-0000-000000000003'. You may have sent your authentication "
+            "request to the wrong tenant."
+        ),
+    ),
+    (
+        "storage_no_data_role",
+        HttpResponseError(
+            "This request is not authorized to perform this operation using this permission.\n"
+            "ErrorCode:AuthorizationPermissionMismatch"
+        ),
+    ),
+    (
+        "onelake_workspace_not_visible",
+        ResourceNotFoundError(
+            "The specified workspace was not found.\nErrorCode:WorkspaceNotFound"
+        ),
     ),
 ]
 

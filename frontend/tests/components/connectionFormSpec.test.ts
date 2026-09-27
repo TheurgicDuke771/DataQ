@@ -6,6 +6,7 @@ import {
   composeSecret,
   initialConfigForType,
   movedDestinationFields,
+  withAuthDefault,
 } from '../../src/components/connections/connectionFormSpec';
 
 describe('composeSecret', () => {
@@ -129,5 +130,56 @@ describe('movedDestinationFields (#1401)', () => {
         { properties: props },
       ),
     ).toEqual(['properties']);
+  });
+});
+
+describe('ADLS service principal (#1680)', () => {
+  const legacySas = { account_url: 'https://a.blob.core.windows.net', container: 'raw' };
+  const sp = {
+    ...legacySas,
+    auth_type: 'service_principal',
+    tenant_id: 't',
+    client_id: 'c',
+  };
+
+  it('offers SAS (the default) and a service principal needing tenant + client ids', () => {
+    const auth = CONNECTION_FORM_SPECS.adls_gen2.auth ?? [];
+    expect(auth.map((a) => a.value)).toEqual(['sas', 'service_principal']);
+    expect(auth[1].secretLabel).toBe('Client secret');
+    expect(auth[1].extraFields?.map((f) => f.name)).toEqual(['tenant_id', 'client_id']);
+    expect(auth[1].expiryNotReadable).toMatch(/Entra ID/);
+    expect(auth[0].expiryNotReadable).toBeUndefined();
+  });
+
+  it('treats a legacy row with no auth_type as SAS', () => {
+    expect(activeAuthOption('adls_gen2', legacySas)?.value).toBe('sas');
+    expect(withAuthDefault('adls_gen2', legacySas)).toEqual({ ...legacySas, auth_type: 'sas' });
+  });
+
+  it('leaves an explicit auth_type, and types without auth modes, untouched', () => {
+    expect(withAuthDefault('adls_gen2', sp)).toEqual(sp);
+    expect(withAuthDefault('s3', { bucket: 'b' })).toEqual({ bucket: 'b' });
+    expect(withAuthDefault('snowflake', undefined)).toEqual({ auth_type: 'password' });
+  });
+
+  it('does not read an explicit default auth_type on a legacy row as a move', () => {
+    expect(
+      movedDestinationFields('adls_gen2', { ...legacySas, auth_type: 'sas' }, legacySas),
+    ).toEqual([]);
+  });
+
+  it('reports every service-principal field that steers the secret', () => {
+    expect(movedDestinationFields('adls_gen2', sp, legacySas)).toEqual([
+      'auth_type',
+      'tenant_id',
+      'client_id',
+    ]);
+    expect(movedDestinationFields('adls_gen2', { ...sp, tenant_id: 'other' }, sp)).toEqual([
+      'tenant_id',
+    ]);
+    expect(movedDestinationFields('adls_gen2', { ...sp, client_id: 'other' }, sp)).toEqual([
+      'client_id',
+    ]);
+    expect(movedDestinationFields('adls_gen2', { ...sp, container: 'other' }, sp)).toEqual([]);
   });
 });

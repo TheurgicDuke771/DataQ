@@ -226,7 +226,7 @@ are the reason this mode is opt-in rather than the default:
   connection, but may never introduce or repoint one. Otherwise a caller could name someone
   else's secret and have the server resolve it on their behalf.
 - **A stored credential is never sent to a destination the caller changed.** Editing a config
-  field that decides where a credential goes — Snowflake `account`, ADLS `account_url`,
+  field that decides where a credential goes — Snowflake `account`, ADLS `account_url`/`auth_type`/`tenant_id`/`client_id`,
   S3/dbt `endpoint_url`, Unity Catalog `workspace_url`, Iceberg `catalog_uri`/`warehouse`/
   `properties`/`secret_property`, Airflow `base_url`, dbt `artifacts_uri` — requires re-supplying that
   credential in the same request, or the update is rejected (`422 credential_redirect`).
