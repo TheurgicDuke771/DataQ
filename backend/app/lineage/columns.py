@@ -411,3 +411,71 @@ def trace_column(
         downstream_status=down.status if down else None,
         truncated=bool((up and up.truncated) or (down and down.truncated)),
     )
+
+
+#: Node budget for the all-columns upstream walk behind classification propagation.
+MAX_SOURCE_NODES = 2000
+
+
+@dataclass(frozen=True)
+class UpstreamSources:
+    """Every column of an asset that recorded lineage derives from something upstream, mapped to
+    the upstream ``(asset_id, column)`` cells it derives from (transitively, recorded pairs only).
+    Keys are the asset's own columns in their engine fold; ``truncated`` if a cap cut the walk.
+    """
+
+    sources: dict[str, set[tuple[uuid.UUID, str]]]
+    truncated: bool
+
+
+def upstream_column_sources(
+    session: Session, asset_id: uuid.UUID, *, max_depth: int = DEFAULT_TRACE_DEPTH
+) -> UpstreamSources:
+    """One multi-source upstream walk over recorded pairs for ALL of ``asset_id``'s columns.
+
+    Only ``recorded`` pairs are followed — a gap contributes nothing, which is the safe direction
+    for its one consumer (classification propagation can only ADD masking from what it reaches).
+    """
+    namespaces = _Namespaces(session)
+    namespaces.ensure([asset_id])
+    # (asset, folded column) -> the start asset's columns it feeds.
+    frontier: dict[tuple[uuid.UUID, str], set[str]] = {}
+    sources: dict[str, set[tuple[uuid.UUID, str]]] = {}
+    seen: dict[tuple[uuid.UUID, str], set[str]] = {}
+    truncated = False
+    depth = 0
+    wanted_assets = {asset_id}
+    while wanted_assets:
+        if depth >= max_depth:
+            truncated = True
+            break
+        edges = _load(session, LineageEdge.downstream_asset_id.in_(list(wanted_assets)))
+        namespaces.ensure({aid for key in edges for aid in key})
+        nxt: dict[tuple[uuid.UUID, str], set[str]] = {}
+        for (up, down), info in sorted(
+            edges.items(), key=lambda kv: (str(kv[0][0]), str(kv[0][1]))
+        ):
+            if down not in wanted_assets:  # an edge without pairs (a gap) yields nothing below
+                continue
+            for up_col, down_col in info.pairs:
+                down_key = (down, namespaces.fold(down, down_col))
+                origins = (
+                    {down_key[1]} if depth == 0 and down == asset_id else frontier.get(down_key)
+                )
+                if not origins:
+                    continue
+                up_key = (up, namespaces.fold(up, up_col))
+                new = origins - seen.get(up_key, set())
+                if not new:
+                    continue
+                if len(seen) >= MAX_SOURCE_NODES and up_key not in seen:
+                    truncated = True
+                    continue
+                seen.setdefault(up_key, set()).update(new)
+                for origin in new:
+                    sources.setdefault(origin, set()).add(up_key)
+                nxt.setdefault(up_key, set()).update(new)
+        frontier = nxt
+        wanted_assets = {aid for aid, _ in nxt}
+        depth += 1
+    return UpstreamSources(sources=sources, truncated=truncated)

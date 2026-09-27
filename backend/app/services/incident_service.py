@@ -24,6 +24,7 @@ from backend.app.db.models import (
     SuiteNotification,
 )
 from backend.app.services import audit_service, run_service, suite_service
+from backend.app.services.column_tags import effective_column_tags
 from backend.app.services.incident_evidence import (
     RedactionContext,
     build_evidence,
@@ -197,6 +198,8 @@ def redact_stale_evidence(session: Session) -> int:
     )
 
     updated = 0
+    # One lineage walk per asset, not per incident.
+    tags_by_asset: dict[Any, dict[str, str] | None] = {}
     for incident in incidents:
         evidence = incident.evidence
         if not evidence:
@@ -208,12 +211,14 @@ def redact_stale_evidence(session: Session) -> int:
         suite = suites.get(incident.suite_id)
         asset = assets.get(incident.asset_id)
         tested_column, expectation_type = context.get(incident.id, (None, None))
+        if incident.asset_id not in tags_by_asset:
+            tags_by_asset[incident.asset_id] = effective_column_tags(session, asset)
         redacted = run_service.redact_observed_value(
             observed,
             tested_column=tested_column,
             expectation_type=expectation_type,
             policy=suite.column_policy if suite is not None else None,
-            tags=asset.column_tags if asset is not None else None,
+            tags=tags_by_asset[incident.asset_id],
         )
         if redacted == observed:
             continue
