@@ -2706,16 +2706,20 @@ five mechanisms:</p>
    warehouse's OWN lineage views straight into <code>lineage_edges</code> with <code>source='snowflake'</code> /
    <code>'unity_catalog'</code>: Snowflake <code>OBJECT_DEPENDENCIES</code> (all editions) → <code>ACCESS_HISTORY</code> /
    <code>GET_LINEAGE</code> (Enterprise); Unity Catalog <code>system.access.table_lineage</code>. First-hand, no
-   dbt hop. Daily beat, <strong>dark by default</strong> (<code>WAREHOUSE_LINEAGE_ENABLED</code> — the views need a
-   grant); the tier that answered and any degraded/failing state surface on the asset's
+   dbt hop. Daily beat, <strong>on by default</strong> (<code>WAREHOUSE_LINEAGE_ENABLED=false</code> opts out — a
+   principal missing the grants degrades per connection); the tier that answered and any
+   degraded/failing state surface on the asset's
    lineage graph so a view-level-only or stale graph never reads as a confident complete
    one (<a href="../../guides/orchestration/#lineage-from-the-warehouse-the-warehouselineageprovider-seam">details</a>).
    <strong>Column grain:</strong> where the warehouse offers it (UC
    <code>system.access.column_lineage</code> — live-verified), the pull refines each table edge with
    <code>upstream column → downstream column</code> pairs, shown on the asset page to every
-   workspace member (ADR 0037 — column names are schema metadata, i.e. identity).
-   Snowflake's column grain lives in <code>ACCESS_HISTORY</code> and <code>GET_LINEAGE</code> (Enterprise) and reports
-   honestly unavailable on Standard. <strong>Snowpark scratch is stitched, not dropped:</strong> a
+   workspace member (ADR 0037 — column names are schema metadata, i.e. identity), and any one
+   column can be <strong>traced</strong> to its origin or its downstream columns. An edge without pairs
+   always says why (<code>column_coverage</code>: none recorded · unavailable · unknown · not captured).
+   Snowflake's column grain comes from <code>ACCESS_HISTORY</code> on every tier (<code>GET_LINEAGE</code> rows are
+   table-grain) and reports honestly unavailable where the grant is missing. <strong>Snowpark scratch is
+   stitched, not dropped:</strong> a
    pipeline that materializes through <code>SNOWPARK_TEMP_*</code> yields the real <code>A → B</code> edge, with the
    scratch object never materialized as an asset.</li>
 </ol>
@@ -2739,7 +2743,7 @@ five mechanisms:</p>
 <td style="text-align: center;">✅ (live-verified)</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: center;">✅ (OBJECT_DEPENDENCIES live; ACCESS_HISTORY + <strong>GET_LINEAGE per-seed traversal</strong> Enterprise, both <strong>+ column grain</strong>, built on a live prod-Enterprise capture)</td>
+<td style="text-align: center;">✅ (OBJECT_DEPENDENCIES live; ACCESS_HISTORY + <strong>GET_LINEAGE per-seed traversal</strong> Enterprise, built on a live prod-Enterprise capture; <strong>+ column grain from ACCESS_HISTORY</strong> on both tiers, live-verified; view column lineage not yet read)</td>
 </tr>
 <tr>
 <td>Unity Catalog</td>

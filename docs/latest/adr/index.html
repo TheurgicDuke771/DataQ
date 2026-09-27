@@ -2583,7 +2583,7 @@
 </tr>
 <tr>
 <td><a href="0034-asset-entity-openlineage-identity-lineage-pull/">0034</a></td>
-<td>Assets &amp; lineage (gap G-d design) — first-class <strong>asset entity keyed by the OpenLineage dataset-naming spec</strong> (namespace+name adopted verbatim, dbt-ol/Spark byte-compatible; DEV/QA = distinct assets, UI groups over <code>env</code>); <strong>lineage emitted/pulled, never built</strong> — OL emission w/ quality facets → dbt <code>manifest.json</code> → <code>lineage_edges</code> cache → <code>LineageProvider</code> seam (Marquez reference; OpenMetadata SDK license-blocked per 0031); incidents anchor to assets (one open per asset+check, evidence-card payload); asset/incident authz derived from suite grants</td>
+<td>Assets &amp; lineage (gap G-d design) — first-class <strong>asset entity keyed by the OpenLineage dataset-naming spec</strong> (namespace+name adopted verbatim, dbt-ol/Spark byte-compatible; DEV/QA = distinct assets, UI groups over <code>env</code>); <strong>lineage emitted/pulled, never built</strong> — OL emission w/ quality facets → dbt <code>manifest.json</code> → <code>lineage_edges</code> cache → <code>LineageProvider</code> seam (Marquez reference; OpenMetadata SDK license-blocked per 0031); incidents anchor to assets (one open per asset+check, evidence-card payload); asset/incident authz derived from suite grants. <em>Amended 2026-09-27:</em> column grain stays a refinement on the table edge with a per-edge <code>column_coverage</code> reason; Snowflake column pairs come from <code>ACCESS_HISTORY</code> on every tier; placement/dedup advisory, classification propagation additive-only</td>
 <td>Accepted</td>
 </tr>
 <tr>

@@ -2736,11 +2736,56 @@ Marquez row).</p>
 with <code>[upstream_column, downstream_column]</code> pairs, stored on the edge row (<code>lineage_edges.columns</code>)
 and <strong>merged union-wise</strong> on incremental refreshes (a log window only re-observes pairs whose
 queries ran inside it; forgetting the rest would be a prune the never-prune regime forbids). A
-separately-gated <code>column_lineage</code> degrades honestly: table edges still land, with a note. The asset
-page shows the mappings per direct edge; an edge whose far endpoint is outside the viewer's grants
-arrives <strong>count-only</strong> from the server (a hidden asset's column names are
-schema disclosure) and renders as a locked box. Snowflake's column grain lives in <code>ACCESS_HISTORY</code>
-(Enterprise) and is honestly absent on Standard.</p>
+separately-gated <code>column_lineage</code> degrades honestly: table edges still land, with a note.
+Snowflake's column grain comes from <code>ACCESS_HISTORY</code>'s <code>objects_modified[].columns[].directSources</code>
+on <strong>every</strong> tier — including when <code>GET_LINEAGE</code> answers, whose table-domain rows carry no column
+names — as a refinement of the table edges, never a source of new ones; it only sees DML writes, so
+a view dependency never has pairs. Live-verified on an Enterprise account as a least-privileged
+reader role: the refinement runs on the <code>GET_LINEAGE</code> tier and records <code>captured</code>; an account whose
+writes are all COPY / <code>INSERT … VALUES</code> (empty <code>directSources</code>) and whose downstream layer is views
+honestly reads <code>none_recorded</code> on every edge. Column lineage <em>through views</em> exists in Snowflake
+(<code>GET_LINEAGE</code> at <code>COLUMN</code> domain) but is not read yet.</p>
+<p><strong>Why an edge has no pairs is always stated</strong> (ADR 0034 amendment 2026-09-27). Every
+lineage edge on the asset page, <code>GET /assets/{id}</code> and MCP <code>get_asset</code> carries a
+<code>column_coverage</code>:</p>
+<table>
+<thead>
+<tr>
+<th><code>column_coverage</code></th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>recorded</code></td>
+<td>Column pairs were observed on this edge — the only state that supports a column-level claim.</td>
+</tr>
+<tr>
+<td><code>none_recorded</code></td>
+<td>The source reads column lineage and its last pull succeeded, but recorded none for this edge (a view, or a write outside the window). Not proof the columns are unrelated.</td>
+</tr>
+<tr>
+<td><code>unavailable</code></td>
+<td>The source's column-lineage read failed on its last refresh (grant, outage).</td>
+</tr>
+<tr>
+<td><code>unknown</code></td>
+<td>The source has not refreshed since column coverage was tracked.</td>
+</tr>
+<tr>
+<td><code>not_captured</code></td>
+<td>This source (dbt manifest, catalog pull) never carries column detail.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Tracing one column.</strong> The asset page's <em>Column lineage</em> card traces a single column across every
+hop — upstream to where it <strong>originates</strong>, downstream to every column <strong>derived from it</strong> — backed by
+<code>GET /api/v1/assets/{asset_id}/column-lineage?column=…&amp;direction=upstream|downstream|both</code>
+and the MCP tool <code>trace_column_lineage</code>. The column is matched with its engine's case fold
+(Snowflake UPPER, Unity Catalog lower). Any edge on the way without <code>recorded</code> pairs is listed as a
+<strong>gap</strong> the column may cross; the trace is then marked partial and an origin behind a gap is
+<em>unconfirmed</em>. Column names are workspace-visible topology (ADR 0037), so every member can trace.
+A pair records derivation, not equality — <code>amount → daily_revenue</code> is an aggregate.</p>
 <p><strong>Snowflake — a tier ladder, richest first</strong> (from the 2026-07-17 live spike):</p>
 <table>
 <thead>
@@ -2754,7 +2799,7 @@ schema disclosure) and renders as a locked box. Snowflake's column grain lives i
 <tbody>
 <tr>
 <td><code>GET_LINEAGE</code></td>
-<td>object-level traversal (+ column grain)</td>
+<td>object-level traversal (table grain; column pairs from <code>ACCESS_HISTORY</code>)</td>
 <td>Enterprise+</td>
 <td>Tried first: its absence is a clean, catchable <code>0A000</code>, the best preflight signal. It is a real <strong>per-seed traversal</strong> — seeds come from the ADR 0040 enumeration seam (<code>WAREHOUSE_LINEAGE_MAX_SEEDS</code>, default 500, loud truncation), each walked upstream <strong>and</strong> downstream at distance 2. Every returned row is a DIRECT source→target edge (<code>distance</code> is hops-from-seed, not a claim about the seed); MASKED (<code>***</code>) endpoints and non-table domains (STAGE) are dropped. A tier that enumerates no seeds, or observes no rows, <strong>descends</strong> rather than returning a confident empty — this tier prunes.</td>
 </tr>

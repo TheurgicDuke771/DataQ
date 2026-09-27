@@ -2569,7 +2569,7 @@ The endpoint accepts the **same credentials as the REST API** (ADR [0008](../adr
     [0032](../adr/0032-email-otp-signin.md)) has no identity provider to issue bearer
     tokens, so an **API key is the only `/mcp` credential** there — mint one as
     below and use it exactly the same way. Everything else is identical, including
-    all 50 tools and per-suite permissions. Two rejections are deliberate in that
+    all 51 tools and per-suite permissions. Two rejections are deliberate in that
     mode: a raw JWT is refused (there is nothing to validate it against), and your
     **sign-in session is never accepted** — it is a browser credential and does not
     authenticate `/mcp`, whether presented as a bearer or carried as a cookie.
@@ -2627,7 +2627,7 @@ Start it via the command palette (`Cmd/Ctrl+Shift+P`) → **MCP: List Servers** 
 
 **Cursor** (`~/.cursor/mcp.json`) uses the same `mcpServers` shape as Claude Desktop.
 
-## The 50 tools
+## The 51 tools
 
 Each tool is a thin wrapper over the same service layer as the REST API — per-suite
 authorization (`view` for a read, `edit` for a mutation) and failing-sample redaction apply
@@ -2637,7 +2637,7 @@ drift-checked in CI, so it cannot go stale the way an earlier hand-typed pass of
 
 The tools split three ways, not two:
 
-- **Read-only** (27) — reads gated on `view` where a suite is named; workspace-wide reads such as
+- **Read-only** (28) — reads gated on `view` where a suite is named; workspace-wide reads such as
   `list_suites` and `get_health_score` need only a signed-in user.
 - **Changes state** (18) — every one gates on `edit` access to the affected suite (schedule,
   binding and incident tools via the suite they target); `import_suite` additionally requires
@@ -3026,17 +3026,42 @@ Marquez row).
 with `[upstream_column, downstream_column]` pairs, stored on the edge row (`lineage_edges.columns`)
 and **merged union-wise** on incremental refreshes (a log window only re-observes pairs whose
 queries ran inside it; forgetting the rest would be a prune the never-prune regime forbids). A
-separately-gated `column_lineage` degrades honestly: table edges still land, with a note. The asset
-page shows the mappings per direct edge; an edge whose far endpoint is outside the viewer's grants
-arrives **count-only** from the server (a hidden asset's column names are
-schema disclosure) and renders as a locked box. Snowflake's column grain lives in `ACCESS_HISTORY`
-(Enterprise) and is honestly absent on Standard.
+separately-gated `column_lineage` degrades honestly: table edges still land, with a note.
+Snowflake's column grain comes from `ACCESS_HISTORY`'s `objects_modified[].columns[].directSources`
+on **every** tier — including when `GET_LINEAGE` answers, whose table-domain rows carry no column
+names — as a refinement of the table edges, never a source of new ones; it only sees DML writes, so
+a view dependency never has pairs. Live-verified on an Enterprise account as a least-privileged
+reader role: the refinement runs on the `GET_LINEAGE` tier and records `captured`; an account whose
+writes are all COPY / `INSERT … VALUES` (empty `directSources`) and whose downstream layer is views
+honestly reads `none_recorded` on every edge. Column lineage *through views* exists in Snowflake
+(`GET_LINEAGE` at `COLUMN` domain) but is not read yet.
+
+**Why an edge has no pairs is always stated** (ADR 0034 amendment 2026-09-27). Every
+lineage edge on the asset page, `GET /assets/{id}` and MCP `get_asset` carries a
+`column_coverage`:
+
+| `column_coverage` | Meaning |
+|---|---|
+| `recorded` | Column pairs were observed on this edge — the only state that supports a column-level claim. |
+| `none_recorded` | The source reads column lineage and its last pull succeeded, but recorded none for this edge (a view, or a write outside the window). Not proof the columns are unrelated. |
+| `unavailable` | The source's column-lineage read failed on its last refresh (grant, outage). |
+| `unknown` | The source has not refreshed since column coverage was tracked. |
+| `not_captured` | This source (dbt manifest, catalog pull) never carries column detail. |
+
+**Tracing one column.** The asset page's *Column lineage* card traces a single column across every
+hop — upstream to where it **originates**, downstream to every column **derived from it** — backed by
+`GET /api/v1/assets/{asset_id}/column-lineage?column=…&direction=upstream|downstream|both`
+and the MCP tool `trace_column_lineage`. The column is matched with its engine's case fold
+(Snowflake UPPER, Unity Catalog lower). Any edge on the way without `recorded` pairs is listed as a
+**gap** the column may cross; the trace is then marked partial and an origin behind a gap is
+*unconfirmed*. Column names are workspace-visible topology (ADR 0037), so every member can trace.
+A pair records derivation, not equality — `amount → daily_revenue` is an aggregate.
 
 **Snowflake — a tier ladder, richest first** (from the 2026-07-17 live spike):
 
 | Tier | Grain | Edition | Notes |
 |---|---|---|---|
-| `GET_LINEAGE` | object-level traversal (+ column grain) | Enterprise+ | Tried first: its absence is a clean, catchable `0A000`, the best preflight signal. It is a real **per-seed traversal** — seeds come from the ADR 0040 enumeration seam (`WAREHOUSE_LINEAGE_MAX_SEEDS`, default 500, loud truncation), each walked upstream **and** downstream at distance 2. Every returned row is a DIRECT source→target edge (`distance` is hops-from-seed, not a claim about the seed); MASKED (`***`) endpoints and non-table domains (STAGE) are dropped. A tier that enumerates no seeds, or observes no rows, **descends** rather than returning a confident empty — this tier prunes. |
+| `GET_LINEAGE` | object-level traversal (table grain; column pairs from `ACCESS_HISTORY`) | Enterprise+ | Tried first: its absence is a clean, catchable `0A000`, the best preflight signal. It is a real **per-seed traversal** — seeds come from the ADR 0040 enumeration seam (`WAREHOUSE_LINEAGE_MAX_SEEDS`, default 500, loud truncation), each walked upstream **and** downstream at distance 2. Every returned row is a DIRECT source→target edge (`distance` is hops-from-seed, not a claim about the seed); MASKED (`***`) endpoints and non-table domains (STAGE) are dropped. A tier that enumerates no seeds, or observes no rows, **descends** rather than returning a confident empty — this tier prunes. |
 | `ACCESS_HISTORY` | column/statement | Enterprise+ | **Present-but-empty on Standard** — so emptiness is corroborated against `QUERY_HISTORY` (edition-gated vs genuinely idle), never read as "no lineage". ~2–3h lag. |
 | `OBJECT_DEPENDENCIES` | view-level | all editions | The floor — live-verified on the demo account (RETAIL→STG→ANALYTICS chain). Views/matviews/dynamic-tables; no column detail. |
 
@@ -3335,6 +3360,15 @@ the per-PR history lives in the repo's commit log and pull requests.
   a superseded preview request instead of merely ignoring its answer.
 
 ### Added
+
+- **Trace one column through lineage.** The asset page's *Column lineage* card (and
+  `GET /assets/{id}/column-lineage`, MCP `trace_column_lineage`) follows a single column up to
+  where it originates and down to every column derived from it. Every lineage edge now says
+  why it has no column pairs when it has none (`column_coverage`: none recorded · unavailable ·
+  unknown · not captured), so an empty column trace is never presented as "unrelated".
+  Snowflake column pairs are now read from `ACCESS_HISTORY` even when `GET_LINEAGE` answers —
+  previously an Enterprise account recorded none. See
+  [orchestration & lineage](../guides/orchestration.md).
 
 - **Browse for a run target instead of typing it.** On a Unity Catalog suite, **Browse
   catalog…** walks catalogs → schemas → tables and fills all three fields; on an ADLS Gen2 or
@@ -3706,22 +3740,26 @@ five mechanisms:
    warehouse's OWN lineage views straight into `lineage_edges` with `source='snowflake'` /
    `'unity_catalog'`: Snowflake `OBJECT_DEPENDENCIES` (all editions) → `ACCESS_HISTORY` /
    `GET_LINEAGE` (Enterprise); Unity Catalog `system.access.table_lineage`. First-hand, no
-   dbt hop. Daily beat, **dark by default** (`WAREHOUSE_LINEAGE_ENABLED` — the views need a
-   grant); the tier that answered and any degraded/failing state surface on the asset's
+   dbt hop. Daily beat, **on by default** (`WAREHOUSE_LINEAGE_ENABLED=false` opts out — a
+   principal missing the grants degrades per connection); the tier that answered and any
+   degraded/failing state surface on the asset's
    lineage graph so a view-level-only or stale graph never reads as a confident complete
    one ([details](../guides/orchestration.md#lineage-from-the-warehouse-the-warehouselineageprovider-seam)).
    **Column grain:** where the warehouse offers it (UC
    `system.access.column_lineage` — live-verified), the pull refines each table edge with
    `upstream column → downstream column` pairs, shown on the asset page to every
-   workspace member (ADR 0037 — column names are schema metadata, i.e. identity).
-   Snowflake's column grain lives in `ACCESS_HISTORY` and `GET_LINEAGE` (Enterprise) and reports
-   honestly unavailable on Standard. **Snowpark scratch is stitched, not dropped:** a
+   workspace member (ADR 0037 — column names are schema metadata, i.e. identity), and any one
+   column can be **traced** to its origin or its downstream columns. An edge without pairs
+   always says why (`column_coverage`: none recorded · unavailable · unknown · not captured).
+   Snowflake's column grain comes from `ACCESS_HISTORY` on every tier (`GET_LINEAGE` rows are
+   table-grain) and reports honestly unavailable where the grant is missing. **Snowpark scratch is
+   stitched, not dropped:** a
    pipeline that materializes through `SNOWPARK_TEMP_*` yields the real `A → B` edge, with the
    scratch object never materialized as an asset.
 
 | Datasource | Asset entity | ① Run-stamping | ② dbt manifest | ③ OL emission | ④ Catalog pull | ⑤ Warehouse-native |
 |---|---|:-:|:-:|:-:|:-:|:-:|
-| Snowflake | `snowflake://{org}-{account}` / `DB.SCHEMA.TABLE` | ✅ | ✅ (live-verified) | ✅ | ✅ | ✅ (OBJECT_DEPENDENCIES live; ACCESS_HISTORY + **GET_LINEAGE per-seed traversal** Enterprise, both **+ column grain**, built on a live prod-Enterprise capture) |
+| Snowflake | `snowflake://{org}-{account}` / `DB.SCHEMA.TABLE` | ✅ | ✅ (live-verified) | ✅ | ✅ | ✅ (OBJECT_DEPENDENCIES live; ACCESS_HISTORY + **GET_LINEAGE per-seed traversal** Enterprise, built on a live prod-Enterprise capture; **+ column grain from ACCESS_HISTORY** on both tiers, live-verified; view column lineage not yet read) |
 | Unity Catalog | `unitycatalog://{host}` / `catalog.schema.table` | ✅ | ✅ (adapter-aware) | ✅ | ✅ | ✅ (system.access.table_lineage, incremental; **+ column grain, live-verified**) |
 | ADLS Gen2 (files) | `abfss://{container}@{account}.dfs.core.windows.net` / pattern **base prefix** | ✅ | — | ✅ | ✅ | — |
 | S3 (files) | `s3://{bucket}` / base prefix | ✅ | — | ✅ | ✅ | — |
@@ -3883,8 +3921,8 @@ run against), and the description is the opening of what an AI assistant is show
 
 | | Count |
 |---|---|
-| Tools | 50 |
-| Read-only | 27 |
+| Tools | 51 |
+| Read-only | 28 |
 | Changes state | 18 |
 | Live probe | 5 |
 
@@ -3922,6 +3960,7 @@ connection mutation, and a credential must never transit an LLM.
 | `list_suite_channels` | `view` on the suite | List the reusable notification channels linked to one suite. |
 | `list_suites` | any signed-in user | List the data-quality suites the current user can access. |
 | `list_trigger_bindings` | any signed-in user; suite-scoped when a suite is named | List the orchestration triggers that run a suite when a pipeline succeeds. |
+| `trace_column_lineage` | any signed-in user | Follow one column of an asset through column-level lineage, upstream and/or downstream. |
 
 ## Changes state
 
@@ -8482,7 +8521,7 @@ Each ADR captures a single significant architecture decision: the context, the d
 | [0031](0031-oss-byol-distribution-licensing.md) | Distribution licensing — **free open-source (MIT) + customer-deployed BYOL**; no entitlement/license-key (amends 0013: supersedes its §5 licensing-model line + licensed-revenue framing); marketplace listings are free offers of the OSS artifacts; THIRD-PARTY-NOTICES/SBOM in images + releases; standing no-strong-copyleft dependency guardrail (CONTRIBUTING rule 40) | Accepted |
 | [0032](0032-email-otp-signin.md) | Email OTP sign-in — passwordless **third authenticator** behind `get_current_user` (`dq_sess_` cookie sessions, PAT-style sha256-at-rest); auth-mode ladder `bypass · otp · oidc`, fail-closed startup; mandatory signup allowlist (no open registration); one user row per normalized email (aad_object_id → nullable, two-step); separate `AUTH_EMAIL_*` mailer + SMTP pre-flight; hard prereq = the rate-limiting auth slice; amends 0026 (email-identity slice) + 0028 (mode enum + cookie credential) | Accepted (amended by 0033 — signup default role + widened trust statement) |
 | [0033](0033-workspace-roles-rbac.md) | Workspace roles — **Admin / Member / Viewer** as stored `users.role` on the two-axis model (role × per-suite ladder, ladder untouched); **connection mutations Admin-only** (closes the workspace-global hole, breaking for Members); Viewer capped at `view`; `WORKSPACE_ADMIN_EMAILS` demotes to bootstrap/break-glass; in-app role management + last-admin guard; amends 0027 (admin source) + 0032 (signup default role) | Accepted |
-| [0034](0034-asset-entity-openlineage-identity-lineage-pull.md) | Assets & lineage (gap G-d design) — first-class **asset entity keyed by the OpenLineage dataset-naming spec** (namespace+name adopted verbatim, dbt-ol/Spark byte-compatible; DEV/QA = distinct assets, UI groups over `env`); **lineage emitted/pulled, never built** — OL emission w/ quality facets → dbt `manifest.json` → `lineage_edges` cache → `LineageProvider` seam (Marquez reference; OpenMetadata SDK license-blocked per 0031); incidents anchor to assets (one open per asset+check, evidence-card payload); asset/incident authz derived from suite grants | Accepted |
+| [0034](0034-asset-entity-openlineage-identity-lineage-pull.md) | Assets & lineage (gap G-d design) — first-class **asset entity keyed by the OpenLineage dataset-naming spec** (namespace+name adopted verbatim, dbt-ol/Spark byte-compatible; DEV/QA = distinct assets, UI groups over `env`); **lineage emitted/pulled, never built** — OL emission w/ quality facets → dbt `manifest.json` → `lineage_edges` cache → `LineageProvider` seam (Marquez reference; OpenMetadata SDK license-blocked per 0031); incidents anchor to assets (one open per asset+check, evidence-card payload); asset/incident authz derived from suite grants. *Amended 2026-09-27:* column grain stays a refinement on the table edge with a per-edge `column_coverage` reason; Snowflake column pairs come from `ACCESS_HISTORY` on every tier; placement/dedup advisory, classification propagation additive-only | Accepted |
 | [0035](0035-request-rate-limiting.md) | Request rate limiting — **app-level innermost HTTP middleware** (portable per 0028/0013, covers the `/mcp` mount a dependency can't, principal-aware where nginx isn't); fixed-window Redis counter (window index in the key → no EXPIRE race), **no new dep** (INCR over slowapi/limits); **fail-open**; endpoint classes `webhook`(per-IP) · `default`(per-`sha256(token)`) · `unauth`(per-IP), raw token never keyed/logged; `/healthz`+`OPTIONS` exempt; headers on 429 only; nginx `limit_req` out of scope; hard prereq for 0032's OTP | Accepted |
 | [0036](0036-connection-anchored-check-engines.md) | Connection-anchored check engines — **engines are capabilities of connections** (GX universal; `dmf`⇔snowflake, `dqx`⇔unity_catalog, `dataplex`⇔future bigquery); **`check.engine`** per check (supersedes 0003's suite-level `gx \| dqx` toggle); type gates the offer, connection **probe** validates reality (classified remediation, never raw errors); **`kind` ⊥ `engine`** (engines = alternate evaluators of existing kinds; engine-aware backend catalog lands with the dimension-classification work); lifecycle validated save/run/import-time (`error` status, never silent); DMF first build, DQX/Dataplex trigger-gated; scheduled-native ingest deferred to a future ADR | Accepted (amends 0003; DMF first native build; DQX/Dataplex trigger-gated) |
 | [0037](0037-workspace-visible-asset-identity.md) | Workspace-visible asset identity — **asset identity + lineage topology (incl. column pairs) visible to every member**; aggregate verdicts (health rollup, future scorecard) **workspace-true** (all composing suites, one number for all viewers); grant boundary moves to **suite-derived detail** (composing-suite names/runs/results/samples/incidents — ADR 0027 ladder unchanged, suite-grain 404-no-leak intact); asset detail 200s for all, `restricted_suite_count` replaces redaction; supersedes an earlier identity-redaction regime (amends 0034 decision 5) | Accepted |
@@ -11914,6 +11953,72 @@ never intended as the primary path.
 path already existed and was exercised in testing before this flip. Set
 `WAREHOUSE_LINEAGE_ENABLED=false` to opt a deployment back out wholesale (e.g. a principal
 known in advance to lack the grants everywhere, or a cost-sensitive `ACCOUNT_USAGE` budget).
+
+## Amendment (2026-09-27) — column grain: a refinement with a coverage state, and its consumers
+
+Column pairs were already pulled (UC `system.access.column_lineage`, Snowflake
+`ACCESS_HISTORY.objects_modified[].columns[].directSources`) and stored on the table edge as
+`lineage_edges.columns`. Making column-level lineage a first-class capability — tracing, plus
+placement, dedup and semantic propagation for check suggestions — forced four decisions the
+original column slice left implicit.
+
+**1. Column grain stays a refinement on the table edge — no column-edge table, no `grain`
+discriminator.** A pair is only meaningful beside the table edge that carries it, so storing it on
+that row makes the edge's provenance key and prune regime (§3) govern its pairs for free. A
+separate column-grain table would need its own dedup and prune rules and could disagree with the
+table graph (a column edge surviving the prune of its own table edge). Traversal reads the JSONB
+per BFS level (`lineage/columns.py`), bounded by the per-edge cap (500 pairs), a depth cap (25) and
+a node cap (500). *Revisit* only if a workspace-wide column query ("every downstream of column X
+across 50k assets") needs an index — that would be a derived table rebuilt from these rows, never a
+second source of truth.
+
+**2. Absence of pairs has a stated reason (the never-a-silent-empty rule, at column grain).** An edge without pairs
+used to be indistinguishable from "the columns are unrelated". Each warehouse pull now stamps
+every edge it observed with whether it looked at column grain (`lineage_edges.column_grain`:
+`captured` · `unavailable` · `not_supported`; NULL = never recorded). The stamp is **per edge, not
+per connection**: an incremental source reads column lineage only for the window an edge was seen
+in, so a later successful pull over other edges must not relabel an edge nobody looked at; a merge
+keeps `captured` once any pull has looked. Every edge then reports a `column_coverage`:
+`recorded` · `none_recorded` (the source reads column lineage, recorded none here — still not proof
+of no dependency: a Snowflake view is never a DML write, and a write outside the window is gone) ·
+`unavailable` (the column read failed) · `unknown` (not refreshed since this was tracked) ·
+`not_captured` (dbt manifest / catalog pull — never column-grain). Several sources on one asset pair
+combine to the strongest statement. A column trace treats **every non-`recorded` edge as a gap**
+the column may cross, reports it, and marks the trace incomplete and any origin behind it
+unconfirmed. Only `recorded` supports a column-level claim, on REST, MCP and the UI alike.
+
+**3. Snowflake's column grain comes from `ACCESS_HISTORY` on every tier.** The feature matrix
+claimed `GET_LINEAGE` carries column grain; every captured live row is table-grain, because the
+traversal runs at `TABLE` domain, where the column fields are NULL. On an Enterprise account — where
+`GET_LINEAGE` answers and the `ACCESS_HISTORY` tier was therefore never reached — Snowflake has
+been recording **no column pairs at all**. `GET_LINEAGE`'s table edges are now refined with the
+`ACCESS_HISTORY` pairs (the existing live-tuned parser), as a refinement only: a DML-only edge the traversal did
+not return is not added, so the table-level prune observation is unchanged. A failed refinement
+leaves the table edges intact and records `unavailable`; a *transient* failure additionally stops
+the snapshot refresh from replacing stored pairs (it merges instead), while a confirmed denial
+still replaces — pairs clear rather than freeze once a grant is revoked. Live-verified (2026-09-27, a
+least-privileged reader role): the refinement runs on the GET_LINEAGE tier and records `captured`,
+but that account's writes carry no `directSources` and its downstream layer is views, so every edge
+honestly reads `none_recorded`. `GET_LINEAGE` at `COLUMN` domain *does* return view column lineage
+(probed live); reading it is a separate, budgeted follow-up — the coverage vocabulary already
+accommodates edges moving from `none_recorded` to `recorded`.
+
+**4. The column name is matched with its engine's unquoted-identifier fold** (§6's fold, applied to
+the column: Snowflake UPPER, Unity Catalog lower, exact elsewhere). The column's existence on the
+asset is not verified — DataQ holds no schema snapshot to check against — so a misspelt name traces
+to nothing and must be reported as "nothing recorded", never "unrelated".
+
+**Consumers** (each shipped separately):
+
+- **Suggestion placement / dedup is advisory, never a silent drop.** A pair records *derivation*,
+  not equality — `amount → daily_revenue` is an aggregate — so only a **pass-through** chain (the
+  same folded column name on every hop) may say "an equivalent check already covers this upstream".
+  A derived column gets its provenance shown, nothing more. The reviewer decides.
+- **Semantic propagation is additive-only.** A column whose upstream origin is classified sensitive
+  inherits `sensitive` through recorded pairs; nothing ever inherits `public`, and a column's own
+  warehouse verdict always wins. Propagation can therefore only add masking relative to the warehouse-tag
+  classification ladder, never remove it. DQ dimensions (ADR 0038) are not propagated: a dimension classifies a
+  *check*, not a column, so there is nothing upstream to inherit.
 
 
 ---

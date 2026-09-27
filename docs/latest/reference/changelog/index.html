@@ -2433,6 +2433,16 @@ the per-PR history lives in the repo's commit log and pull requests.</p>
 <h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">¶</a></h3>
 <ul>
 <li>
+<p><strong>Trace one column through lineage.</strong> The asset page's <em>Column lineage</em> card (and
+  <code>GET /assets/{id}/column-lineage</code>, MCP <code>trace_column_lineage</code>) follows a single column up to
+  where it originates and down to every column derived from it. Every lineage edge now says
+  why it has no column pairs when it has none (<code>column_coverage</code>: none recorded · unavailable ·
+  unknown · not captured), so an empty column trace is never presented as "unrelated".
+  Snowflake column pairs are now read from <code>ACCESS_HISTORY</code> even when <code>GET_LINEAGE</code> answers —
+  previously an Enterprise account recorded none. See
+  <a href="../../guides/orchestration/">orchestration &amp; lineage</a>.</p>
+</li>
+<li>
 <p><strong>Browse for a run target instead of typing it.</strong> On a Unity Catalog suite, <strong>Browse
   catalog…</strong> walks catalogs → schemas → tables and fills all three fields; on an ADLS Gen2 or
   S3 suite, <strong>Browse files…</strong> (single file) or <strong>Browse folders…</strong> (batch prefix) walks the

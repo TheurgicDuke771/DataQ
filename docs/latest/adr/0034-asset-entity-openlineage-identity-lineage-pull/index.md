@@ -184,3 +184,69 @@ never intended as the primary path.
 path already existed and was exercised in testing before this flip. Set
 `WAREHOUSE_LINEAGE_ENABLED=false` to opt a deployment back out wholesale (e.g. a principal
 known in advance to lack the grants everywhere, or a cost-sensitive `ACCOUNT_USAGE` budget).
+
+## Amendment (2026-09-27) — column grain: a refinement with a coverage state, and its consumers
+
+Column pairs were already pulled (UC `system.access.column_lineage`, Snowflake
+`ACCESS_HISTORY.objects_modified[].columns[].directSources`) and stored on the table edge as
+`lineage_edges.columns`. Making column-level lineage a first-class capability — tracing, plus
+placement, dedup and semantic propagation for check suggestions — forced four decisions the
+original column slice left implicit.
+
+**1. Column grain stays a refinement on the table edge — no column-edge table, no `grain`
+discriminator.** A pair is only meaningful beside the table edge that carries it, so storing it on
+that row makes the edge's provenance key and prune regime (§3) govern its pairs for free. A
+separate column-grain table would need its own dedup and prune rules and could disagree with the
+table graph (a column edge surviving the prune of its own table edge). Traversal reads the JSONB
+per BFS level (`lineage/columns.py`), bounded by the per-edge cap (500 pairs), a depth cap (25) and
+a node cap (500). *Revisit* only if a workspace-wide column query ("every downstream of column X
+across 50k assets") needs an index — that would be a derived table rebuilt from these rows, never a
+second source of truth.
+
+**2. Absence of pairs has a stated reason (the never-a-silent-empty rule, at column grain).** An edge without pairs
+used to be indistinguishable from "the columns are unrelated". Each warehouse pull now stamps
+every edge it observed with whether it looked at column grain (`lineage_edges.column_grain`:
+`captured` · `unavailable` · `not_supported`; NULL = never recorded). The stamp is **per edge, not
+per connection**: an incremental source reads column lineage only for the window an edge was seen
+in, so a later successful pull over other edges must not relabel an edge nobody looked at; a merge
+keeps `captured` once any pull has looked. Every edge then reports a `column_coverage`:
+`recorded` · `none_recorded` (the source reads column lineage, recorded none here — still not proof
+of no dependency: a Snowflake view is never a DML write, and a write outside the window is gone) ·
+`unavailable` (the column read failed) · `unknown` (not refreshed since this was tracked) ·
+`not_captured` (dbt manifest / catalog pull — never column-grain). Several sources on one asset pair
+combine to the strongest statement. A column trace treats **every non-`recorded` edge as a gap**
+the column may cross, reports it, and marks the trace incomplete and any origin behind it
+unconfirmed. Only `recorded` supports a column-level claim, on REST, MCP and the UI alike.
+
+**3. Snowflake's column grain comes from `ACCESS_HISTORY` on every tier.** The feature matrix
+claimed `GET_LINEAGE` carries column grain; every captured live row is table-grain, because the
+traversal runs at `TABLE` domain, where the column fields are NULL. On an Enterprise account — where
+`GET_LINEAGE` answers and the `ACCESS_HISTORY` tier was therefore never reached — Snowflake has
+been recording **no column pairs at all**. `GET_LINEAGE`'s table edges are now refined with the
+`ACCESS_HISTORY` pairs (the existing live-tuned parser), as a refinement only: a DML-only edge the traversal did
+not return is not added, so the table-level prune observation is unchanged. A failed refinement
+leaves the table edges intact and records `unavailable`; a *transient* failure additionally stops
+the snapshot refresh from replacing stored pairs (it merges instead), while a confirmed denial
+still replaces — pairs clear rather than freeze once a grant is revoked. Live-verified (2026-09-27, a
+least-privileged reader role): the refinement runs on the GET_LINEAGE tier and records `captured`,
+but that account's writes carry no `directSources` and its downstream layer is views, so every edge
+honestly reads `none_recorded`. `GET_LINEAGE` at `COLUMN` domain *does* return view column lineage
+(probed live); reading it is a separate, budgeted follow-up — the coverage vocabulary already
+accommodates edges moving from `none_recorded` to `recorded`.
+
+**4. The column name is matched with its engine's unquoted-identifier fold** (§6's fold, applied to
+the column: Snowflake UPPER, Unity Catalog lower, exact elsewhere). The column's existence on the
+asset is not verified — DataQ holds no schema snapshot to check against — so a misspelt name traces
+to nothing and must be reported as "nothing recorded", never "unrelated".
+
+**Consumers** (each shipped separately):
+
+- **Suggestion placement / dedup is advisory, never a silent drop.** A pair records *derivation*,
+  not equality — `amount → daily_revenue` is an aggregate — so only a **pass-through** chain (the
+  same folded column name on every hop) may say "an equivalent check already covers this upstream".
+  A derived column gets its provenance shown, nothing more. The reviewer decides.
+- **Semantic propagation is additive-only.** A column whose upstream origin is classified sensitive
+  inherits `sensitive` through recorded pairs; nothing ever inherits `public`, and a column's own
+  warehouse verdict always wins. Propagation can therefore only add masking relative to the warehouse-tag
+  classification ladder, never remove it. DQ dimensions (ADR 0038) are not propagated: a dimension classifies a
+  *check*, not a column, so there is nothing upstream to inherit.
