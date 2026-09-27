@@ -319,7 +319,10 @@ Database with both auth modes.
 - **Names** resolve under the database's collation. On the usual case-insensitive collations
   any casing reaches the object; on a **case-sensitive** collation, a mixed-case *schema* in a
   run target is not supported (the check engine lower-cases it), though mixed-case tables and
-  columns are.
+  columns are. A **Fabric Warehouse** is case-sensitive by default, so keep its schema names
+  lower-case (or use `dbo`) until this is lifted. A comparison check's SQL side must also name
+  every computed column and leave out `ORDER BY` — SQL Server refuses both inside the derived
+  table DataQ reads it through.
 - **No column tags.** DataQ does not read SQL Server's sensitivity classifications
   (`sys.sensitivity_classifications`) yet — reading them needs a permission a reader login
   usually lacks, and without it the catalog view silently returns nothing, which DataQ would
