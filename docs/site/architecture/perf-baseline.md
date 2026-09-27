@@ -16,7 +16,7 @@
 | **Flat file Parquet** (ADLS) | full load into worker pandas | 5M rows (~131 MB parquet) | **5M → 10M** | 5M+: child SIGKILL; 10M killed the whole container |
 | **Unity Catalog** — audited ordinary expectations | **SQL pushdown** (`UC_SQL_PUSHDOWN=true`, the default) | **200M rows** (50M/100M/200M all green, worker memory flat) | none found — matches the Snowflake regime | n/a |
 | **Unity Catalog** — custom SQL (`unexpected_rows_expectation`) | **SQL batch**, unconditional (no pandas metric provider exists) | **200M rows** (worker memory flat, run alongside the pushdown checks above) | none found | n/a |
-| **Unity Catalog** — unaudited types / sampled suites | frame load (`read_sql_table`) | 1M rows | **1M → 2M** (the scan-cap guardrail now refuses 2M cleanly instead of OOM) | child SIGKILL past the size cap |
+| **Unity Catalog** — unaudited types / sampled suites | frame load (`read_sql_table`) | 1M rows | **1M → 2M** on a 6-column table (the scan-cap guardrail now refuses 2M cleanly instead of OOM); the cap counts rows, not width — a 9-column 1M-row table already costs 1,689 MiB, so the effective ceiling falls with width | child SIGKILL past the size cap |
 | **Apache Iceberg** (native, ADR 0030) | full snapshot via `pyiceberg` → Arrow | 2M rows | **2M → 5M** | worker replica OOM-killed + recreated |
 | **AWS S3** | same code as ADLS (`flatfile.py` is shared) | not run live (no S3 credentials remain) | expect ≡ ADLS | ≡ ADLS |
 
@@ -861,9 +861,50 @@ Pushdown lanes bypass admission for the suite's own batch: they hold no dataset 
 the worker, and charging them for one would serialise the cheapest work on the
 platform. They are **not** exempt from a comparison check, whose two sides
 materialise in the worker on every datasource — that estimate is added on top, and
-is the whole estimate on an otherwise-pushdown suite. Iceberg has no estimator yet
-— its `scan().count()` probe is tracked separately — and is logged as unmetered
-rather than counted as free.
+is the whole estimate on an otherwise-pushdown suite.
+
+**Iceberg** is sized from the same manifest plan its row-cap probe reads. That is
+metadata only, never a data read. It reserves the **larger** of two figures:
+planned rows × `RUN_ADMISSION_ROW_BYTES`, and data-file bytes × the format's
+expansion factor (Parquet 9×). Each figure alone is blind in a different way:
+
+- **Rows** are width-blind: a 40-column table costs the same as a 6-column one.
+- **File bytes** miss dictionary-encoded strings, which are tiny on disk and
+  full-width once read into memory.
+
+A table over `RUN_MAX_SCAN_ROWS_ICEBERG` reserves **nothing**, because the row-cap
+probe refuses it before any data is read. Even the cap's worth, 3M rows × 1 KiB
+at the defaults, would be about three times the whole budget, and would hold back
+a run that is certain to be refused until the worker drained.
+
+A suite of freshness/volume monitors answers from snapshot metadata and reserves
+nothing (`run_admission_iceberg_metadata_only`). The exception is a snapshot whose
+summary cannot prove there are no row-level deletes: merge-on-read, or a writer
+that omits the delete totals. There, the volume monitor falls back to a
+materialising `scan().count()`. That case is reserved for like a full read and
+logged as `run_admission_iceberg_monitor_fallback` with the reason. A freshness
+fallback caused by a data file that lacks column bounds is only visible by
+planning the scan. It reads a single column and is not reserved for.
+
+Measured on a local MinIO warehouse with a SQLite catalog, using the real
+`IcebergCheckRunner` and five expectations, one process per table. The actual
+figure is the peak RSS increase over the process baseline:
+
+| Table | Columns | Rows | Data files | Actual | Reserved | Basis |
+|---|---|---|---|---|---|---|
+| narrow | 6 | 1M | 17.5 MiB | 309 MiB | 977 MiB | rows |
+| narrow | 6 | 2M | 35.1 MiB | 430 MiB | 1,953 MiB | rows |
+| wide (random strings) | 20 | 1M | 108 MiB | 1,245 MiB | 977 MiB | rows |
+| wider (random strings) | 40 | 500k | 111 MiB | 1,230 MiB | 1,000 MiB | file bytes |
+| low-cardinality strings | 20 | 1M | 22.6 MiB | 1,058 MiB | 977 MiB | rows |
+
+The narrow table reserves 3–4.5× more than it uses, the same over-reservation
+the row factor has always carried. The wide shapes come in 8–22% under. Most of
+that gap is a fixed ~190 MiB per run, the intercept of the narrow 1M → 2M line,
+which no lane's estimate counts. Without that intercept the wide rows are within
+8%. Neither figure measures the width of a dictionary-heavy table exactly. The
+figures in the low-cardinality row show that, and it is the same row-count
+blindness the Unity Catalog frame lane has.
 
 #### Database growth — the reads a user waits on
 
@@ -958,7 +999,7 @@ for the row-boundary trim. Against the whole-object download this replaced, the
 vs 877 MiB) and less wall time; against the first, blindly-doubling version of
 the bounded read it is **half the peak RSS** (903 vs 1847 MiB) and **2.4× faster**.
 (The warehouse profiler's batched rank-join, the post-optimisation number this
-page records elsewhere, is not measured here — see the not-measured table
+page records elsewhere, is measured live in the Snowflake tiers section
 below.)
 
 ### Snowflake tiers — measured
@@ -982,6 +1023,77 @@ wall clock is mostly the 13 round trips, not the scan. Peak RSS here is the
 process baseline (GX and the connector loaded), the same ~380 MiB an empty run
 costs.
 
+### Column listing + profile — one warehouse login
+
+Redaction-policy suggestion (`suggest_policy_for_target` — the REST route, the
+MCP tool and the worker's auto-classify) and the LLM prompt builders (SQL
+generation, check suggestions) each list a table's columns and then profile
+them. Those used to be two separate connections, so two warehouse logins back to
+back against the same datasource; they now run inside
+`profile_service.shared_connection()`, which reuses one live connection per
+datasource for the whole block. SQL generation with `include_profile`
+and additional tables previously paid a login per list and per profile, and now
+pays one. After a failed statement inside the scope, the connection is rolled back
+and probed with `SELECT 1`. If it still answers it is kept; if not, it is dropped
+and the next call logs in again. The probe is needed because the Snowflake and
+Databricks dialects never mark a dropped session as invalidated. That was measured
+on Unity Catalog, where a dropped session still read `invalidated=False`.
+
+Measured live against Unity Catalog (Free Edition SQL warehouse, warm,
+`dataq_retail.gold.feedback_sentiment`, 7 columns), counting driver sessions
+opened:
+
+| Path | Sessions opened | Wall (run 1 / run 2) |
+|---|---|---|
+| Before — `list_columns` then `profile_connection` | 2 | 9.85 s / 4.20–4.48 s |
+| After — `suggest_policy_for_target` | **1** | 2.82–3.20 s |
+| After — the LLM prompt shape (`top_n=0` profile) | **1** | 2.27–2.58 s |
+
+The wall-clock gap is the second session's open, about 1.5 s here. The same
+count was measured live against Snowflake from its own `QUERY_HISTORY`, per
+session: **2** sessions before, **1** for both paths after. A session dropped
+mid-scope is replaced by exactly one fresh login.
+
+### Unity Catalog tiers — measured
+
+Run live on 2026-09-27 against the Databricks sample catalog (`samples.tpch.part`,
+exactly 1,000,000 rows, 9 columns, six of them strings), read-only, so nothing
+was created in the workspace. Both cases ran over the **same table and suite**,
+differing only in `UC_SQL_PUSHDOWN`. The suite keeps the standard shape — not-null
+on `p_partkey` and `p_name`, between on `p_size` (1–50) and `p_retailprice`
+(0–3000), unique on `p_partkey` — supplied through `PERF_UC_SUITE_JSON`, with
+`PERF_UC_ROWS_1M` giving the true row count. Medians of 3 on the development rig,
+plus one run of each inside the container rig (1 CPU / 2 GiB, swap off). Serverless
+Starter warehouse (2X-Small), warm after the first run.
+
+| Tier | Rows | Checks | Run wall | Worker peak RSS (dev / 2 GiB rig) | Statements | Rows materialised in the worker |
+|---|---|---|---|---|---|---|
+| UC, SQL pushdown | 1,000,000 | 5 / 5 pass | 12.0 s | 368 / 359 MiB | 17 | 0 |
+| UC, frame load (`UC_SQL_PUSHDOWN=false`) | 1,000,000 | 5 / 5 pass | 26–36 s | 2,021 / **1,689 MiB** | 9 | 1,000,000 |
+
+Pushed down, the worker holds nothing — `frame_rows` is a measured 0 at the
+reader seam and peak RSS is the empty-run process baseline, the Snowflake regime.
+The frame lane holds the whole table: +1,330 MiB over that baseline inside the
+2 GiB rig (the dev-box number is higher; macOS's allocator is not the deployed
+one). It survived the rig, with ~350 MiB to spare **for this one run in an
+otherwise idle process**.
+
+That margin is the knee. The 2026-08-22 campaign's 6-column order-lines table
+cost ~860 bytes/row on this lane; this 9-column table costs ~1,390. Both the
+1.5M-row `RUN_MAX_SCAN_ROWS` cap and `run_admission`'s 1,024-byte/row UC frame
+estimate count rows, not width, so a table of this shape under the cap can still
+OOM the worker. Until the estimate accounts for width, treat the 1.5M cap as
+calibrated for narrow tables only.
+
+The pushdown lane issues more statements (17 vs 9 — GX evaluates each pushed-down
+metric on the warehouse, where the frame lane computes them in pandas) and still finishes in under half
+the frame lane's wall time. The frame lane's wall clock was bimodal across six
+runs in two batches (26.1–27.2 s and 32.3–36.4 s) while its peak RSS stayed within
+16 MiB, so the spread is the warehouse's fetch path, not the worker; another
+session was issuing small queries against the same warehouse during the first
+batch. The Databricks driver reports no `rowcount`, so `result_rows_unknown`
+equals `statements` on both lanes rather than posting a false zero.
+
 ### What is explicitly NOT measured here
 
 A tier that simply does not appear in a result set reads as "nothing to report",
@@ -992,9 +1104,9 @@ what each one waits for is a live warehouse and the environment naming it:
 | Tier | How it runs | Environment it needs |
 |---|---|---|
 | Snowflake 1M / 50M, pushdown — **measured above** | `SnowflakeCheckRunner.run_checks`, the same five expectations as every other rung (or `PERF_SF_SUITE_JSON` for a table the harness did not build) | `PERF_SF_ACCOUNT` `PERF_SF_USER` `PERF_SF_ROLE` `PERF_SF_DATABASE` `PERF_SF_SCHEMA` `PERF_SF_WAREHOUSE` `PERF_SF_TABLE_1M` / `PERF_SF_TABLE_50M`, secret in `PERF_SF_SECRET` |
-| Unity Catalog 1M, pushdown **and** frame-load | `UnityCatalogCheckRunner.run_checks` twice over the same table, the two cases differing only in `UC_SQL_PUSHDOWN` — the clean isolated comparison | `PERF_UC_WORKSPACE_URL` `PERF_UC_WAREHOUSE_ID` `PERF_UC_CATALOG` `PERF_UC_SCHEMA` `PERF_UC_TABLE_1M`, secret in `PERF_UC_SECRET` |
-| Iceberg 1M, native `pyiceberg` snapshot | `IcebergCheckRunner.run_checks` against a real catalog | `PERF_ICEBERG_CATALOG_JSON` (the connection config) `PERF_ICEBERG_TABLE`, optional secret in `PERF_ICEBERG_SECRET` |
-| Wide-table profiler on a warehouse (the batched rank-join) | `profile_service.profile_table`; the column listing is done first and is outside the clock | the Snowflake set above plus `PERF_SF_WIDE_TABLE` |
+| Unity Catalog 1M, pushdown **and** frame-load — **measured above** | `UnityCatalogCheckRunner.run_checks` twice over the same table, the two cases differing only in `UC_SQL_PUSHDOWN` — the clean isolated comparison (or `PERF_UC_SUITE_JSON` + `PERF_UC_ROWS_1M` for a table the harness did not build) | `PERF_UC_WORKSPACE_URL` `PERF_UC_WAREHOUSE_ID` `PERF_UC_CATALOG` `PERF_UC_SCHEMA` `PERF_UC_TABLE_1M`, secret in `PERF_UC_SECRET` |
+| Iceberg 1M, native `pyiceberg` snapshot — **still not measured** (the harness catalog was unreachable when the other tiers ran) | `IcebergCheckRunner.run_checks` against a real catalog | `PERF_ICEBERG_CATALOG_JSON` (the connection config) `PERF_ICEBERG_TABLE`, optional secret in `PERF_ICEBERG_SECRET` |
+| Wide-table profiler on a warehouse (the batched rank-join) — **measured above** | `profile_service.profile_table`; the column listing is done first and is outside the clock | the Snowflake set above plus `PERF_SF_WIDE_TABLE` |
 
 Every one of them emits `statements` (gated: growth is a regression), wall clock,
 rows/s and the harness's own peak RSS. `frame_rows` — rows actually materialised
@@ -1007,9 +1119,10 @@ Secrets are read from the environment at run time only; a skip reason names the
 variable that is missing and never its value, and a test asserts no configured
 secret reaches an emitted row.
 
-The earlier sections of this page carry live warehouse numbers from the 2026-07
-and 2026-08 campaigns; what is missing is those tiers *inside the budget*, so a
-regression in them would be caught rather than re-measured by hand.
+The Snowflake, Unity Catalog and warehouse-profiler rows are now in the committed
+`baseline.json`, so `check --tag warehouse` against a configured warehouse gates
+their `statements` and `checks_evaluated` rather than leaving a regression to be
+re-measured by hand. Only the live Iceberg tier still emits `not_measured`.
 
 ### The Iceberg memory curve — local, and run under the real limit
 

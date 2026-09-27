@@ -13,7 +13,13 @@ from cryptography.hazmat.primitives import serialization
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from backend.app.core.secrets import SecretStore
-from backend.app.datasources.base import CheckOutcome, CheckSpec, MonitorSpec, SuiteOutcome
+from backend.app.datasources.base import (
+    CheckOutcome,
+    CheckSpec,
+    MonitorSpec,
+    SuiteOutcome,
+    ValueSignalGate,
+)
 
 # GX-translation machinery is shared across runners (see `gx_runner`); re-exported
 # here so existing importers (and tests) keep resolving these from `snowflake`.
@@ -159,6 +165,8 @@ class SnowflakeCheckRunner:
     # Native engines this runner evaluates (ADR 0036): the run path routes a check whose `engine` is
     # advertised here to `run_native_check`; anything else lands as a classified per-check error.
     supported_native_engines: ClassVar[frozenset[str]] = frozenset({DMF_ENGINE})
+    # The run path hands a `value_signal_gate` only to runners advertising it (#2014).
+    accepts_value_signal_gate: ClassVar[bool] = True
 
     def __init__(self, config: SnowflakeConfig, secret: str) -> None:
         self._config = config
@@ -192,6 +200,7 @@ class SnowflakeCheckRunner:
         schema: str | None,
         checks: list[CheckSpec],
         index_columns: list[str] | None = None,
+        value_signal_gate: ValueSignalGate | None = None,
     ) -> SuiteOutcome:
         context = gx.get_context(mode="ephemeral")
         if self._config.auth_type == "key_pair":
@@ -229,6 +238,7 @@ class SnowflakeCheckRunner:
             # unexpected_index_column_names path accepts the authored (upper) casing and keys
             # the locators by it — folding would lowercase the locator keys users see.
             index_columns=index_columns,
+            value_signal_gate=value_signal_gate,
         )
 
     def run_native_check(

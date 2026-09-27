@@ -26,6 +26,8 @@ DMF_COLUMN_METRICS: dict[str, str] = {
     "dmf:null_percent": "NULL_PERCENT",
     "dmf:duplicate_count": "DUPLICATE_COUNT",
     "dmf:unique_count": "UNIQUE_COUNT",
+    "dmf:blank_count": "BLANK_COUNT",
+    "dmf:future_timestamp_percent": "FUTURE_TIMESTAMP_PERCENT",
 }
 DMF_EXPECTATION_TYPES = tuple(DMF_COLUMN_METRICS)
 # Higher-is-worse metrics band with thresholds; unique_count degrades DOWNWARD
@@ -246,6 +248,24 @@ def _classify_probe_failure(exc: Exception) -> dict[str, Any]:
     )
 
 
+_TEMPORAL_TYPES = "DATE, TIMESTAMP_LTZ and TIMESTAMP_TZ columns only"
+_ARGUMENT_TYPE_GUIDANCE: dict[str, str] = {
+    "FUTURE_TIMESTAMP_PERCENT": (
+        f"Snowflake's FUTURE_TIMESTAMP_PERCENT data metric function accepts {_TEMPORAL_TYPES} "
+        "— this column's type (commonly TIMESTAMP_NTZ) is not supported by the DMF."
+    ),
+    "BLANK_COUNT": (
+        "Snowflake's BLANK_COUNT data metric function accepts VARCHAR columns only — "
+        "point the check at a string column."
+    ),
+    "FRESHNESS": (
+        f"Snowflake's FRESHNESS data metric function accepts {_TEMPORAL_TYPES} — this "
+        "column's type (commonly TIMESTAMP_NTZ) is not supported by the DMF. Use the "
+        "GX-engine freshness monitor for this column instead."
+    ),
+}
+
+
 def _classify_dmf_error(exc: Exception) -> str:
     """Fixed guidance for the DMF failure shapes live testing surfaced —
     Snowflake's own messages either mislead when generically classified (an
@@ -253,13 +273,10 @@ def _classify_dmf_error(exc: Exception) -> str:
     the author can only fix by knowing the platform rule.
     """
     text = str(exc)
-    if "Invalid argument types" in text and "FRESHNESS" in text:
-        return (
-            "Snowflake's FRESHNESS data metric function accepts DATE, "
-            "TIMESTAMP_LTZ and TIMESTAMP_TZ columns only — this column's type "
-            "(commonly TIMESTAMP_NTZ) is not supported by the DMF. Use the "
-            "GX-engine freshness monitor for this column instead."
-        )
+    if "Invalid argument types" in text:
+        for function, guidance in _ARGUMENT_TYPE_GUIDANCE.items():
+            if function in text:
+                return guidance
     if "invalid identifier" in text or "does not exist or not authorized" in text:
         # The second shape is Snowflake's missing-TABLE error (002003) — its "or not authorized"
         # tail must not fall through to the privilege branch below.

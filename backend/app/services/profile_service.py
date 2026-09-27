@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Generator, Mapping
-from contextlib import contextmanager
+from collections.abc import Callable, Generator, Iterator, Mapping
+from contextlib import AbstractContextManager, contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -376,6 +377,101 @@ def _open_connection(connection: Connection, secret_store: SecretStore) -> Gener
         engine.dispose()
 
 
+class _SharedConnections:
+    """Live connections held open for one `shared_connection` scope, one per datasource."""
+
+    def __init__(self) -> None:
+        self._live: dict[Any, tuple[Any, AbstractContextManager[Any]]] = {}
+
+    @staticmethod
+    def _key(connection: Connection) -> Any:
+        return connection.id if connection.id is not None else id(connection)
+
+    def acquire(self, connection: Connection, secret_store: SecretStore) -> Any:
+        key = self._key(connection)
+        held = self._live.get(key)
+        if held is not None:
+            return held[0]
+        opener = _open_connection(connection, secret_store)
+        conn = opener.__enter__()
+        self._live[key] = (conn, opener)
+        return conn
+
+    def recover(self, connection: Connection, conn: Any) -> None:
+        """After a failed statement: roll back and keep a live connection, drop a dead one.
+
+        Liveness is probed, not read off ``invalidated``: the Snowflake and Databricks dialects
+        do not classify disconnects, so a dropped session is never flagged there.
+        """
+        if not (getattr(conn, "invalidated", False) or getattr(conn, "closed", False)):
+            _recover_transaction(conn)
+            try:
+                conn.execute(select(literal_column("1"))).close()
+                return
+            except Exception as exc:
+                log.warning("profile_shared_connection_dropped", error_type=type(exc).__name__)
+            # Discard without the pool's reset-on-return, which would ROLLBACK on a dead session.
+            try:
+                conn.invalidate()
+            except Exception as exc:
+                log.warning(
+                    "profile_shared_connection_invalidate_failed", error_type=type(exc).__name__
+                )
+        held = self._live.pop(self._key(connection), None)
+        if held is not None:
+            self._close(held[1])
+
+    @staticmethod
+    def _close(opener: AbstractContextManager[Any]) -> None:
+        try:
+            opener.__exit__(None, None, None)
+        except Exception as exc:
+            log.warning("profile_shared_connection_close_failed", error_type=type(exc).__name__)
+
+    def close(self) -> None:
+        while self._live:
+            _, (_, opener) = self._live.popitem()
+            self._close(opener)
+
+
+_SHARED_CONNECTIONS: ContextVar[_SharedConnections | None] = ContextVar(
+    "profile_shared_connections", default=None
+)
+
+
+@contextmanager
+def shared_connection() -> Iterator[None]:
+    """Reuse one warehouse login per datasource connection for every SQL list/profile
+    call inside this block (#1645). Opens lazily; nested scopes join the outer one.
+    """
+    if _SHARED_CONNECTIONS.get() is not None:
+        yield
+        return
+    shared = _SharedConnections()
+    token = _SHARED_CONNECTIONS.set(shared)
+    try:
+        yield
+    finally:
+        _SHARED_CONNECTIONS.reset(token)
+        shared.close()
+
+
+@contextmanager
+def _datasource_connection(connection: Connection, secret_store: SecretStore) -> Generator[Any]:
+    """`_open_connection`, or the scope's already-open one inside `shared_connection`."""
+    shared = _SHARED_CONNECTIONS.get()
+    if shared is None:
+        with _open_connection(connection, secret_store) as conn:
+            yield conn
+        return
+    conn = shared.acquire(connection, secret_store)
+    try:
+        yield conn
+    except BaseException:
+        shared.recover(connection, conn)
+        raise
+
+
 # ───────────────────────── orchestration ───────────────────────────
 
 
@@ -537,7 +633,7 @@ def profile_table(
         validate_identifier(col)
 
     try:
-        with _open_connection(connection, secret_store) as conn:
+        with _datasource_connection(connection, secret_store) as conn:
             # A catalog-qualified (3-part, Unity Catalog) target needs the live connection's dialect
             # to quote the catalog/schema (#936).
             dialect = conn.dialect if catalog is not None else None
@@ -947,7 +1043,7 @@ def list_table_columns(
     validate_identifier(effective_schema)
 
     try:
-        with _open_connection(connection, secret_store) as conn:
+        with _datasource_connection(connection, secret_store) as conn:
             dialect = conn.dialect if catalog is not None else None
             result = conn.execute(build_columns_query(effective_schema, table, catalog, dialect))
             return list(result.keys())
@@ -1040,29 +1136,32 @@ def suggest_policy_for_target(
     top_n: int = 20,
     secret_store: SecretStore,
 ) -> dict[str, Any]:
-    """List → profile → classify a target's columns into a redaction-policy suggestion."""
-    columns = list_columns(
-        connection,
-        session=session,
-        table=table,
-        schema=schema,
-        catalog=catalog,
-        namespace=namespace,
-        path=path,
-        file_format=file_format,
-        secret_store=secret_store,
-    )
-    result = profile_connection(
-        connection,
-        session=session,
-        columns=columns,
-        top_n=top_n,
-        table=table,
-        schema=schema,
-        catalog=catalog,
-        namespace=namespace,
-        path=path,
-        file_format=file_format,
-        secret_store=secret_store,
-    )
+    """List → profile → classify a target's columns into a redaction-policy suggestion,
+    under one warehouse login (#1645).
+    """
+    with shared_connection():
+        columns = list_columns(
+            connection,
+            session=session,
+            table=table,
+            schema=schema,
+            catalog=catalog,
+            namespace=namespace,
+            path=path,
+            file_format=file_format,
+            secret_store=secret_store,
+        )
+        result = profile_connection(
+            connection,
+            session=session,
+            columns=columns,
+            top_n=top_n,
+            table=table,
+            schema=schema,
+            catalog=catalog,
+            namespace=namespace,
+            path=path,
+            file_format=file_format,
+            secret_store=secret_store,
+        )
     return derive_column_policy(result.columns)

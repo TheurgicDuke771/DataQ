@@ -123,15 +123,13 @@ def fold_reflection_keyed_columns(
     for spec in checks:
         column_list = spec.kwargs.get("column_list")
         if spec.expectation_type in reflection_keyed_types and isinstance(column_list, list):
-            spec = CheckSpec(
-                expectation_type=spec.expectation_type,
-                kwargs={
-                    **spec.kwargs,
-                    "column_list": [
-                        normalize_name(c) if isinstance(c, str) else c for c in column_list
-                    ],
-                },
-            )
+            keyed = [normalize_name(c) if isinstance(c, str) else c for c in column_list]
+            if keyed != column_list:
+                spec = CheckSpec(
+                    expectation_type=spec.expectation_type,
+                    kwargs={**spec.kwargs, "column_list": keyed},
+                    authored_kwargs=spec.authored_kwargs or spec.kwargs,
+                )
         folded.append(spec)
     return folded
 
