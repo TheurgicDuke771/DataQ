@@ -39,9 +39,14 @@ class _FakeConn:
         self.dead = False
         self.rollbacks = 0
         self.pings = 0
+        self.invalidations = 0
 
     def rollback(self) -> None:
         self.rollbacks += 1
+
+    def invalidate(self) -> None:
+        self.invalidations += 1
+        self.invalidated = True
 
     def execute(self, _stmt: Any) -> Any:
         self.pings += 1
@@ -176,6 +181,7 @@ def test_a_dead_session_the_dialect_never_flagged_is_still_dropped(opener: _Open
         again = _use(connection)
         assert again is not conn
         assert conn.pings == 1
+        assert conn.invalidations == 1
     assert len(opener.opened) == 2
 
 
@@ -450,3 +456,41 @@ def test_a_session_killed_mid_scope_is_replaced_by_a_fresh_login(
     killer.dispose()
     assert columns == ["id", "email", "qty"]
     assert len(logins) == 3  # the scope's login, the killer's, and the replacement
+
+
+@_needs_pg
+def test_a_dead_session_the_dialect_never_flags_is_discarded_without_a_reset_rollback(
+    db_session: Any,
+    warehouse_table: str,
+    logins: list[object],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The Snowflake shape, on a real driver: the dialect doesn't classify the disconnect, so
+    `invalidated` stays False. Eviction must discard the connection rather than hand it back
+    to the pool, whose reset-on-return would ROLLBACK on the dead session and log an error.
+    """
+    from sqlalchemy.dialects.postgresql.psycopg2 import PGDialect_psycopg2
+
+    monkeypatch.setattr(PGDialect_psycopg2, "is_disconnect", lambda *_a, **_k: False)
+    owner = admin_user(db_session, prefix="shared")
+    connection = _connection_of(db_session, _sql_suite(db_session, owner, warehouse_table))
+    store = FakeSecretStore({"ref": "pw"})
+    target = {"table": warehouse_table, "schema": "public"}
+    with shared_connection():
+        profile_service.list_columns(connection, session=db_session, secret_store=store, **target)
+        shared = profile_service._SHARED_CONNECTIONS.get()
+        assert shared is not None
+        sa_conn, _ = next(iter(shared._live.values()))
+        sa_conn.connection.dbapi_connection.close()
+        with pytest.raises(ProfileFailedError):
+            profile_service.list_columns(
+                connection, session=db_session, secret_store=store, **target
+            )
+        assert shared._live == {}
+        columns = profile_service.list_columns(
+            connection, session=db_session, secret_store=store, **target
+        )
+    assert columns == ["id", "email", "qty"]
+    assert len(logins) == 2
+    assert not [r for r in caplog.records if r.name.startswith("sqlalchemy.pool")]

@@ -410,6 +410,13 @@ class _SharedConnections:
                 return
             except Exception as exc:
                 log.warning("profile_shared_connection_dropped", error_type=type(exc).__name__)
+            # Discard without the pool's reset-on-return, which would ROLLBACK on a dead session.
+            try:
+                conn.invalidate()
+            except Exception as exc:
+                log.warning(
+                    "profile_shared_connection_invalidate_failed", error_type=type(exc).__name__
+                )
         held = self._live.pop(self._key(connection), None)
         if held is not None:
             self._close(held[1])
