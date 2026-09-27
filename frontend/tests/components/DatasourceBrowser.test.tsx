@@ -289,7 +289,7 @@ describe('FileBrowserButton', () => {
 
   it('shows a folder the backend would refuse to list, by its full key, without opening it', async () => {
     const user = userEvent.setup();
-    mockFiles.mockResolvedValueOnce(folder('', ['exports//', '/', 'raw/']));
+    mockFiles.mockResolvedValueOnce(folder('', ['exports//', '/data/', 'raw/']));
     render(
       <FileBrowserButton connectionId="c1" rootLabel="landing" mode="folder" onPick={vi.fn()} />,
     );

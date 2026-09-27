@@ -251,12 +251,13 @@ function leaf(key: string): string {
 
 /**
  * Whether the backend will list under `prefix` — mirrors `browse_service.validate_prefix`: no
- * leading `/`, no empty/`.`/`..` segment, no backslash or control character. A store can hold a
- * key like `exports//x.csv`, whose `exports//` folder would otherwise read as `exports/` and 422.
+ * empty/`.`/`..` segment (a leading `/` is an empty first one), no backslash or control character.
+ * A store can hold a key like `exports//x.csv`, whose `exports//` folder would otherwise read as
+ * `exports/` and 422.
  */
 function isBrowsablePrefix(prefix: string): boolean {
   // eslint-disable-next-line no-control-regex
-  if (prefix.startsWith('/') || /[\u0000-\u001f\u007f\\]/.test(prefix)) return false;
+  if (/[\u0000-\u001f\u007f\\]/.test(prefix)) return false;
   const segments = prefix.split('/');
   const inner = segments[segments.length - 1] === '' ? segments.slice(0, -1) : segments;
   return inner.every((seg) => seg !== '' && seg !== '.' && seg !== '..');
