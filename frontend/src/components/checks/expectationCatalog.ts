@@ -845,7 +845,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     dimension: 'completeness',
     label: 'Blank count (DMF)',
     description:
-      'Snowflake’s system BLANK_COUNT metric function, computed natively in the warehouse — counts blank strings, which NULL count does not. VARCHAR columns only.',
+      'Snowflake’s system BLANK_COUNT metric function, computed natively in the warehouse — counts empty or space-only strings (not NULLs; tabs/newlines aren’t treated as blank). VARCHAR columns only.',
     category: 'Snowflake DMF',
     fields: [COLUMN],
     thresholds: {

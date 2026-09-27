@@ -341,7 +341,8 @@ Snowflake is unaffected — its schema comes from the connection.
 
 On a Snowflake connection, the check editor offers a separate **Snowflake DMF**
 category for six types — null count, null percent, duplicate count, unique count,
-blank count (VARCHAR columns) and future-timestamp percent (DATE / TIMESTAMP_LTZ /
+blank count (VARCHAR columns; empty or space-only strings — not NULLs, and tabs/newlines
+aren't treated as blank) and future-timestamp percent (DATE / TIMESTAMP_LTZ /
 TIMESTAMP_TZ columns) — that run on Snowflake's own `SNOWFLAKE.CORE.*` **Data Metric Functions** instead of a
 GX expectation. Same authoring flow (pick the type, set the column); the difference
 is the `engine` the check runs on (`dmf` vs the default `gx`). Every type except unique
