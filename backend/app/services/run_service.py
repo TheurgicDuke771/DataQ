@@ -236,8 +236,8 @@ def _run_outcome_phases(
             raise NotImplementedError(
                 f"{type(runner).__name__} does not support monitor kind(s) "
                 f"{', '.join(unsupported_kinds)} — these need a monitor-capable "
-                "datasource (Snowflake / Unity Catalog / PostgreSQL / MySQL / Iceberg / "
-                "ADLS Gen2 / S3)"
+                "datasource (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / "
+                "Iceberg / ADLS Gen2 / S3)"
             )
         if not callable(getattr(runner, "run_monitors", None)):
             raise NotImplementedError(

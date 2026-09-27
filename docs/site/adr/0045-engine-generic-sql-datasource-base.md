@@ -69,6 +69,44 @@ connection a run opened. Decision 4 therefore reads
 "read only except where the engine's own check implementation needs temporary
 tables", and the docs say so.
 
+## Amendment — Trino, the federation engine
+
+Trino plugged in as one spec module (`datasources/trino.py`, the Apache-2.0 `trino` client and
+its dialect) plus a registry entry. A connection pins one **catalog** (the base's `database`,
+stored as `catalog`); the session URL carries `catalog/schema`, which is how a run is scoped.
+It needed six small, generic base hooks — each one a fact about *some* engine, not a Trino
+special case in the base:
+
+- **`auth_connect_args`** — an engine whose driver authenticates with an auth OBJECT (basic, a
+  JWT bearer) rather than a URL password. When set, the secret never enters the URL: the
+  dialect would read a JWT from the URL's query, which SQLAlchemy does not mask.
+- **`requires_secret` / `secret_optional`** — a config may authenticate with no stored secret
+  (Trino `auth_type: none`); the adapter, runner builder, profiler, browser and dataset reader
+  then proceed without one instead of reporting a missing credential.
+- **`credential_expiry`** — a secret that states its own lifetime (a JWT's `exp`) feeds the
+  existing credential-expiry signal on the connection.
+- **`destination_fields`** per spec — the fields whose change requires re-entering the
+  secret: for Trino, dropping TLS or trusting another CA (`sslmode`, `ca_bundle`) changes who
+  can receive the secret as surely as the host does, and `auth_type` changes how it is sent (a
+  stored password must never go out as a bearer token). A config whose auth mode needs a
+  secret is refused on save when none is stored or supplied.
+- **`names_are_lower_case`** — Trino folds every identifier, quoted or not, and its catalogs
+  report them lower case, so a mixed-case catalog, schema or target is refused at save time;
+  otherwise it could never join its enumerated asset or its schema-drift introspection.
+- **`url_database`** — the same hook the MySQL engine uses.
+
+Plus one base fix: the catalog queries' "no limit" bind value dropped from 2^62 to 2^31 - 1,
+because Trino refuses `ORDER BY … LIMIT` above that (live-found).
+
+**Decision 4 does not hold for Trino, and the docs say so.** Trino has no session or
+transaction read-only switch a client can set, so DataQ cannot make the server refuse a write.
+The guarantee is the Trino user's own access control (live-verified: a read-only file-based
+rule refuses an `INSERT` with *Access Denied*), with the ADR 0019 validator in front of custom
+SQL. TLS is `verify-full` or `disable` only — the client always verifies when TLS is on — and a
+password or JWT over `disable` is refused at config validation, before the driver's own refusal.
+GX already disables temporary tables on Trino, so uniqueness runs as one aggregate query and
+needs no `temp_table_types` entry.
+
 ## Consequences
 
 - Every behaviour is verified against a **real server through the real driver** — for a
@@ -82,5 +120,8 @@ tables", and the docs say so.
   point: it is not "supported" until the same battery has run against it.
 - A spec's hooks are only kept when a live run proves them: MySQL does not need
   PostgreSQL's JSON-as-text option (PyMySQL already returns JSON as text), so it has none.
+- A Trino connection covers whatever its catalog federates, so its checks are only as fast
+  (and as costly) as the connector behind the catalog — a full scan of a Hive table is a
+  full scan.
 - Snowflake and Unity Catalog keep their own adapters; they are not migrated onto the base
   (their auth, catalogs and lineage differ too much to gain from it).

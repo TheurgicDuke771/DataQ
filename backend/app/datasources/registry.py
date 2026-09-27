@@ -31,7 +31,6 @@ from backend.app.datasources.iceberg import IcebergConnectionAdapter, build_iceb
 from backend.app.datasources.s3 import S3ConnectionAdapter
 from backend.app.datasources.sampling import SamplingConfigError, parse_sample_spec
 from backend.app.datasources.snowflake import SnowflakeConnectionAdapter, build_snowflake_runner
-from backend.app.datasources.sql import is_sql_identifier
 from backend.app.datasources.sql_engines import SQL_ENGINES
 from backend.app.datasources.unity_catalog import (
     UnityCatalogConnectionAdapter,
@@ -298,16 +297,14 @@ def _generic_sql_target(spec: SqlEngineSpec) -> Callable[[dict[str, Any], str], 
     a name the run path can't address — or one PostgreSQL would silently truncate onto a
     different object — is a 422 on the suite, not an error on every run.
     """
-    limit = spec.config_model.max_identifier_length
+    model = spec.config_model
 
     def _resolve(target: dict[str, Any], conn_type: str) -> ResolvedTarget:
         resolved = _table_schema_target(target, conn_type)
         for label, name in (("table", resolved.table), ("schema", resolved.schema)):
-            if name is not None and (not is_sql_identifier(name) or len(name) > limit):
-                raise TargetShapeError(
-                    f"{conn_type} target {label} must be a plain SQL identifier (letters, "
-                    f"digits, _ and $; not starting with a digit) of at most {limit} characters"
-                )
+            problem = None if name is None else model.identifier_problem(name)
+            if problem is not None:
+                raise TargetShapeError(f"{conn_type} target {label} {problem}")
         return resolved
 
     return _resolve

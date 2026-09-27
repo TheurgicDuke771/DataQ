@@ -133,7 +133,7 @@ def test_the_asset_identity_is_the_openlineage_mysql_shape() -> None:
 
 
 def test_mysql_is_registered_everywhere_a_sql_datasource_must_be() -> None:
-    assert GENERIC_SQL_TYPES == {"postgres", "mysql"}
+    assert {"postgres", "mysql"} <= GENERIC_SQL_TYPES
     assert registry.destination_fields("mysql") == {"secret": ("host", "port")}
     for capability in (SQL_QUERYABLE_TYPES, SQL_BATCH_CONNECTION_TYPES, PUSHDOWN_TYPES):
         assert "mysql" in capability

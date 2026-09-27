@@ -32,6 +32,7 @@ CONNECTION_TYPES = (
     "iceberg",
     "postgres",
     "mysql",
+    "trino",
     "adf",
     "airflow",
     "dbt",

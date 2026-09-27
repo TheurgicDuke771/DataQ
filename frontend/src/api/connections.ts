@@ -10,6 +10,7 @@ export const CONNECTION_TYPES = [
   'iceberg',
   'postgres',
   'mysql',
+  'trino',
   'adf',
   'airflow',
   'dbt',
@@ -31,6 +32,7 @@ export const CONNECTION_KIND: Record<ConnectionType, ConnectionKind> = {
   iceberg: 'datasource',
   postgres: 'datasource',
   mysql: 'datasource',
+  trino: 'datasource',
   adf: 'orchestration',
   airflow: 'orchestration',
   dbt: 'orchestration',
@@ -59,6 +61,7 @@ export const DATASOURCE_CATEGORIES = [
   'iceberg',
   'postgres',
   'mysql',
+  'trino',
 ] as const;
 export type DatasourceCategory = (typeof DATASOURCE_CATEGORIES)[number];
 
@@ -70,6 +73,7 @@ export const DATASOURCE_CATEGORY: Record<ConnectionType, DatasourceCategory | nu
   iceberg: 'iceberg',
   postgres: 'postgres',
   mysql: 'mysql',
+  trino: 'trino',
   adf: null,
   airflow: null,
   dbt: null,
@@ -82,6 +86,7 @@ export const DATASOURCE_CATEGORY_LABELS: Record<DatasourceCategory, string> = {
   iceberg: 'Apache Iceberg',
   postgres: 'PostgreSQL',
   mysql: 'MySQL / MariaDB',
+  trino: 'Trino',
 };
 
 /**
@@ -93,6 +98,7 @@ export const SQL_QUERYABLE_TYPES: ConnectionType[] = [
   'unity_catalog',
   'postgres',
   'mysql',
+  'trino',
 ];
 
 export const isSqlQueryable = (type: ConnectionType): boolean => SQL_QUERYABLE_TYPES.includes(type);
@@ -112,6 +118,7 @@ export const MONITOR_CAPABLE_TYPES: ConnectionType[] = [
   'unity_catalog',
   'postgres',
   'mysql',
+  'trino',
   'iceberg',
   ...FILE_TYPES,
 ];
@@ -124,7 +131,7 @@ export const supportsMonitors = (type: ConnectionType): boolean =>
  * backend `sql_engines.SQL_BATCH_CONNECTION_TYPES`. Unity Catalog is deliberately absent: its
  * pushdown set is an allowlist, so anything outside it runs on that runner's pandas batch.
  */
-export const SQL_BATCH_TYPES: ConnectionType[] = ['snowflake', 'postgres', 'mysql'];
+export const SQL_BATCH_TYPES: ConnectionType[] = ['snowflake', 'postgres', 'mysql', 'trino'];
 
 export const runsSqlBatch = (type: ConnectionType): boolean => SQL_BATCH_TYPES.includes(type);
 
@@ -230,6 +237,7 @@ export const CONNECTION_TYPE_LABELS: Record<ConnectionType, string> = {
   iceberg: 'Apache Iceberg',
   postgres: 'PostgreSQL',
   mysql: 'MySQL / MariaDB',
+  trino: 'Trino',
   adf: 'Azure Data Factory',
   airflow: 'Airflow',
   dbt: 'dbt',

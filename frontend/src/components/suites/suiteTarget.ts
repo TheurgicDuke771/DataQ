@@ -17,6 +17,7 @@ export function targetKind(type: ConnectionType): TargetKind | null {
     case 'snowflake':
     case 'postgres':
     case 'mysql':
+    case 'trino':
       return 'sql';
     case 'unity_catalog':
       return 'uc';
@@ -83,7 +84,11 @@ export function isBatchTarget(target: Record<string, unknown> | null): boolean {
  * generic SQL half of the backend `browse_service.TABLE_BROWSE_TYPES` (a connection that pins
  * one database has no catalog level).
  */
-export const SCHEMA_BROWSE_TYPES: ReadonlySet<ConnectionType> = new Set(['postgres', 'mysql']);
+export const SCHEMA_BROWSE_TYPES: ReadonlySet<ConnectionType> = new Set([
+  'postgres',
+  'mysql',
+  'trino',
+]);
 
 /** Placeholder hints for the SQL target fields, in each engine's own name case. */
 export function sqlTargetPlaceholders(type: ConnectionType | undefined): {
@@ -94,6 +99,8 @@ export function sqlTargetPlaceholders(type: ConnectionType | undefined): {
   if (type === 'postgres') return { schema: 'public', table: 'orders' };
   // A MySQL schema is a database; blank means the connection's own.
   if (type === 'mysql') return { schema: 'shop', table: 'orders' };
+  // Trino reports every name lower case, and only accepts it that way.
+  if (type === 'trino') return { schema: 'sales', table: 'orders' };
   return { schema: 'PUBLIC', table: 'ANALYTICS.ORDERS' };
 }
 

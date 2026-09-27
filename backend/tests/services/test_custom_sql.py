@@ -131,7 +131,13 @@ class TestDatasourceGating:
                 connection_type="s3",
             )
         assert exc.value.detail["connection_type"] == "s3"
-        assert exc.value.detail["supported"] == ["mysql", "postgres", "snowflake", "unity_catalog"]
+        assert exc.value.detail["supported"] == [
+            "mysql",
+            "postgres",
+            "snowflake",
+            "trino",
+            "unity_catalog",
+        ]
 
 
 # ─────────── forbidden-keyword set: isolate every member ────────────
