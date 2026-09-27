@@ -23,6 +23,7 @@ from backend.app.datasources.iceberg import (
     read_iceberg_dataframe,
 )
 from backend.app.datasources.sampling import enforce_byte_cap
+from backend.app.datasources.sql_engines import GENERIC_SQL_TYPES
 from backend.app.db.models import Connection
 from backend.app.services.custom_sql import validate_query
 from backend.app.services.profile_service import (
@@ -233,6 +234,7 @@ _READERS: dict[str, _Reader] = {
     "adls_gen2": _flatfile_read,
     "s3": _flatfile_read,
     "iceberg": _iceberg_read,
+    **dict.fromkeys(GENERIC_SQL_TYPES, _sql_read),
 }
 
 

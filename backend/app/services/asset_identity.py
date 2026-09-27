@@ -36,6 +36,13 @@ def resolve_asset_identity(
         return _resolve_s3(config, target)
     if conn_type == "iceberg":
         return _resolve_iceberg(config, target)
+    # Imported here: the engine registry pulls pydantic config models this module must not load
+    # for the (much more common) callers that never resolve a generic SQL identity.
+    from backend.app.datasources.sql_engines import sql_engine
+
+    spec = sql_engine(conn_type)
+    if spec is not None:
+        return _resolve_generic_sql(spec, config, target)
     raise ValueError(f"connection type {conn_type!r} has no asset identity (not a datasource)")
 
 
@@ -89,6 +96,19 @@ def _resolve_unity_catalog(config: dict[str, Any], target: dict[str, Any]) -> As
     namespace = f"unitycatalog://{netloc}"
     name = format_unity_catalog_name(catalog, schema, table)
     return AssetIdentity(namespace=namespace, name=name)
+
+
+def _resolve_generic_sql(
+    spec: Any, config: dict[str, Any], target: dict[str, Any]
+) -> AssetIdentity:
+    """``<scheme>://host:port`` + the engine's dotted name, parts verbatim (#1678)."""
+    validated = spec.validate_config(config)
+    table = _require(target, "table", spec.conn_type, "target")
+    schema = _str_or_none(target.get("schema")) or validated.default_schema
+    return AssetIdentity(
+        namespace=spec.namespace(validated),
+        name=spec.asset_name(validated, schema=schema, table=table),
+    )
 
 
 def _resolve_adls_gen2(config: dict[str, Any], target: dict[str, Any]) -> AssetIdentity:

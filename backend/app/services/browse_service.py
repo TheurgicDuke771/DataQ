@@ -4,6 +4,8 @@ Two read-only, one-level-at-a-time listings through a connection's stored creden
 
 * **Unity Catalog** — catalogs → schemas → tables, from ``system.information_schema`` via the
   ADR 0040 enumeration seam, so a picked table is one the inventory sync would also see.
+* **The generic SQL engines** (PostgreSQL, #1678) — schemas → tables, from the engine's own
+  catalog query, the same one the inventory sync enumerates with.
 * **ADLS Gen2 / S3** — the folders and files directly under a prefix of the connection's one
   container/bucket.
 
@@ -15,15 +17,17 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Final, Literal
+from typing import Any, Final, Literal
 
 from sqlalchemy.orm import Session
 
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
-from backend.app.datasources import flatfile
+from backend.app.datasources import flatfile, generic_sql
+from backend.app.datasources.generic_sql import SqlEngineSpec
 from backend.app.datasources.sql import is_sql_identifier
+from backend.app.datasources.sql_engines import GENERIC_SQL_TYPES, sql_engine
 from backend.app.db.models import Connection
 from backend.app.lineage.warehouse_unity_catalog import UnityCatalogLineageProvider
 from backend.app.services import credential_health
@@ -32,7 +36,7 @@ from backend.app.services.profile_service import _open_connection
 
 log = get_logger(__name__)
 
-TABLE_BROWSE_TYPES: Final[frozenset[str]] = frozenset({"unity_catalog"})
+TABLE_BROWSE_TYPES: Final[frozenset[str]] = frozenset({"unity_catalog", *GENERIC_SQL_TYPES})
 FILE_BROWSE_TYPES: Final[frozenset[str]] = frozenset({"adls_gen2", "s3"})
 
 DEFAULT_LIMIT: Final = 200
@@ -134,37 +138,43 @@ def browse_catalog(
     limit: int,
     secret_store: SecretStore,
 ) -> CatalogListing:
-    """One level of the catalog → schema → table tree, capped at ``limit`` names."""
+    """One level of the catalog → schema → table tree, capped at ``limit`` names.
+
+    A generic SQL engine (#1678) has no catalog level — its connection pins one database — so
+    its tree starts at schemas and a ``catalog`` is refused rather than ignored.
+    """
     if connection.type not in TABLE_BROWSE_TYPES:
         raise BrowseUnsupportedError(
             f"catalog browsing is not supported for {connection.type!r} connections",
             detail={"type": connection.type, "supported": sorted(TABLE_BROWSE_TYPES)},
         )
-    if schema is not None and catalog is None:
+    spec = sql_engine(connection.type)
+    if spec is not None and catalog is not None:
+        raise BrowseInputInvalidError(
+            f"a {spec.display_name} connection has no catalog level — browse its schemas",
+            detail={"field": "catalog"},
+        )
+    if spec is None and schema is not None and catalog is None:
         raise BrowseInputInvalidError("schema requires a catalog", detail={"field": "schema"})
     catalog = _identifier(catalog, "catalog")
     schema = _identifier(schema, "schema")
     _require_credential(connection)
-    provider = UnityCatalogLineageProvider()
-    level: Literal["catalog", "schema", "table"] = (
-        "catalog" if catalog is None else "schema" if schema is None else "table"
-    )
+    level: Literal["catalog", "schema", "table"]
+    if spec is not None:
+        level = "schema" if schema is None else "table"
+    else:
+        level = "catalog" if catalog is None else "schema" if schema is None else "table"
 
     with credential_health.credential_use(session, connection):
         try:
             with _open_connection(connection, secret_store) as conn:
                 # limit + 1: the extra row is how a full page is told from a complete one.
-                if catalog is None:
-                    names = provider.catalog_names(conn, limit=limit + 1)
-                elif schema is None:
-                    names = provider.schema_names(conn, catalog=catalog, limit=limit + 1)
+                if spec is not None:
+                    names = _generic_sql_names(spec, conn, schema=schema, limit=limit + 1)
                 else:
-                    names = [
-                        table
-                        for _, _, table in provider.table_rows(
-                            conn, limit=limit + 1, catalog=catalog, schema=schema
-                        )
-                    ]
+                    names = _unity_catalog_names(
+                        conn, catalog=catalog, schema=schema, limit=limit + 1
+                    )
         except Exception as exc:
             log.warning(
                 "browse_catalog_failed",
@@ -185,6 +195,30 @@ def browse_catalog(
         truncated=len(names) > limit,
         limit=limit,
     )
+
+
+def _unity_catalog_names(
+    conn: Any, *, catalog: str | None, schema: str | None, limit: int
+) -> list[str]:
+    provider = UnityCatalogLineageProvider()
+    if catalog is None:
+        return provider.catalog_names(conn, limit=limit)
+    if schema is None:
+        return provider.schema_names(conn, catalog=catalog, limit=limit)
+    return [
+        table
+        for _, _, table in provider.table_rows(conn, limit=limit, catalog=catalog, schema=schema)
+    ]
+
+
+def _generic_sql_names(
+    spec: SqlEngineSpec, conn: Any, *, schema: str | None, limit: int
+) -> list[str]:
+    # The same catalog queries the inventory sync enumerates with (ADR 0040), so a picked table
+    # is one the asset view would also show.
+    if schema is None:
+        return generic_sql.schema_names(spec, conn, limit=limit)
+    return [table for _, table in generic_sql.table_rows(spec, conn, schema=schema, limit=limit)]
 
 
 def browse_files(

@@ -23,6 +23,7 @@ from backend.app.datasources.monitors import (
     monitor_expectation_type,
     monitor_outcome,
 )
+from backend.app.datasources.sql_engines import GENERIC_SQL_TYPES
 from backend.app.db.models import Check, Connection
 from backend.app.services.failure_classifier import classify_failure_reason
 from backend.app.services.monitor_baseline import get_baseline, insert_baseline_if_absent
@@ -38,7 +39,7 @@ log = get_logger(__name__)
 # One column of a schema snapshot: {"name": str, "type": str}.
 ColumnSpec = dict[str, str]
 
-_SQL_TYPES = frozenset({"snowflake", "unity_catalog"})
+_SQL_TYPES = frozenset({"snowflake", "unity_catalog", *GENERIC_SQL_TYPES})
 _FILE_TYPES = frozenset({"adls_gen2", "s3"})
 # How many CSV rows the dtype inference samples — a header-only read types every column `object`,
 # which would report a phantom type change on the first run after baselining from a sampled read.

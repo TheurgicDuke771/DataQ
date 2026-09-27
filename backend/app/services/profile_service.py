@@ -8,7 +8,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import column, distinct, func, literal_column, select, union_all
+from sqlalchemy import column, distinct, func, literal_column, null, select, union_all
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.sql import Select
 
@@ -28,6 +28,7 @@ from backend.app.datasources.flatfile import (
     read_csv_head,
     read_csv_projected_sample,
 )
+from backend.app.datasources.generic_sql import ColumnCaps, SqlEngineSpec
 from backend.app.datasources.iceberg import (
     IcebergConfig,
     iceberg_credentials,
@@ -41,6 +42,7 @@ from backend.app.datasources.snowflake import (
     build_connection_string,
 )
 from backend.app.datasources.sql import core_table, folding_identifier, is_sql_identifier
+from backend.app.datasources.sql_engines import SQL_ENGINES, default_schema
 from backend.app.datasources.unity_catalog import UnityCatalogConfig, build_databricks_url
 from backend.app.db.models import Connection
 from backend.app.services import credential_health
@@ -151,15 +153,27 @@ def build_aggregate_query(
     columns: list[str],
     catalog: str | None = None,
     dialect: Dialect | None = None,
+    *,
+    unorderable: frozenset[str] = frozenset(),
+    ungroupable: frozenset[str] = frozenset(),
 ) -> Select[Any]:
-    """One round-trip: row count + null/distinct/min/max per column."""
+    """One round-trip: row count + null/distinct/min/max per column.
+
+    ``unorderable`` / ``ungroupable`` name columns whose type the engine has no MIN/MAX or no
+    equality for (PostgreSQL ``boolean``/``jsonb``, ``json``, #1678): their statistic is a NULL
+    literal — "unavailable", which is how the profile already reports it — rather than an
+    aggregate that fails the WHOLE profile.
+    """
     projection: list[Any] = [func.count().label("row_count")]
     for i, col in enumerate(columns):
         c: Any = column(folding_identifier(validate_identifier(col)))
         projection.append((func.count() - func.count(c)).label(f"nulls_{i}"))
-        projection.append(func.count(distinct(c)).label(f"distinct_{i}"))
-        projection.append(func.min(c).label(f"min_{i}"))
-        projection.append(func.max(c).label(f"max_{i}"))
+        projection.append(
+            (null() if col in ungroupable else func.count(distinct(c))).label(f"distinct_{i}")
+        )
+        orderable = col not in unorderable
+        projection.append((func.min(c) if orderable else null()).label(f"min_{i}"))
+        projection.append((func.max(c) if orderable else null()).label(f"max_{i}"))
     return select(*projection).select_from(_table(schema, table_name, catalog, dialect))
 
 
@@ -277,7 +291,9 @@ def assemble_profile(
                 column=col,
                 null_count=nulls,
                 null_fraction=null_fraction(nulls, row_count),
-                distinct_count=int(aggregate[f"distinct_{i}"]),
+                distinct_count=(
+                    None if aggregate[f"distinct_{i}"] is None else int(aggregate[f"distinct_{i}"])
+                ),
                 min_value=sanitize_json(aggregate[f"min_{i}"]),
                 max_value=sanitize_json(aggregate[f"max_{i}"]),
                 top_values=[
@@ -317,6 +333,15 @@ def _unity_catalog_engine_args(connection: Connection, secret: str) -> tuple[str
     return build_databricks_url(cfg, secret), {}
 
 
+def _generic_sql_engine_args(
+    spec: SqlEngineSpec,
+) -> Callable[[Connection, str], tuple[str, dict[str, Any]]]:
+    def _args(connection: Connection, secret: str) -> tuple[str, dict[str, Any]]:
+        return spec.engine_args(spec.validate_config(connection.config), secret)
+
+    return _args
+
+
 @dataclass(frozen=True)
 class _SqlProfiler:
     """SQL profiling strategy: in-warehouse aggregation over a SQLAlchemy engine."""
@@ -343,6 +368,7 @@ _PROFILERS: dict[str, _Profiler] = {
     "s3": _FileProfiler(),
     "adls_gen2": _FileProfiler(),
     "iceberg": _IcebergProfiler(),
+    **{t: _SqlProfiler(_generic_sql_engine_args(spec)) for t, spec in SQL_ENGINES.items()},
 }
 
 
@@ -523,7 +549,13 @@ def resolve_effective_schema(connection: Connection, schema: str | None) -> str:
     connection's configured default. Raises `ProfileIdentifierInvalidError` (422)
     when neither is set. Shared by `profile_table` and `list_table_columns`.
     """
-    effective_schema = schema if schema is not None else connection.config.get("schema")
+    if schema is not None:
+        effective_schema: Any = schema
+    elif connection.type in SQL_ENGINES:
+        # A generic SQL engine has a default even when the connection names none (#1678).
+        effective_schema = default_schema(connection.type, connection.config)
+    else:
+        effective_schema = connection.config.get("schema")
     if not isinstance(effective_schema, str):
         raise ProfileIdentifierInvalidError(
             "no schema given and the connection has none", detail={"schema": effective_schema}
@@ -609,6 +641,16 @@ def _fetch_top_values(
     return collected
 
 
+def _column_caps(
+    connection: Connection, conn: Any, *, schema: str, table: str
+) -> dict[str, ColumnCaps]:
+    """Per-column aggregate capability, for engines that declare it (#1678); ``{}`` otherwise."""
+    spec = SQL_ENGINES.get(connection.type)
+    if spec is None or spec.column_caps is None:
+        return {}
+    return spec.column_caps(conn, schema, table)
+
+
 def profile_table(
     connection: Connection,
     *,
@@ -637,9 +679,20 @@ def profile_table(
             # A catalog-qualified (3-part, Unity Catalog) target needs the live connection's dialect
             # to quote the catalog/schema (#936).
             dialect = conn.dialect if catalog is not None else None
+            caps = _column_caps(connection, conn, schema=effective_schema, table=table)
+            unorderable = frozenset(c for c, cap in caps.items() if not cap.orderable)
+            ungroupable = frozenset(c for c, cap in caps.items() if not cap.groupable)
             aggregate = (
                 conn.execute(
-                    build_aggregate_query(effective_schema, table, columns, catalog, dialect)
+                    build_aggregate_query(
+                        effective_schema,
+                        table,
+                        columns,
+                        catalog,
+                        dialect,
+                        unorderable=unorderable,
+                        ungroupable=ungroupable,
+                    )
                 )
                 .mappings()
                 .one()
@@ -648,7 +701,7 @@ def profile_table(
                 conn,
                 schema=effective_schema,
                 table=table,
-                columns=columns,
+                columns=[c for c in columns if c not in ungroupable],
                 top_n=top_n,
                 catalog=catalog,
                 dialect=dialect,
@@ -1034,7 +1087,8 @@ def list_table_columns(
     catalog: str | None = None,
     secret_store: SecretStore,
 ) -> list[str]:
-    """Column names of a SQL `table` on `connection` (Snowflake / Unity Catalog)."""
+    """Column names of a SQL `table` on `connection` (Snowflake / Unity Catalog / the
+    generic SQL engines)."""
     effective_schema = resolve_effective_schema(connection, schema)
     # Validate every identifier up front (422) before any query is built/run.
     if catalog is not None:

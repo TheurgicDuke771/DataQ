@@ -78,7 +78,7 @@ def wired(monkeypatch: pytest.MonkeyPatch) -> dict[str, _FakeProvider]:
     monkeypatch.setattr(profile_service, "_open_connection", _fake_open_connection)
     monkeypatch.setattr(
         inventory_service,
-        "get_warehouse_lineage_provider",
+        "get_table_enumerator",
         lambda conn_type: providers.get(conn_type),
     )
     return providers

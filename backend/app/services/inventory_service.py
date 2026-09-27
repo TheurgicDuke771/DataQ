@@ -12,8 +12,9 @@ from sqlalchemy.orm import Session
 from backend.app.core.config import get_settings
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
+from backend.app.datasources.sql_engines import GENERIC_SQL_TYPES
 from backend.app.db.models import Connection
-from backend.app.lineage.warehouse import get_warehouse_lineage_provider
+from backend.app.lineage.warehouse import get_table_enumerator
 from backend.app.services import credential_health
 from backend.app.services.asset_service import upsert_assets
 from backend.app.services.connection_lock import lock_connection
@@ -23,7 +24,7 @@ log = get_logger(__name__)
 
 #: Connection types the inventory sync can enumerate (the warehouse half of the
 #: ADR 0040 seam; flat-file/iceberg are recorded non-goals — path-grain floods).
-INVENTORY_TYPES = ("snowflake", "unity_catalog")
+INVENTORY_TYPES = ("snowflake", "unity_catalog", *sorted(GENERIC_SQL_TYPES))
 
 
 class InventorySyncEnumerationError(Exception):
@@ -44,7 +45,7 @@ def sync_connection_inventory(
     session: Session, *, connection: Connection, secret_store: SecretStore
 ) -> int:
     """Enumerate one connection's tables into ``assets``; return the row count."""
-    provider = get_warehouse_lineage_provider(connection.type)
+    provider = get_table_enumerator(connection.type)
     if provider is None:  # registry gap, not an operator error — loud, not silent
         raise ValueError(f"no table enumerator for connection type {connection.type!r}")
 
