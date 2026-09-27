@@ -2631,6 +2631,11 @@
 <td>In-app workspace membership — one <code>workspace_members</code> table an admin manages from Admin → Members; <strong>empty table = today's behaviour, non-empty = member if in the env allowlist OR the table</strong>, checked on every request at four points (<code>_upsert_user</code>, OTP session resolve, PAT resolve, OTP eligibility) so removing someone stops their browser session and their PATs on the next request; env allowlists become a starting seed plus an emergency way in that can only grant (OTP mode still needs a non-empty one to boot); the first row imports every existing user as a <strong>provisional</strong> member shown for review, never a silent backfill; last-admin removal refused, self-removal confirmed; <code>initial_role</code> applies only when the user row is first created; the IdP account stays a prerequisite — DataQ controls its own door only; REST denies with 403, <code>/mcp</code> with 401</td>
 <td>Accepted</td>
 </tr>
+<tr>
+<td><a href="0044-mssql-tds-driver-and-entra-auth/">0044</a></td>
+<td>MSSQL / T-SQL adapter driver + auth — <strong><code>python-tds</code> + <code>sqlalchemy-pytds</code> (MIT, pure Python, FEDAUTH token) by default</strong> for SQL Server / Azure SQL / Synapse, with the adapter shipping its own SAN hostname validator and named-instance routing fix (both driver defects found in the live spike); <strong>Fabric SQL endpoints via an optional ODBC lane</strong> (<code>mssql+pyodbc</code> when the operator installs msodbcsql18 — never redistributed by DataQ) because python-tds's routed login to Fabric fails; one engine-generic <code>mssql</code> type with <code>sql</code> / <code>entra_service_principal</code> auth, <code>destination_fields</code> host/port/tenant_id/auth_type</td>
+<td>Accepted</td>
+</tr>
 </tbody>
 </table>
 
