@@ -6,21 +6,21 @@ One-page reference: what runs where. For the readable tour of everything DataQ o
 
 ## Check kinds × datasources
 
-| Check kind | Snowflake | Unity Catalog | PostgreSQLᵖ | ADLS Gen2 (files) | S3 (files)ˢ | Iceberg |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|
-| GX expectations (column / table shape) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Snowflake DMF (native metric functions)ᵈ | ✅ | — | — | — | — | — |
-| Custom SQL (rows returned = failures)ᶜ | ✅ | ✅ | ✅ | — | — | — |
-| Freshness monitor (hours since latest timestamp) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Freshness from **file arrival time** (no column — catches "no new file") | — | — | — | ✅ | ✅ | — |
-| Volume monitor (row count in range) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Anomaly monitor (z-score vs a learned baseline)ᵃ | ✅ | ✅ | ✅ | — | — | — |
-| Schema-drift monitor (column add/drop/type-change vs a stored baseline)ᵇ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Comparison / reconciliation (diff vs a baseline connection) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Column profiler (nulls, distinct, min/max, top values) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Browse for the run target (catalog → schema → table / folders → file) | — | ✅ | ✅ (schema → table) | ✅ | ✅ | — |
-| DQ dimension on checks + asset scorecard (coverage + score) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Dry-run preview | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Check kind | Snowflake | Unity Catalog | PostgreSQLᵖ | SQL Serverᵐ | ADLS Gen2 (files) | S3 (files)ˢ | Iceberg |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| GX expectations (column / table shape) | ✅ | ✅ | ✅ | ✅ (no regex) | ✅ | ✅ | ✅ |
+| Snowflake DMF (native metric functions)ᵈ | ✅ | — | — | — | — | — | — |
+| Custom SQL (rows returned = failures)ᶜ | ✅ | ✅ | ✅ | ✅ | — | — | — |
+| Freshness monitor (hours since latest timestamp) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Freshness from **file arrival time** (no column — catches "no new file") | — | — | — | — | ✅ | ✅ | — |
+| Volume monitor (row count in range) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Anomaly monitor (z-score vs a learned baseline)ᵃ | ✅ | ✅ | ✅ | ✅ | — | — | — |
+| Schema-drift monitor (column add/drop/type-change vs a stored baseline)ᵇ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Comparison / reconciliation (diff vs a baseline connection) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Column profiler (nulls, distinct, min/max, top values) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Browse for the run target (catalog → schema → table / folders → file) | — | ✅ | ✅ (schema → table) | ✅ (schema → table) | ✅ | ✅ | — |
+| DQ dimension on checks + asset scorecard (coverage + score) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Dry-run preview | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 ᵃ **Live-verified.** The anomaly monitor learns a rolling mean/stddev of the
 target's own row count or freshness age (optionally per weekday) and bands each
@@ -75,12 +75,25 @@ inventory enumeration and browsing) against the test database on every change. T
 profiler reports min/max as unavailable for types PostgreSQL cannot order (`boolean`,
 `jsonb`, …) — see [Datasources & checks](../guides/datasources-checks.md#postgresql).
 
+ᵐ **SQL Server** — SQL Server, Azure SQL Database, Synapse and (through the optional,
+user-installed ODBC lane) Microsoft Fabric SQL endpoints; SQL login or Entra service principal;
+TLS always verified; everything by pushdown. Unlike PostgreSQL, sessions are **not** read-only
+at the server (TDS has no such setting) — the login must be a `db_datareader`. Every ticked row
+was verified by an **executed** run against a live Azure SQL database with both auth modes
+(every SQL-capable expectation type, custom SQL, freshness over
+`datetimeoffset`/`datetime2`/`date`, volume, anomaly measurement, profiler, schema drift,
+comparison reads, inventory enumeration, browsing and a persisted suite run). That battery is
+an opt-in live lane (`tests/integration/test_mssql_live.py`), not CI — no SQL Server can run in
+CI without a commercial licence. The four regex expectations are refused on SQL Server (no T-SQL
+translation in GX), and Fabric SQL endpoints do not work on the default driver yet — see
+[Datasources & checks](../guides/datasources-checks.md#sql-server-azure-sql-fabric-t-sql).
+
 ˢ **S3 means AWS S3 *and* any S3-compatible store** — MinIO, Ceph/RadosGW, Cloudflare R2,
 Wasabi, Backblaze B2, SeaweedFS or an on-prem gateway. Set the connection's optional
 endpoint URL; every row in this column applies identically either way. See
 [Datasources & checks](../guides/datasources-checks.md#s3-compatible-object-stores).
 
-Custom SQL runs a SQL query, so it's **SQL-datasource only** (Snowflake, Unity Catalog, PostgreSQL;
+Custom SQL runs a SQL query, so it's **SQL-datasource only** (Snowflake, Unity Catalog, PostgreSQL, SQL Server;
 there is no flat-file support, and no issue currently tracks adding it — flat files get freshness/volume monitors instead (see the rows above);
 Iceberg is not SQL-queryable — reads go through `pyiceberg` scans, not a query engine).
 **Comparison checks** (ADR [0015](../adr/0015-two-connection-comparison-check-model.md))
@@ -146,6 +159,7 @@ five mechanisms:
 | S3 (files) | `s3://{bucket}` / base prefix | ✅ | — | ✅ | ✅ | — |
 | Iceberg | `{catalog_uri}` / `namespace.table` | ✅ | —¹ | ✅ | ✅ | —³ |
 | PostgreSQL | `postgres://{host}:{port}` / `database.schema.table` | ✅ (+ inventory sync) | ✅ by construction (dbt-postgres names match; not yet live-verified) | ✅ | ✅ | —⁴ |
+| SQL Server | `mssql://{host}:{port}` / `database.schema.table` | ✅ (+ inventory sync) | not verified (dbt-sqlserver / dbt-fabric naming untested) | ✅ | ✅ | —⁴ |
 | BI reports / dashboards | not yet materialized² | — | — | — | reserved² | — |
 
 ¹ dbt-managed Iceberg tables surface through the warehouse adapter (Snowflake/UC rows);
@@ -153,7 +167,7 @@ native `pyiceberg` connections have no dbt slice of their own.
 ³ Warehouse-native lineage reads a query engine's lineage view; a native `pyiceberg`
 connection has no engine to ask (an engine-registered Iceberg table is covered under its
 Snowflake/UC connection).
-⁴ PostgreSQL keeps no lineage log to read, so there is no warehouse-native pull; the
+⁴ PostgreSQL and SQL Server keep no lineage log DataQ reads, so there is no warehouse-native pull; the
 inventory sync still enumerates its tables (ADR 0040).
 ² The lineage graph's node-kind contract reserves `bi_report`/`dashboard` — a BI node
 (e.g. a Power BI report downstream of a mart) becomes representable the moment a capable

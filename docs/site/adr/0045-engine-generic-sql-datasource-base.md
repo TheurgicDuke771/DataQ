@@ -60,3 +60,27 @@ that silently doesn't work on the new engine.
   point: it is not "supported" until the same battery has run against it.
 - Snowflake and Unity Catalog keep their own adapters; they are not migrated onto the base
   (their auth, catalogs and lineage differ too much to gain from it).
+
+## Amendment — SQL Server (2026-09-27)
+
+The SQL Server / T-SQL engine ([ADR 0044](0044-mssql-tds-driver-and-entra-auth.md)) is the
+first engine that breaks three of the assumptions above, and each became an optional spec hook
+rather than a special case:
+
+- **§4 does not hold for it.** TDS has no session-level read-only setting, so a SQL Server
+  session is *not* read-only at the server. The guard there is the ADR 0019 validator — now
+  lexing each engine's own delimited identifiers (`[…]`, `` `…` ``) — plus a `db_datareader`
+  login, which the docs require. The base's promise is restated per engine, not assumed.
+- **§5's session scoping does not exist.** A login's default schema is fixed on the server, so
+  `session_schema = False` hands GX the schema instead; SQL Server's usual case-insensitive
+  collations resolve it whatever GX's casing (a mixed-case schema on a case-sensitive
+  collation is a documented limitation).
+- **One secret can be two kinds of credential.** An Entra service principal's client secret
+  goes to a token endpoint, not the server, so the spec owns its URL and connect args (a
+  subclass overriding `url` / `engine_args`), declares its own `destination_fields`, and names
+  its secret (`credential_noun`).
+
+Two more hooks came with it: `explain_failure`, which turns a failure the engine *knows* (a
+documented driver limitation, a missing optional driver) into a DataQ-authored message shown
+verbatim; and `unsupported_expectation_types`, for an allowlisted type the dialect has no GX
+translation for (regex on T-SQL), refused at author time rather than erroring on every run.
