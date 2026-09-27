@@ -249,6 +249,22 @@ function leaf(key: string): string {
   return parts[parts.length - 1] ?? key;
 }
 
+/**
+ * Whether the backend will list under `prefix` — mirrors `browse_service.validate_prefix`: no
+ * leading `/`, no empty/`.`/`..` segment, no backslash or control character. A store can hold a
+ * key like `exports//x.csv`, whose `exports//` folder would otherwise read as `exports/` and 422.
+ */
+function isBrowsablePrefix(prefix: string): boolean {
+  // eslint-disable-next-line no-control-regex
+  if (prefix.startsWith('/') || /[\u0000-\u001f\u007f\\]/.test(prefix)) return false;
+  const segments = prefix.split('/');
+  const inner = segments[segments.length - 1] === '' ? segments.slice(0, -1) : segments;
+  return inner.every((seg) => seg !== '' && seg !== '.' && seg !== '..');
+}
+
+const UNBROWSABLE_HINT =
+  "Can't be opened here — its path starts with '/' or has an empty, '.' or '..' part.";
+
 function formatSize(bytes: number | null): string {
   if (bytes === null) return '';
   if (bytes < 1024) return `${bytes} B`;
@@ -307,7 +323,7 @@ export function FileBrowserButton({
         footer={
           mode === 'folder' ? (
             <Button type="primary" onClick={() => pick(prefix)}>
-              {prefix ? `Use ${prefix}` : 'Use the whole container'}
+              {prefix ? `Use ${prefix}` : 'Use the top level (no prefix)'}
             </Button>
           ) : null
         }
@@ -363,7 +379,17 @@ export function FileBrowserButton({
                             ]
                       }
                     >
-                      {row.folder ? (
+                      {row.folder && !isBrowsablePrefix(row.key) ? (
+                        <Flex vertical>
+                          <Typography.Text type="secondary">
+                            <FolderOutlined style={{ marginRight: 8 }} />
+                            {row.key}
+                          </Typography.Text>
+                          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                            {UNBROWSABLE_HINT}
+                          </Typography.Text>
+                        </Flex>
+                      ) : row.folder ? (
                         <Button
                           type="link"
                           icon={<FolderOutlined />}

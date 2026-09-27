@@ -287,6 +287,25 @@ describe('FileBrowserButton', () => {
     expect(within(crumbs).getByRole('button', { name: 'landing' })).toBeInTheDocument();
   });
 
+  it('shows a folder the backend would refuse to list, by its full key, without opening it', async () => {
+    const user = userEvent.setup();
+    mockFiles.mockResolvedValueOnce(folder('', ['exports//', '/', 'raw/']));
+    render(
+      <FileBrowserButton connectionId="c1" rootLabel="landing" mode="folder" onPick={vi.fn()} />,
+    );
+    await user.click(screen.getByRole('button', { name: /Browse folders/ }));
+
+    await screen.findByRole('button', { name: /raw\// });
+    expect(screen.getByText('exports//')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /exports/ })).not.toBeInTheDocument();
+    expect(screen.getAllByText(/Can't be opened here/)).toHaveLength(2);
+    // At the top level the footer names no container/bucket it can't know is right.
+    expect(
+      screen.getByRole('button', { name: 'Use the top level (no prefix)' }),
+    ).toBeInTheDocument();
+    expect(mockFiles).toHaveBeenCalledTimes(1);
+  });
+
   it('says a truncated folder listing is only the first page', async () => {
     const user = userEvent.setup();
     mockFiles.mockResolvedValueOnce({ ...folder('', ['a/']), truncated: true, limit: 1 });
