@@ -54,6 +54,9 @@ _BY_EXPECTATION_TYPE: dict[str, str] = {
     "dmf:null_percent": COMPLETENESS,
     "dmf:duplicate_count": UNIQUENESS,
     "dmf:unique_count": UNIQUENESS,
+    "dmf:blank_count": COMPLETENESS,
+    # A timestamp after "now" is an impossible value, not late data.
+    "dmf:future_timestamp_percent": VALIDITY,
 }
 
 # Fallback for the non-GX kinds, whose `expectation_type` is the generated `monitor:<kind>` /
