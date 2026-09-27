@@ -2088,6 +2088,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#column-listing-profile-one-warehouse-login" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Column listing + profile — one warehouse login
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#unity-catalog-tiers-measured" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3241,6 +3252,17 @@
     <span class="md-ellipsis">
       
         Snowflake tiers — measured
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#column-listing-profile-one-warehouse-login" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Column listing + profile — one warehouse login
       
     </span>
   </a>
@@ -5418,6 +5440,53 @@ same 28 rows come back either way: the worker holds a verdict, not the table. Th
 wall clock is mostly the 13 round trips, not the scan. Peak RSS here is the
 process baseline (GX and the connector loaded), the same ~380 MiB an empty run
 costs.</p>
+<h3 id="column-listing-profile-one-warehouse-login">Column listing + profile — one warehouse login<a class="headerlink" href="#column-listing-profile-one-warehouse-login" title="Permanent link">¶</a></h3>
+<p>Redaction-policy suggestion (<code>suggest_policy_for_target</code> — the REST route, the
+MCP tool and the worker's auto-classify) and the LLM prompt builders (SQL
+generation, check suggestions) each list a table's columns and then profile
+them. Those used to be two separate connections, so two warehouse logins back to
+back against the same datasource; they now run inside
+<code>profile_service.shared_connection()</code>, which reuses one live connection per
+datasource for the whole block. SQL generation with <code>include_profile</code>
+and additional tables previously paid a login per list and per profile, and now
+pays one. After a failed statement inside the scope, the connection is rolled back
+and probed with <code>SELECT 1</code>. If it still answers it is kept; if not, it is dropped
+and the next call logs in again. The probe is needed because the Snowflake and
+Databricks dialects never mark a dropped session as invalidated. That was measured
+on Unity Catalog, where a dropped session still read <code>invalidated=False</code>.</p>
+<p>Measured live against Unity Catalog (Free Edition SQL warehouse, warm,
+<code>dataq_retail.gold.feedback_sentiment</code>, 7 columns), counting driver sessions
+opened:</p>
+<table>
+<thead>
+<tr>
+<th>Path</th>
+<th>Sessions opened</th>
+<th>Wall (run 1 / run 2)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Before — <code>list_columns</code> then <code>profile_connection</code></td>
+<td>2</td>
+<td>9.85 s / 4.20–4.48 s</td>
+</tr>
+<tr>
+<td>After — <code>suggest_policy_for_target</code></td>
+<td><strong>1</strong></td>
+<td>2.82–3.20 s</td>
+</tr>
+<tr>
+<td>After — the LLM prompt shape (<code>top_n=0</code> profile)</td>
+<td><strong>1</strong></td>
+<td>2.27–2.58 s</td>
+</tr>
+</tbody>
+</table>
+<p>The wall-clock gap is the second session's open, about 1.5 s here. The same
+count was measured live against Snowflake from its own <code>QUERY_HISTORY</code>, per
+session: <strong>2</strong> sessions before, <strong>1</strong> for both paths after. A session dropped
+mid-scope is replaced by exactly one fresh login.</p>
 <h3 id="unity-catalog-tiers-measured">Unity Catalog tiers — measured<a class="headerlink" href="#unity-catalog-tiers-measured" title="Permanent link">¶</a></h3>
 <p>Run live on 2026-09-27 against the Databricks sample catalog (<code>samples.tpch.part</code>,
 exactly 1,000,000 rows, 9 columns, six of them strings), read-only, so nothing
