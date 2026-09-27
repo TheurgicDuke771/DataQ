@@ -557,3 +557,73 @@ describe('ConnectionForm — PostgreSQL', () => {
     expect(payload.secret).toBe('pw');
   });
 });
+
+describe('ConnectionForm — SQL Server', () => {
+  it('defaults to a SQL login on the shipped driver and sends only that mode’s fields', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue({ ...icebergConnection, type: 'mssql' });
+
+    render(
+      <AntApp>
+        <ConnectionForm type="mssql" onSaved={vi.fn()} onCancel={vi.fn()} />
+      </AntApp>,
+    );
+
+    await user.type(await screen.findByLabelText('Name'), 'orders-sql');
+    await selectOption(user, 'DEV');
+    await user.type(screen.getByLabelText('Host'), 'srv.database.windows.net');
+    await user.type(screen.getByLabelText('Database'), 'shop');
+    await user.type(screen.getByLabelText('User'), 'dq_reader');
+    expect(screen.queryByLabelText('Tenant ID')).toBeNull();
+    await user.type(screen.getByLabelText('Password'), 'pw');
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalled());
+    const payload = mockCreate.mock.calls[0][0];
+    expect(payload.type).toBe('mssql');
+    expect(payload.config).toMatchObject({
+      host: 'srv.database.windows.net',
+      database: 'shop',
+      user: 'dq_reader',
+      auth_type: 'sql',
+      driver: 'python-tds',
+    });
+    expect(payload.config).not.toHaveProperty('tenant_id');
+    expect(payload.secret).toBe('pw');
+  });
+
+  it('a service principal swaps the user for tenant + client ids and a client secret', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue({ ...icebergConnection, type: 'mssql' });
+
+    render(
+      <AntApp>
+        <ConnectionForm type="mssql" onSaved={vi.fn()} onCancel={vi.fn()} />
+      </AntApp>,
+    );
+
+    await user.type(await screen.findByLabelText('Name'), 'fabric-wh');
+    await selectOption(user, 'DEV');
+    await user.type(screen.getByLabelText('Host'), 'abc.datawarehouse.fabric.microsoft.com');
+    await user.type(screen.getByLabelText('Database'), 'wh');
+    // Comboboxes: env, driver, auth type.
+    await selectOption(user, 'Service principal (Entra ID)', { index: 2 });
+    expect(screen.queryByLabelText('User')).toBeNull();
+    await user.type(screen.getByLabelText('Tenant ID'), '11111111-2222-3333-4444-555555555555');
+    await user.type(screen.getByLabelText('Client ID'), 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
+    await selectOption(user, 'odbc', { index: 1 });
+    await user.type(screen.getByLabelText('Client secret'), 's3cret');
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalled());
+    const payload = mockCreate.mock.calls[0][0];
+    expect(payload.config).toMatchObject({
+      auth_type: 'entra_service_principal',
+      tenant_id: '11111111-2222-3333-4444-555555555555',
+      client_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      driver: 'odbc',
+    });
+    expect(payload.config).not.toHaveProperty('user');
+    expect(payload.secret).toBe('s3cret');
+  });
+});

@@ -24,6 +24,7 @@ const catalog = EXPECTATION_CATALOG.map((s) => ({
   dimension: s.dimension ?? null,
   noThresholds: s.noThresholds ?? false,
   dataframeOnly: s.dataframeOnly ?? false,
+  unsupportedOn: s.unsupportedOn ?? [],
   requireFailOrCritical: s.thresholds?.requireFailOrCritical ?? false,
   fields: s.fields.map((f) => ({
     name: f.name,

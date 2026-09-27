@@ -44,6 +44,8 @@ function ConfigTextField({
         <Select mode="tags" tokenSeparators={[',']} placeholder="Add one or more…" />
       ) : field.options ? (
         <Select allowClear options={field.options.map((value) => ({ value, label: value }))} />
+      ) : field.type === 'multiline' ? (
+        <Input.TextArea rows={4} autoComplete="off" spellCheck={false} />
       ) : (
         <Input />
       )}
@@ -240,7 +242,9 @@ export function ConnectionTypeFields({
         </Form.Item>
       )}
 
-      {activeAuth?.extraField && <ConfigTextField field={activeAuth.extraField} />}
+      {activeAuth?.extraFields?.map((f) => (
+        <ConfigTextField key={f.name} field={f} />
+      ))}
 
       {showSecret &&
         (activeAuth ? (

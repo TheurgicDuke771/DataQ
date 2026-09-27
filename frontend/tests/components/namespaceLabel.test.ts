@@ -15,6 +15,12 @@ describe('namespaceLabel', () => {
       expect(namespaceLabel('postgres://db.internal:5432')).toBe('PostgreSQL · db.internal:5432');
     });
 
+    it('names a SQL Server endpoint by host:port (#1679)', () => {
+      expect(namespaceLabel('mssql://srv.database.windows.net:1433')).toBe(
+        'SQL Server · srv.database.windows.net:1433',
+      );
+    });
+
     it('shortens a Databricks workspace host to the workspace id', () => {
       expect(namespaceLabel('unitycatalog://dbc-1234abcd-5678.cloud.databricks.com')).toBe(
         'Databricks · dbc-1234abcd-5678',
@@ -138,6 +144,9 @@ describe('datasourceKind', () => {
     ['postgres://db.internal:5432', 'postgres'],
     // An Iceberg SQL-catalog DSN is NOT the PostgreSQL datasource namespace.
     ['postgresql://u@h/db', 'other'],
+    ['mssql://srv:1433', 'mssql'],
+    // Nor is a pyodbc/pytds driver DSN the SQL Server datasource namespace.
+    ['mssql+pyodbc://u@h/db', 'other'],
     ['file', 'other'],
     ['nonsense', 'other'],
   ])('%s → %s', (ns, kind) => {
@@ -153,6 +162,7 @@ describe('datasourceKind', () => {
       'abfss://c@a.dfs.core.windows.net',
       's3://bucket',
       'postgres://db.internal:5432',
+      'mssql://srv:1433',
     ]) {
       expect(datasourceKind(ns)).not.toBe('other');
       expect(namespaceLabel(ns)).toContain(' · ');

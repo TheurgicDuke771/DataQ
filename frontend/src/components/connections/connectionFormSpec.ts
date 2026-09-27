@@ -9,8 +9,9 @@ export interface TextField {
   /**
    * `tags` renders a free-entry multi-value input whose config value is a `string[]` (e.g. dbt's
    * `jobs`); `toggle` renders a Switch whose config value is a boolean (e.g.
+   * `inventory_sync`); `multiline` renders a textarea (e.g. a PEM CA bundle).
    */
-  type?: 'text' | 'tags' | 'toggle';
+  type?: 'text' | 'tags' | 'toggle' | 'multiline';
   /** Helper text under the field. */
   extra?: string;
   /**
@@ -34,8 +35,11 @@ export interface AuthOption {
   secretLabel: string;
   /** Secret is a multi-line PEM key rather than a single-line password. */
   multilineSecret?: boolean;
-  /** An extra config field this mode needs (e.g. Airflow basic → username). */
-  extraField?: TextField;
+  /**
+   * Extra config fields this mode needs (e.g. Airflow basic → username). Unmounted — and so not
+   * submitted — under any other mode.
+   */
+  extraFields?: TextField[];
   /**
    * Present → the mode takes an optional second secret part (e.g. a key-pair private key's
    * passphrase) that rides the combined payload — see `composeSecret`.
@@ -191,6 +195,80 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
     secretLabel: 'Password',
     destinationFields: ['host', 'port'],
   },
+  mssql: {
+    // One engine-generic adapter for anything that speaks SQL Server's TDS protocol (#1679,
+    // ADR 0044) — SQL Server, Azure SQL, Synapse, Fabric SQL. TLS is always verified.
+    textFields: [
+      {
+        name: 'host',
+        label: 'Host',
+        extra:
+          'Hostname only — e.g. myserver.database.windows.net or ' +
+          '<id>.datawarehouse.fabric.microsoft.com (no scheme, port or \\instance)',
+      },
+      { name: 'port', label: 'Port', optional: true, extra: 'Defaults to 1433' },
+      { name: 'database', label: 'Database' },
+      {
+        name: 'schema',
+        label: 'Default schema',
+        optional: true,
+        extra: 'Where an unqualified run target resolves — defaults to dbo',
+      },
+      {
+        name: 'driver',
+        label: 'Driver',
+        optional: true,
+        options: ['python-tds', 'odbc'],
+        extra:
+          'python-tds (default) ships with DataQ. odbc uses Microsoft ODBC Driver 18, which you ' +
+          'must install in your own DataQ image — needed today for Microsoft Fabric SQL endpoints.',
+      },
+      {
+        name: 'ca_certificate',
+        label: 'Private CA certificate',
+        optional: true,
+        type: 'multiline',
+        extra:
+          'PEM of the CA your server certificate chains to, for a self-hosted server — leave ' +
+          'empty for public CAs (Azure SQL, Fabric). python-tds driver only.',
+      },
+      {
+        name: 'inventory_sync',
+        label: 'Inventory sync',
+        type: 'toggle',
+        optional: true,
+        default: true,
+        extra: 'Daily sync of every table this login can read into the asset view.',
+      },
+    ],
+    defaultConfig: { driver: 'python-tds' },
+    auth: [
+      {
+        value: 'sql',
+        label: 'SQL login',
+        secretLabel: 'Password',
+        extraFields: [{ name: 'user', label: 'User' }],
+      },
+      {
+        value: 'entra_service_principal',
+        label: 'Service principal (Entra ID)',
+        secretLabel: 'Client secret',
+        extraFields: [
+          { name: 'tenant_id', label: 'Tenant ID' },
+          { name: 'client_id', label: 'Client ID' },
+        ],
+      },
+    ],
+    destinationFields: [
+      'host',
+      'port',
+      'auth_type',
+      'tenant_id',
+      'client_id',
+      'ca_certificate',
+      'driver',
+    ],
+  },
   iceberg: {
     // Native pyiceberg read (ADR 0030).
     textFields: [
@@ -260,7 +338,7 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
         value: 'basic',
         label: 'Basic auth',
         secretLabel: 'Password',
-        extraField: { name: 'username', label: 'Username' },
+        extraFields: [{ name: 'username', label: 'Username' }],
       },
     ],
     destinationFields: ['base_url'],

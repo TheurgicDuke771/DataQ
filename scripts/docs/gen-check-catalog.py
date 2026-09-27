@@ -151,6 +151,14 @@ def runs_on(entry: dict, cap: str | None, pushdown: set[str], ds: dict) -> str:
                 + ", ".join(labels[t] for t in excluded)
                 + " (no SQL implementation; refused at author time)"
             )
+    dialect_gap = [t for t in types if t in entry.get("unsupportedOn", [])]
+    if dialect_gap:
+        types = [t for t in types if t not in dialect_gap]
+        note += (
+            " — not "
+            + ", ".join(labels[t] for t in dialect_gap)
+            + " (no translation for that SQL dialect; refused at author time)"
+        )
     if entry["type"] in pushdown and "unity_catalog" in types:
         note += " · SQL pushdown on Unity Catalog"
     names = (
