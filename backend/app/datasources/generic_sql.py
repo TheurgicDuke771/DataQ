@@ -319,17 +319,21 @@ class GenericSqlCheckRunner:
         # as spelled retargets a mixed-case schema. So the SESSION is scoped to the target's
         # schema instead (the engine's default schema) and GX gets no schema at all.
         scoped = self._spec.scoped_config(self._config, schema)
+        connections = GxConnectionSource(self._spec, scoped, self._secret)
         context = gx.get_context(mode="ephemeral")
-        datasource = self._spec.gx_datasource(
-            context,
-            f"{self._spec.conn_type}-{table}",
-            self._spec.url_string(scoped, self._secret),
-            {
-                "connect_args": self._spec.connect_args(scoped, None),
-                **self._spec.run_engine_options,
-            },
-        )
+        datasource: Any = None
         try:
+            # GX tests the connection inside `add_*`, so a failure there must still close it.
+            datasource = self._spec.gx_datasource(
+                context,
+                f"{self._spec.conn_type}-{table}",
+                self._spec.url_string(scoped, self._secret),
+                {
+                    "connect_args": self._spec.connect_args(scoped, None),
+                    "creator": connections.connect,
+                    **self._spec.run_engine_options,
+                },
+            )
             asset = datasource.add_table_asset(
                 name=table, table_name=gx_table_name(table), schema_name=None
             )
@@ -343,7 +347,9 @@ class GenericSqlCheckRunner:
                 value_signal_gate=value_signal_gate,
             )
         finally:
-            _dispose_gx_engine(datasource)
+            if datasource is not None:
+                _dispose_gx_engine(datasource)
+            connections.close()
 
     def run_monitors(
         self, *, table: str, schema: str | None, monitors: list[MonitorSpec]
@@ -356,6 +362,42 @@ class GenericSqlCheckRunner:
             catalog=None,
             monitors=monitors,
         )
+
+
+class GxConnectionSource:
+    """The DBAPI connections a GX run is allowed to use, opened by DataQ and closed by DataQ.
+
+    GX builds a fresh SQLAlchemy engine for every execution engine it makes and never disposes
+    them, so a run left one server session per run open until garbage collection (live-found:
+    three runs, three idle PostgreSQL backends — an OLTP server's connection slots are small and
+    shared). Handed to GX as its engines' `creator`, this source records every connection it
+    opens and `close` shuts them all, whichever engine pooled them.
+    """
+
+    def __init__(self, spec: SqlEngineSpec, config: GenericSqlConfig, secret: str) -> None:
+        from sqlalchemy import create_engine
+        from sqlalchemy.pool import NullPool
+
+        url, connect_args = spec.engine_args(config, secret, timeout=None)
+        self._source = create_engine(url, connect_args=connect_args, poolclass=NullPool)
+        self._opened: list[Any] = []
+
+    def connect(self) -> Any:
+        proxied = self._source.raw_connection()
+        # The caller's pool owns it from here; NullPool would close it on check-in otherwise.
+        proxied.detach()
+        connection = proxied.dbapi_connection
+        self._opened.append(connection)
+        return connection
+
+    def close(self) -> None:
+        while self._opened:
+            connection = self._opened.pop()
+            try:
+                connection.close()
+            except Exception as exc:  # already closed by its pool, or the server went away
+                log.debug("generic_sql_gx_connection_close_failed", error_type=type(exc).__name__)
+        self._source.dispose()
 
 
 def gx_table_name(table: str) -> str:

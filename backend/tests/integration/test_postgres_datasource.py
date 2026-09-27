@@ -368,6 +368,33 @@ def test_failing_rows_carry_the_identifier_column_as_their_locator(pg: PgTarget)
     ]
 
 
+def test_a_finished_run_leaves_no_server_session_open(pg: PgTarget) -> None:
+    """GX builds a fresh engine per execution engine and never disposes it: each run used to
+    leave one idle backend behind until garbage collection (live-found — three runs, three
+    backends). An OLTP server's connection slots are small and shared."""
+    assert TEST_DATABASE_URL is not None
+    admin = create_engine(TEST_DATABASE_URL)
+    try:
+        for _ in range(3):
+            runner = _runner(pg)
+            try:
+                runner.run_checks(
+                    table="Orders",
+                    schema=pg.schema,
+                    checks=[CheckSpec("expect_column_values_to_not_be_null", {"column": "email"})],
+                )
+            finally:
+                runner.close()
+        with admin.connect() as conn:
+            backends = conn.execute(
+                text("SELECT count(*) FROM pg_stat_activity WHERE usename = :role"),
+                {"role": pg.role},
+            ).scalar_one()
+    finally:
+        admin.dispose()
+    assert backends == 0
+
+
 def test_a_lower_case_table_resolves_bare(pg: PgTarget) -> None:
     runner = _runner(pg)
     try:
