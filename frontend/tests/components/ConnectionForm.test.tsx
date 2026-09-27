@@ -522,3 +522,38 @@ describe('ConnectionForm — inventory_sync toggle default (asset-first, 2026-09
     expect(mockUpdate.mock.calls[0][1].config).toMatchObject({ inventory_sync: true });
   });
 });
+
+describe('ConnectionForm — PostgreSQL', () => {
+  it('offers the TLS mode as a closed choice and sends the one picked', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue({ ...icebergConnection, type: 'postgres' });
+
+    render(
+      <AntApp>
+        <ConnectionForm type="postgres" onSaved={vi.fn()} onCancel={vi.fn()} />
+      </AntApp>,
+    );
+
+    await user.type(await screen.findByLabelText('Name'), 'orders-db');
+    await selectOption(user, 'DEV');
+    await user.type(screen.getByLabelText('Host'), 'db.internal');
+    await user.type(screen.getByLabelText('Database'), 'shop');
+    await user.type(screen.getByLabelText('User'), 'dq_reader');
+    // The second combobox is TLS mode (env is the first): no free text, so no typo can reach
+    // the backend.
+    await selectOption(user, 'verify-full', { index: 1 });
+    await user.type(screen.getByLabelText('Password'), 'pw');
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalled());
+    const payload = mockCreate.mock.calls[0][0];
+    expect(payload.type).toBe('postgres');
+    expect(payload.config).toMatchObject({
+      host: 'db.internal',
+      database: 'shop',
+      user: 'dq_reader',
+      sslmode: 'verify-full',
+    });
+    expect(payload.secret).toBe('pw');
+  });
+});

@@ -158,6 +158,33 @@ def get_warehouse_lineage_provider(connection_type: str) -> WarehouseLineageProv
 WAREHOUSE_LINEAGE_CONNECTION_TYPES: tuple[str, ...] = ("snowflake", "unity_catalog")
 
 
+@runtime_checkable
+class TableEnumerator(Protocol):
+    """The table-enumeration half of the ADR 0040 seam, on its own: every warehouse lineage
+    provider is one, and so is a source that enumerates tables but has no lineage to pull.
+    """
+
+    def enumerate_tables(
+        self,
+        conn: object,
+        *,
+        connection_config: dict[str, object],
+        limit: int | None = None,
+    ) -> tuple[AssetIdentity, ...]: ...
+
+
+def get_table_enumerator(connection_type: str) -> TableEnumerator | None:
+    """The inventory-sync enumerator for a datasource type, or ``None`` when it has none."""
+    provider = get_warehouse_lineage_provider(connection_type)
+    if provider is not None:
+        return provider
+    from backend.app.datasources.sql_engines import sql_engine
+    from backend.app.lineage.warehouse_generic_sql import GenericSqlTableEnumerator
+
+    spec = sql_engine(connection_type)
+    return GenericSqlTableEnumerator(spec) if spec is not None else None
+
+
 @cache
 def snapshot_lineage_connection_types() -> tuple[str, ...]:
     """Connection types whose warehouse provider is a SNAPSHOT source — the only ones a

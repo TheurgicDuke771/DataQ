@@ -22,10 +22,17 @@ from backend.app.datasources.base import (
     TargetShapeError,
 )
 from backend.app.datasources.flatfile import build_flatfile_runner
+from backend.app.datasources.generic_sql import (
+    GenericSqlConnectionAdapter,
+    SqlEngineSpec,
+    build_generic_sql_runner,
+)
 from backend.app.datasources.iceberg import IcebergConnectionAdapter, build_iceberg_runner
 from backend.app.datasources.s3 import S3ConnectionAdapter
 from backend.app.datasources.sampling import SamplingConfigError, parse_sample_spec
 from backend.app.datasources.snowflake import SnowflakeConnectionAdapter, build_snowflake_runner
+from backend.app.datasources.sql import is_sql_identifier
+from backend.app.datasources.sql_engines import SQL_ENGINES
 from backend.app.datasources.unity_catalog import (
     UnityCatalogConnectionAdapter,
     build_unity_catalog_runner,
@@ -52,6 +59,8 @@ _ADAPTERS: dict[str, ConnectionAdapter] = {
     "adf": ADFConnectionAdapter(),
     "airflow": AirflowConnectionAdapter(),
     "dbt": DbtConnectionAdapter(),
+    # Every engine on the generic SQL base (#1678) — one entry per `SqlEngineSpec`.
+    **{conn_type: GenericSqlConnectionAdapter(spec) for conn_type, spec in SQL_ENGINES.items()},
 }
 
 
@@ -167,12 +176,25 @@ def _iceberg_runner(
     return build_iceberg_runner(config=config, secret_ref=secret_ref, secret_store=secret_store)
 
 
+def _generic_sql_runner(spec: SqlEngineSpec) -> _RunnerBuilder:
+    def _build(
+        *, config: dict[str, Any], secret_ref: str | None, secret_store: SecretStore, **_: Any
+    ) -> CheckRunner:
+        # `sampling` is swallowed like Snowflake's: a pushdown runner never materialises rows.
+        return build_generic_sql_runner(
+            spec, config=config, secret_ref=secret_ref, secret_store=secret_store
+        )
+
+    return _build
+
+
 _RUNNER_BUILDERS: dict[str, _RunnerBuilder] = {
     "snowflake": _snowflake_runner,
     "adls_gen2": _flatfile_runner,
     "s3": _flatfile_runner,
     "unity_catalog": _unity_catalog_runner,
     "iceberg": _iceberg_runner,
+    **{conn_type: _generic_sql_runner(spec) for conn_type, spec in SQL_ENGINES.items()},
 }
 
 
@@ -262,12 +284,33 @@ def _flatfile_target(target: dict[str, Any], conn_type: str) -> ResolvedTarget:
     return ResolvedTarget(table=_require(target, "path", conn_type), schema=None, catalog=None)
 
 
-def _snowflake_target(target: dict[str, Any], conn_type: str) -> ResolvedTarget:
+def _table_schema_target(target: dict[str, Any], conn_type: str) -> ResolvedTarget:
+    """``table`` + optional ``schema`` — Snowflake and every generic SQL engine (#1678)."""
     return ResolvedTarget(
         table=_require(target, "table", conn_type),
         schema=_opt(target.get("schema")),
         catalog=None,
     )
+
+
+def _generic_sql_target(spec: SqlEngineSpec) -> Callable[[dict[str, Any], str], ResolvedTarget]:
+    """`_table_schema_target`, plus the engine's identifier rules checked at SAVE time (#1678):
+    a name the run path can't address — or one PostgreSQL would silently truncate onto a
+    different object — is a 422 on the suite, not an error on every run.
+    """
+    limit = spec.config_model.max_identifier_length
+
+    def _resolve(target: dict[str, Any], conn_type: str) -> ResolvedTarget:
+        resolved = _table_schema_target(target, conn_type)
+        for label, name in (("table", resolved.table), ("schema", resolved.schema)):
+            if name is not None and (not is_sql_identifier(name) or len(name) > limit):
+                raise TargetShapeError(
+                    f"{conn_type} target {label} must be a plain SQL identifier (letters, "
+                    f"digits, _ and $; not starting with a digit) of at most {limit} characters"
+                )
+        return resolved
+
+    return _resolve
 
 
 def _unity_catalog_target(target: dict[str, Any], conn_type: str) -> ResolvedTarget:
@@ -362,11 +405,12 @@ def _batch_spec(target: dict[str, Any]) -> BatchSpec:
 
 
 _TARGET_RESOLVERS: dict[str, Callable[[dict[str, Any], str], ResolvedTarget]] = {
-    "snowflake": _snowflake_target,
+    "snowflake": _table_schema_target,
     "unity_catalog": _unity_catalog_target,
     "iceberg": _iceberg_target,
     "adls_gen2": _flatfile_target,
     "s3": _flatfile_target,
+    **{conn_type: _generic_sql_target(spec) for conn_type, spec in SQL_ENGINES.items()},
 }
 
 

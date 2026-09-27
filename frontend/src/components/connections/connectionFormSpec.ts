@@ -14,6 +14,11 @@ export interface TextField {
   /** Helper text under the field. */
   extra?: string;
   /**
+   * A closed vocabulary: renders a clearable Select instead of free text, so a typo can't
+   * reach the backend and clearing it sends nothing (the backend default applies).
+   */
+  options?: string[];
+  /**
    * `toggle` only: the value an absent config key should be treated as. Must be applied by
    * merging into the config object before it reaches the form (see `withToggleDefaults`) —
    * a per-`Form.Item` `initialValue` is silently overwritten the moment `setFieldsValue`
@@ -151,6 +156,40 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
     ],
     secretLabel: 'Personal access token (PAT)',
     destinationFields: ['workspace_url'],
+  },
+  postgres: {
+    // One engine-generic adapter for any PostgreSQL server (#1678) — never a hosting vendor.
+    textFields: [
+      { name: 'host', label: 'Host', extra: 'Hostname or IP only — no scheme, port or path' },
+      { name: 'port', label: 'Port', optional: true, extra: 'Defaults to 5432' },
+      { name: 'database', label: 'Database' },
+      { name: 'user', label: 'User' },
+      {
+        name: 'schema',
+        label: 'Default schema',
+        optional: true,
+        extra: 'Where an unqualified run target resolves — defaults to public',
+      },
+      {
+        name: 'sslmode',
+        label: 'TLS mode',
+        optional: true,
+        options: ['require', 'verify-full', 'verify-ca', 'disable'],
+        extra:
+          'require when left empty · verify-* also checks the server certificate against the ' +
+          'system trust store · disable sends everything in plaintext',
+      },
+      {
+        name: 'inventory_sync',
+        label: 'Inventory sync',
+        type: 'toggle',
+        optional: true,
+        default: true,
+        extra: 'Daily sync of every table this user can read into the asset view.',
+      },
+    ],
+    secretLabel: 'Password',
+    destinationFields: ['host', 'port'],
   },
   iceberg: {
     // Native pyiceberg read (ADR 0030).

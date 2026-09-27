@@ -4,7 +4,7 @@
  */
 
 export type DatasourceKind =
-  'snowflake' | 'unity_catalog' | 'adls_gen2' | 's3' | 'iceberg' | 'other';
+  'snowflake' | 'unity_catalog' | 'adls_gen2' | 's3' | 'iceberg' | 'postgres' | 'other';
 
 interface SchemeSpec {
   prefix: string;
@@ -45,6 +45,8 @@ const SCHEMES: SchemeSpec[] = [
     },
   },
   { prefix: 's3://', kind: 's3', source: 'S3', instance: (rest) => rest },
+  // `postgres://host:port` — the OpenLineage PostgreSQL namespace (#1678).
+  { prefix: 'postgres://', kind: 'postgres', source: 'PostgreSQL', instance: (rest) => rest },
 ];
 
 /** Catalog schemes whose URI has no *database* in it — the host itself is the catalog. */

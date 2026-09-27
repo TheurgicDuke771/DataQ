@@ -581,8 +581,9 @@ def list_suites() -> list[dict[str, Any]]:
 
     Use this to discover what suites exist before drilling into results or
     triggering a run. Returns, per suite: its id, name, the datasource it runs
-    against (snowflake / adls / s3 / unity_catalog), the environment (dev / qa /
-    uat), how many checks it has, and the status + time of its most recent run
+    against (snowflake / adls / s3 / unity_catalog / iceberg / postgres), the
+    environment (dev / qa / uat), how many checks it has, and the status + time of
+    its most recent run
     (null if it has never run). Scoped to suites the user owns or has a share on
     (a workspace-admin sees every suite).
 
@@ -1309,7 +1310,7 @@ def list_connections(type: str | None = None, env: str | None = None) -> list[di
     Use this for 'what are we connected to?', 'which connections are broken?', or
     to find the connection a suite should run against. Returns, per connection:
     its id, name, type (``snowflake`` / ``adls_gen2`` / ``s3`` / ``unity_catalog``
-    / ``iceberg`` for datasources; ``adf`` / ``airflow`` / ``dbt`` for
+    / ``iceberg`` / ``postgres`` for datasources; ``adf`` / ``airflow`` / ``dbt`` for
     orchestration providers), environment, whether a credential is stored, and
     its health — when it was last polled or last ran, a classified error reason
     when it is failing, how many consecutive failures it has had, and when its
@@ -4133,8 +4134,9 @@ def profile_column(
     for an Iceberg table when passing an explicit ``table`` (Iceberg addresses
     ``namespace.table``); it defaults to the suite target's namespace when no
     explicit ``table``/``path`` is given, so it only needs passing alongside
-    your own ``table``. **Snowflake and Unity Catalog are profiled in full; ADLS, S3 and Iceberg
-    targets are profiled over a sample of at most 100,000 rows.** When
+    your own ``table``. **Snowflake, Unity Catalog and PostgreSQL are profiled in
+    full; ADLS, S3 and Iceberg targets are profiled over a sample of at most
+    100,000 rows.** When
     ``sampled`` is true, ``row_count`` is the number of rows **sampled** — not
     the size of the file or table — and every statistic describes only that
     sample. Say so rather than reporting a sample fraction as a fact about the
@@ -4190,7 +4192,7 @@ def profile_column(
             file_format=file_format,
             secret_store=get_secret_store(),
         )
-        # Only the SQL path (Snowflake / Unity Catalog) aggregates the whole
+        # Only the SQL path (Snowflake / Unity Catalog / PostgreSQL) aggregates the whole
         # table; ADLS / S3 / Iceberg read at most `_SAMPLE_ROWS` rows into pandas
         # and compute locally. `row_count` is then the SAMPLE size, not the
         # table's — "how many rows are in the orders file?" answered `100000`

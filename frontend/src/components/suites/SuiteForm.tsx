@@ -27,6 +27,8 @@ import {
   asFileFormat,
   assembleTarget,
   MAX_SAMPLE_ROWS,
+  SCHEMA_BROWSE_TYPES,
+  sqlTargetPlaceholders,
   storedSampling,
   supportsSampling,
   type TargetFormValues,
@@ -357,16 +359,25 @@ export function TargetFields({
               }
             />
           )}
+          {kind === 'sql' && connection && SCHEMA_BROWSE_TYPES.has(connection.type) && (
+            <CatalogBrowserButton
+              connectionId={connection.id}
+              root="schema"
+              onPick={({ schema, table }) =>
+                form.setFieldsValue({ target_schema: schema, target_table: table })
+              }
+            />
+          )}
           {kind === 'uc' && (
             <Form.Item name="target_catalog" label="Catalog">
               <Input placeholder="main" />
             </Form.Item>
           )}
           <Form.Item name="target_schema" label="Schema (optional)">
-            <Input placeholder={kind === 'uc' ? 'default' : 'PUBLIC'} />
+            <Input placeholder={sqlTargetPlaceholders(connection?.type).schema} />
           </Form.Item>
           <Form.Item name="target_table" label="Table">
-            <Input placeholder={kind === 'uc' ? 'orders' : 'ANALYTICS.ORDERS'} />
+            <Input placeholder={sqlTargetPlaceholders(connection?.type).table} />
           </Form.Item>
         </>
       )}

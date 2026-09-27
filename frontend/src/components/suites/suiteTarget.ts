@@ -15,6 +15,7 @@ export type TargetKind = 'sql' | 'uc' | 'flatfile' | 'iceberg';
 export function targetKind(type: ConnectionType): TargetKind | null {
   switch (type) {
     case 'snowflake':
+    case 'postgres':
       return 'sql';
     case 'unity_catalog':
       return 'uc';
@@ -74,6 +75,23 @@ function summarizeTargetBase(target: Record<string, unknown> | null): string | n
  */
 export function isBatchTarget(target: Record<string, unknown> | null): boolean {
   return Boolean(targetString(target, 'pattern'));
+}
+
+/**
+ * `sql` datasources whose connection can be browsed schemas → tables (#466) — mirrors the
+ * generic SQL half of the backend `browse_service.TABLE_BROWSE_TYPES` (a connection that pins
+ * one database has no catalog level).
+ */
+export const SCHEMA_BROWSE_TYPES: ReadonlySet<ConnectionType> = new Set(['postgres']);
+
+/** Placeholder hints for the SQL target fields, in each engine's own name case. */
+export function sqlTargetPlaceholders(type: ConnectionType | undefined): {
+  schema: string;
+  table: string;
+} {
+  if (type === 'unity_catalog') return { schema: 'default', table: 'orders' };
+  if (type === 'postgres') return { schema: 'public', table: 'orders' };
+  return { schema: 'PUBLIC', table: 'ANALYTICS.ORDERS' };
 }
 
 /**
