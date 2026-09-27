@@ -17,6 +17,12 @@ SQL_ENGINES: dict[str, SqlEngineSpec] = {spec.conn_type: spec for spec in (POSTG
 
 GENERIC_SQL_TYPES: frozenset[str] = frozenset(SQL_ENGINES)
 
+# Connection types whose CheckRunner evaluates ordinary expectations on a SQL batch. Unity Catalog
+# is deliberately absent: its pushdown set is an allowlist, so anything outside it — including
+# every `DATAFRAME_ONLY_EXPECTATION_TYPES` entry — routes to that runner's pandas batch. Lives
+# here, not in `gx_runner`, which the generic runner imports (an import cycle otherwise).
+SQL_BATCH_CONNECTION_TYPES: frozenset[str] = frozenset({"snowflake", *GENERIC_SQL_TYPES})
+
 
 def sql_engine(conn_type: str) -> SqlEngineSpec | None:
     """The spec for a generic SQL connection type, or ``None`` for any other type."""

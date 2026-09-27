@@ -23,9 +23,13 @@ from backend.app.datasources.generic_sql import (
     build_generic_sql_runner,
     gx_table_name,
 )
-from backend.app.datasources.gx_runner import SQL_BATCH_CONNECTION_TYPES
 from backend.app.datasources.postgres import POSTGRES, PostgresConfig
-from backend.app.datasources.sql_engines import GENERIC_SQL_TYPES, default_schema, sql_engine
+from backend.app.datasources.sql_engines import (
+    GENERIC_SQL_TYPES,
+    SQL_BATCH_CONNECTION_TYPES,
+    default_schema,
+    sql_engine,
+)
 from backend.app.services.asset_identity import resolve_asset_identity
 from backend.app.services.custom_sql import SQL_QUERYABLE_TYPES
 from backend.app.services.failure_classifier import (

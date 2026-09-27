@@ -24,7 +24,6 @@ from backend.app.datasources.base import (
     SuiteOutcome,
     ValueSignalGate,
 )
-from backend.app.datasources.sql_engines import GENERIC_SQL_TYPES
 from backend.app.services.column_classification import value_signal_summary
 
 log = get_logger(__name__)
@@ -82,12 +81,6 @@ _GX_INTERNAL_KWARGS = frozenset({"batch_id"})
 # Submission-position marker stamped into each expectation's `meta` (#767): GX 1.17 reorders results
 # once any expectation errors, cross-wiring the positional zip.
 _INDEX_META_KEY = "dataq_index"
-
-
-# Connection types whose CheckRunner evaluates ordinary expectations on a SQL batch. Unity Catalog
-# is deliberately absent: its pushdown set is an allowlist, so anything outside it — including
-# every `DATAFRAME_ONLY_EXPECTATION_TYPES` entry — routes to that runner's pandas batch.
-SQL_BATCH_CONNECTION_TYPES: frozenset[str] = frozenset({"snowflake", *GENERIC_SQL_TYPES})
 
 
 class UnknownExpectationError(ValueError):
