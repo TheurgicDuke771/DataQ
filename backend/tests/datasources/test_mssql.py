@@ -222,6 +222,9 @@ def test_service_principal_url_carries_no_credential() -> None:
     assert "the-client-secret" not in rendered
     url = make_url(rendered)
     assert url.username is None and url.password is None
+    # Not merely hidden by rendering (a URL with no user drops its password from the string):
+    # the URL object itself carries none, so the DBAPI never sees user/password beside a token.
+    assert MSSQL.url(_config(_SP), "the-client-secret").password is None
 
 
 def test_tls_is_always_on_with_hostname_verification() -> None:

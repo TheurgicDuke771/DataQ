@@ -281,8 +281,6 @@ _AUTH_MARKERS: tuple[str, ...] = (
     # failed": error 4060 ("Cannot open database requested by the login. The login failed.") is
     # a missing database grant, not a dead credential.
     "login failed for user",
-    # Microsoft Entra ID: an unknown application (the secret markers are with ADLS's below).
-    "aadsts700016",
     # Azure ADLS Gen2 / Blob.
     "authenticationfailed",
     "server failed to authenticate the request",
