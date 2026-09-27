@@ -6,7 +6,7 @@ from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
 
-from backend.app.datasources.base import SAMPLE_ROW_CAP
+from backend.app.datasources.base import SAMPLE_ROW_CAP, CheckSpec
 from backend.app.datasources.gx_runner import (
     _VALUE_SIGNAL_SUMMARY_ROW_CAP,
     _bounded_observed_value,
@@ -93,6 +93,31 @@ def test_to_suite_outcome_reorders_errored_first_gx_result() -> None:
         {"column": "b"},
         {"column": "c"},
     ]
+
+
+def test_to_suite_outcome_restores_authored_kwargs_by_submission_index() -> None:
+    # #1618: GX returns the errored check first, so the authored spelling must follow the
+    # dataq_index marker, not position — and only the key the runner rewrote is restored.
+    folded = CheckSpec(
+        "expect_compound_columns_to_be_unique",
+        {"column_list": ["a", "b"], "mostly": 0.5},
+        authored_kwargs={"column_list": ["A", "B"], "mostly": 0.5},
+    )
+    plain = CheckSpec("expect_x", {"column": "c"})
+    gx_result = SimpleNamespace(
+        success=False,
+        results=[
+            _marked_result(
+                index=1,
+                type_="expect_compound_columns_to_be_unique",
+                kwargs={"column_list": ["a", "b"], "mostly": 0.50, "batch_id": "x"},
+            ),
+            _marked_result(index=0, type_="expect_x", kwargs={"column": "c"}),
+        ],
+    )
+    first, second = to_suite_outcome(gx_result, [plain, folded]).checks
+    assert first.expected_value == {"column": "c"}
+    assert second.expected_value == {"column_list": ["A", "B"], "mostly": 0.5}
 
 
 def test_to_suite_outcome_all_pass_preserves_order() -> None:

@@ -1115,6 +1115,124 @@
         "title": "BeatHealthRead",
         "type": "object"
       },
+      "BrowseFileRead": {
+        "properties": {
+          "last_modified": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Modified"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          }
+        },
+        "required": [
+          "path",
+          "size",
+          "last_modified"
+        ],
+        "title": "BrowseFileRead",
+        "type": "object"
+      },
+      "CatalogBrowseRead": {
+        "description": "One level of the catalog \u2192 schema \u2192 table tree. `truncated` means more names exist\nthan `limit` \u2014 the list is then a prefix, and the target can still be typed by hand.",
+        "properties": {
+          "catalog": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Catalog"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogEntryRead"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "level": {
+            "enum": [
+              "catalog",
+              "schema",
+              "table"
+            ],
+            "title": "Level",
+            "type": "string"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "level",
+          "catalog",
+          "schema",
+          "entries",
+          "truncated",
+          "limit"
+        ],
+        "title": "CatalogBrowseRead",
+        "type": "object"
+      },
+      "CatalogEntryRead": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "selectable": {
+            "description": "False when DataQ cannot target this name (not a plain SQL identifier).",
+            "title": "Selectable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "selectable"
+        ],
+        "title": "CatalogEntryRead",
+        "type": "object"
+      },
       "ChannelCreate": {
         "additionalProperties": false,
         "properties": {
@@ -3884,6 +4002,51 @@
           "detail"
         ],
         "title": "ExternalTransfer",
+        "type": "object"
+      },
+      "FileBrowseRead": {
+        "description": "The folders and files directly under `prefix` in the connection's container/bucket\n(`root`). `truncated` means the level holds more than `limit` entries.",
+        "properties": {
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/BrowseFileRead"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "folders": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Folders",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "prefix": {
+            "title": "Prefix",
+            "type": "string"
+          },
+          "root": {
+            "title": "Root",
+            "type": "string"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "root",
+          "prefix",
+          "folders",
+          "files",
+          "truncated",
+          "limit"
+        ],
+        "title": "FileBrowseRead",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -10829,6 +10992,161 @@
           }
         },
         "summary": "Update a connection",
+        "tags": [
+          "connections"
+        ]
+      }
+    },
+    "/api/v1/connections/{connection_id}/browse/catalog": {
+      "get": {
+        "operationId": "browse_connection_catalog_api_v1_connections__connection_id__browse_catalog_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Connection Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "catalog",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Catalog"
+            }
+          },
+          {
+            "in": "query",
+            "name": "schema",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Schema"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogBrowseRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List one level of a Unity Catalog connection's catalogs/schemas/tables",
+        "tags": [
+          "connections"
+        ]
+      }
+    },
+    "/api/v1/connections/{connection_id}/browse/files": {
+      "get": {
+        "operationId": "browse_connection_files_api_v1_connections__connection_id__browse_files_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Connection Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "prefix",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 1024,
+              "title": "Prefix",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileBrowseRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List the folders and files under a prefix of an ADLS Gen2 / S3 connection",
         "tags": [
           "connections"
         ]

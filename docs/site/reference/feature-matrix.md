@@ -18,6 +18,7 @@ One-page reference: what runs where. For the readable tour of everything DataQ o
 | Schema-drift monitor (column add/drop/type-change vs a stored baseline)ᵇ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Comparison / reconciliation (diff vs a baseline connection) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Column profiler (nulls, distinct, min/max, top values) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Browse for the run target (catalog → schema → table / folders → file) | — | ✅ | ✅ | ✅ | — |
 | DQ dimension on checks + asset scorecard (coverage + score) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Dry-run preview | ✅ | ✅ | ✅ | ✅ | ✅ |
 
@@ -53,8 +54,9 @@ row count is not a bandable metric), so `metric_value` is null by design, not by
 omission.
 
 ᵈ **Snowflake DMF** (ADR [0036](../adr/0036-connection-anchored-check-engines.md)) is the
-first platform-native check engine — an alternative `check.engine` for four expectation
-types (null count, null percent, duplicate count, unique count) that invokes Snowflake's
+first platform-native check engine — an alternative `check.engine` for six expectation
+types (null count, null percent, duplicate count, unique count, blank count, future-timestamp
+percent) plus the freshness monitor, invoking Snowflake's
 own `SNOWFLAKE.CORE.*` metric functions instead of a GX expectation. Engine is selected per
 check, on a Snowflake connection only; `kind` stays `expectation` either way. Testing or
 re-authenticating a Snowflake connection also probes DMF availability (Enterprise Edition +

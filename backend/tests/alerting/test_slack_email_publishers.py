@@ -149,8 +149,8 @@ def test_email_html_has_deep_link_and_expected_observed() -> None:
     assert "https://dataq.example.com/results/abc123" in html  # View run link
     assert "expected min_value=0 · observed 12 · 3.2% unexpected" in html
     assert "prod" in html and "ADF" in html  # metadata row
-    # #661: checks render a header-row table; run details are a key/value table.
-    assert "<thead>" in html and ">Status<" in html and ">Check<" in html and ">Details<" in html
+    # #2108: a plain-language block per failing check; the raw detail is kept small.
+    assert "What needs attention" in html and "Technical details: expected min_value=0" in html
     assert "<b>Suite</b>" in html and "Orders Header" in html  # suite in the details table
     assert "<b>Owner</b>" in html and "Ada Lovelace" in html  # owner in the details table
 
@@ -291,10 +291,11 @@ def test_slack_render_truncates_beyond_max_check_lines() -> None:
     assert "3 unexpected" in text  # count-only sample note branch (render.check_detail)
 
 
-def test_email_text_body_lists_failures_with_pct_note() -> None:
+def test_email_text_body_lists_failures_in_plain_language() -> None:
     text = email_mod.render_text_body(_report(worst="fail"))
-    assert "Failing checks:" in text
-    assert "[fail] order_total >= 0 — 3.2% unexpected" in text
+    assert "* order_total >= 0 [Failed]" in text
+    assert "  What we found: 51 rows (3.2%) didn't meet this rule." in text
+    assert "  Technical details: 3.2% unexpected" in text
 
 
 def test_email_text_body_truncates_beyond_max_check_lines() -> None:
@@ -305,7 +306,7 @@ def test_email_text_body_truncates_beyond_max_check_lines() -> None:
 
 def test_email_text_body_clean_run_has_no_failing_section() -> None:
     text = email_mod.render_text_body(_report(worst=None))
-    assert "Failing checks:" not in text
+    assert "What we found" not in text and "every check passed" in text
 
 
 # ── publish paths (W8 coverage audit) ────────────────────────────────────────

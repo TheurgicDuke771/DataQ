@@ -10,6 +10,7 @@ from collections.abc import Callable, Generator, Iterable, Iterator
 from contextlib import closing, contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from itertools import islice
 from typing import Any, ClassVar
 
 import great_expectations as gx
@@ -1419,6 +1420,106 @@ def list_files(
     uses `iter_files` instead (#943).
     """
     return list(iter_files(conn_type=conn_type, config=config, prefix=prefix, secret=secret))
+
+
+# ── interactive browse (#466) ───────────────────────────────────────
+# One delimited listing page: the immediate "folders" and objects under a prefix, capped at
+# `limit` entries. A single bounded request, never a walk — the API threadpool calls it.
+
+
+@dataclass(frozen=True)
+class BrowseFile:
+    """An object directly under the browsed prefix."""
+
+    path: str
+    size: int | None
+    last_modified: datetime | None
+
+
+@dataclass(frozen=True)
+class DirectoryListing:
+    """One level of a flat-file store. ``truncated`` means more entries exist under the prefix
+    than were returned, so the level is incomplete — never "this is everything".
+    """
+
+    folders: list[str]
+    files: list[BrowseFile]
+    truncated: bool
+
+
+def _cap(
+    folders: list[str], files: list[BrowseFile], *, limit: int, more: bool
+) -> DirectoryListing:
+    """Merge-order the two lists the way the store listed them and keep the first ``limit``."""
+    # A folder marker / HNS directory blob shares its name with a folder prefix; show it once.
+    folder_names = {f.rstrip("/") for f in folders}
+    files = [f for f in files if f.path.rstrip("/") not in folder_names]
+    merged: list[tuple[str, str | BrowseFile]] = [(f, f) for f in folders]
+    merged += [(f.path, f) for f in files]
+    merged.sort(key=lambda item: item[0])
+    kept = merged[:limit]
+    return DirectoryListing(
+        folders=[entry for _, entry in kept if isinstance(entry, str)],
+        files=[entry for _, entry in kept if isinstance(entry, BrowseFile)],
+        truncated=more or len(merged) > limit,
+    )
+
+
+def list_directory(
+    *, conn_type: str, config: dict[str, Any], prefix: str, secret: str, limit: int
+) -> DirectoryListing:
+    """The folders and files immediately under ``prefix`` (live seam, one bounded page)."""
+    if conn_type == "s3":
+        cfg = S3Config.model_validate(config)
+        page = _s3_client(cfg, secret).list_objects_v2(
+            Bucket=cfg.bucket, Prefix=prefix, Delimiter="/", MaxKeys=limit + 1
+        )
+        folders = [p["Prefix"] for p in page.get("CommonPrefixes", []) if p.get("Prefix")]
+        files = [
+            BrowseFile(path=o["Key"], size=o.get("Size"), last_modified=o.get("LastModified"))
+            for o in page.get("Contents", [])
+            if o.get("Key") and o["Key"] != prefix  # the prefix's own folder marker
+        ]
+        return _cap(folders, files, limit=limit, more=bool(page.get("IsTruncated")))
+
+    from azure.storage.blob import BlobPrefix
+
+    acfg = AdlsConfig.model_validate(config)
+    client_az = _blob_service(acfg, secret)
+    try:
+        container = client_az.get_container_client(acfg.container)
+        walk = container.walk_blobs(
+            name_starts_with=prefix or None, delimiter="/", results_per_page=limit + 1
+        )
+        folders = []
+        files = []
+        kept = 0
+        # Truncation counts KEPT entries: the prefix's own placeholder blob and an HNS
+        # directory blob (listed as `a/b` just before its `a/b/` prefix) are dropped, so a raw
+        # item count would report a complete level as truncated. The raw bound stays finite —
+        # at most one placeholder plus one duplicate per folder.
+        for item in islice(walk, 2 * limit + 3):
+            if isinstance(item, BlobPrefix):
+                if files and files[-1].path == item.name.rstrip("/"):
+                    files.pop()
+                    kept -= 1
+                folders.append(item.name)
+            elif item.name != prefix:
+                files.append(
+                    BrowseFile(
+                        path=item.name,
+                        size=getattr(item, "size", None),
+                        last_modified=getattr(item, "last_modified", None),
+                    )
+                )
+            else:
+                continue
+            kept += 1
+            if kept > limit:
+                break
+        return _cap(folders, files, limit=limit, more=kept > limit)
+    finally:
+        client_az.close()
 
 
 #: Soft limit makes the listing cost visible (#839); hard limit refuses — a

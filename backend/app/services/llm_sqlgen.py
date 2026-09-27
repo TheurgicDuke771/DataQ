@@ -18,7 +18,7 @@ from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore, SecretStoreUnavailableError
 from backend.app.db.models import Connection, LlmInvocation, Suite
 from backend.app.llm.base import LLMOutputInvalidError, LLMRequestInvalidError
-from backend.app.services import llm_prompt_context, llm_service
+from backend.app.services import llm_prompt_context, llm_service, profile_service
 from backend.app.services.custom_sql import (
     SQL_QUERYABLE_TYPES,
     CustomSqlInvalidError,
@@ -297,23 +297,25 @@ def build_prompt(
         primary_schema=primary.get("schema"),
         primary_catalog=primary.get("catalog"),
     )
-    context, columns = _schema_context(
-        session, suite, connection, secret_store=secret_store, actor=actor
-    )
-    if include_profile:
-        context += _profile_context(
-            session, suite, connection, columns, secret_store=secret_store, actor=actor
+    # Every table below is on the suite's own connection: one warehouse login (#1645).
+    with profile_service.shared_connection():
+        context, columns = _schema_context(
+            session, suite, connection, secret_store=secret_store, actor=actor
         )
-    for ref in additional:
-        context += "\n\n" + _additional_table_context(
-            session,
-            suite,
-            connection,
-            ref,
-            include_profile=include_profile,
-            secret_store=secret_store,
-            actor=actor,
-        )
+        if include_profile:
+            context += _profile_context(
+                session, suite, connection, columns, secret_store=secret_store, actor=actor
+            )
+        for ref in additional:
+            context += "\n\n" + _additional_table_context(
+                session,
+                suite,
+                connection,
+                ref,
+                include_profile=include_profile,
+                secret_store=secret_store,
+                actor=actor,
+            )
     system = _SYSTEM + (_MULTI_TABLE_SYSTEM_ADDENDUM if additional else "")
     prompt = (
         f"Dialect: {_DIALECT_BY_TYPE[connection.type]}\n"
