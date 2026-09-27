@@ -1689,6 +1689,7 @@ def test_fold_reflection_keyed_columns_lowercases_all_caps_compound_unique() -> 
     assert folded.kwargs["mostly"] == 0.9
     # frozen input untouched
     assert spec.kwargs["column_list"] == ["ORDER_NUMBER", "CUSTOMER_ID"]
+    assert folded.authored_kwargs == spec.kwargs
 
 
 def test_fold_reflection_keyed_columns_leaves_mixed_case_and_other_types_alone() -> None:
@@ -1910,3 +1911,45 @@ def test_a_clash_group_failure_keeps_the_kept_groups_outcomes(
     assert outcome.checks[0].errored is True
     assert outcome.checks[1].errored is False
     assert outcome.checks[1].success is True
+
+
+def test_pushdown_compound_unique_reports_the_authored_column_list(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # #1618: the reflection fold feeds GX `["id", "amt"]`, but the result must report the
+    # column_list the check stores, not the folded spelling.
+    _pushdown_on(monkeypatch)
+    runner = _uc_runner()
+    _orders_sql_seam(runner, tmp_path, monkeypatch, rows=[(1, 10), (1, 10), (2, 20)])
+    outcome = runner.run_checks(
+        table="orders",
+        schema="sales",
+        checks=[CheckSpec("expect_compound_columns_to_be_unique", {"column_list": ["ID", "AMT"]})],
+    )
+    (check,) = outcome.checks
+    assert check.errored is False, check.error_message
+    assert check.success is False  # the duplicate (1, 10) pair is really evaluated
+    assert check.expected_value is not None
+    assert check.expected_value["column_list"] == ["ID", "AMT"]
+
+
+def test_an_unreachable_sql_batch_reports_the_authored_column_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # #1618: the errored-group outcome is shaped from the (already folded) specs too.
+    _pushdown_on(monkeypatch)
+    runner = _uc_runner()
+
+    def _warehouse_down(*_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError("Could not connect")
+
+    monkeypatch.setattr(runner, "_sql_batch_definition", _warehouse_down)
+    _forbid_dataframe_read(runner, monkeypatch)
+    outcome = runner.run_checks(
+        table="orders",
+        schema="sales",
+        checks=[CheckSpec("expect_compound_columns_to_be_unique", {"column_list": ["ID", "AMT"]})],
+    )
+    (check,) = outcome.checks
+    assert check.errored is True
+    assert check.expected_value == {"column_list": ["ID", "AMT"]}

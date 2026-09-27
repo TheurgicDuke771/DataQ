@@ -109,6 +109,9 @@ class CheckReport:
     # here so an alert doesn't silently look identical to "nothing was found"
     # (#1880 review).
     sample_suppressed: bool = False
+    # The check this result belongs to, so an alert can pair it with its incident
+    # by identity — check names are not unique (#2108 review).
+    check_id: uuid.UUID | None = None
 
 
 @dataclass(frozen=True)

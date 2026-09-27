@@ -26,8 +26,10 @@
 #      creates, so no default could be right for more than one deployment. Set it
 #      below.
 
-# image_tag          = "v10"       # backend  — bump per deploy (immutable tag, not "latest")
-# frontend_image_tag = "v1"        # frontend — bump per deploy (immutable tag, not "latest")
+# REQUIRED, no default — the tag the app is CREATED with; later rollouts are deploy.yml's.
+# Pass what prod runs now (README.md, Apply) rather than pinning it here.
+# image_tag          = "<sha>"     # backend  (immutable tag, never "latest")
+# frontend_image_tag = "<sha>"     # frontend (immutable tag, never "latest")
 shared_pg_server_name = "my-shared-pg-server"      # REQUIRED — the pre-existing PG server
 # Region that server is EXPECTED in. Leave unset for an ordinary deployment —
 # it then defaults to azure_location and the residency check stays silent. Set it

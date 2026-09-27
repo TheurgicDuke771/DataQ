@@ -122,6 +122,7 @@ def build_run_report(session: Session, run: Run) -> RunReport:
         check = checks.get(result.check_id)
         check_reports.append(
             CheckReport(
+                check_id=result.check_id,
                 check_name=check.name if check is not None else "(deleted check)",
                 expectation_type=check.expectation_type if check is not None else "",
                 status=result.status,

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 
@@ -16,6 +16,15 @@ SAMPLE_ROW_CAP = 20
 # Sub-key inside a persisted `sample_failures` payload holding the capture-time, full-population
 # value-signal summary (#1230).
 VALUE_SIGNAL_SUMMARY_KEY = "value_signal_summary"
+
+# Sibling sub-key recording that the SQL lanes' population sample (#2014) was needed and FAILED,
+# so the ladder classified from the capped values instead. Internal, like the summary itself.
+VALUE_SIGNAL_STATUS_KEY = "value_signal_status"
+VALUE_SIGNAL_SAMPLE_FAILED = "population_sample_failed"
+
+#: `column -> True` when the failing-row value signal could change that column's masking, i.e.
+#: the redaction ladder cannot already decide it from policy, tags or the column name (#2014).
+ValueSignalGate = Callable[[str], bool]
 
 
 def parse_whole_number(
@@ -44,6 +53,9 @@ class CheckSpec:
 
     expectation_type: str
     kwargs: dict[str, Any]
+    # Set when a runner rewrote `kwargs` for the engine (#1618): the kwargs as authored, which
+    # the result's `expected_value` reports so it matches the stored check.
+    authored_kwargs: dict[str, Any] | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)
