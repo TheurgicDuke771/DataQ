@@ -400,8 +400,11 @@ don't stop at HTTP 200s. Work top-down:
   running once, after the code lands, against the live app's DB. First instance: **#1772**
   (`python -m backend.scripts.redact_stale_incident_evidence`) — masks `Incident.evidence`
   snapshots stored before the build-time redaction fix; safe to re-run, safe to run more than
-  once across a multi-cloud deploy. Check each release's PR description for whether one of
-  these is needed.
+  once across a multi-cloud deploy. Second: **#2112**
+  (`python -m backend.scripts.clear_misprobed_dmf_capability`, dry run; add `--apply` to
+  write) — clears the false "DMF unavailable" the old probe stored on Snowflake connections
+  so they read "not yet tested" until their next connection test; never contacts Snowflake,
+  idempotent. Check each release's PR description for whether one of these is needed.
 - [ ] **Email OTP mailer, if `AUTH_EMAIL_*` is set** — as a workspace admin, `POST
   /api/v1/admin/auth-email/test` (#737) and confirm the test message actually lands in your
   inbox. A non-2xx response names the failing stage in `error.detail.stage` (`connect` / `tls`

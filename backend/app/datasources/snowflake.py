@@ -371,4 +371,4 @@ class SnowflakeConnectionAdapter:
     def _probe_dmf_on_connection(conn: Any) -> dict[str, Any]:
         from sqlalchemy import text
 
-        return probe_dmf_capability(lambda stmt: conn.execute(text(stmt)).scalar())
+        return probe_dmf_capability(lambda stmt: conn.execute(text(stmt)).first())

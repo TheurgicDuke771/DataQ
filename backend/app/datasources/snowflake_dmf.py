@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from backend.app.core.logging import get_logger
 from backend.app.datasources.base import CheckOutcome
 from backend.app.datasources.monitors import (
     FRESHNESS,
@@ -14,6 +15,8 @@ from backend.app.datasources.monitors import (
     monitor_expectation_type,
 )
 from backend.app.services.failure_classifier import safe_failure_reason
+
+log = get_logger(__name__)
 
 DMF_ENGINE = "dmf"
 
@@ -153,17 +156,96 @@ def evaluate_dmf_check(
         )
 
 
-def probe_dmf_capability(fetch_scalar: Any) -> dict[str, Any]:
-    """Connection-test-time DMF availability probe (#1867) — a self-contained
-    system-DMF call (no table access needed) that exercises exactly the
-    edition + grant requirements a real dmf-engine check would hit. Never
-    raises; the result is the `engine_capabilities["dmf"]` shape.
+# The types NULL_COUNT is defined over (live `SHOW DATA METRIC FUNCTIONS`, 2026-09-27), as
+# INFORMATION_SCHEMA.COLUMNS.DATA_TYPE spells them.
+_PROBE_TARGET_BASE = (
+    "SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
+    "WHERE DATA_TYPE IN ('TEXT', 'NUMBER', 'FLOAT', 'DATE', 'TIMESTAMP_LTZ', "
+    "'TIMESTAMP_NTZ', 'TIMESTAMP_TZ') AND TABLE_SCHEMA "
+)
+# The configured schema first, then anywhere else in the connection's database.
+_PROBE_TARGET_QUERIES = (
+    _PROBE_TARGET_BASE + "= CURRENT_SCHEMA() LIMIT 1",
+    _PROBE_TARGET_BASE + "<> 'INFORMATION_SCHEMA' LIMIT 1",
+)
+
+DMF_AVAILABLE = "available"
+DMF_NO_PRIVILEGE = "no_privilege"
+DMF_UNSUPPORTED_EDITION = "unsupported_edition"
+DMF_UNDETERMINED = "undetermined"
+
+
+def _quote_identifier(name: str) -> str:
+    return '"' + name.replace('"', '""') + '"'
+
+
+def _undetermined(reason: str) -> dict[str, Any]:
+    return {"available": None, "status": DMF_UNDETERMINED, "reason": reason}
+
+
+def probe_dmf_capability(fetch_row: Any) -> dict[str, Any]:
+    """Connection-test-time DMF availability probe (#1867, #2112). Never raises;
+    the result is the `engine_capabilities["dmf"]` shape.
+
+    An ad-hoc system-DMF call only accepts a bare column of a table or view, so the
+    probe borrows one the role can already see and reads zero rows of it
+    (``LIMIT 0``: compiled, privilege-checked, nothing scanned). ``available`` is
+    ``None`` when the probe itself couldn't decide — never ``False``.
     """
     try:
-        fetch_scalar("SELECT SNOWFLAKE.CORE.FRESHNESS(SELECT CURRENT_TIMESTAMP())")
-        return {"available": True}
+        target = None
+        for query in _PROBE_TARGET_QUERIES:
+            target = fetch_row(query)
+            if target:
+                break
     except Exception as exc:
-        return {"available": False, "reason": _classify_dmf_error(exc)}
+        log.warning("dmf_probe_target_lookup_failed", error_type=type(exc).__name__)
+        return _undetermined(
+            "couldn't list a table or view in the connection's database to probe DMF "
+            "availability with — it is re-checked on the next connection test"
+        )
+    if not target:
+        return _undetermined(
+            "no table or view with a probe-able column is visible to this role in the "
+            "connection's database, so DMF availability couldn't be checked — it is "
+            "re-checked on the next connection test"
+        )
+    schema, table, column = (_quote_identifier(str(part)) for part in target)
+    statement = f"SELECT SNOWFLAKE.CORE.NULL_COUNT(SELECT {column} FROM {schema}.{table} LIMIT 0)"  # noqa: S608  # nosec B608
+    try:
+        fetch_row(statement)
+    except Exception as exc:
+        return _classify_probe_failure(exc)
+    return {"available": True, "status": DMF_AVAILABLE}
+
+
+def _classify_probe_failure(exc: Exception) -> dict[str, Any]:
+    text = str(exc)
+    if "Unsupported feature" in text or "Enterprise Edition" in text:
+        return {
+            "available": False,
+            "status": DMF_UNSUPPORTED_EDITION,
+            "reason": "this Snowflake account's edition does not support data metric "
+            "functions — DMFs need Enterprise Edition or higher",
+        }
+    if (
+        "Unknown function" in text
+        or "Insufficient privileges" in text
+        or "SQL access control error" in text
+    ):
+        return {
+            "available": False,
+            "status": DMF_NO_PRIVILEGE,
+            "reason": "the connection's role cannot invoke Snowflake system data metric "
+            "functions — grant it the SNOWFLAKE.DATA_METRIC_USER database role",
+        }
+    # Anything else (a broken view, a timeout, an unrecognised message) says nothing about DMF
+    # availability either way.
+    log.warning("dmf_probe_inconclusive", error_type=type(exc).__name__)
+    return _undetermined(
+        "DMF availability couldn't be determined from the probe query — it is "
+        "re-checked on the next connection test"
+    )
 
 
 _TEMPORAL_TYPES = "DATE, TIMESTAMP_LTZ and TIMESTAMP_TZ columns only"

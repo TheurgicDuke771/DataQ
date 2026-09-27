@@ -313,32 +313,118 @@ def test_a_bad_dmf_identifier_is_echoed_bounded() -> None:
 # ── connection-test-time capability probe (#1867) ───────────────────────────
 
 
-def test_probe_dmf_capability_success() -> None:
-    assert probe_dmf_capability(lambda s: 3600) == {"available": True}
+class _ProbeWarehouse:
+    """Answers the probe's two statement kinds: the INFORMATION_SCHEMA target lookup
+    (per schema filter) and the DMF call itself."""
+
+    def __init__(
+        self,
+        *,
+        in_schema: tuple[str, str, str] | None = ("RETAIL", "ORDERS", "ID"),
+        anywhere: tuple[str, str, str] | None = None,
+        dmf_error: str | None = None,
+        lookup_error: str | None = None,
+    ) -> None:
+        self.in_schema, self.anywhere = in_schema, anywhere
+        self.dmf_error, self.lookup_error = dmf_error, lookup_error
+        self.executed: list[str] = []
+
+    def __call__(self, statement: str) -> Any:
+        self.executed.append(statement)
+        if "INFORMATION_SCHEMA.COLUMNS" in statement:
+            if self.lookup_error:
+                raise RuntimeError(self.lookup_error)
+            return self.in_schema if "CURRENT_SCHEMA()" in statement else self.anywhere
+        if self.dmf_error:
+            raise RuntimeError(self.dmf_error)
+        return (0,)
 
 
-def test_probe_dmf_capability_classifies_a_privilege_failure() -> None:
-    def boom(statement: str) -> Any:
-        raise RuntimeError("Insufficient privileges to operate on data metric function")
+def test_probe_calls_a_system_dmf_on_a_bare_table_column_reading_zero_rows() -> None:
+    # #2112: an ad-hoc DMF only accepts a bare column of a table-like object; LIMIT 0 is the
+    # form that compiles (a WHERE clause is rejected as "Invalid argument types").
+    wh = _ProbeWarehouse()
+    assert probe_dmf_capability(wh) == {"available": True, "status": "available"}
+    assert wh.executed[-1] == (
+        'SELECT SNOWFLAKE.CORE.NULL_COUNT(SELECT "ID" FROM "RETAIL"."ORDERS" LIMIT 0)'
+    )
+    assert "CURRENT_TIMESTAMP" not in " ".join(wh.executed)
 
-    result = probe_dmf_capability(boom)
+
+def test_probe_falls_back_to_any_schema_when_the_configured_one_has_no_table() -> None:
+    wh = _ProbeWarehouse(in_schema=None, anywhere=("OTHER", "T", "C"))
+    assert probe_dmf_capability(wh)["available"] is True
+    assert wh.executed[-1].endswith('FROM "OTHER"."T" LIMIT 0)')
+
+
+def test_probe_quotes_hostile_identifiers_from_the_catalog() -> None:
+    wh = _ProbeWarehouse(in_schema=('s"x', 't"; DROP TABLE y; --', "c"))
+    probe_dmf_capability(wh)
+    assert wh.executed[-1] == (
+        'SELECT SNOWFLAKE.CORE.NULL_COUNT(SELECT "c" FROM "s""x"."t""; DROP TABLE y; --" LIMIT 0)'
+    )
+
+
+def test_probe_with_nothing_to_probe_is_undetermined_not_unavailable() -> None:
+    result = probe_dmf_capability(_ProbeWarehouse(in_schema=None, anywhere=None))
+    assert result["available"] is None
+    assert result["status"] == "undetermined"
+    assert "re-checked on the next connection test" in result["reason"]
+
+
+def test_probe_target_lookup_failure_is_undetermined() -> None:
+    result = probe_dmf_capability(_ProbeWarehouse(lookup_error="warehouse suspended"))
+    assert result["available"] is None
+    assert result["status"] == "undetermined"
+
+
+def test_probe_classifies_a_privilege_failure() -> None:
+    result = probe_dmf_capability(
+        _ProbeWarehouse(dmf_error="Insufficient privileges to operate on data metric function")
+    )
     assert result["available"] is False
+    assert result["status"] == "no_privilege"
     assert "SNOWFLAKE.DATA_METRIC_USER" in result["reason"]
 
 
-def test_probe_dmf_capability_never_stores_the_raw_exception_text() -> None:
-    # An unrecognized failure shape falls through to `safe_failure_reason`, which
-    # is itself classified — the raw driver text (DSN/credential-bearing) must
-    # never survive into the stored reason (#1867, mirroring the #900 rule).
-    secret_bearing_text = "connection failed: user=svc_dataq password=hunter2 unreachable"
+def test_probe_classifies_an_unknown_function_as_no_privilege() -> None:
+    result = probe_dmf_capability(
+        _ProbeWarehouse(dmf_error="002141 (42601): Unknown function SNOWFLAKE.CORE.NULL_COUNT")
+    )
+    assert result["status"] == "no_privilege"
 
-    def boom(statement: str) -> Any:
-        raise RuntimeError(secret_bearing_text)
 
-    result = probe_dmf_capability(boom)
+def test_probe_classifies_an_edition_failure() -> None:
+    result = probe_dmf_capability(
+        _ProbeWarehouse(dmf_error="Unsupported feature 'DATA METRIC FUNCTION'.")
+    )
     assert result["available"] is False
-    assert "hunter2" not in result["reason"]
-    assert "svc_dataq" not in result["reason"]
+    assert result["status"] == "unsupported_edition"
+    assert "Enterprise Edition" in result["reason"]
+
+
+# The #2112 shape itself: never again a column-type reason for a probe problem.
+_NULL_COUNT_TYPE_REJECTION = (
+    "001044 (42P13): SQL compilation error: error line 1 at position 7\n"
+    "Invalid argument types for function 'NULL_COUNT$V1': (BOOLEAN)"
+)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        _NULL_COUNT_TYPE_REJECTION,
+        # A broken view: its "or not authorized" tail is about the view, not DMF.
+        "002003 (42S02): SQL compilation error:\nObject 'R.V' does not exist or not authorized.",
+        "connection failed: user=svc_dataq password=hunter2 unreachable",
+    ],
+)
+def test_probe_failures_that_say_nothing_about_dmf_are_undetermined(error: str) -> None:
+    result = probe_dmf_capability(_ProbeWarehouse(dmf_error=error))
+    assert result["available"] is None
+    assert result["status"] == "undetermined"
+    for leaked in ("FRESHNESS", "TIMESTAMP_NTZ", "BOOLEAN", "hunter2", "svc_dataq", "R.V"):
+        assert leaked not in result["reason"]
 
 
 # ── #1928: BLANK_COUNT + FUTURE_TIMESTAMP_PERCENT ──────────────────────────
