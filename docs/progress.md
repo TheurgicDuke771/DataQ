@@ -273,7 +273,7 @@ batches land measured against the new baseline.
 | ⬜ | [#1669](https://github.com/TheurgicDuke771/DataQ/issues/1669) Bulk operations on checks (multi-select enable/disable/severity/snooze) | ux |
 | ⬜ | [#1671](https://github.com/TheurgicDuke771/DataQ/issues/1671) a11y: non-color severity cues + colorblind-safe palette | ux |
 | ⬜ | [#1677](https://github.com/TheurgicDuke771/DataQ/issues/1677) JSON flat-file support (csv/parquet + json) | datasource |
-| ⬜ | [#1678](https://github.com/TheurgicDuke771/DataQ/issues/1678) Generic PostgreSQL adapter — the G-f cheap first win, dogfoodable | datasource |
+| 🟡 | [#1678](https://github.com/TheurgicDuke771/DataQ/issues/1678) Generic PostgreSQL adapter — the G-f cheap first win, dogfoodable — PR open (engine-generic SQL base, ADR 0044; live-verified vs PostgreSQL 16, CI dogfood battery) | datasource |
 | ⬜ | [#1686](https://github.com/TheurgicDuke771/DataQ/issues/1686) Run comparison — diff two runs of a suite | results |
 | ⬜ | [#1688](https://github.com/TheurgicDuke771/DataQ/issues/1688) Checks-as-code: dataq.yaml/JSON authoring contract + validate/apply/drift (phase 1 can ship alone) | gitops |
 | ⬜ | [#1664](https://github.com/TheurgicDuke771/DataQ/issues/1664) "Data Quality Control Plane" positioning copy (marketing + docs site) | docs |
