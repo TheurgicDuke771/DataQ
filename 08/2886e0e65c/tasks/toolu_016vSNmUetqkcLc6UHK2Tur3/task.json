@@ -1,0 +1,7 @@
+{
+  "tool_use_id": "toolu_016vSNmUetqkcLc6UHK2Tur3",
+  "agent_id": "a455fb797173eefbd",
+  "subagent_type": "general-purpose",
+  "task_description": "#1685 Trino adapter",
+  "started_at": "2026-09-27T17:34:21.995889+05:30"
+}
