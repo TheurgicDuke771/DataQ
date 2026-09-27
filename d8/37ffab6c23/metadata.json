@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "d837ffab6c23",
+  "strategy": "manual-commit",
+  "branch": "fix/azure-deploy-role-beat",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/d8/37ffab6c23/0/metadata.json",
+      "transcript": "/d8/37ffab6c23/0/full.jsonl",
+      "compact_transcript": "/d8/37ffab6c23/0/transcript.jsonl",
+      "content_hash": "/d8/37ffab6c23/0/content_hash.txt",
+      "prompt": "/d8/37ffab6c23/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 226,
+    "cache_creation_tokens": 275103,
+    "cache_read_tokens": 24046863,
+    "output_tokens": 83207,
+    "api_call_count": 113
+  }
+}
