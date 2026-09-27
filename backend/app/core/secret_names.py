@@ -43,6 +43,7 @@ _TYPE_WORDS: Final = {
     "dbt": ("dbt",),
     "s3": ("s3", "aws", "amazon"),
     "postgres": ("postgres", "postgresql", "pg"),
+    "mysql": ("mysql", "mariadb"),
     # The engine's words only — "Azure SQL" vs "Fabric" is what tells two connections apart.
     "mssql": ("mssql", "sql", "server", "sqlserver"),
 }

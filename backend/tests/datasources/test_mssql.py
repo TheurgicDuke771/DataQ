@@ -587,3 +587,12 @@ def test_a_database_the_login_cannot_open_is_not_a_dead_credential() -> None:
 def test_a_hostname_mismatch_is_connectivity() -> None:
     exc = RuntimeError("Certificate does not match host name '20.51.9.131'")
     assert classify_failure_category(exc) is FailureCategory.CONNECTIVITY
+
+
+def test_tls_cannot_be_weakened_by_the_base_sslmode() -> None:
+    """The generic base offers `require`/`disable`; on SQL Server TLS is always fully verified."""
+    assert _config().sslmode == "verify-full"
+    assert _config(sslmode="").sslmode == "verify-full"
+    for weaker in ("disable", "require", "verify-ca"):
+        with pytest.raises(ValidationError, match="always verifies"):
+            _config(sslmode=weaker)

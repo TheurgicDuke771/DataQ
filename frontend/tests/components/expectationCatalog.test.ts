@@ -259,6 +259,13 @@ describe('typeFieldHint (issue #768 — Snowflake NUMBER ≠ "NUMBER")', () => {
     expect(hint).not.toMatch(/int64/);
   });
 
+  it('tells MySQL authors to use the SQLAlchemy type name — a different vocabulary', () => {
+    const hint = typeFieldHint('mysql');
+    expect(hint).toMatch(/`DECIMAL`/);
+    expect(hint).toMatch(/TINYINT/);
+    expect(hint).not.toMatch(/NUMERIC\(12, 2\)/);
+  });
+
   it('tells SQL Server authors to use the bare type name GX matches (#1679)', () => {
     const hint = typeFieldHint('mssql');
     expect(hint).toMatch(/`DECIMAL` for decimal\(12,2\)/);

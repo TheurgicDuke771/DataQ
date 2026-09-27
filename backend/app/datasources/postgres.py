@@ -4,9 +4,7 @@ self-hosted or a managed service on any cloud. A `SqlEngineSpec` on the generic 
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, Literal
-
-from pydantic import field_validator
+from typing import Any, ClassVar
 
 from backend.app.datasources.generic_sql import (
     ColumnCaps,
@@ -14,11 +12,6 @@ from backend.app.datasources.generic_sql import (
     SqlCatalog,
     SqlEngineSpec,
 )
-
-#: libpq ``sslmode`` values DataQ offers. ``require`` is the default: a connection that silently
-#: downgrades to plaintext (libpq's own ``prefer``) is not offered at all, and ``disable`` must be
-#: chosen explicitly.
-PostgresSslMode = Literal["disable", "require", "verify-ca", "verify-full"]
 
 
 class PostgresConfig(GenericSqlConfig):
@@ -28,23 +21,18 @@ class PostgresConfig(GenericSqlConfig):
     # NAMEDATALEN - 1: PostgreSQL truncates anything longer (with only a NOTICE).
     max_identifier_length: ClassVar[int] = 63
 
-    sslmode: PostgresSslMode = "require"
-
-    @field_validator("sslmode", mode="before")
-    @classmethod
-    def _blank_sslmode_is_the_default(cls, value: Any) -> Any:
-        return (
-            "require" if value is None or (isinstance(value, str) and not value.strip()) else value
-        )
-
     def engine_default_schema(self) -> str:
         return "public"
 
 
-def _connect_args(config: PostgresConfig, timeout: int | None) -> dict[str, Any]:
+def _connect_args(
+    config: PostgresConfig, timeout: int | None, *, read_only: bool = True
+) -> dict[str, Any]:
     # `default_transaction_read_only` makes every transaction DataQ opens READ ONLY — the
     # server refuses a write however it was smuggled into a query.
-    options = f"-c default_transaction_read_only=on -c search_path={_search_path(config)}"
+    options = f"-c search_path={_search_path(config)}"
+    if read_only:
+        options = f"-c default_transaction_read_only=on {options}"
     args: dict[str, Any] = {
         "sslmode": config.sslmode,
         "options": options,

@@ -288,9 +288,9 @@ DataQ runs checks *against* your data; it is **not** a copy of your data. What i
   driver's own hostname check is broken on current pyOpenSSL, so DataQ replaces it with its own
   (DNS subject-alternative names, a wildcard only as one whole left-most label, an IP only
   against an IP entry, never the certificate's CN) — live-verified to refuse a connection made
-  by IP address and one whose certificate chains to an untrusted CA. A PostgreSQL connection
-  defaults to `require`; see [Datasources & checks](../guides/datasources-checks.md).
-- **Datasource writes:** PostgreSQL sessions are read-only at the server. **SQL Server has no
+  by IP address and one whose certificate chains to an untrusted CA. PostgreSQL and MySQL connections
+  default to `require`; see [Datasources & checks](../guides/datasources-checks.md).
+- **Datasource writes:** PostgreSQL and MySQL sessions are read-only at the server. **SQL Server has no
   equivalent session setting**, so there the protection is the custom-SQL validator plus the
   login's grants: give DataQ a `db_datareader`-only login, as the datasource guide shows.
 - **At rest:** PostgreSQL, the object stores, and the secret store (Key Vault / AWS Secrets
@@ -459,7 +459,7 @@ confirm your DataQ connection role can still read both tags.
 
 ### Where it applies
 
-Only **Snowflake** and **Unity Catalog** have a column-tag source DataQ reads. PostgreSQL, ADLS,
+Only **Snowflake** and **Unity Catalog** have a column-tag source DataQ reads. PostgreSQL, MySQL, ADLS,
 S3, Iceberg and flat files have no authoritative source to read, so for those the
 classification remains the suite's own policy, the name/value classifier, and
 fail-closed mode. This is a limit of the platforms, not a gap in the
@@ -511,7 +511,7 @@ values happen to look harmless and the rows behind them do not.
 | Lane | Where the population signal comes from |
 |---|---|
 | Flat files (ADLS, S3), Iceberg, the Unity Catalog DataFrame batch | The failing-row list the check already builds (up to 5,000 rows); no extra query |
-| Snowflake, PostgreSQL, Unity Catalog SQL pushdown | One **extra, bounded query** per failing check: the check's own failing condition, selecting only the tested column and the identifier column, `LIMIT 5000` |
+| Snowflake, PostgreSQL, MySQL, SQL Server, Unity Catalog SQL pushdown | One **extra, bounded query** per failing check: the check's own failing condition, selecting only the tested column and the identifier column, `LIMIT 5000` |
 
 The extra query on the warehouse lanes is issued only when all of these hold:
 the check found more than 20 unexpected rows (including a check that still

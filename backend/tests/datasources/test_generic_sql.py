@@ -162,6 +162,11 @@ def test_a_cleared_optional_field_means_the_default_not_an_error(blank: str) -> 
     )
 
 
+def test_a_session_asked_not_to_be_read_only_keeps_everything_else() -> None:
+    options = POSTGRES.connect_args(_config(schema="Sales"), None, read_only=False)["options"]
+    assert options == '-c search_path=pg_catalog,"Sales",public'
+
+
 def test_the_run_path_session_has_no_login_timeout() -> None:
     assert "connect_timeout" not in POSTGRES.connect_args(_config(), None)
 

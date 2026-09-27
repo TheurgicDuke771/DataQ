@@ -12,9 +12,10 @@ from typing import Any
 
 from backend.app.datasources.generic_sql import GenericSqlConfig, SqlEngineSpec
 from backend.app.datasources.mssql import MSSQL
+from backend.app.datasources.mysql import MYSQL
 from backend.app.datasources.postgres import POSTGRES
 
-SQL_ENGINES: dict[str, SqlEngineSpec] = {spec.conn_type: spec for spec in (POSTGRES, MSSQL)}
+SQL_ENGINES: dict[str, SqlEngineSpec] = {spec.conn_type: spec for spec in (POSTGRES, MYSQL, MSSQL)}
 
 GENERIC_SQL_TYPES: frozenset[str] = frozenset(SQL_ENGINES)
 

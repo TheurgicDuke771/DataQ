@@ -21,6 +21,7 @@ describe('targetKind', () => {
     const cases: [ConnectionType, ReturnType<typeof targetKind>][] = [
       ['snowflake', 'sql'],
       ['postgres', 'sql'],
+      ['mysql', 'sql'],
       ['mssql', 'sql'],
       ['unity_catalog', 'uc'],
       ['iceberg', 'iceberg'],
@@ -37,6 +38,7 @@ describe('targetKind', () => {
 describe('sqlTargetPlaceholders', () => {
   it('hints each engine in its own name case — PostgreSQL resolves names exactly as spelled', () => {
     expect(sqlTargetPlaceholders('postgres')).toEqual({ schema: 'public', table: 'orders' });
+    expect(sqlTargetPlaceholders('mysql')).toEqual({ schema: 'shop', table: 'orders' });
     expect(sqlTargetPlaceholders('mssql')).toEqual({ schema: 'dbo', table: 'Orders' });
     expect(sqlTargetPlaceholders('unity_catalog')).toEqual({ schema: 'default', table: 'orders' });
     expect(sqlTargetPlaceholders('snowflake')).toEqual({
@@ -48,7 +50,7 @@ describe('sqlTargetPlaceholders', () => {
 
 describe('SCHEMA_BROWSE_TYPES', () => {
   it('offers the schema-rooted browser on the generic SQL engines only', () => {
-    expect([...SCHEMA_BROWSE_TYPES]).toEqual(['postgres', 'mssql']);
+    expect([...SCHEMA_BROWSE_TYPES]).toEqual(['postgres', 'mysql', 'mssql']);
   });
 });
 

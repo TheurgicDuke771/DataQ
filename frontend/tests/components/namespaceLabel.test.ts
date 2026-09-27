@@ -142,6 +142,7 @@ describe('datasourceKind', () => {
     ['abfss://c@a.dfs.core.windows.net', 'adls_gen2'],
     ['s3://bucket', 's3'],
     ['postgres://db.internal:5432', 'postgres'],
+    ['mysql://db.internal:3306', 'mysql'],
     // An Iceberg SQL-catalog DSN is NOT the PostgreSQL datasource namespace.
     ['postgresql://u@h/db', 'other'],
     ['mssql://srv:1433', 'mssql'],
@@ -162,6 +163,7 @@ describe('datasourceKind', () => {
       'abfss://c@a.dfs.core.windows.net',
       's3://bucket',
       'postgres://db.internal:5432',
+      'mysql://db.internal:3306',
       'mssql://srv:1433',
     ]) {
       expect(datasourceKind(ns)).not.toBe('other');

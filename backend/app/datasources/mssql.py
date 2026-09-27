@@ -85,6 +85,20 @@ class MssqlConfig(GenericSqlConfig):
     #: roots — python-tds lane only (the ODBC driver reads the OS trust store).
     ca_certificate: str | None = None
 
+    #: TLS with certificate AND hostname verification is the only mode (ADR 0044 §3) — the base's
+    #: `require` / `disable` are refused rather than silently ignored.
+    sslmode: Literal["verify-full"] = "verify-full"
+
+    @field_validator("sslmode", mode="before")
+    @classmethod
+    def _blank_sslmode_is_the_default(cls, value: Any) -> Any:
+        if value is None or (isinstance(value, str) and value.strip() in ("", "verify-full")):
+            return "verify-full"
+        raise ValueError(
+            "a SQL Server connection always verifies the server certificate and hostname; "
+            "sslmode can only be verify-full"
+        )
+
     @field_validator("tenant_id", "client_id", "ca_certificate", "user", mode="before")
     @classmethod
     def _blank_optional_is_unset(cls, value: Any) -> Any:

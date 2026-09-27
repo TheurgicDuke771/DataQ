@@ -10,6 +10,7 @@
 | Unity Catalog (Databricks) | workspace URL + warehouse + PAT | ✅ | ✅ |
 | Apache Iceberg | catalog URI + catalog type (REST/SQL/Glue/Hive) + optional storage credential | ✅ | ✅ |
 | PostgreSQL (any server — self-hosted or a managed service) | host + port + database + user, password; TLS mode | ✅ | ✅ |
+| MySQL / MariaDB (any server — self-hosted or a managed service) | host + port + database + user, password; TLS mode | ✅ | ✅ |
 | SQL Server / T-SQL (SQL Server, Azure SQL, Synapse; Fabric SQL via the ODBC lane) | host + port + database; SQL login (user, password) or Entra service principal (tenant + client ID, client secret) | ✅ | ✅ |
 
 ## Add a connection
@@ -34,7 +35,7 @@ runs, so it is validated when the connection is saved).
 
 Editing a field that decides *where* the credential is sent — Snowflake `account`, ADLS
 `account_url`, S3/dbt `endpoint_url`, Unity Catalog `workspace_url`, Iceberg `catalog_uri` /
-`warehouse` / `properties` / `secret_property`, PostgreSQL `host` / `port`, SQL Server `host` /
+`warehouse` / `properties` / `secret_property`, PostgreSQL / MySQL `host` / `port`, SQL Server `host` /
 `port` / `auth_type` / `tenant_id` / `client_id` / `ca_certificate` / `driver`, Airflow
 `base_url`, dbt `artifacts_uri` —
 requires re-entering
@@ -159,6 +160,44 @@ Live-verified against PostgreSQL 16.
   what a check targets). There is **no warehouse-native lineage**: PostgreSQL keeps no lineage
   log to read, so a PostgreSQL asset's lineage comes from dbt, OpenLineage or a catalog, and
   an empty graph means "not observed", not "nothing feeds this table".
+
+### MySQL / MariaDB
+
+One connection type for **any MySQL or MariaDB server**, on the same generic SQL base as
+PostgreSQL. The driver is **PyMySQL** (MIT); the GPL-licensed MySQL drivers are never used.
+Live-verified against MySQL 8.4, MariaDB 11.8 and MariaDB 10.6 (the long-term line many
+managed services still default to).
+
+- **Fields:** host, port (default 3306), database, user, and the password as the secret. A
+  MySQL *schema* is a database, so a run target's optional schema names another database
+  (it defaults to the connection's).
+- **TLS:** the same modes as PostgreSQL, `require` by default. `require` encrypts and refuses a
+  server without TLS (PyMySQL's own default would quietly fall back to plaintext); `verify-*`
+  also checks the certificate against the system trust store, so a server with MySQL's
+  self-generated certificate fails them.
+- **Read only, UTC.** Every session runs `SET SESSION TRANSACTION READ ONLY` (the statement
+  every version accepts — the `transaction_read_only` variable does not exist before
+  MariaDB 11.1) and sets `time_zone = '+00:00'`, so a
+  `TIMESTAMP` column comes back in UTC and freshness is right whatever the server's zone is
+  (`DATETIME` has no zone and is read as UTC). **One exception:** GX checks uniqueness on
+  MySQL by copying the column into session temporary tables, which a read-only transaction
+  refuses — so *Column values unique* runs on its own session without the read-only guard.
+  No SQL you wrote ever runs there. It needs the `CREATE TEMPORARY TABLES` grant; without it
+  that one check errors and the rest of the suite is unaffected:
+
+  ```sql
+  CREATE USER 'dataq_reader'@'%' IDENTIFIED BY '…';
+  GRANT SELECT, SHOW VIEW, CREATE TEMPORARY TABLES ON shop.* TO 'dataq_reader'@'%';
+  ```
+
+- **Collation decides equality.** Uniqueness, set membership and comparisons follow the
+  column's collation: under the default case-insensitive one, `'a'` and `'A'` are duplicates.
+  Column names are case-insensitive; **table and database names are case-sensitive** on a Linux
+  server (`lower_case_table_names=0`), so type them exactly as the server shows them.
+- **Types:** `BOOLEAN` is `TINYINT(1)` (values `0`/`1`); MariaDB's `JSON` is `LONGTEXT`, which is
+  what schema drift reports for it.
+- **No column tags, no warehouse-native lineage** — as for PostgreSQL. Inventory sync and the
+  schema browser list what `information_schema` shows the user, which is privilege-filtered.
 
 ### SQL Server / Azure SQL / Fabric (T-SQL)
 
@@ -419,7 +458,7 @@ expectation can sit side by side, so the label is per check, not per run.
 2. **Add check** opens a dedicated page (`/suites/<id>/checks/new`): pick a **category**,
    then the check type, then fill its config. The authoring paths:
 
-### Browsing for a run target (Unity Catalog, PostgreSQL, ADLS Gen2, S3)
+### Browsing for a run target (Unity Catalog, PostgreSQL, MySQL, ADLS Gen2, S3)
 
 The suite form offers a picker beside the target fields; typing the target still works
 everywhere, and is the only way on Snowflake and Iceberg.
@@ -432,7 +471,8 @@ everywhere, and is the only way on Snowflake and Iceberg.
   `samples` and `__databricks_internal` catalogs are never listed.
 - **PostgreSQL — Browse schemas…** lists the schemas the user has `USAGE` on, then that
   schema's tables and views it can `SELECT` — the same query the inventory sync enumerates
-  with. There is no catalog level: the connection pins one database.
+  with. There is no catalog level: the connection pins one database. **MySQL / MariaDB**
+  works the same way, its schemas being the databases the user has privileges on.
 - **ADLS Gen2 / S3 — Browse files…** (single-file mode) walks the folders of the
   connection's one container or bucket and fills **File path** with the file you pick.
   **Browse folders…** (batch mode) fills **Prefix** with the folder you are in.
@@ -508,7 +548,7 @@ and a learned baseline. **Whole-table set comparisons** (columns match an expect
 ordered list) are what the *Schema-drift* monitor does, against a captured baseline. For
 anything with no vetted type, write a custom-SQL check.
 
-### Custom SQL (Snowflake / Unity Catalog / PostgreSQL — ADR 0019)
+### Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL — ADR 0019)
 
 A read-only SQL rule in the Monaco editor: **any rows returned are failures**. Use
 `{batch}` as a placeholder for the suite's target table
@@ -524,7 +564,7 @@ a two-part name would silently resolve against the session's default schema — 
 *different table*, quietly checked. A UC target without a schema therefore errors
 its custom-SQL checks (with that reason on the result) while every other check in
 the suite runs normally. Set the schema on the suite's run target to fix it.
-Snowflake and PostgreSQL are unaffected — their schema comes from the connection.
+Snowflake, PostgreSQL and MySQL are unaffected — their schema comes from the connection.
 
 ### Snowflake DMF (ADR 0036)
 
@@ -574,12 +614,12 @@ whole prefix.
 *Did the shape change under you?* Capture a **baseline** column-name/type snapshot,
 then each run diffs the live snapshot against it and flags any add / drop /
 type-change. Introspection is per-datasource, never a `CheckRunner`/GX pass or a
-data scan: `information_schema` for Snowflake/Unity Catalog/PostgreSQL, the Parquet footer (or
+data scan: `information_schema` for Snowflake/Unity Catalog/PostgreSQL/MySQL, the Parquet footer (or
 a bounded CSV header sample) for ADLS Gen2/S3 flat files, and the loaded table's own
 metadata for Iceberg. Re-baseline explicitly once you've reviewed a drift and want
 it as the new normal — it is never re-baselined for you.
 
-### Anomaly monitor (Snowflake / Unity Catalog / PostgreSQL — ADR 0012)
+### Anomaly monitor (Snowflake / Unity Catalog / PostgreSQL / MySQL — ADR 0012)
 
 *Is this value abnormal for this dataset?* Where a volume monitor asks "is the row
 count inside a range I chose?", the anomaly monitor learns the range: it keeps a
@@ -659,6 +699,8 @@ the type your warehouse/catalog shows you:
   `type_` against the **fully-qualified dialect type**, not the short column type. A
   `NUMBER` column reports as `DECIMAL(38, 0)`; `VARCHAR` reports as `VARCHAR(16777216)`.
   Plugging in `NUMBER` or `DECIMAL` alone fails every time.
+- **MySQL / MariaDB** build a SQL batch too, but GX compares the SQLAlchemy type *class*
+  there, so `type_` is the bare type name: `DECIMAL`, `VARCHAR`, `TINYINT` (a `BOOLEAN`).
 - **PostgreSQL** builds the same kind of SQL batch and compares the same way: a
   `numeric(12,2)` column is `NUMERIC(12, 2)`, a `timestamptz` is `TIMESTAMP WITH TIME ZONE`.
 - **Unity Catalog, ADLS Gen2 / S3, and Apache Iceberg** all read the target into a
@@ -680,6 +722,8 @@ the type your warehouse/catalog shows you:
 |---|---|---|
 | Snowflake | SQL (dialect-native) | `DECIMAL(38, 0)` for `NUMBER`, `VARCHAR(16777216)` for `VARCHAR` |
 | PostgreSQL | SQL (dialect-native) | `NUMERIC(12, 2)` for `numeric(12,2)`, `TIMESTAMP WITH TIME ZONE` for `timestamptz`, `TEXT`, `INTEGER` |
+| MySQL / MariaDB | SQL (SQLAlchemy type class) | `DECIMAL` for `DECIMAL(12,2)`, `VARCHAR`, `INTEGER`, `TIMESTAMP`, `DATETIME`, `TINYINT` for `BOOLEAN` |
+| SQL Server | SQL (SQLAlchemy type name) | `DECIMAL` for `decimal(12,2)`, `INTEGER` for `int`, `NVARCHAR`, `DATETIME2`, `DATETIMEOFFSET`, `BIT` |
 | Unity Catalog | pandas DataFrame (not Arrow-backed) | `int64` for non-nullable `BIGINT` (**`float64` if the column contains NULLs**); `object` or `str` for `STRING` |
 | ADLS Gen2 / S3 (CSV) | pandas DataFrame (not Arrow-backed) | `int64`/`float64`/`bool` for numerics (**NULLs upcast integers to `float64`**); `object` or `str` for strings |
 | ADLS Gen2 / S3 (Parquet) / Iceberg | pandas DataFrame (Arrow-backed) | Arrow-flavored dtype names — confirm via a dry-run's `observed_value` |

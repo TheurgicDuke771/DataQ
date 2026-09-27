@@ -270,6 +270,10 @@ const TYPE_FIELD_DEFAULT_HELP =
 const SQL_ENGINE_TYPE_HINT =
   'Use the engine’s fully-qualified type exactly as the dialect reports it — e.g. Snowflake NUMBER is `DECIMAL(38, 0)`, a PostgreSQL numeric(12,2) is `NUMERIC(12, 2)`. Run a dry-run: the failing result’s observed_value shows the exact expected string.';
 
+// MySQL / MariaDB: GX matches the SQLAlchemy type CLASS, not a rendered type string.
+const CLASS_NAME_TYPE_HINT =
+  'Use the SQLAlchemy type name for the column — e.g. `DECIMAL` for DECIMAL(12,2), `VARCHAR`, `INTEGER`, `TIMESTAMP`, `DATETIME`; a BOOLEAN column is TINYINT(1), so `TINYINT`. Run a dry-run: a passing result’s observed_value shows the name GX matched.';
+
 // SQL Server: GX matches the SQLAlchemy type NAME, not a rendered type string (live-verified:
 // `DECIMAL` passes for a decimal(12,2) column, `DATETIMEOFFSET` for a datetimeoffset one).
 const MSSQL_TYPE_HINT =
@@ -287,6 +291,7 @@ export const TYPE_FIELD_NAMES: string[] = [TYPE_FIELD_NAME, TYPE_LIST_FIELD_NAME
 /** Datasource-tailored help for the `type_` field (issue #768. */
 export function typeFieldHint(connectionType: ConnectionType | undefined): string {
   if (!connectionType || !DATASOURCE_CATEGORY[connectionType]) return TYPE_FIELD_DEFAULT_HELP;
+  if (connectionType === 'mysql') return CLASS_NAME_TYPE_HINT;
   if (connectionType === 'mssql') return MSSQL_TYPE_HINT;
   return runsSqlBatch(connectionType) ? SQL_ENGINE_TYPE_HINT : DATAFRAME_ENGINE_TYPE_HINT;
 }
@@ -450,7 +455,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     dataframeOnly: true,
     label: 'Column values are valid JSON',
     description:
-      'Every value parses as JSON — for a payload/metadata column stored as text. Not offered on Snowflake, PostgreSQL or SQL Server: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there (or, on Snowflake, a VARIANT column).',
+      'Every value parses as JSON — for a payload/metadata column stored as text. Not offered on Snowflake, PostgreSQL, MySQL or SQL Server: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there (or, on Snowflake, a VARIANT column).',
     category: 'Column values',
     fields: [COLUMN, MOSTLY],
   },
@@ -616,7 +621,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     dataframeOnly: true,
     label: 'Column values match a date format',
     description:
-      'Every value parses under the given strftime format — for a date or timestamp stored as text. Not offered on Snowflake, PostgreSQL or SQL Server: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there.',
+      'Every value parses under the given strftime format — for a date or timestamp stored as text. Not offered on Snowflake, PostgreSQL, MySQL or SQL Server: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there.',
     category: 'Column values',
     fields: [
       COLUMN,
