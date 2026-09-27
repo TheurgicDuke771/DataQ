@@ -2583,6 +2583,27 @@ Suggestions are proposals: nothing is created until you click <strong>Add</stron
 remaining</strong>), so one you disagree with costs a glance. A separate warning surfaces any
 pipeline trigger binding that <em>nearly</em> matched this suite (right pipeline, wrong
 environment) — a coverage gap no column profile could reveal either way.</p>
+<p><strong>Placement and dedup from column lineage.</strong> Where recorded column lineage reaches the suggested
+column, each suggestion also says where that column comes from. There are two recommendations,
+each made only when the column keeps the <strong>same name on every hop</strong> upstream. That is a
+heuristic for a copy rather than proof of one, because <code>SUM(amount) AS amount</code> keeps the name
+too:</p>
+<ul>
+<li><strong>An equivalent check already runs upstream</strong> — the same check type <em>with the same parameters</em>
+  on the same-named column upstream. <code>between 0 and 1,000,000</code> upstream does not cover a
+  suggested <code>between 0 and 100</code>. A copy may not need its own check, though joins and filters can still
+  break uniqueness or nullability, so decide per table. Upstream checks in suites you can't view are
+  counted, never named.</li>
+<li><strong>Place it at the origin</strong> — nothing equivalent runs upstream yet, and checking the column where
+  it originates fires once per bad load instead of once per downstream copy.</li>
+</ul>
+<p>A derived column (<code>amount → daily_revenue</code>) gets its provenance shown and no recommendation,
+since an upstream check does not cover an aggregate. Monitor suggestions (freshness) never get a
+recommendation, because a fresh upstream table says nothing about a stalled downstream job. When
+the lineage walk could not follow the column, the note says so rather than staying silent. This is
+advice, not a filter: no suggestion
+is ever hidden because of it, and when the lineage walk hit a gap the note says the picture may be
+incomplete.</p>
 <details class="note">
 <summary>Scripted / MCP access</summary>
 <p></p><div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>https://&lt;your-dataq-host&gt;/api/v1/llm/check_suggestions<span class="w"> </span><span class="se">\</span>
@@ -2592,7 +2613,10 @@ environment) — a coverage gap no column profile could reveal either way.</p>
 The response is <code>{suggestions, rejected, coverage_warnings}</code> — each suggestion carries
 <code>expectation_type</code>, <code>name</code>, <code>rationale</code>, <code>config</code> and <code>dimension</code> (plus
 <code>fail_threshold_hours</code> instead of a threshold inside <code>config</code> for a freshness
-suggestion).<p></p>
+suggestion), and a column-scoped one a <code>lineage</code> object — <code>origins</code> (each with
+<code>pass_through</code> / <code>confirmed</code>), <code>equivalent_upstream_checks</code>, <code>restricted_equivalent_checks</code>,
+<code>different_parameters_upstream</code>,
+<code>recommendation</code> (<code>already_covered_upstream</code> · <code>place_at_origin</code> · <code>null</code>) and <code>complete</code>.<p></p>
 </details>
 <h2 id="what-is-recorded-what-it-costs-who-may-call">What is recorded, what it costs, who may call<a class="headerlink" href="#what-is-recorded-what-it-costs-who-may-call" title="Permanent link">¶</a></h2>
 <ul>

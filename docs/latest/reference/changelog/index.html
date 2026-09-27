@@ -2433,6 +2433,13 @@ the per-PR history lives in the repo's commit log and pull requests.</p>
 <h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">¶</a></h3>
 <ul>
 <li>
+<p><strong>Check suggestions know where a column comes from.</strong> A suggested check on a column that
+  is copied unchanged from an upstream table now says so — "an equivalent check already runs
+  upstream" or "place it at the origin" — so one bad load fires one alert, not one per copy.
+  Derived columns get their provenance only; the advice never hides a suggestion. See
+  <a href="../../guides/ai-features/">AI features</a>.</p>
+</li>
+<li>
 <p><strong>Trace one column through lineage.</strong> The asset page's <em>Column lineage</em> card (and
   <code>GET /assets/{id}/column-lineage</code>, MCP <code>trace_column_lineage</code>) follows a single column up to
   where it originates and down to every column derived from it. Every lineage edge now says
