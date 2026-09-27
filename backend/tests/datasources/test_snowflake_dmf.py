@@ -395,11 +395,12 @@ def test_blank_count_null_scalar_is_an_error_not_a_pass() -> None:
     assert outcome.error_message == "BLANK_COUNT returned no value"
 
 
-def _type_rejection(function: str, expectation_type: str) -> str:
+def _type_rejection(function: str, expectation_type: str, arg_type: str = "NUMBER(38,2)") -> str:
+    # Live-captured shape (2026-09-27, DATAQ_READER): error line breaks before "Invalid".
     def boom(statement: str) -> None:
         raise RuntimeError(
-            "001044 (42P13): SQL compilation error: Invalid argument types for "
-            f"function '{function}$V1': (NUMBER(38,0))"
+            "001044 (42P13): SQL compilation error: error line 1 at position 7\n"
+            f"Invalid argument types for function '{function}$V1': ({arg_type})"
         )
 
     outcome = evaluate_dmf_check(
@@ -423,7 +424,9 @@ def test_blank_count_type_rejection_names_the_varchar_rule() -> None:
 def test_future_timestamp_type_rejection_is_not_read_as_freshness() -> None:
     # The pre-#1928 branch keyed on FRESHNESS alone; the new temporal DMF must get its own
     # guidance, not the freshness monitor's workaround.
-    message = _type_rejection("FUTURE_TIMESTAMP_PERCENT", "dmf:future_timestamp_percent")
+    message = _type_rejection(
+        "FUTURE_TIMESTAMP_PERCENT", "dmf:future_timestamp_percent", "TIMESTAMP_NTZ(9)"
+    )
     assert "FUTURE_TIMESTAMP_PERCENT" in message
     assert "TIMESTAMP_TZ" in message
     assert "freshness monitor" not in message
