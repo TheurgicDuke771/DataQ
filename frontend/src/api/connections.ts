@@ -9,6 +9,7 @@ export const CONNECTION_TYPES = [
   'unity_catalog',
   'iceberg',
   'postgres',
+  'mysql',
   'adf',
   'airflow',
   'dbt',
@@ -29,6 +30,7 @@ export const CONNECTION_KIND: Record<ConnectionType, ConnectionKind> = {
   unity_catalog: 'datasource',
   iceberg: 'datasource',
   postgres: 'datasource',
+  mysql: 'datasource',
   adf: 'orchestration',
   airflow: 'orchestration',
   dbt: 'orchestration',
@@ -56,6 +58,7 @@ export const DATASOURCE_CATEGORIES = [
   'unity_catalog',
   'iceberg',
   'postgres',
+  'mysql',
 ] as const;
 export type DatasourceCategory = (typeof DATASOURCE_CATEGORIES)[number];
 
@@ -66,6 +69,7 @@ export const DATASOURCE_CATEGORY: Record<ConnectionType, DatasourceCategory | nu
   unity_catalog: 'unity_catalog',
   iceberg: 'iceberg',
   postgres: 'postgres',
+  mysql: 'mysql',
   adf: null,
   airflow: null,
   dbt: null,
@@ -77,13 +81,19 @@ export const DATASOURCE_CATEGORY_LABELS: Record<DatasourceCategory, string> = {
   unity_catalog: 'Unity Catalog',
   iceberg: 'Apache Iceberg',
   postgres: 'PostgreSQL',
+  mysql: 'MySQL / MariaDB',
 };
 
 /**
  * Datasources GX can run a custom-SQL (`UnexpectedRowsExpectation`) query against — mirrors the
  * backend `custom_sql.SQL_QUERYABLE_TYPES` (ADR 0019).
  */
-export const SQL_QUERYABLE_TYPES: ConnectionType[] = ['snowflake', 'unity_catalog', 'postgres'];
+export const SQL_QUERYABLE_TYPES: ConnectionType[] = [
+  'snowflake',
+  'unity_catalog',
+  'postgres',
+  'mysql',
+];
 
 export const isSqlQueryable = (type: ConnectionType): boolean => SQL_QUERYABLE_TYPES.includes(type);
 
@@ -101,6 +111,7 @@ export const MONITOR_CAPABLE_TYPES: ConnectionType[] = [
   'snowflake',
   'unity_catalog',
   'postgres',
+  'mysql',
   'iceberg',
   ...FILE_TYPES,
 ];
@@ -113,7 +124,7 @@ export const supportsMonitors = (type: ConnectionType): boolean =>
  * backend `sql_engines.SQL_BATCH_CONNECTION_TYPES`. Unity Catalog is deliberately absent: its
  * pushdown set is an allowlist, so anything outside it runs on that runner's pandas batch.
  */
-export const SQL_BATCH_TYPES: ConnectionType[] = ['snowflake', 'postgres'];
+export const SQL_BATCH_TYPES: ConnectionType[] = ['snowflake', 'postgres', 'mysql'];
 
 export const runsSqlBatch = (type: ConnectionType): boolean => SQL_BATCH_TYPES.includes(type);
 
@@ -218,6 +229,7 @@ export const CONNECTION_TYPE_LABELS: Record<ConnectionType, string> = {
   unity_catalog: 'Unity Catalog',
   iceberg: 'Apache Iceberg',
   postgres: 'PostgreSQL',
+  mysql: 'MySQL / MariaDB',
   adf: 'Azure Data Factory',
   airflow: 'Airflow',
   dbt: 'dbt',

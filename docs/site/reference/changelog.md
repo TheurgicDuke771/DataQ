@@ -31,6 +31,12 @@ the per-PR history lives in the repo's commit log and pull requests.
   connection card says so rather than showing nothing. See
   [OneLake](../guides/datasources-checks.md#onelake-fabric-lakehouse-files).
 
+- **MySQL / MariaDB datasource.** Any MySQL or MariaDB server, on the same generic SQL
+  base as PostgreSQL and through the MIT-licensed PyMySQL driver: every SQL-capable check,
+  all monitors, the profiler, browsing and inventory sync. Sessions are read-only and UTC;
+  TLS is `require` by default. *Column values unique* needs the `CREATE TEMPORARY TABLES`
+  grant — see [Datasources & checks](../guides/datasources-checks.md#mysql-mariadb).
+
 - **PostgreSQL datasource.** Connect any PostgreSQL server — self-hosted or a managed
   service — and run every SQL-capable check on it: GX expectations and custom SQL by pushdown,
   freshness / volume / anomaly / schema-drift monitors, comparisons, the column profiler,

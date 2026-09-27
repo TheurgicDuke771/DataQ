@@ -31,6 +31,7 @@ CONNECTION_TYPES = (
     "unity_catalog",
     "iceberg",
     "postgres",
+    "mysql",
     "adf",
     "airflow",
     "dbt",
