@@ -1,0 +1,43 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "f94a424b4701",
+  "session_id": "636954bf-9316-4764-b6a2-2c4b520126ab",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-27T04:31:34.667313Z",
+  "branch": "fix/azure-image-tag-required",
+  "checkpoints_count": 11,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "96f5ab0b8876",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 196,
+    "cache_creation_tokens": 250171,
+    "cache_read_tokens": 19760002,
+    "output_tokens": 73328,
+    "api_call_count": 98,
+    "subagent_tokens": {
+      "input_tokens": 838,
+      "cache_creation_tokens": 1680810,
+      "cache_read_tokens": 78085714,
+      "output_tokens": 23604,
+      "api_call_count": 419
+    }
+  },
+  "session_metrics": {
+    "turn_count": 11
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 7,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".claude/settings.local.json": 7
+      }
+    }
+  ]
+}

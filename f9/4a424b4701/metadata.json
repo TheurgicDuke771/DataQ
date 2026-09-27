@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "f94a424b4701",
+  "strategy": "manual-commit",
+  "branch": "fix/azure-image-tag-required",
+  "checkpoints_count": 11,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/f9/4a424b4701/0/metadata.json",
+      "transcript": "/f9/4a424b4701/0/full.jsonl",
+      "compact_transcript": "/f9/4a424b4701/0/transcript.jsonl",
+      "content_hash": "/f9/4a424b4701/0/content_hash.txt",
+      "prompt": "/f9/4a424b4701/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 196,
+    "cache_creation_tokens": 250171,
+    "cache_read_tokens": 19760002,
+    "output_tokens": 73328,
+    "api_call_count": 98,
+    "subagent_tokens": {
+      "input_tokens": 838,
+      "cache_creation_tokens": 1680810,
+      "cache_read_tokens": 78085714,
+      "output_tokens": 23604,
+      "api_call_count": 419
+    }
+  }
+}
