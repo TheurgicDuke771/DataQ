@@ -241,17 +241,39 @@ Marquez row).
 with `[upstream_column, downstream_column]` pairs, stored on the edge row (`lineage_edges.columns`)
 and **merged union-wise** on incremental refreshes (a log window only re-observes pairs whose
 queries ran inside it; forgetting the rest would be a prune the never-prune regime forbids). A
-separately-gated `column_lineage` degrades honestly: table edges still land, with a note. The asset
-page shows the mappings per direct edge; an edge whose far endpoint is outside the viewer's grants
-arrives **count-only** from the server (a hidden asset's column names are
-schema disclosure) and renders as a locked box. Snowflake's column grain lives in `ACCESS_HISTORY`
-(Enterprise) and is honestly absent on Standard.
+separately-gated `column_lineage` degrades honestly: table edges still land, with a note.
+Snowflake's column grain comes from `ACCESS_HISTORY`'s `objects_modified[].columns[].directSources`
+on **every** tier — including when `GET_LINEAGE` answers, whose table-domain rows carry no column
+names — as a refinement of the table edges, never a source of new ones; it only sees DML writes, so
+a view dependency never has pairs. *(The GET_LINEAGE + ACCESS_HISTORY composition is not yet
+live-verified.)*
+
+**Why an edge has no pairs is always stated** (ADR 0034 amendment 2026-09-27). Every
+lineage edge on the asset page, `GET /assets/{id}` and MCP `get_asset` carries a
+`column_coverage`:
+
+| `column_coverage` | Meaning |
+|---|---|
+| `recorded` | Column pairs were observed on this edge — the only state that supports a column-level claim. |
+| `none_recorded` | The source reads column lineage and its last pull succeeded, but recorded none for this edge (a view, or a write outside the window). Not proof the columns are unrelated. |
+| `unavailable` | The source's column-lineage read failed on its last refresh (grant, outage). |
+| `unknown` | The source has not refreshed since column coverage was tracked. |
+| `not_captured` | This source (dbt manifest, catalog pull) never carries column detail. |
+
+**Tracing one column.** The asset page's *Column lineage* card traces a single column across every
+hop — upstream to where it **originates**, downstream to every column **derived from it** — backed by
+`GET /api/v1/assets/{asset_id}/column-lineage?column=…&direction=upstream|downstream|both`
+and the MCP tool `trace_column_lineage`. The column is matched with its engine's case fold
+(Snowflake UPPER, Unity Catalog lower). Any edge on the way without `recorded` pairs is listed as a
+**gap** the column may cross; the trace is then marked partial and an origin behind a gap is
+*unconfirmed*. Column names are workspace-visible topology (ADR 0037), so every member can trace.
+A pair records derivation, not equality — `amount → daily_revenue` is an aggregate.
 
 **Snowflake — a tier ladder, richest first** (from the 2026-07-17 live spike):
 
 | Tier | Grain | Edition | Notes |
 |---|---|---|---|
-| `GET_LINEAGE` | object-level traversal (+ column grain) | Enterprise+ | Tried first: its absence is a clean, catchable `0A000`, the best preflight signal. It is a real **per-seed traversal** — seeds come from the ADR 0040 enumeration seam (`WAREHOUSE_LINEAGE_MAX_SEEDS`, default 500, loud truncation), each walked upstream **and** downstream at distance 2. Every returned row is a DIRECT source→target edge (`distance` is hops-from-seed, not a claim about the seed); MASKED (`***`) endpoints and non-table domains (STAGE) are dropped. A tier that enumerates no seeds, or observes no rows, **descends** rather than returning a confident empty — this tier prunes. |
+| `GET_LINEAGE` | object-level traversal (table grain; column pairs from `ACCESS_HISTORY`) | Enterprise+ | Tried first: its absence is a clean, catchable `0A000`, the best preflight signal. It is a real **per-seed traversal** — seeds come from the ADR 0040 enumeration seam (`WAREHOUSE_LINEAGE_MAX_SEEDS`, default 500, loud truncation), each walked upstream **and** downstream at distance 2. Every returned row is a DIRECT source→target edge (`distance` is hops-from-seed, not a claim about the seed); MASKED (`***`) endpoints and non-table domains (STAGE) are dropped. A tier that enumerates no seeds, or observes no rows, **descends** rather than returning a confident empty — this tier prunes. |
 | `ACCESS_HISTORY` | column/statement | Enterprise+ | **Present-but-empty on Standard** — so emptiness is corroborated against `QUERY_HISTORY` (edition-gated vs genuinely idle), never read as "no lineage". ~2–3h lag. |
 | `OBJECT_DEPENDENCIES` | view-level | all editions | The floor — live-verified on the demo account (RETAIL→STG→ANALYTICS chain). Views/matviews/dynamic-tables; no column detail. |
 

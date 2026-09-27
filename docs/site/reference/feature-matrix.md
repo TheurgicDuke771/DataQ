@@ -107,22 +107,26 @@ five mechanisms:
    warehouse's OWN lineage views straight into `lineage_edges` with `source='snowflake'` /
    `'unity_catalog'`: Snowflake `OBJECT_DEPENDENCIES` (all editions) → `ACCESS_HISTORY` /
    `GET_LINEAGE` (Enterprise); Unity Catalog `system.access.table_lineage`. First-hand, no
-   dbt hop. Daily beat, **dark by default** (`WAREHOUSE_LINEAGE_ENABLED` — the views need a
-   grant); the tier that answered and any degraded/failing state surface on the asset's
+   dbt hop. Daily beat, **on by default** (`WAREHOUSE_LINEAGE_ENABLED=false` opts out — a
+   principal missing the grants degrades per connection); the tier that answered and any
+   degraded/failing state surface on the asset's
    lineage graph so a view-level-only or stale graph never reads as a confident complete
    one ([details](../guides/orchestration.md#lineage-from-the-warehouse-the-warehouselineageprovider-seam)).
    **Column grain:** where the warehouse offers it (UC
    `system.access.column_lineage` — live-verified), the pull refines each table edge with
    `upstream column → downstream column` pairs, shown on the asset page to every
-   workspace member (ADR 0037 — column names are schema metadata, i.e. identity).
-   Snowflake's column grain lives in `ACCESS_HISTORY` and `GET_LINEAGE` (Enterprise) and reports
-   honestly unavailable on Standard. **Snowpark scratch is stitched, not dropped:** a
+   workspace member (ADR 0037 — column names are schema metadata, i.e. identity), and any one
+   column can be **traced** to its origin or its downstream columns. An edge without pairs
+   always says why (`column_coverage`: none recorded · unavailable · unknown · not captured).
+   Snowflake's column grain comes from `ACCESS_HISTORY` on every tier (`GET_LINEAGE` rows are
+   table-grain) and reports honestly unavailable where the grant is missing. **Snowpark scratch is
+   stitched, not dropped:** a
    pipeline that materializes through `SNOWPARK_TEMP_*` yields the real `A → B` edge, with the
    scratch object never materialized as an asset.
 
 | Datasource | Asset entity | ① Run-stamping | ② dbt manifest | ③ OL emission | ④ Catalog pull | ⑤ Warehouse-native |
 |---|---|:-:|:-:|:-:|:-:|:-:|
-| Snowflake | `snowflake://{org}-{account}` / `DB.SCHEMA.TABLE` | ✅ | ✅ (live-verified) | ✅ | ✅ | ✅ (OBJECT_DEPENDENCIES live; ACCESS_HISTORY + **GET_LINEAGE per-seed traversal** Enterprise, both **+ column grain**, built on a live prod-Enterprise capture) |
+| Snowflake | `snowflake://{org}-{account}` / `DB.SCHEMA.TABLE` | ✅ | ✅ (live-verified) | ✅ | ✅ | ✅ (OBJECT_DEPENDENCIES live; ACCESS_HISTORY + **GET_LINEAGE per-seed traversal** Enterprise, built on a live prod-Enterprise capture; **+ column grain from ACCESS_HISTORY** on both tiers — the GET_LINEAGE composition not yet live-verified) |
 | Unity Catalog | `unitycatalog://{host}` / `catalog.schema.table` | ✅ | ✅ (adapter-aware) | ✅ | ✅ | ✅ (system.access.table_lineage, incremental; **+ column grain, live-verified**) |
 | ADLS Gen2 (files) | `abfss://{container}@{account}.dfs.core.windows.net` / pattern **base prefix** | ✅ | — | ✅ | ✅ | — |
 | S3 (files) | `s3://{bucket}` / base prefix | ✅ | — | ✅ | ✅ | — |
