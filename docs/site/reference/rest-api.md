@@ -98,7 +98,7 @@ Orchestration connections carry `null` here — theirs is the poll health above.
 status first.
 
 **Moving a connection to a new host.** A `PATCH` that changes a field deciding *where* the
-credential is sent — `account` (Snowflake), `account_url` (ADLS), `endpoint_url` (S3, dbt),
+credential is sent — `account` (Snowflake), `account_url` / `auth_type` / `tenant_id` / `client_id` (ADLS), `endpoint_url` (S3, dbt),
 `workspace_url` (Unity Catalog), `catalog_uri` / `warehouse` / `properties` /
 `secret_property` (Iceberg),
 `base_url` (Airflow), `artifacts_uri` (dbt) — must re-supply that credential in the same

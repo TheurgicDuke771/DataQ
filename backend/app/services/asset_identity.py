@@ -98,9 +98,30 @@ def _resolve_adls_gen2(config: dict[str, Any], target: dict[str, Any]) -> AssetI
     account = host.split(".")[0] if host else ""
     if not account:
         raise ValueError("adls_gen2 asset identity requires a valid 'account_url'")
-    namespace = f"abfss://{container}@{account}.dfs.core.windows.net"
+    namespace = f"abfss://{container}@{_adls_dfs_authority(host, account)}"
     name = _flatfile_name(target, "adls_gen2")
     return AssetIdentity(namespace=namespace, name=name)
+
+
+#: The public-cloud storage suffix. Every namespace persisted before #1680 was built against it, so
+#: a host under it (or not in `<account>.blob|dfs.<suffix>` form at all) keeps that exact shape.
+_AZURE_PUBLIC_STORAGE_SUFFIX = ".core.windows.net"
+
+
+def _adls_dfs_authority(host: str, account: str) -> str:
+    """The ABFS authority for an ADLS-compatible Blob/DFS ``host``: its DFS endpoint.
+
+    Any other ADLS-compatible endpoint (a sovereign cloud, Fabric OneLake's
+    ``onelake.blob.fabric.microsoft.com``) is named after ITS DFS host, not the public cloud's.
+    """
+    labels = host.lower().split(".")
+    if (
+        len(labels) >= 3
+        and labels[1] in ("blob", "dfs")
+        and not host.lower().endswith(_AZURE_PUBLIC_STORAGE_SUFFIX)
+    ):
+        return ".".join([labels[0], "dfs", *labels[2:]])
+    return f"{account}.dfs.core.windows.net"
 
 
 def _resolve_s3(config: dict[str, Any], target: dict[str, Any]) -> AssetIdentity:

@@ -238,7 +238,9 @@ export function ConnectionTypeFields({
         </Form.Item>
       )}
 
-      {activeAuth?.extraField && <ConfigTextField field={activeAuth.extraField} />}
+      {activeAuth?.extraFields?.map((f) => (
+        <ConfigTextField key={f.name} field={f} />
+      ))}
 
       {showSecret &&
         (activeAuth ? (

@@ -522,3 +522,133 @@ describe('ConnectionForm — inventory_sync toggle default (asset-first, 2026-09
     expect(mockUpdate.mock.calls[0][1].config).toMatchObject({ inventory_sync: true });
   });
 });
+
+describe('ConnectionForm — ADLS service principal (#1680)', () => {
+  const legacySas: Connection = {
+    id: 'conn-adls-1',
+    name: 'lake',
+    type: 'adls_gen2',
+    env: 'dev',
+    config: { account_url: 'https://a.blob.core.windows.net', container: 'raw' },
+    has_secret: true,
+    created_by: 'u1',
+  };
+
+  async function fillCreate(user: ReturnType<typeof userEvent.setup>) {
+    await user.type(await screen.findByLabelText('Name'), 'onelake');
+    await selectOption(user, 'DEV');
+    await user.type(
+      screen.getByLabelText('Account URL'),
+      'https://onelake.blob.fabric.microsoft.com',
+    );
+    await user.type(screen.getByLabelText('Container'), 'my-workspace');
+  }
+
+  it('defaults to a SAS token and asks for tenant, client and client secret under a service principal', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue(legacySas);
+    render(
+      <AntApp>
+        <ConnectionForm type="adls_gen2" onSaved={vi.fn()} onCancel={vi.fn()} />
+      </AntApp>,
+    );
+
+    await fillCreate(user);
+    expect(screen.getByLabelText('SAS token')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Tenant ID')).not.toBeInTheDocument();
+
+    await selectOption(user, 'Service principal (Entra ID)', { index: 1 });
+    await user.type(await screen.findByLabelText('Tenant ID'), 'tenant-guid');
+    await user.type(screen.getByLabelText('Client ID'), 'client-guid');
+    await user.type(screen.getByLabelText('Client secret'), 'the-client-secret');
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalled());
+    const payload = mockCreate.mock.calls[0][0];
+    expect(payload.config).toEqual({
+      account_url: 'https://onelake.blob.fabric.microsoft.com',
+      container: 'my-workspace',
+      auth_type: 'service_principal',
+      tenant_id: 'tenant-guid',
+      client_id: 'client-guid',
+    });
+    expect(payload.secret).toBe('the-client-secret');
+  });
+
+  it('drops tenant and client ids typed under a service principal once SAS is re-selected', async () => {
+    // The backend refuses them on a SAS connection rather than silently ignoring them.
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue(legacySas);
+    render(
+      <AntApp>
+        <ConnectionForm type="adls_gen2" onSaved={vi.fn()} onCancel={vi.fn()} />
+      </AntApp>,
+    );
+
+    await fillCreate(user);
+    await selectOption(user, 'Service principal (Entra ID)', { index: 1 });
+    await user.type(await screen.findByLabelText('Tenant ID'), 'tenant-guid');
+    await user.type(screen.getByLabelText('Client ID'), 'client-guid');
+    await selectOption(user, 'SAS token', { index: 1 });
+    await user.type(await screen.findByLabelText('SAS token', { selector: 'input' }), 'sv=1&sig=x');
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalled());
+    const { config } = mockCreate.mock.calls[0][0];
+    expect(config).toMatchObject({ auth_type: 'sas' });
+    expect(config).not.toHaveProperty('tenant_id');
+    expect(config).not.toHaveProperty('client_id');
+  });
+
+  it('edits a legacy SAS row (no auth_type) without demanding the SAS again', async () => {
+    const user = userEvent.setup();
+    mockUpdate.mockResolvedValue(legacySas);
+    render(
+      <AntApp>
+        <ConnectionForm
+          type="adls_gen2"
+          connection={legacySas}
+          onSaved={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </AntApp>,
+    );
+
+    const container = await screen.findByLabelText('Container');
+    await user.clear(container);
+    await user.type(container, 'curated');
+    expect(screen.queryByLabelText('SAS token')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
+    const [, body] = mockUpdate.mock.calls[0];
+    expect(body.config).toMatchObject({ container: 'curated', auth_type: 'sas' });
+    expect(body.secret).toBeUndefined();
+  });
+
+  it('asks for the client secret when a legacy SAS row is switched to a service principal', async () => {
+    const user = userEvent.setup();
+    mockUpdate.mockResolvedValue(legacySas);
+    render(
+      <AntApp>
+        <ConnectionForm
+          type="adls_gen2"
+          connection={legacySas}
+          onSaved={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </AntApp>,
+    );
+
+    await screen.findByLabelText('Container');
+    await selectOption(user, 'Service principal (Entra ID)');
+    await user.type(await screen.findByLabelText('Tenant ID'), 'tenant-guid');
+    await user.type(screen.getByLabelText('Client ID'), 'client-guid');
+    await screen.findByText('Re-enter the credential to move this connection');
+    await user.type(await screen.findByLabelText('Client secret'), 'the-client-secret');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
+    expect(mockUpdate.mock.calls[0][1].secret).toBe('the-client-secret');
+  });
+});

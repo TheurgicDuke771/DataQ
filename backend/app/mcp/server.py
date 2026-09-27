@@ -1333,10 +1333,12 @@ def list_connections(type: str | None = None, env: str | None = None) -> list[di
     A null health timestamp means *unknown* — nothing has polled or run yet —
     never "healthy", and ``consecutive_run_failures`` is likewise null rather
     than 0 for a connection that has never run. A null ``credential_expires_at``
-    means either that this credential type states no readable lifetime **or**
-    that its expiry has never been read — ``credential_expiry_checked_at`` tells
-    the two apart, and null there means we have never looked. Report all of these
-    as silence rather than reassurance.
+    means either that this credential states no readable lifetime **or** that its
+    expiry has never been read — ``credential_expiry_checked_at`` tells the two
+    apart, and null there means we have never looked. "No readable lifetime" is not
+    "never expires": a password or a service-principal client secret (an ADLS
+    connection's ``service_principal`` mode) expires on a date only the identity
+    provider knows. Report all of these as silence rather than reassurance.
 
     ``credential_health`` answers the narrower question "is this connection's
     stored credential still accepted?" — and it is the right field for "why did

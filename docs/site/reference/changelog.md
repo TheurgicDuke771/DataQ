@@ -17,6 +17,16 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Added
 
+- **ADLS Gen2 connections can authenticate as an Entra ID service principal — which also
+  opens Microsoft Fabric OneLake lakehouse files.** Pick *Service principal* and give the
+  tenant ID, client ID and client secret; point the account URL at
+  `https://onelake.blob.fabric.microsoft.com` with the workspace as the container to run any
+  flat-file check, freshness, volume, profile or browse against `<lakehouse>.Lakehouse/Files/`.
+  SAS connections are unchanged. Changing the tenant, client, auth type or account URL
+  requires re-entering the secret. A client secret's expiry is not readable by DataQ, so the
+  connection card says so rather than showing nothing. See
+  [OneLake](../guides/datasources-checks.md#onelake-fabric-lakehouse-files).
+
 - **Sensitive columns stay masked downstream.** If a warehouse tag marks a column sensitive,
   every column that recorded column lineage shows is copied or derived from it is masked as well,
   across REST, MCP, alerts and incident evidence. This only ever adds masking: a column's own tag

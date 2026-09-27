@@ -20,7 +20,7 @@ from backend.app.core.errors import SafeMonitorError
 from backend.app.core.logging import get_logger
 from backend.app.core.s3_endpoint import addressing_config_kwargs
 from backend.app.core.secrets import SecretStore
-from backend.app.datasources.adls import AdlsConfig
+from backend.app.datasources.adls import AdlsConfig, blob_service_client
 from backend.app.datasources.base import (
     SAMPLE_HEAD,
     CheckOutcome,
@@ -181,9 +181,7 @@ def _s3_client(cfg: S3Config, secret: str) -> Any:
 
 def _blob_service(acfg: AdlsConfig, secret: str) -> Any:
     """An ADLS `BlobServiceClient` for `acfg` (caller must `.close()` it)."""
-    from azure.storage.blob import BlobServiceClient
-
-    return BlobServiceClient(account_url=acfg.account_url, credential=secret)
+    return blob_service_client(acfg, secret)
 
 
 class StoreSession:

@@ -133,6 +133,23 @@ def _reject_empty_credentials(**supplied: str | None) -> None:
             raise EmptyCredentialError(f"'{field}' must not be empty", detail={"field": field})
 
 
+def _with_config_defaults(conn_type: str, config: Mapping[str, Any]) -> dict[str, Any]:
+    """``config`` with each ABSENT field filled from the type's schema default, so an omitted
+    ``auth_type`` and an explicit default one compare equal. Present keys are never rewritten.
+    """
+    try:
+        model = get_connection_adapter(conn_type).validate_config(dict(config))
+    except Exception:
+        # A stored config that no longer validates is compared as written.
+        return dict(config)
+    defaults = {
+        info.alias or name: getattr(model, name)
+        for name, info in type(model).model_fields.items()
+        if (info.alias or name) not in config and getattr(model, name) is not None
+    }
+    return {**config, **defaults}
+
+
 def _reject_uncredentialed_redirect(
     conn_type: str,
     *,
@@ -145,8 +162,10 @@ def _reject_uncredentialed_redirect(
     """Refuse to point a STORED credential at a new host — closes #1401."""
     moved: set[str] = set()
     missing: list[str] = []
+    stored_view = _with_config_defaults(conn_type, stored)
+    incoming_view = _with_config_defaults(conn_type, incoming)
     for slot, fields in sorted(destination_fields(conn_type).items()):
-        slot_moved = [f for f in fields if stored.get(f) != incoming.get(f)]
+        slot_moved = [f for f in fields if stored_view.get(f) != incoming_view.get(f)]
         if not slot_moved:
             continue
         if slot == "secret":

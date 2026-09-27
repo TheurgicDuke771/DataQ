@@ -190,6 +190,34 @@ def test_adls_account_from_url(account_url: str) -> None:
     assert identity.name == "retail/orders.csv"
 
 
+@pytest.mark.parametrize(
+    "account_url,authority",
+    [
+        # Fabric OneLake (#1680) — named after its OWN DFS host, not the public cloud's.
+        ("https://onelake.blob.fabric.microsoft.com", "onelake.dfs.fabric.microsoft.com"),
+        ("https://onelake.dfs.fabric.microsoft.com", "onelake.dfs.fabric.microsoft.com"),
+        ("https://OneLake.Blob.Fabric.Microsoft.com", "onelake.dfs.fabric.microsoft.com"),
+        # A sovereign cloud.
+        ("https://acct.blob.core.chinacloudapi.cn", "acct.dfs.core.chinacloudapi.cn"),
+        # Public cloud stays byte-stable with every namespace persisted before #1680.
+        ("https://MyLake.blob.core.windows.net", "MyLake.dfs.core.windows.net"),
+        # Not `<account>.blob|dfs.<suffix>` at all (an emulator): the legacy shape.
+        # identifier-ok: an emulator loopback address, not a storage account
+        ("http://127.0.0.1:10000/devstoreaccount1", "127.dfs.core.windows.net"),
+    ],
+)
+def test_adls_namespace_follows_an_adls_compatible_endpoint(
+    account_url: str, authority: str
+) -> None:
+    identity = resolve_asset_identity(
+        "adls_gen2",
+        {"account_url": account_url, "container": "ws"},
+        {"path": "lh.Lakehouse/Files/orders.csv"},
+    )
+    assert identity.namespace == f"abfss://ws@{authority}"
+    assert identity.name == "lh.Lakehouse/Files/orders.csv"
+
+
 def test_adls_path_strips_single_leading_slash() -> None:
     identity = resolve_asset_identity(
         "adls_gen2",
