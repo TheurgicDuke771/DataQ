@@ -7,6 +7,10 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Fixed
 
+- **A batch-target preview no longer comes back empty just because signing in was slow.** The
+  preview's time budget now starts when the store returns its first object, not before the
+  client authenticates; a service principal's token request alone could use the whole budget.
+
 - **The batch-target preview no longer scans unbounded, or matches a regex it hasn't
   vetted, in the API process.** The suite editor's live "resolves to" hint now stops at a
   small object-count/wall-clock budget (`BATCH_PREVIEW_MAX_OBJECTS`/`_MAX_SECONDS`) and
@@ -16,6 +20,16 @@ the per-PR history lives in the repo's commit log and pull requests.
   a superseded preview request instead of merely ignoring its answer.
 
 ### Added
+
+- **ADLS Gen2 connections can authenticate as an Entra ID service principal — which also
+  opens Microsoft Fabric OneLake lakehouse files.** Pick *Service principal* and give the
+  tenant ID, client ID and client secret; point the account URL at
+  `https://onelake.blob.fabric.microsoft.com` with the workspace as the container to run any
+  flat-file check, freshness, volume, profile or browse against `<lakehouse>.Lakehouse/Files/`.
+  SAS connections are unchanged. Changing the tenant, client, auth type or account URL
+  requires re-entering the secret. A client secret's expiry is not readable by DataQ, so the
+  connection card says so rather than showing nothing. See
+  [OneLake](../guides/datasources-checks.md#onelake-fabric-lakehouse-files).
 
 - **MySQL / MariaDB datasource.** Any MySQL or MariaDB server, on the same generic SQL
   base as PostgreSQL and through the MIT-licensed PyMySQL driver: every SQL-capable check,

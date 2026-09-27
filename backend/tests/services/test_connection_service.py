@@ -1474,6 +1474,105 @@ def test_editing_a_non_destination_field_needs_no_credential(db_session: Any) ->
     assert conn.config["warehouse"] == "COMPUTE_WH_XL"
 
 
+_ADLS_SP_CONFIG = {
+    "account_url": "https://onelake.blob.fabric.microsoft.com",
+    "container": "ws",
+    "auth_type": "service_principal",
+    "tenant_id": "00000000-0000-0000-0000-00000000000a",
+    "client_id": "00000000-0000-0000-0000-00000000000b",
+}
+
+
+def _create_adls(db_session: Any, store: FakeSecretStore, config: dict[str, Any]) -> Connection:
+    return _create(
+        db_session, store, name="lake", conn_type="adls_gen2", config=dict(config), secret="s3cr3t"
+    )
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        # The token endpoint the client secret is presented to, and as whom.
+        ("tenant_id", "attacker.onmicrosoft.com"),
+        ("client_id", "00000000-0000-0000-0000-0000000000ff"),
+        # Where the bearer token it yields is sent.
+        ("account_url", "https://attacker.example.com"),
+    ],
+)
+def test_moving_a_service_principal_destination_without_the_secret_is_rejected(
+    db_session: Any, field: str, value: str
+) -> None:
+    """#1680 on the #1401 guard: every field that decides where the client secret (or the
+    token it buys) goes needs the secret re-supplied.
+    """
+    store = FakeSecretStore()
+    conn = _create_adls(db_session, store, _ADLS_SP_CONFIG)
+
+    with pytest.raises(svc.CredentialRedirectError) as exc:
+        svc.update_connection(
+            db_session, conn.id, config={**_ADLS_SP_CONFIG, field: value}, secret_store=store
+        )
+
+    assert exc.value.detail == {"fields": [field], "required": ["secret"]}
+    assert conn.config[field] == _ADLS_SP_CONFIG[field]
+
+
+def test_switching_a_sas_connection_to_service_principal_needs_the_secret(db_session: Any) -> None:
+    """Otherwise the stored SAS would be presented to Entra as a client secret."""
+    store = FakeSecretStore()
+    sas_config = {"account_url": _ADLS_SP_CONFIG["account_url"], "container": "ws"}
+    conn = _create_adls(db_session, store, sas_config)
+
+    with pytest.raises(svc.CredentialRedirectError) as exc:
+        svc.update_connection(db_session, conn.id, config=dict(_ADLS_SP_CONFIG), secret_store=store)
+    assert exc.value.detail["fields"] == ["auth_type", "client_id", "tenant_id"]
+
+    svc.update_connection(
+        db_session,
+        conn.id,
+        config=dict(_ADLS_SP_CONFIG),
+        secret="client-secret",
+        secret_store=store,
+    )
+    assert conn.config["auth_type"] == "service_principal"
+
+
+def test_an_explicit_default_auth_type_on_a_legacy_row_is_not_a_move(db_session: Any) -> None:
+    """A pre-#1680 ADLS row has no `auth_type`; the form now sends the default `sas`. Absent and
+    default are the same destination, so an ordinary edit must not demand the SAS again.
+    """
+    store = FakeSecretStore()
+    legacy = {"account_url": "https://acct.blob.core.windows.net", "container": "raw"}
+    conn = _create_adls(db_session, store, legacy)
+    assert "auth_type" not in conn.config
+
+    svc.update_connection(
+        db_session,
+        conn.id,
+        config={**legacy, "container": "curated", "auth_type": "sas"},
+        secret_store=store,
+    )
+
+    assert conn.config["container"] == "curated"
+
+
+def test_a_stored_config_that_no_longer_validates_is_compared_as_written(db_session: Any) -> None:
+    """The default-fill must not turn an unreadable stored row into an unguarded one."""
+    store = FakeSecretStore()
+    conn = _create_adls(db_session, store, _ADLS_SP_CONFIG)
+    # A row written by an older build, which today's schema rejects outright.
+    conn.config = {**_ADLS_SP_CONFIG, "legacy_key": True}
+    db_session.flush()
+
+    with pytest.raises(svc.CredentialRedirectError):
+        svc.update_connection(
+            db_session,
+            conn.id,
+            config={**_ADLS_SP_CONFIG, "account_url": "https://attacker.example.com"},
+            secret_store=store,
+        )
+
+
 def test_a_partial_patch_that_omits_the_secret_name_is_not_read_as_a_move(
     db_session: Any,
 ) -> None:

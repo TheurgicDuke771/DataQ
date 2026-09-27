@@ -255,6 +255,41 @@ describe('Connections', () => {
     expect(screen.queryByText('expiry unknown')).not.toBeInTheDocument();
   });
 
+  it('says a service-principal secret expiry is not visible, never silence (#1680)', async () => {
+    // A client secret DOES expire — in Entra, where DataQ cannot read it. No badge there would
+    // read as "does not expire".
+    mockList.mockResolvedValue([
+      conn({
+        id: 'sp',
+        name: 'onelake-sp',
+        type: 'adls_gen2',
+        config: {
+          account_url: 'https://onelake.blob.fabric.microsoft.com',
+          container: 'ws',
+          auth_type: 'service_principal',
+          tenant_id: 't',
+          client_id: 'c',
+        },
+        credential_expiry_checked_at: '2026-09-27T00:00:00Z',
+      }),
+      conn({
+        id: 'sas',
+        name: 'lake-sas',
+        type: 'adls_gen2',
+        config: { account_url: 'https://a.blob.core.windows.net', container: 'raw' },
+        credential_expiry_checked_at: '2026-09-27T00:00:00Z',
+      }),
+    ]);
+
+    renderPage();
+
+    await screen.findByText('onelake-sp');
+    // Only the service-principal card: a checked SAS with no expiry stays silent.
+    expect(screen.getAllByText('expiry not visible')).toHaveLength(1);
+    await userEvent.hover(screen.getByText('expiry not visible'));
+    expect(await screen.findByText(/track it in Entra ID/)).toBeInTheDocument();
+  });
+
   it('shows an empty state when there are no connections', async () => {
     mockList.mockResolvedValue([]);
 

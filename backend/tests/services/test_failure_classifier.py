@@ -33,6 +33,27 @@ from backend.app.services.failure_classifier import (
         ),
         (KeyError("account"), FailureCategory.CONFIG),
         (ValueError("something entirely unexpected"), FailureCategory.UNKNOWN),
+        # ADLS service principal / OneLake (#1680), shaped on the errors the SDKs raised live.
+        (
+            RuntimeError("Authentication failed: AADSTS7000215: Invalid client secret provided."),
+            FailureCategory.PERMISSION,
+        ),
+        (
+            RuntimeError(
+                "This request is not authorized to perform this operation using this "
+                "permission. ErrorCode:AuthorizationPermissionMismatch"
+            ),
+            FailureCategory.PERMISSION,
+        ),
+        (
+            RuntimeError("The specified workspace was not found. ErrorCode:WorkspaceNotFound"),
+            FailureCategory.CONFIG,
+        ),
+        (
+            # A flat listing that does not reach inside a OneLake item.
+            RuntimeError("Either WorkspaceId or ArtifactId are missing in the request"),
+            FailureCategory.CONFIG,
+        ),
     ],
 )
 def test_classifies_into_the_expected_category(exc: Exception, expected: FailureCategory) -> None:

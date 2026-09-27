@@ -3835,3 +3835,87 @@ def test_the_profiler_and_drift_readers_release_their_store_client(
 
     assert len(frame) == 20 and names == ["id", "load_ts"] and len(schema) == 2
     assert log["clients"] and all(client.closed for client in log["clients"])
+
+
+# ───────────── service-principal auth reaches every ADLS door (#1680) ─────────────
+
+
+def test_every_adls_read_path_authenticates_with_the_service_principal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One credential factory for the adapter test AND the flat-file reads — an auth mode wired
+    at one door and not its sibling is a known defect class here.
+    """
+    import azure.identity as azid
+    import azure.storage.blob as azblob
+
+    credentials: list[tuple[Any, ...]] = []
+    clients: list[Any] = []
+
+    class _Cred:
+        def __init__(self, *args: Any, **_: Any) -> None:
+            credentials.append(args)
+
+        def close(self) -> None:
+            pass
+
+    class _Container:
+        def list_blobs(self, **_: Any) -> Any:
+            return iter([SimpleNamespace(name="p/a.csv", last_modified=None)])
+
+    class _Client:
+        def __init__(self, **kwargs: Any) -> None:
+            self.credential = kwargs["credential"]
+            clients.append(self)
+
+        def get_container_client(self, _name: str) -> _Container:
+            return _Container()
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(azid, "ClientSecretCredential", _Cred)
+    monkeypatch.setattr(azblob, "BlobServiceClient", _Client)
+    config = {
+        "account_url": "https://onelake.blob.fabric.microsoft.com",
+        "container": "ws",
+        "auth_type": "service_principal",
+        "tenant_id": "t-1",
+        "client_id": "c-1",
+    }
+
+    files = flatfile.list_files(conn_type="adls_gen2", config=config, prefix="p/", secret="cs")
+    with flatfile.StoreSession(conn_type="adls_gen2", config=config, secret="cs") as session:
+        session.blob_service  # noqa: B018 — materialises the session's client
+
+    assert [f.path for f in files] == ["p/a.csv"]
+    assert credentials == [("t-1", "c-1", "cs"), ("t-1", "c-1", "cs")]
+    assert all(isinstance(c.credential, _Cred) for c in clients)
+
+
+def test_preview_budget_clock_starts_at_the_first_object_not_at_client_setup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A service principal's token fetch alone took 4-5 s live against a 3 s budget, which
+    truncated every OneLake preview before its first object (#1680).
+    """
+
+    def _slow_first(**_kwargs: Any) -> Any:
+        time.sleep(0.3)  # client + token setup, longer than the whole budget
+        for day in ("2026-09-26", "2026-09-27"):
+            yield flatfile.FileRef(f"data/orders_{day}.csv")
+
+    monkeypatch.setattr(flatfile, "iter_files", _slow_first)
+    result = flatfile.resolve_batch_file_preview(
+        conn_type="adls_gen2",
+        config={},
+        secret="s",
+        prefix="data/",
+        pattern=_PATTERN,
+        max_objects=100,
+        max_seconds=0.1,
+    )
+
+    assert result.truncated is False
+    assert result.scanned == 2
+    assert result.path == "data/orders_2026-09-27.csv"

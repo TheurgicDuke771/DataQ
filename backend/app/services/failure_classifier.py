@@ -282,6 +282,9 @@ _AUTH_MARKERS: tuple[str, ...] = (
     "server failed to authenticate the request",
     "signature did not match",
     "invalid_client",
+    # Entra ID service principal (ADLS `service_principal`): wrong / expired client secret.
+    "aadsts7000215",
+    "aadsts7000222",
     # AWS S3 (and S3-compatible stores, which reuse the same error codes).
     "invalidaccesskeyid",
     "signaturedoesnotmatch",

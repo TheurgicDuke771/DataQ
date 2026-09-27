@@ -294,7 +294,7 @@ batches land measured against the new baseline.
 | ⬜ | [#1327](https://github.com/TheurgicDuke771/DataQ/issues/1327) Profiler: `sqlalchemy.values()` for the rank driver — consider | spike |
 | ⬜ | [#1334](https://github.com/TheurgicDuke771/DataQ/issues/1334) Check ordinal (same-transaction inserts tie on `created_at`) | quality |
 | ⬜ | [#1660](https://github.com/TheurgicDuke771/DataQ/issues/1660) **Spike/ADR:** automated coverage loop — fleet-wide monitor bootstrap design (the G-a remainder) | spike |
-| ⬜ | [#1680](https://github.com/TheurgicDuke771/DataQ/issues/1680) **Spike:** OneLake flat-file — ADLS adapter + endpoint override + Entra auth | spike |
+| 🟡 | [#1680](https://github.com/TheurgicDuke771/DataQ/issues/1680) **Spike:** OneLake flat-file — ADLS adapter + endpoint override + Entra auth — **built**: ADLS `service_principal` auth, live-verified on a Fabric trial workspace (PR open; follow-ups #2127/#2128/#2129) | spike |
 | ⬜ | [#1668](https://github.com/TheurgicDuke771/DataQ/issues/1668) First-run onboarding + empty-state pass (pairs with #732 marketplace checklist) | ux |
 | ⬜ | [#1518](https://github.com/TheurgicDuke771/DataQ/issues/1518) **Cycle close:** every remaining item closed or rolled by name; zero open PRs; retro-v1.2; freeze this file; tag + release `v1.2.0` | close |
 
