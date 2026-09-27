@@ -636,3 +636,29 @@ case that bites, since the product cannot know them and will never warn.
   **Not updated:**
   - AWS `Retail Snowflake DEV`: blocked on AWS CLI credentials.
   - The local mirror: empty, so there was nothing to update.
+
+## 2026-09-27 (evening) — Azure SQL free-offer test DB for #1679 (ADR 0044 spike) + Fabric trial prep (#1679/#1680)
+
+All user-approved. Done by Claude, with the owner's `az` login.
+
+- **`Microsoft.Sql` resource provider registered** on the subscription (it was `NotRegistered`).
+- **Logical server `dataq-mssql-645a5b`** (`dataq-rg`, westus2), minimal TLS 1.2:
+  - Entra admin = the owner account; a SQL admin login `dataqadmin`.
+  - The password is generated straight into KV `mssql-test-sqladmin` and was never printed.
+- **Database `dataq_test`**: **free offer** (`useFreeLimit=true`, `freeLimitExhaustionBehavior=AutoPause`), serverless GP_S_Gen5, local backup redundancy. It cannot bill: it pauses when the monthly free allowance runs out.
+- **Firewall rule `claude-maint-20260927`**: a single IP, the maintainer's current egress. **Delete it when testing ends.**
+- **Principals inside `dataq_test`** (both `db_datareader`):
+  - `[dataq-terraform-sp]`, a contained user `FROM EXTERNAL PROVIDER`;
+  - `dataq_reader`, a SQL user whose password is in KV `mssql-test-reader`.
+
+  One test table, `dbo.Orders` (4 rows).
+- **Connection policy:** switched to **Redirect** for the spike, then **restored to Default**.
+- **Entra:** `dataq-admin@<tenant>.onmicrosoft.com` got `usageLocation=IN` and the **Fabric Administrator** directory role (assignment id prefix `lonqqS8S…`). This is so it can start a Fabric trial and enable the tenant setting "Service principals can use Fabric APIs". **Remove the role once Fabric verification is done.**
+- **Expected state after:**
+  - The server and database exist and auto-pause, at $0.
+  - Both KV secrets exist.
+  - No app configuration changed and no connection created in prod.
+- **Teardown when #1679/#1680 are verified:**
+  - `az sql db delete`, `az sql server delete`, delete the firewall rule;
+  - purge `mssql-test-sqladmin` / `mssql-test-reader`;
+  - remove the Fabric Administrator assignment.
