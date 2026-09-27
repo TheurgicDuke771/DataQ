@@ -67,11 +67,51 @@ export interface LineageNode {
   depth: number;
 }
 
+/**
+ * Why an edge does or does not carry column pairs (#1710) — `recorded` is the only state that
+ * supports a column-level claim; the rest say why `columns` is empty, never "no dependency".
+ */
+export type ColumnCoverage =
+  'recorded' | 'none_recorded' | 'unavailable' | 'unknown' | 'not_captured';
+
 /** One edge of the lineage neighbourhood — mirrors `LineageEdgeRead`. */
 export interface LineageEdge {
   source: string;
   target: string;
   columns?: [string, string][] | null;
+  /** Absent from a pre-#1710 API — read as `unknown`. */
+  column_coverage?: ColumnCoverage;
+}
+
+export type TraceDirection = 'upstream' | 'downstream' | 'both';
+export type TraceStatus = 'traced' | 'no_table_lineage' | 'none_recorded' | 'incomplete';
+
+/** One column-grain trace — mirrors `ColumnTraceRead` (#1710). */
+export interface ColumnTrace {
+  asset_id: string;
+  column: string;
+  upstream: { asset_id: string; column: string; depth: number }[];
+  downstream: { asset_id: string; column: string; depth: number }[];
+  hops: {
+    upstream_asset_id: string;
+    upstream_column: string;
+    downstream_asset_id: string;
+    downstream_column: string;
+  }[];
+  gaps: { upstream_asset_id: string; downstream_asset_id: string; coverage: ColumnCoverage }[];
+  origins: { asset_id: string; column: string; depth: number; confirmed: boolean }[];
+  upstream_status: TraceStatus | null;
+  downstream_status: TraceStatus | null;
+  truncated: boolean;
+  complete: boolean;
+  assets: {
+    id: string;
+    namespace: string;
+    name: string;
+    env: string | null;
+    is_monitored: boolean;
+  }[];
+  qualified_by: string[];
 }
 
 /** Asset detail — mirrors `AssetDetailRead`. */
@@ -178,6 +218,17 @@ export async function listAssets(
 
 export async function getAsset(assetId: string): Promise<AssetDetail> {
   const { data } = await api.get<AssetDetail>(`/assets/${assetId}`);
+  return data;
+}
+
+export async function traceColumn(
+  assetId: string,
+  column: string,
+  direction: TraceDirection = 'both',
+): Promise<ColumnTrace> {
+  const { data } = await api.get<ColumnTrace>(`/assets/${assetId}/column-lineage`, {
+    params: { column, direction },
+  });
   return data;
 }
 

@@ -2478,6 +2478,90 @@
         "title": "CheckVersionRead",
         "type": "object"
       },
+      "ColumnHopRead": {
+        "properties": {
+          "downstream_asset_id": {
+            "format": "uuid",
+            "title": "Downstream Asset Id",
+            "type": "string"
+          },
+          "downstream_column": {
+            "title": "Downstream Column",
+            "type": "string"
+          },
+          "upstream_asset_id": {
+            "format": "uuid",
+            "title": "Upstream Asset Id",
+            "type": "string"
+          },
+          "upstream_column": {
+            "title": "Upstream Column",
+            "type": "string"
+          }
+        },
+        "required": [
+          "upstream_asset_id",
+          "upstream_column",
+          "downstream_asset_id",
+          "downstream_column"
+        ],
+        "title": "ColumnHopRead",
+        "type": "object"
+      },
+      "ColumnNodeRead": {
+        "properties": {
+          "asset_id": {
+            "format": "uuid",
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "column": {
+            "title": "Column",
+            "type": "string"
+          },
+          "depth": {
+            "title": "Depth",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "asset_id",
+          "column",
+          "depth"
+        ],
+        "title": "ColumnNodeRead",
+        "type": "object"
+      },
+      "ColumnOriginRead": {
+        "description": "An upstream-most column the walk reached (the traced column itself is never listed).\n`confirmed: false` \u21d2 a gap or the depth cap means something further upstream may still\nfeed it.",
+        "properties": {
+          "asset_id": {
+            "format": "uuid",
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "column": {
+            "title": "Column",
+            "type": "string"
+          },
+          "confirmed": {
+            "title": "Confirmed",
+            "type": "boolean"
+          },
+          "depth": {
+            "title": "Depth",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "asset_id",
+          "column",
+          "depth",
+          "confirmed"
+        ],
+        "title": "ColumnOriginRead",
+        "type": "object"
+      },
       "ColumnPolicyRead": {
         "description": "A suite's failing-sample redaction policy: the shown ``identifier_column``\n(a non-PII row locator) + the always-masked ``pii_columns``, plus whether the\nsuite is in fail-closed mode.",
         "properties": {
@@ -2801,6 +2885,158 @@
           "columns"
         ],
         "title": "ColumnProfileRequest",
+        "type": "object"
+      },
+      "ColumnTraceAssetRead": {
+        "description": "The identity of an asset a column trace names.",
+        "properties": {
+          "env": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Env"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_monitored": {
+            "title": "Is Monitored",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "namespace": {
+            "title": "Namespace",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "namespace",
+          "name",
+          "env",
+          "is_monitored"
+        ],
+        "title": "ColumnTraceAssetRead",
+        "type": "object"
+      },
+      "ColumnTraceRead": {
+        "description": "Column-grain provenance (`upstream`, `origins`) and impact (`downstream`) for one column.\n\n`*_status` per direction: `traced` \u00b7 `no_table_lineage` \u00b7 `none_recorded` \u00b7 `incomplete`\n(null when that direction was not requested). `complete` is false whenever `gaps` is\nnon-empty or `truncated` \u2014 then an absent column is NOT evidence of no dependency (#828).\nThe column's existence on the asset is not verified: a misspelling traces to nothing.",
+        "properties": {
+          "asset_id": {
+            "format": "uuid",
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "assets": {
+            "items": {
+              "$ref": "#/components/schemas/ColumnTraceAssetRead"
+            },
+            "title": "Assets",
+            "type": "array"
+          },
+          "column": {
+            "title": "Column",
+            "type": "string"
+          },
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "downstream": {
+            "items": {
+              "$ref": "#/components/schemas/ColumnNodeRead"
+            },
+            "title": "Downstream",
+            "type": "array"
+          },
+          "downstream_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Downstream Status"
+          },
+          "gaps": {
+            "items": {
+              "$ref": "#/components/schemas/CoverageGapRead"
+            },
+            "title": "Gaps",
+            "type": "array"
+          },
+          "hops": {
+            "items": {
+              "$ref": "#/components/schemas/ColumnHopRead"
+            },
+            "title": "Hops",
+            "type": "array"
+          },
+          "origins": {
+            "items": {
+              "$ref": "#/components/schemas/ColumnOriginRead"
+            },
+            "title": "Origins",
+            "type": "array"
+          },
+          "qualified_by": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Qualified By",
+            "type": "array"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "upstream": {
+            "items": {
+              "$ref": "#/components/schemas/ColumnNodeRead"
+            },
+            "title": "Upstream",
+            "type": "array"
+          },
+          "upstream_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upstream Status"
+          }
+        },
+        "required": [
+          "asset_id",
+          "column",
+          "upstream",
+          "downstream",
+          "hops",
+          "gaps",
+          "origins",
+          "upstream_status",
+          "downstream_status",
+          "truncated",
+          "complete",
+          "assets",
+          "qualified_by"
+        ],
+        "title": "ColumnTraceRead",
         "type": "object"
       },
       "ColumnsRead": {
@@ -3325,6 +3561,32 @@
           "created_at"
         ],
         "title": "ConnectionVersionRead",
+        "type": "object"
+      },
+      "CoverageGapRead": {
+        "description": "A table edge on the walk that carries no column pairs \u2014 the column MAY cross it.",
+        "properties": {
+          "coverage": {
+            "title": "Coverage",
+            "type": "string"
+          },
+          "downstream_asset_id": {
+            "format": "uuid",
+            "title": "Downstream Asset Id",
+            "type": "string"
+          },
+          "upstream_asset_id": {
+            "format": "uuid",
+            "title": "Upstream Asset Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "upstream_asset_id",
+          "downstream_asset_id",
+          "coverage"
+        ],
+        "title": "CoverageGapRead",
         "type": "object"
       },
       "DashboardSummaryRead": {
@@ -4483,6 +4745,11 @@
       "LineageEdgeRead": {
         "description": "One edge of the lineage neighbourhood, `source` (upstream) \u2192 `target`\n(downstream) asset id. The UI draws exactly these \u2014 without them a graph could\nonly guess which depth-2 node hangs off which depth-1 node (#805).",
         "properties": {
+          "column_coverage": {
+            "default": "unknown",
+            "title": "Column Coverage",
+            "type": "string"
+          },
           "columns": {
             "anyOf": [
               {
@@ -8115,6 +8382,15 @@
         "title": "TopValue",
         "type": "object"
       },
+      "TraceDirection": {
+        "enum": [
+          "upstream",
+          "downstream",
+          "both"
+        ],
+        "title": "TraceDirection",
+        "type": "string"
+      },
       "TrendPointRead": {
         "properties": {
           "day": {
@@ -10264,6 +10540,81 @@
           }
         },
         "summary": "Update asset metadata (workspace-admin only)",
+        "tags": [
+          "assets"
+        ]
+      }
+    },
+    "/api/v1/assets/{asset_id}/column-lineage": {
+      "get": {
+        "operationId": "trace_asset_column_api_v1_assets__asset_id__column_lineage_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "column",
+            "required": true,
+            "schema": {
+              "maxLength": 255,
+              "minLength": 1,
+              "title": "Column",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "direction",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/TraceDirection",
+              "default": "both"
+            }
+          },
+          {
+            "in": "query",
+            "name": "max_depth",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "maximum": 25,
+              "minimum": 1,
+              "title": "Max Depth",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ColumnTraceRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Trace one column's lineage",
         "tags": [
           "assets"
         ]

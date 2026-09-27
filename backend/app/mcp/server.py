@@ -19,7 +19,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
@@ -54,6 +54,7 @@ from backend.app.db.models import (
     User,
 )
 from backend.app.db.session import get_session
+from backend.app.lineage import columns as lineage_columns
 from backend.app.mcp import docs_catalog
 from backend.app.mcp.auth import (
     McpAuthError,
@@ -3324,6 +3325,15 @@ def get_asset(asset_id: str) -> dict[str, Any]:
     The paragraph above therefore does NOT apply to a prune-suspension on its own:
     such a source still discovers new edges normally, so a thin neighbour list is
     still trustworthy. Only removal of dead edges has stalled.
+
+    Each edge's `columns` lists `[upstream_column, downstream_column]` pairs when column-level
+    lineage was recorded; `column_coverage` says why it is null otherwise — `none_recorded`
+    (the source reads column lineage and recorded none for this edge; still not proof the
+    columns are unrelated), `unavailable` (its column read failed), `unknown` (not refreshed
+    since this was tracked) or `not_captured` (dbt / catalog sources never carry columns).
+    Only `recorded` supports a column-level claim. To follow ONE column across several hops
+    ("where does customer_id come from?", "what breaks if this column changes?") use
+    `trace_column_lineage` rather than chaining these pairs by hand.
     """
     aid = _parse_uuid(asset_id, field="asset_id")
     with _ctx() as (session, user), _service_errors():
@@ -3382,7 +3392,13 @@ def get_asset(asset_id: str) -> dict[str, Any]:
                 "upstream": [_lineage_node_payload(n) for n in detail.upstream],
                 "downstream": [_lineage_node_payload(n) for n in detail.downstream],
                 "edges": [
-                    {"source": str(e.source), "target": str(e.target), "columns": e.columns}
+                    {
+                        "source": str(e.source),
+                        "target": str(e.target),
+                        "columns": e.columns,
+                        # Why `columns` is null when it is (#1710) — see the docstring.
+                        "column_coverage": str(e.column_coverage),
+                    }
                     for e in detail.lineage_edges
                 ],
                 # Empty ⇒ the graph is as complete as DataQ can make it. Non-empty ⇒ absence of
@@ -3403,6 +3419,100 @@ def _lineage_node_payload(node: Any) -> dict[str, Any]:
         "is_monitored": node.is_monitored,
         "depth": node.depth,
     }
+
+
+@mcp.tool
+def trace_column_lineage(
+    asset_id: str,
+    column: Annotated[str, Field(min_length=1, max_length=255)],
+    direction: Literal["upstream", "downstream", "both"] = "both",
+    max_depth: Annotated[int, Field(ge=1, le=lineage_columns.MAX_TRACE_DEPTH)] = (
+        lineage_columns.DEFAULT_TRACE_DEPTH
+    ),
+) -> dict[str, Any]:
+    """Follow one column of an asset through column-level lineage, upstream and/or downstream.
+
+    Use this for 'where does orders.customer_id come from?', 'which downstream columns are
+    affected if this column goes null?' or 'is this column a copy of an upstream one?'. Take
+    `asset_id` from `list_assets` / `get_asset`. Returns `origins` (the upstream-most columns
+    it derives from — empty when no upstream hop was found; read `upstream_status` for why),
+    `upstream` / `downstream` column nodes with hop `depth`, the `hops` themselves
+    (`upstream_column` → `downstream_column`), the `assets` those nodes belong to, and
+    per-direction `upstream_status` / `downstream_status` — `null` means that direction was not
+    requested via `direction`, which is "not asked", never a finding.
+
+    Column lineage is only as complete as what the warehouse recorded, so read the result
+    through its honesty fields before answering:
+
+    - `gaps` lists table edges on the walk that carry NO column pairs, each with the reason
+      (`none_recorded` / `unavailable` / `unknown` / `not_captured`, as in `get_asset`). The
+      column may flow across any of them. When `complete` is false, say the trace is partial —
+      never "nothing else feeds / depends on this column".
+    - An origin with `confirmed: false` may be fed by something further upstream (a gap or the
+      depth cap stopped the walk there).
+    - Status `no_table_lineage` means the asset has no lineage edges that way at all; status
+      `none_recorded` means every adjacent edge carries column detail and none maps this
+      column. Neither verifies the column exists — DataQ does not check the name against the
+      schema, so a misspelt column simply traces to nothing.
+    - `qualified_by` carries the table-level lineage qualifiers (failing, stale or coarse
+      sources); a trace inherits every one of them.
+    - A column pair records derivation, not equality: a downstream column can be an
+      aggregate or a join output of its source, so do not assume a check on one holds on the
+      other.
+    """
+    aid = _parse_uuid(asset_id, field="asset_id")
+    with _ctx() as (session, _user), _service_errors():
+        view = asset_view_service.trace_asset_column(
+            session,
+            aid,
+            column,
+            direction=lineage_columns.TraceDirection(direction),
+            max_depth=max_depth,
+        )
+        trace = view.trace
+
+        def _node(n: Any) -> dict[str, Any]:
+            return {"asset_id": str(n.asset_id), "column": n.column, "depth": n.depth}
+
+        return {
+            "asset_id": str(trace.asset_id),
+            "column": trace.column,
+            "upstream_status": trace.upstream_status,
+            "downstream_status": trace.downstream_status,
+            "complete": trace.complete,
+            "truncated": trace.truncated,
+            "origins": [{**_node(o), "confirmed": o.confirmed} for o in trace.origins],
+            "upstream": [_node(n) for n in trace.upstream],
+            "downstream": [_node(n) for n in trace.downstream],
+            "hops": [
+                {
+                    "upstream_asset_id": str(h.upstream_asset_id),
+                    "upstream_column": h.upstream_column,
+                    "downstream_asset_id": str(h.downstream_asset_id),
+                    "downstream_column": h.downstream_column,
+                }
+                for h in trace.hops
+            ],
+            "gaps": [
+                {
+                    "upstream_asset_id": str(g.upstream_asset_id),
+                    "downstream_asset_id": str(g.downstream_asset_id),
+                    "coverage": str(g.coverage),
+                }
+                for g in trace.gaps
+            ],
+            "assets": [
+                {
+                    "id": str(a.id),
+                    "namespace": a.namespace,
+                    "name": a.name,
+                    "env": a.env,
+                    "is_monitored": a.is_monitored,
+                }
+                for a in view.assets
+            ],
+            "qualified_by": view.qualified_by,
+        }
 
 
 def _incident_payload(incident: Any) -> dict[str, Any]:

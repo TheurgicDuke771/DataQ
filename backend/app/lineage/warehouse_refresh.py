@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import case, delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -41,6 +41,7 @@ from backend.app.core.secrets import SecretStore
 from backend.app.db.models import Connection, LineageEdge
 from backend.app.lineage.warehouse import (
     MAX_COLUMN_PAIRS_PER_EDGE,
+    ColumnGrain,
     LineageTier,
     WarehouseLineageProvider,
     WarehouseLineageResult,
@@ -85,6 +86,8 @@ class WarehouseRefreshOutcome:
     # is derived by comparing the two: a second, strictly-later wall-clock reading would make
     # every healthy pruning connection compare as permanently suspended.
     refreshed_at: datetime | None = None
+    # #1710 — what the pull learned about column grain; None = nothing new (keep the stored state).
+    column_grain: ColumnGrain | None = None
 
 
 def refresh_warehouse_edges(
@@ -154,6 +157,9 @@ def _persist(
         and _suspension_exhausted(connection.lineage_last_authoritative_refresh_at)
     )
     prune = authoritative_snapshot or prune_forced
+    # #1710: the verbatim `columns` replace also needs the COLUMN read to be authoritative — a
+    # transient column-read failure must not wipe pairs an earlier pull captured.
+    replace_columns = authoritative_snapshot and result.columns_authoritative
     # clock_timestamp() advances within the tx (unlike now()), captured BEFORE the edge upserts
     # stamp a strictly-later last_seen.
     refresh_started_at = session.execute(select(func.clock_timestamp())).scalar_one()
@@ -175,7 +181,7 @@ def _persist(
         # unions pairs with the persisted prior.
         existing_columns = (
             {}
-            if authoritative_snapshot
+            if replace_columns
             else _existing_columns(session, source=source, connection_id=connection.id)
         )
         edge_rows = _edge_rows(
@@ -185,7 +191,7 @@ def _persist(
             connection_id=connection.id,
             existing_columns=existing_columns,
         )
-        _upsert_edges(session, edge_rows, replace_columns=authoritative_snapshot)
+        _upsert_edges(session, edge_rows, replace_columns=replace_columns)
 
     # Prune ONLY a snapshot source, and only when the pull observed current state completely
     # enough (Snowflake OBJECT_DEPENDENCIES — a current-state view) or the backstop fired.
@@ -250,6 +256,7 @@ def _persist(
         prune_suspended_since=connection.lineage_last_authoritative_refresh_at,
         prune_forced=prune_forced,
         refreshed_at=refresh_started_at,
+        column_grain=result.column_grain,
     )
 
 
@@ -396,6 +403,8 @@ def _edge_rows(
                 "connection_id": connection_id,
                 "last_seen": func.clock_timestamp(),
                 "columns": merged,
+                # #1710: stamped on every edge this pull observed; None = the pull said nothing.
+                "column_grain": str(result.column_grain) if result.column_grain else None,
             }
         )
     return rows
@@ -417,9 +426,26 @@ def _upsert_edges(
             if replace_columns
             else func.coalesce(stmt.excluded.columns, LineageEdge.columns)
         )
+        # The grain follows the same regime: a replace takes this pull's observation; a merge keeps
+        # "captured" once any pull has looked (a later failed look does not unsee it).
+        grain_value = (
+            func.coalesce(stmt.excluded.column_grain, LineageEdge.column_grain)
+            if replace_columns
+            else case(
+                (
+                    stmt.excluded.column_grain == ColumnGrain.CAPTURED.value,
+                    ColumnGrain.CAPTURED.value,
+                ),
+                else_=func.coalesce(LineageEdge.column_grain, stmt.excluded.column_grain),
+            )
+        )
         session.execute(
             stmt.on_conflict_do_update(
                 constraint="uq_lineage_edges_up_down_source_conn",
-                set_={"last_seen": func.clock_timestamp(), "columns": columns_value},
+                set_={
+                    "last_seen": func.clock_timestamp(),
+                    "columns": columns_value,
+                    "column_grain": grain_value,
+                },
             )
         )

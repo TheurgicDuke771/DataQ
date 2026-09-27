@@ -11,6 +11,7 @@ from sqlalchemy import text
 from backend.app.core.logging import get_logger
 from backend.app.lineage.warehouse import (
     MAX_COLUMN_PAIRS_PER_EDGE,
+    ColumnGrain,
     LineageEdgePair,
     LineageTier,
     WarehouseLineageResult,
@@ -65,9 +66,13 @@ class UnityCatalogLineageProvider:
         # Column grain (#901): a refinement of the table edges, never a reason to fail them — a
         # workspace where column_lineage is gated separately still gets table lineage.
         degraded_reason: str | None = None
+        # No table edges in the window → column_lineage is never read, so this pull says nothing
+        # new about column grain (None keeps the connection's last recorded state).
+        column_grain: ColumnGrain | None = ColumnGrain.CAPTURED if edges else None
         try:
             edges = self._attach_column_pairs(conn, edges, since)
         except Exception as exc:
+            column_grain = ColumnGrain.UNAVAILABLE
             degraded_reason = (
                 "column-level lineage unavailable: could not read "
                 f"system.access.column_lineage ({type(exc).__name__})"
@@ -84,6 +89,7 @@ class UnityCatalogLineageProvider:
             # The system table lags ingestion by up to ~1-2h (Databricks-documented).
             freshness_lag="~1-2h (system.access ingestion latency)",
             new_watermark=new_watermark,
+            column_grain=column_grain,
         )
 
     # ── identity ──────────────────────────────────────────────────────────────

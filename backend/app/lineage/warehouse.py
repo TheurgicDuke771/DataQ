@@ -25,10 +25,20 @@ class LineageTier(StrEnum):
     UNITY_CATALOG_SYSTEM_ACCESS = "unity_catalog_system_access"  # system.access.table_lineage
     NONE = "none"
 
-    @property
-    def is_column_level(self) -> bool:
-        """True for tiers that carry column-level detail (used to label the graph)."""
-        return self in {self.SNOWFLAKE_GET_LINEAGE, self.SNOWFLAKE_ACCESS_HISTORY}
+
+class ColumnGrain(StrEnum):
+    """Whether a pull observed column-grain lineage (#1710) — orthogonal to the table tier.
+
+    The tier says which source answered the TABLE edges; column grain has its own
+    source (UC ``column_lineage``, Snowflake ``ACCESS_HISTORY.objects_modified``) that can
+    fail or be absent independently. Persisted per connection so an edge with no column
+    pairs can say WHY (#828): the source looked and found none, could not look, or never
+    looks at all.
+    """
+
+    CAPTURED = "captured"  # the column-grain read ran — an edge without pairs genuinely had none
+    UNAVAILABLE = "unavailable"  # a column-grain read was attempted and failed (grant, outage)
+    NOT_SUPPORTED = "not_supported"  # this source has no column-grain read at all
 
 
 # Defensive per-edge cap on persisted column pairs (#901/#908): real schemas are bounded, but a
@@ -67,6 +77,14 @@ class WarehouseLineageResult:
     # Is this pull a COMPLETE-ENOUGH observation of current state for a snapshot provider's refresh
     # to PRUNE against it (#1109 review)?
     prunable: bool = True
+    # #1710: what this pull learned about COLUMN grain. ``None`` = no new observation (an
+    # incremental pull whose window held no table events never reads column lineage), so the
+    # connection keeps whatever state it last recorded rather than being reset to "unknown".
+    column_grain: ColumnGrain | None = None
+    # #1710: may a snapshot pull REPLACE the stored column pairs? False when the column read failed
+    # transiently — replacing then would wipe pairs a previous pull captured over a blip. (A
+    # confirmed denial still replaces: pairs must clear, not freeze, when a grant is revoked.)
+    columns_authoritative: bool = True
 
     @classmethod
     def empty(

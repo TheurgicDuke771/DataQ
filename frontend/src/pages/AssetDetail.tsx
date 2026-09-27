@@ -379,6 +379,7 @@ function OwnerBlock({
         destroyOnHidden
       >
         <Select<string>
+          aria-label="Asset owner"
           style={{ width: '100%' }}
           placeholder="Unassigned"
           allowClear
