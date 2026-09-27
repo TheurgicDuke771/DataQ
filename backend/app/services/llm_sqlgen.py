@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore, SecretStoreUnavailableError
+from backend.app.datasources.sql_engines import SQL_ENGINES
 from backend.app.db.models import Connection, LlmInvocation, Suite
 from backend.app.llm.base import LLMOutputInvalidError, LLMRequestInvalidError
 from backend.app.services import llm_prompt_context, llm_service, profile_service
@@ -44,7 +45,11 @@ MAX_DESCRIPTION_CHARS = 2000
 #: general-purpose multi-table schema dump (#1649).
 MAX_ADDITIONAL_TABLES = 4
 
-_DIALECT_BY_TYPE = {"snowflake": "Snowflake SQL", "unity_catalog": "Databricks SQL"}
+_DIALECT_BY_TYPE = {
+    "snowflake": "Snowflake SQL",
+    "unity_catalog": "Databricks SQL",
+    **{t: spec.llm_dialect or f"{spec.display_name} SQL" for t, spec in SQL_ENGINES.items()},
+}
 if set(_DIALECT_BY_TYPE) != set(SQL_QUERYABLE_TYPES):  # pragma: no cover - import-time guard
     raise RuntimeError(
         "every SQL_QUERYABLE_TYPES member needs a dialect entry: "
@@ -333,8 +338,11 @@ def validate_output(
     Runs on the already-NUL-scrubbed payload — the gate must see the exact
     bytes that will be persisted.
     """
+    suite = session.get(Suite, invocation.suite_id) if invocation.suite_id else None
+    connection = session.get(Connection, suite.connection_id) if suite is not None else None
     try:
-        validate_query(payload.get("sql"))
+        # The target's dialect when it is still known; otherwise every dialect's rules.
+        validate_query(payload.get("sql"), connection_type=connection.type if connection else None)
     except CustomSqlInvalidError as exc:
         # exc.detail carries the ADR 0019 gate's own structured reason (e.g.
         # {"forbidden": [...]});  #1786 review — forward it so a failed

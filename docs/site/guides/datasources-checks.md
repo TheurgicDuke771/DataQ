@@ -5,10 +5,14 @@
 | Datasource | Connection | Check authoring | Execution |
 |---|---|---|---|
 | Snowflake (DEV/QA/UAT) | account + user + key/PAT | ✅ | ✅ |
-| ADLS Gen2 (flat files) | account URL + container, SAS | ✅ | ✅ |
+| ADLS Gen2 (flat files) — and ADLS-compatible endpoints such as [Fabric OneLake](#onelake-fabric-lakehouse-files) | account URL + container, SAS **or** Entra service principal | ✅ | ✅ |
 | AWS S3 **and S3-compatible** (flat files) | bucket + region, access key (+ optional endpoint) | ✅ | ✅ |
 | Unity Catalog (Databricks) | workspace URL + warehouse + PAT | ✅ | ✅ |
 | Apache Iceberg | catalog URI + catalog type (REST/SQL/Glue/Hive) + optional storage credential | ✅ | ✅ |
+| PostgreSQL (any server — self-hosted or a managed service) | host + port + database + user, password; TLS mode | ✅ | ✅ |
+| MySQL / MariaDB (any server — self-hosted or a managed service) | host + port + database + user, password; TLS mode | ✅ | ✅ |
+| Trino (any cluster, incl. Starburst — and every catalog it federates) | host + port + catalog + user; password, JWT or none; TLS + optional private CA | ✅ | ✅ |
+| SQL Server / T-SQL (SQL Server, Azure SQL, Synapse; Fabric SQL via the ODBC lane) | host + port + database; SQL login (user, password) or Entra service principal (tenant + client ID, client secret) | ✅ | ✅ |
 
 ## Add a connection
 
@@ -28,11 +32,50 @@ atomically via **Re-auth**. Leave the passphrase blank for an unencrypted key.
 Key-pair connections also require **Role** (the GX key-pair form mandates one for suite
 runs, so it is validated when the connection is saved).
 
+ADLS Gen2 supports two auth modes: a **SAS token** (the default, and what every connection
+created before this option existed uses) and an **Entra ID service principal** — the
+directory (**Tenant ID**) and application (**Client ID**) IDs, plus the app's **client secret**
+as the credential. A service principal needs a *data* role on the container (e.g. *Storage
+Blob Data Reader*); **Test** lists one entry to prove it, because the container-properties call
+alone also succeeds for a principal that holds only the control-plane *Contributor* role and
+would then fail every read. DataQ cannot read a client secret's expiry — it lives in Entra ID —
+so the connection card says **expiry not visible** instead of counting down; track it where the
+secret was created and **Re-auth** before it lapses. A wrong or expired client secret is
+recorded as a rejected credential; a wrong tenant or client ID, or a missing data role, is
+reported as a configuration or permission problem instead.
+
+### OneLake (Fabric lakehouse files)
+
+Microsoft Fabric OneLake serves the same Blob API, so an **ADLS Gen2** connection reads a
+lakehouse's `Files/` area — CSV and Parquet, with every flat-file check, freshness (including
+arrival-time), volume, the profiler, browsing and batch targets. There is no separate
+connection type:
+
+| Field | Value |
+|---|---|
+| Account URL | `https://onelake.blob.fabric.microsoft.com` |
+| Container | the Fabric **workspace** name or ID |
+| Auth type | **Service principal** — OneLake does not accept a stored SAS (its SAS is user-delegated and lasts at most an hour) |
+| Run target path | `<lakehouse>.Lakehouse/Files/<folder>/<file>`, e.g. `sales.Lakehouse/Files/orders/orders_2026-09-27.csv` |
+
+Prerequisites, in Fabric: the tenant setting *Service principals can use Fabric APIs* must be
+enabled, and the service principal must be a member of the workspace (Viewer is enough to
+read). OneLake reports a workspace the principal cannot see as **not found**, so a
+"table/path does not exist" failure on a correct workspace name usually means a missing
+workspace role. A batch target's prefix must reach inside an item
+(`<lakehouse>.Lakehouse/Files/...`): OneLake refuses a flat listing of the workspace root,
+though **Browse** starts there fine. Assets from OneLake are named
+`abfss://<workspace>@onelake.dfs.fabric.microsoft.com/...`. Only public-cloud Entra ID is
+supported for the token (`login.microsoftonline.com`).
+
 ### Moving a connection to a new host
 
 Editing a field that decides *where* the credential is sent — Snowflake `account`, ADLS
-`account_url`, S3/dbt `endpoint_url`, Unity Catalog `workspace_url`, Iceberg `catalog_uri` /
-`warehouse` / `properties` / `secret_property`, Airflow `base_url`, dbt `artifacts_uri` —
+`account_url` / `auth_type` / `tenant_id` / `client_id`, S3/dbt `endpoint_url`, Unity Catalog `workspace_url`, Iceberg `catalog_uri` /
+`warehouse` / `properties` / `secret_property`, PostgreSQL / MySQL `host` / `port`, Trino
+`host` / `port` / `sslmode` / `ca_bundle` / `auth_type`, SQL Server `host` / `port` / `auth_type` /
+`tenant_id` / `client_id` / `ca_bundle` / `driver`, Airflow
+`base_url`, dbt `artifacts_uri` —
 requires re-entering
 that credential in the same save. The edit form asks for it as soon as you change one of
 those fields; through the API the request is rejected with `422 credential_redirect` until
@@ -108,7 +151,274 @@ incidents (decided in
 The same two fields exist on a **dbt** orchestration connection whose `artifacts_uri` is
 `s3://…`, so the artifacts poll can read from the same store.
 
-### Identifier casing (Snowflake / Unity Catalog)
+### PostgreSQL
+
+One connection type for **any PostgreSQL server** — self-hosted, or a managed service on any
+cloud. It is named for the engine, never for a vendor that hosts it (ADR
+[0010](../adr/0010-provider-agnostic-infrastructure-seams.md)), and is the first engine on
+DataQ's generic SQL datasource base, which the MySQL/MariaDB and Trino adapters reuse.
+Live-verified against PostgreSQL 16.
+
+- **Fields:** host (a bare hostname or IP — no scheme, port or path), port (default 5432),
+  database, user, an optional default schema (default `public`: where a target with no
+  schema resolves), and the password as the connection's secret.
+- **TLS:** `require` by default. `verify-full` / `verify-ca` also check the server
+  certificate, against the system trust store. `disable` must be chosen explicitly; libpq's
+  `prefer` — which silently falls back to plaintext — is not offered.
+- **Read only, always.** Every session DataQ opens sets `default_transaction_read_only`, so
+  the server itself refuses a write, whatever a query contains. Give DataQ its own login role
+  anyway, with no more than it needs:
+
+  ```sql
+  CREATE ROLE dataq_reader LOGIN PASSWORD '…';
+  GRANT CONNECT ON DATABASE shop TO dataq_reader;
+  GRANT USAGE ON SCHEMA sales TO dataq_reader;
+  GRANT SELECT ON ALL TABLES IN SCHEMA sales TO dataq_reader;
+  ```
+
+- **Name resolution.** Each session's `search_path` is `pg_catalog`, then the target's schema,
+  then `public` — so an unqualified name in custom SQL resolves in the table's own schema, and
+  extension objects installed in `public` (citext, pg_trgm, PostGIS) still work. `pg_catalog`
+  comes first on purpose: a function planted in a schema DataQ reads can never override a
+  built-in DataQ's own SQL calls. Still, don't give untrusted roles `CREATE` on schemas DataQ
+  checks — a function with a *different* signature there is still callable by name.
+- **Everything runs in the database** — expectations on a SQL batch, monitors as scalar
+  aggregates, custom SQL as-is — so no rows are loaded into the worker and a run target
+  takes no sampling block.
+- **The profiler** reports min/max as unavailable (null) for types PostgreSQL has no MIN/MAX
+  for — `boolean`, `json`/`jsonb`, `uuid`, geometric — and distinct count / top values as
+  unavailable for types with no equality (`json`, `xml`, geometric), instead of failing the
+  whole profile. A domain is judged by the type it is a domain over, and an array by its
+  element type. A JSON cell in a failing-row sample is shown as its JSON text.
+- **No column tags.** PostgreSQL has no column-tag feature for DataQ to read, so its columns
+  are classified by the suite's column policy and DataQ's own name/value checks only — see
+  [security](../security/overview.md).
+- **Inventory sync** enumerates the tables, views, materialized views and foreign tables the
+  user can `SELECT`, in schemas it has `USAGE` on (partitions are left out — their parent is
+  what a check targets). There is **no warehouse-native lineage**: PostgreSQL keeps no lineage
+  log to read, so a PostgreSQL asset's lineage comes from dbt, OpenLineage or a catalog, and
+  an empty graph means "not observed", not "nothing feeds this table".
+
+### MySQL / MariaDB
+
+One connection type for **any MySQL or MariaDB server**, on the same generic SQL base as
+PostgreSQL. The driver is **PyMySQL** (MIT); the GPL-licensed MySQL drivers are never used.
+Live-verified against MySQL 8.4, MariaDB 11.8 and MariaDB 10.6 (the long-term line many
+managed services still default to).
+
+- **Fields:** host, port (default 3306), database, user, and the password as the secret. A
+  MySQL *schema* is a database, so a run target's optional schema names another database
+  (it defaults to the connection's).
+- **TLS:** the same modes as PostgreSQL, `require` by default. `require` encrypts and refuses a
+  server without TLS (PyMySQL's own default would quietly fall back to plaintext); `verify-*`
+  also checks the certificate against the system trust store, so a server with MySQL's
+  self-generated certificate fails them.
+- **Read only, UTC.** Every session runs `SET SESSION TRANSACTION READ ONLY` (the statement
+  every version accepts — the `transaction_read_only` variable does not exist before
+  MariaDB 11.1) and sets `time_zone = '+00:00'`, so a
+  `TIMESTAMP` column comes back in UTC and freshness is right whatever the server's zone is
+  (`DATETIME` has no zone and is read as UTC). **One exception:** GX checks uniqueness on
+  MySQL by copying the column into session temporary tables, which a read-only transaction
+  refuses — so *Column values unique* runs on its own session without the read-only guard.
+  No SQL you wrote ever runs there. It needs the `CREATE TEMPORARY TABLES` grant; without it
+  that one check errors and the rest of the suite is unaffected:
+
+  ```sql
+  CREATE USER 'dataq_reader'@'%' IDENTIFIED BY '…';
+  GRANT SELECT, SHOW VIEW, CREATE TEMPORARY TABLES ON shop.* TO 'dataq_reader'@'%';
+  ```
+
+- **Collation decides equality.** Uniqueness, set membership and comparisons follow the
+  column's collation: under the default case-insensitive one, `'a'` and `'A'` are duplicates.
+  Column names are case-insensitive; **table and database names are case-sensitive** on a Linux
+  server (`lower_case_table_names=0`), so type them exactly as the server shows them.
+- **Types:** `BOOLEAN` is `TINYINT(1)` (values `0`/`1`); MariaDB's `JSON` is `LONGTEXT`, which is
+  what schema drift reports for it.
+- **No column tags, no warehouse-native lineage** — as for PostgreSQL. Inventory sync and the
+  schema browser list what `information_schema` shows the user, which is privilege-filtered.
+
+### Trino
+
+One connection type for **any Trino cluster** — including Starburst — and through it every
+store the cluster federates (Hive, Iceberg, Delta, PostgreSQL, MySQL, Cassandra, MongoDB,
+Kafka topics…) with no per-store adapter on DataQ's side. It is the third engine on the
+generic SQL base. Live-verified against Trino 483 with the `memory`, `tpch` and `postgresql`
+connectors, over HTTPS with a private CA, the PASSWORD and JWT authenticators, and file-based
+access control.
+
+- **Fields:** host, port (default 443, or 8080 with TLS disabled), **catalog**, user, an
+  optional default schema (default `default`), and the auth type with its secret. A
+  connection reads **one catalog** — the counterpart of a PostgreSQL database — so a target
+  is `schema.table` inside it and its asset is `catalog.schema.table`. Add one connection per
+  catalog you want to check.
+- **Authentication:** `password` (Trino's PASSWORD authenticator — a password file, LDAP, …;
+  sent as HTTP basic), `jwt` (a bearer token; DataQ reads its `exp` and shows when it
+  expires, so rotate it with **Re-authenticate** before then), or `none` for a cluster
+  without authentication (no secret is stored; Trino still needs a user name). A password or
+  token is **only ever sent over TLS**: `password`/`jwt` with TLS disabled is refused when
+  you save, before anything is sent.
+- **TLS:** `verify-full` by default — the certificate and the host name are always checked;
+  there is no mode that encrypts without verifying. For a certificate from a **private CA**,
+  paste the CA's PEM into **CA bundle**: it replaces the system trust store for this
+  connection. Changing the host, port, TLS mode, CA bundle or auth type counts as moving the
+  credential, so the edit asks for it again (switching to `none` asks for nothing — the stored
+  one is simply no longer sent). The CA must be a well-formed X.509 CA (with a
+  `keyUsage` extension) — the worker's TLS stack verifies strictly.
+- **Not read-only at the session — the credential is the guarantee.** Trino has no session
+  or transaction read-only switch a client can set, so unlike PostgreSQL and MySQL, DataQ
+  cannot make the server refuse a write. Custom SQL still passes DataQ's validator, which
+  rejects writes and DDL — but the guarantee rests on **the Trino user DataQ connects as**:
+  give it read-only access in the cluster's access control, e.g. with file-based rules:
+
+  ```json
+  {
+    "catalogs": [{"user": "dataq_reader", "catalog": "hive", "allow": "read-only"}],
+    "tables": [{"user": "dataq_reader", "schema": "sales", "privileges": ["SELECT"]}]
+  }
+  ```
+
+  Listings (the schema browser, inventory sync) show what that access control lets the user
+  see.
+- **Names are lower case.** Trino folds every identifier to lower case — quoted or not — and
+  its catalogs report them that way, so the catalog, schema and table must be typed in
+  lower case (a mixed-case name is refused when you save). A connector over a store with
+  mixed-case names (PostgreSQL, MySQL) presents them lower-cased; on those catalogs enable the
+  connector's `case-insensitive-name-matching` so Trino can resolve them. A mixed-case
+  **column** name in a check works — it folds like any other.
+- **Time zones.** Every session runs in UTC, so a `timestamp` (no zone) column is read as
+  UTC wall-clock time; `timestamp with time zone` carries its own zone. Freshness is right
+  either way.
+- **Everything runs on the cluster** — expectations on a SQL batch (GX never creates
+  temporary tables on Trino; uniqueness is one aggregate query), monitors as scalar
+  aggregates, custom SQL as-is. A check costs whatever the query costs the catalog behind
+  it — a full scan of a large Hive table is a full scan.
+- **Comparisons are byte-wise:** `'a'` and `'A'` are different values (unlike MySQL's default
+  collation).
+- **The profiler** reports min/max, distinct count and top values as unavailable (null) for
+  types Trino cannot order — `json`, `map`, and anything containing one (`array(json)`, a
+  `row` with a `map` field), plus the sketch/digest and geometry types.
+- **No column tags, no warehouse-native lineage.** DataQ reads no column-classification
+  source from Trino, and Trino keeps no lineage log DataQ reads — lineage comes from dbt,
+  OpenLineage or a catalog, and an empty graph means "not observed".
+
+### SQL Server / Azure SQL / Fabric (T-SQL)
+
+One connection type (`mssql`) for **anything that speaks SQL Server's TDS protocol** — SQL
+Server itself, Azure SQL Database, Synapse dedicated pools, and the Microsoft Fabric SQL
+endpoints (Warehouse, Lakehouse SQL analytics endpoint, SQL database in Fabric). It is named for
+the engine, not a cloud (ADR [0010](../adr/0010-provider-agnostic-infrastructure-seams.md)),
+and sits on the same generic SQL base as PostgreSQL. The driver decision and its trade-offs are
+[ADR 0044](../adr/0044-mssql-tds-driver-and-entra-auth.md). Live-verified against Azure SQL
+Database with both auth modes on both driver lanes, and against a Microsoft Fabric Warehouse and
+Lakehouse SQL analytics endpoint on the ODBC lane.
+
+- **Fields:** host (a bare hostname — e.g. `myserver.database.windows.net`; no scheme, port or
+  `\instance`: connect to a named instance by its port), port (default 1433), database, an
+  optional default schema (default `dbo`), and one of two **auth modes**:
+    - **SQL login** — `user`, and the password as the secret. SQL Server, Azure SQL, Synapse.
+    - **Entra service principal** — `tenant_id` and `client_id`, and the client secret as the
+      secret. DataQ asks Entra ID for a token for `https://database.windows.net/` and presents
+      it at login; the client secret never goes to the database server. Azure SQL, Synapse and
+      Fabric. The principal must exist in the database (`CREATE USER [app-name] FROM EXTERNAL
+      PROVIDER`) with read access. DataQ cannot read a client secret's expiry — track it in
+      Entra ID and re-authenticate before it lapses. Managed identity and certificate
+      credentials are not supported yet.
+- **TLS is always on and always verified.** There is no TLS mode to choose: every connection is
+  encrypted, the server certificate must chain to a trusted CA (the public roots DataQ ships,
+  or a **private CA certificate** you paste into the connection for a self-hosted server), and
+  the hostname must match the certificate. Connecting by IP address fails for that reason — use
+  the name on the certificate. The shipped driver speaks TLS 1.2; TDS 8 "strict" encryption is
+  not supported yet.
+- **Read only — by grant, not by session.** Like Trino and unlike PostgreSQL and MySQL, SQL Server has no
+  per-session read-only switch, so DataQ **cannot make the server refuse a write**. The guards
+  are the custom-SQL validator (which understands T-SQL `[bracket]` identifiers and refuses
+  `OPENQUERY`/`OPENROWSET`/`OPENDATASOURCE`, `BULK`, `DBCC`, `WAITFOR`, `BACKUP`/`RESTORE`
+  and the rest of the ADR 0019 list) and **the login you give DataQ, which must be read-only**:
+
+  ```sql
+  -- in the target database
+  CREATE USER dataq_reader FOR LOGIN dataq_reader;   -- or FROM EXTERNAL PROVIDER for Entra
+  ALTER ROLE db_datareader ADD MEMBER dataq_reader;
+  ```
+
+  Nothing else is needed: the session-scoped `#temp` tables some SQL Server queries use need no
+  extra grant (verified with a `db_datareader`-only login).
+- **Two driver lanes** (`driver`):
+    - **`python-tds`** (default) — pure-Python and MIT-licensed, shipped in the DataQ image. It
+      covers SQL Server, Azure SQL and Synapse.
+    - **`odbc`** — Microsoft ODBC Driver 18 through `pyodbc`. DataQ **does not ship** this
+      driver (its licence does not allow us to redistribute it — ADR 0044), so this lane only
+      works in an image **you** build on top of DataQ's — a sketch (DataQ's CI does not build
+      or test it, since doing so would mean accepting the driver's licence):
+
+      ```dockerfile
+      FROM ghcr.io/theurgicduke771/dataq-backend:latest
+      USER root
+      RUN apt-get update && ACCEPT_EULA=Y apt-get install -y --no-install-recommends \
+            msodbcsql18 unixodbc && pip install pyodbc && rm -rf /var/lib/apt/lists/*
+      USER 10001
+      ```
+
+      (add Microsoft's apt repository first, as Microsoft's install guide describes). Pick
+      `odbc` on the connection; an optional `odbc_driver` names a different installed driver.
+      If the lane is chosen but the driver or `pyodbc` is missing, **Test** says exactly that
+      and how to fix it. On this lane the driver's own certificate checking applies (encryption
+      required, server certificate and hostname verified against the image's trust store —
+      connecting by IP is refused here too). A service principal still logs in with a token
+      DataQ requests from Entra ID, so a wrong client secret fails at once with Entra's own
+      error rather than a login timeout.
+- **Microsoft Fabric SQL endpoints need the ODBC lane today.** Over the default `python-tds`
+  driver, Fabric rejects the login after routing it (a known incompatibility in that driver,
+  still being worked on); Test and runs say so and point at the ODBC lane instead of showing the
+  raw driver error. Fabric accepts Entra ID only, and
+  two things are set up on the Fabric side: the tenant setting **Service principals can use
+  Fabric APIs**, and a workspace role (or item permission) for the principal. If Fabric refuses
+  the principal's login on the ODBC lane, Test names those two prerequisites.
+
+  On a Fabric Warehouse or Lakehouse SQL endpoint, **seven expectation types are not
+  available**: *Column values unique*, *Compound columns unique*, *Values unique within
+  record*, *Column A greater than B*, *Column pair equal*, *Column pair in set* and
+  *Multicolumn sum*. Great Expectations evaluates them on SQL Server through a temporary table,
+  which Fabric refuses, so DataQ refuses them when you save the check on a Fabric connection
+  (the editor still lists them — the save explains why). Use custom SQL instead, e.g.
+  `SELECT id FROM {batch} GROUP BY id HAVING COUNT(*) > 1` for uniqueness. A Fabric endpoint's
+  first login after it has been idle can take longer than Test Connection's 10 seconds — test
+  again; runs wait up to a minute.
+- **Everything runs in the database**, as on PostgreSQL. A run target takes no sampling block
+  (so no `TABLESAMPLE`). Freshness reads `datetimeoffset` as the instant it is (offset
+  honoured), `datetime2`/`datetime` as UTC, and `date` as midnight UTC.
+- **Regular expressions are not available**: T-SQL has no regex operator Great Expectations can
+  translate to, so the four regex expectations are refused when you save them (and hidden in
+  the editor). Use a custom-SQL check with `LIKE` or `PATINDEX`. Value-length checks use
+  T-SQL `LEN`, which ignores trailing spaces.
+- **Type checks** (`to_be_of_type`, `in_type_list`) compare the bare type name: `DECIMAL` for
+  `decimal(12,2)`, `INTEGER` for `int`, `NVARCHAR`, `DATETIME2`, `DATETIMEOFFSET`, `BIT`.
+- **The profiler** reports min/max as unavailable (null) for types SQL Server has no MIN/MAX for
+  — `bit`, `xml`, `geography`/`geometry`, `text`/`ntext`/`image`, `json`, `vector` — and distinct
+  count / top values as unavailable for all of those except `bit`.
+- **Names** resolve under the database's collation. On the usual case-insensitive collations
+  any casing reaches the object; on a **case-sensitive** collation, a mixed-case *schema* in a
+  run target is not supported (the check engine lower-cases it), though mixed-case tables and
+  columns are. A **Fabric Warehouse** is case-sensitive by default, so keep its schema names
+  lower-case (or use `dbo`) until this is lifted. A comparison check's SQL side must also name
+  every computed column and leave out `ORDER BY` — SQL Server refuses both inside the derived
+  table DataQ reads it through.
+- **No column tags.** DataQ does not read SQL Server's sensitivity classifications
+  (`sys.sensitivity_classifications`) yet — reading them needs a permission a reader login
+  usually lacks, and without it the catalog view silently returns nothing, which DataQ would
+  otherwise report as "no sensitive columns". Columns are classified by the suite's column
+  policy and DataQ's own checks. There is no warehouse-native lineage either.
+- **Inventory sync and browsing** list the tables and views in `INFORMATION_SCHEMA` that the
+  login can `SELECT`; the fixed-role schemas every database carries (`db_datareader`, …) are
+  never offered.
+- **Speed.** The shipped driver is pure Python. DataQ pushes aggregates to the server and caps
+  samples, so this rarely matters, but every query is one network round trip — a suite run
+  from a region far from the database is dominated by latency, not by the database.
+- **Azure SQL serverless** databases pause when idle. The first login resumes them, which can
+  take up to a minute: a run waits for it, a Test Connection gives up after 10 seconds — test
+  again once the database is awake.
+
+### Identifier casing (Snowflake / Unity Catalog / PostgreSQL)
 
 Warehouses fold **unquoted** identifiers — Snowflake upper-cases them — so a column
 created as `order_ts` is really stored as `ORDER_TS`, while one created as
@@ -129,6 +439,12 @@ the aggregate/top-values queries, and freshness/volume monitors alike.
   nor `"order"` (wrong case) reaches.
 
 In both cases, alias the column in a view and point the check at that.
+
+**PostgreSQL** folds unquoted names to *lower*-case, so the same rule gives the natural
+result there: `order_id` is sent bare, while `CustomerId` or `Sales` (created quoted) are
+quoted and matched exactly. PostgreSQL silently **truncates** a name longer than 63
+characters, which could resolve a different object — so a longer table or schema name is
+refused when the suite is saved.
 
 One more caveat: in a **three-part** `catalog.schema.table` target, only the table
 gets quoted — a mixed-case *catalog or schema* still folds. This affects nobody
@@ -255,13 +571,13 @@ expectation can sit side by side, so the label is per check, not per run.
 
 ## Author a check
 
-1. Create (or open) a **suite** and point it at a **target** — a table (Snowflake/UC), a
+1. Create (or open) a **suite** and point it at a **target** — a table (Snowflake/UC/PostgreSQL), a
    file/path or batch pattern (ADLS/S3), or an Iceberg `namespace.table`. On Unity Catalog,
-   ADLS Gen2 and S3 you can **browse** for it instead of typing it — see below.
+   PostgreSQL, ADLS Gen2 and S3 you can **browse** for it instead of typing it — see below.
 2. **Add check** opens a dedicated page (`/suites/<id>/checks/new`): pick a **category**,
    then the check type, then fill its config. The authoring paths:
 
-### Browsing for a run target (Unity Catalog, ADLS Gen2, S3)
+### Browsing for a run target (Unity Catalog, PostgreSQL, MySQL, Trino, ADLS Gen2, S3)
 
 The suite form offers a picker beside the target fields; typing the target still works
 everywhere, and is the only way on Snowflake and Iceberg.
@@ -272,6 +588,12 @@ everywhere, and is the only way on Snowflake and Iceberg.
   credential can see — a table it has no privilege on is not shown, and an empty level
   means "nothing visible to this credential", not "nothing exists". The `system`,
   `samples` and `__databricks_internal` catalogs are never listed.
+- **PostgreSQL — Browse schemas…** lists the schemas the user has `USAGE` on, then that
+  schema's tables and views it can `SELECT` — the same query the inventory sync enumerates
+  with. There is no catalog level: the connection pins one database. **MySQL / MariaDB**
+  works the same way, its schemas being the databases the user has privileges on, and
+  **Trino** inside the connection's catalog, listing what the cluster's access control
+  lets the user see.
 - **ADLS Gen2 / S3 — Browse files…** (single-file mode) walks the folders of the
   connection's one container or bucket and fills **File path** with the file you pick.
   **Browse folders…** (batch mode) fills **Prefix** with the folder you are in.
@@ -347,7 +669,7 @@ and a learned baseline. **Whole-table set comparisons** (columns match an expect
 ordered list) are what the *Schema-drift* monitor does, against a captured baseline. For
 anything with no vetted type, write a custom-SQL check.
 
-### Custom SQL (Snowflake / Unity Catalog — ADR 0019)
+### Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino — ADR 0019)
 
 A read-only SQL rule in the Monaco editor: **any rows returned are failures**. Use
 `{batch}` as a placeholder for the suite's target table
@@ -363,7 +685,7 @@ a two-part name would silently resolve against the session's default schema — 
 *different table*, quietly checked. A UC target without a schema therefore errors
 its custom-SQL checks (with that reason on the result) while every other check in
 the suite runs normally. Set the schema on the suite's run target to fix it.
-Snowflake is unaffected — its schema comes from the connection.
+Snowflake, PostgreSQL, MySQL and Trino are unaffected — their schema comes from the connection.
 
 ### Snowflake DMF (ADR 0036)
 
@@ -413,12 +735,12 @@ whole prefix.
 *Did the shape change under you?* Capture a **baseline** column-name/type snapshot,
 then each run diffs the live snapshot against it and flags any add / drop /
 type-change. Introspection is per-datasource, never a `CheckRunner`/GX pass or a
-data scan: `information_schema` for Snowflake/Unity Catalog, the Parquet footer (or
+data scan: `information_schema` for Snowflake/Unity Catalog/PostgreSQL/MySQL/Trino, the Parquet footer (or
 a bounded CSV header sample) for ADLS Gen2/S3 flat files, and the loaded table's own
 metadata for Iceberg. Re-baseline explicitly once you've reviewed a drift and want
 it as the new normal — it is never re-baselined for you.
 
-### Anomaly monitor (Snowflake / Unity Catalog — ADR 0012)
+### Anomaly monitor (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino — ADR 0012)
 
 *Is this value abnormal for this dataset?* Where a volume monitor asks "is the row
 count inside a range I chose?", the anomaly monitor learns the range: it keeps a
@@ -498,6 +820,12 @@ the type your warehouse/catalog shows you:
   `type_` against the **fully-qualified dialect type**, not the short column type. A
   `NUMBER` column reports as `DECIMAL(38, 0)`; `VARCHAR` reports as `VARCHAR(16777216)`.
   Plugging in `NUMBER` or `DECIMAL` alone fails every time.
+- **MySQL / MariaDB** build a SQL batch too, but GX compares the SQLAlchemy type *class*
+  there, so `type_` is the bare type name: `DECIMAL`, `VARCHAR`, `TINYINT` (a `BOOLEAN`).
+- **PostgreSQL** builds the same kind of SQL batch and compares the same way: a
+  `numeric(12,2)` column is `NUMERIC(12, 2)`, a `timestamptz` is `TIMESTAMP WITH TIME ZONE`.
+- **Trino** compares the same way, in its own type names: `DECIMAL(12, 2)`, `VARCHAR`,
+  `TIMESTAMP(6)`, `TIMESTAMP(6) WITH TIME ZONE`, `BIGINT`.
 - **Unity Catalog, ADLS Gen2 / S3, and Apache Iceberg** all read the target into a
   pandas DataFrame first (`PandasExecutionEngine`). GX first tries an **exact dtype
   match**; only when the column's dtype is `object` and `type_` isn't
@@ -516,12 +844,16 @@ the type your warehouse/catalog shows you:
 | Datasource | Engine | `type_` guidance |
 |---|---|---|
 | Snowflake | SQL (dialect-native) | `DECIMAL(38, 0)` for `NUMBER`, `VARCHAR(16777216)` for `VARCHAR` |
+| PostgreSQL | SQL (dialect-native) | `NUMERIC(12, 2)` for `numeric(12,2)`, `TIMESTAMP WITH TIME ZONE` for `timestamptz`, `TEXT`, `INTEGER` |
+| MySQL / MariaDB | SQL (SQLAlchemy type class) | `DECIMAL` for `DECIMAL(12,2)`, `VARCHAR`, `INTEGER`, `TIMESTAMP`, `DATETIME`, `TINYINT` for `BOOLEAN` |
+| Trino | SQL (dialect-native) | `DECIMAL(12, 2)`, `VARCHAR` / `VARCHAR(20)`, `TIMESTAMP(6)`, `TIMESTAMP(6) WITH TIME ZONE`, `BIGINT` |
+| SQL Server | SQL (SQLAlchemy type name) | `DECIMAL` for `decimal(12,2)`, `INTEGER` for `int`, `NVARCHAR`, `DATETIME2`, `DATETIMEOFFSET`, `BIT` |
 | Unity Catalog | pandas DataFrame (not Arrow-backed) | `int64` for non-nullable `BIGINT` (**`float64` if the column contains NULLs**); `object` or `str` for `STRING` |
 | ADLS Gen2 / S3 (CSV) | pandas DataFrame (not Arrow-backed) | `int64`/`float64`/`bool` for numerics (**NULLs upcast integers to `float64`**); `object` or `str` for strings |
 | ADLS Gen2 / S3 (Parquet) / Iceberg | pandas DataFrame (Arrow-backed) | Arrow-flavored dtype names — confirm via a dry-run's `observed_value` |
 
 **Calibration tip:** don't guess — **dry-run first**, but know where the trail runs
-out. On **Snowflake and the Arrow-backed sources** (Parquet/Iceberg), a failing
+out. On **Snowflake, PostgreSQL, Trino and the Arrow-backed sources** (Parquet/Iceberg), a failing
 result's `observed_value` carries the *exact* string GX expected — copy it into
 `type_` and re-run to confirm green. On **Unity Catalog / CSV**, a wrong value-type
 guess (e.g. `int64` against a string column) falls to GX's row-wise compare, which

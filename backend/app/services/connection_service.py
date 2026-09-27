@@ -14,7 +14,7 @@ from sqlalchemy import func, select, true
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from backend.app.core.errors import DataQError, jsonable_errors
+from backend.app.core.errors import DataQError, SafeMonitorError, jsonable_errors
 from backend.app.core.logging import get_logger
 from backend.app.core.secret_names import connection_secret_ref
 from backend.app.core.secrets import SecretNotFoundError, SecretStore, SecretWriteError
@@ -24,6 +24,7 @@ from backend.app.datasources.registry import (
     destination_fields,
     get_connection_adapter,
 )
+from backend.app.datasources.sql_engines import authenticates_without_secret
 from backend.app.db.models import (
     CHECK_ORDER,
     ENVS,
@@ -133,6 +134,23 @@ def _reject_empty_credentials(**supplied: str | None) -> None:
             raise EmptyCredentialError(f"'{field}' must not be empty", detail={"field": field})
 
 
+def _with_config_defaults(conn_type: str, config: Mapping[str, Any]) -> dict[str, Any]:
+    """``config`` with each ABSENT field filled from the type's schema default, so an omitted
+    ``auth_type`` and an explicit default one compare equal. Present keys are never rewritten.
+    """
+    try:
+        model = get_connection_adapter(conn_type).validate_config(dict(config))
+    except Exception:
+        # A stored config that no longer validates is compared as written.
+        return dict(config)
+    defaults = {
+        info.alias or name: getattr(model, name)
+        for name, info in type(model).model_fields.items()
+        if (info.alias or name) not in config and getattr(model, name) is not None
+    }
+    return {**config, **defaults}
+
+
 def _reject_uncredentialed_redirect(
     conn_type: str,
     *,
@@ -145,12 +163,20 @@ def _reject_uncredentialed_redirect(
     """Refuse to point a STORED credential at a new host — closes #1401."""
     moved: set[str] = set()
     missing: list[str] = []
+    stored_view = _with_config_defaults(conn_type, stored)
+    incoming_view = _with_config_defaults(conn_type, incoming)
     for slot, fields in sorted(destination_fields(conn_type).items()):
-        slot_moved = [f for f in fields if stored.get(f) != incoming.get(f)]
+        slot_moved = [f for f in fields if stored_view.get(f) != incoming_view.get(f)]
         if not slot_moved:
             continue
         if slot == "secret":
-            if not has_stored_secret or supplied_secret is not None:
+            # Nothing to redirect: no secret is stored, one is supplied, or the new config sends
+            # none at all (Trino `auth_type: none` — the stored one is left unused).
+            if (
+                not has_stored_secret
+                or supplied_secret is not None
+                or authenticates_without_secret(conn_type, dict(incoming))
+            ):
                 continue
             missing.append("secret")
         # An extra credential is "stored" iff config carries its ref, by the same `*_secret_name`
@@ -169,6 +195,26 @@ def _reject_uncredentialed_redirect(
             f"connection's credentials are sent, so {', '.join(repr(m) for m in missing)} "
             "must be re-supplied in the same request",
             detail={"fields": sorted(moved), "required": missing},
+        )
+
+
+def _reject_missing_required_secret(
+    conn_type: str, config: Mapping[str, Any], *, has_secret: bool
+) -> None:
+    """For a type whose secret is optional PER CONFIG (Trino's `auth_type`), refuse a config that
+    authenticates with a secret when none is stored or supplied — switching `none` → `password`
+    would otherwise save a connection every run then fails on.
+    """
+    if has_secret:
+        return
+    adapter = get_connection_adapter(conn_type)
+    if not getattr(adapter, "secret_optional", False):
+        return
+    requires = getattr(adapter.validate_config(dict(config)), "requires_secret", None)
+    if callable(requires) and requires():
+        raise ConnectionConfigInvalidError(
+            "this configuration authenticates with a credential, so one must be supplied",
+            detail={"required": ["secret"]},
         )
 
 
@@ -363,6 +409,7 @@ def create_connection(
     _reject_foreign_secret_names(config, stored=None)
     if catalog_secret is not None:
         _validate_extra_secret_supported(conn_type, config, "catalog")
+    _reject_missing_required_secret(conn_type, config, has_secret=secret is not None)
 
     conn = Connection(
         name=name,
@@ -563,6 +610,9 @@ def update_connection(
             has_stored_secret=conn.secret_ref is not None,
             supplied_secret=secret,
             supplied_extra_secrets={"catalog": catalog_secret},
+        )
+        _reject_missing_required_secret(
+            conn.type, merged_config, has_secret=conn.secret_ref is not None or secret is not None
         )
         # Asset-first default (2026-09): a connection syncs unless `inventory_sync` is
         # explicitly `false` — an absent key is opted IN, not opted out.
@@ -956,6 +1006,16 @@ def _persist_engine_capabilities(
     )
 
 
+def _test_failure_message(exc: BaseException) -> str:
+    """What a failed test tells the client: the driver's own text never (it can carry DSN or
+    credential fragments), a DataQ-authored `SafeMonitorError` message — a known driver
+    limitation, a missing optional driver — always.
+    """
+    if isinstance(exc, SafeMonitorError) and str(exc):
+        return f"connection test failed: {exc}"
+    return "connection test failed"
+
+
 def test_connection(
     session: Session,
     connection_id: uuid.UUID,
@@ -1000,9 +1060,9 @@ def test_connection(
             error_type=type(exc).__name__,
         )
         # Don't echo the adapter exception to the client — it can carry DSN / credential fragments
-        # (it's also kept out of the logs above).
+        # (it's also kept out of the logs above). A DataQ-authored SAFE message is the exception.
         raise ConnectionTestFailedError(
-            "connection test failed", detail={"connection_id": str(connection_id)}
+            _test_failure_message(exc), detail={"connection_id": str(connection_id)}
         ) from exc
 
     log.info("connection_test_succeeded", connection_id=str(connection_id))
@@ -1059,7 +1119,7 @@ def test_draft_connection(
         # Same rationale as `test_connection`: never echo the adapter exception to the client
         # (DSN/credential fragments), original kept as __cause__ for the server-side traceback only.
         raise ConnectionTestFailedError(
-            "connection test failed", detail={"type": conn_type}
+            _test_failure_message(exc), detail={"type": conn_type}
         ) from exc
 
     log.info("connection_draft_test_succeeded", type=conn_type)

@@ -522,3 +522,409 @@ describe('ConnectionForm — inventory_sync toggle default (asset-first, 2026-09
     expect(mockUpdate.mock.calls[0][1].config).toMatchObject({ inventory_sync: true });
   });
 });
+
+describe('ConnectionForm — ADLS service principal (#1680)', () => {
+  const legacySas: Connection = {
+    id: 'conn-adls-1',
+    name: 'lake',
+    type: 'adls_gen2',
+    env: 'dev',
+    config: { account_url: 'https://a.blob.core.windows.net', container: 'raw' },
+    has_secret: true,
+    created_by: 'u1',
+  };
+
+  async function fillCreate(user: ReturnType<typeof userEvent.setup>) {
+    await user.type(await screen.findByLabelText('Name'), 'onelake');
+    await selectOption(user, 'DEV');
+    await user.type(
+      screen.getByLabelText('Account URL'),
+      'https://onelake.blob.fabric.microsoft.com',
+    );
+    await user.type(screen.getByLabelText('Container'), 'my-workspace');
+  }
+
+  it('defaults to a SAS token and asks for tenant, client and client secret under a service principal', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue(legacySas);
+    render(
+      <AntApp>
+        <ConnectionForm type="adls_gen2" onSaved={vi.fn()} onCancel={vi.fn()} />
+      </AntApp>,
+    );
+
+    await fillCreate(user);
+    expect(screen.getByLabelText('SAS token')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Tenant ID')).not.toBeInTheDocument();
+
+    await selectOption(user, 'Service principal (Entra ID)', { index: 1 });
+    await user.type(await screen.findByLabelText('Tenant ID'), 'tenant-guid');
+    await user.type(screen.getByLabelText('Client ID'), 'client-guid');
+    await user.type(screen.getByLabelText('Client secret'), 'the-client-secret');
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalled());
+    const payload = mockCreate.mock.calls[0][0];
+    expect(payload.config).toEqual({
+      account_url: 'https://onelake.blob.fabric.microsoft.com',
+      container: 'my-workspace',
+      auth_type: 'service_principal',
+      tenant_id: 'tenant-guid',
+      client_id: 'client-guid',
+    });
+    expect(payload.secret).toBe('the-client-secret');
+  });
+
+  it('drops tenant and client ids typed under a service principal once SAS is re-selected', async () => {
+    // The backend refuses them on a SAS connection rather than silently ignoring them.
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue(legacySas);
+    render(
+      <AntApp>
+        <ConnectionForm type="adls_gen2" onSaved={vi.fn()} onCancel={vi.fn()} />
+      </AntApp>,
+    );
+
+    await fillCreate(user);
+    await selectOption(user, 'Service principal (Entra ID)', { index: 1 });
+    await user.type(await screen.findByLabelText('Tenant ID'), 'tenant-guid');
+    await user.type(screen.getByLabelText('Client ID'), 'client-guid');
+    await selectOption(user, 'SAS token', { index: 1 });
+    await user.type(await screen.findByLabelText('SAS token', { selector: 'input' }), 'sv=1&sig=x');
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalled());
+    const { config } = mockCreate.mock.calls[0][0];
+    expect(config).toMatchObject({ auth_type: 'sas' });
+    expect(config).not.toHaveProperty('tenant_id');
+    expect(config).not.toHaveProperty('client_id');
+  });
+
+  it('edits a legacy SAS row (no auth_type) without demanding the SAS again', async () => {
+    const user = userEvent.setup();
+    mockUpdate.mockResolvedValue(legacySas);
+    render(
+      <AntApp>
+        <ConnectionForm
+          type="adls_gen2"
+          connection={legacySas}
+          onSaved={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </AntApp>,
+    );
+
+    const container = await screen.findByLabelText('Container');
+    await user.clear(container);
+    await user.type(container, 'curated');
+    expect(screen.queryByLabelText('SAS token')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
+    const [, body] = mockUpdate.mock.calls[0];
+    expect(body.config).toMatchObject({ container: 'curated', auth_type: 'sas' });
+    expect(body.secret).toBeUndefined();
+  });
+
+  it('asks for the client secret when a legacy SAS row is switched to a service principal', async () => {
+    const user = userEvent.setup();
+    mockUpdate.mockResolvedValue(legacySas);
+    render(
+      <AntApp>
+        <ConnectionForm
+          type="adls_gen2"
+          connection={legacySas}
+          onSaved={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </AntApp>,
+    );
+
+    await screen.findByLabelText('Container');
+    await selectOption(user, 'Service principal (Entra ID)');
+    await user.type(await screen.findByLabelText('Tenant ID'), 'tenant-guid');
+    await user.type(screen.getByLabelText('Client ID'), 'client-guid');
+    await screen.findByText('Re-enter the credential to move this connection');
+    await user.type(await screen.findByLabelText('Client secret'), 'the-client-secret');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
+    expect(mockUpdate.mock.calls[0][1].secret).toBe('the-client-secret');
+  });
+
+  it('stops asking for the secret once the switch to a service principal is undone', async () => {
+    // Ids typed under the abandoned mode must not linger as a "moved destination" — that would
+    // force re-entering, and so overwriting, a SAS for an edit that moved nothing.
+    const user = userEvent.setup();
+    mockUpdate.mockResolvedValue(legacySas);
+    render(
+      <AntApp>
+        <ConnectionForm
+          type="adls_gen2"
+          connection={legacySas}
+          onSaved={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </AntApp>,
+    );
+
+    await screen.findByLabelText('Container');
+    await selectOption(user, 'Service principal (Entra ID)');
+    await user.type(await screen.findByLabelText('Tenant ID'), 'tenant-guid');
+    await screen.findByText('Re-enter the credential to move this connection');
+    await selectOption(user, 'SAS token');
+
+    await waitFor(() =>
+      expect(
+        screen.queryByText('Re-enter the credential to move this connection'),
+      ).not.toBeInTheDocument(),
+    );
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
+    expect(mockUpdate.mock.calls[0][1].secret).toBeUndefined();
+  });
+});
+
+describe('ConnectionForm — PostgreSQL', () => {
+  it('offers the TLS mode as a closed choice and sends the one picked', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue({ ...icebergConnection, type: 'postgres' });
+
+    render(
+      <AntApp>
+        <ConnectionForm type="postgres" onSaved={vi.fn()} onCancel={vi.fn()} />
+      </AntApp>,
+    );
+
+    await user.type(await screen.findByLabelText('Name'), 'orders-db');
+    await selectOption(user, 'DEV');
+    await user.type(screen.getByLabelText('Host'), 'db.internal');
+    await user.type(screen.getByLabelText('Database'), 'shop');
+    await user.type(screen.getByLabelText('User'), 'dq_reader');
+    // The second combobox is TLS mode (env is the first): no free text, so no typo can reach
+    // the backend.
+    await selectOption(user, 'verify-full', { index: 1 });
+    await user.type(screen.getByLabelText('Password'), 'pw');
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalled());
+    const payload = mockCreate.mock.calls[0][0];
+    expect(payload.type).toBe('postgres');
+    expect(payload.config).toMatchObject({
+      host: 'db.internal',
+      database: 'shop',
+      user: 'dq_reader',
+      sslmode: 'verify-full',
+    });
+    expect(payload.secret).toBe('pw');
+  });
+});
+
+describe('ConnectionForm — MySQL / MariaDB', () => {
+  it('needs no schema field and sends the TLS mode picked', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue({ ...icebergConnection, type: 'mysql' });
+
+    render(
+      <AntApp>
+        <ConnectionForm type="mysql" onSaved={vi.fn()} onCancel={vi.fn()} />
+      </AntApp>,
+    );
+
+    await user.type(await screen.findByLabelText('Name'), 'orders-mysql');
+    await selectOption(user, 'DEV');
+    await user.type(screen.getByLabelText('Host'), 'db.internal');
+    await user.type(screen.getByLabelText('Database'), 'shop');
+    await user.type(screen.getByLabelText('User'), 'dq_reader');
+    // A MySQL schema is a database: there is no separate schema field to fill.
+    expect(screen.queryByLabelText(/Default schema/)).not.toBeInTheDocument();
+    await selectOption(user, 'disable', { index: 1 });
+    await user.type(screen.getByLabelText('Password'), 'pw');
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalled());
+    const payload = mockCreate.mock.calls[0][0];
+    expect(payload.type).toBe('mysql');
+    expect(payload.config).toMatchObject({
+      host: 'db.internal',
+      database: 'shop',
+      sslmode: 'disable',
+    });
+  });
+});
+
+describe('ConnectionForm — Trino', () => {
+  const trinoConnection: Connection = {
+    id: 'conn-tr-1',
+    name: 'lake',
+    type: 'trino',
+    env: 'dev',
+    config: { host: 'trino.internal', catalog: 'hive', user: 'dq', auth_type: 'password' },
+    has_secret: true,
+    created_by: 'u1',
+  };
+
+  it('asks for the credential again when the auth type changes, but not for None', async () => {
+    const user = userEvent.setup();
+    mockUpdate.mockResolvedValue(trinoConnection);
+
+    render(
+      <AntApp>
+        <ConnectionForm
+          type="trino"
+          connection={trinoConnection}
+          onSaved={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </AntApp>,
+    );
+
+    await screen.findByLabelText('Host');
+    expect(screen.queryByLabelText('Password')).not.toBeInTheDocument();
+    // Comboboxes in edit mode: TLS mode, auth type.
+    await selectOption(user, 'None — the cluster trusts the user name', { index: 1 });
+    expect(screen.queryByText('Re-enter the credential to move this connection')).toBeNull();
+    await selectOption(user, 'JWT', { index: 1 });
+    await screen.findByText('Re-enter the credential to move this connection');
+    await user.type(await screen.findByLabelText('JWT (bearer token)'), 'a.b.c');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
+    expect(mockUpdate.mock.calls[0][1].config).toMatchObject({ auth_type: 'jwt' });
+    expect(mockUpdate.mock.calls[0][1].secret).toBe('a.b.c');
+  });
+
+  it('asks for no secret when the cluster has no authentication', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue({ ...icebergConnection, type: 'trino' });
+
+    render(
+      <AntApp>
+        <ConnectionForm type="trino" onSaved={vi.fn()} onCancel={vi.fn()} />
+      </AntApp>,
+    );
+
+    await user.type(await screen.findByLabelText('Name'), 'lake');
+    await selectOption(user, 'DEV');
+    await user.type(screen.getByLabelText('Host'), 'trino.internal');
+    await user.type(screen.getByLabelText('Catalog'), 'hive');
+    await user.type(screen.getByLabelText('User'), 'dq_reader');
+    // Comboboxes: env, TLS mode, auth type.
+    await selectOption(user, 'disable', { index: 1 });
+    expect(screen.getByLabelText('Password')).toBeInTheDocument();
+    await selectOption(user, 'None — the cluster trusts the user name', { index: 2 });
+    expect(screen.queryByLabelText('Password')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalled());
+    const payload = mockCreate.mock.calls[0][0];
+    expect(payload.type).toBe('trino');
+    expect(payload.config).toMatchObject({
+      host: 'trino.internal',
+      catalog: 'hive',
+      sslmode: 'disable',
+      auth_type: 'none',
+    });
+    expect(payload.secret).toBeFalsy();
+  });
+
+  it('takes a password and a private CA bundle by default', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue({ ...icebergConnection, type: 'trino' });
+
+    render(
+      <AntApp>
+        <ConnectionForm type="trino" onSaved={vi.fn()} onCancel={vi.fn()} />
+      </AntApp>,
+    );
+
+    await user.type(await screen.findByLabelText('Name'), 'lake');
+    await selectOption(user, 'DEV');
+    await user.type(screen.getByLabelText('Host'), 'trino.internal');
+    await user.type(screen.getByLabelText('Catalog'), 'hive');
+    await user.type(screen.getByLabelText('User'), 'dq_reader');
+    const bundle = screen.getByLabelText(/CA bundle/);
+    expect(bundle.tagName).toBe('TEXTAREA');
+    await user.type(bundle, 'BEGIN CERTIFICATE');
+    await user.type(screen.getByLabelText('Password'), 'pw');
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalled());
+    const payload = mockCreate.mock.calls[0][0];
+    expect(payload.config).toMatchObject({
+      auth_type: 'password',
+      ca_bundle: 'BEGIN CERTIFICATE',
+    });
+    expect(payload.secret).toBe('pw');
+  });
+});
+
+describe('ConnectionForm — SQL Server', () => {
+  it('defaults to a SQL login on the shipped driver and sends only that mode’s fields', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue({ ...icebergConnection, type: 'mssql' });
+
+    render(
+      <AntApp>
+        <ConnectionForm type="mssql" onSaved={vi.fn()} onCancel={vi.fn()} />
+      </AntApp>,
+    );
+
+    await user.type(await screen.findByLabelText('Name'), 'orders-sql');
+    await selectOption(user, 'DEV');
+    await user.type(screen.getByLabelText('Host'), 'srv.database.windows.net');
+    await user.type(screen.getByLabelText('Database'), 'shop');
+    await user.type(screen.getByLabelText('User'), 'dq_reader');
+    expect(screen.queryByLabelText('Tenant ID')).toBeNull();
+    await user.type(screen.getByLabelText('Password'), 'pw');
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalled());
+    const payload = mockCreate.mock.calls[0][0];
+    expect(payload.type).toBe('mssql');
+    expect(payload.config).toMatchObject({
+      host: 'srv.database.windows.net',
+      database: 'shop',
+      user: 'dq_reader',
+      auth_type: 'sql',
+      driver: 'python-tds',
+    });
+    expect(payload.config).not.toHaveProperty('tenant_id');
+    expect(payload.secret).toBe('pw');
+  });
+
+  it('a service principal swaps the user for tenant + client ids and a client secret', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue({ ...icebergConnection, type: 'mssql' });
+
+    render(
+      <AntApp>
+        <ConnectionForm type="mssql" onSaved={vi.fn()} onCancel={vi.fn()} />
+      </AntApp>,
+    );
+
+    await user.type(await screen.findByLabelText('Name'), 'fabric-wh');
+    await selectOption(user, 'DEV');
+    await user.type(screen.getByLabelText('Host'), 'abc.datawarehouse.fabric.microsoft.com');
+    await user.type(screen.getByLabelText('Database'), 'wh');
+    // Comboboxes: env, driver, auth type.
+    await selectOption(user, 'Service principal (Entra ID)', { index: 2 });
+    expect(screen.queryByLabelText('User')).toBeNull();
+    await user.type(screen.getByLabelText('Tenant ID'), '11111111-2222-3333-4444-555555555555');
+    await user.type(screen.getByLabelText('Client ID'), 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
+    await selectOption(user, 'odbc', { index: 1 });
+    await user.type(screen.getByLabelText('Client secret'), 's3cret');
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalled());
+    const payload = mockCreate.mock.calls[0][0];
+    expect(payload.config).toMatchObject({
+      auth_type: 'entra_service_principal',
+      tenant_id: '11111111-2222-3333-4444-555555555555',
+      client_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      driver: 'odbc',
+    });
+    expect(payload.config).not.toHaveProperty('user');
+    expect(payload.secret).toBe('s3cret');
+  });
+});

@@ -117,7 +117,7 @@ class ConnectionRead(ApiModel):
     # When the expiry was last read (#1024).
     credential_expiry_checked_at: datetime | None = None
 
-    # Inventory-sync outcome (#1104) — opted-in `snowflake`/`unity_catalog` connections only
+    # Inventory-sync outcome (#1104) — opted-in `snowflake`/`unity_catalog`/generic SQL connections
     # (config.inventory_sync, ADR 0040); NULL/never-attempted on every other connection.
     inventory_sync_last_attempted_at: datetime | None = None
     inventory_sync_last_error: str | None = None
@@ -416,8 +416,9 @@ class CatalogEntryRead(ApiModel):
 
 
 class CatalogBrowseRead(ApiModel):
-    """One level of the catalog → schema → table tree. `truncated` means more names exist
-    than `limit` — the list is then a prefix, and the target can still be typed by hand.
+    """One level of the catalog → schema → table tree (a generic SQL connection such as
+    PostgreSQL or MySQL starts at `schema`: its database is fixed). `truncated` means more names
+    exist than `limit` — the list is then a prefix, and the target can still be typed by hand.
     """
 
     model_config = ConfigDict(populate_by_name=True)
@@ -455,7 +456,10 @@ _BrowseLimit = Annotated[int, Query(ge=1, le=browse_service.MAX_LIMIT)]
 @router.get(
     "/connections/{connection_id}/browse/catalog",
     response_model=CatalogBrowseRead,
-    summary="List one level of a Unity Catalog connection's catalogs/schemas/tables",
+    summary=(
+        "List one level of a Unity Catalog (catalogs/schemas/tables) or generic SQL "
+        "(schemas/tables) connection"
+    ),
 )
 def browse_connection_catalog(
     connection_id: uuid.UUID,

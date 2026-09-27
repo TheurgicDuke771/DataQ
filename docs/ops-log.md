@@ -651,3 +651,55 @@ case that bites, since the product cannot know them and will never warn.
   - Apply (\`dataq-app-migrate-mqqa9h9\`): **cleared 3**.
   - The three prod Snowflake connections were then re-tested through \`/test\` (\`{"ok":true}\` ×3). The new probe now stores \`engine_capabilities.dmf = {"status": "available", "available": true}\` on Payments / Orders / Retail, replacing the false "DMF unavailable".
 - **Other:** a live Snowflake write for #1928, authorized by the user. It was a session-scoped \`TEMPORARY\` table \`DATAQ_DB.ANALYTICS_STG.BLANK_PROBE_2086\` as \`DATAQ_LOADER\`, dropped explicitly afterwards; \`SHOW TABLES\` returns nothing. It showed BLANK_COUNT counts '' and space-only strings, but not tab/newline-only strings or NULL.
+
+## 2026-09-27 (evening) — Azure SQL free-offer test DB for #1679 (ADR 0044 spike) + Fabric trial prep (#1679/#1680)
+
+All user-approved. Done by Claude, with the owner's `az` login.
+
+- **`Microsoft.Sql` resource provider registered** on the subscription (it was `NotRegistered`).
+- **Logical server `dataq-mssql-645a5b`** (`dataq-rg`, westus2), minimal TLS 1.2:
+  - Entra admin = the owner account; a SQL admin login `dataqadmin`.
+  - The password is generated straight into KV `mssql-test-sqladmin` and was never printed.
+- **Database `dataq_test`**: **free offer** (`useFreeLimit=true`, `freeLimitExhaustionBehavior=AutoPause`), serverless GP_S_Gen5, local backup redundancy. It cannot bill: it pauses when the monthly free allowance runs out.
+- **Firewall rule `claude-maint-20260927`**: a single IP, the maintainer's current egress. **Delete it when testing ends.**
+- **Principals inside `dataq_test`** (both `db_datareader`):
+  - `[dataq-terraform-sp]`, a contained user `FROM EXTERNAL PROVIDER`;
+  - `dataq_reader`, a SQL user whose password is in KV `mssql-test-reader`.
+
+  One test table, `dbo.Orders` (4 rows).
+- **Connection policy:** switched to **Redirect** for the spike, then **restored to Default**.
+- **Entra:** `dataq-admin@<tenant>.onmicrosoft.com` got `usageLocation=IN` and the **Fabric Administrator** directory role (assignment id prefix `lonqqS8S…`). This is so it can start a Fabric trial and enable the tenant setting "Service principals can use Fabric APIs". **Remove the role once Fabric verification is done.**
+- **Expected state after:**
+  - The server and database exist and auto-pause, at $0.
+  - Both KV secrets exist.
+  - No app configuration changed and no connection created in prod.
+- **Teardown when #1679/#1680 are verified:**
+  - `az sql db delete`, `az sql server delete`, delete the firewall rule;
+  - purge `mssql-test-sqladmin` / `mssql-test-reader`;
+  - remove the Fabric Administrator assignment.
+
+## 2026-09-27/28 — new datasources shipped + two Azure deploys (`730fc215`, `517b407b`)
+
+- **Azure Deploy, run 36338726892, `730fc215`:** adds PostgreSQL (#1678), MySQL/MariaDB (#1684) and ADLS service-principal auth for OneLake (#1680).
+  - Migrations `4c80e6795811` and `d0cccce55833` widen the connection-type check constraint (additive). Migrate `Succeeded` 17:57Z.
+  - `tofu plan` beforehand showed output-only changes.
+  - All four apps on the SHA, smoke green, 6/6 headers.
+  - Draft `/connections/test` confirmed prod recognises `postgres`, `mysql` and ADLS `service_principal`. Nothing was persisted.
+  - A live Snowflake suite run `succeeded`.
+- **2026-09-28:** the Azure SQL test server's single-IP firewall rule was replaced, user-approved:
+  - `claude-maint-20260927` deleted;
+  - `claude-maint-20260928` added for the maintainer's new egress IP (the only rule).
+- **Azure Deploy, run 36346556533, `517b407b`:** adds Trino (#1685) and SQL Server / Azure SQL / Fabric (#1679).
+  - Migrations `1a95d7c34808` and `0b451979c77d` (additive). Migrate `Succeeded` 20:04Z.
+  - New runtime pins: `python-tds`, `sqlalchemy-pytds`, `pyOpenSSL`, `certifi`, `trino`, `PyMySQL`. **No ODBC driver is in the image** (ADR 0044 Decision 1a).
+  - All four apps on the SHA, smoke green, 6/6 headers.
+  - Prod recognises `trino` and `mssql`.
+  - A live Snowflake suite run `succeeded`. Post-roll: 0 non-Airflow errors, beat 10 sent, worker 12 completed.
+- **Maintainer-machine only (not infra):**
+  - Microsoft ODBC Driver 18 installed via Homebrew (`brew trust --formula microsoft/mssql-release/msodbcsql18`, EULA accepted at the user's instruction), to live-test the ODBC lane.
+  - `pyodbc` sits in an isolated scratch path, not the conda env.
+  - Uninstall: `brew uninstall msodbcsql18 && odbcinst -u -d -n "ODBC Driver 18 for SQL Server"`.
+- **Fabric test data** in trial workspace `dataq-fabric-test`:
+  - Warehouse `dataq_wh.dbo.Orders` (4 rows, created via ODBC as the SP);
+  - Lakehouse `dataq_lh` table `orders` (loaded from `Files/orders`, CSV/Parquet uploaded by the SP).
+  - **Teardown** (still pending, per the earlier entry): Azure SQL server + firewall rule, KV `mssql-test-*`, the Fabric Administrator role on `dataq-admin`, and the trial workspace.

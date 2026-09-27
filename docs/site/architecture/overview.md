@@ -32,6 +32,7 @@ flowchart LR
         Files["ADLS Gen2 · S3 · flat files"]
         UC["Unity Catalog · Databricks"]
         Iceberg["Apache Iceberg · native pyiceberg read<br/>object storage + catalog"]
+        PGDS["PostgreSQL · MySQL / MariaDB · Trino · SQL Server<br/>generic SQL base, pushdown"]
     end
 
     Web -->|HTTPS| Frontend
@@ -608,7 +609,7 @@ flowchart LR
         APPI["App Insights (PII-redacted logs + traces)"]
     end
     subgraph egress["🌐 Outbound — credentials fetched from Key Vault per use"]
-        DS["Datasources — Snowflake · ADLS · S3 · Unity Catalog · Iceberg"]
+        DS["Datasources — Snowflake · ADLS · S3 · Unity Catalog · Iceberg · PostgreSQL · MySQL · Trino · SQL Server"]
         AL["Teams / Slack webhooks · SMTP"]
         OAPI["ADF / Airflow REST APIs (polling)"]
         LLM["LLM provider — Anthropic / OpenAI-compat<br/>(off by default; masked profiler stats or a<br/>redacted observed_value only — never raw samples)"]

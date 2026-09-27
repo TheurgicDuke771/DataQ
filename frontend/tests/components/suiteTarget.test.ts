@@ -10,6 +10,8 @@ import {
   SAMPLING_CAPABLE_TYPES,
   summarizeTarget,
   supportsSampling,
+  SCHEMA_BROWSE_TYPES,
+  sqlTargetPlaceholders,
   targetKind,
   targetSampling,
 } from '../../src/components/suites/suiteTarget';
@@ -18,6 +20,10 @@ describe('targetKind', () => {
   it('maps each datasource type to its input shape; orchestration → null', () => {
     const cases: [ConnectionType, ReturnType<typeof targetKind>][] = [
       ['snowflake', 'sql'],
+      ['postgres', 'sql'],
+      ['mysql', 'sql'],
+      ['trino', 'sql'],
+      ['mssql', 'sql'],
       ['unity_catalog', 'uc'],
       ['iceberg', 'iceberg'],
       ['adls_gen2', 'flatfile'],
@@ -27,6 +33,26 @@ describe('targetKind', () => {
       ['dbt', null],
     ];
     for (const [type, kind] of cases) expect(targetKind(type)).toBe(kind);
+  });
+});
+
+describe('sqlTargetPlaceholders', () => {
+  it('hints each engine in its own name case — PostgreSQL resolves names exactly as spelled', () => {
+    expect(sqlTargetPlaceholders('postgres')).toEqual({ schema: 'public', table: 'orders' });
+    expect(sqlTargetPlaceholders('mysql')).toEqual({ schema: 'shop', table: 'orders' });
+    expect(sqlTargetPlaceholders('trino')).toEqual({ schema: 'sales', table: 'orders' });
+    expect(sqlTargetPlaceholders('mssql')).toEqual({ schema: 'dbo', table: 'Orders' });
+    expect(sqlTargetPlaceholders('unity_catalog')).toEqual({ schema: 'default', table: 'orders' });
+    expect(sqlTargetPlaceholders('snowflake')).toEqual({
+      schema: 'PUBLIC',
+      table: 'ANALYTICS.ORDERS',
+    });
+  });
+});
+
+describe('SCHEMA_BROWSE_TYPES', () => {
+  it('offers the schema-rooted browser on the generic SQL engines only', () => {
+    expect([...SCHEMA_BROWSE_TYPES]).toEqual(['postgres', 'mysql', 'trino', 'mssql']);
   });
 });
 

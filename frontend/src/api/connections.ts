@@ -1,6 +1,6 @@
 import { api } from './client';
 
-/** Connections API — the eight configurable connection types (CLAUDE.md §4). */
+/** Connections API — every configurable connection type (CLAUDE.md §4). */
 
 export const CONNECTION_TYPES = [
   'snowflake',
@@ -8,6 +8,10 @@ export const CONNECTION_TYPES = [
   's3',
   'unity_catalog',
   'iceberg',
+  'postgres',
+  'mysql',
+  'trino',
+  'mssql',
   'adf',
   'airflow',
   'dbt',
@@ -27,6 +31,10 @@ export const CONNECTION_KIND: Record<ConnectionType, ConnectionKind> = {
   s3: 'datasource',
   unity_catalog: 'datasource',
   iceberg: 'datasource',
+  postgres: 'datasource',
+  mysql: 'datasource',
+  trino: 'datasource',
+  mssql: 'datasource',
   adf: 'orchestration',
   airflow: 'orchestration',
   dbt: 'orchestration',
@@ -48,7 +56,16 @@ export const ORCHESTRATION_TYPES = typesOfKind('orchestration');
  * Coarser datasource grouping for the Results datasource-type filter (ADR 0022): the two flat-file
  * types (ADLS Gen2 + S3) share a runner shape and read as one "Flat file" choice.
  */
-export const DATASOURCE_CATEGORIES = ['snowflake', 'flatfile', 'unity_catalog', 'iceberg'] as const;
+export const DATASOURCE_CATEGORIES = [
+  'snowflake',
+  'flatfile',
+  'unity_catalog',
+  'iceberg',
+  'postgres',
+  'mysql',
+  'trino',
+  'mssql',
+] as const;
 export type DatasourceCategory = (typeof DATASOURCE_CATEGORIES)[number];
 
 export const DATASOURCE_CATEGORY: Record<ConnectionType, DatasourceCategory | null> = {
@@ -57,6 +74,10 @@ export const DATASOURCE_CATEGORY: Record<ConnectionType, DatasourceCategory | nu
   s3: 'flatfile',
   unity_catalog: 'unity_catalog',
   iceberg: 'iceberg',
+  postgres: 'postgres',
+  mysql: 'mysql',
+  trino: 'trino',
+  mssql: 'mssql',
   adf: null,
   airflow: null,
   dbt: null,
@@ -67,13 +88,24 @@ export const DATASOURCE_CATEGORY_LABELS: Record<DatasourceCategory, string> = {
   flatfile: 'Flat file',
   unity_catalog: 'Unity Catalog',
   iceberg: 'Apache Iceberg',
+  postgres: 'PostgreSQL',
+  mysql: 'MySQL / MariaDB',
+  trino: 'Trino',
+  mssql: 'SQL Server',
 };
 
 /**
  * Datasources GX can run a custom-SQL (`UnexpectedRowsExpectation`) query against — mirrors the
  * backend `custom_sql.SQL_QUERYABLE_TYPES` (ADR 0019).
  */
-export const SQL_QUERYABLE_TYPES: ConnectionType[] = ['snowflake', 'unity_catalog'];
+export const SQL_QUERYABLE_TYPES: ConnectionType[] = [
+  'snowflake',
+  'unity_catalog',
+  'postgres',
+  'mysql',
+  'trino',
+  'mssql',
+];
 
 export const isSqlQueryable = (type: ConnectionType): boolean => SQL_QUERYABLE_TYPES.includes(type);
 
@@ -90,6 +122,10 @@ export const isFileDatasource = (type: ConnectionType): boolean => FILE_TYPES.in
 export const MONITOR_CAPABLE_TYPES: ConnectionType[] = [
   'snowflake',
   'unity_catalog',
+  'postgres',
+  'mysql',
+  'trino',
+  'mssql',
   'iceberg',
   ...FILE_TYPES,
 ];
@@ -99,10 +135,16 @@ export const supportsMonitors = (type: ConnectionType): boolean =>
 
 /**
  * Datasources whose CheckRunner evaluates ordinary expectations on a SQL batch — mirrors the
- * backend `gx_runner.SQL_BATCH_CONNECTION_TYPES`. Unity Catalog is deliberately absent: its
+ * backend `sql_engines.SQL_BATCH_CONNECTION_TYPES`. Unity Catalog is deliberately absent: its
  * pushdown set is an allowlist, so anything outside it runs on that runner's pandas batch.
  */
-export const SQL_BATCH_TYPES: ConnectionType[] = ['snowflake'];
+export const SQL_BATCH_TYPES: ConnectionType[] = [
+  'snowflake',
+  'postgres',
+  'mysql',
+  'trino',
+  'mssql',
+];
 
 export const runsSqlBatch = (type: ConnectionType): boolean => SQL_BATCH_TYPES.includes(type);
 
@@ -206,6 +248,10 @@ export const CONNECTION_TYPE_LABELS: Record<ConnectionType, string> = {
   s3: 'AWS S3',
   unity_catalog: 'Unity Catalog',
   iceberg: 'Apache Iceberg',
+  postgres: 'PostgreSQL',
+  mysql: 'MySQL / MariaDB',
+  trino: 'Trino',
+  mssql: 'SQL Server',
   adf: 'Azure Data Factory',
   airflow: 'Airflow',
   dbt: 'dbt',

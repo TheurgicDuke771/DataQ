@@ -20,6 +20,7 @@ from backend.app.services.connection_service import (
     ConnectionSecretWriteError,
     ConnectionTestFailedError,
 )
+from backend.tests.support.certs import self_signed_ca_pem
 from backend.tests.support.fake_secret_store import FakeSecretStore
 
 _SF_CONFIG = {
@@ -143,7 +144,7 @@ def test_create_without_secret_leaves_secret_ref_null(db_session: Any) -> None:
 
 def test_create_unknown_type_raises_config_invalid(db_session: Any) -> None:
     with pytest.raises(ConnectionConfigInvalidError):
-        _create(db_session, FakeSecretStore(), conn_type="mssql")
+        _create(db_session, FakeSecretStore(), conn_type="oracle")
 
 
 def test_create_invalid_config_raises_config_invalid(db_session: Any) -> None:
@@ -724,7 +725,7 @@ def test_draft_test_secret_optional_adapter_normalizes_blank_string_to_none(
 def test_draft_test_unknown_type_raises_config_invalid(db_session: Any) -> None:
     with pytest.raises(ConnectionConfigInvalidError):
         svc.test_draft_connection(
-            "mssql", env="dev", config={}, secret="p@ss", secret_store=FakeSecretStore()
+            "oracle", env="dev", config={}, secret="p@ss", secret_store=FakeSecretStore()
         )
 
 
@@ -1473,6 +1474,105 @@ def test_editing_a_non_destination_field_needs_no_credential(db_session: Any) ->
     assert conn.config["warehouse"] == "COMPUTE_WH_XL"
 
 
+_ADLS_SP_CONFIG = {
+    "account_url": "https://onelake.blob.fabric.microsoft.com",
+    "container": "ws",
+    "auth_type": "service_principal",
+    "tenant_id": "00000000-0000-0000-0000-00000000000a",
+    "client_id": "00000000-0000-0000-0000-00000000000b",
+}
+
+
+def _create_adls(db_session: Any, store: FakeSecretStore, config: dict[str, Any]) -> Connection:
+    return _create(
+        db_session, store, name="lake", conn_type="adls_gen2", config=dict(config), secret="s3cr3t"
+    )
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        # The token endpoint the client secret is presented to, and as whom.
+        ("tenant_id", "attacker.onmicrosoft.com"),
+        ("client_id", "00000000-0000-0000-0000-0000000000ff"),
+        # Where the bearer token it yields is sent.
+        ("account_url", "https://attacker.example.com"),
+    ],
+)
+def test_moving_a_service_principal_destination_without_the_secret_is_rejected(
+    db_session: Any, field: str, value: str
+) -> None:
+    """#1680 on the #1401 guard: every field that decides where the client secret (or the
+    token it buys) goes needs the secret re-supplied.
+    """
+    store = FakeSecretStore()
+    conn = _create_adls(db_session, store, _ADLS_SP_CONFIG)
+
+    with pytest.raises(svc.CredentialRedirectError) as exc:
+        svc.update_connection(
+            db_session, conn.id, config={**_ADLS_SP_CONFIG, field: value}, secret_store=store
+        )
+
+    assert exc.value.detail == {"fields": [field], "required": ["secret"]}
+    assert conn.config[field] == _ADLS_SP_CONFIG[field]
+
+
+def test_switching_a_sas_connection_to_service_principal_needs_the_secret(db_session: Any) -> None:
+    """Otherwise the stored SAS would be presented to Entra as a client secret."""
+    store = FakeSecretStore()
+    sas_config = {"account_url": _ADLS_SP_CONFIG["account_url"], "container": "ws"}
+    conn = _create_adls(db_session, store, sas_config)
+
+    with pytest.raises(svc.CredentialRedirectError) as exc:
+        svc.update_connection(db_session, conn.id, config=dict(_ADLS_SP_CONFIG), secret_store=store)
+    assert exc.value.detail["fields"] == ["auth_type", "client_id", "tenant_id"]
+
+    svc.update_connection(
+        db_session,
+        conn.id,
+        config=dict(_ADLS_SP_CONFIG),
+        secret="client-secret",
+        secret_store=store,
+    )
+    assert conn.config["auth_type"] == "service_principal"
+
+
+def test_an_explicit_default_auth_type_on_a_legacy_row_is_not_a_move(db_session: Any) -> None:
+    """A pre-#1680 ADLS row has no `auth_type`; the form now sends the default `sas`. Absent and
+    default are the same destination, so an ordinary edit must not demand the SAS again.
+    """
+    store = FakeSecretStore()
+    legacy = {"account_url": "https://acct.blob.core.windows.net", "container": "raw"}
+    conn = _create_adls(db_session, store, legacy)
+    assert "auth_type" not in conn.config
+
+    svc.update_connection(
+        db_session,
+        conn.id,
+        config={**legacy, "container": "curated", "auth_type": "sas"},
+        secret_store=store,
+    )
+
+    assert conn.config["container"] == "curated"
+
+
+def test_a_stored_config_that_no_longer_validates_is_compared_as_written(db_session: Any) -> None:
+    """The default-fill must not turn an unreadable stored row into an unguarded one."""
+    store = FakeSecretStore()
+    conn = _create_adls(db_session, store, _ADLS_SP_CONFIG)
+    # A row written by an older build, which today's schema rejects outright.
+    conn.config = {**_ADLS_SP_CONFIG, "legacy_key": True}
+    db_session.flush()
+
+    with pytest.raises(svc.CredentialRedirectError):
+        svc.update_connection(
+            db_session,
+            conn.id,
+            config={**_ADLS_SP_CONFIG, "account_url": "https://attacker.example.com"},
+            secret_store=store,
+        )
+
+
 def test_a_partial_patch_that_omits_the_secret_name_is_not_read_as_a_move(
     db_session: Any,
 ) -> None:
@@ -2156,3 +2256,117 @@ def test_renaming_a_connection_never_moves_its_secret_ref(
     assert conn.secret_ref == original_ref
     assert store.data[original_ref] == "rotated"
     assert would_be not in store.data, "rotation wrote to a second, orphaned key"
+
+
+# ────────── a Trino connection's secret is required per auth mode (#1685) ────────
+
+_TRINO: dict[str, Any] = {"host": "trino.internal", "catalog": "hive", "user": "dq_reader"}
+_TRINO_OPEN: dict[str, Any] = {**_TRINO, "auth_type": "none", "sslmode": "disable"}
+
+
+def _trino(
+    db_session: Any, store: FakeSecretStore, *, config: dict[str, Any], secret: str | None
+) -> Connection:
+    return svc.create_connection(
+        db_session,
+        name=f"lake-{uuid.uuid4().hex[:6]}",
+        conn_type="trino",
+        env="dev",
+        config=dict(config),
+        secret=secret,
+        created_by=_user(db_session).id,
+        secret_store=store,
+    )
+
+
+def test_a_trino_connection_that_authenticates_needs_its_secret_at_create(db_session: Any) -> None:
+    store = FakeSecretStore()
+    with pytest.raises(svc.ConnectionConfigInvalidError) as exc:
+        _trino(db_session, store, config=_TRINO, secret=None)
+    assert exc.value.detail["required"] == ["secret"]
+    # Without authentication there is nothing to store.
+    assert _trino(db_session, store, config=_TRINO_OPEN, secret=None).secret_ref is None
+
+
+def test_switching_to_password_auth_without_a_password_is_refused(db_session: Any) -> None:
+    store = FakeSecretStore()
+    conn = _trino(db_session, store, config=_TRINO_OPEN, secret=None)
+    with pytest.raises(svc.ConnectionConfigInvalidError):
+        svc.update_connection(db_session, conn.id, config=dict(_TRINO), secret_store=store)
+    updated = svc.update_connection(
+        db_session, conn.id, config=dict(_TRINO), secret="pw", secret_store=store
+    )
+    assert updated.secret_ref is not None and "auth_type" not in updated.config  # the default
+
+
+def test_a_stored_password_is_never_re_sent_as_a_bearer_token(db_session: Any) -> None:
+    store = FakeSecretStore()
+    conn = _trino(db_session, store, config=_TRINO, secret="pw")
+    with pytest.raises(svc.CredentialRedirectError) as exc:
+        svc.update_connection(
+            db_session, conn.id, config={**_TRINO, "auth_type": "jwt"}, secret_store=store
+        )
+    assert exc.value.detail["fields"] == ["auth_type"]
+    # Trusting another CA moves the credential just as surely as another host.
+    with pytest.raises(svc.CredentialRedirectError):
+        svc.update_connection(
+            db_session,
+            conn.id,
+            config={**_TRINO, "ca_bundle": self_signed_ca_pem()},
+            secret_store=store,
+        )
+
+
+def test_dropping_authentication_sends_the_stored_secret_nowhere(db_session: Any) -> None:
+    store = FakeSecretStore()
+    conn = _trino(db_session, store, config=_TRINO, secret="pw")
+    updated = svc.update_connection(
+        db_session, conn.id, config=dict(_TRINO_OPEN), secret_store=store
+    )
+    assert updated.config["auth_type"] == "none"
+
+
+class _KnownLimitationAdapter(_PassAdapter):
+    """An adapter that recognised the failure and said why in DataQ's own words (#1679)."""
+
+    def test(self, raw: dict[str, Any], secret: str, **_: Any) -> None:
+        from backend.app.datasources.generic_sql import KnownDatasourceLimitationError
+
+        try:
+            raise RuntimeError("driver text with host=secret-host;pwd=hunter2")
+        except RuntimeError as exc:
+            raise KnownDatasourceLimitationError("Use the ODBC driver lane instead.") from exc
+
+
+def test_a_dataq_authored_failure_reason_reaches_the_client(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A SAFE message is shown (a known limitation and its fix); the driver text never is."""
+    store = FakeSecretStore()
+    conn = _create(db_session, store)
+    monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _KnownLimitationAdapter())
+    with pytest.raises(ConnectionTestFailedError) as saved:
+        svc.test_connection(db_session, conn.id, secret_store=store)
+    assert saved.value.message == "connection test failed: Use the ODBC driver lane instead."
+    with pytest.raises(ConnectionTestFailedError) as draft:
+        svc.test_draft_connection(
+            "snowflake",
+            env="dev",
+            config=dict(_SF_CONFIG),
+            secret="p@ss",
+            secret_store=store,
+        )
+    assert draft.value.message == "connection test failed: Use the ODBC driver lane instead."
+    for exc in (saved.value, draft.value):
+        assert "hunter2" not in str(exc) and "secret-host" not in str(exc)
+
+
+def test_an_unrecognised_failure_still_says_only_that_it_failed(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = FakeSecretStore()
+    conn = _create(db_session, store)
+    monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _FailAdapter())
+    with pytest.raises(ConnectionTestFailedError) as excinfo:
+        svc.test_connection(db_session, conn.id, secret_store=store)
+    assert excinfo.value.message == "connection test failed"

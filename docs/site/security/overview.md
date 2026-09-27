@@ -226,7 +226,7 @@ are the reason this mode is opt-in rather than the default:
   connection, but may never introduce or repoint one. Otherwise a caller could name someone
   else's secret and have the server resolve it on their behalf.
 - **A stored credential is never sent to a destination the caller changed.** Editing a config
-  field that decides where a credential goes — Snowflake `account`, ADLS `account_url`,
+  field that decides where a credential goes — Snowflake `account`, ADLS `account_url`/`auth_type`/`tenant_id`/`client_id`,
   S3/dbt `endpoint_url`, Unity Catalog `workspace_url`, Iceberg `catalog_uri`/`warehouse`/
   `properties`/`secret_property`, Airflow `base_url`, dbt `artifacts_uri` — requires re-supplying that
   credential in the same request, or the update is rejected (`422 credential_redirect`).
@@ -282,6 +282,18 @@ DataQ runs checks *against* your data; it is **not** a copy of your data. What i
   that stack has no custom domain and therefore no certificate the load balancer could serve.
   The second one does cross the AWS network, so it is a real, tracked gap rather than a
   contained one.
+- **To your datasources:** each connection type's own transport. A **SQL Server** connection
+  (SQL Server, Azure SQL, Synapse, Fabric) is **always** encrypted and **always** verifies the
+  server certificate and its hostname — there is no setting that turns either off. The shipped
+  driver's own hostname check is broken on current pyOpenSSL, so DataQ replaces it with its own
+  (DNS subject-alternative names, a wildcard only as one whole left-most label, an IP only
+  against an IP entry, never the certificate's CN) — live-verified to refuse a connection made
+  by IP address and one whose certificate chains to an untrusted CA. PostgreSQL and MySQL connections
+  default to `require`; see [Datasources & checks](../guides/datasources-checks.md).
+- **Datasource writes:** PostgreSQL and MySQL sessions are read-only at the server. **Trino
+  and SQL Server have no equivalent session setting**, so there the protection is the
+  custom-SQL validator plus the account's own access control — on SQL Server a
+  `db_datareader`-only login, as the datasource guide shows.
 - **At rest:** PostgreSQL, the object stores, and the secret store (Key Vault / AWS Secrets
   Manager) encrypt at rest in both reference deployments. The AWS cache (ElastiCache — the
   Celery broker and rate-limit counters, not a data store) currently does **not**.
@@ -448,12 +460,19 @@ confirm your DataQ connection role can still read both tags.
 
 ### Where it applies
 
-Only **Snowflake** and **Unity Catalog** have a column-tag concept. ADLS, S3,
-Iceberg and flat files have no authoritative source to read, so for those the
+Only **Snowflake** and **Unity Catalog** have a column-tag source DataQ reads. PostgreSQL, MySQL, Trino, ADLS,
+S3, Iceberg and flat files have no authoritative source to read, so for those the
 classification remains the suite's own policy, the name/value classifier, and
 fail-closed mode. This is a limit of the platforms, not a gap in the
 implementation, and it is stated here so nobody plans around a guarantee that
 cannot exist.
+
+**SQL Server is different, and the gap there is DataQ's.** SQL Server and Azure SQL do have
+column sensitivity classifications (`sys.sensitivity_classifications`), but DataQ does not read
+them yet: a login without the permission to see them gets an empty result rather than an error,
+which would read as "nothing is sensitive" — the silent failure the Snowflake check above guards
+against. Until that is built with the same care, SQL Server columns are classified like
+PostgreSQL's.
 
 ### How fresh it is
 
@@ -493,7 +512,7 @@ values happen to look harmless and the rows behind them do not.
 | Lane | Where the population signal comes from |
 |---|---|
 | Flat files (ADLS, S3), Iceberg, the Unity Catalog DataFrame batch | The failing-row list the check already builds (up to 5,000 rows); no extra query |
-| Snowflake, Unity Catalog SQL pushdown | One **extra, bounded query** per failing check: the check's own failing condition, selecting only the tested column and the identifier column, `LIMIT 5000` |
+| Snowflake, PostgreSQL, MySQL, Trino, SQL Server, Unity Catalog SQL pushdown | One **extra, bounded query** per failing check: the check's own failing condition, selecting only the tested column and the identifier column, `LIMIT 5000` |
 
 The extra query on the warehouse lanes is issued only when all of these hold:
 the check found more than 20 unexpected rows (including a check that still

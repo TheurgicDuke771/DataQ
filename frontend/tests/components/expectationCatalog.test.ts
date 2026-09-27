@@ -252,6 +252,27 @@ describe('typeFieldHint (issue #768 — Snowflake NUMBER ≠ "NUMBER")', () => {
     expect(hint).toMatch(/dry-run/i);
   });
 
+  it('tells PostgreSQL authors to use the dialect-reported type too (a SQL batch, #1678)', () => {
+    const hint = typeFieldHint('postgres');
+    expect(hint).toMatch(/NUMERIC\(12, 2\)/);
+    expect(hint).toMatch(/dry-run/i);
+    expect(hint).not.toMatch(/int64/);
+  });
+
+  it('tells MySQL authors to use the SQLAlchemy type name — a different vocabulary', () => {
+    const hint = typeFieldHint('mysql');
+    expect(hint).toMatch(/`DECIMAL`/);
+    expect(hint).toMatch(/TINYINT/);
+    expect(hint).not.toMatch(/NUMERIC\(12, 2\)/);
+  });
+
+  it('tells SQL Server authors to use the bare type name GX matches (#1679)', () => {
+    const hint = typeFieldHint('mssql');
+    expect(hint).toMatch(/`DECIMAL` for decimal\(12,2\)/);
+    expect(hint).toMatch(/dry-run/i);
+    expect(hint).not.toMatch(/int64/);
+  });
+
   it.each<ConnectionType>(['unity_catalog', 's3', 'adls_gen2', 'iceberg'])(
     'tells %s authors about pandas dtypes, the object-dtype string case, and the NULL upcast',
     (type) => {
@@ -428,5 +449,37 @@ describe('expectationsByCategoryFor (dataframeOnly per-spec gating, #1509)', () 
     const onSnowflake = offeredTypes('snowflake');
     expect(onSnowflake).toContain('expect_column_values_to_not_be_null');
     expect(onSnowflake).toContain('expect_compound_columns_to_be_unique');
+  });
+});
+
+describe('expectationsByCategoryFor (dialect gaps — regex on SQL Server, #1679)', () => {
+  const REGEX_TYPES = [
+    'expect_column_values_to_match_regex',
+    'expect_column_values_to_not_match_regex',
+    'expect_column_values_to_match_regex_list',
+    'expect_column_values_to_not_match_regex_list',
+  ];
+  const offeredTypes = (connectionType: ConnectionType | undefined, alwaysInclude?: string) =>
+    expectationsByCategoryFor(connectionType, alwaysInclude).flatMap((g) =>
+      g.specs.map((s) => s.type),
+    );
+
+  it('hides every regex type on SQL Server, whose dialect GX cannot translate them to', () => {
+    const offered = offeredTypes('mssql');
+    for (const type of REGEX_TYPES) expect(offered).not.toContain(type);
+    expect(offered).toContain('expect_column_values_to_not_be_null');
+    expect(offered).toContain('expect_column_value_lengths_to_be_between');
+  });
+
+  it.each<ConnectionType>(['snowflake', 'postgres', 'unity_catalog', 's3'])(
+    'still offers them on %s',
+    (connectionType) => {
+      const offered = offeredTypes(connectionType);
+      for (const type of REGEX_TYPES) expect(offered).toContain(type);
+    },
+  );
+
+  it('keeps an existing regex check editable on SQL Server rather than retyping it', () => {
+    expect(offeredTypes('mssql', REGEX_TYPES[0])).toContain(REGEX_TYPES[0]);
   });
 });

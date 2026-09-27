@@ -20,6 +20,7 @@ import {
   composeSecret,
   initialConfigForType,
   movedDestinationFields,
+  withAuthDefault,
   withToggleDefaults,
 } from './connectionFormSpec';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
@@ -74,7 +75,7 @@ export function ConnectionForm({
       // showing OFF for a connection that is actually syncing (see connectionFormSpec.ts).
       form.setFieldsValue({
         name: connection.name,
-        config: withToggleDefaults(type, connection.config),
+        config: withAuthDefault(type, withToggleDefaults(type, connection.config)),
       });
     } else {
       form.setFieldsValue({ config: initialConfigForType(type) });
@@ -199,7 +200,7 @@ export function ConnectionForm({
           />
         </Form.Item>
       )}
-      {movedDestinations.length > 0 && (
+      {movedDestinations.length > 0 && !activeAuthOption(type, editedConfig)?.noSecret && (
         <Alert
           type="warning"
           showIcon

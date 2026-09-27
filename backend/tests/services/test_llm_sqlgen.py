@@ -234,6 +234,37 @@ def test_output_gate_passes_readonly_sql(db_session: Any) -> None:
     assert out["sql"].startswith("SELECT")
 
 
+def test_output_gate_lexes_the_target_dialect(db_session: Any, admin: User) -> None:
+    """T-SQL bracket identifiers are identifier text on a SQL Server suite (#1679) — the same
+    SQL is an unterminated string to every other dialect, so it passes only when the gate knows
+    the suite's connection.
+    """
+    sql = "SELECT * FROM t WHERE [it's] IS NULL"
+    mssql_suite = make_sql_suite(db_session, admin, conn_type="mssql")
+    out = llm_sqlgen.validate_output(
+        db_session, _invocation(db_session, mssql_suite, admin), {"sql": sql, "explanation": ""}
+    )
+    assert out["sql"] == sql
+    snowflake_suite = make_sql_suite(db_session, admin)
+    with pytest.raises(LLMOutputInvalidError):
+        llm_sqlgen.validate_output(
+            db_session,
+            _invocation(db_session, snowflake_suite, admin),
+            {"sql": sql, "explanation": ""},
+        )
+
+
+def test_the_sql_server_prompt_names_t_sql(
+    db_session: Any, admin: User, store: FakeSecretStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    suite = make_sql_suite(
+        db_session, admin, conn_type="mssql", target={"table": "Orders", "schema": "dbo"}
+    )
+    monkeypatch.setattr(profile_service_module, "list_columns", lambda *_a, **_kw: ["Id"])
+    prompt, _, _ = llm_sqlgen.build_prompt(db_session, _invocation(db_session, suite, admin), store)
+    assert "Dialect: T-SQL" in prompt and "TOP n instead of LIMIT" in prompt
+
+
 class _SqlProvider:
     model = "fake"
 

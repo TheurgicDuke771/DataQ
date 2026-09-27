@@ -9,10 +9,16 @@ export interface TextField {
   /**
    * `tags` renders a free-entry multi-value input whose config value is a `string[]` (e.g. dbt's
    * `jobs`); `toggle` renders a Switch whose config value is a boolean (e.g.
+   * `inventory_sync`); `textarea` renders a multi-line input (e.g. a PEM CA bundle).
    */
-  type?: 'text' | 'tags' | 'toggle';
+  type?: 'text' | 'tags' | 'toggle' | 'textarea';
   /** Helper text under the field. */
   extra?: string;
+  /**
+   * A closed vocabulary: renders a clearable Select instead of free text, so a typo can't
+   * reach the backend and clearing it sends nothing (the backend default applies).
+   */
+  options?: string[];
   /**
    * `toggle` only: the value an absent config key should be treated as. Must be applied by
    * merging into the config object before it reaches the form (see `withToggleDefaults`) —
@@ -27,10 +33,20 @@ export interface AuthOption {
   label: string;
   /** Label for the secret this mode needs. */
   secretLabel: string;
+  /** The mode authenticates with no secret at all (e.g. Trino `none`): no secret field. */
+  noSecret?: boolean;
   /** Secret is a multi-line PEM key rather than a single-line password. */
   multilineSecret?: boolean;
-  /** An extra config field this mode needs (e.g. Airflow basic → username). */
-  extraField?: TextField;
+  /**
+   * Extra config fields this mode needs (e.g. Airflow basic → username). Unmounted — and so not
+   * submitted — under any other mode.
+   */
+  extraFields?: TextField[];
+  /**
+   * Shown where the expiry badge would be: this mode's credential has an expiry DataQ cannot
+   * read, so the absence of a badge must never read as "does not expire".
+   */
+  expiryNotReadable?: string;
   /**
    * Present → the mode takes an optional second secret part (e.g. a key-pair private key's
    * passphrase) that rides the combined payload — see `composeSecret`.
@@ -103,12 +119,38 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
     destinationFields: ['account'],
   },
   adls_gen2: {
+    // Any ADLS-compatible Blob endpoint — e.g. Fabric OneLake (#1680), which needs a service
+    // principal (its SAS is short-lived by design).
     textFields: [
-      { name: 'account_url', label: 'Account URL' },
-      { name: 'container', label: 'Container' },
+      {
+        name: 'account_url',
+        label: 'Account URL',
+        extra:
+          'https://<account>.blob.core.windows.net, or an ADLS-compatible endpoint such as ' +
+          'https://onelake.blob.fabric.microsoft.com',
+      },
+      {
+        name: 'container',
+        label: 'Container',
+        extra: 'The container (for OneLake: the workspace name or ID)',
+      },
     ],
-    secretLabel: 'SAS token',
-    destinationFields: ['account_url'],
+    auth: [
+      { value: 'sas', label: 'SAS token', secretLabel: 'SAS token' },
+      {
+        value: 'service_principal',
+        label: 'Service principal (Entra ID)',
+        secretLabel: 'Client secret',
+        extraFields: [
+          { name: 'tenant_id', label: 'Tenant ID' },
+          { name: 'client_id', label: 'Client ID' },
+        ],
+        expiryNotReadable:
+          "DataQ cannot read a client secret's expiry — track it in Entra ID, where it was " +
+          'created, and re-authenticate before it lapses.',
+      },
+    ],
+    destinationFields: ['account_url', 'auth_type', 'tenant_id', 'client_id'],
   },
   s3: {
     // AWS by default; setting an endpoint points the same connection at any
@@ -151,6 +193,210 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
     ],
     secretLabel: 'Personal access token (PAT)',
     destinationFields: ['workspace_url'],
+  },
+  postgres: {
+    // One engine-generic adapter for any PostgreSQL server (#1678) — never a hosting vendor.
+    textFields: [
+      { name: 'host', label: 'Host', extra: 'Hostname or IP only — no scheme, port or path' },
+      { name: 'port', label: 'Port', optional: true, extra: 'Defaults to 5432' },
+      { name: 'database', label: 'Database' },
+      { name: 'user', label: 'User' },
+      {
+        name: 'schema',
+        label: 'Default schema',
+        optional: true,
+        extra: 'Where an unqualified run target resolves — defaults to public',
+      },
+      {
+        name: 'sslmode',
+        label: 'TLS mode',
+        optional: true,
+        options: ['require', 'verify-full', 'verify-ca', 'disable'],
+        extra:
+          'require when left empty · verify-* also checks the server certificate against the ' +
+          'system trust store · disable sends everything in plaintext',
+      },
+      {
+        name: 'inventory_sync',
+        label: 'Inventory sync',
+        type: 'toggle',
+        optional: true,
+        default: true,
+        extra: 'Daily sync of every table this user can read into the asset view.',
+      },
+    ],
+    secretLabel: 'Password',
+    destinationFields: ['host', 'port'],
+  },
+  mysql: {
+    // One engine-generic adapter for any MySQL or MariaDB server (#1684), via the MIT PyMySQL driver.
+    textFields: [
+      { name: 'host', label: 'Host', extra: 'Hostname or IP only — no scheme, port or path' },
+      { name: 'port', label: 'Port', optional: true, extra: 'Defaults to 3306' },
+      {
+        name: 'database',
+        label: 'Database',
+        extra: 'Where an unqualified run target resolves (a MySQL schema is a database)',
+      },
+      { name: 'user', label: 'User' },
+      {
+        name: 'sslmode',
+        label: 'TLS mode',
+        optional: true,
+        options: ['require', 'verify-full', 'verify-ca', 'disable'],
+        extra:
+          'require when left empty · verify-* also checks the server certificate against the ' +
+          'system trust store · disable sends everything in plaintext',
+      },
+      {
+        name: 'inventory_sync',
+        label: 'Inventory sync',
+        type: 'toggle',
+        optional: true,
+        default: true,
+        extra: 'Daily sync of every table this user can read into the asset view.',
+      },
+    ],
+    secretLabel: 'Password',
+    destinationFields: ['host', 'port'],
+  },
+  trino: {
+    // Any Trino / Starburst cluster (#1685) on the generic SQL base; a connection pins one catalog.
+    textFields: [
+      { name: 'host', label: 'Host', extra: 'Hostname or IP only — no scheme, port or path' },
+      {
+        name: 'port',
+        label: 'Port',
+        optional: true,
+        extra: 'Defaults to 443, or 8080 with TLS disabled',
+      },
+      {
+        name: 'catalog',
+        label: 'Catalog',
+        extra: 'The Trino catalog this connection reads, in lower case (e.g. hive, iceberg)',
+      },
+      { name: 'user', label: 'User' },
+      {
+        name: 'schema',
+        label: 'Default schema',
+        optional: true,
+        extra: 'Where an unqualified run target resolves (lower case) — defaults to default',
+      },
+      {
+        name: 'sslmode',
+        label: 'TLS mode',
+        optional: true,
+        options: ['verify-full', 'disable'],
+        extra:
+          'verify-full when left empty — the certificate and host name are always checked · ' +
+          'disable is plaintext and allows only auth type None',
+      },
+      {
+        name: 'ca_bundle',
+        label: 'CA bundle (PEM)',
+        optional: true,
+        type: 'textarea',
+        extra:
+          'For a server certificate issued by a private CA — replaces the system trust ' +
+          'store for this connection',
+      },
+      {
+        name: 'inventory_sync',
+        label: 'Inventory sync',
+        type: 'toggle',
+        optional: true,
+        default: true,
+        extra: 'Daily sync of every table this user can read in the catalog into the asset view.',
+      },
+    ],
+    auth: [
+      { value: 'password', label: 'Password', secretLabel: 'Password' },
+      { value: 'jwt', label: 'JWT', secretLabel: 'JWT (bearer token)' },
+      {
+        value: 'none',
+        label: 'None — the cluster trusts the user name',
+        secretLabel: 'Credential (unused while the auth type is None)',
+        noSecret: true,
+      },
+    ],
+    destinationFields: ['host', 'port', 'sslmode', 'ca_bundle', 'auth_type'],
+  },
+  mssql: {
+    // One engine-generic adapter for anything that speaks SQL Server's TDS protocol (#1679,
+    // ADR 0044) — SQL Server, Azure SQL, Synapse, Fabric SQL. TLS is always verified.
+    textFields: [
+      {
+        name: 'host',
+        label: 'Host',
+        extra:
+          'Hostname only — e.g. myserver.database.windows.net or ' +
+          '<id>.datawarehouse.fabric.microsoft.com (no scheme, port or \\instance)',
+      },
+      { name: 'port', label: 'Port', optional: true, extra: 'Defaults to 1433' },
+      { name: 'database', label: 'Database' },
+      {
+        name: 'schema',
+        label: 'Default schema',
+        optional: true,
+        extra: 'Where an unqualified run target resolves — defaults to dbo',
+      },
+      {
+        name: 'driver',
+        label: 'Driver',
+        optional: true,
+        options: ['python-tds', 'odbc'],
+        extra:
+          'python-tds (default) ships with DataQ. odbc uses Microsoft ODBC Driver 18, which you ' +
+          'must install in your own DataQ image — needed today for Microsoft Fabric SQL endpoints.',
+      },
+      {
+        name: 'ca_bundle',
+        label: 'Private CA certificate',
+        optional: true,
+        type: 'textarea',
+        extra:
+          'PEM of the CA your server certificate chains to, for a self-hosted server — leave ' +
+          'empty for public CAs (Azure SQL, Fabric). python-tds driver only.',
+      },
+      {
+        name: 'inventory_sync',
+        label: 'Inventory sync',
+        type: 'toggle',
+        optional: true,
+        default: true,
+        extra: 'Daily sync of every table this login can read into the asset view.',
+      },
+    ],
+    defaultConfig: { driver: 'python-tds' },
+    auth: [
+      {
+        value: 'sql',
+        label: 'SQL login',
+        secretLabel: 'Password',
+        extraFields: [{ name: 'user', label: 'User' }],
+      },
+      {
+        value: 'entra_service_principal',
+        label: 'Service principal (Entra ID)',
+        secretLabel: 'Client secret',
+        extraFields: [
+          { name: 'tenant_id', label: 'Tenant ID' },
+          { name: 'client_id', label: 'Client ID' },
+        ],
+        expiryNotReadable:
+          "DataQ cannot read a client secret's expiry — track it in Entra ID, where it was " +
+          'created, and re-authenticate before it lapses.',
+      },
+    ],
+    destinationFields: [
+      'host',
+      'port',
+      'auth_type',
+      'tenant_id',
+      'client_id',
+      'ca_bundle',
+      'driver',
+    ],
   },
   iceberg: {
     // Native pyiceberg read (ADR 0030).
@@ -221,7 +467,7 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
         value: 'basic',
         label: 'Basic auth',
         secretLabel: 'Password',
-        extraField: { name: 'username', label: 'Username' },
+        extraFields: [{ name: 'username', label: 'Username' }],
       },
     ],
     destinationFields: ['base_url'],
@@ -286,6 +532,19 @@ export function withToggleDefaults(
   return result;
 }
 
+/**
+ * The type's default auth_type for a stored config that carries none (connections created before
+ * the type had auth modes). Present keys are left untouched.
+ */
+export function withAuthDefault(
+  type: ConnectionType,
+  config: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const auth = CONNECTION_FORM_SPECS[type].auth;
+  if (!auth || config?.auth_type !== undefined) return { ...config };
+  return { ...config, auth_type: auth[0].value };
+}
+
 /** Initial `config` for a freshly-selected type — seeds the default auth_type
  * (if any) plus the type's own `defaultConfig` (e.g. Iceberg's `catalog_name`), and any
  * `toggle` field's default (e.g. `inventory_sync`). */
@@ -320,7 +579,10 @@ export function movedDestinationFields(
   stored: Record<string, unknown>,
 ): string[] {
   if (edited === undefined) return [];
+  // An absent auth_type IS the default one — the backend compares them the same way.
+  const was = withAuthDefault(type, stored);
+  const now = withAuthDefault(type, edited);
   return (CONNECTION_FORM_SPECS[type].destinationFields ?? []).filter(
-    (field) => JSON.stringify(edited[field] ?? null) !== JSON.stringify(stored[field] ?? null),
+    (field) => JSON.stringify(now[field] ?? null) !== JSON.stringify(was[field] ?? null),
   );
 }

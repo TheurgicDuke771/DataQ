@@ -50,8 +50,12 @@ _MARKERS: tuple[tuple[FailureCategory, tuple[str, ...]], ...] = (
             "insufficient permission",
             "grant",
             "login failed",
+            # PostgreSQL: the server's host-based auth refused this client/user/database (#1678).
+            "pg_hba.conf",
             "http 401",
             "http 403",
+            # Trino's client wording for a 401 (#1685).
+            "error 401:",
         ),
     ),
     (
@@ -67,10 +71,15 @@ _MARKERS: tuple[tuple[FailureCategory, tuple[str, ...]], ...] = (
             "unreachable",
             "temporary failure in name resolution",
             "name or service not known",
+            # libpq's DNS failure, on Linux and macOS respectively (#1678).
+            "could not translate host name",
+            "nodename nor servname",
             "getaddrinfo",
             "max retries exceeded",
             "failed to establish a new connection",
             "ssl",
+            # python-tds's hostname check (ADR 0044) — a TLS refusal, reported without "ssl".
+            "certificate does not match host name",
             # Upstream-down HTTP statuses (#1285).
             "bad gateway",
             "service unavailable",
@@ -82,6 +91,7 @@ _MARKERS: tuple[tuple[FailureCategory, tuple[str, ...]], ...] = (
         FailureCategory.CONFIG,
         (
             "does not exist",
+            "doesn't exist",
             "no such",
             "not found",
             "cannot be found",
@@ -262,23 +272,45 @@ _AUTH_MARKERS: tuple[str, ...] = (
     # Databricks / Unity Catalog: an invalid or revoked PAT.
     "invalid access token",
     "pat is invalid",
+    # PostgreSQL SQLSTATE 28P01 — a wrong or changed password (#1678). Not 28000 (a pg_hba
+    # refusal), which is a server policy about this client, not the credential's health.
+    "password authentication failed",
+    # MySQL / MariaDB error 1045 — the login itself was refused. Keyed on the "(using password:"
+    # tail that only 1045 carries: 1044 ("… to database 'x'") is a missing grant, not a dead
+    # credential.
+    "(using password:",
+    # SQL Server error 18456 — the login itself was refused (#1679). The server sends 18456
+    # after a 4060 too, and the drivers join the two messages, so `_AUTH_VETOES` keeps a
+    # missing database grant from reading as a dead credential.
+    "login failed for user",
     # Azure ADLS Gen2 / Blob.
     "authenticationfailed",
     "server failed to authenticate the request",
     "signature did not match",
     "invalid_client",
+    # Entra ID service principal (ADLS, SQL Server): wrong / expired client secret.
+    "aadsts7000215",
+    "aadsts7000222",
     # AWS S3 (and S3-compatible stores, which reuse the same error codes).
     "invalidaccesskeyid",
     "signaturedoesnotmatch",
     "expiredtoken",
     "tokenrefreshrequired",
     "unrecognizedclientexception",
+    # Trino: the client raises `HttpError("error 401: …")` for any rejected credential —
+    # a wrong password, an expired or badly-signed JWT (#1685).
+    "error 401:",
     # Generic HTTP shape — Iceberg REST catalogs, Databricks SQL, any HTTP driver.
     "http 401",
     "401 unauthorized",
     "invalid credential",
     "credentials could not be resolved",
 )
+
+# Text that says the credential WORKED even though an auth marker is also present: SQL Server
+# error 4060 ("Cannot open database … requested by the login") — the login is valid, the
+# database is missing or not granted — arrives joined with an 18456 "Login failed for user".
+_AUTH_VETOES: tuple[str, ...] = ("requested by the login",)
 
 #: The one fixed, secret-free reason a credential-health failure is recorded with.
 AUTH_FAILURE_REASON = (
@@ -309,6 +341,8 @@ def is_auth_failure(exc: BaseException) -> bool:
             break
         seen.add(id(current))
         haystack = f"{type(current).__name__}: {current}".lower()
+        if any(veto in haystack for veto in _AUTH_VETOES):
+            return False
         if any(marker in haystack for marker in _AUTH_MARKERS):
             return True
         current = current.__cause__ or current.__context__

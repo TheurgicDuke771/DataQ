@@ -36,6 +36,13 @@ def resolve_asset_identity(
         return _resolve_s3(config, target)
     if conn_type == "iceberg":
         return _resolve_iceberg(config, target)
+    # Imported here: the engine registry pulls pydantic config models this module must not load
+    # for the (much more common) callers that never resolve a generic SQL identity.
+    from backend.app.datasources.sql_engines import sql_engine
+
+    spec = sql_engine(conn_type)
+    if spec is not None:
+        return _resolve_generic_sql(spec, config, target)
     raise ValueError(f"connection type {conn_type!r} has no asset identity (not a datasource)")
 
 
@@ -91,6 +98,19 @@ def _resolve_unity_catalog(config: dict[str, Any], target: dict[str, Any]) -> As
     return AssetIdentity(namespace=namespace, name=name)
 
 
+def _resolve_generic_sql(
+    spec: Any, config: dict[str, Any], target: dict[str, Any]
+) -> AssetIdentity:
+    """``<scheme>://host:port`` + the engine's dotted name, parts verbatim (#1678)."""
+    validated = spec.validate_config(config)
+    table = _require(target, "table", spec.conn_type, "target")
+    schema = _str_or_none(target.get("schema")) or validated.default_schema
+    return AssetIdentity(
+        namespace=spec.namespace(validated),
+        name=spec.asset_name(validated, schema=schema, table=table),
+    )
+
+
 def _resolve_adls_gen2(config: dict[str, Any], target: dict[str, Any]) -> AssetIdentity:
     container = _require(config, "container", "adls_gen2", "config")
     account_url = _require(config, "account_url", "adls_gen2", "config")
@@ -98,9 +118,23 @@ def _resolve_adls_gen2(config: dict[str, Any], target: dict[str, Any]) -> AssetI
     account = host.split(".")[0] if host else ""
     if not account:
         raise ValueError("adls_gen2 asset identity requires a valid 'account_url'")
-    namespace = f"abfss://{container}@{account}.dfs.core.windows.net"
+    namespace = f"abfss://{container}@{_adls_dfs_authority(host, account)}"
     name = _flatfile_name(target, "adls_gen2")
     return AssetIdentity(namespace=namespace, name=name)
+
+
+def _adls_dfs_authority(host: str, account: str) -> str:
+    """The ABFS authority for an ADLS-compatible Blob/DFS ``host``.
+
+    Every Azure Storage host (`<account>.blob|dfs.core.<cloud suffix>`) and anything not in that
+    shape keeps the pre-#1680 `<account>.dfs.core.windows.net` form byte-for-byte — namespaces
+    persisted under it must not fork. Any other ADLS-compatible endpoint (Fabric OneLake's
+    ``onelake.blob.fabric.microsoft.com``) is named after its own DFS host.
+    """
+    labels = host.lower().split(".")
+    if len(labels) >= 3 and labels[1] in ("blob", "dfs") and labels[2] != "core":
+        return ".".join([labels[0], "dfs", *labels[2:]])
+    return f"{account}.dfs.core.windows.net"
 
 
 def _resolve_s3(config: dict[str, Any], target: dict[str, Any]) -> AssetIdentity:

@@ -42,6 +42,10 @@ function ConfigTextField({
     >
       {field.type === 'tags' ? (
         <Select mode="tags" tokenSeparators={[',']} placeholder="Add one or more…" />
+      ) : field.options ? (
+        <Select allowClear options={field.options.map((value) => ({ value, label: value }))} />
+      ) : field.type === 'textarea' ? (
+        <Input.TextArea rows={4} spellCheck={false} />
       ) : (
         <Input />
       )}
@@ -238,19 +242,26 @@ export function ConnectionTypeFields({
         </Form.Item>
       )}
 
-      {activeAuth?.extraField && <ConfigTextField field={activeAuth.extraField} />}
+      {activeAuth?.extraFields?.map((f) => (
+        <ConfigTextField key={f.name} field={f} />
+      ))}
 
       {showSecret &&
-        (activeAuth ? (
-          <>
-            <SecretField label={activeAuth.secretLabel} multiline={activeAuth.multilineSecret} />
-            {activeAuth.passphraseLabel && <PassphraseField label={activeAuth.passphraseLabel} />}
-          </>
-        ) : (
-          spec.secretLabel && (
-            <SecretField label={spec.secretLabel} optional={spec.optionalSecret} />
-          )
-        ))}
+        (activeAuth
+          ? !activeAuth.noSecret && (
+              <>
+                <SecretField
+                  label={activeAuth.secretLabel}
+                  multiline={activeAuth.multilineSecret}
+                />
+                {activeAuth.passphraseLabel && (
+                  <PassphraseField label={activeAuth.passphraseLabel} />
+                )}
+              </>
+            )
+          : spec.secretLabel && (
+              <SecretField label={spec.secretLabel} optional={spec.optionalSecret} />
+            ))}
 
       {spec.secondSecret?.showWhen(config) && (
         <CatalogSecretField label={spec.secondSecret.label} extra={spec.secondSecret.extra} />

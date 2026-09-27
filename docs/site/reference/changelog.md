@@ -7,6 +7,10 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Fixed
 
+- **A batch-target preview no longer comes back empty just because signing in was slow.** The
+  preview's time budget now starts when the store returns its first object, not before the
+  client authenticates; a service principal's token request alone could use the whole budget.
+
 - **The batch-target preview no longer scans unbounded, or matches a regex it hasn't
   vetted, in the API process.** The suite editor's live "resolves to" hint now stops at a
   small object-count/wall-clock budget (`BATCH_PREVIEW_MAX_OBJECTS`/`_MAX_SECONDS`) and
@@ -16,6 +20,61 @@ the per-PR history lives in the repo's commit log and pull requests.
   a superseded preview request instead of merely ignoring its answer.
 
 ### Added
+
+- **ADLS Gen2 connections can authenticate as an Entra ID service principal — which also
+  opens Microsoft Fabric OneLake lakehouse files.** Pick *Service principal* and give the
+  tenant ID, client ID and client secret; point the account URL at
+  `https://onelake.blob.fabric.microsoft.com` with the workspace as the container to run any
+  flat-file check, freshness, volume, profile or browse against `<lakehouse>.Lakehouse/Files/`.
+  SAS connections are unchanged. Changing the tenant, client, auth type or account URL
+  requires re-entering the secret. A client secret's expiry is not readable by DataQ, so the
+  connection card says so rather than showing nothing. See
+  [OneLake](../guides/datasources-checks.md#onelake-fabric-lakehouse-files).
+
+- **MySQL / MariaDB datasource.** Any MySQL or MariaDB server, on the same generic SQL
+  base as PostgreSQL and through the MIT-licensed PyMySQL driver: every SQL-capable check,
+  all monitors, the profiler, browsing and inventory sync. Sessions are read-only and UTC;
+  TLS is `require` by default. *Column values unique* needs the `CREATE TEMPORARY TABLES`
+  grant — see [Datasources & checks](../guides/datasources-checks.md#mysql-mariadb).
+
+- **Trino datasource.** Connect any Trino (or Starburst) cluster — one catalog per connection
+  — and check whatever that catalog federates (Hive, Iceberg, PostgreSQL, Cassandra, Kafka…)
+  with every SQL-capable check, all monitors, the profiler, schema → table browsing and
+  inventory sync. Password, JWT (its expiry is shown) or no authentication; TLS always verifies
+  the server, with an optional private CA bundle, and a credential is never sent in plaintext.
+  Trino has no read-only session, so give DataQ a Trino user with read-only access — see
+  [Datasources & checks](../guides/datasources-checks.md#trino).
+
+- **PostgreSQL datasource.** Connect any PostgreSQL server — self-hosted or a managed
+  service — and run every SQL-capable check on it: GX expectations and custom SQL by pushdown,
+  freshness / volume / anomaly / schema-drift monitors, comparisons, the column profiler,
+  schema → table browsing for the run target, and inventory sync into the asset view. TLS is
+  `require` by default and every session is read-only at the server. It is the first engine on
+  a new engine-generic SQL base (ADR [0045](../adr/0045-engine-generic-sql-datasource-base.md)).
+  See [Datasources & checks](../guides/datasources-checks.md#postgresql).
+
+- **SQL Server / Azure SQL / Fabric datasource.** One `mssql` connection type for anything that
+  speaks SQL Server's TDS protocol — SQL Server, Azure SQL Database, Synapse, and Microsoft
+  Fabric SQL endpoints — with a SQL login or an Entra ID service principal. Every SQL-capable
+  check runs by pushdown, plus monitors, comparisons, the profiler, schema → table browsing and
+  inventory sync. TLS is always on and always verified (certificate and hostname). The default
+  driver is pure-Python and shipped; Fabric SQL endpoints currently need an optional ODBC lane
+  you install yourself (live-verified on a Fabric Warehouse and Lakehouse SQL endpoint), and
+  DataQ tells you so instead of showing a driver error. On Fabric, the uniqueness and
+  column-pair expectations are refused (Fabric does not support the temporary table GX builds
+  for them). Regex
+  expectations are not available on SQL Server. ADR
+  [0044](../adr/0044-mssql-tds-driver-and-entra-auth.md); see
+  [Datasources & checks](../guides/datasources-checks.md#sql-server-azure-sql-fabric-t-sql).
+
+### Security
+
+- **The custom-SQL guard now lexes each engine's own quoting.** A T-SQL `[bracket]` or a
+  Databricks `` `backtick` `` identifier containing a quote could make the read-only check
+  mistake a following statement for part of a string; the guard now reads those identifiers
+  as identifiers, rejects a nested block comment (engines disagree where one ends), and on
+  SQL Server also refuses `OPENQUERY`, `OPENROWSET`, `OPENDATASOURCE`, `BULK`, `DBCC` and
+  `WAITFOR`. A query whose engine is unknown must pass every engine's rules.
 
 - **Sensitive columns stay masked downstream.** If a warehouse tag marks a column sensitive,
   every column that recorded column lineage shows is copied or derived from it is masked as well,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from backend.app.datasources.sql_engines import GENERIC_SQL_TYPES
 from backend.app.db.models import GX_ENGINE
 
 # Datasource connection types only — an orchestration provider offers no engines (it has no checks).
@@ -13,6 +14,8 @@ _OFFERED: dict[str, frozenset[str]] = {
     "s3": frozenset({GX_ENGINE}),
     "unity_catalog": frozenset({GX_ENGINE}),  # "dqx" trigger-gated (ADR 0036 §6)
     "iceberg": frozenset({GX_ENGINE}),
+    # The generic SQL engines (#1678) have no native DQ engine to offer.
+    **{conn_type: frozenset({GX_ENGINE}) for conn_type in GENERIC_SQL_TYPES},
 }
 
 

@@ -23,6 +23,7 @@ from backend.app.datasources.iceberg import (
     read_iceberg_dataframe,
 )
 from backend.app.datasources.sampling import enforce_byte_cap
+from backend.app.datasources.sql_engines import GENERIC_SQL_TYPES, authenticates_without_secret
 from backend.app.db.models import Connection
 from backend.app.services.custom_sql import validate_query
 from backend.app.services.profile_service import (
@@ -83,10 +84,10 @@ def _require_secret(connection: Connection, secret_store: SecretStore) -> str:
 # ───────────────────────── SQL (snowflake / unity_catalog) ──────────
 
 
-def _wrapped_query(spec: DatasetSpec) -> str:
+def _wrapped_query(spec: DatasetSpec, connection_type: str) -> str:
     """The validated read-only projection as a parenthesized FROM source."""
     assert spec.query is not None
-    validate_query(spec.query)
+    validate_query(spec.query, connection_type=connection_type)
     return spec.query.strip().rstrip(string.whitespace + ";")
 
 
@@ -95,7 +96,9 @@ def _sql_read(
 ) -> Any:
     import pandas as pd
 
-    if not connection.secret_ref:
+    if not connection.secret_ref and not authenticates_without_secret(
+        connection.type, connection.config
+    ):
         # Pre-check so a credential-less connection is the same clean 422 the
         # flat-file path gives, not `_open_connection`'s bare ValueError 500.
         raise DatasetReadUnsupportedError(
@@ -107,14 +110,13 @@ def _sql_read(
     table: str | None = None
     schema: str | None = None
     if spec.query is not None:
-        q = _wrapped_query(spec)
+        q = _wrapped_query(spec, connection.type)
         # Interpolation is safe: `q` passed the read-only single-statement validator (ADR 0019) at
         # author time AND immediately above.
         count_sql = f"SELECT COUNT(*) FROM (\n{q}\n) __dataq_src"  # noqa: S608  # nosec B608
-        select_sql = (
-            f"SELECT * FROM (\n{q}\n) __dataq_src "  # noqa: S608  # nosec B608
-            f"LIMIT {int(max_rows) + 1}"
-        )
+        # The row bound is Core's `.limit`, which each dialect renders its own way (T-SQL has
+        # no LIMIT — `SELECT TOP n`).
+        select_sql = q
     else:
         if not spec.table:
             raise DatasetReadUnsupportedError(
@@ -134,7 +136,11 @@ def _sql_read(
     with _open_connection(connection, secret_store) as conn:
         if count_sql is not None and select_sql is not None:
             count_stmt = sa.text(count_sql)
-            select_stmt = sa.text(select_sql)
+            select_stmt = (
+                sa.select(sa.text("*"))
+                .select_from(sa.text(select_sql).columns().subquery("__dataq_src"))
+                .limit(max_rows + 1)
+            )
         else:
             # `_table` needs a live dialect only when `spec.catalog` is set (Unity Catalog's 3-part
             # namespace, #936).
@@ -233,6 +239,7 @@ _READERS: dict[str, _Reader] = {
     "adls_gen2": _flatfile_read,
     "s3": _flatfile_read,
     "iceberg": _iceberg_read,
+    **dict.fromkeys(GENERIC_SQL_TYPES, _sql_read),
 }
 
 
