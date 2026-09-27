@@ -101,6 +101,37 @@ export interface CheckSuggestion {
   dimension: string | null;
   /** Only on a `monitor:freshness` suggestion — grounded in the bound pipeline's cadence. */
   fail_threshold_hours?: number | null;
+  /** Column-lineage placement/dedup advice — absent for a suggestion with no column. */
+  lineage?: SuggestionLineage;
+}
+
+/** Placement/dedup advice computed from recorded column lineage — advice, never a filter. */
+export interface SuggestionLineage {
+  upstream_status: string;
+  complete?: boolean;
+  origins?: {
+    asset_id: string;
+    asset_name: string | null;
+    column: string;
+    confirmed: boolean;
+    /** Same column name on every hop — the only case a dedup/placement claim is made for. */
+    pass_through: boolean;
+    has_equivalent_check: boolean;
+  }[];
+  equivalent_upstream_checks?: {
+    asset_id: string;
+    asset_name: string | null;
+    column: string;
+    suite_id: string;
+    suite_name: string;
+    check_id: string;
+    check_name: string;
+  }[];
+  /** Equivalents on suites the viewer cannot see — counted, never named. */
+  restricted_equivalent_checks?: number;
+  /** Same check type on a same-name upstream column but different parameters — not coverage. */
+  different_parameters_upstream?: number;
+  recommendation?: 'already_covered_upstream' | 'place_at_origin' | null;
 }
 
 export interface RejectedSuggestion {
