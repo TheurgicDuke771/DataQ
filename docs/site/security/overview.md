@@ -475,10 +475,12 @@ values happen to look harmless and the rows behind them do not.
 | Snowflake, Unity Catalog SQL pushdown | One **extra, bounded query** per failing check: the check's own failing condition, selecting only the tested column and the identifier column, `LIMIT 5000` |
 
 The extra query on the warehouse lanes is issued only when all of these hold:
-the check failed on more than 20 rows, it tests a single column, and the value
-signal could actually change the outcome for the tested or identifier column —
-a column already masked by a tag, `pii_columns`, its name or fail-closed mode
-never pays for it. The decision is made with the policy and tags **as of the
+the check found more than 20 unexpected rows (including a check that still
+passes under `mostly`, whose sample is kept all the same), it tests a single
+column, and the value signal could actually change the outcome for the tested or
+identifier column — a column already masked by a tag, `pii_columns`, its name or
+fail-closed mode never pays for it. Zero-sample privacy mode never issues it:
+no sample is stored, so there is nothing to classify. The decision is made with the policy and tags **as of the
 run**; if they change later, a column that was decided without the query falls
 back to its 20 stored values.
 

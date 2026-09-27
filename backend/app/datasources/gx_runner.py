@@ -200,11 +200,12 @@ def _needs_population_signal(
     gate: ValueSignalGate,
 ) -> bool:
     """Would the SQL lane's capped sample decide masking where the frame lane uses the
-    population (#2014)? Only for a failing column-map check with more failing rows than the
-    capped sample holds, and only when the gate says the value signal decides at least one of
-    the columns the summary covers — policy/tags/name-decided columns never pay the query.
+    population (#2014)? Only for a column-map check with more unexpected rows than the capped
+    sample holds — passing under `mostly` included, since its sample is persisted and shown
+    just the same — and only when the gate says the value signal decides at least one of the
+    columns the summary covers; policy/tags/name-decided columns never pay the query.
     """
-    if outcome.errored or outcome.success:
+    if outcome.errored:
         return False
     sample = outcome.sample_failures
     if not sample or VALUE_SIGNAL_SUMMARY_KEY in sample:

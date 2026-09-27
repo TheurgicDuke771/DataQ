@@ -2379,3 +2379,36 @@ def test_value_signal_gate_is_withheld_from_a_runner_that_does_not_take_it() -> 
     runner = FakeRunner(_one_ok())
     outcomes = _drain(runner, run_service.build_value_signal_gate(None, None))
     assert [o.success for o in outcomes] == [True]
+
+
+def test_zero_sample_mode_withholds_the_value_signal_gate(monkeypatch: pytest.MonkeyPatch) -> None:
+    # #2014 review: with no sample persisted, the population query would pull up to 5,000 raw
+    # failing values into the worker only to discard them.
+    monkeypatch.setenv("PRIVACY_ZERO_SAMPLE_MODE", "true")
+    get_settings.cache_clear()
+    runner = _GateAwareRunner(_one_ok())
+    run_service.execute_run(
+        _sess(FakeSession()),
+        run=_run(),
+        checks=_checks(1),
+        runner=cast(CheckRunner, runner),
+        table="T",
+        value_signal_gate=run_service.build_value_signal_gate(None, None),
+    )
+    assert runner.called_with is not None
+    assert runner.called_with["value_signal_gate"] is None
+
+
+def test_execute_run_forwards_the_gate_when_samples_are_kept() -> None:
+    runner = _GateAwareRunner(_one_ok())
+    gate = run_service.build_value_signal_gate(None, None)
+    run_service.execute_run(
+        _sess(FakeSession()),
+        run=_run(),
+        checks=_checks(1),
+        runner=cast(CheckRunner, runner),
+        table="T",
+        value_signal_gate=gate,
+    )
+    assert runner.called_with is not None
+    assert runner.called_with["value_signal_gate"] is gate

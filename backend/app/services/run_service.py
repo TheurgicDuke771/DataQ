@@ -331,6 +331,10 @@ def execute_run(
     # Resolved once per run, not per check: the switch is a workspace setting read
     # per task (#1887), and a run must persist under one consistent policy.
     zero_sample = privacy_settings_service.zero_sample_mode(session)
+    if zero_sample:
+        # No sample is persisted, so the population query (#2014) would pull up to 5,000 raw
+        # failing values into the worker only to discard them.
+        value_signal_gate = None
     session.commit()
     log.info(
         "run_started",

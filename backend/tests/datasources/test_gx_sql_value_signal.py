@@ -232,7 +232,7 @@ def test_no_extra_query_when_the_capped_sample_is_the_whole_population(tmp_path:
     assert VALUE_SIGNAL_SUMMARY_KEY not in check.sample_failures
 
 
-def test_passing_and_aggregate_checks_never_pay_the_query(tmp_path: Path) -> None:
+def test_clean_and_aggregate_checks_never_pay_the_query(tmp_path: Path) -> None:
     checks = [
         CheckSpec(_IN_SET, {"column": "qty", "value_set": [1]}),
         CheckSpec("expect_column_max_to_be_between", {"column": "qty", "max_value": 0}),
@@ -250,6 +250,18 @@ def test_passing_and_aggregate_checks_never_pay_the_query(tmp_path: Path) -> Non
     assert [p for _, p in spy.calls if _VALUE_SIGNAL_SUMMARY_ROW_CAP in p] == []
     assert outcome.checks[0].success is True
     assert outcome.checks[1].success is False
+
+
+def test_a_check_passing_under_mostly_still_gets_the_signal(tmp_path: Path) -> None:
+    """`mostly` lets a check pass with its unexpected rows still sampled and shown; the frame
+    lane summarises them regardless of the verdict, so the SQL lane must too."""
+    lenient = CheckSpec(_IN_SET, {"column": _TESTED, "value_set": ["n/a"], "mostly": 0.0})
+    sql = _run_sql(tmp_path, checks=[lenient])
+    assert sql.success is True
+    redacted, _, columns = _redacted(sql)
+    assert redacted is not None
+    assert "walk-in" not in str(redacted["unexpected_index_list"])
+    assert _TESTED in columns
 
 
 def test_frame_lane_never_runs_the_extra_query() -> None:
