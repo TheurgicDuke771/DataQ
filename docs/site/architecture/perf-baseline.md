@@ -982,6 +982,34 @@ wall clock is mostly the 13 round trips, not the scan. Peak RSS here is the
 process baseline (GX and the connector loaded), the same ~380 MiB an empty run
 costs.
 
+### Column listing + profile — one warehouse login
+
+Redaction-policy suggestion (`suggest_policy_for_target` — the REST route, the
+MCP tool and the worker's auto-classify) and the LLM prompt builders (SQL
+generation, check suggestions) each list a table's columns and then profile
+them. Those used to be two separate connections, so two warehouse logins back to
+back against the same datasource; they now run inside
+`profile_service.shared_connection()`, which reuses one live connection per
+datasource for the whole block. SQL generation with `include_profile`
+and additional tables previously paid a login per list and per profile, and now
+pays one. A failed statement inside the scope is rolled back and the connection
+kept, unless the driver has invalidated it, in which case the next call logs in
+again.
+
+Measured live against Unity Catalog (Free Edition SQL warehouse, warm,
+`dataq_retail.gold.feedback_sentiment`, 7 columns), counting driver sessions
+opened:
+
+| Path | Sessions opened | Wall (run 1 / run 2) |
+|---|---|---|
+| Before — `list_columns` then `profile_connection` | 2 | 9.85 s / 4.20–4.48 s |
+| After — `suggest_policy_for_target` | **1** | 2.82–3.20 s |
+| After — the LLM prompt shape (`top_n=0` profile) | **1** | 2.27–2.58 s |
+
+The wall-clock gap is the second session's open, about 1.5 s here. Snowflake's
+key-pair or password login is typically 1–3 s as well; the same count has not yet
+been measured against Snowflake.
+
 ### What is explicitly NOT measured here
 
 A tier that simply does not appear in a result set reads as "nothing to report",
