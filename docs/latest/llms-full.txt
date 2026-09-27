@@ -3734,7 +3734,9 @@ own `SNOWFLAKE.CORE.*` metric functions instead of a GX expectation. Engine is s
 check, on a Snowflake connection only; `kind` stays `expectation` either way. Testing or
 re-authenticating a Snowflake connection also probes DMF availability (Enterprise Edition +
 grant) and stores the result on the connection — surfaced on the connection list and, as a caveat
-rather than a hard gate, in the check editor's engine picker.
+rather than a hard gate, in the check editor's engine picker. The probe reads zero rows of one
+table the connection's role can already see; if the role can see none, or the probe fails for a
+reason unrelated to DMFs, the connection shows "couldn't determine" rather than "unavailable".
 
 ˢ **S3 means AWS S3 *and* any S3-compatible store** — MinIO, Ceph/RadosGW, Cloudflare R2,
 Wasabi, Backblaze B2, SeaweedFS or an on-prem gateway. Set the connection's optional
