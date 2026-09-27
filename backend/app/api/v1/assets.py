@@ -20,6 +20,7 @@ from backend.app.core.auth import get_current_user, require_workspace_admin
 from backend.app.core.roles import is_workspace_admin
 from backend.app.db.models import User
 from backend.app.db.session import get_db
+from backend.app.lineage.columns import DEFAULT_TRACE_DEPTH, MAX_TRACE_DEPTH, TraceDirection
 from backend.app.services import asset_view_service as svc
 
 router = APIRouter(tags=["assets"])
@@ -112,6 +113,10 @@ class LineageEdgeRead(ApiModel):
     source: uuid.UUID
     target: uuid.UUID
     columns: list[tuple[str, str]] | None = None
+    # #1710: why `columns` is null when it is — `recorded` · `none_recorded` (the source reads
+    # column lineage and recorded none here) · `unavailable` (its column read failed) · `unknown`
+    # (not refreshed since this was tracked) · `not_captured` (dbt/catalog: never column-grain).
+    column_coverage: str = "unknown"
 
 
 class LineageSourceHealthRead(ApiModel):
@@ -202,6 +207,83 @@ class AssetDetailRead(ApiModel):
     warehouse_lineage_status: list[WarehouseLineageStatusRead] = Field(default_factory=list)
 
 
+class ColumnTraceAssetRead(ApiModel):
+    """The identity of an asset a column trace names."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    namespace: str
+    name: str
+    env: str | None
+    is_monitored: bool
+
+
+class ColumnNodeRead(ApiModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    asset_id: uuid.UUID
+    column: str
+    depth: int
+
+
+class ColumnHopRead(ApiModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    upstream_asset_id: uuid.UUID
+    upstream_column: str
+    downstream_asset_id: uuid.UUID
+    downstream_column: str
+
+
+class CoverageGapRead(ApiModel):
+    """A table edge on the walk that carries no column pairs — the column MAY cross it."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    upstream_asset_id: uuid.UUID
+    downstream_asset_id: uuid.UUID
+    coverage: str
+
+
+class ColumnOriginRead(ApiModel):
+    """An upstream-most column the walk reached (the traced column itself is never listed).
+    `confirmed: false` ⇒ a gap or the depth cap means something further upstream may still
+    feed it."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    asset_id: uuid.UUID
+    column: str
+    depth: int
+    confirmed: bool
+
+
+class ColumnTraceRead(ApiModel):
+    """Column-grain provenance (`upstream`, `origins`) and impact (`downstream`) for one column.
+
+    `*_status` per direction: `traced` · `no_table_lineage` · `none_recorded` · `incomplete`
+    (null when that direction was not requested). `complete` is false whenever `gaps` is
+    non-empty or `truncated` — then an absent column is NOT evidence of no dependency (#828).
+    The column's existence on the asset is not verified: a misspelling traces to nothing.
+    """
+
+    asset_id: uuid.UUID
+    column: str
+    upstream: list[ColumnNodeRead]
+    downstream: list[ColumnNodeRead]
+    hops: list[ColumnHopRead]
+    gaps: list[CoverageGapRead]
+    origins: list[ColumnOriginRead]
+    upstream_status: str | None
+    downstream_status: str | None
+    truncated: bool
+    complete: bool
+    assets: list[ColumnTraceAssetRead]
+    # Table-level lineage qualifiers — the trace inherits every one of them.
+    qualified_by: list[str]
+
+
 class AssetMetadataUpdate(ApiRequestModel):
     """Partial metadata update (workspace-Admin-only). Each field is optional; an
     explicit `null` clears it, an omitted field leaves it unchanged — the two are
@@ -279,3 +361,36 @@ def update_asset(
     # Return the refreshed workspace-true summary. Never 404s on an asset with no
     # composing suites — metadata exists independently of suites.
     return svc.summarize_asset(db, asset)
+
+
+@router.get(
+    "/assets/{asset_id}/column-lineage",
+    response_model=ColumnTraceRead,
+    summary="Trace one column's lineage",
+)
+def trace_asset_column(
+    asset_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    column: str = Query(min_length=1, max_length=255),
+    direction: TraceDirection = TraceDirection.BOTH,
+    max_depth: int = Query(default=DEFAULT_TRACE_DEPTH, ge=1, le=MAX_TRACE_DEPTH),
+) -> ColumnTraceRead:
+    # Workspace-visible topology (ADR 0037): opens for every member, 404 only on an unknown id.
+    view = svc.trace_asset_column(db, asset_id, column, direction=direction, max_depth=max_depth)
+    trace = view.trace
+    return ColumnTraceRead(
+        asset_id=trace.asset_id,
+        column=trace.column,
+        upstream=[ColumnNodeRead.model_validate(n) for n in trace.upstream],
+        downstream=[ColumnNodeRead.model_validate(n) for n in trace.downstream],
+        hops=[ColumnHopRead.model_validate(h) for h in trace.hops],
+        gaps=[CoverageGapRead.model_validate(g) for g in trace.gaps],
+        origins=[ColumnOriginRead.model_validate(o) for o in trace.origins],
+        upstream_status=trace.upstream_status,
+        downstream_status=trace.downstream_status,
+        truncated=trace.truncated,
+        complete=trace.complete,
+        assets=[ColumnTraceAssetRead.model_validate(a) for a in view.assets],
+        qualified_by=view.qualified_by,
+    )

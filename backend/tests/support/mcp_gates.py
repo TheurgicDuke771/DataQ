@@ -16,6 +16,7 @@ GATES: dict[str, str] = {
     "list_connections": "read",
     "list_notification_channels": "read",
     "list_suites": "read",
+    "trace_column_lineage": "read",  # lineage topology is workspace-visible (ADR 0037)
     # ── accessible-suite scoped, and view-gated when a suite is named ────────
     "get_near_misses": "read:suite-optional",
     "list_incidents": "read:suite-optional",

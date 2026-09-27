@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import ColumnElement, and_, func, or_, select, tuple_
+from sqlalchemy import ColumnElement, and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import get_settings
@@ -19,13 +19,13 @@ from backend.app.db.models import (
     Asset,
     Check,
     Connection,
-    LineageEdge,
     Result,
     Run,
     Suite,
     User,
     worst_severity,
 )
+from backend.app.lineage import columns as lineage_columns
 from backend.app.lineage.edges import lineage_neighbourhood
 from backend.app.lineage.warehouse import (
     WAREHOUSE_LINEAGE_CONNECTION_TYPES,
@@ -137,6 +137,8 @@ class LineageEdgeRef:
     source: uuid.UUID
     target: uuid.UUID
     columns: tuple[tuple[str, str], ...] | None = None
+    # #1710: why `columns` is None when it is — never read "no pairs" as "no column lineage".
+    column_coverage: lineage_columns.ColumnCoverage = lineage_columns.ColumnCoverage.UNKNOWN
 
 
 @dataclass(frozen=True)
@@ -696,64 +698,77 @@ def coverage_by_connection(
     return {cid: AssetCoverage(total=t, unmonitored=u) for cid, (t, u) in totals.items()}
 
 
+@dataclass(frozen=True)
+class ColumnTraceView:
+    """A column trace plus what it needs to be read honestly: the identities of every asset it
+    names, and the TABLE-level lineage qualifiers (a trace is never more complete than the table
+    graph it walks — a failing or coarse source under-reports columns exactly as it does tables).
+    """
+
+    trace: lineage_columns.ColumnTrace
+    assets: list[LineageNode]
+    qualified_by: list[str]
+
+
+def trace_asset_column(
+    session: Session,
+    asset_id: uuid.UUID,
+    column: str,
+    *,
+    direction: lineage_columns.TraceDirection = lineage_columns.TraceDirection.BOTH,
+    max_depth: int = lineage_columns.DEFAULT_TRACE_DEPTH,
+) -> ColumnTraceView:
+    """Column-grain provenance / impact for one asset column (#1710). Workspace-visible like the
+    rest of the lineage topology (ADR 0037); only an unknown asset id raises (404).
+    """
+    if session.get(Asset, asset_id) is None:
+        raise AssetNotFoundError("asset not found", detail={"asset_id": str(asset_id)})
+    trace = lineage_columns.trace_column(
+        session, asset_id, column, direction=direction, max_depth=max_depth
+    )
+    ids = {asset_id}
+    ids.update(n.asset_id for n in (*trace.upstream, *trace.downstream))
+    for gap in trace.gaps:
+        ids.update((gap.upstream_asset_id, gap.downstream_asset_id))
+    by_id = {a.id: a for a in session.scalars(select(Asset).where(Asset.id.in_(ids)))}
+    monitored = _monitored_ids(session, list(by_id))
+    return ColumnTraceView(
+        trace=trace,
+        assets=_lineage_nodes(
+            [(by_id[i], 0) for i in sorted(by_id, key=lambda i: (by_id[i].name, str(i)))],
+            monitored,
+        ),
+        qualified_by=lineage_qualifiers(
+            failing_lineage_sources(session), warehouse_lineage_status(session)
+        ),
+    )
+
+
 def _lineage_edge_refs(
     session: Session,
     edges: list[tuple[uuid.UUID, uuid.UUID]],
 ) -> list[LineageEdgeRef]:
-    """The neighbourhood's edges with their column-level refinement (#901), shown
-    in full to every member (ADR 0037 — column names are schema metadata, i.e.
-    identity). Column data is unioned across the sources that observed the edge
-    (two provenance rows for one asset pair are one drawn edge).
+    """The neighbourhood's edges with their column-level refinement (#901) and WHY an edge has
+    no pairs when it has none (#1710) — shown in full to every member (ADR 0037 — column names
+    are schema metadata, i.e. identity). Unioned across the sources that observed the edge.
     """
     if not edges:
         return []
-    pairs: dict[tuple[uuid.UUID, uuid.UUID], set[tuple[str, str]]] = {}
-    for up, down, cols in session.execute(
-        select(
-            LineageEdge.upstream_asset_id,
-            LineageEdge.downstream_asset_id,
-            LineageEdge.columns,
-        ).where(
-            tuple_(LineageEdge.upstream_asset_id, LineageEdge.downstream_asset_id).in_(edges),
-            LineageEdge.columns.is_not(None),
-            # Exclude JSON 'null' in SQL (#907) — rows bulk-written before
-            # `none_as_null` carry it and pass `is_not(None)`.
-            func.jsonb_typeof(LineageEdge.columns) != "null",
-        )
-    ):
-        # Defensive shape check: `columns` is app-written JSONB, but a malformed value must degrade
-        # to "skipped", never 500 the asset page.
-        if not isinstance(cols, (list, tuple)):
-            log.warning(
-                "lineage_edge_columns_malformed",
-                upstream_asset_id=str(up),
-                downstream_asset_id=str(down),
-                value_type=type(cols).__name__,
+    refined = lineage_columns.edge_columns(session, edges)
+    refs: list[LineageEdgeRef] = []
+    for up, down in edges:
+        info = refined.get((up, down))
+        refs.append(
+            LineageEdgeRef(
+                source=up,
+                target=down,
+                columns=info.pairs if info is not None and info.pairs else None,
+                column_coverage=(
+                    info.coverage if info is not None else lineage_columns.ColumnCoverage.UNKNOWN
+                ),
             )
-            continue
-        valid = [
-            (str(entry[0]), str(entry[1]))
-            for entry in cols
-            if isinstance(entry, (list, tuple)) and len(entry) == 2
-        ]
-        # The loud-degradation contract covers ENTRIES too (#924 review): a wrong-arity/non-list
-        # item inside a well-formed list must not vanish silently.
-        if len(valid) != len(cols):
-            log.warning(
-                "lineage_edge_column_entries_malformed",
-                upstream_asset_id=str(up),
-                downstream_asset_id=str(down),
-                dropped=len(cols) - len(valid),
-            )
-        pairs.setdefault((up, down), set()).update(valid)
-    return [
-        LineageEdgeRef(
-            source=up,
-            target=down,
-            columns=tuple(sorted(cols)) if (cols := pairs.get((up, down))) else None,
         )
-        for up, down in edges
-    ]
+    return refs
 
 
 def _lineage_nodes(

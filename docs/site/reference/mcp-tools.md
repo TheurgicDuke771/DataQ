@@ -6,8 +6,8 @@ run against), and the description is the opening of what an AI assistant is show
 
 | | Count |
 |---|---|
-| Tools | 50 |
-| Read-only | 27 |
+| Tools | 51 |
+| Read-only | 28 |
 | Changes state | 18 |
 | Live probe | 5 |
 
@@ -45,6 +45,7 @@ connection mutation, and a credential must never transit an LLM.
 | `list_suite_channels` | `view` on the suite | List the reusable notification channels linked to one suite. |
 | `list_suites` | any signed-in user | List the data-quality suites the current user can access. |
 | `list_trigger_bindings` | any signed-in user; suite-scoped when a suite is named | List the orchestration triggers that run a suite when a pipeline succeeds. |
+| `trace_column_lineage` | any signed-in user | Follow one column of an asset through column-level lineage, upstream and/or downstream. |
 
 ## Changes state
 
