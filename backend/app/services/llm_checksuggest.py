@@ -38,6 +38,7 @@ from backend.app.llm.base import LLMOutputInvalidError, LLMRequestInvalidError
 from backend.app.services import (
     check_dimension,
     check_service,
+    lineage_placement,
     llm_prompt_context,
     llm_service,
     orchestration_service,
@@ -560,6 +561,11 @@ def validate_output(
         }
         for r in near_misses
     ]
+    # Column-lineage placement/dedup advice (#1710) — deterministic, and advice only: it never
+    # drops a suggestion (a pair records derivation, not equality).
+    lineage_placement.annotate_suggestions(
+        session, suite=suite, user_id=invocation.requested_by_user_id, suggestions=accepted
+    )
     return {"suggestions": accepted, "rejected": rejected, "coverage_warnings": coverage_warnings}
 
 
