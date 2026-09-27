@@ -1,0 +1,8 @@
+{
+  "tool_use_id": "toolu_01D2iJY8vX2iCSgKVQ4xZ5MM",
+  "agent_id": "aed936a9a09496c6d",
+  "subagent_type": "general-purpose",
+  "task_description": "#1710 column-level lineage",
+  "started_at": "2026-09-27T10:03:45.73098+05:30",
+  "completed_at": "2026-09-27T15:37:02.543054+05:30"
+}
