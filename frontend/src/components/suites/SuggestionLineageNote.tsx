@@ -26,9 +26,10 @@ export function SuggestionLineageNote({ lineage }: { lineage?: SuggestionLineage
     const hidden = restricted > 0 ? `${restricted} in suites you can't view` : '';
     return (
       <Typography.Text type="warning" style={{ fontSize: 12 }} data-testid="lineage-note">
-        An equivalent check already runs upstream on the same column (
-        {[where, hidden].filter(Boolean).join('; ')}). A pass-through copy may not need its own —
-        but joins and filters can still break it, so decide per table.{partialNote}
+        The same check, with the same parameters, already runs upstream on a column of the same name
+        ({[where, hidden].filter(Boolean).join('; ')}). If this column is a plain copy it may not
+        need its own — but joins, filters and aggregation can still break it, so decide per table.
+        {partialNote}
       </Typography.Text>
     );
   }
@@ -36,9 +37,9 @@ export function SuggestionLineageNote({ lineage }: { lineage?: SuggestionLineage
     const origin = (lineage.origins ?? []).find((o) => o.pass_through);
     return (
       <Typography.Text type="secondary" style={{ fontSize: 12 }} data-testid="lineage-note">
-        This column is passed through unchanged from{' '}
-        {origin ? `${tableName(origin.asset_name)}.${origin.column}` : 'an upstream table'}.
-        Checking it there as well fires once per bad load, not once per copy.{partialNote}
+        A column of the same name upstream feeds this one (
+        {origin ? `${tableName(origin.asset_name)}.${origin.column}` : 'an upstream table'}).
+        Checking it there as well fires once per bad load rather than once per copy.{partialNote}
       </Typography.Text>
     );
   }
@@ -48,6 +49,14 @@ export function SuggestionLineageNote({ lineage }: { lineage?: SuggestionLineage
       <Typography.Text type="secondary" style={{ fontSize: 12 }} data-testid="lineage-note">
         Derived from {derived.map((o) => `${tableName(o.asset_name)}.${o.column}`).join(', ')} — not
         a plain copy, so an upstream check would not cover it.{partialNote}
+      </Typography.Text>
+    );
+  }
+  if (partial || lineage.upstream_status === 'incomplete') {
+    // Could-not-follow is a different fact from nothing-recorded — say it (#828).
+    return (
+      <Typography.Text type="secondary" style={{ fontSize: 12 }} data-testid="lineage-note">
+        Column lineage is incomplete for this column, so where it comes from is unknown.
       </Typography.Text>
     );
   }

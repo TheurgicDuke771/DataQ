@@ -189,18 +189,23 @@ environment) — a coverage gap no column profile could reveal either way.
 
 **Placement and dedup from column lineage.** Where recorded column lineage reaches the suggested
 column, each suggestion also says where that column comes from. There are two recommendations,
-each made only for a *pass-through* column (the same column name on every hop — a copy, not a
-derivation):
+each made only when the column keeps the **same name on every hop** upstream. That is a
+heuristic for a copy rather than proof of one, because `SUM(amount) AS amount` keeps the name
+too:
 
-- **An equivalent check already runs upstream** — the same check type on the same column in a
-  table this one copies from. A copy may not need its own check, though joins and filters can still
+- **An equivalent check already runs upstream** — the same check type *with the same parameters*
+  on the same-named column upstream. `between 0 and 1,000,000` upstream does not cover a
+  suggested `between 0 and 100`. A copy may not need its own check, though joins and filters can still
   break uniqueness or nullability, so decide per table. Upstream checks in suites you can't view are
   counted, never named.
 - **Place it at the origin** — nothing equivalent runs upstream yet, and checking the column where
   it originates fires once per bad load instead of once per downstream copy.
 
 A derived column (`amount → daily_revenue`) gets its provenance shown and no recommendation,
-since an upstream check does not cover an aggregate. This is advice, not a filter: no suggestion
+since an upstream check does not cover an aggregate. Monitor suggestions (freshness) never get a
+recommendation, because a fresh upstream table says nothing about a stalled downstream job. When
+the lineage walk could not follow the column, the note says so rather than staying silent. This is
+advice, not a filter: no suggestion
 is ever hidden because of it, and when the lineage walk hit a gap the note says the picture may be
 incomplete.
 
@@ -215,6 +220,7 @@ incomplete.
     `fail_threshold_hours` instead of a threshold inside `config` for a freshness
     suggestion), and a column-scoped one a `lineage` object — `origins` (each with
     `pass_through` / `confirmed`), `equivalent_upstream_checks`, `restricted_equivalent_checks`,
+    `different_parameters_upstream`,
     `recommendation` (`already_covered_upstream` · `place_at_origin` · `null`) and `complete`.
 
 ## What is recorded, what it costs, who may call

@@ -45,7 +45,9 @@ describe('SuggestionLineageNote (#1710)', () => {
     expect(
       screen.getByText(/feedback\.customer_id; 2 in suites you can't view/),
     ).toBeInTheDocument();
-    expect(screen.getByText(/joins and filters can still break it/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/joins, filters and aggregation can still break it/),
+    ).toBeInTheDocument();
   });
 
   it('suggests placing at the pass-through origin, and says when lineage is partial', () => {
@@ -60,7 +62,7 @@ describe('SuggestionLineageNote (#1710)', () => {
       />,
     );
     expect(
-      screen.getByText(/passed through unchanged from feedback\.customer_id/),
+      screen.getByText(/same name upstream feeds this one \(feedback\.customer_id\)/),
     ).toBeInTheDocument();
     expect(screen.getByText(/Lineage is incomplete here/)).toBeInTheDocument();
   });
@@ -82,6 +84,15 @@ describe('SuggestionLineageNote (#1710)', () => {
   it('states an error rather than omitting it', () => {
     render(<SuggestionLineageNote lineage={{ upstream_status: 'error' }} />);
     expect(screen.getByText(/could not be checked/)).toBeInTheDocument();
+  });
+
+  it('says so when lineage could not follow the column, instead of saying nothing', () => {
+    render(
+      <SuggestionLineageNote
+        lineage={{ upstream_status: 'incomplete', complete: false, origins: [] }}
+      />,
+    );
+    expect(screen.getByText(/Column lineage is incomplete for this column/)).toBeInTheDocument();
   });
 
   it('says nothing when no lineage was found', () => {

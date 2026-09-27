@@ -129,6 +129,8 @@ export interface SuggestionLineage {
   }[];
   /** Equivalents on suites the viewer cannot see — counted, never named. */
   restricted_equivalent_checks?: number;
+  /** Same check type on a same-name upstream column but different parameters — not coverage. */
+  different_parameters_upstream?: number;
   recommendation?: 'already_covered_upstream' | 'place_at_origin' | null;
 }
 

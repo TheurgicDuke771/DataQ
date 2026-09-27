@@ -114,6 +114,55 @@ def test_equivalent_check_on_an_ungranted_suite_is_counted_not_named(
     assert shared["restricted_equivalent_checks"] == 0
 
 
+def test_same_type_with_different_parameters_is_not_coverage(
+    db_session: Session, world: dict[str, Any]
+) -> None:
+    upstream = _suite(db_session, world["conn"], world["me"], world["silver"])
+    check = _check(db_session, upstream, "expect_column_values_to_be_between", "customer_id")
+    check.config = {"column": "customer_id", "min_value": 0, "max_value": 1_000_000}
+    db_session.flush()
+    narrow = {"column": "customer_id", "min_value": 0, "max_value": 100}
+    out = lp.placement_for(
+        db_session,
+        asset_id=world["gold"],
+        column="customer_id",
+        expectation_type="expect_column_values_to_be_between",
+        user_id=world["me"].id,
+        config=narrow,
+    )
+    assert out["recommendation"] == lp.PLACE_AT_ORIGIN
+    assert out["equivalent_upstream_checks"] == []
+    assert out["different_parameters_upstream"] == 1
+    same = lp.placement_for(
+        db_session,
+        asset_id=world["gold"],
+        column="customer_id",
+        expectation_type="expect_column_values_to_be_between",
+        user_id=world["me"].id,
+        config={**check.config, "column": "customer_id"},
+    )
+    assert same["recommendation"] == lp.ALREADY_COVERED_UPSTREAM
+
+
+def test_a_monitor_kind_never_gets_a_placement_claim(
+    db_session: Session, world: dict[str, Any]
+) -> None:
+    """An upstream freshness monitor says nothing about a stalled downstream job."""
+    upstream = _suite(db_session, world["conn"], world["me"], world["raw"])
+    _check(db_session, upstream, "monitor:freshness", "customer_id")
+    out = lp.placement_for(
+        db_session,
+        asset_id=world["gold"],
+        column="customer_id",
+        expectation_type="monitor:freshness",
+        user_id=world["me"].id,
+        config={"column": "customer_id"},
+    )
+    assert out["recommendation"] is None
+    assert out["equivalent_upstream_checks"] == [] and out["restricted_equivalent_checks"] == 0
+    assert out["origins"]  # provenance is still shown
+
+
 def test_a_different_check_type_upstream_is_not_an_equivalent(
     db_session: Session, world: dict[str, Any]
 ) -> None:
@@ -217,6 +266,24 @@ def test_annotate_is_fail_soft_per_suggestion_and_keeps_the_session_usable(
     assert calls == ["boom", "customer_id"]
     # The aborted statement was contained by the SAVEPOINT: the outer transaction still works.
     assert db_session.execute(text("SELECT 1")).scalar() == 1
+
+
+def test_annotate_compares_the_suggestions_own_parameters(
+    db_session: Session, world: dict[str, Any]
+) -> None:
+    params = {"column": "customer_id", "min_value": 1, "max_value": 9}
+    upstream = _suite(db_session, world["conn"], world["me"], world["raw"])
+    check = _check(db_session, upstream, "expect_column_values_to_be_between", "customer_id")
+    check.config = dict(params)
+    db_session.flush()
+    suite = _suite(db_session, world["conn"], world["me"], world["gold"])
+    suggestions: list[dict[str, Any]] = [
+        {"expectation_type": "expect_column_values_to_be_between", "config": dict(params)}
+    ]
+    lp.annotate_suggestions(
+        db_session, suite=suite, user_id=world["me"].id, suggestions=suggestions
+    )
+    assert suggestions[0]["lineage"]["recommendation"] == lp.ALREADY_COVERED_UPSTREAM
 
 
 def test_annotate_skips_a_suite_with_no_asset(db_session: Session, world: dict[str, Any]) -> None:

@@ -5,15 +5,19 @@ check already runs upstream. It is ADVICE, never a filter: a column pair records
 not equality (`amount → daily_revenue` is an aggregate; a join can fan out a key), so the
 suggestion is always kept and the reviewer decides. Two rules keep the advice honest:
 
-* **Only a pass-through chain** — the same (engine-folded) column name on every hop — may claim
+* **Only a same-name chain** — the same (engine-folded) column name on every hop — may claim
   "an equivalent check already covers this upstream" or "place it at the origin". A renamed or
-  derived column gets its provenance shown and nothing more.
+  derived column gets its provenance shown and nothing more. Same name is a heuristic, not proof
+  of a copy (`SUM(amount) AS amount` keeps the name), so the UI says "same column name upstream".
+* **Equivalent = same type AND same parameters.** Monitor kinds (freshness, volume…) never get a
+  recommendation: they measure the table they run on, not the column's upstream.
 * **Suite detail stays behind grants** (ADR 0037): an upstream check the requester cannot view
   is counted, never named.
 """
 
 from __future__ import annotations
 
+import json
 import uuid
 from collections import deque
 from dataclasses import dataclass
@@ -32,6 +36,16 @@ log = get_logger(__name__)
 #: The two recommendations a suggestion can carry (absent ⇒ nothing to say).
 ALREADY_COVERED_UPSTREAM = "already_covered_upstream"
 PLACE_AT_ORIGIN = "place_at_origin"
+
+#: Monitor kinds measure the TABLE they run on (a stalled downstream job, a dropped row count) —
+#: an upstream monitor on the same column says nothing about them, so no placement/dedup claim.
+_MONITOR_PREFIX = "monitor:"
+
+
+def _params(config: dict[str, Any] | None) -> str:
+    """A check's parameters minus its column — what must match for two checks to be equivalent."""
+    rest = {k: v for k, v in (config or {}).items() if k != "column"}
+    return json.dumps(rest, sort_keys=True, default=str)
 
 
 @dataclass(frozen=True)
@@ -78,7 +92,7 @@ def _equivalent_checks(
     *,
     expectation_type: str,
 ) -> list[tuple[Check, Suite, _Node]]:
-    """Checks of the SAME expectation type on a pass-through upstream column."""
+    """Checks of the SAME expectation type on a pass-through upstream column (any parameters)."""
     if not nodes:
         return []
     by_asset: dict[uuid.UUID, set[str]] = {}
@@ -108,8 +122,14 @@ def placement_for(
     column: str,
     expectation_type: str,
     user_id: uuid.UUID | None,
+    config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """The `lineage` annotation for one suggested check on ``asset_id.column``."""
+    """The `lineage` annotation for one suggested check on ``asset_id.column``.
+
+    An upstream check is an *equivalent* only with the same type AND the same parameters (minus
+    the column): `between 0..1e6` upstream does not cover a suggested `between 0..100`. Same type
+    with other parameters is counted as ``different_parameters_upstream``, never as coverage.
+    """
     trace = lineage_columns.trace_column(
         session, asset_id, column, direction=lineage_columns.TraceDirection.UPSTREAM
     )
@@ -117,9 +137,16 @@ def placement_for(
     assets = {a.id: a for a in session.scalars(select(Asset).where(Asset.id.in_(ids)))}
     namespaces = {aid: str(a.namespace) for aid, a in assets.items()}
     pass_through = _pass_through_nodes(trace, namespaces)
-    equivalents = _equivalent_checks(
-        session, pass_through, namespaces, expectation_type=expectation_type
+    is_monitor = expectation_type.startswith(_MONITOR_PREFIX)
+    same_type = (
+        []
+        if is_monitor
+        else _equivalent_checks(
+            session, pass_through, namespaces, expectation_type=expectation_type
+        )
     )
+    wanted = _params(config)
+    equivalents = [(c, s, n) for c, s, n in same_type if _params(c.config) == wanted]
     levels = (
         effective_permissions(session, [s for _, s, _ in equivalents], user_id)
         if user_id is not None and equivalents
@@ -148,8 +175,10 @@ def placement_for(
                 "has_equivalent_check": node in covered_nodes,
             }
         )
-    if equivalents:
-        recommendation: str | None = ALREADY_COVERED_UPSTREAM
+    if is_monitor:
+        recommendation: str | None = None
+    elif equivalents:
+        recommendation = ALREADY_COVERED_UPSTREAM
     elif any(o["pass_through"] for o in origins):
         recommendation = PLACE_AT_ORIGIN
     else:
@@ -172,6 +201,8 @@ def placement_for(
         ],
         # Equivalents on suites the requester cannot view: counted, never named (ADR 0037).
         "restricted_equivalent_checks": len(equivalents) - len(visible),
+        # Same check type on a same-name upstream column, but different parameters — not coverage.
+        "different_parameters_upstream": len(same_type) - len(equivalents),
         "recommendation": recommendation,
     }
 
@@ -203,6 +234,7 @@ def annotate_suggestions(
                     column=column,
                     expectation_type=str(suggestion.get("expectation_type")),
                     user_id=user_id,
+                    config=suggestion.get("config"),
                 )
         except Exception as exc:
             log.warning(
