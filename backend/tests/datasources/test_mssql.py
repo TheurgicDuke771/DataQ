@@ -251,6 +251,28 @@ def test_a_private_ca_is_written_once_and_used_as_the_only_trust() -> None:
     assert other != first
 
 
+def test_a_planted_file_at_a_guessable_path_is_never_trusted() -> None:
+    """The bundle lives in a private, unguessable directory — not a content-hash name in the
+    shared temp dir, where another local user could pre-create it holding their own CA.
+    """
+    import hashlib
+    import os
+    import stat
+    import tempfile
+
+    pem = _pem()
+    digest = hashlib.sha256(pem.encode("ascii")).hexdigest()[:32]
+    planted = Path(tempfile.gettempdir()) / f"dataq-mssql-ca-{digest}.pem"
+    planted.write_text("attacker CA")
+    try:
+        path = Path(MSSQL.connect_args(_config(ca_certificate=pem), 10)["cafile"])
+        assert path != planted
+        assert path.read_text() == pem
+        assert stat.S_IMODE(os.stat(path.parent).st_mode) == 0o700
+    finally:
+        planted.unlink()
+
+
 class _FakeCredential:
     instances: ClassVar[list[_FakeCredential]] = []
 
@@ -583,7 +605,11 @@ def test_a_refused_client_secret_is_a_dead_credential() -> None:
 
 
 def test_a_database_the_login_cannot_open_is_not_a_dead_credential() -> None:
-    exc = RuntimeError('Cannot open database "dq" requested by the login. The login failed.')
+    """SQL Server sends 4060 AND an 18456 for it, and pytds joins the messages into one text."""
+    exc = RuntimeError(
+        'Cannot open database "dq" requested by the login. The login failed. '
+        "Login failed for user 'reader'."
+    )
     assert not is_auth_failure(exc)
 
 

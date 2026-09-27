@@ -102,6 +102,20 @@ _DIALECT_FORBIDDEN: dict[str, frozenset[str]] = {
             "reconfigure",
             "backup",
             "restore",
+            "dump",
+            "load",
+            # T-SQL runs several statements in one batch with no `;` between them, so every
+            # statement keyword that changes state must be named, not just the leading one.
+            "writetext",
+            "updatetext",
+            "deny",
+            "receive",
+            "send",
+            "enable",
+            "disable",
+            "checkpoint",
+            "setuser",
+            "revert",
         }
     ),
 }
@@ -124,8 +138,12 @@ def _strip_noncode(
     while i < n:
         pair = sql[i : i + 2]
         if pair == "--":
+            # A lone CR ends a line comment too (PostgreSQL and SQL Server both treat it as a
+            # line break), so the comment must not be read as running on to the next LF.
             nl = sql.find("\n", i)
-            i = n if nl == -1 else nl
+            end = n if nl == -1 else nl
+            cr = sql.find("\r", i, end)  # bounded by the LF: each comment is scanned once
+            i = end if cr == -1 else cr
             out.append(" ")
         elif pair == "/*":
             end = sql.find("*/", i + 2)

@@ -424,3 +424,29 @@ def test_tsql_only_keywords_are_forbidden_on_mssql(keyword: str) -> None:
     # Unknown dialect: every dialect's list applies.
     with pytest.raises(CustomSqlInvalidError):
         validate_query(query)
+
+
+def test_a_lone_carriage_return_ends_a_line_comment() -> None:
+    """PostgreSQL and SQL Server end `--` at a CR; reading on to the LF would hide the DELETE."""
+    for connection_type in (None, "postgres", "mssql"):
+        with pytest.raises(CustomSqlInvalidError):
+            validate_query(
+                "SELECT 1 FROM {batch} --x\rDELETE FROM t", connection_type=connection_type
+            )
+    validate_query("SELECT 1 FROM {batch} -- note\r\nWHERE 1 = 1", connection_type="mssql")
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "WRITETEXT t.c @p 'x'",
+        "UPDATETEXT t.c @p 0 NULL 'x'",
+        "DENY SELECT ON t TO public",
+        "DISABLE TRIGGER trg ON t",
+        "CHECKPOINT",
+    ],
+)
+def test_tsql_runs_unseparated_statements_so_each_write_keyword_is_refused(statement: str) -> None:
+    """T-SQL needs no `;` between statements: the second one below would run in the same batch."""
+    with pytest.raises(CustomSqlInvalidError):
+        validate_query(f"SELECT TOP 1 c FROM {{batch}} {statement}", connection_type="mssql")

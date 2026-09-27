@@ -182,23 +182,29 @@ class MssqlConfig(GenericSqlConfig):
 # ───────────────────────────── TLS ─────────────────────────────
 
 _ca_lock = threading.Lock()
+_ca_dir: str | None = None
 
 
 def _ca_file(config: MssqlConfig) -> str:
-    """The CA bundle python-tds must verify against — never ``None``, which would turn TLS off."""
+    """The CA bundle python-tds must verify against — never ``None``, which would turn TLS off.
+
+    A private CA is written into a directory this process created (``mkdtemp``: mode 0700, a
+    fresh name), never a predictable path in the shared temp dir, where another local user
+    could plant a file of their own CA first and have it trusted.
+    """
+    global _ca_dir
     if config.ca_certificate is None:
         import certifi
 
         return str(certifi.where())
     pem = config.ca_certificate.encode("ascii")
-    path = os.path.join(
-        tempfile.gettempdir(), f"dataq-mssql-ca-{hashlib.sha256(pem).hexdigest()[:32]}.pem"
-    )
     with _ca_lock:
+        if _ca_dir is None:
+            _ca_dir = tempfile.mkdtemp(prefix="dataq-mssql-ca-")
+        path = os.path.join(_ca_dir, f"{hashlib.sha256(pem).hexdigest()[:32]}.pem")
         if not os.path.exists(path):
-            # Public certificates only (validated PEM), keyed by content: a race writes the same
-            # bytes, and the atomic rename means a reader never sees a partial file.
-            fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".pem")
+            # Keyed by content; the atomic rename means a reader never sees a partial file.
+            fd, tmp = tempfile.mkstemp(dir=_ca_dir, suffix=".pem")
             with os.fdopen(fd, "wb") as handle:
                 handle.write(pem)
             os.replace(tmp, path)
