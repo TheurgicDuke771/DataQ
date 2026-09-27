@@ -99,10 +99,13 @@ read-only at the server (TDS has no such setting) — the login must be a `db_da
 ticked row was verified by an **executed** run against a live Azure SQL database with both auth
 modes (every SQL-capable expectation type, custom SQL, freshness over
 `datetimeoffset`/`datetime2`/`date`, volume, anomaly measurement, profiler, schema drift,
-comparison reads, inventory enumeration, browsing and a persisted suite run). That battery is
+comparison reads, inventory enumeration, browsing and a persisted suite run), on both the
+python-tds and the ODBC lane, plus a Fabric Warehouse and Lakehouse SQL endpoint on the ODBC
+lane (where seven multi-column / uniqueness types are refused — GX builds a temporary table
+Fabric does not support). That battery is
 an opt-in live lane (`tests/integration/test_mssql_live.py`), not CI — no SQL Server can run in
 CI without a commercial licence. The four regex expectations are refused on SQL Server (no T-SQL
-translation in GX), and Fabric SQL endpoints do not work on the default driver yet — see
+translation in GX), and Fabric SQL endpoints need the user-installed ODBC lane — see
 [Datasources & checks](../guides/datasources-checks.md#sql-server-azure-sql-fabric-t-sql).
 
 ˢ **S3 means AWS S3 *and* any S3-compatible store** — MinIO, Ceph/RadosGW, Cloudflare R2,

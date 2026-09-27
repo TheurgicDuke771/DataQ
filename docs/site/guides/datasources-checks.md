@@ -309,7 +309,8 @@ endpoints (Warehouse, Lakehouse SQL analytics endpoint, SQL database in Fabric).
 the engine, not a cloud (ADR [0010](../adr/0010-provider-agnostic-infrastructure-seams.md)),
 and sits on the same generic SQL base as PostgreSQL. The driver decision and its trade-offs are
 [ADR 0044](../adr/0044-mssql-tds-driver-and-entra-auth.md). Live-verified against Azure SQL
-Database with both auth modes.
+Database with both auth modes on both driver lanes, and against a Microsoft Fabric Warehouse and
+Lakehouse SQL analytics endpoint on the ODBC lane.
 
 - **Fields:** host (a bare hostname — e.g. `myserver.database.windows.net`; no scheme, port or
   `\instance`: connect to a named instance by its port), port (default 1433), database, an
@@ -362,7 +363,10 @@ Database with both auth modes.
       `odbc` on the connection; an optional `odbc_driver` names a different installed driver.
       If the lane is chosen but the driver or `pyodbc` is missing, **Test** says exactly that
       and how to fix it. On this lane the driver's own certificate checking applies (encryption
-      required, server certificate verified against the image's trust store).
+      required, server certificate and hostname verified against the image's trust store —
+      connecting by IP is refused here too). A service principal still logs in with a token
+      DataQ requests from Entra ID, so a wrong client secret fails at once with Entra's own
+      error rather than a login timeout.
 - **Microsoft Fabric SQL endpoints need the ODBC lane today.** Over the default `python-tds`
   driver, Fabric rejects the login after routing it (a known incompatibility in that driver,
   still being worked on); Test and runs say so and point at the ODBC lane instead of showing the
@@ -370,6 +374,16 @@ Database with both auth modes.
   two things are set up on the Fabric side: the tenant setting **Service principals can use
   Fabric APIs**, and a workspace role (or item permission) for the principal. If Fabric refuses
   the principal's login on the ODBC lane, Test names those two prerequisites.
+
+  On a Fabric Warehouse or Lakehouse SQL endpoint, **seven expectation types are not
+  available**: *Column values unique*, *Compound columns unique*, *Values unique within
+  record*, *Column A greater than B*, *Column pair equal*, *Column pair in set* and
+  *Multicolumn sum*. Great Expectations evaluates them on SQL Server through a temporary table,
+  which Fabric refuses, so DataQ refuses them when you save the check on a Fabric connection
+  (the editor still lists them — the save explains why). Use custom SQL instead, e.g.
+  `SELECT id FROM {batch} GROUP BY id HAVING COUNT(*) > 1` for uniqueness. A Fabric endpoint's
+  first login after it has been idle can take longer than Test Connection's 10 seconds — test
+  again; runs wait up to a minute.
 - **Everything runs in the database**, as on PostgreSQL. A run target takes no sampling block
   (so no `TABLESAMPLE`). Freshness reads `datetimeoffset` as the instant it is (offset
   honoured), `datetime2`/`datetime` as UTC, and `date` as midnight UTC.
