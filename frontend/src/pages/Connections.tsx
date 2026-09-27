@@ -30,6 +30,7 @@ import {
 } from '../api/connections';
 import { useCanAuthor, useCanMutateConnections, useWorkspaceRole } from '../auth/useMe';
 import { ConnectionTypeAvatar } from '../components/connections/connectionVisuals';
+import { activeAuthOption } from '../components/connections/connectionFormSpec';
 import { formatTimestamp } from '../components/results/resultsFormat';
 import { expiryLabel, expiryStatus } from '../utils/expiry';
 import { ReauthModal } from '../components/connections/ReauthModal';
@@ -239,9 +240,12 @@ function HealthBadge({ health }: { health: HealthState }) {
 function CredentialExpiryBadge({
   expiresAt,
   checkedAt,
+  notReadable,
 }: {
   expiresAt?: string | null;
   checkedAt?: string | null;
+  /** This credential's expiry exists but is not readable by DataQ (why, and what to do). */
+  notReadable?: string;
 }) {
   const status = expiryStatus(expiresAt);
   const label = expiryLabel(status);
@@ -253,6 +257,13 @@ function CredentialExpiryBadge({
     );
   }
   // No expiry to show.
+  if (notReadable) {
+    return (
+      <Tooltip title={notReadable}>
+        <Badge status="default" text="expiry not visible" />
+      </Tooltip>
+    );
+  }
   if (!checkedAt) {
     return (
       <Tooltip title="DataQ has not read this credential's expiry yet. It is checked when the credential is written and on a periodic sweep.">
@@ -371,6 +382,7 @@ function ConnectionCard({
             <CredentialExpiryBadge
               expiresAt={connection.credential_expires_at}
               checkedAt={connection.credential_expiry_checked_at}
+              notReadable={activeAuthOption(connection.type, connection.config)?.expiryNotReadable}
             />
             {(connection.consecutive_run_failures ?? 0) > 0 && (
               <Tooltip

@@ -281,15 +281,16 @@ _AUTH_MARKERS: tuple[str, ...] = (
     # failed": error 4060 ("Cannot open database requested by the login. The login failed.") is
     # a missing database grant, not a dead credential.
     "login failed for user",
-    # Microsoft Entra ID: an invalid / expired client secret, or an unknown application.
-    "aadsts7000215",
-    "aadsts7000222",
+    # Microsoft Entra ID: an unknown application (the secret markers are with ADLS's below).
     "aadsts700016",
     # Azure ADLS Gen2 / Blob.
     "authenticationfailed",
     "server failed to authenticate the request",
     "signature did not match",
     "invalid_client",
+    # Entra ID service principal (ADLS, SQL Server): wrong / expired client secret.
+    "aadsts7000215",
+    "aadsts7000222",
     # AWS S3 (and S3-compatible stores, which reuse the same error codes).
     "invalidaccesskeyid",
     "signaturedoesnotmatch",

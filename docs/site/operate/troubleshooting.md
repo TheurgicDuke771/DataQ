@@ -18,7 +18,7 @@ Common problems and where to look. For deeper telemetry (logs, traces, where the
 the credential again.**
 
 You changed a field that decides where the credential is sent — a host, URL, or URI
-(Snowflake `account`, ADLS `account_url`, S3/dbt `endpoint_url`, Unity Catalog
+(Snowflake `account`, ADLS `account_url` / `auth_type` / `tenant_id` / `client_id`, S3/dbt `endpoint_url`, Unity Catalog
 `workspace_url`, Iceberg `catalog_uri` / `warehouse` / `properties` / `secret_property`,
 Airflow `base_url`, dbt
 `artifacts_uri`). Re-enter the credential in the same save and it will go through;

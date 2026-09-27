@@ -5,7 +5,7 @@
 | Datasource | Connection | Check authoring | Execution |
 |---|---|---|---|
 | Snowflake (DEV/QA/UAT) | account + user + key/PAT | ✅ | ✅ |
-| ADLS Gen2 (flat files) | account URL + container, SAS | ✅ | ✅ |
+| ADLS Gen2 (flat files) — and ADLS-compatible endpoints such as [Fabric OneLake](#onelake-fabric-lakehouse-files) | account URL + container, SAS **or** Entra service principal | ✅ | ✅ |
 | AWS S3 **and S3-compatible** (flat files) | bucket + region, access key (+ optional endpoint) | ✅ | ✅ |
 | Unity Catalog (Databricks) | workspace URL + warehouse + PAT | ✅ | ✅ |
 | Apache Iceberg | catalog URI + catalog type (REST/SQL/Glue/Hive) + optional storage credential | ✅ | ✅ |
@@ -31,10 +31,46 @@ atomically via **Re-auth**. Leave the passphrase blank for an unencrypted key.
 Key-pair connections also require **Role** (the GX key-pair form mandates one for suite
 runs, so it is validated when the connection is saved).
 
+ADLS Gen2 supports two auth modes: a **SAS token** (the default, and what every connection
+created before this option existed uses) and an **Entra ID service principal** — the
+directory (**Tenant ID**) and application (**Client ID**) IDs, plus the app's **client secret**
+as the credential. A service principal needs a *data* role on the container (e.g. *Storage
+Blob Data Reader*); **Test** lists one entry to prove it, because the container-properties call
+alone also succeeds for a principal that holds only the control-plane *Contributor* role and
+would then fail every read. DataQ cannot read a client secret's expiry — it lives in Entra ID —
+so the connection card says **expiry not visible** instead of counting down; track it where the
+secret was created and **Re-auth** before it lapses. A wrong or expired client secret is
+recorded as a rejected credential; a wrong tenant or client ID, or a missing data role, is
+reported as a configuration or permission problem instead.
+
+### OneLake (Fabric lakehouse files)
+
+Microsoft Fabric OneLake serves the same Blob API, so an **ADLS Gen2** connection reads a
+lakehouse's `Files/` area — CSV and Parquet, with every flat-file check, freshness (including
+arrival-time), volume, the profiler, browsing and batch targets. There is no separate
+connection type:
+
+| Field | Value |
+|---|---|
+| Account URL | `https://onelake.blob.fabric.microsoft.com` |
+| Container | the Fabric **workspace** name or ID |
+| Auth type | **Service principal** — OneLake does not accept a stored SAS (its SAS is user-delegated and lasts at most an hour) |
+| Run target path | `<lakehouse>.Lakehouse/Files/<folder>/<file>`, e.g. `sales.Lakehouse/Files/orders/orders_2026-09-27.csv` |
+
+Prerequisites, in Fabric: the tenant setting *Service principals can use Fabric APIs* must be
+enabled, and the service principal must be a member of the workspace (Viewer is enough to
+read). OneLake reports a workspace the principal cannot see as **not found**, so a
+"table/path does not exist" failure on a correct workspace name usually means a missing
+workspace role. A batch target's prefix must reach inside an item
+(`<lakehouse>.Lakehouse/Files/...`): OneLake refuses a flat listing of the workspace root,
+though **Browse** starts there fine. Assets from OneLake are named
+`abfss://<workspace>@onelake.dfs.fabric.microsoft.com/...`. Only public-cloud Entra ID is
+supported for the token (`login.microsoftonline.com`).
+
 ### Moving a connection to a new host
 
 Editing a field that decides *where* the credential is sent — Snowflake `account`, ADLS
-`account_url`, S3/dbt `endpoint_url`, Unity Catalog `workspace_url`, Iceberg `catalog_uri` /
+`account_url` / `auth_type` / `tenant_id` / `client_id`, S3/dbt `endpoint_url`, Unity Catalog `workspace_url`, Iceberg `catalog_uri` /
 `warehouse` / `properties` / `secret_property`, PostgreSQL / MySQL `host` / `port`, SQL Server `host` /
 `port` / `auth_type` / `tenant_id` / `client_id` / `ca_certificate` / `driver`, Airflow
 `base_url`, dbt `artifacts_uri` —
