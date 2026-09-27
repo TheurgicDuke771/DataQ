@@ -308,3 +308,62 @@ export async function listConnectionVersions(id: string): Promise<ConnectionVers
   const { data } = await api.get<ConnectionVersion[]>(`/connections/${id}/versions`);
   return data;
 }
+
+/** One name at a level of a catalog tree; `selectable: false` = DataQ cannot target it. */
+export interface CatalogEntry {
+  name: string;
+  selectable: boolean;
+}
+
+/** Mirrors `GET /connections/{id}/browse/catalog` — one level of catalog → schema → table. */
+export interface CatalogBrowse {
+  level: 'catalog' | 'schema' | 'table';
+  catalog: string | null;
+  schema: string | null;
+  entries: CatalogEntry[];
+  /** More names exist at this level than `limit`; `entries` is only the first page. */
+  truncated: boolean;
+  limit: number;
+}
+
+export async function browseCatalog(
+  id: string,
+  params: { catalog?: string; schema?: string; limit?: number },
+  signal?: AbortSignal,
+): Promise<CatalogBrowse> {
+  const { data } = await api.get<CatalogBrowse>(`/connections/${id}/browse/catalog`, {
+    params,
+    signal,
+  });
+  return data;
+}
+
+export interface BrowseFile {
+  path: string;
+  size: number | null;
+  last_modified: string | null;
+}
+
+/** Mirrors `GET /connections/{id}/browse/files` — the folders + files directly under `prefix`. */
+export interface FileBrowse {
+  /** The connection's container (ADLS) or bucket (S3). */
+  root: string;
+  prefix: string;
+  folders: string[];
+  files: BrowseFile[];
+  /** More entries exist under `prefix` than `limit`; the lists are only the first page. */
+  truncated: boolean;
+  limit: number;
+}
+
+export async function browseFiles(
+  id: string,
+  params: { prefix?: string; limit?: number },
+  signal?: AbortSignal,
+): Promise<FileBrowse> {
+  const { data } = await api.get<FileBrowse>(`/connections/${id}/browse/files`, {
+    params,
+    signal,
+  });
+  return data;
+}

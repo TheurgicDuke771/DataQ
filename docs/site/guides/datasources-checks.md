@@ -256,9 +256,37 @@ expectation can sit side by side, so the label is per check, not per run.
 ## Author a check
 
 1. Create (or open) a **suite** and point it at a **target** — a table (Snowflake/UC), a
-   file/path or batch pattern (ADLS/S3), or an Iceberg `namespace.table`.
+   file/path or batch pattern (ADLS/S3), or an Iceberg `namespace.table`. On Unity Catalog,
+   ADLS Gen2 and S3 you can **browse** for it instead of typing it — see below.
 2. **Add check** opens a dedicated page (`/suites/<id>/checks/new`): pick a **category**,
    then the check type, then fill its config. The authoring paths:
+
+### Browsing for a run target (Unity Catalog, ADLS Gen2, S3)
+
+The suite form offers a picker beside the target fields; typing the target still works
+everywhere, and is the only way on Snowflake and Iceberg.
+
+- **Unity Catalog — Browse catalog…** lists catalogs, then the chosen catalog's schemas,
+  then that schema's tables; picking a table fills **Catalog**, **Schema** and **Table**.
+  The names come from `system.information_schema`, so the list is what the connection's
+  credential can see — a table it has no privilege on is not shown, and an empty level
+  means "nothing visible to this credential", not "nothing exists". The `system`,
+  `samples` and `__databricks_internal` catalogs are never listed.
+- **ADLS Gen2 / S3 — Browse files…** (single-file mode) walks the folders of the
+  connection's one container or bucket and fills **File path** with the file you pick.
+  **Browse folders…** (batch mode) fills **Prefix** with the folder you are in.
+
+Each level is **one bounded request** of up to 200 names. When a level holds more, the
+picker says so ("Showing the first 200 … there are more") rather than presenting a partial
+list as the whole thing — type the name into the field instead. A name DataQ cannot target
+(anything that is not a plain identifier: letters, digits, `_` and `$`, not starting with a
+digit) is listed but not pickable, since a suite pointed at it could not run.
+
+Browsing opens the datasource with the connection's stored credential, so it needs the
+**Member** role (the same bar as testing a connection); Viewers cannot author suites and do
+not get the picker. Only names, sizes and timestamps come back — never a credential or a
+row. The same listings are available over the REST API as
+`GET /connections/{id}/browse/catalog` and `GET /connections/{id}/browse/files`.
 
 ### GX expectation (all datasources)
 

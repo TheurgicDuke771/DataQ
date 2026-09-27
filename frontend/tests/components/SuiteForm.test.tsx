@@ -4,7 +4,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { Connection } from '../../src/api/connections';
+import { browseCatalog, browseFiles, type Connection } from '../../src/api/connections';
 import {
   type BatchPreviewResponse,
   createSuite,
@@ -25,6 +25,13 @@ vi.mock('../../src/api/suites', async (importOriginal) => {
   };
 });
 
+vi.mock('../../src/api/connections', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/api/connections')>();
+  return { ...actual, browseCatalog: vi.fn(), browseFiles: vi.fn() };
+});
+
+const mockBrowseCatalog = vi.mocked(browseCatalog);
+const mockBrowseFiles = vi.mocked(browseFiles);
 const mockCreate = vi.mocked(createSuite);
 const mockUpdate = vi.mocked(updateSuite);
 const mockPreview = vi.mocked(previewBatchTarget);
@@ -840,5 +847,143 @@ describe('SuiteForm — sampling', () => {
 
     // Inline and persistent, and it names the check the author has to go fix.
     expect(await screen.findByText(/Conflicting check: rowcount_guard\./)).toBeInTheDocument();
+  });
+});
+
+// ── live browse pickers ──────────────────────────────────────────────────────
+
+describe('SuiteForm — browse pickers', () => {
+  const ucConnection: Connection = {
+    id: 'conn-uc',
+    name: 'uc-dev',
+    type: 'unity_catalog',
+    env: 'dev',
+    config: {},
+    has_secret: true,
+    created_by: 'u1',
+  };
+  const s3Connection: Connection = {
+    id: 'conn-s3',
+    name: 's3-dev',
+    type: 's3',
+    env: 'dev',
+    config: { bucket: 'landing' },
+    has_secret: true,
+    created_by: 'u1',
+  };
+
+  afterEach(() => {
+    mockBrowseCatalog.mockReset();
+    mockBrowseFiles.mockReset();
+  });
+
+  it('fills catalog, schema and table from the catalog browser and saves them as the target', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue(suite());
+    mockBrowseCatalog
+      .mockResolvedValueOnce({
+        level: 'catalog',
+        catalog: null,
+        schema: null,
+        entries: [{ name: 'dataq_retail', selectable: true }],
+        truncated: false,
+        limit: 200,
+      })
+      .mockResolvedValueOnce({
+        level: 'schema',
+        catalog: 'dataq_retail',
+        schema: null,
+        entries: [{ name: 'gold', selectable: true }],
+        truncated: false,
+        limit: 200,
+      })
+      .mockResolvedValueOnce({
+        level: 'table',
+        catalog: 'dataq_retail',
+        schema: 'gold',
+        entries: [{ name: 'daily_revenue', selectable: true }],
+        truncated: false,
+        limit: 200,
+      });
+    renderForm({ connections: [ucConnection] });
+
+    await user.type(screen.getByLabelText('Name'), 'revenue');
+    await pickConnection(user, /uc-dev/);
+    await user.click(await screen.findByRole('button', { name: /Browse catalog/ }));
+    await user.click(await screen.findByRole('button', { name: /dataq_retail/ }));
+    await user.click(await screen.findByRole('button', { name: /gold/ }));
+    await user.click(await screen.findByRole('button', { name: /daily_revenue/ }));
+
+    expect(mockBrowseCatalog.mock.calls[0][0]).toBe('conn-uc');
+    await waitFor(() => expect(screen.getByLabelText('Table')).toHaveValue('daily_revenue'));
+    expect(screen.getByLabelText('Catalog')).toHaveValue('dataq_retail');
+    expect(screen.getByLabelText('Schema (optional)')).toHaveValue('gold');
+
+    await user.click(screen.getByRole('button', { name: /Create & add checks/ }));
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
+    expect(mockCreate.mock.calls[0][0].target).toEqual({
+      catalog: 'dataq_retail',
+      schema: 'gold',
+      table: 'daily_revenue',
+    });
+  });
+
+  it('fills a single-file path from the file browser, rooted at the bucket', async () => {
+    const user = userEvent.setup();
+    mockBrowseFiles.mockResolvedValueOnce({
+      root: 'landing',
+      prefix: '',
+      folders: [],
+      files: [{ path: 'orders.csv', size: 10, last_modified: null }],
+      truncated: false,
+      limit: 200,
+    });
+    renderForm({ connections: [s3Connection] });
+
+    await pickConnection(user, /s3-dev/);
+    await user.click(await screen.findByRole('button', { name: /Browse files/ }));
+    expect(await screen.findByRole('navigation')).toHaveTextContent('landing');
+    await user.click(await screen.findByRole('button', { name: /orders\.csv/ }));
+
+    await waitFor(() => expect(screen.getByLabelText('File path')).toHaveValue('orders.csv'));
+    expect(mockBrowseFiles.mock.calls[0][0]).toBe('conn-s3');
+  });
+
+  it('fills a batch prefix from the folder browser', async () => {
+    const user = userEvent.setup();
+    mockBrowseFiles
+      .mockResolvedValueOnce({
+        root: 'landing',
+        prefix: '',
+        folders: ['raw/'],
+        files: [],
+        truncated: false,
+        limit: 200,
+      })
+      .mockResolvedValueOnce({
+        root: 'landing',
+        prefix: 'raw/',
+        folders: [],
+        files: [],
+        truncated: false,
+        limit: 200,
+      });
+    renderForm({ connections: [s3Connection] });
+
+    await pickConnection(user, /s3-dev/);
+    await user.click(await screen.findByText('Batch pattern'));
+    await user.click(await screen.findByRole('button', { name: /Browse folders/ }));
+    await user.click(await screen.findByRole('button', { name: /raw\// }));
+    await user.click(await screen.findByRole('button', { name: 'Use raw/' }));
+
+    await waitFor(() => expect(screen.getByLabelText('Prefix (optional)')).toHaveValue('raw/'));
+  });
+
+  it('offers no browser for a datasource it cannot list, keeping typed entry', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await pickConnection(user, /sf-dev/);
+    expect(await screen.findByLabelText('Table')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Browse/ })).not.toBeInTheDocument();
   });
 });
