@@ -5055,9 +5055,98 @@ been worse than the problem:</p>
 the worker, and charging them for one would serialise the cheapest work on the
 platform. They are <strong>not</strong> exempt from a comparison check, whose two sides
 materialise in the worker on every datasource — that estimate is added on top, and
-is the whole estimate on an otherwise-pushdown suite. Iceberg has no estimator yet
-— its <code>scan().count()</code> probe is tracked separately — and is logged as unmetered
-rather than counted as free.</p>
+is the whole estimate on an otherwise-pushdown suite.</p>
+<p><strong>Iceberg</strong> is sized from the same manifest plan its row-cap probe reads. That is
+metadata only, never a data read. It reserves the <strong>larger</strong> of two figures:
+planned rows × <code>RUN_ADMISSION_ROW_BYTES</code>, and data-file bytes × the format's
+expansion factor (Parquet 9×). Each figure alone is blind in a different way:</p>
+<ul>
+<li><strong>Rows</strong> are width-blind: a 40-column table costs the same as a 6-column one.</li>
+<li><strong>File bytes</strong> miss dictionary-encoded strings, which are tiny on disk and
+  full-width once read into memory.</li>
+</ul>
+<p>A table over <code>RUN_MAX_SCAN_ROWS_ICEBERG</code> reserves <strong>nothing</strong>, because the row-cap
+probe refuses it before any data is read. Even the cap's worth, 3M rows × 1 KiB
+at the defaults, would be about three times the whole budget, and would hold back
+a run that is certain to be refused until the worker drained.</p>
+<p>A suite of freshness/volume monitors answers from snapshot metadata and reserves
+nothing (<code>run_admission_iceberg_metadata_only</code>). The exception is a snapshot whose
+summary cannot prove there are no row-level deletes: merge-on-read, or a writer
+that omits the delete totals. There, the volume monitor falls back to a
+materialising <code>scan().count()</code>. That case is reserved for like a full read and
+logged as <code>run_admission_iceberg_monitor_fallback</code> with the reason. A freshness
+fallback caused by a data file that lacks column bounds is only visible by
+planning the scan. It reads a single column and is not reserved for.</p>
+<p>Measured on a local MinIO warehouse with a SQLite catalog, using the real
+<code>IcebergCheckRunner</code> and five expectations, one process per table. The actual
+figure is the peak RSS increase over the process baseline:</p>
+<table>
+<thead>
+<tr>
+<th>Table</th>
+<th>Columns</th>
+<th>Rows</th>
+<th>Data files</th>
+<th>Actual</th>
+<th>Reserved</th>
+<th>Basis</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>narrow</td>
+<td>6</td>
+<td>1M</td>
+<td>17.5 MiB</td>
+<td>309 MiB</td>
+<td>977 MiB</td>
+<td>rows</td>
+</tr>
+<tr>
+<td>narrow</td>
+<td>6</td>
+<td>2M</td>
+<td>35.1 MiB</td>
+<td>430 MiB</td>
+<td>1,953 MiB</td>
+<td>rows</td>
+</tr>
+<tr>
+<td>wide (random strings)</td>
+<td>20</td>
+<td>1M</td>
+<td>108 MiB</td>
+<td>1,245 MiB</td>
+<td>977 MiB</td>
+<td>rows</td>
+</tr>
+<tr>
+<td>wider (random strings)</td>
+<td>40</td>
+<td>500k</td>
+<td>111 MiB</td>
+<td>1,230 MiB</td>
+<td>1,000 MiB</td>
+<td>file bytes</td>
+</tr>
+<tr>
+<td>low-cardinality strings</td>
+<td>20</td>
+<td>1M</td>
+<td>22.6 MiB</td>
+<td>1,058 MiB</td>
+<td>977 MiB</td>
+<td>rows</td>
+</tr>
+</tbody>
+</table>
+<p>The narrow table reserves 3–4.5× more than it uses, the same over-reservation
+the row factor has always carried. The wide shapes come in 8–22% under. Most of
+that gap is a fixed ~190 MiB per run, the intercept of the narrow 1M → 2M line,
+which no lane's estimate counts. Without that intercept the wide rows are within
+8%. Neither figure measures the width of a dictionary-heavy table exactly. The
+figures in the low-cardinality row show that, and it is the same row-count
+blindness the Unity Catalog frame lane has.</p>
 <h4 id="database-growth-the-reads-a-user-waits-on">Database growth — the reads a user waits on<a class="headerlink" href="#database-growth-the-reads-a-user-waits-on" title="Permanent link">¶</a></h4>
 <p>p50 / p95 in milliseconds, page 1, over a scratch PostgreSQL 16 seeded with
 <code>generate_series</code>. The statement count beside each is what the budget gates.</p>

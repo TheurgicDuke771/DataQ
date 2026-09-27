@@ -6028,9 +6028,50 @@ Pushdown lanes bypass admission for the suite's own batch: they hold no dataset 
 the worker, and charging them for one would serialise the cheapest work on the
 platform. They are **not** exempt from a comparison check, whose two sides
 materialise in the worker on every datasource — that estimate is added on top, and
-is the whole estimate on an otherwise-pushdown suite. Iceberg has no estimator yet
-— its `scan().count()` probe is tracked separately — and is logged as unmetered
-rather than counted as free.
+is the whole estimate on an otherwise-pushdown suite.
+
+**Iceberg** is sized from the same manifest plan its row-cap probe reads. That is
+metadata only, never a data read. It reserves the **larger** of two figures:
+planned rows × `RUN_ADMISSION_ROW_BYTES`, and data-file bytes × the format's
+expansion factor (Parquet 9×). Each figure alone is blind in a different way:
+
+- **Rows** are width-blind: a 40-column table costs the same as a 6-column one.
+- **File bytes** miss dictionary-encoded strings, which are tiny on disk and
+  full-width once read into memory.
+
+A table over `RUN_MAX_SCAN_ROWS_ICEBERG` reserves **nothing**, because the row-cap
+probe refuses it before any data is read. Even the cap's worth, 3M rows × 1 KiB
+at the defaults, would be about three times the whole budget, and would hold back
+a run that is certain to be refused until the worker drained.
+
+A suite of freshness/volume monitors answers from snapshot metadata and reserves
+nothing (`run_admission_iceberg_metadata_only`). The exception is a snapshot whose
+summary cannot prove there are no row-level deletes: merge-on-read, or a writer
+that omits the delete totals. There, the volume monitor falls back to a
+materialising `scan().count()`. That case is reserved for like a full read and
+logged as `run_admission_iceberg_monitor_fallback` with the reason. A freshness
+fallback caused by a data file that lacks column bounds is only visible by
+planning the scan. It reads a single column and is not reserved for.
+
+Measured on a local MinIO warehouse with a SQLite catalog, using the real
+`IcebergCheckRunner` and five expectations, one process per table. The actual
+figure is the peak RSS increase over the process baseline:
+
+| Table | Columns | Rows | Data files | Actual | Reserved | Basis |
+|---|---|---|---|---|---|---|
+| narrow | 6 | 1M | 17.5 MiB | 309 MiB | 977 MiB | rows |
+| narrow | 6 | 2M | 35.1 MiB | 430 MiB | 1,953 MiB | rows |
+| wide (random strings) | 20 | 1M | 108 MiB | 1,245 MiB | 977 MiB | rows |
+| wider (random strings) | 40 | 500k | 111 MiB | 1,230 MiB | 1,000 MiB | file bytes |
+| low-cardinality strings | 20 | 1M | 22.6 MiB | 1,058 MiB | 977 MiB | rows |
+
+The narrow table reserves 3–4.5× more than it uses, the same over-reservation
+the row factor has always carried. The wide shapes come in 8–22% under. Most of
+that gap is a fixed ~190 MiB per run, the intercept of the narrow 1M → 2M line,
+which no lane's estimate counts. Without that intercept the wide rows are within
+8%. Neither figure measures the width of a dictionary-heavy table exactly. The
+figures in the low-cardinality row show that, and it is the same row-count
+blindness the Unity Catalog frame lane has.
 
 #### Database growth — the reads a user waits on
 
