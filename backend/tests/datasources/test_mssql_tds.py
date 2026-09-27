@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as dt
 import ipaddress
 import socket
+import threading
 from typing import Any
 
 import pytest
@@ -157,7 +158,7 @@ def test_install_refuses_an_unrecognised_driver(
 ) -> None:
     import pytds.tls
 
-    monkeypatch.setattr(mssql_tds, "_installed", False)
+    monkeypatch.setattr(mssql_tds, "_installed", threading.Event())
     monkeypatch.delattr(pytds.tls, "validate_host")
     with pytest.raises(RuntimeError, match="re-verify ADR 0044"):
         mssql_tds.install()

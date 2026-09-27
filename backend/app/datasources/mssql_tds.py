@@ -22,7 +22,7 @@ import threading
 from typing import Any
 
 _lock = threading.Lock()
-_installed = False
+_installed = threading.Event()
 
 
 def host_part(name: str) -> str:
@@ -97,11 +97,10 @@ class _RoutingSocketModule:
 
 def install() -> None:
     """Apply both fixes to the imported pytds. Idempotent and thread-safe."""
-    global _installed
-    if _installed:
+    if _installed.is_set():
         return
     with _lock:
-        if _installed:
+        if _installed.is_set():
             return
         import pytds
         import pytds.tls
@@ -115,4 +114,4 @@ def install() -> None:
             )
         pytds.tls.validate_host = validate_host
         pytds.socket = _RoutingSocketModule()
-        _installed = True
+        _installed.set()

@@ -85,7 +85,6 @@ def _env(name: str) -> str | None:
 DRIVER = _env("DRIVER") or "python-tds"
 ODBC = DRIVER == "odbc"
 _pytds_only = pytest.mark.skipif(ODBC, reason="python-tds lane behaviour")
-_odbc_only = pytest.mark.skipif(not ODBC, reason="ODBC lane behaviour")
 
 
 def _sql_config() -> dict[str, Any]:
