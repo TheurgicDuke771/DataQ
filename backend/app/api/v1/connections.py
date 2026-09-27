@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from pydantic import ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
 
@@ -17,8 +17,8 @@ from backend.app.core.secrets import SecretStore, get_secret_store
 from backend.app.core.uri_credentials import redact_config_uris
 from backend.app.db.models import Connection, User
 from backend.app.db.session import get_db
+from backend.app.services import browse_service, credential_health
 from backend.app.services import connection_service as svc
-from backend.app.services import credential_health
 
 router = APIRouter(tags=["connections"])
 
@@ -403,3 +403,117 @@ def list_connection_versions(
         ConnectionVersionRead.model_validate(v)
         for v in svc.list_connection_versions(db, connection_id)
     ]
+
+
+# ───────────────────────── interactive browse (#466) ───────────────
+
+
+class CatalogEntryRead(ApiModel):
+    name: str
+    selectable: bool = Field(
+        description="False when DataQ cannot target this name (not a plain SQL identifier)."
+    )
+
+
+class CatalogBrowseRead(ApiModel):
+    """One level of the catalog → schema → table tree. `truncated` means more names exist
+    than `limit` — the list is then a prefix, and the target can still be typed by hand.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    level: Literal["catalog", "schema", "table"]
+    catalog: str | None
+    schema_: str | None = Field(serialization_alias="schema")
+    entries: list[CatalogEntryRead]
+    truncated: bool
+    limit: int
+
+
+class BrowseFileRead(ApiModel):
+    path: str
+    size: int | None
+    last_modified: datetime | None
+
+
+class FileBrowseRead(ApiModel):
+    """The folders and files directly under `prefix` in the connection's container/bucket
+    (`root`). `truncated` means the level holds more than `limit` entries.
+    """
+
+    root: str
+    prefix: str
+    folders: list[str]
+    files: list[BrowseFileRead]
+    truncated: bool
+    limit: int
+
+
+_BrowseLimit = Annotated[int, Query(ge=1, le=browse_service.MAX_LIMIT)]
+
+
+@router.get(
+    "/connections/{connection_id}/browse/catalog",
+    response_model=CatalogBrowseRead,
+    summary="List one level of a Unity Catalog connection's catalogs/schemas/tables",
+)
+def browse_connection_catalog(
+    connection_id: uuid.UUID,
+    current_user: MemberUser,
+    db: Annotated[Session, Depends(get_db)],
+    secret_store: Annotated[SecretStore, Depends(get_secret_store)],
+    catalog: Annotated[str | None, Query(max_length=255)] = None,
+    schema_: Annotated[str | None, Query(alias="schema", max_length=255)] = None,
+    limit: _BrowseLimit = browse_service.DEFAULT_LIMIT,
+) -> CatalogBrowseRead:
+    # sync def → threadpool; the warehouse query is blocking. Member+, the same gate as
+    # /test and suite creation: anyone who may point a new suite at this connection.
+    listing = browse_service.browse_catalog(
+        svc.get_connection(db, connection_id),
+        session=db,
+        catalog=catalog,
+        schema=schema_,
+        limit=limit,
+        secret_store=secret_store,
+    )
+    return CatalogBrowseRead(
+        level=listing.level,
+        catalog=listing.catalog,
+        schema_=listing.schema,
+        entries=[CatalogEntryRead(name=e.name, selectable=e.selectable) for e in listing.entries],
+        truncated=listing.truncated,
+        limit=listing.limit,
+    )
+
+
+@router.get(
+    "/connections/{connection_id}/browse/files",
+    response_model=FileBrowseRead,
+    summary="List the folders and files under a prefix of an ADLS Gen2 / S3 connection",
+)
+def browse_connection_files(
+    connection_id: uuid.UUID,
+    current_user: MemberUser,
+    db: Annotated[Session, Depends(get_db)],
+    secret_store: Annotated[SecretStore, Depends(get_secret_store)],
+    prefix: Annotated[str, Query(max_length=1024)] = "",
+    limit: _BrowseLimit = browse_service.DEFAULT_LIMIT,
+) -> FileBrowseRead:
+    listing = browse_service.browse_files(
+        svc.get_connection(db, connection_id),
+        session=db,
+        prefix=prefix,
+        limit=limit,
+        secret_store=secret_store,
+    )
+    return FileBrowseRead(
+        root=listing.root,
+        prefix=listing.prefix,
+        folders=listing.folders,
+        files=[
+            BrowseFileRead(path=f.path, size=f.size, last_modified=f.last_modified)
+            for f in listing.files
+        ],
+        truncated=listing.truncated,
+        limit=listing.limit,
+    )

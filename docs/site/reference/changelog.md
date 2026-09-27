@@ -32,6 +32,14 @@ the per-PR history lives in the repo's commit log and pull requests.
   previously an Enterprise account recorded none. See
   [orchestration & lineage](../guides/orchestration.md).
 
+- **Browse for a run target instead of typing it.** On a Unity Catalog suite, **Browse
+  catalog…** walks catalogs → schemas → tables and fills all three fields; on an ADLS Gen2 or
+  S3 suite, **Browse files…** (single file) or **Browse folders…** (batch prefix) walks the
+  connection's container or bucket. Each level is one bounded listing (up to 200 names) and
+  says so when there are more; a name DataQ cannot target is shown but not pickable. Nothing
+  is saved until you save the suite, and the typed fields keep working exactly as before.
+  Needs the Member role, like testing a connection.
+
 - **Offboarding is one guided pass.** Admin → Members → **Offboard** hands a departing
   member's suites to somebody else, revokes every API key and browser session they hold,
   and withdraws their membership — in a single transaction, so a half-finished departure

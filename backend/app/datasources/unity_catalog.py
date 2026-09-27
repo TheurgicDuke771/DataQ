@@ -19,6 +19,7 @@ from backend.app.datasources.base import (
     MonitorSpec,
     SampleSpec,
     SuiteOutcome,
+    ValueSignalGate,
 )
 from backend.app.datasources.gx_runner import run_expectations
 from backend.app.datasources.monitors import (
@@ -251,6 +252,8 @@ class UnityCatalogCheckRunner:
     # Runner-advertised monitor capability (#429): EXPLICITLY what this runner implements — never
     # frozenset(MONITOR_KINDS).
     supported_monitor_kinds: ClassVar[frozenset[str]] = frozenset({FRESHNESS, VOLUME})
+    # The run path hands a `value_signal_gate` only to runners advertising it (#2014).
+    accepts_value_signal_gate: ClassVar[bool] = True
 
     def __init__(
         self,
@@ -385,6 +388,7 @@ class UnityCatalogCheckRunner:
         schema: str | None,
         checks: list[CheckSpec],
         index_columns: list[str] | None = None,
+        value_signal_gate: ValueSignalGate | None = None,
     ) -> SuiteOutcome:
         """Evaluate `checks`, routing each to the batch its expectation can run on."""
         pushdown_on = (
@@ -427,6 +431,7 @@ class UnityCatalogCheckRunner:
                 schema=schema,
                 checks=[checks[i] for i in sql_positions],
                 index_columns=index_columns,
+                value_signal_gate=value_signal_gate,
             )
             success = success and sql_outcome.success
             by_position.update(zip(sql_positions, sql_outcome.checks, strict=True))
@@ -494,6 +499,7 @@ class UnityCatalogCheckRunner:
         schema: str | None,
         checks: list[CheckSpec],
         index_columns: list[str] | None = None,
+        value_signal_gate: ValueSignalGate | None = None,
     ) -> SuiteOutcome:
         """Evaluate the SQL-batch group (custom SQL #1179, pushdown types #1532)
         on one Databricks-SQL batch.
@@ -523,6 +529,7 @@ class UnityCatalogCheckRunner:
                     checks=checks,
                     name=f"suite-uc-sql-{table}",
                     index_columns=index_columns,
+                    value_signal_gate=value_signal_gate,
                 )
             keep = [i for i in range(len(checks)) if i not in clash_set]
             clash = sorted(clash_set)
@@ -542,6 +549,7 @@ class UnityCatalogCheckRunner:
                         if all(is_custom_sql(s.expectation_type) for s in kept_checks)
                         else index_columns
                     ),
+                    value_signal_gate=value_signal_gate,
                 )
                 success = kept.success
                 outcomes.update(zip(keep, kept.checks, strict=True))
@@ -552,6 +560,7 @@ class UnityCatalogCheckRunner:
                     batch_definition=batch_definition,
                     checks=clashed_checks,
                     name=f"suite-uc-sql-noidx-{table}",
+                    value_signal_gate=value_signal_gate,
                 )
             except Exception as exc:
                 # Error ONLY the not-yet-evaluated group; the keep group's real
@@ -581,7 +590,7 @@ class UnityCatalogCheckRunner:
                     success=False,
                     errored=True,
                     error_message=reason,
-                    expected_value=dict(spec.kwargs) or None,
+                    expected_value=dict(spec.authored_kwargs or spec.kwargs) or None,
                 )
                 for spec in checks
             ],

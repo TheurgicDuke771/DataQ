@@ -8,6 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from backend.app.datasources.base import CheckRunner, CheckSpec, ConnectionAdapter, MonitorSpec
+from backend.app.datasources.gx_runner import run_expectations
 from backend.app.datasources.registry import (
     UnsupportedConnectionTypeError,
     get_connection_adapter,
@@ -823,6 +824,8 @@ def test_fold_reflection_keyed_columns_lowercases_all_caps_compound_unique() -> 
     assert folded.kwargs["mostly"] == 0.9
     # frozen input untouched
     assert spec.kwargs["column_list"] == ["ORDER_NUMBER", "CUSTOMER_ID"]
+    # #1618: the pre-fold spelling rides along for the result's expected_value.
+    assert folded.authored_kwargs == spec.kwargs
 
 
 def test_fold_reflection_keyed_columns_leaves_mixed_case_and_other_types_alone() -> None:
@@ -834,6 +837,7 @@ def test_fold_reflection_keyed_columns_leaves_mixed_case_and_other_types_alone()
     )
     folded_mixed, folded_other = _fold_reflection_keyed_columns([mixed, other])
     assert folded_mixed.kwargs["column_list"] == ["OrderNum", "customer_id"]
+    assert folded_mixed.authored_kwargs is None
     assert folded_other is other
 
 
@@ -881,7 +885,90 @@ def test_run_checks_passes_index_columns_unfolded(monkeypatch: pytest.MonkeyPatc
         }
     )
     runner = SnowflakeCheckRunner(config, "pw")
+
+    def gate(_column: str) -> bool:
+        return True
+
     runner.run_checks(
-        table="ORDERS_HEADER", schema="RETAIL", checks=[], index_columns=["ORDER_NUMBER"]
+        table="ORDERS_HEADER",
+        schema="RETAIL",
+        checks=[],
+        index_columns=["ORDER_NUMBER"],
+        value_signal_gate=gate,
     )
     assert captured["index_columns"] == ["ORDER_NUMBER"]
+    # #2014: the SQL lane's population-sample gate reaches `run_expectations`.
+    assert captured["value_signal_gate"] is gate
+    assert SnowflakeCheckRunner.accepts_value_signal_gate is True
+
+
+def _sqlite_as_snowflake(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None:
+    """Stand sqlite in for the warehouse at `add_snowflake`, everything else real GX. Its
+    reflected keys are the lowercase names, which is what snowflake-sqlalchemy reflects an
+    unquoted (upper-case-stored) Snowflake column as."""
+    import sqlite3
+
+    import great_expectations as gx
+
+    path = tmp_path / "sf.sqlite"
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE orders_header (order_number INTEGER, customer_id INTEGER)")
+    conn.executemany("INSERT INTO orders_header VALUES (?, ?)", [(1, 10), (2, 10), (2, 10)])
+    conn.commit()
+    conn.close()
+
+    def get_context(mode: str) -> Any:
+        real = gx.get_context(mode=mode)
+
+        def add_snowflake(**kw: Any) -> Any:
+            return real.data_sources.add_sqlite(
+                name=kw["name"], connection_string=f"sqlite:///{path}"
+            )
+
+        return SimpleNamespace(
+            data_sources=SimpleNamespace(add_snowflake=add_snowflake),
+            suites=real.suites,
+            validation_definitions=real.validation_definitions,
+        )
+
+    monkeypatch.setattr(
+        "backend.app.datasources.snowflake.gx", SimpleNamespace(get_context=get_context)
+    )
+
+
+def test_compound_unique_expected_value_reports_the_authored_casing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    # #1618: GX still gets the #1616-folded names (live Snowflake KeyErrors on the all-caps
+    # spelling) while the result reports the column_list exactly as the check stores it.
+    _sqlite_as_snowflake(monkeypatch, tmp_path)
+    submitted: list[Any] = []
+
+    def spy(context: Any, **kwargs: Any) -> Any:
+        submitted.extend(kwargs["checks"])
+        return run_expectations(context, **kwargs)
+
+    monkeypatch.setattr("backend.app.datasources.snowflake.run_expectations", spy)
+    authored = ["ORDER_NUMBER", "CUSTOMER_ID"]
+    runner = SnowflakeCheckRunner(SnowflakeConfig.model_validate(_CONFIG), "pw")
+    outcome = runner.run_checks(
+        table="orders_header",
+        schema="main",
+        checks=[
+            CheckSpec("expect_compound_columns_to_be_unique", {"column_list": authored}),
+            CheckSpec(
+                "expect_compound_columns_to_be_unique",
+                {"column_list": ["order_number", "customer_id"]},
+            ),
+        ],
+    )
+    assert submitted[0].kwargs["column_list"] == ["order_number", "customer_id"]
+    upper, lower = outcome.checks
+    assert upper.errored is False, upper.error_message
+    assert upper.success is False  # the duplicate (2, 10) pair is really evaluated
+    assert upper.expected_value is not None
+    assert upper.expected_value["column_list"] == authored
+    # A lowercase authoring is not rewritten, so it reports as authored too.
+    assert lower.expected_value is not None
+    assert lower.expected_value["column_list"] == ["order_number", "customer_id"]
+    assert lower.success is False

@@ -256,9 +256,37 @@ expectation can sit side by side, so the label is per check, not per run.
 ## Author a check
 
 1. Create (or open) a **suite** and point it at a **target** — a table (Snowflake/UC), a
-   file/path or batch pattern (ADLS/S3), or an Iceberg `namespace.table`.
+   file/path or batch pattern (ADLS/S3), or an Iceberg `namespace.table`. On Unity Catalog,
+   ADLS Gen2 and S3 you can **browse** for it instead of typing it — see below.
 2. **Add check** opens a dedicated page (`/suites/<id>/checks/new`): pick a **category**,
    then the check type, then fill its config. The authoring paths:
+
+### Browsing for a run target (Unity Catalog, ADLS Gen2, S3)
+
+The suite form offers a picker beside the target fields; typing the target still works
+everywhere, and is the only way on Snowflake and Iceberg.
+
+- **Unity Catalog — Browse catalog…** lists catalogs, then the chosen catalog's schemas,
+  then that schema's tables; picking a table fills **Catalog**, **Schema** and **Table**.
+  The names come from `system.information_schema`, so the list is what the connection's
+  credential can see — a table it has no privilege on is not shown, and an empty level
+  means "nothing visible to this credential", not "nothing exists". The `system`,
+  `samples` and `__databricks_internal` catalogs are never listed.
+- **ADLS Gen2 / S3 — Browse files…** (single-file mode) walks the folders of the
+  connection's one container or bucket and fills **File path** with the file you pick.
+  **Browse folders…** (batch mode) fills **Prefix** with the folder you are in.
+
+Each level is **one bounded request** of up to 200 names. When a level holds more, the
+picker says so ("Showing the first 200 … there are more") rather than presenting a partial
+list as the whole thing — type the name into the field instead. A name DataQ cannot target
+(anything that is not a plain identifier: letters, digits, `_` and `$`, not starting with a
+digit) is listed but not pickable, since a suite pointed at it could not run.
+
+Browsing opens the datasource with the connection's stored credential, so it needs the
+**Member** role (the same bar as testing a connection); Viewers cannot author suites and do
+not get the picker. Only names, sizes and timestamps come back — never a credential or a
+row. The same listings are available over the REST API as
+`GET /connections/{id}/browse/catalog` and `GET /connections/{id}/browse/files`.
 
 ### GX expectation (all datasources)
 
@@ -340,11 +368,16 @@ Snowflake is unaffected — its schema comes from the connection.
 ### Snowflake DMF (ADR 0036)
 
 On a Snowflake connection, the check editor offers a separate **Snowflake DMF**
-category for four types — null count, null percent, duplicate count, unique count —
-that run on Snowflake's own `SNOWFLAKE.CORE.*` **Data Metric Functions** instead of a
+category for six types — null count, null percent, duplicate count, unique count,
+blank count (VARCHAR columns; empty or space-only strings — not NULLs, and tabs/newlines
+aren't treated as blank) and future-timestamp percent (DATE / TIMESTAMP_LTZ /
+TIMESTAMP_TZ columns) — that run on Snowflake's own `SNOWFLAKE.CORE.*` **Data Metric Functions** instead of a
 GX expectation. Same authoring flow (pick the type, set the column); the difference
-is the `engine` the check runs on (`dmf` vs the default `gx`). Not offered on other
-datasources.
+is the `engine` the check runs on (`dmf` vs the default `gx`). Every type except unique
+count needs a fail or critical threshold, banded like any other metric. Not offered on other
+datasources. Snowflake's `ACCEPTED_VALUES` and `SCHEMA_CHANGE_COUNT` are not offered: both
+can only run as a DMF attached to the table on a schedule, not as the on-demand call DataQ
+makes (use the GX in-set check and the schema-drift monitor instead).
 
 ### Freshness monitor (all datasources — ADR 0012/0030)
 

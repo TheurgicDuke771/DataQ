@@ -42,6 +42,7 @@ from backend.app.services import (
     llm_prompt_context,
     llm_service,
     orchestration_service,
+    profile_service,
 )
 from backend.app.services.workspace_health_service import NearMissRecord
 
@@ -193,24 +194,25 @@ def _profile_prompt(
     failure: a suggestion grounded in nothing is a confident wrong answer —
     unlike #1512, the profile here is never optional, so no degrade path.
     """
-    columns = llm_prompt_context.list_columns_for_prompt(
-        session,
-        suite,
-        connection,
-        secret_store=secret_store,
-        actor=actor,
-        consumer="llm_check_suggestion",
-    )
-    profile = llm_prompt_context.masked_profile_for_prompt(
-        session,
-        suite,
-        connection,
-        columns,
-        top_n=_TOP_N,
-        secret_store=secret_store,
-        actor=actor,
-        consumer="llm_check_suggestion",
-    )
+    with profile_service.shared_connection():  # list + profile on one login (#1645)
+        columns = llm_prompt_context.list_columns_for_prompt(
+            session,
+            suite,
+            connection,
+            secret_store=secret_store,
+            actor=actor,
+            consumer="llm_check_suggestion",
+        )
+        profile = llm_prompt_context.masked_profile_for_prompt(
+            session,
+            suite,
+            connection,
+            columns,
+            top_n=_TOP_N,
+            secret_store=secret_store,
+            actor=actor,
+            consumer="llm_check_suggestion",
+        )
     lines = [f"Row count: {profile.row_count}"]
     for col in profile.columns:
         stats = [f"nulls={col.null_fraction:.1%}"]

@@ -290,6 +290,13 @@ def test_dmf_types_derive_their_dimension() -> None:
         derive_dimension(expectation_type="dmf:duplicate_count", kind="expectation") == "uniqueness"
     )
     assert derive_dimension(expectation_type="dmf:unique_count", kind="expectation") == "uniqueness"
+    assert (
+        derive_dimension(expectation_type="dmf:blank_count", kind="expectation") == "completeness"
+    )
+    assert (
+        derive_dimension(expectation_type="dmf:future_timestamp_percent", kind="expectation")
+        == "validity"
+    )
 
 
 def test_a_bad_dmf_identifier_is_echoed_bounded() -> None:
@@ -332,3 +339,99 @@ def test_probe_dmf_capability_never_stores_the_raw_exception_text() -> None:
     assert result["available"] is False
     assert "hunter2" not in result["reason"]
     assert "svc_dataq" not in result["reason"]
+
+
+# ── #1928: BLANK_COUNT + FUTURE_TIMESTAMP_PERCENT ──────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("expectation_type", "function"),
+    [
+        ("dmf:blank_count", "BLANK_COUNT"),
+        ("dmf:future_timestamp_percent", "FUTURE_TIMESTAMP_PERCENT"),
+    ],
+)
+def test_new_column_metrics_use_their_system_dmf(expectation_type: str, function: str) -> None:
+    stmt = _stmt(expectation_type=expectation_type, config={"column": "Status"})
+    assert stmt == f'SELECT SNOWFLAKE.CORE.{function}(SELECT "Status" FROM retail.orders_header)'
+
+
+@pytest.mark.parametrize(
+    "expectation_type", ["dmf:accepted_values", "dmf:schema_change_count", "dmf:freshness"]
+)
+def test_dmfs_without_an_ad_hoc_form_are_not_mapped(expectation_type: str) -> None:
+    # ACCEPTED_VALUES and SCHEMA_CHANGE_COUNT are documented "can't call this function directly";
+    # FRESHNESS is the freshness kind's evaluator, never an expectation type (ADR 0036 §4).
+    with pytest.raises(MonitorConfigError):
+        _stmt(expectation_type=expectation_type)
+
+
+def test_future_timestamp_percent_outcome_is_the_raw_percent() -> None:
+    outcome = evaluate_dmf_check(
+        lambda s: 12.5,
+        kind="expectation",
+        expectation_type="dmf:future_timestamp_percent",
+        config={"column": "order_ts"},
+        table="t",
+        schema=None,
+    )
+    assert outcome.success and not outcome.errored
+    assert outcome.metric_value == 12.5
+    assert outcome.observed_value == {"value": 12.5}
+    assert outcome.expected_value is not None
+    assert outcome.expected_value["metric"] == "FUTURE_TIMESTAMP_PERCENT"
+
+
+def test_blank_count_null_scalar_is_an_error_not_a_pass() -> None:
+    outcome = evaluate_dmf_check(
+        lambda s: None,
+        kind="expectation",
+        expectation_type="dmf:blank_count",
+        config={"column": "status"},
+        table="t",
+        schema=None,
+    )
+    assert outcome.errored and not outcome.success
+    assert outcome.error_message == "BLANK_COUNT returned no value"
+
+
+def _type_rejection(function: str, expectation_type: str, arg_type: str = "NUMBER(38,2)") -> str:
+    # Live-captured shape (2026-09-27, DATAQ_READER): error line breaks before "Invalid".
+    def boom(statement: str) -> None:
+        raise RuntimeError(
+            "001044 (42P13): SQL compilation error: error line 1 at position 7\n"
+            f"Invalid argument types for function '{function}$V1': ({arg_type})"
+        )
+
+    outcome = evaluate_dmf_check(
+        boom,
+        kind="expectation",
+        expectation_type=expectation_type,
+        config={"column": "c"},
+        table="t",
+        schema=None,
+    )
+    assert outcome.errored and outcome.error_message is not None
+    return outcome.error_message
+
+
+def test_blank_count_type_rejection_names_the_varchar_rule() -> None:
+    message = _type_rejection("BLANK_COUNT", "dmf:blank_count")
+    assert "VARCHAR" in message
+    assert "freshness" not in message.lower()
+
+
+def test_future_timestamp_type_rejection_is_not_read_as_freshness() -> None:
+    # The pre-#1928 branch keyed on FRESHNESS alone; the new temporal DMF must get its own
+    # guidance, not the freshness monitor's workaround.
+    message = _type_rejection(
+        "FUTURE_TIMESTAMP_PERCENT", "dmf:future_timestamp_percent", "TIMESTAMP_NTZ(9)"
+    )
+    assert "FUTURE_TIMESTAMP_PERCENT" in message
+    assert "TIMESTAMP_TZ" in message
+    assert "freshness monitor" not in message
+
+
+def test_an_unrecognised_type_rejection_falls_through_to_the_safe_classifier() -> None:
+    message = _type_rejection("SOME_FUTURE_DMF", "dmf:null_count")
+    assert "SOME_FUTURE_DMF" not in message
