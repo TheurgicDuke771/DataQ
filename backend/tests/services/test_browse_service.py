@@ -397,6 +397,29 @@ def test_adls_listing_never_pulls_past_limit_plus_one(monkeypatch: pytest.Monkey
     assert listing.truncated is True
 
 
+def test_adls_placeholder_blob_does_not_make_a_complete_level_read_truncated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    items = [_blob("data/", 0)] + [_blob(f"data/f{i}.csv") for i in range(3)]
+    _, listing = _adls_listing(monkeypatch, items, prefix="data/", limit=3)
+    assert [f.path for f in listing.files] == ["data/f0.csv", "data/f1.csv", "data/f2.csv"]
+    assert listing.truncated is False
+
+
+def test_adls_hns_directory_pairs_count_once_toward_the_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    items: list[Any] = []
+    for name in ("a", "b", "c"):
+        items += [_blob(name, 0), _prefix(f"{name}/")]
+    _, complete = _adls_listing(monkeypatch, items, limit=3)
+    assert (complete.folders, complete.files, complete.truncated) == (["a/", "b/", "c/"], [], False)
+
+    _, over = _adls_listing(monkeypatch, [*items, _blob("d", 0), _prefix("d/")], limit=3)
+    assert over.folders == ["a/", "b/", "c/"]
+    assert over.truncated is True
+
+
 def test_adls_root_listing_passes_no_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
     service, _ = _adls_listing(monkeypatch, [])
     assert service.container.kwargs["name_starts_with"] is None

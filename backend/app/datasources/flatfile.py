@@ -1493,11 +1493,16 @@ def list_directory(
         )
         folders = []
         files = []
-        seen = 0
-        # islice, not a break-after check: pulling item limit+2 could fetch a second page.
-        for item in islice(walk, limit + 1):
-            seen += 1
+        kept = 0
+        # Truncation counts KEPT entries: the prefix's own placeholder blob and an HNS
+        # directory blob (listed as `a/b` just before its `a/b/` prefix) are dropped, so a raw
+        # item count would report a complete level as truncated. The raw bound stays finite —
+        # at most one placeholder plus one duplicate per folder.
+        for item in islice(walk, 2 * limit + 3):
             if isinstance(item, BlobPrefix):
+                if files and files[-1].path == item.name.rstrip("/"):
+                    files.pop()
+                    kept -= 1
                 folders.append(item.name)
             elif item.name != prefix:
                 files.append(
@@ -1507,7 +1512,12 @@ def list_directory(
                         last_modified=getattr(item, "last_modified", None),
                     )
                 )
-        return _cap(folders, files, limit=limit, more=seen > limit)
+            else:
+                continue
+            kept += 1
+            if kept > limit:
+                break
+        return _cap(folders, files, limit=limit, more=kept > limit)
     finally:
         client_az.close()
 
