@@ -28,7 +28,7 @@ the per-PR history lives in the repo's commit log and pull requests.
   freshness / volume / anomaly / schema-drift monitors, comparisons, the column profiler,
   schema → table browsing for the run target, and inventory sync into the asset view. TLS is
   `require` by default and every session is read-only at the server. It is the first engine on
-  a new engine-generic SQL base (ADR [0044](../adr/0044-engine-generic-sql-datasource-base.md)).
+  a new engine-generic SQL base (ADR [0045](../adr/0045-engine-generic-sql-datasource-base.md)).
   See [Datasources & checks](../guides/datasources-checks.md#postgresql).
 
 - **Sensitive columns stay masked downstream.** If a warehouse tag marks a column sensitive,

@@ -1,4 +1,4 @@
-# ADR 0044 — Engine-generic SQL datasource base
+# ADR 0045 — Engine-generic SQL datasource base
 
 - **Status:** Accepted (2026-09-27)
 - **Date:** 2026-09-27

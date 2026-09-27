@@ -1,5 +1,5 @@
 """MySQL / MariaDB datasource (#1684) — one engine-generic adapter for any MySQL-protocol server,
-self-hosted or managed. A `SqlEngineSpec` on the generic SQL base (ADR 0044).
+self-hosted or managed. A `SqlEngineSpec` on the generic SQL base (ADR 0045).
 
 The driver is **PyMySQL** (MIT). `mysqlclient` and `mysql-connector-python` are GPL-licensed and
 therefore excluded by the project's licence rule (ADR 0031) — do not swap either in.
