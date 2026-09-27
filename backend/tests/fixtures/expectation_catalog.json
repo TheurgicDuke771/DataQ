@@ -384,6 +384,26 @@
     "dataframeOnly": false
   },
   {
+    "type": "dmf:blank_count",
+    "kind": "expectation",
+    "dimension": "completeness",
+    "fields": [
+      "column"
+    ],
+    "noThresholds": false,
+    "dataframeOnly": false
+  },
+  {
+    "type": "dmf:future_timestamp_percent",
+    "kind": "expectation",
+    "dimension": "validity",
+    "fields": [
+      "column"
+    ],
+    "noThresholds": false,
+    "dataframeOnly": false
+  },
+  {
     "type": "dmf:unique_count",
     "kind": "expectation",
     "dimension": "uniqueness",
