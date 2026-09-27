@@ -76,8 +76,8 @@ profiler reports min/max as unavailable for types PostgreSQL cannot order (`bool
 `jsonb`, …) — see [Datasources & checks](../guides/datasources-checks.md#postgresql).
 
 ᵐ **MySQL / MariaDB** — any server, on the same generic SQL base as PostgreSQL, through
-the MIT-licensed PyMySQL driver. The same battery was **executed** against MySQL 8.4 and
-MariaDB 11.8, each through its own least-privileged user. Two engine facts to know: GX's
+the MIT-licensed PyMySQL driver. The same battery was **executed** against MySQL 8.4,
+MariaDB 11.8 and MariaDB 10.6, each through its own least-privileged user. Two engine facts to know: GX's
 MySQL uniqueness check builds session temporary tables, so it runs on its own session
 without the read-only guard and needs the `CREATE TEMPORARY TABLES` grant; and
 uniqueness, set membership and comparisons follow the column's collation (`'a'` and

@@ -222,6 +222,10 @@ class SqlEngineSpec:
     #: read-only session refuses (GX's MySQL uniqueness check). They run in a separate GX session
     #: without the read-only guard; nothing a user wrote runs there — custom SQL never does.
     temp_table_types: frozenset[str] = frozenset()
+    #: Statements every new session runs, given whether it must be read-only — for an engine
+    #: whose driver can only carry ONE init statement (PyMySQL's `init_command`) but needs two,
+    #: each spelled in the syntax every server version accepts. ``None`` = `connect_args` does it.
+    session_statements: Callable[[bool], tuple[str, ...]] | None = None
 
     def validate_config(self, raw: dict[str, Any]) -> GenericSqlConfig:
         return self.config_model.model_validate(raw)
@@ -253,10 +257,56 @@ class SqlEngineSpec:
         return self.url(config, secret).render_as_string(hide_password=False)
 
     def engine_args(
-        self, config: GenericSqlConfig, secret: str, *, timeout: int | None = CONNECT_TIMEOUT
+        self,
+        config: GenericSqlConfig,
+        secret: str,
+        *,
+        timeout: int | None = CONNECT_TIMEOUT,
+        read_only: bool = True,
     ) -> tuple[str, dict[str, Any]]:
-        """``(url, connect_args)`` for a plain SQLAlchemy engine (profiler, schema drift, …)."""
-        return self.url_string(config, secret), self.connect_args(config, timeout)
+        """``(url, connect_args)`` for a SQLAlchemy engine. An engine built from these must also go
+        through `prepare_engine`, which applies `session_statements`.
+        """
+        return self.url_string(config, secret), self.connect_args(
+            config, timeout, read_only=read_only
+        )
+
+    def prepare_engine(self, engine: Any, *, read_only: bool = True) -> Any:
+        """Run `session_statements` on every connection ``engine`` opens from now on. Returns
+        ``engine``. Connections already pooled predate the hook — dispose them first.
+        """
+        if self.session_statements is None:
+            return engine
+        from sqlalchemy import event
+
+        statements = self.session_statements(read_only)
+
+        def _setup(dbapi_connection: Any, _record: Any) -> None:
+            cursor = dbapi_connection.cursor()
+            try:
+                for statement in statements:
+                    cursor.execute(statement)
+            finally:
+                cursor.close()
+
+        event.listen(engine, "connect", _setup)
+        return engine
+
+    def create_engine(
+        self,
+        config: GenericSqlConfig,
+        secret: str,
+        *,
+        timeout: int | None = CONNECT_TIMEOUT,
+        read_only: bool = True,
+        **engine_kwargs: Any,
+    ) -> Any:
+        """A SQLAlchemy engine with this engine's connect args AND session statements."""
+        from sqlalchemy import create_engine
+
+        url, connect_args = self.engine_args(config, secret, timeout=timeout, read_only=read_only)
+        engine = create_engine(url, connect_args=connect_args, **engine_kwargs)
+        return self.prepare_engine(engine, read_only=read_only)
 
     def namespace(self, config: GenericSqlConfig) -> str:
         """The OpenLineage namespace: ``<scheme>://<host>:<port>`` (host case-folded)."""
@@ -292,11 +342,9 @@ class GenericSqlConnectionAdapter:
             raise ValueError(
                 f"a password is required to test a {self.spec.display_name} connection"
             )
-        from sqlalchemy import create_engine, text
+        from sqlalchemy import text
 
-        config = self.validate_config(raw)
-        url, connect_args = self.spec.engine_args(config, secret)
-        engine = create_engine(url, connect_args=connect_args)
+        engine = self.spec.create_engine(self.validate_config(raw), secret)
         try:
             with engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
@@ -320,13 +368,11 @@ class GenericSqlCheckRunner:
         self._engine = LazyEngine(self._build_engine)
 
     def _build_engine(self) -> Any:
-        from sqlalchemy import create_engine
-
-        url, connect_args = self._spec.engine_args(self._config, self._secret, timeout=None)
         # pool_pre_ping: the session can sit idle across a long GX validation.
-        return create_engine(
-            url,
-            connect_args=connect_args,
+        return self._spec.create_engine(
+            self._config,
+            self._secret,
+            timeout=None,
             pool_pre_ping=True,
             **self._spec.run_engine_options,
         )
@@ -391,17 +437,21 @@ class GenericSqlCheckRunner:
         # as spelled retargets a mixed-case schema. So the SESSION is scoped to the target's
         # schema instead (the engine's default schema) and GX gets no schema at all.
         scoped = self._spec.scoped_config(self._config, schema)
+        connections = GxConnectionSource(self._spec, scoped, self._secret, read_only=read_only)
         context = gx.get_context(mode="ephemeral")
-        datasource = self._spec.gx_datasource(
-            context,
-            f"{self._spec.conn_type}-{table}",
-            self._spec.url_string(scoped, self._secret),
-            {
-                "connect_args": self._spec.connect_args(scoped, None, read_only=read_only),
-                **self._spec.run_engine_options,
-            },
-        )
+        datasource: Any = None
         try:
+            # GX tests the connection inside `add_*`, so a failure there must still close it.
+            datasource = self._spec.gx_datasource(
+                context,
+                f"{self._spec.conn_type}-{table}",
+                self._spec.url_string(scoped, self._secret),
+                {
+                    "connect_args": self._spec.connect_args(scoped, None, read_only=read_only),
+                    "creator": connections.connect,
+                    **self._spec.run_engine_options,
+                },
+            )
             asset = datasource.add_table_asset(
                 name=table, table_name=gx_table_name(table), schema_name=None
             )
@@ -415,7 +465,9 @@ class GenericSqlCheckRunner:
                 value_signal_gate=value_signal_gate,
             )
         finally:
-            _dispose_gx_engine(datasource)
+            if datasource is not None:
+                _dispose_gx_engine(datasource)
+            connections.close()
 
     def run_monitors(
         self, *, table: str, schema: str | None, monitors: list[MonitorSpec]
@@ -428,6 +480,45 @@ class GenericSqlCheckRunner:
             catalog=None,
             monitors=monitors,
         )
+
+
+class GxConnectionSource:
+    """The DBAPI connections a GX run is allowed to use, opened by DataQ and closed by DataQ.
+
+    GX builds a fresh SQLAlchemy engine for every execution engine it makes and never disposes
+    them, so a run left one server session per run open until garbage collection (live-found:
+    three runs, three idle PostgreSQL backends). Handing GX this source as its engines'
+    `creator` fixes both halves: every connection runs the engine's session statements (which
+    an event hook on the one engine GX exposes never reaches), and `close` shuts every
+    connection the run opened, whichever engine pooled it.
+    """
+
+    def __init__(
+        self, spec: SqlEngineSpec, config: GenericSqlConfig, secret: str, *, read_only: bool
+    ) -> None:
+        from sqlalchemy.pool import NullPool
+
+        self._source = spec.create_engine(
+            config, secret, timeout=None, read_only=read_only, poolclass=NullPool
+        )
+        self._opened: list[Any] = []
+
+    def connect(self) -> Any:
+        proxied = self._source.raw_connection()
+        # The caller's pool owns it from here; NullPool would close it on check-in otherwise.
+        proxied.detach()
+        connection = proxied.dbapi_connection
+        self._opened.append(connection)
+        return connection
+
+    def close(self) -> None:
+        while self._opened:
+            connection = self._opened.pop()
+            try:
+                connection.close()
+            except Exception as exc:  # already closed by its pool, or the server went away
+                log.debug("generic_sql_gx_connection_close_failed", error_type=type(exc).__name__)
+        self._source.dispose()
 
 
 def gx_table_name(table: str) -> str:

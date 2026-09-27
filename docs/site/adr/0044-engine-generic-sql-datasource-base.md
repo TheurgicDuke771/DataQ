@@ -56,7 +56,16 @@ session connects to the target's schema to scope it), a shared `sslmode` vocabul
 **`temp_table_types`** — GX checks uniqueness on MySQL by building session temporary
 tables, which a read-only transaction refuses, so that one type runs on its own GX
 session with the read-only guard off (`connect_args(read_only=False)`). Nothing a user
-wrote runs there; custom SQL stays on the guarded session. Decision 4 therefore reads
+wrote runs there; custom SQL stays on the guarded session. MySQL's read-only and UTC
+settings are two statements (the `transaction_read_only` *variable* is missing before
+MariaDB 11.1, so the portable `SET SESSION TRANSACTION READ ONLY` form is used), which
+PyMySQL's single `init_command` cannot carry — hence `session_statements`, applied to every
+engine DataQ builds (`prepare_engine`) and, for GX, through a **`GxConnectionSource`**
+handed to GX as its engines' `creator`. GX builds a fresh SQLAlchemy engine per execution
+engine and never disposes it, so an event hook on the engine it exposes never reached the
+one that validates — and each run left one idle server session behind until garbage
+collection (live-found on PostgreSQL: three runs, three backends). The source closes every
+connection a run opened. Decision 4 therefore reads
 "read only except where the engine's own check implementation needs temporary
 tables", and the docs say so.
 

@@ -53,16 +53,25 @@ def _tls(config: MySqlConfig) -> dict[str, Any]:
 def _connect_args(
     config: MySqlConfig, timeout: int | None, *, read_only: bool = True
 ) -> dict[str, Any]:
-    # `time_zone` UTC so a TIMESTAMP column comes back in UTC (the driver returns naive datetimes,
-    # which the freshness math reads as UTC). READ ONLY for every transaction the session opens —
-    # the server refuses a write however it was smuggled into a query.
-    init = "SET SESSION time_zone = '+00:00'"
-    if read_only:
-        init += ", SESSION transaction_read_only = 1"
-    args: dict[str, Any] = {"charset": "utf8mb4", "init_command": init, **_tls(config)}
+    # The session's own settings are `_session_statements`, not an `init_command`: PyMySQL runs
+    # exactly one init statement and the two settings cannot share one.
+    args: dict[str, Any] = {"charset": "utf8mb4", **_tls(config)}
     if timeout is not None:
         args["connect_timeout"] = timeout
     return args
+
+
+def _session_statements(read_only: bool) -> tuple[str, ...]:
+    # `time_zone` UTC so a TIMESTAMP column comes back in UTC (the driver returns naive datetimes,
+    # which the freshness math reads as UTC). READ ONLY for every transaction the session opens —
+    # the server refuses a write however it was smuggled into a query. Spelled as the
+    # `SET SESSION TRANSACTION` statement, which every MySQL and MariaDB version accepts: the
+    # `transaction_read_only` VARIABLE does not exist before MariaDB 11.1 (live-found on 10.6 —
+    # every connection failed 1193), and `tx_read_only` is gone from MySQL 8.
+    statements: tuple[str, ...] = ("SET SESSION time_zone = '+00:00'",)
+    if read_only:
+        statements += ("SET SESSION TRANSACTION READ ONLY",)
+    return statements
 
 
 def _add_gx_datasource(
@@ -105,4 +114,5 @@ MYSQL = SqlEngineSpec(
     # A read-only transaction refuses that, so this one type runs on its own session without
     # the guard — which also needs the CREATE TEMPORARY TABLES grant (live-found).
     temp_table_types=frozenset({"expect_column_values_to_be_unique"}),
+    session_statements=_session_statements,
 )

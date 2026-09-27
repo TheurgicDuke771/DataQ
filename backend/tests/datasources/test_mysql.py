@@ -74,15 +74,38 @@ def test_the_url_escapes_the_password_and_connects_to_the_scoped_database() -> N
 
 
 def test_the_session_is_read_only_and_utc_unless_a_temp_table_type_asks_otherwise() -> None:
-    args = MYSQL.connect_args(_config(), 10)
-    assert args["init_command"] == (
-        "SET SESSION time_zone = '+00:00', SESSION transaction_read_only = 1"
+    assert MYSQL.session_statements is not None
+    # The statement form, never the `transaction_read_only` VARIABLE — MariaDB < 11.1 has none.
+    assert MYSQL.session_statements(True) == (
+        "SET SESSION time_zone = '+00:00'",
+        "SET SESSION TRANSACTION READ ONLY",
     )
+    assert MYSQL.session_statements(False) == ("SET SESSION time_zone = '+00:00'",)
+    args = MYSQL.connect_args(_config(), 10)
+    assert "init_command" not in args
     assert args["connect_timeout"] == 10 and args["charset"] == "utf8mb4"
-    writable = MYSQL.connect_args(_config(), None, read_only=False)
-    assert writable["init_command"] == "SET SESSION time_zone = '+00:00'"
-    assert "connect_timeout" not in writable
+    assert "connect_timeout" not in MYSQL.connect_args(_config(), None, read_only=False)
     assert MYSQL.temp_table_types == {"expect_column_values_to_be_unique"}
+
+
+def test_prepare_engine_runs_the_session_statements_on_every_new_connection() -> None:
+    """The hook itself, against a real (sqlite) connection: `query_only` stands in for MySQL's
+    read-only statement, which sqlite does not speak."""
+    from dataclasses import replace
+
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.exc import OperationalError
+
+    spec = replace(MYSQL, session_statements=lambda ro: ("PRAGMA query_only = ON",) if ro else ())
+    guarded = spec.prepare_engine(create_engine("sqlite://"), read_only=True)
+    with guarded.connect() as conn:
+        with pytest.raises(OperationalError, match="readonly"):
+            conn.execute(text("CREATE TABLE t (i INTEGER)"))
+    writable = spec.prepare_engine(create_engine("sqlite://"), read_only=False)
+    with writable.connect() as conn:
+        conn.execute(text("CREATE TABLE t (i INTEGER)"))
+    # An engine with no session statements is handed back untouched.
+    assert replace(MYSQL, session_statements=None).prepare_engine("engine") == "engine"
 
 
 def test_tls_is_required_unless_explicitly_disabled() -> None:

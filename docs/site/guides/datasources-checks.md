@@ -163,7 +163,8 @@ Live-verified against PostgreSQL 16.
 
 One connection type for **any MySQL or MariaDB server**, on the same generic SQL base as
 PostgreSQL. The driver is **PyMySQL** (MIT); the GPL-licensed MySQL drivers are never used.
-Live-verified against MySQL 8.4 and MariaDB 11.8.
+Live-verified against MySQL 8.4, MariaDB 11.8 and MariaDB 10.6 (the long-term line many
+managed services still default to).
 
 - **Fields:** host, port (default 3306), database, user, and the password as the secret. A
   MySQL *schema* is a database, so a run target's optional schema names another database
@@ -172,7 +173,9 @@ Live-verified against MySQL 8.4 and MariaDB 11.8.
   server without TLS (PyMySQL's own default would quietly fall back to plaintext); `verify-*`
   also checks the certificate against the system trust store, so a server with MySQL's
   self-generated certificate fails them.
-- **Read only, UTC.** Every session sets `transaction_read_only` and `time_zone = '+00:00'`, so a
+- **Read only, UTC.** Every session runs `SET SESSION TRANSACTION READ ONLY` (the statement
+  every version accepts — the `transaction_read_only` variable does not exist before
+  MariaDB 11.1) and sets `time_zone = '+00:00'`, so a
   `TIMESTAMP` column comes back in UTC and freshness is right whatever the server's zone is
   (`DATETIME` has no zone and is read as UTC). **One exception:** GX checks uniqueness on
   MySQL by copying the column into session temporary tables, which a read-only transaction

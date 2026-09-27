@@ -2,9 +2,10 @@
 
 Opt-in: set ``MYSQL_TEST_URLS`` to comma-separated admin URLs, one per server, e.g.
 ``mysql+pymysql://root@127.0.0.1:3307,mysql+pymysql://root@127.0.0.1:3308`` (a ``mysql:8`` and a
-``mariadb:11`` container). Every test runs once per server. Nothing here is mocked: values cross
-the real PyMySQL driver boundary (#953), and every DataQ path runs as a freshly created
-least-privileged user, never the admin.
+``mariadb:11`` container). A server without TLS (the ``mariadb:10.6`` image) takes
+``?dq_sslmode=disable``; the TLS tests then skip for it. Every test runs once per server.
+Nothing here is mocked: values cross the real PyMySQL driver boundary (#953), and every DataQ
+path runs as a freshly created least-privileged user, never the admin.
 """
 
 from __future__ import annotations
@@ -55,6 +56,7 @@ class MyTarget:
     hidden: str
     no_temp_user: str
     is_mariadb: bool
+    admin_url: Any
 
 
 def _seed(db: str, hidden: str) -> list[str]:
@@ -92,7 +94,9 @@ def _seed(db: str, hidden: str) -> list[str]:
 
 @pytest.fixture(scope="module", params=_URLS or ["unset"])
 def my(request: pytest.FixtureRequest) -> Iterator[MyTarget]:
-    admin_url = make_url(request.param)
+    raw_url = make_url(request.param)
+    sslmode = raw_url.query.get("dq_sslmode", "require")
+    admin_url = raw_url.difference_update_query(["dq_sslmode"])
     suffix = uuid.uuid4().hex[:8]
     db, hidden = f"DqMy_{suffix}", f"dq_hidden_{suffix}"
     user, no_temp_user = f"dq_my_reader_{suffix}", f"dq_my_notemp_{suffix}"
@@ -121,9 +125,11 @@ def my(request: pytest.FixtureRequest) -> Iterator[MyTarget]:
             "database": db,
             "user": user,
             # The containers serve self-signed certificates: `require` encrypts, verify-* fail.
-            "sslmode": "require",
+            "sslmode": sslmode,
         }
-        yield MyTarget(config, password, db, hidden, no_temp_user, "mariadb" in version.lower())
+        yield MyTarget(
+            config, password, db, hidden, no_temp_user, "mariadb" in version.lower(), admin_url
+        )
     finally:
         with admin.begin() as conn:
             conn.execute(text("SET GLOBAL time_zone = 'SYSTEM'"))
@@ -174,6 +180,8 @@ def test_a_real_login_over_tls_and_a_wrong_password(my: MyTarget) -> None:
 
 
 def test_verified_tls_refuses_a_self_signed_server(my: MyTarget) -> None:
+    if my.config["sslmode"] == "disable":
+        pytest.skip("this server has no TLS")
     for mode in ("verify-ca", "verify-full"):
         with pytest.raises(DBAPIError, match="CERTIFICATE_VERIFY_FAILED") as exc:
             get_connection_adapter("mysql").test({**my.config, "sslmode": mode}, my.password)
@@ -191,16 +199,16 @@ def test_a_database_the_user_has_no_grant_on_is_a_permission_failure_not_a_dead_
 
 
 def test_every_session_is_read_only_utc_and_encrypted(my: MyTarget) -> None:
-    url, connect_args = _SPEC.engine_args(_SPEC.validate_config(my.config), my.password)
-    engine = create_engine(url, connect_args=connect_args)
+    engine = _SPEC.create_engine(_SPEC.validate_config(my.config), my.password)
     try:
         with engine.connect() as conn:
-            read_only, zone, database = conn.execute(
-                text("SELECT @@session.transaction_read_only, @@session.time_zone, DATABASE()")
-            ).one()
+            # Read-only-ness is proven by the refused writes below, not a variable: its name
+            # differs across versions (`tx_read_only` / `transaction_read_only`).
+            zone, database = conn.execute(text("SELECT @@session.time_zone, DATABASE()")).one()
             cipher = conn.execute(text("SHOW SESSION STATUS LIKE 'Ssl_cipher'")).one()[1]
-        assert (int(read_only), zone, database) == (1, "+00:00", my.database)
-        assert cipher  # `require` negotiated TLS
+        assert (zone, database) == ("+00:00", my.database)
+        # `require` negotiated TLS; `disable` (a server without TLS) did not.
+        assert bool(cipher) is (my.config["sslmode"] != "disable")
         for statement in (
             "CREATE TEMPORARY TABLE dq_probe (i INT)",
             "CREATE TABLE dq_probe (i INT)",
@@ -360,6 +368,53 @@ def test_without_the_temporary_table_grant_only_uniqueness_errors(my: MyTarget) 
     unique, not_null = _run(my, "Orders", checks, config={"user": my.no_temp_user}).checks
     assert unique.errored
     assert not not_null.errored and not_null.success is False
+
+
+def test_the_session_statements_reach_every_session_dataq_opens(my: MyTarget) -> None:
+    """GX builds its own engine and the profiler its own — both must carry the session statements.
+    The server's zone is +05:00, so a session that missed them shows it."""
+    [gx_session] = _run(
+        my,
+        "Orders",
+        [
+            CheckSpec(
+                CUSTOM_SQL_EXPECTATION_TYPE,
+                {
+                    "unexpected_rows_query": (
+                        "SELECT * FROM {batch} WHERE @@session.time_zone <> '+00:00'"
+                    )
+                },
+            )
+        ],
+    ).checks
+    assert not gx_session.errored, gx_session.error_message
+    assert gx_session.success is True
+    with profile_service._open_connection(_connection(my), _store(my)) as conn:
+        assert conn.execute(text("SELECT @@session.time_zone")).scalar() == "+00:00"
+        with pytest.raises(DBAPIError, match="READ ONLY"):
+            conn.execute(text("CREATE TEMPORARY TABLE dq_probe (i INT)"))
+
+
+def test_a_finished_run_leaves_no_server_session_open(my: MyTarget) -> None:
+    for _ in range(3):
+        _run(
+            my,
+            "Orders",
+            [
+                CheckSpec("expect_column_values_to_not_be_null", {"column": "email"}),
+                CheckSpec("expect_column_values_to_be_unique", {"column": "CustomerId"}),
+            ],
+        )
+    engine = create_engine(my.admin_url)
+    try:
+        with engine.connect() as conn:
+            sessions = conn.execute(
+                text("SELECT count(*) FROM information_schema.processlist WHERE user = :user"),
+                {"user": my.config["user"]},
+            ).scalar_one()
+    finally:
+        engine.dispose()
+    assert sessions == 0
 
 
 def test_a_lower_case_table_and_a_case_insensitive_column(my: MyTarget) -> None:
