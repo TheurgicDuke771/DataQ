@@ -999,6 +999,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Channels">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-an-alert-email-says" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What an alert email says
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2336,6 +2353,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Channels">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-an-alert-email-says" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What an alert email says
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2472,6 +2506,16 @@ as a separate <em>Legacy inline destinations</em> card with a <strong>Clear</str
 move the suite onto a channel and retire the override. Setting a new inline destination
 is not possible any more — not from the app and not from the API, for anyone: the request
 is refused with the field named. A suite's destinations are the channels, full stop.</p>
+<h3 id="what-an-alert-email-says">What an alert email says<a class="headerlink" href="#what-an-alert-email-says" title="Permanent link">¶</a></h3>
+<p>Alert emails are written for someone who doesn't know the check engine. Each failing
+check gets one plain sentence ("34,480 rows (99.42%) have a duplicate order_number", "The
+newest record is 61.95 days old"), a few already-redacted example values, and the open
+incident's context as short labelled facts: how long it has been failing, what triggered
+the run, what else failed with it, and which downstream tables may be affected. When a
+lineage source behind that last fact is failing, the email says the list may be
+incomplete rather than presenting it as the full picture. The raw expected/observed detail
+engineers want stays underneath in small print. Numbers are rounded to two decimals
+everywhere, in Slack and Teams too.</p>
 <h2 id="per-suite-configuration">Per-suite configuration<a class="headerlink" href="#per-suite-configuration" title="Permanent link">¶</a></h2>
 <p>Open a suite → <strong>Notifications</strong> panel:</p>
 <ul>

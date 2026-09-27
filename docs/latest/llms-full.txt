@@ -2661,6 +2661,18 @@ move the suite onto a channel and retire the override. Setting a new inline dest
 is not possible any more — not from the app and not from the API, for anyone: the request
 is refused with the field named. A suite's destinations are the channels, full stop.
 
+### What an alert email says
+
+Alert emails are written for someone who doesn't know the check engine. Each failing
+check gets one plain sentence ("34,480 rows (99.42%) have a duplicate order_number", "The
+newest record is 61.95 days old"), a few already-redacted example values, and the open
+incident's context as short labelled facts: how long it has been failing, what triggered
+the run, what else failed with it, and which downstream tables may be affected. When a
+lineage source behind that last fact is failing, the email says the list may be
+incomplete rather than presenting it as the full picture. The raw expected/observed detail
+engineers want stays underneath in small print. Numbers are rounded to two decimals
+everywhere, in Slack and Teams too.
+
 ## Per-suite configuration
 
 Open a suite → **Notifications** panel:
