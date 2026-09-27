@@ -393,19 +393,22 @@ def _dispatch(due: int) -> list[Metric]:
 
     with _session() as session:
         _seed_schedules(session, due)
-        original = run_dispatch.dispatch_or_fail
-        # The enqueue seam only — everything DB-side (the SKIP LOCKED claim, the
-        # cron advance, the run INSERT, the commit) runs for real.
-        run_dispatch.dispatch_or_fail = lambda *args, **kwargs: True
+        original = run_dispatch.dispatch_run
+        # The broker publish only — everything DB-side (the SKIP LOCKED claim, the
+        # cron advance, the run INSERT, the task-id write-back, the commits) runs for real.
+        run_dispatch.dispatch_run = lambda run_id: f"perf-{run_id}"
         try:
-            started = time.perf_counter()
-            summary = tasks._dispatch_due_schedules(session)
-            elapsed = time.perf_counter() - started
+            with _counted(session) as statements:
+                started = time.perf_counter()
+                summary = tasks._dispatch_due_schedules(session)
+                elapsed = time.perf_counter() - started
         finally:
-            run_dispatch.dispatch_or_fail = original
+            run_dispatch.dispatch_run = original
 
     return [
         Metric("schedules_due", float(summary["due"]), "schedules", "exact"),
+        # Each statement is a database round-trip; per-schedule statements are the #1999 ceiling.
+        Metric("dispatch_statements", float(len(statements)), "queries", "strict"),
         Metric("dispatch_wall_s", elapsed, "s", "observe"),
         Metric(
             "schedules_per_s",

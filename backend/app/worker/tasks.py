@@ -13,7 +13,6 @@ from sqlalchemy.orm import Session
 from backend.app.alerting import dispatch as alert_dispatch
 from backend.app.alerting.base import HEALTH_FAILING, HEALTH_RECOVERED, HealthState
 from backend.app.core.config import get_settings
-from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore, get_secret_store
 from backend.app.core.tamper_anchor import get_tamper_anchor
@@ -25,7 +24,6 @@ from backend.app.db.models import (
     Check,
     Connection,
     Run,
-    Schedule,
     Suite,
 )
 from backend.app.db.session import get_session
@@ -42,7 +40,6 @@ from backend.app.services import (
     comparison_run,
     connection_service,
     credential_health,
-    cron,
     incident_service,
     llm_kinds,  # noqa: F401 — registers every LLM feature kind in the worker
     llm_service,
@@ -50,9 +47,9 @@ from backend.app.services import (
     otp_service,
     profile_service,
     run_admission,
-    run_dispatch,
     run_service,
     run_target,
+    schedule_dispatch,
     secret_sweep_service,
     stateful_monitors,
     suite_service,
@@ -682,74 +679,9 @@ def refresh_dbt_lineage(connection_id: str, job: str) -> str:
 # ──────────────────────── scheduled run dispatch (A7) ──────────────────────
 
 
-def _advance_schedule(schedule: Schedule, *, now: datetime) -> bool:
-    """Roll ``schedule`` forward to its next future fire; stamp ``last_run_at``."""
-    schedule.last_run_at = now
-    try:
-        schedule.next_run_at = cron.next_fire(schedule.cron, schedule.timezone, after=now)
-    except DataQError:
-        schedule.enabled = False
-        log.error(
-            "schedule_disabled_invalid_cron",
-            schedule_id=str(schedule.id),
-            cron=schedule.cron,
-            timezone=schedule.timezone,
-        )
-        return False
-    return True
-
-
-def _fire_schedule(session: Session, schedule: Schedule, *, now: datetime) -> str:
-    """Fire one due schedule: advance it, then queue + dispatch a suite run."""
-    if not _advance_schedule(schedule, now=now):
-        session.commit()
-        return "disabled"
-
-    suite = session.get(Suite, schedule.suite_id)
-    assert suite is not None  # schedule cascade-deletes with its suite
-    connection = session.get(Connection, suite.connection_id)
-    assert connection is not None  # suite.connection_id FK is RESTRICT
-    try:
-        run_target.resolve_target(connection.type, suite.target)
-    except DataQError:
-        session.commit()  # persist the advance; skip the doomed run
-        log.warning(
-            "schedule_skipped_invalid_target",
-            schedule_id=str(schedule.id),
-            suite_id=str(suite.id),
-        )
-        return "skipped_target"
-
-    run = run_dispatch.new_queued_run(suite, triggered_by=f"schedule:{schedule.id}")
-    session.add(run)
-    session.commit()
-    session.refresh(run)
-    # Shared dispatch+broker-failure handling (#227); the advance is already committed.
-    if not run_dispatch.dispatch_or_fail(session, run, schedule_id=str(schedule.id)):
-        return "dispatch_failed"
-    log.info("schedule_fired", schedule_id=str(schedule.id), run_id=str(run.id))
-    return "dispatched"
-
-
 def _dispatch_due_schedules(session: Session, *, now: datetime | None = None) -> dict[str, int]:
-    """Fire every enabled schedule whose ``next_run_at`` has passed (A7)."""
-    now = now or datetime.now(UTC)
-    summary = {"due": 0, "dispatched": 0, "skipped_target": 0, "dispatch_failed": 0, "disabled": 0}
-    while True:
-        schedule = session.scalars(
-            select(Schedule)
-            .where(Schedule.enabled.is_(True), Schedule.next_run_at <= now)
-            .order_by(Schedule.next_run_at)
-            .with_for_update(skip_locked=True)
-            .limit(1)
-        ).first()
-        if schedule is None:
-            break
-        summary["due"] += 1
-        outcome = _fire_schedule(session, schedule, now=now)
-        summary[outcome] = summary.get(outcome, 0) + 1
-    log.info("schedules_dispatch_completed", **summary)
-    return summary
+    """Fire every enabled schedule whose ``next_run_at`` has passed (A7), batched (#1999)."""
+    return schedule_dispatch.dispatch_due_schedules(session, now=now)
 
 
 @celery_app.task(name="dispatch_due_schedules")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
