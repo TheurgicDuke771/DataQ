@@ -866,17 +866,25 @@ is the whole estimate on an otherwise-pushdown suite.
 **Iceberg** is sized from the same manifest plan its row-cap probe reads. That is
 metadata only, never a data read. It reserves the **larger** of two figures:
 planned rows × `RUN_ADMISSION_ROW_BYTES`, and data-file bytes × the format's
-expansion factor (Parquet 9×). Either figure is clamped to what
-`RUN_MAX_SCAN_ROWS_ICEBERG` admits, because an over-cap table is refused before
-it is read. Each figure alone is blind in a different way:
+expansion factor (Parquet 9×). Each figure alone is blind in a different way:
 
 - **Rows** are width-blind: a 40-column table costs the same as a 6-column one.
 - **File bytes** miss dictionary-encoded strings, which are tiny on disk and
   full-width once read into memory.
 
-A suite of freshness/volume monitors only reads snapshot metadata. Its scan
-fallbacks are capped but not reserved for, and it is logged as
-`run_admission_iceberg_metadata_only`.
+A table over `RUN_MAX_SCAN_ROWS_ICEBERG` reserves **nothing**, because the row-cap
+probe refuses it before any data is read. Even the cap's worth, 3M rows × 1 KiB
+at the defaults, would be about three times the whole budget, and would hold back
+a run that is certain to be refused until the worker drained.
+
+A suite of freshness/volume monitors answers from snapshot metadata and reserves
+nothing (`run_admission_iceberg_metadata_only`). The exception is a snapshot whose
+summary cannot prove there are no row-level deletes: merge-on-read, or a writer
+that omits the delete totals. There, the volume monitor falls back to a
+materialising `scan().count()`. That case is reserved for like a full read and
+logged as `run_admission_iceberg_monitor_fallback` with the reason. A freshness
+fallback caused by a data file that lacks column bounds is only visible by
+planning the scan. It reads a single column and is not reserved for.
 
 Measured on a local MinIO warehouse with a SQLite catalog, using the real
 `IcebergCheckRunner` and five expectations, one process per table. The actual

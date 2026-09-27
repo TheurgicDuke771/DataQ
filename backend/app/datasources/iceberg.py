@@ -464,6 +464,22 @@ def _row_delete_guard(summary: Any) -> str | None:
     return None
 
 
+def summary_scan_fallback_reason(table: Any) -> str | None:
+    """Why a volume/freshness monitor would have to scan rather than answer from snapshot
+    metadata, or ``None`` when the metadata answers (or there is no snapshot to read).
+
+    Freshness can additionally fall back per file (missing bounds, attached delete files); that
+    is only visible by planning the scan and reads a single column.
+    """
+    snapshot = table.current_snapshot()
+    if snapshot is None:
+        return None
+    summary = getattr(snapshot, "summary", None)
+    if _summary_int(summary, "total-records") is None:
+        return "snapshot summary lacks total-records"
+    return _row_delete_guard(summary)
+
+
 def _volume_from_snapshot_summary(table: Any) -> tuple[int | None, dict[str, Any]]:
     """``(total_records, delta_detail)`` from the current snapshot's summary (#859)."""
     snapshot = table.current_snapshot()

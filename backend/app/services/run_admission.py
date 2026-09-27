@@ -151,16 +151,41 @@ def _iceberg_estimate(
         iceberg_credentials,
         load_iceberg_table,
         planned_scan,
+        summary_scan_fallback_reason,
+    )
+    from backend.app.datasources.monitors import (
+        FRESHNESS,
+        VOLUME,
     )
 
-    if not any(c.kind == "expectation" for c in checks):
-        # Monitors answer from snapshot metadata and only fall back to a (capped) scan.
-        log.info("run_admission_iceberg_metadata_only", connection_id=str(connection.id))
+    kinds = {c.kind for c in checks}
+    monitors = kinds & {FRESHNESS, VOLUME}
+    if "expectation" not in kinds and not monitors:
         return None
     config = IcebergConfig.model_validate(connection.config)
     secret, catalog_secret = iceberg_credentials(config, connection.secret_ref, get_secret_store())
-    scan = planned_scan(load_iceberg_table(config, secret, target.table, catalog_secret))
+    table = load_iceberg_table(config, secret, target.table, catalog_secret)
+    if "expectation" in kinds:
+        basis_prefix = "iceberg"
+    else:
+        # Monitors answer from snapshot metadata unless it cannot prove the answer; then the
+        # volume/freshness fallback scans (a merge-on-read count materialises the tasks).
+        reason = summary_scan_fallback_reason(table)
+        if reason is None:
+            log.info("run_admission_iceberg_metadata_only", connection_id=str(connection.id))
+            return None
+        log.info(
+            "run_admission_iceberg_monitor_fallback",
+            connection_id=str(connection.id),
+            reason=reason,
+        )
+        basis_prefix = "iceberg_monitor_fallback"
+    scan = planned_scan(table)
     settings = get_settings()
+    cap = settings.iceberg_scan_row_cap
+    if cap > 0 and scan.rows > cap:
+        # Refused by the row-cap probe before anything is read, so it holds nothing.
+        return MemoryEstimate(bytes=0, basis="iceberg_over_cap")
     by_rows = scan.rows * settings.run_admission_row_bytes
     by_bytes = int(
         sum(
@@ -173,16 +198,9 @@ def _iceberg_estimate(
             for fmt, size in scan.bytes_by_format.items()
         )
     )
-    estimate, basis = (
-        (by_rows, "iceberg_planned_rows")
-        if by_rows >= by_bytes
-        else (by_bytes, "iceberg_file_bytes")
-    )
-    cap = settings.iceberg_scan_row_cap
-    if cap > 0 and scan.rows > cap:
-        # Refused at the cap before `to_arrow()`, so reserve for what the cap admits.
-        estimate = estimate * cap // scan.rows
-    return MemoryEstimate(bytes=estimate, basis=basis)
+    if by_rows >= by_bytes:
+        return MemoryEstimate(bytes=by_rows, basis=f"{basis_prefix}_planned_rows")
+    return MemoryEstimate(bytes=by_bytes, basis=f"{basis_prefix}_file_bytes")
 
 
 def _comparison_bytes(checks: list[Check]) -> int:

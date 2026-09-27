@@ -182,11 +182,11 @@ def test_a_wide_table_reserves_by_its_file_bytes_not_its_row_count(catalog: Any)
     assert estimate.bytes > 200 * settings.run_admission_row_bytes
 
 
-def test_an_over_cap_table_reserves_only_what_the_cap_admits(
-    catalog: Any, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The read is refused at the cap before `to_arrow()`; reserving the whole table would
-    queue a run that fails in a second behind every other one."""
+def test_an_over_cap_table_reserves_nothing(catalog: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The row-cap probe refuses it before anything is read, so the run holds nothing.
+    Reserving even the cap's worth (3M rows x 1 KiB at the defaults, ~3x the whole budget)
+    would park a run that is certain to be refused until the worker drains.
+    """
     monkeypatch.setenv("RUN_MAX_SCAN_ROWS_ICEBERG", "20")
     get_settings.cache_clear()
     cat, properties = catalog
@@ -194,8 +194,21 @@ def test_an_over_cap_table_reserves_only_what_the_cap_admits(
 
     estimate = _estimate(properties, "sales.orders")
 
+    assert estimate == run_admission.MemoryEstimate(bytes=0, basis="iceberg_over_cap")
+
+
+def test_a_table_at_the_cap_is_still_reserved(
+    catalog: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RUN_MAX_SCAN_ROWS_ICEBERG", "50")
+    get_settings.cache_clear()
+    cat, properties = catalog
+    _narrow(cat, "sales.orders", 50)
+
+    estimate = _estimate(properties, "sales.orders")
+
     assert estimate is not None
-    assert estimate.bytes == 50 * get_settings().run_admission_row_bytes * 20 // 50
+    assert estimate.bytes == 50 * get_settings().run_admission_row_bytes
 
 
 def test_a_disabled_cap_reserves_the_whole_table(
@@ -221,19 +234,84 @@ def test_an_empty_table_reserves_nothing_rather_than_reading_as_unmetered(catalo
     assert estimate is not None and estimate.bytes == 0
 
 
-def test_a_monitor_only_suite_materialises_nothing_and_says_so(
+def test_a_monitor_only_suite_on_clean_metadata_reserves_nothing(
     catalog: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cat, properties = catalog
     _narrow(cat, "sales.orders", 50)
     logged: list[str] = []
     monkeypatch.setattr(run_admission.log, "info", lambda event, **_kw: logged.append(event))
+
+    assert _estimate(properties, "sales.orders", kinds=("volume", "freshness")) is None
+    assert "run_admission_iceberg_metadata_only" in logged
+
+
+def _with_summary(monkeypatch: pytest.MonkeyPatch, **overrides: str | None) -> None:
+    """Serve the real table with its real snapshot summary edited — row-level deletes cannot
+    be written by pyiceberg itself (it falls back to copy-on-write)."""
+    from pyiceberg.table.snapshots import Summary
+
+    real = iceberg_mod.load_iceberg_table
+
+    def _load(*args: Any, **kwargs: Any) -> Any:
+        table = real(*args, **kwargs)
+        snapshot = table.current_snapshot()
+        props = {**snapshot.summary.additional_properties, **overrides}
+        summary = Summary(
+            snapshot.summary.operation, **{k: v for k, v in props.items() if v is not None}
+        )
+        edited = snapshot.model_copy(update={"summary": summary})
+        table.current_snapshot = lambda: edited
+        return table
+
+    monkeypatch.setattr(iceberg_mod, "load_iceberg_table", _load)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "reason"),
+    [
+        ({"total-position-deletes": "3"}, "row-level deletes present"),
+        ({"total-equality-deletes": None}, "omits total-equality-deletes"),
+        ({"total-records": None}, "lacks total-records"),
+    ],
+)
+def test_a_monitor_only_suite_that_must_scan_is_reserved_for(
+    catalog: Any, monkeypatch: pytest.MonkeyPatch, overrides: dict[str, Any], reason: str
+) -> None:
+    """Merge-on-read (or a writer that omits the delete totals) sends the volume monitor to
+    `scan().count()`, which materialises the tasks — not a metadata answer."""
+    cat, properties = catalog
+    _narrow(cat, "sales.orders", 50)
+    _with_summary(monkeypatch, **overrides)
+    logged: list[tuple[str, dict[str, Any]]] = []
+    monkeypatch.setattr(run_admission.log, "info", lambda event, **kw: logged.append((event, kw)))
+
+    estimate = _estimate(properties, "sales.orders", kinds=("volume",))
+
+    assert estimate is not None
+    assert estimate.basis == "iceberg_monitor_fallback_planned_rows"
+    assert estimate.bytes == 50 * get_settings().run_admission_row_bytes
+    fallback = [kw for event, kw in logged if event == "run_admission_iceberg_monitor_fallback"]
+    assert len(fallback) == 1 and reason in fallback[0]["reason"]
+
+
+def test_a_suite_with_no_materialising_check_never_probes(
+    catalog: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, properties = catalog
     monkeypatch.setattr(
         iceberg_mod, "load_iceberg_table", lambda *_a, **_k: pytest.fail("no probe needed")
     )
 
-    assert _estimate(properties, "sales.orders", kinds=("volume", "freshness")) is None
-    assert "run_admission_iceberg_metadata_only" in logged
+    assert _estimate(properties, "sales.orders", kinds=("schema_drift",)) is None
+
+
+def test_summary_scan_fallback_reason_reads_a_real_snapshot(
+    catalog: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cat, _ = catalog
+    assert iceberg_mod.summary_scan_fallback_reason(_narrow(cat, "sales.orders", 5)) is None
+    assert iceberg_mod.summary_scan_fallback_reason(_narrow(cat, "sales.empty", 0)) is None
 
 
 def test_a_missing_table_never_fails_the_run(catalog: Any) -> None:
