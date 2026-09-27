@@ -3891,3 +3891,31 @@ def test_every_adls_read_path_authenticates_with_the_service_principal(
     assert [f.path for f in files] == ["p/a.csv"]
     assert credentials == [("t-1", "c-1", "cs"), ("t-1", "c-1", "cs")]
     assert all(isinstance(c.credential, _Cred) for c in clients)
+
+
+def test_preview_budget_clock_starts_at_the_first_object_not_at_client_setup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A service principal's token fetch alone took 4-5 s live against a 3 s budget, which
+    truncated every OneLake preview before its first object (#1680).
+    """
+
+    def _slow_first(**_kwargs: Any) -> Any:
+        time.sleep(0.3)  # client + token setup, longer than the whole budget
+        for day in ("2026-09-26", "2026-09-27"):
+            yield flatfile.FileRef(f"data/orders_{day}.csv")
+
+    monkeypatch.setattr(flatfile, "iter_files", _slow_first)
+    result = flatfile.resolve_batch_file_preview(
+        conn_type="adls_gen2",
+        config={},
+        secret="s",
+        prefix="data/",
+        pattern=_PATTERN,
+        max_objects=100,
+        max_seconds=0.1,
+    )
+
+    assert result.truncated is False
+    assert result.scanned == 2
+    assert result.path == "data/orders_2026-09-27.csv"

@@ -7,6 +7,10 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Fixed
 
+- **A batch-target preview no longer comes back empty just because signing in was slow.** The
+  preview's time budget now starts when the store returns its first object, not before the
+  client authenticates; a service principal's token request alone could use the whole budget.
+
 - **The batch-target preview no longer scans unbounded, or matches a regex it hasn't
   vetted, in the API process.** The suite editor's live "resolves to" hint now stops at a
   small object-count/wall-clock budget (`BATCH_PREVIEW_MAX_OBJECTS`/`_MAX_SECONDS`) and

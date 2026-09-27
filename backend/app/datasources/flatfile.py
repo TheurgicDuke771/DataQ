@@ -1609,10 +1609,18 @@ class _Budget:
 
 
 def _budget_bounded(files: Iterable[FileRef], budget: _Budget) -> Iterator[FileRef]:
-    """Yield from `files`, stopping (without raising) once either budget is hit."""
-    deadline = time.monotonic() + budget.max_seconds
+    """Yield from `files`, stopping (without raising) once either budget is hit.
+
+    The clock starts at the first listed object, so it bounds the SCAN, not client setup: an
+    Entra token fetch (service-principal auth, #1680) alone can outlast the budget, which
+    would otherwise truncate every preview before its first object.
+    """
+    deadline: float | None = None
     for file in files:
-        if budget.scanned >= budget.max_objects or time.monotonic() >= deadline:
+        now = time.monotonic()
+        if deadline is None:
+            deadline = now + budget.max_seconds
+        if budget.scanned >= budget.max_objects or now >= deadline:
             budget.truncated = True
             return
         budget.scanned += 1
