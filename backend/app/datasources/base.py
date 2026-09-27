@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 
@@ -44,6 +44,9 @@ class CheckSpec:
 
     expectation_type: str
     kwargs: dict[str, Any]
+    # Set when a runner rewrote `kwargs` for the engine (#1618): the kwargs as authored, which
+    # the result's `expected_value` reports so it matches the stored check.
+    authored_kwargs: dict[str, Any] | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)
