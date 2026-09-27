@@ -10,11 +10,9 @@ the commit means a rolled-back batch never reaches the broker.
 
 from __future__ import annotations
 
-import contextvars
 import time
 import uuid
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -34,8 +32,6 @@ BATCH_SIZE = 500
 #: Stop claiming once a tick has run this long — under the 60 s beat interval, so a
 #: tick that cannot drain its due set reports the residual instead of overlapping.
 BUDGET_S = 45.0
-#: Concurrent broker publishes per batch; each is one broker round-trip.
-PUBLISH_WORKERS = 8
 
 _ADVANCE_SQL = text("""
     UPDATE schedules AS s
@@ -78,24 +74,19 @@ def _next_fire(
 
 
 def _publish(queued: list[_Queued]) -> tuple[list[tuple[_Queued, str]], list[_Queued]]:
-    def one(item: _Queued) -> tuple[_Queued, str | None]:
+    """Publish serially: `send_task` is not safe to call concurrently — the Redis result
+    backend shares one non-reentrant PubSub lock across calls.
+    """
+    sent: list[tuple[_Queued, str]] = []
+    failed: list[_Queued] = []
+    for item in queued:
         try:
-            return item, run_dispatch.dispatch_run(item.run_id)
+            sent.append((item, run_dispatch.dispatch_run(item.run_id)))
         except Exception:
             log.exception(
                 "run_dispatch_failed", run_id=str(item.run_id), schedule_id=str(item.schedule_id)
             )
-            return item, None
-
-    if len(queued) > 1:
-        # Each publish runs in a copy of this context: log fields + trace parent carry over.
-        context = contextvars.copy_context()
-        with ThreadPoolExecutor(max_workers=min(PUBLISH_WORKERS, len(queued))) as pool:
-            results = list(pool.map(lambda item: context.copy().run(one, item), queued))
-    else:
-        results = [one(item) for item in queued]
-    sent = [(item, task_id) for item, task_id in results if task_id is not None]
-    failed = [item for item, task_id in results if task_id is None]
+            failed.append(item)
     return sent, failed
 
 
