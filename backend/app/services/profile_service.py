@@ -396,6 +396,9 @@ def _open_connection(connection: Connection, secret_store: SecretStore) -> Gener
     secret = secret_store.get(connection.secret_ref)
     url, connect_args = _engine_args(connection, secret)
     engine = create_engine(url, connect_args=connect_args)
+    spec = SQL_ENGINES.get(connection.type)
+    if spec is not None:
+        spec.prepare_engine(engine)  # the engine's session statements (read-only, UTC, …)
     try:
         with engine.connect() as conn:
             yield conn

@@ -191,6 +191,38 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
     secretLabel: 'Password',
     destinationFields: ['host', 'port'],
   },
+  mysql: {
+    // One engine-generic adapter for any MySQL or MariaDB server (#1684), via the MIT PyMySQL driver.
+    textFields: [
+      { name: 'host', label: 'Host', extra: 'Hostname or IP only — no scheme, port or path' },
+      { name: 'port', label: 'Port', optional: true, extra: 'Defaults to 3306' },
+      {
+        name: 'database',
+        label: 'Database',
+        extra: 'Where an unqualified run target resolves (a MySQL schema is a database)',
+      },
+      { name: 'user', label: 'User' },
+      {
+        name: 'sslmode',
+        label: 'TLS mode',
+        optional: true,
+        options: ['require', 'verify-full', 'verify-ca', 'disable'],
+        extra:
+          'require when left empty · verify-* also checks the server certificate against the ' +
+          'system trust store · disable sends everything in plaintext',
+      },
+      {
+        name: 'inventory_sync',
+        label: 'Inventory sync',
+        type: 'toggle',
+        optional: true,
+        default: true,
+        extra: 'Daily sync of every table this user can read into the asset view.',
+      },
+    ],
+    secretLabel: 'Password',
+    destinationFields: ['host', 'port'],
+  },
   iceberg: {
     // Native pyiceberg read (ADR 0030).
     textFields: [

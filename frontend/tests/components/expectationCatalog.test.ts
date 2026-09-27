@@ -259,6 +259,13 @@ describe('typeFieldHint (issue #768 — Snowflake NUMBER ≠ "NUMBER")', () => {
     expect(hint).not.toMatch(/int64/);
   });
 
+  it('tells MySQL authors to use the SQLAlchemy type name — a different vocabulary', () => {
+    const hint = typeFieldHint('mysql');
+    expect(hint).toMatch(/`DECIMAL`/);
+    expect(hint).toMatch(/TINYINT/);
+    expect(hint).not.toMatch(/NUMERIC\(12, 2\)/);
+  });
+
   it.each<ConnectionType>(['unity_catalog', 's3', 'adls_gen2', 'iceberg'])(
     'tells %s authors about pandas dtypes, the object-dtype string case, and the NULL upcast',
     (type) => {
