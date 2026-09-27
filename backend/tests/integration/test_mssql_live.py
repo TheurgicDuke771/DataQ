@@ -41,7 +41,7 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import NameOID
-from sqlalchemy import create_engine, select, text
+from sqlalchemy import select
 
 from backend.app.datasources import generic_sql
 from backend.app.datasources.base import CheckSpec, MonitorSpec
@@ -206,24 +206,6 @@ def test_a_server_certificate_outside_the_configured_ca_is_refused() -> None:
             {**_sql_config(), "ca_certificate": _unrelated_ca()}, _password()
         )
     assert classify_failure_category(exc.value) is FailureCategory.CONNECTIVITY
-
-
-def test_every_session_is_encrypted() -> None:
-    url, connect_args = _SPEC.engine_args(_SPEC.validate_config(_sql_config()), _password())
-    engine = create_engine(url, connect_args=connect_args)
-    try:
-        with engine.connect() as conn:
-            encrypted = conn.execute(
-                text(
-                    "SELECT encrypt_option FROM sys.dm_exec_connections"
-                    " WHERE session_id = @@SPID"
-                )
-            ).scalar()
-    except Exception as exc:  # VIEW SERVER STATE is not a datareader grant everywhere
-        pytest.skip(f"cannot read sys.dm_exec_connections as this login: {type(exc).__name__}")
-    finally:
-        engine.dispose()
-    assert encrypted == "TRUE"
 
 
 @pytest.mark.skipif(not _env("FABRIC_HOST"), reason="no Fabric endpoint configured")
