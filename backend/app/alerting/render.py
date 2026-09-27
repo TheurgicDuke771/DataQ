@@ -36,11 +36,16 @@ _TRIGGER_LABELS = {
 
 def format_number(value: float | int) -> str:
     """At most 2 decimals, thousands separators, trailing zeros dropped —
-    ``99.4232987`` → ``99.42``, ``34480`` → ``34,480``, ``10.0`` → ``10``.
+    ``99.4232987`` → ``99.42``, ``34480`` → ``34,480``, ``10.0`` → ``10``. A
+    non-zero value that 2 decimals would erase keeps 2 significant figures
+    (``0.004``, ``0.0021``) so a real failure never reads as ``0``.
     """
     if isinstance(value, bool):
         return str(value)
-    text = f"{round(float(value), 2):,.2f}"
+    number = float(value)
+    if number != 0 and abs(number) < 0.01:
+        return f"{number:.2g}"
+    text = f"{round(number, 2):,.2f}"
     return text.rstrip("0").rstrip(".") if "." in text else text
 
 
@@ -370,17 +375,41 @@ def plain_check_summary(check: CheckReport) -> str:
 
 def _lineage_caveat(qualifiers: list[str]) -> str:
     """One honest sentence for the qualifiers `_blast_radius_clause` lists in
-    full: a suspended prune risks EXTRA edges, everything else MISSING or stale
-    ones, and the two are never merged into one direction.
+    full, keeping what each one actually says: a failing refresh, a stale one, a
+    coarse (view-level) one, and a suspended prune — the last risks EXTRA
+    tables, the rest MISSING or outdated ones, never merged into one direction.
     """
-    extra = [q for q in qualifiers if "pruned removed edges" in q]
-    other = len(qualifiers) - len(extra)
-    notes = []
-    if other:
-        notes.append(
-            f"{other} lineage source{'s' if other != 1 else ''} couldn't be refreshed, so this "
-            "list may be incomplete or out of date"
+    failing = sum(1 for q in qualifiers if "failing" in q)
+    stale = sum(1 for q in qualifiers if "has not refreshed recently" in q)
+    coarse = sum(1 for q in qualifiers if "is coarse" in q)
+    extra = any("pruned removed edges" in q for q in qualifiers)
+    unknown = (
+        len(qualifiers)
+        - failing
+        - stale
+        - coarse
+        - sum(1 for q in qualifiers if "pruned removed edges" in q)
+    )
+
+    def sources(n: int) -> str:
+        return f"{n} lineage source{'s' if n != 1 else ''}"
+
+    problems = []
+    if failing:
+        problems.append(f"{sources(failing)} couldn't be refreshed")
+    if stale:
+        problems.append(
+            f"{sources(stale)} {'hasn' if stale == 1 else 'haven'}'t refreshed recently"
         )
+    if coarse:
+        problems.append(
+            f"{sources(coarse)} only record{'s' if coarse == 1 else ''} view-level lineage"
+        )
+    if unknown > 0:
+        problems.append(f"{sources(unknown)} reported a problem")
+    notes = []
+    if problems:
+        notes.append(", ".join(problems) + ", so this list may be incomplete or out of date")
     if extra:
         notes.append("it may also include tables that no longer depend on this one")
     return "; ".join(notes)
@@ -409,7 +438,9 @@ def incident_facts(card: IncidentCard) -> list[tuple[str, str]]:
         pipeline = evidence.get("upstream_pipeline_run")
         if pipeline is None:
             facts.append(("Triggered by", "A manual or scheduled run (no upstream pipeline)."))
-        elif isinstance(pipeline, dict):
+        elif not isinstance(pipeline, dict):
+            facts.append(("Triggered by", "Not available."))
+        else:
             facts.append(
                 (
                     "Triggered by",
@@ -429,6 +460,8 @@ def incident_facts(card: IncidentCard) -> list[tuple[str, str]]:
             else:
                 text = f"All {len(siblings)} other checks passed."
             facts.append(("Same run", text))
+        else:
+            facts.append(("Same run", "Not available."))
         blast = evidence.get("downstream_blast_radius")
         if isinstance(blast, dict | list):
             assets, qualifiers = blast_radius_assets_and_qualifiers(blast)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -54,7 +55,10 @@ def _card(
         (34480, "34,480"),
         (10.0, "10"),
         (0.5, "0.5"),
-        (0.004, "0"),
+        (0.004, "0.004"),
+        (0.0021999, "0.0022"),
+        (-0.004, "-0.004"),
+        (0.0, "0"),
         (-2.456, "-2.46"),
     ],
 )
@@ -133,8 +137,8 @@ def test_incident_facts_are_labelled_and_name_downstream_tables() -> None:
     assert facts["Same run"] == "1 of 7 other checks also failed."
     assert facts["Downstream"] == (
         "May affect 4 downstream tables: orders_daily, revenue, churn and 1 more. "
-        "Note: 2 lineage sources couldn't be refreshed, so this list may be incomplete "
-        "or out of date."
+        "Note: 1 lineage source couldn't be refreshed, 1 lineage source hasn't refreshed "
+        "recently, so this list may be incomplete or out of date."
     )
 
 
@@ -191,3 +195,77 @@ def test_email_leads_with_the_plain_sentence_and_keeps_numbers_rounded() -> None
     html = email_mod.render_html_body(report)
     assert "34,480 rows (99.42%) have a duplicate order_number." in html
     assert "99.4232" not in html and "99.4232" not in text
+
+
+def test_a_tiny_failure_rate_never_reads_as_zero_percent() -> None:
+    check = _check(
+        expected={"column": "id"}, sample={"unexpected_count": 1, "unexpected_percent": 0.002}
+    )
+    assert render.plain_check_summary(check) == "1 row (0.002%) has a duplicate id."
+    assert render.check_sample_note(check) == "0.002% unexpected"
+
+
+def test_a_coarse_source_is_not_described_as_a_failed_refresh() -> None:
+    evidence = {
+        "upstream_pipeline_run": None,
+        "sibling_checks": [],
+        "downstream_blast_radius": {
+            "assets": [],
+            "qualified_by": ["warehouse lineage on 'wh' is coarse: view-level only"],
+        },
+    }
+    downstream = dict(render.incident_facts(_card(evidence)))["Downstream"]
+    assert "1 lineage source only records view-level lineage" in downstream
+    assert "refreshed" not in downstream
+
+
+def test_evidence_layers_that_failed_to_build_are_stated_not_dropped() -> None:
+    evidence = {"upstream_pipeline_run": "broken", "sibling_checks": None}
+    facts = dict(render.incident_facts(_card(evidence)))
+    assert facts["Triggered by"] == "Not available."
+    assert facts["Same run"] == "Not available."
+    assert facts["Downstream"] == "Not available."
+
+
+def _run(
+    checks: list[CheckReport], incidents: list[IncidentCard], status: str = "succeeded"
+) -> RunReport:
+    return RunReport(
+        run_id=uuid.uuid4(),
+        suite_id=uuid.uuid4(),
+        suite_name="Orders",
+        run_status=status,
+        datasource_type="snowflake",
+        target_label="RETAIL.ORDERS",
+        worst_severity="fail" if checks else None,
+        counts={},
+        checks=checks,
+        finished_at=None,
+        incidents=incidents,
+    )
+
+
+def test_a_run_that_did_not_finish_says_so_rather_than_zero_problems() -> None:
+    text = email_mod.render_text_body(_run([], [], status="failed"))
+    assert "couldn't finish checking Orders (RETAIL.ORDERS)" in text
+    assert "0 problems" not in text and "every check passed" not in text
+
+
+def test_errored_or_skipped_checks_are_not_reported_as_all_passed() -> None:
+    checks = [_check(status="error"), _check(status="skip"), _check(status="pass")]
+    intro = email_mod.render_text_body(_run(checks, [])).splitlines()[2]
+    assert intro == "DataQ checked Orders (RETAIL.ORDERS) and couldn't verify 2 checks."
+
+
+def test_same_named_checks_each_get_their_own_incident() -> None:
+    first, second = uuid.uuid4(), uuid.uuid4()
+    checks = [replace(_check(), check_id=first), replace(_check(), check_id=second)]
+    cards = [
+        replace(_card(None, count=3), check_id=second, incident_id=uuid.UUID(int=2)),
+        replace(_card(None, count=9), check_id=first, incident_id=uuid.UUID(int=1)),
+    ]
+    text = email_mod.render_text_body(_run(checks, cards))
+    first_block, second_block = text.split("* order_id unique")[1:3]
+    assert "failed on 9 runs" in first_block and "failed on 3 runs" not in first_block
+    assert "failed on 3 runs" in second_block
+    assert "Other open incidents" not in text

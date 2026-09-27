@@ -44,37 +44,59 @@ def render_subject(report: RunReport) -> str:
 
 def _intro(report: RunReport) -> str:
     target = f" ({report.target_label})" if report.target_label else ""
-    if report.success:
-        return f"DataQ checked {report.suite_name}{target} and every check passed."
-    problems = sum(1 for c in report.checks if c.status != "pass")
-    noun = "problem" if problems == 1 else "problems"
-    return (
-        f"DataQ checked {report.suite_name}{target} and found {problems} {noun} "
-        f"that {'needs' if problems == 1 else 'need'} attention."
-    )
+    subject = f"{report.suite_name}{target}"
+    if report.run_status == "failed":
+        return (
+            f"DataQ couldn't finish checking {subject}, so this data wasn't verified. "
+            "Open the run for the reason."
+        )
+    problems = sum(1 for c in report.checks if c.status not in ("pass", "skip", "error"))
+    unverified = sum(1 for c in report.checks if c.status in ("skip", "error"))
+    if not problems and not unverified:
+        return f"DataQ checked {subject} and every check passed."
+    parts = []
+    if problems:
+        parts.append(
+            f"found {problems} problem{'s' if problems != 1 else ''} that "
+            f"{'needs' if problems == 1 else 'need'} attention"
+        )
+    if unverified:
+        parts.append(f"couldn't verify {unverified} check{'s' if unverified != 1 else ''}")
+    return f"DataQ checked {subject} and " + " and ".join(parts) + "."
 
 
-def _incident_for(report: RunReport, check: CheckReport) -> IncidentCard | None:
-    return next((i for i in report.incidents if i.check_name == check.check_name), None)
+def _pair_incidents(
+    report: RunReport, shown: list[CheckReport]
+) -> tuple[dict[int, IncidentCard], list[IncidentCard]]:
+    """Pair each rendered check with its incident — by check id when the report
+    carries one, else by name — using each incident at most once, so duplicate
+    names can't show one incident twice and hide another. Anything left over is
+    returned to be listed on its own, never dropped.
+    """
+    remaining = list(report.incidents)
+    paired: dict[int, IncidentCard] = {}
+    for index, check in enumerate(shown):
+        if check.check_id is not None:
+            match = next((i for i in remaining if i.check_id == check.check_id), None)
+        else:
+            match = next((i for i in remaining if i.check_name == check.check_name), None)
+        if match is not None:
+            paired[index] = match
+            remaining.remove(match)
+    return paired, remaining
 
 
 def _failing(report: RunReport) -> list[CheckReport]:
     return [c for c in report.checks if c.status != "pass"]
 
 
-def _unmatched_incidents(report: RunReport) -> list[IncidentCard]:
-    """Incidents with no rendered check block to sit under (name drift, or a check
-    past the line cap) — listed on their own, never silently dropped.
-    """
-    shown = {c.check_name for c in _failing(report)[:_MAX_CHECK_LINES]}
-    return [i for i in report.incidents if i.check_name not in shown]
-
-
 def render_text_body(report: RunReport) -> str:
     """Plain-text body (the alternative for non-HTML clients)."""
     lines = [render_subject(report), "", _intro(report), ""]
     failing = _failing(report)
-    for check in failing[:_MAX_CHECK_LINES]:
+    shown = failing[:_MAX_CHECK_LINES]
+    paired, others = _pair_incidents(report, shown)
+    for index, check in enumerate(shown):
         lines.append(f"* {check.check_name} [{_STATUS_LABEL.get(check.status, check.status)}]")
         summary = render.plain_check_summary(check)
         if summary:
@@ -82,7 +104,7 @@ def render_text_body(report: RunReport) -> str:
         examples = render.check_sample_values(check)
         if examples:
             lines.append(f"  Examples: {examples.removeprefix('e.g. ')}")
-        incident = _incident_for(report, check)
+        incident = paired.get(index)
         if incident is not None:
             lines.extend(f"  {label}: {text}" for label, text in render.incident_facts(incident))
         detail = render.check_detail(check)
@@ -91,7 +113,6 @@ def render_text_body(report: RunReport) -> str:
         lines.append("")
     if len(failing) > _MAX_CHECK_LINES:
         lines.append(f"…and {len(failing) - _MAX_CHECK_LINES} more — see the run for all of them.")
-    others = _unmatched_incidents(report)
     if others:
         lines.append("Other open incidents:")
         for card in others:
@@ -112,11 +133,23 @@ def render_text_body(report: RunReport) -> str:
     return "\n".join(lines)
 
 
-_STATUS_LABEL = {"fail": "Failed", "warn": "Warning", "error": "Couldn't run", "skip": "Skipped"}
-_STATUS_COLOUR = {"fail": "#dc2626", "warn": "#d97706", "error": "#6b7280", "skip": "#6b7280"}
+_STATUS_LABEL = {
+    "critical": "Critical",
+    "fail": "Failed",
+    "warn": "Warning",
+    "error": "Couldn't run",
+    "skip": "Skipped",
+}
+_STATUS_COLOUR = {
+    "critical": "#991b1b",
+    "fail": "#dc2626",
+    "warn": "#d97706",
+    "error": "#6b7280",
+    "skip": "#6b7280",
+}
 
 
-def _check_block(report: RunReport, check: CheckReport) -> str:
+def _check_block(check: CheckReport, incident: IncidentCard | None) -> str:
     colour = _STATUS_COLOUR.get(check.status, "#dc2626")
     badge = (
         f"<span style='display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;"
@@ -134,7 +167,6 @@ def _check_block(report: RunReport, check: CheckReport) -> str:
     examples = render.check_sample_values(check)
     if examples:
         facts.append(("Examples", examples.removeprefix("e.g. ")))
-    incident = _incident_for(report, check)
     if incident is not None:
         facts.extend(render.incident_facts(incident))
     if facts:
@@ -167,13 +199,14 @@ def render_html_body(report: RunReport) -> str:
     label_td = f"{td}color:#6b7280;white-space:nowrap;"
 
     failing = _failing(report)
-    blocks = "".join(_check_block(report, c) for c in failing[:_MAX_CHECK_LINES])
+    shown = failing[:_MAX_CHECK_LINES]
+    paired, others = _pair_incidents(report, shown)
+    blocks = "".join(_check_block(c, paired.get(i)) for i, c in enumerate(shown))
     if len(failing) > _MAX_CHECK_LINES:
         blocks += (
             f"<p style='font-size:13px;color:#6b7280;'>…and {len(failing) - _MAX_CHECK_LINES} "
             "more — see the run for all of them.</p>"
         )
-    others = _unmatched_incidents(report)
     if others:
         blocks += "<h3 style='margin:16px 0 0;font-size:15px;'>Other open incidents</h3>" + "".join(
             "<div style='border-left:3px solid #9ca3af;padding:8px 12px;margin:12px 0;"
