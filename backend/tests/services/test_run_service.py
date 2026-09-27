@@ -2321,3 +2321,61 @@ def test_elapsed_ms_reads_a_naive_timestamp_as_utc_instead_of_raising() -> None:
 
     elapsed = run_service._elapsed_ms(run)
     assert elapsed is not None and 30_000 <= elapsed < 60_000
+
+
+# ───────────────────── value-signal gate forwarding (#2014) ───────────
+
+
+class _GateAwareRunner(FakeRunner):
+    """A SQL-lane runner: advertises the gate, so the run path must hand it over."""
+
+    accepts_value_signal_gate = True
+
+    def run_checks(
+        self,
+        *,
+        table: str,
+        schema: str | None,
+        checks: list[CheckSpec],
+        index_columns: list[str] | None = None,
+        value_signal_gate: Any = None,
+    ) -> SuiteOutcome:
+        outcome = super().run_checks(
+            table=table, schema=schema, checks=checks, index_columns=index_columns
+        )
+        assert self.called_with is not None
+        self.called_with["value_signal_gate"] = value_signal_gate
+        return outcome
+
+
+def _one_ok() -> SuiteOutcome:
+    return SuiteOutcome(success=True, checks=[CheckOutcome("x", success=True)])
+
+
+def _drain(runner: Any, gate: Any) -> list[CheckOutcome]:
+    return [
+        outcome
+        for phase in run_service._run_outcome_phases(
+            cast(CheckRunner, runner),
+            table="t",
+            schema=None,
+            checks=_checks(1),
+            value_signal_gate=gate,
+        )
+        for _, outcome in phase.resolved
+    ]
+
+
+def test_value_signal_gate_reaches_an_advertising_runner() -> None:
+    runner = _GateAwareRunner(_one_ok())
+    gate = run_service.build_value_signal_gate({"pii_columns": ["email"]}, None)
+    _drain(runner, gate)
+    assert runner.called_with is not None
+    assert runner.called_with["value_signal_gate"] is gate
+
+
+def test_value_signal_gate_is_withheld_from_a_runner_that_does_not_take_it() -> None:
+    # A frame-lane runner's signature has no such keyword; passing it would TypeError the run.
+    runner = FakeRunner(_one_ok())
+    outcomes = _drain(runner, run_service.build_value_signal_gate(None, None))
+    assert [o.success for o in outcomes] == [True]

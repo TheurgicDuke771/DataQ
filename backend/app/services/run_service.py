@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import uuid
 from collections import defaultdict
 from collections.abc import Callable, Hashable, Iterator, Mapping, Sequence
@@ -19,12 +20,14 @@ from backend.app.core.logging import get_logger
 from backend.app.core.timeutil import as_utc
 from backend.app.datasources.base import (
     SAMPLE_ROW_CAP,
+    VALUE_SIGNAL_STATUS_KEY,
     VALUE_SIGNAL_SUMMARY_KEY,
     CheckOutcome,
     CheckRunner,
     CheckSpec,
     MonitorRunner,
     MonitorSpec,
+    ValueSignalGate,
 )
 from backend.app.datasources.monitors import (
     MONITOR_KINDS,
@@ -137,6 +140,7 @@ def _run_outcome_phases(
     index_columns: list[str] | None = None,
     comparison_executor: Callable[[Check], CheckOutcome] | None = None,
     stateful_monitor_executor: Callable[[Check], CheckOutcome] | None = None,
+    value_signal_gate: ValueSignalGate | None = None,
 ) -> Iterator[OutcomePhase]:
     """Run a suite's checks, dispatched by `check.kind` (ADR 0012), yielding each
     unit of execution as it resolves.
@@ -210,8 +214,13 @@ def _run_outcome_phases(
             CheckSpec(expectation_type=checks[i].expectation_type, kwargs=dict(checks[i].config))
             for i in expectation_idx
         ]
+        # Only runners that advertise it take the gate (#2014) — the SQL lanes; a frame lane
+        # already carries the population signal in its own locator list.
+        extra: dict[str, Any] = {}
+        if value_signal_gate is not None and getattr(runner, "accepts_value_signal_gate", False):
+            extra["value_signal_gate"] = value_signal_gate
         suite_outcome = runner.run_checks(
-            table=table, schema=schema, checks=specs, index_columns=index_columns
+            table=table, schema=schema, checks=specs, index_columns=index_columns, **extra
         )
         # One atomic GX batch; `strict=True` keeps a wrong-arity runner loud.
         yield OutcomePhase(
@@ -314,6 +323,7 @@ def execute_run(
     index_columns: list[str] | None = None,
     comparison_executor: Callable[[Check], CheckOutcome] | None = None,
     stateful_monitor_executor: Callable[[Check], CheckOutcome] | None = None,
+    value_signal_gate: ValueSignalGate | None = None,
 ) -> Run:
     """Run ``checks`` against ``table`` via ``runner`` and persist the outcome."""
     run.status = "running"
@@ -344,6 +354,7 @@ def execute_run(
             index_columns=index_columns,
             comparison_executor=comparison_executor,
             stateful_monitor_executor=stateful_monitor_executor,
+            value_signal_gate=value_signal_gate,
         ):
             rows = [
                 _build_result(run.id, checks[i], check_outcome, zero_sample=zero_sample)
@@ -834,6 +845,37 @@ def _may_show_incidental(
     )
 
 
+def value_signal_decides(
+    column: str, policy: Mapping[str, Any] | None, tags: Mapping[str, str] | None
+) -> bool:
+    """Whether a column's failing-row VALUES can change its masking — the negation of every
+    rung that decides without them: a sensitive tag or `pii_columns` (masked), a PII-shaped
+    name (masked by `is_sensitive` either way), or fail-closed mode without clearance (masked).
+    Mirrors `_known_sensitive` / `_may_show_incidental`, which share those rungs; the SQL lanes
+    pay for a population sample only when this is True (#2014).
+    """
+    if _tag_sensitive(column, tags) or _policy_pii(column, policy):
+        return False
+    if is_sensitive(column, ()):
+        return False
+    if _policy_requires_classification(policy):
+        return _tag_non_sensitive(column, tags) or _policy_identifier(column, policy)
+    return True
+
+
+def build_value_signal_gate(
+    policy: Mapping[str, Any] | None, tags: Mapping[str, str] | None
+) -> ValueSignalGate:
+    """`value_signal_decides` bound to a run's capture-time policy and warehouse tags."""
+    policy_snapshot = copy.deepcopy(dict(policy or {}))
+    tags_snapshot = dict(tags or {})
+
+    def gate(column: str) -> bool:
+        return value_signal_decides(column, policy_snapshot, tags_snapshot)
+
+    return gate
+
+
 def _values_by_column(rows: Sequence[Any]) -> dict[str, list[Any]]:
     """Gather each column's values across the sampled failing rows, so the classifier's
     value signal (emails, id-shape) sees the whole column, not one cell.
@@ -1254,8 +1296,8 @@ def redact_sample_failures(
     displayed_key = _displayed_sample_key(sample)
     out: dict[str, Any] = {}
     for key, raw_value in sample.items():
-        if key == VALUE_SIGNAL_SUMMARY_KEY:
-            # Internal metadata (#1230): consumed above, never re-emitted or tracked.
+        if key in (VALUE_SIGNAL_SUMMARY_KEY, VALUE_SIGNAL_STATUS_KEY):
+            # Internal metadata (#1230/#2014): consumed above, never re-emitted or tracked.
             continue
         # Tracker suppressed on the losing list so `summary()` describes the table on
         # screen (#1197); comparison buckets render together, so they always accumulate.
