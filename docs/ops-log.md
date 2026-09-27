@@ -622,3 +622,17 @@ case that bites, since the product cannot know them and will never warn.
 - **Still open:**
   - **Every Snowflake PAT in Key Vault expired around 09-23 (#2085).** Prod Snowflake connections are down until the user mints new ones.
   - **The AWS CLI credential on the maintainer machine is invalid,** so the AWS apply and deploy for the beat split are pending.
+- ~05:25–05:30Z: **Snowflake PAT rotation (#2085).** The user minted three PATs (`DATAQ_READER_PAT`, `DATAQ_LOADER_PAT`, and `DATAQ_ADMIN_PAT`, which is restricted to `ACCOUNTADMIN`). All three were created 2026-09-26 22:22Z and **expire 2026-10-11 22:22Z**, so the next rotation is due before then.
+
+  | PAT | Written to | Method |
+  |---|---|---|
+  | READER | Azure connections `Snowflake — Payments / Orders / Retail` | `POST /connections/{id}/reauth` as the admin PAT `dataq-pat-w1-admin` |
+  | LOADER | KV `snowflake-password-harness` and `snowflake-loader-pat` | `az keyvault secret set` |
+  | LOADER | ACA inline `snowflake-password` on `dataq-harness-airflow`, `dataq-harness-airflow-worker` and job `dbt-lineage` (all Stopped) | `az containerapp [job] secret set` |
+  | ADMIN | harness `secrets.sh` `SNOWFLAKE_PASSWORD` | edited in place |
+
+  Every copy was checked by hash comparison. `/test` returned ok ×3, and a live prod suite run `a689bb2d` ("Snowflake — Orders (all paths)") → `succeeded` 6/2, which also served as the post-deploy authenticated write probe.
+
+  **Not updated:**
+  - AWS `Retail Snowflake DEV`: blocked on AWS CLI credentials.
+  - The local mirror: empty, so there was nothing to update.
