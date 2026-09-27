@@ -448,8 +448,8 @@ confirm your DataQ connection role can still read both tags.
 
 ### Where it applies
 
-Only **Snowflake** and **Unity Catalog** have a column-tag concept. ADLS, S3,
-Iceberg and flat files have no authoritative source to read, so for those the
+Only **Snowflake** and **Unity Catalog** have a column-tag concept. PostgreSQL, ADLS,
+S3, Iceberg and flat files have no authoritative source to read, so for those the
 classification remains the suite's own policy, the name/value classifier, and
 fail-closed mode. This is a limit of the platforms, not a gap in the
 implementation, and it is stated here so nobody plans around a guarantee that
@@ -493,7 +493,7 @@ values happen to look harmless and the rows behind them do not.
 | Lane | Where the population signal comes from |
 |---|---|
 | Flat files (ADLS, S3), Iceberg, the Unity Catalog DataFrame batch | The failing-row list the check already builds (up to 5,000 rows); no extra query |
-| Snowflake, Unity Catalog SQL pushdown | One **extra, bounded query** per failing check: the check's own failing condition, selecting only the tested column and the identifier column, `LIMIT 5000` |
+| Snowflake, PostgreSQL, Unity Catalog SQL pushdown | One **extra, bounded query** per failing check: the check's own failing condition, selecting only the tested column and the identifier column, `LIMIT 5000` |
 
 The extra query on the warehouse lanes is issued only when all of these hold:
 the check found more than 20 unexpected rows (including a check that still

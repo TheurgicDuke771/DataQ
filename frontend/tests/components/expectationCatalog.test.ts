@@ -252,6 +252,13 @@ describe('typeFieldHint (issue #768 — Snowflake NUMBER ≠ "NUMBER")', () => {
     expect(hint).toMatch(/dry-run/i);
   });
 
+  it('tells PostgreSQL authors to use the dialect-reported type too (a SQL batch, #1678)', () => {
+    const hint = typeFieldHint('postgres');
+    expect(hint).toMatch(/NUMERIC\(12, 2\)/);
+    expect(hint).toMatch(/dry-run/i);
+    expect(hint).not.toMatch(/int64/);
+  });
+
   it.each<ConnectionType>(['unity_catalog', 's3', 'adls_gen2', 'iceberg'])(
     'tells %s authors about pandas dtypes, the object-dtype string case, and the NULL upcast',
     (type) => {

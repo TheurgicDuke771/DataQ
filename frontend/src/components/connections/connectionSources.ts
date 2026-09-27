@@ -4,6 +4,7 @@ import { CONNECTION_TYPES, type ConnectionType } from '../../api/connections';
 export const SOURCE_CATEGORIES = [
   'Warehouses',
   'Lakehouses',
+  'Databases',
   'Cloud Storage',
   'Orchestration',
 ] as const;
@@ -16,6 +17,7 @@ export const SOURCE_CATEGORY: Record<ConnectionType, SourceCategory> = {
   snowflake: 'Warehouses',
   unity_catalog: 'Lakehouses',
   iceberg: 'Lakehouses',
+  postgres: 'Databases',
   adls_gen2: 'Cloud Storage',
   s3: 'Cloud Storage',
 };
@@ -25,6 +27,7 @@ export const CONNECTION_BLURB: Record<ConnectionType, string> = {
   snowflake: 'Cloud data warehouse',
   unity_catalog: 'Databricks governance layer',
   iceberg: 'Apache Iceberg tables (native read)',
+  postgres: 'Any PostgreSQL server — self-hosted or managed',
   adls_gen2: 'Azure Data Lake Storage',
   s3: 'Object storage buckets',
   adf: 'Trigger & monitor pipeline runs',
@@ -37,6 +40,7 @@ export const CONNECTION_BLURB: Record<ConnectionType, string> = {
 export const SOURCE_CATEGORY_NOTE: Record<SourceCategory, string> = {
   Warehouses: 'Run checks directly against tables in a cloud data warehouse.',
   Lakehouses: 'Validate lakehouse tables governed by Unity Catalog.',
+  Databases: 'Run checks directly against tables in an operational (OLTP) database.',
   'Cloud Storage': 'Run checks on flat files (CSV / Parquet) in object storage.',
   Orchestration:
     'Optional — connect Azure Data Factory, Airflow or dbt to watch their pipeline / job runs and trigger suites on completion.',

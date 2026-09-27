@@ -104,6 +104,43 @@ describe('CatalogBrowserButton', () => {
     });
   });
 
+  it('starts at schemas on a schema-rooted (generic SQL) connection and hands back no catalog', async () => {
+    const user = userEvent.setup();
+    const onPick = vi.fn();
+    mockCatalog
+      .mockResolvedValueOnce(level('schema', ['Sales', 'public']))
+      .mockResolvedValueOnce(level('table', ['Orders'], { schema: 'Sales' }));
+    render(<CatalogBrowserButton connectionId="pg1" onPick={onPick} root="schema" />);
+
+    await user.click(screen.getByRole('button', { name: /Browse schemas/ }));
+    expect(screen.getByText('Schemas')).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: /Sales/ }));
+    await user.click(await screen.findByRole('button', { name: /Orders/ }));
+
+    // A catalog is never sent: the backend refuses one on a connection that pins its database.
+    expect(mockCatalog.mock.calls.map((c) => [c[0], c[1]])).toEqual([
+      ['pg1', { catalog: undefined, schema: undefined }],
+      ['pg1', { catalog: undefined, schema: 'Sales' }],
+    ]);
+    expect(onPick).toHaveBeenCalledWith({ schema: 'Sales', table: 'Orders' });
+  });
+
+  it('says which schema is empty on a schema-rooted connection', async () => {
+    const user = userEvent.setup();
+    mockCatalog
+      .mockResolvedValueOnce(level('schema', ['empty_one']))
+      .mockResolvedValueOnce(level('table', [], { schema: 'empty_one' }));
+    render(<CatalogBrowserButton connectionId="pg1" onPick={vi.fn()} root="schema" />);
+
+    await user.click(screen.getByRole('button', { name: /Browse schemas/ }));
+    await user.click(await screen.findByRole('button', { name: /empty_one/ }));
+    expect(
+      await screen.findByText(
+        "No tables in empty_one are visible to this connection's credential.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('goes back up through the breadcrumb', async () => {
     const user = userEvent.setup();
     mockCatalog

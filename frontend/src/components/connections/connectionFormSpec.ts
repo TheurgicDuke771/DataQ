@@ -152,6 +152,39 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
     secretLabel: 'Personal access token (PAT)',
     destinationFields: ['workspace_url'],
   },
+  postgres: {
+    // One engine-generic adapter for any PostgreSQL server (#1678) — never a hosting vendor.
+    textFields: [
+      { name: 'host', label: 'Host', extra: 'Hostname or IP only — no scheme, port or path' },
+      { name: 'port', label: 'Port', optional: true, extra: 'Defaults to 5432' },
+      { name: 'database', label: 'Database' },
+      { name: 'user', label: 'User' },
+      {
+        name: 'schema',
+        label: 'Default schema',
+        optional: true,
+        extra: 'Where an unqualified run target resolves — defaults to public',
+      },
+      {
+        name: 'sslmode',
+        label: 'TLS mode',
+        optional: true,
+        extra:
+          'require (default) · verify-full · verify-ca · disable — verify-* checks the server ' +
+          'certificate against the system trust store',
+      },
+      {
+        name: 'inventory_sync',
+        label: 'Inventory sync',
+        type: 'toggle',
+        optional: true,
+        default: true,
+        extra: 'Daily sync of every table this user can read into the asset view.',
+      },
+    ],
+    secretLabel: 'Password',
+    destinationFields: ['host', 'port'],
+  },
   iceberg: {
     // Native pyiceberg read (ADR 0030).
     textFields: [
