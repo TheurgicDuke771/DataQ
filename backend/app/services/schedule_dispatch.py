@@ -32,6 +32,9 @@ BATCH_SIZE = 500
 #: Stop claiming once a tick has run this long — under the 60 s beat interval, so a
 #: tick that cannot drain its due set reports the residual instead of overlapping.
 BUDGET_S = 45.0
+#: Consecutive publish failures that mean the broker is down: each failure costs a full
+#: publish-retry cycle, so the rest of the batch is failed without trying and the tick ends.
+BROKER_DOWN_AFTER = 3
 
 _ADVANCE_SQL = text("""
     UPDATE schedules AS s
@@ -73,21 +76,32 @@ def _next_fire(
     return cache[key]
 
 
-def _publish(queued: list[_Queued]) -> tuple[list[tuple[_Queued, str]], list[_Queued]]:
+def _publish(
+    queued: list[_Queued],
+) -> tuple[list[tuple[_Queued, str]], list[_Queued], bool]:
     """Publish serially: `send_task` is not safe to call concurrently — the Redis result
-    backend shares one non-reentrant PubSub lock across calls.
+    backend shares one non-reentrant PubSub lock across calls. Returns (sent, failed,
+    broker_down).
     """
     sent: list[tuple[_Queued, str]] = []
     failed: list[_Queued] = []
-    for item in queued:
+    streak = 0
+    for index, item in enumerate(queued):
         try:
             sent.append((item, run_dispatch.dispatch_run(item.run_id)))
+            streak = 0
         except Exception:
             log.exception(
                 "run_dispatch_failed", run_id=str(item.run_id), schedule_id=str(item.schedule_id)
             )
             failed.append(item)
-    return sent, failed
+            streak += 1
+            if streak >= BROKER_DOWN_AFTER:
+                rest = queued[index + 1 :]
+                failed.extend(rest)
+                log.error("schedule_dispatch_broker_down", failed_without_attempt=len(rest))
+                return sent, failed, True
+    return sent, failed, False
 
 
 def _dispatch_batch(
@@ -175,7 +189,7 @@ def _dispatch_batch(
         session.execute(insert(Run), run_rows)
     session.commit()
 
-    sent, failed = _publish(queued)
+    sent, failed, broker_down = _publish(queued)
     for item, _task_id in sent:
         log.info("schedule_fired", schedule_id=str(item.schedule_id), run_id=str(item.run_id))
     if sent:
@@ -197,6 +211,7 @@ def _dispatch_batch(
     outcomes["dispatched"] = len(sent)
     outcomes["dispatch_failed"] = len(failed)
     outcomes["claimed"] = len(claimed)
+    outcomes["broker_down"] = int(broker_down)
     return outcomes
 
 
@@ -227,13 +242,15 @@ def dispatch_due_schedules(
     while True:
         outcomes = _dispatch_batch(session, now=now, limit=batch_size, fires=fires)
         claimed = outcomes.pop("claimed", 0)
+        broker_down = outcomes.pop("broker_down", 0)
         summary["due"] += claimed
         for key, count in outcomes.items():
             summary[key] += count
         # A short batch means everything still due is locked by another dispatcher.
-        if claimed < batch_size:
+        if claimed < batch_size and not broker_down:
             break
-        if clock() - started >= budget_s:
+        # A down broker would fail every further batch too: leave them due for the next tick.
+        if broker_down or clock() - started >= budget_s:
             summary["residual"] = (
                 session.scalar(
                     select(func.count())
@@ -244,7 +261,11 @@ def dispatch_due_schedules(
             )
             session.rollback()
             log.warning(
-                "schedules_dispatch_budget_exhausted",
+                (
+                    "schedules_dispatch_stopped_broker_down"
+                    if broker_down
+                    else "schedules_dispatch_budget_exhausted"
+                ),
                 residual=summary["residual"],
                 dispatched=summary["dispatched"],
                 elapsed_s=round(clock() - started, 3),

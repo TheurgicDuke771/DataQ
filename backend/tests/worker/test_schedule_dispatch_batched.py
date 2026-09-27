@@ -282,3 +282,29 @@ def test_a_failed_publish_does_not_overwrite_a_run_cancelled_meanwhile(
     (run,) = _runs(db_session)
     db_session.refresh(run)
     assert run.status == "cancelled"
+
+
+def test_a_down_broker_fails_the_batch_fast_and_ends_the_tick(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each failed publish costs a full retry cycle, so after BROKER_DOWN_AFTER in a row
+    the rest of the batch is failed without trying and no further batch is claimed.
+    """
+    suite = _suite(db_session)
+    _schedules(db_session, suite, 8)
+    attempts: list[object] = []
+
+    def _down(run_id: object) -> str:
+        attempts.append(run_id)
+        raise RuntimeError("broker down")
+
+    monkeypatch.setattr(run_dispatch, "dispatch_run", _down)
+
+    with capture_logs() as logs:
+        summary = schedule_dispatch.dispatch_due_schedules(db_session, now=NOW, batch_size=5)
+
+    assert len(attempts) == schedule_dispatch.BROKER_DOWN_AFTER
+    assert summary["due"] == 5 and summary["dispatch_failed"] == 5
+    assert summary["residual"] == 3  # left due for the next tick, not failed
+    assert all(r.status == "failed" for r in _runs(db_session))
+    assert any(e["event"] == "schedules_dispatch_stopped_broker_down" for e in logs)

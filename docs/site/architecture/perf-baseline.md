@@ -1169,11 +1169,15 @@ the next occurrence strictly after the tick's `now` in the schedule's own
 timezone (DST-aware, no backfill); it is computed once per distinct
 `(cron, timezone)` pair per tick rather than once per schedule.
 
-A tick also has a **budget** now: once 45 seconds have passed it stops claiming,
+A tick also has a **budget** now, checked between batches: once 45 seconds have
+passed it claims no further batch,
 counts what is still due, and logs `schedules_dispatch_budget_exhausted` with that
 residual. The next tick picks the residual up. Before, a tick that could not
 finish simply ran into the next one — correct, because of `SKIP LOCKED`, but
-invisible, and holding two worker slots.
+invisible, and holding two worker slots. Because publishing happens inside a
+batch, an unreachable broker could otherwise hold one batch for minutes (every
+publish runs Celery's retry cycle), so three consecutive publish failures end the
+batch — its remaining runs are failed without another attempt — and the tick.
 
 ### Method
 
