@@ -559,6 +559,46 @@ describe('ConnectionForm — PostgreSQL', () => {
 });
 
 describe('ConnectionForm — Trino', () => {
+  const trinoConnection: Connection = {
+    id: 'conn-tr-1',
+    name: 'lake',
+    type: 'trino',
+    env: 'dev',
+    config: { host: 'trino.internal', catalog: 'hive', user: 'dq', auth_type: 'password' },
+    has_secret: true,
+    created_by: 'u1',
+  };
+
+  it('asks for the credential again when the auth type changes, but not for None', async () => {
+    const user = userEvent.setup();
+    mockUpdate.mockResolvedValue(trinoConnection);
+
+    render(
+      <AntApp>
+        <ConnectionForm
+          type="trino"
+          connection={trinoConnection}
+          onSaved={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </AntApp>,
+    );
+
+    await screen.findByLabelText('Host');
+    expect(screen.queryByLabelText('Password')).not.toBeInTheDocument();
+    // Comboboxes in edit mode: TLS mode, auth type.
+    await selectOption(user, 'None — the cluster trusts the user name', { index: 1 });
+    expect(screen.queryByText('Re-enter the credential to move this connection')).toBeNull();
+    await selectOption(user, 'JWT', { index: 1 });
+    await screen.findByText('Re-enter the credential to move this connection');
+    await user.type(await screen.findByLabelText('JWT (bearer token)'), 'a.b.c');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
+    expect(mockUpdate.mock.calls[0][1].config).toMatchObject({ auth_type: 'jwt' });
+    expect(mockUpdate.mock.calls[0][1].secret).toBe('a.b.c');
+  });
+
   it('asks for no secret when the cluster has no authentication', async () => {
     const user = userEvent.setup();
     mockCreate.mockResolvedValue({ ...icebergConnection, type: 'trino' });

@@ -35,7 +35,7 @@ runs, so it is validated when the connection is saved).
 Editing a field that decides *where* the credential is sent — Snowflake `account`, ADLS
 `account_url`, S3/dbt `endpoint_url`, Unity Catalog `workspace_url`, Iceberg `catalog_uri` /
 `warehouse` / `properties` / `secret_property`, PostgreSQL `host` / `port`, Trino `host` /
-`port` / `sslmode` / `ca_bundle`, Airflow
+`port` / `sslmode` / `ca_bundle` / `auth_type`, Airflow
 `base_url`, dbt `artifacts_uri` —
 requires re-entering
 that credential in the same save. The edit form asks for it as soon as you change one of
@@ -183,8 +183,9 @@ access control.
 - **TLS:** `verify-full` by default — the certificate and the host name are always checked;
   there is no mode that encrypts without verifying. For a certificate from a **private CA**,
   paste the CA's PEM into **CA bundle**: it replaces the system trust store for this
-  connection. Changing the host, port, TLS mode or CA bundle counts as moving the
-  credential, so the edit asks for it again. The CA must be a well-formed X.509 CA (with a
+  connection. Changing the host, port, TLS mode, CA bundle or auth type counts as moving the
+  credential, so the edit asks for it again (switching to `none` asks for nothing — the stored
+  one is simply no longer sent). The CA must be a well-formed X.509 CA (with a
   `keyUsage` extension) — the worker's TLS stack verifies strictly.
 - **Not read-only at the session — the credential is the guarantee.** Trino has no session
   or transaction read-only switch a client can set, so unlike PostgreSQL and MySQL, DataQ

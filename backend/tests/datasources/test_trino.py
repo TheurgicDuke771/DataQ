@@ -8,7 +8,7 @@ from __future__ import annotations
 import importlib.metadata
 import ssl
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -30,6 +30,7 @@ from backend.app.datasources.postgres import POSTGRES
 from backend.app.datasources.sql_engines import (
     GENERIC_SQL_TYPES,
     SQL_BATCH_CONNECTION_TYPES,
+    SQL_ENGINES,
     authenticates_without_secret,
     default_schema,
 )
@@ -46,6 +47,7 @@ from backend.app.services.failure_classifier import (
 from backend.app.services.inventory_service import INVENTORY_TYPES
 from backend.app.services.llm_sqlgen import _DIALECT_BY_TYPE
 from backend.app.services.run_admission import PUSHDOWN_TYPES
+from backend.tests.support.certs import self_signed_ca_pem
 from backend.tests.support.fake_secret_store import FakeSecretStore
 
 _BASE: dict[str, Any] = {"host": "trino.internal", "catalog": "hive", "user": "dq_reader"}
@@ -56,30 +58,6 @@ def _config(**overrides: Any) -> TrinoConfig:
     config = TRINO.validate_config({**_BASE, **overrides})
     assert isinstance(config, TrinoConfig)
     return config
-
-
-def _ca_pem() -> str:
-    """A throwaway self-signed CA certificate (public material, generated per run)."""
-    from cryptography import x509
-    from cryptography.hazmat.primitives import hashes, serialization
-    from cryptography.hazmat.primitives.asymmetric import ec
-    from cryptography.x509.oid import NameOID
-
-    key = ec.generate_private_key(ec.SECP256R1())
-    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, f"dq test {uuid.uuid4().hex}")])
-    now = datetime.now(UTC)
-    cert = (
-        x509.CertificateBuilder()
-        .subject_name(name)
-        .issuer_name(name)
-        .public_key(key.public_key())
-        .serial_number(x509.random_serial_number())
-        .not_valid_before(now)
-        .not_valid_after(now + timedelta(days=1))
-        .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
-        .sign(key, hashes.SHA256())
-    )
-    return cert.public_bytes(serialization.Encoding.PEM).decode()
 
 
 # ───────────────────────────── driver + licence ─────────────────────────────
@@ -157,7 +135,7 @@ def test_unknown_keys_are_refused() -> None:
 
 class TestCaBundle:
     def test_a_pem_bundle_is_accepted_and_normalised(self) -> None:
-        pem = _ca_pem()
+        pem = self_signed_ca_pem()
         config = _config(ca_bundle="\n" + pem + "\n\n")
         assert config.ca_bundle == pem.strip() + "\n"
 
@@ -176,7 +154,7 @@ class TestCaBundle:
 
     def test_a_bundle_without_tls_is_refused(self) -> None:
         with pytest.raises(ValidationError, match="TLS only"):
-            TRINO.validate_config({**_OPEN, "ca_bundle": _ca_pem()})
+            TRINO.validate_config({**_OPEN, "ca_bundle": self_signed_ca_pem()})
 
 
 # ───────────────────────────── session + auth ─────────────────────────────
@@ -197,14 +175,22 @@ def test_every_session_is_utc_and_verifies_tls_against_the_system_store() -> Non
 
 
 def test_a_custom_ca_is_the_only_trust_anchor_and_is_shared_by_content() -> None:
-    pem = _ca_pem()
+    pem = self_signed_ca_pem()
     first = TRINO.connect_args(_config(ca_bundle=pem), None)["verify"]
     again = TRINO.connect_args(_config(ca_bundle=pem), None)["verify"]
     assert isinstance(first, str) and first == again
     assert Path(first).read_text() == pem.strip() + "\n"
     ssl.create_default_context(cafile=first)  # loadable as a CA file
-    other = TRINO.connect_args(_config(ca_bundle=_ca_pem()), None)["verify"]
+    other = TRINO.connect_args(_config(ca_bundle=self_signed_ca_pem()), None)["verify"]
     assert other != first
+
+
+def test_a_file_planted_at_the_bundle_path_is_replaced_not_trusted() -> None:
+    pem = self_signed_ca_pem()
+    path = Path(TRINO.connect_args(_config(ca_bundle=pem), None)["verify"])
+    path.write_text(self_signed_ca_pem())  # someone else's CA, at the predictable name
+    assert TRINO.connect_args(_config(ca_bundle=pem), None)["verify"] == str(path)
+    assert path.read_text() == pem.strip() + "\n"
 
 
 def test_the_secret_rides_an_auth_object_never_the_url() -> None:
@@ -292,10 +278,10 @@ def test_trino_is_registered_everywhere_a_sql_datasource_must_be() -> None:
     assert _DIALECT_BY_TYPE["trino"] == "Trino SQL"
     assert engines_for("trino") == {"gx"}
     assert default_schema("trino", _BASE) == "default"
-    # #1401: moving the host or port, dropping TLS, or trusting another CA all change who can
-    # receive the secret.
+    # #1401: moving the host or port, dropping TLS, trusting another CA or switching the auth
+    # mode all change who receives the secret, or how.
     assert registry.destination_fields("trino") == {
-        "secret": ("host", "port", "sslmode", "ca_bundle")
+        "secret": ("host", "port", "sslmode", "ca_bundle", "auth_type")
     }
     trino, postgres = (registry.get_connection_adapter(t) for t in ("trino", "postgres"))
     assert isinstance(trino, GenericSqlConnectionAdapter) and trino.secret_optional is True
@@ -394,6 +380,28 @@ def test_types_trino_cannot_order_are_profiled_without_min_max_or_top_values() -
         "sketch": False,
     }
     assert all(cap.orderable == cap.groupable for cap in caps.values())
+
+
+def test_the_profiler_looks_caps_up_folded_whatever_the_caller_typed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from dataclasses import replace
+
+    from backend.app.datasources.generic_sql import ColumnCaps
+
+    seen: list[tuple[str, str]] = []
+
+    def caps(_conn: Any, schema: str, table: str) -> dict[str, ColumnCaps]:
+        seen.append((schema, table))
+        return {"payload": ColumnCaps(False, False), "amount": ColumnCaps()}
+
+    monkeypatch.setitem(SQL_ENGINES, "trino", replace(TRINO, column_caps=caps))
+    row = _open_connection_row()
+    got = profile_service._column_caps(
+        row, None, schema="Sales", table="Events", columns=["Payload", "amount", "Missing"]
+    )
+    assert seen == [("sales", "events")]
+    assert got == {"Payload": ColumnCaps(False, False), "amount": ColumnCaps()}
 
 
 # ───────────────────────────── the credential-free paths ─────────────────────────────

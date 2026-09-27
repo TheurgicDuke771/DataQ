@@ -252,7 +252,7 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
         noSecret: true,
       },
     ],
-    destinationFields: ['host', 'port', 'sslmode', 'ca_bundle'],
+    destinationFields: ['host', 'port', 'sslmode', 'ca_bundle', 'auth_type'],
   },
   iceberg: {
     // Native pyiceberg read (ADR 0030).

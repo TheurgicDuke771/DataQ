@@ -146,7 +146,9 @@ def _ca_bundle_path(bundle: str) -> str:
     """
     digest = hashlib.sha256(bundle.encode()).hexdigest()[:32]
     path = Path(tempfile.gettempdir()) / f"dataq-trino-ca-{digest}.pem"
-    if not path.exists():
+    # Re-checked, not trusted by name: a file at this predictable path with other contents
+    # (planted, or truncated by a crash) is replaced rather than used as the trust anchor.
+    if not path.exists() or path.read_text() != bundle:
         fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".dataq-trino-ca-")
         try:
             with os.fdopen(fd, "w") as handle:
@@ -251,7 +253,8 @@ TRINO = SqlEngineSpec(
     credential_expiry=_credential_expiry,
     namespace_scheme="trino",
     database_in_name=True,
-    destination_fields=("host", "port", "sslmode", "ca_bundle"),
+    # `auth_type` too: a stored password must not be re-sent as a bearer token (or vice versa).
+    destination_fields=("host", "port", "sslmode", "ca_bundle", "auth_type"),
     catalog=SqlCatalog(
         # Scoped to the session catalog (the connection's). Trino filters information_schema by
         # the user's access control, so what is listed is what the credential may see.

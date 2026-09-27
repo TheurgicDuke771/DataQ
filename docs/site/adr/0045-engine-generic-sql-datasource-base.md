@@ -65,7 +65,9 @@ special case in the base:
   existing credential-expiry signal on the connection.
 - **`destination_fields`** per spec — the fields whose change requires re-entering the
   secret: for Trino, dropping TLS or trusting another CA (`sslmode`, `ca_bundle`) changes who
-  can receive the secret as surely as the host does.
+  can receive the secret as surely as the host does, and `auth_type` changes how it is sent (a
+  stored password must never go out as a bearer token). A config whose auth mode needs a
+  secret is refused on save when none is stored or supplied.
 - **`names_are_lower_case`** — Trino folds every identifier, quoted or not, and its catalogs
   report them lower case, so a mixed-case catalog, schema or target is refused at save time;
   otherwise it could never join its enumerated asset or its schema-drift introspection.

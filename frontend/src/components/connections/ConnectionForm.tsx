@@ -199,7 +199,7 @@ export function ConnectionForm({
           />
         </Form.Item>
       )}
-      {movedDestinations.length > 0 && (
+      {movedDestinations.length > 0 && !activeAuthOption(type, editedConfig)?.noSecret && (
         <Alert
           type="warning"
           showIcon

@@ -654,13 +654,20 @@ def _fetch_top_values(
 
 
 def _column_caps(
-    connection: Connection, conn: Any, *, schema: str, table: str
+    connection: Connection, conn: Any, *, schema: str, table: str, columns: list[str]
 ) -> dict[str, ColumnCaps]:
-    """Per-column aggregate capability, for engines that declare it (#1678); ``{}`` otherwise."""
+    """Per-column aggregate capability, for engines that declare it (#1678); ``{}`` otherwise.
+    Keyed by ``columns`` as the caller spelled them.
+    """
     spec = SQL_ENGINES.get(connection.type)
     if spec is None or spec.column_caps is None:
         return {}
-    return spec.column_caps(conn, schema, table)
+    if not spec.config_model.names_are_lower_case:
+        return spec.column_caps(conn, schema, table)
+    # An engine that folds every name (Trino) resolves `Events.Payload` as `events.payload` and
+    # its catalog reports it that way — so look the names up folded, whatever the caller typed.
+    caps = spec.column_caps(conn, schema.lower(), table.lower())
+    return {column: caps[column.lower()] for column in columns if column.lower() in caps}
 
 
 def profile_table(
@@ -691,7 +698,9 @@ def profile_table(
             # A catalog-qualified (3-part, Unity Catalog) target needs the live connection's dialect
             # to quote the catalog/schema (#936).
             dialect = conn.dialect if catalog is not None else None
-            caps = _column_caps(connection, conn, schema=effective_schema, table=table)
+            caps = _column_caps(
+                connection, conn, schema=effective_schema, table=table, columns=columns
+            )
             unorderable = frozenset(c for c, cap in caps.items() if not cap.orderable)
             ungroupable = frozenset(c for c, cap in caps.items() if not cap.groupable)
             aggregate = (

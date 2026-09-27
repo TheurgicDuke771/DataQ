@@ -24,6 +24,7 @@ from backend.app.datasources.registry import (
     destination_fields,
     get_connection_adapter,
 )
+from backend.app.datasources.sql_engines import authenticates_without_secret
 from backend.app.db.models import (
     CHECK_ORDER,
     ENVS,
@@ -150,7 +151,13 @@ def _reject_uncredentialed_redirect(
         if not slot_moved:
             continue
         if slot == "secret":
-            if not has_stored_secret or supplied_secret is not None:
+            # Nothing to redirect: no secret is stored, one is supplied, or the new config sends
+            # none at all (Trino `auth_type: none` — the stored one is left unused).
+            if (
+                not has_stored_secret
+                or supplied_secret is not None
+                or authenticates_without_secret(conn_type, dict(incoming))
+            ):
                 continue
             missing.append("secret")
         # An extra credential is "stored" iff config carries its ref, by the same `*_secret_name`
@@ -169,6 +176,26 @@ def _reject_uncredentialed_redirect(
             f"connection's credentials are sent, so {', '.join(repr(m) for m in missing)} "
             "must be re-supplied in the same request",
             detail={"fields": sorted(moved), "required": missing},
+        )
+
+
+def _reject_missing_required_secret(
+    conn_type: str, config: Mapping[str, Any], *, has_secret: bool
+) -> None:
+    """For a type whose secret is optional PER CONFIG (Trino's `auth_type`), refuse a config that
+    authenticates with a secret when none is stored or supplied — switching `none` → `password`
+    would otherwise save a connection every run then fails on.
+    """
+    if has_secret:
+        return
+    adapter = get_connection_adapter(conn_type)
+    if not getattr(adapter, "secret_optional", False):
+        return
+    requires = getattr(adapter.validate_config(dict(config)), "requires_secret", None)
+    if callable(requires) and requires():
+        raise ConnectionConfigInvalidError(
+            "this configuration authenticates with a credential, so one must be supplied",
+            detail={"required": ["secret"]},
         )
 
 
@@ -363,6 +390,7 @@ def create_connection(
     _reject_foreign_secret_names(config, stored=None)
     if catalog_secret is not None:
         _validate_extra_secret_supported(conn_type, config, "catalog")
+    _reject_missing_required_secret(conn_type, config, has_secret=secret is not None)
 
     conn = Connection(
         name=name,
@@ -563,6 +591,9 @@ def update_connection(
             has_stored_secret=conn.secret_ref is not None,
             supplied_secret=secret,
             supplied_extra_secrets={"catalog": catalog_secret},
+        )
+        _reject_missing_required_secret(
+            conn.type, merged_config, has_secret=conn.secret_ref is not None or secret is not None
         )
         # Asset-first default (2026-09): a connection syncs unless `inventory_sync` is
         # explicitly `false` — an absent key is opted IN, not opted out.

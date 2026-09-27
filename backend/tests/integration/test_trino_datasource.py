@@ -452,6 +452,23 @@ def test_the_profile_survives_json_and_reports_booleans(trino: TrinoTarget) -> N
     assert by_column["placed_at"].min_value is not None
 
 
+def test_the_profile_folds_names_the_caller_typed_in_mixed_case(trino: TrinoTarget) -> None:
+    """The profile API is not held to the save-time lower-case rule; Trino folds `ORDERS` and
+    `Payload` itself, so the json column must still be recognised as unorderable."""
+    profile = profile_service.profile_table(
+        _connection(trino),
+        table="ORDERS",
+        schema=trino.schema.upper(),
+        columns=["Payload", "Amount"],
+        top_n=2,
+        secret_store=_STORE,
+    )
+    by_column = {column.column: column for column in profile.columns}
+    assert profile.row_count == 6
+    assert by_column["Payload"].min_value is None and by_column["Payload"].top_values == []
+    assert by_column["Amount"].max_value == 250.1
+
+
 def test_columns_schema_drift_and_comparison_reads(trino: TrinoTarget) -> None:
     connection = _connection(trino)
     columns = profile_service.list_table_columns(
