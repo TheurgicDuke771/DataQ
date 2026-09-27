@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
@@ -358,3 +358,80 @@ class TestSeamGuard:
         with pytest.raises(cases_warehouse.SeamMissingError, match="_gone"):
             with cases_warehouse._measured_frames(object(), ("_gone",), counters):
                 pass  # pragma: no cover — the context manager raises on entry
+
+
+class _FakeUcRunner:
+    """Stands in for the driver side only; the tier body under test is real."""
+
+    seen: ClassVar[list[tuple[str, str | None, list[Any]]]] = []
+
+    def __init__(self, **_kwargs: Any) -> None:
+        pass
+
+    def _read_table(self, *, table: str, schema: str | None) -> Any:  # pragma: no cover
+        return []
+
+    def run_checks(self, *, table: str, schema: str | None, checks: list[Any]) -> Any:
+        from types import SimpleNamespace
+
+        _FakeUcRunner.seen = [(table, schema, checks)]
+        return SimpleNamespace(
+            checks=[SimpleNamespace(success=True, errored=False) for _ in checks]
+        )
+
+    def close(self) -> None:
+        pass
+
+
+class TestUnityCatalogOverrides:
+    """A vendor sample table (`samples.tpch.part`) has neither the harness's
+    columns nor its row count; the tier must report what it actually ran."""
+
+    @pytest.fixture(autouse=True)
+    def _uc_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from backend.app.datasources import unity_catalog as uc_mod
+
+        monkeypatch.setattr(uc_mod, "UnityCatalogCheckRunner", _FakeUcRunner)
+        for name, value in (
+            ("PERF_UC_WORKSPACE_URL", "https://example.cloud.databricks.com"),
+            ("PERF_UC_WAREHOUSE_ID", "abc123"),
+            ("PERF_UC_CATALOG", "samples"),
+            ("PERF_UC_SCHEMA", "tpch"),
+            ("PERF_UC_TABLE_1M", "part"),
+            ("PERF_UC_SECRET", "not-a-real-token"),
+        ):
+            monkeypatch.setenv(name, value)
+        monkeypatch.delenv("PERF_UC_SUITE_JSON", raising=False)
+        monkeypatch.delenv("PERF_UC_ROWS_1M", raising=False)
+
+    @staticmethod
+    def _metric(metrics: list[harness.Metric], name: str) -> float:
+        return next(m.value for m in metrics if m.name == name)
+
+    def test_the_suite_override_replaces_the_standard_five(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        suite = [
+            ["expect_column_values_to_not_be_null", {"column": "p_partkey"}],
+            ["expect_column_values_to_be_unique", {"column": "p_partkey"}],
+        ]
+        monkeypatch.setenv("PERF_UC_SUITE_JSON", json.dumps(suite))
+        metrics = cases_warehouse._run_unity_catalog(1_000_000)
+        table, schema, checks = _FakeUcRunner.seen[0]
+        assert (table, schema) == ("part", "tpch")
+        assert [[c.expectation_type, c.kwargs] for c in checks] == suite
+        assert self._metric(metrics, "checks_evaluated") == 2
+
+    def test_without_an_override_the_standard_five_run(self) -> None:
+        cases_warehouse._run_unity_catalog(1_000_000)
+        checks = _FakeUcRunner.seen[0][2]
+        assert [(c.expectation_type, c.kwargs) for c in checks] == [
+            (name, kwargs) for name, kwargs in cases_warehouse._CHECK_SHAPES
+        ]
+
+    def test_the_true_row_count_is_what_the_tier_reports(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        assert self._metric(cases_warehouse._run_unity_catalog(1_000_000), "table_rows") == 1e6
+        monkeypatch.setenv("PERF_UC_ROWS_1M", "999983")
+        assert self._metric(cases_warehouse._run_unity_catalog(1_000_000), "table_rows") == 999983

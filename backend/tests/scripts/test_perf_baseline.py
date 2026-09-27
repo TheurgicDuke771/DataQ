@@ -361,10 +361,24 @@ class TestCli:
         missing = {case.id for case in catalog.select(tags=["ci"])} - covered
         assert not missing, f"CI would run cases with no baseline row: {sorted(missing)}"
 
-    def test_the_committed_baseline_records_the_warehouse_tiers_as_not_measured(self) -> None:
+    def test_every_warehouse_tier_is_in_the_baseline_measured_cleanly_or_not_at_all(
+        self,
+    ) -> None:
+        """A tier absent from the baseline reads as "nothing to report"; one committed
+        from a run whose checks errored would gate the error path as the norm."""
         baseline = json.loads(perf_baseline.BASELINE_PATH.read_text())
-        skipped = {r["case"] for r in baseline["rows"] if r.get("status") == "not_measured"}
-        assert {case.id for case in catalog.select(families=["warehouse_run"])} <= skipped
+        rows: dict[str, dict[str, dict[str, Any]]] = {}
+        for row in baseline["rows"]:
+            rows.setdefault(row["case"], {})[row["metric"]] = row
+        for case in catalog.select(families=["warehouse_run"]):
+            metrics = rows.get(case.id)
+            assert metrics, f"{case.id} has no baseline row at all"
+            if "not_measured" in metrics:
+                assert len(metrics) == 1, f"{case.id} is both measured and not"
+                continue
+            assert metrics["statements"]["gate"] == "strict"
+            assert metrics["checks_errored"]["value"] == 0
+            assert metrics["checks_passed"]["value"] == metrics["checks_evaluated"]["value"]
 
 
 def test_git_sha_prefers_the_pinned_value_and_survives_a_missing_git(
