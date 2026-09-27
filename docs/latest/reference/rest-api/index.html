@@ -2693,14 +2693,32 @@ in production — this page is the reference.)</p>
 <td><code>/connections/{id}/versions</code></td>
 <td>Config-change history (ADR 0020 snapshots — never credentials).</td>
 </tr>
+<tr>
+<td>GET</td>
+<td><code>/connections/{id}/browse/catalog</code></td>
+<td>Unity Catalog only: one level of catalogs → schemas → tables (<code>?catalog=&amp;schema=&amp;limit=</code>).</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/connections/{id}/browse/files</code></td>
+<td>ADLS Gen2 / S3 only: the folders and files directly under <code>?prefix=</code> in the connection's container/bucket.</td>
+</tr>
 </tbody>
 </table>
 <p><strong>Roles (ADR 0033).</strong> Connections are shared infrastructure holding credentials, so the gates
 here are the sharpest in the API: <strong>create, update, delete, re-auth and the unsaved-draft
 <code>POST /connections/test</code> are Admin-only</strong>; the saved-connection <code>POST /connections/{id}/test</code>
-is Member+; list and read are open to any authenticated user (responses carry <code>has_secret</code>,
-never secret material). A Member's PAT hitting <code>POST /connections</code> gets <code>403</code> regardless of
+is Member+, as are the two <code>browse/*</code> listings (they open the datasource with the stored
+credential, and a Member is exactly who points a new suite at a connection); list and read are
+open to any authenticated user (responses carry <code>has_secret</code>, never secret material). A Member's PAT hitting <code>POST /connections</code> gets <code>403</code> regardless of
 any suite grant — the two axes are independent.</p>
+<p><strong>Browsing.</strong> Both <code>browse/*</code> listings return <strong>names only</strong> — no credential, no cell
+value — one level per call. <code>limit</code> defaults to 200 (max 500); a level holding more than that
+comes back with <code>truncated: true</code>, so the list is a prefix of the level, never presented as all
+of it. Catalog entries carry <code>selectable: false</code> when the name is not a plain SQL identifier
+(DataQ cannot target it, so it is shown but not pickable). A <code>prefix</code> with a control character,
+backslash, leading <code>/</code>, or an empty/<code>.</code>/<code>..</code> segment is refused with <code>422 browse_input_invalid</code>;
+a listing failure is <code>502 browse_failed</code> with a classified, secret-free <code>detail.reason</code>.</p>
 <p><strong>Credential health.</strong> Each datasource connection in <code>GET /connections</code> carries a
 <code>credential_health</code> object — <code>status</code> (<code>healthy</code> / <code>failing</code> / <code>unknown</code>),
 <code>consecutive_auth_failures</code>, <code>last_auth_success_at</code>, <code>last_auth_failure_at</code> and a classified
