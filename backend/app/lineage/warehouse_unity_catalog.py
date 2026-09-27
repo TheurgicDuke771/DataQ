@@ -102,6 +102,23 @@ class UnityCatalogLineageProvider:
     ) -> tuple[AssetIdentity, ...]:
         """ADR 0040 — enumerate the workspace's tables from ``system.information_schema.tables``."""
         namespace = self._namespace(connection_config)
+        return tuple(
+            self._identity(namespace, catalog, schema, table)
+            for catalog, schema, table in self.table_rows(conn, limit=limit)
+        )
+
+    def table_rows(
+        self,
+        conn: object,
+        *,
+        limit: int | None = None,
+        catalog: str | None = None,
+        schema: str | None = None,
+    ) -> list[tuple[str, str, str]]:
+        """The ``(catalog, schema, table)`` rows behind :meth:`enumerate_tables`, optionally
+        scoped to one catalog / schema — the same query and exclusions, shared with the
+        interactive browser (#466) so a picked table is one the inventory would also see.
+        """
         sql = (
             "SELECT table_catalog, table_schema, table_name"
             " FROM system.information_schema.tables"
@@ -111,18 +128,51 @@ class UnityCatalogLineageProvider:
             " AND table_catalog NOT IN ('system', 'samples', '__databricks_internal')"
             " AND table_type IN ('MANAGED', 'EXTERNAL', 'VIEW', 'MATERIALIZED_VIEW',"
             " 'STREAMING_TABLE')"
-            " ORDER BY table_catalog, table_schema, table_name"
         )
         params: dict[str, object] = {}
+        if catalog is not None:
+            sql += " AND table_catalog = :catalog"
+            params["catalog"] = catalog
+        if schema is not None:
+            sql += " AND table_schema = :schema"
+            params["schema"] = schema
+        sql += " ORDER BY table_catalog, table_schema, table_name"
         if limit is not None:
             sql += " LIMIT :lim"
             params["lim"] = int(limit)
         rows = conn.execute(text(sql), params).all()  # type: ignore[attr-defined]
-        return tuple(
-            self._identity(namespace, catalog, schema, table)
-            for catalog, schema, table in rows
-            if catalog and schema and table  # same NULL-row guard as the SF seam
-        )
+        return [
+            (catalog_, schema_, table)
+            for catalog_, schema_, table in rows
+            if catalog_ and schema_ and table  # same NULL-row guard as the SF seam
+        ]
+
+    def catalog_names(self, conn: object, *, limit: int) -> list[str]:
+        """Catalogs the principal can see, under the same exclusions as :meth:`table_rows`."""
+        rows = conn.execute(  # type: ignore[attr-defined]
+            text(
+                "SELECT catalog_name FROM system.information_schema.catalogs"
+                " WHERE catalog_name IS NOT NULL"
+                " AND catalog_name NOT IN ('system', 'samples', '__databricks_internal')"
+                " ORDER BY catalog_name LIMIT :lim"
+            ),
+            {"lim": int(limit)},
+        ).all()
+        return [name for (name,) in rows if name]
+
+    def schema_names(self, conn: object, *, catalog: str, limit: int) -> list[str]:
+        """Schemas of ``catalog`` the principal can see, minus ``information_schema``."""
+        rows = conn.execute(  # type: ignore[attr-defined]
+            text(
+                "SELECT schema_name FROM system.information_schema.schemata"
+                " WHERE catalog_name = :catalog AND schema_name IS NOT NULL"
+                " AND schema_name != 'information_schema'"
+                " AND catalog_name NOT IN ('system', 'samples', '__databricks_internal')"
+                " ORDER BY schema_name LIMIT :lim"
+            ),
+            {"catalog": catalog, "lim": int(limit)},
+        ).all()
+        return [name for (name,) in rows if name]
 
     def _namespace(self, config: dict[str, object]) -> str:
         workspace_url = config.get("workspace_url")

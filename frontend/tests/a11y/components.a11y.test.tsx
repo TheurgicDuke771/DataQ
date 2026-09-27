@@ -26,8 +26,18 @@ import {
   toRecords,
 } from '../../scripts/a11y/ratchet';
 
-import { type Connection, getConnection, listConnections } from '../../src/api/connections';
+import {
+  browseCatalog,
+  browseFiles,
+  type Connection,
+  getConnection,
+  listConnections,
+} from '../../src/api/connections';
 import { ConnectionForm } from '../../src/components/connections/ConnectionForm';
+import {
+  CatalogBrowserButton,
+  FileBrowserButton,
+} from '../../src/components/suites/DatasourceBrowser';
 import { NotificationsPanel } from '../../src/components/suites/NotificationsPanel';
 import { SuiteForm } from '../../src/components/suites/SuiteForm';
 import { getNotifications } from '../../src/api/notifications';
@@ -48,6 +58,8 @@ vi.mock('../../src/api/connections', async (importOriginal) => {
     testConnection: vi.fn(),
     getConnection: vi.fn(),
     listConnections: vi.fn(),
+    browseCatalog: vi.fn(),
+    browseFiles: vi.fn(),
   };
 });
 
@@ -256,5 +268,47 @@ describe('component a11y floor (#1670)', () => {
       expect(document.querySelectorAll('tr.ant-table-row').length).toBeGreaterThan(0),
     );
     await checkA11y('component:Results', container);
+  });
+
+  it('the catalog browser modal has no new serious/critical violations', async () => {
+    vi.mocked(browseCatalog).mockResolvedValue({
+      level: 'catalog',
+      catalog: null,
+      schema: null,
+      entries: [
+        { name: 'dataq_retail', selectable: true },
+        { name: 'odd-name', selectable: false },
+      ],
+      truncated: true,
+      limit: 2,
+    });
+    render(
+      <AntApp>
+        <CatalogBrowserButton connectionId="c1" onPick={vi.fn()} />
+      </AntApp>,
+    );
+    await userEvent.setup().click(screen.getByRole('button', { name: /Browse catalog/ }));
+    await screen.findByRole('button', { name: /dataq_retail/ });
+    // The modal renders in a portal, outside the render container.
+    await checkA11y('component:CatalogBrowser', document.body);
+  });
+
+  it('the file browser modal has no new serious/critical violations', async () => {
+    vi.mocked(browseFiles).mockResolvedValue({
+      root: 'landing',
+      prefix: '',
+      folders: ['raw/'],
+      files: [{ path: 'orders.csv', size: 10, last_modified: null }],
+      truncated: false,
+      limit: 200,
+    });
+    render(
+      <AntApp>
+        <FileBrowserButton connectionId="c1" rootLabel="landing" mode="folder" onPick={vi.fn()} />
+      </AntApp>,
+    );
+    await userEvent.setup().click(screen.getByRole('button', { name: /Browse folders/ }));
+    await screen.findByRole('button', { name: /raw\// });
+    await checkA11y('component:FileBrowser', document.body);
   });
 });

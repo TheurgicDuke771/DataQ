@@ -20,6 +20,8 @@ Environment, per tier:
               PERF_SF_SUITE_JSON  PERF_SF_SCHEMA_1M/_50M  PERF_SF_ROWS_1M/_50M
   Unity Cat.  PERF_UC_WORKSPACE_URL PERF_UC_WAREHOUSE_ID PERF_UC_CATALOG
               PERF_UC_SCHEMA PERF_UC_TABLE_1M          secret: PERF_UC_SECRET
+              optional, for a table the harness did not build (e.g. `samples.tpch`):
+              PERF_UC_SUITE_JSON  PERF_UC_ROWS_1M
   Iceberg     PERF_ICEBERG_CATALOG_JSON PERF_ICEBERG_TABLE
               (optional secret: PERF_ICEBERG_SECRET)
 
@@ -356,7 +358,8 @@ def _run_unity_catalog(rows: int) -> list[Metric]:
         token=os.environ["PERF_UC_SECRET"],
         catalog=catalog,
     )
-    specs = _check_specs()
+    specs = _check_specs("PERF_UC_SUITE_JSON")
+    rows = int(_env("PERF_UC_ROWS_1M") or rows)
     try:
         # `_read_table` is the frame lane's own reader: wrapping it is what tells
         # the two lanes apart by MEASUREMENT rather than by the flag the case sets.

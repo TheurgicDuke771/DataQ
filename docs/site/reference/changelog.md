@@ -23,6 +23,12 @@ the per-PR history lives in the repo's commit log and pull requests.
   still wins, and nothing inherits `public`. `LINEAGE_CLASSIFICATION_PROPAGATION=false` turns it
   off. See [security](../security/overview.md).
 
+- **Check suggestions know where a column comes from.** A suggested check on a column that
+  is copied unchanged from an upstream table now says so — "an equivalent check already runs
+  upstream" or "place it at the origin" — so one bad load fires one alert, not one per copy.
+  Derived columns get their provenance only; the advice never hides a suggestion. See
+  [AI features](../guides/ai-features.md).
+
 - **Trace one column through lineage.** The asset page's *Column lineage* card (and
   `GET /assets/{id}/column-lineage`, MCP `trace_column_lineage`) follows a single column up to
   where it originates and down to every column derived from it. Every lineage edge now says
@@ -31,6 +37,14 @@ the per-PR history lives in the repo's commit log and pull requests.
   Snowflake column pairs are now read from `ACCESS_HISTORY` even when `GET_LINEAGE` answers —
   previously an Enterprise account recorded none. See
   [orchestration & lineage](../guides/orchestration.md).
+
+- **Browse for a run target instead of typing it.** On a Unity Catalog suite, **Browse
+  catalog…** walks catalogs → schemas → tables and fills all three fields; on an ADLS Gen2 or
+  S3 suite, **Browse files…** (single file) or **Browse folders…** (batch prefix) walks the
+  connection's container or bucket. Each level is one bounded listing (up to 200 names) and
+  says so when there are more; a name DataQ cannot target is shown but not pickable. Nothing
+  is saved until you save the suite, and the typed fields keep working exactly as before.
+  Needs the Member role, like testing a connection.
 
 - **Offboarding is one guided pass.** Admin → Members → **Offboard** hands a departing
   member's suites to somebody else, revokes every API key and browser session they hold,

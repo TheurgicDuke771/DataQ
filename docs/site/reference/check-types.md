@@ -6,7 +6,7 @@ offers. Every GX type on this page is executed in CI on a dataframe batch, and o
 
 | | Count |
 |---|---|
-| Check types in the editor | 35 |
+| Check types in the editor | 37 |
 | GX expectation types vetted by the backend | 25 |
 
 How to read a row: **Parameters** are the editor's fields (`mostly` is GX's optional row
@@ -110,6 +110,8 @@ Snowflake's native Data Metric Functions, evaluated inside Snowflake.
 | **Null count (DMF)** | `dmf:null_count` | Snowflake’s system NULL_COUNT metric function, computed natively in the warehouse. | Completeness | `column` | warn / fail / critical (fail or critical required) | Snowflake |
 | **Null percent (DMF)** | `dmf:null_percent` | Snowflake’s system NULL_PERCENT metric function (0–100), computed natively in the warehouse. | Completeness | `column` | warn / fail / critical (fail or critical required) | Snowflake |
 | **Duplicate count (DMF)** | `dmf:duplicate_count` | Snowflake’s system DUPLICATE_COUNT metric function, computed natively in the warehouse. | Uniqueness | `column` | warn / fail / critical (fail or critical required) | Snowflake |
+| **Blank count (DMF)** | `dmf:blank_count` | Snowflake’s system BLANK_COUNT metric function, computed natively in the warehouse — counts empty or space-only strings (not NULLs; tabs/newlines aren’t treated as blank). VARCHAR columns only. | Completeness | `column` | warn / fail / critical (fail or critical required) | Snowflake |
+| **Future timestamp percent (DMF)** | `dmf:future_timestamp_percent` | Snowflake’s system FUTURE_TIMESTAMP_PERCENT metric function (0–100): the share of rows dated after the evaluation time. DATE, TIMESTAMP_LTZ and TIMESTAMP_TZ columns only. | Validity | `column` | warn / fail / critical (fail or critical required) | Snowflake |
 | **Unique count (DMF)** | `dmf:unique_count` | Snowflake’s system UNIQUE_COUNT metric function, computed natively in the warehouse. Degrades downward, so this type carries no thresholds — read the observed value directly. | Uniqueness | `column` | None — pass/fail only | Snowflake |
 
 ## Authorable outside the editor

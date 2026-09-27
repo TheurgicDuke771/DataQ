@@ -8,6 +8,7 @@ import {
   suggestChecks,
 } from '../../api/llm';
 import { createCheck } from '../../api/suites';
+import { SuggestionLineageNote } from './SuggestionLineageNote';
 import { suggestionToCheck } from './suggestions';
 import { errorMessage, fetchFailure } from '../../utils/errors';
 import { DimensionTag } from '../checks/checkBadges';
@@ -184,6 +185,7 @@ function SuggestBody({ suiteId, onAdded }: { suiteId: string; onAdded: () => voi
                       {JSON.stringify(s.config)}
                       {s.fail_threshold_hours != null ? ` · fail ≥ ${s.fail_threshold_hours}h` : ''}
                     </Typography.Text>
+                    <SuggestionLineageNote lineage={s.lineage} />
                   </Flex>
                 }
               />

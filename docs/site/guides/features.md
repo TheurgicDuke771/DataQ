@@ -33,8 +33,8 @@ anomaly / comparison** monitor kinds:
 
 - **GX expectations** — column- and table-shape rules (not-null, unique, in-set, row
   count, value ranges, …) from the GX catalog, with a form editor. On a Snowflake
-  connection, four of these (null count/percent, duplicate count, unique count) can
-  instead run on Snowflake's own **Data Metric Functions (DMF)** engine — a separate
+  connection, six column metrics (null count/percent, duplicate count, unique count, blank
+  count, future-timestamp percent) can instead run on Snowflake's own **Data Metric Functions (DMF)** engine — a separate
   category in the check editor, selected per check.
 - **Custom SQL** — an escape hatch for cross-column/join rules: rows returned = failures.
   Read-only, single-statement (enforced). SQL datasources only.

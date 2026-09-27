@@ -34,6 +34,7 @@ import {
   targetKind,
   targetSampling,
 } from './suiteTarget';
+import { CatalogBrowserButton, FileBrowserButton } from './DatasourceBrowser';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { errorMessage } from '../../utils/errors';
 import { apiFieldError, detailNames } from '../../utils/fieldErrors';
@@ -198,6 +199,7 @@ export function SuiteForm({
         <TargetFields
           kind={kind}
           suiteId={isEdit ? suite.id : undefined}
+          connection={activeConn}
           canSample={supportsSampling(activeConn?.type)}
         />
       )}
@@ -211,18 +213,28 @@ export function SuiteForm({
   );
 }
 
+/** The container (ADLS) or bucket (S3) a flat-file connection is pinned to. */
+function storeRootLabel(connection: Connection | undefined): string {
+  const root = connection?.config.bucket ?? connection?.config.container;
+  return typeof root === 'string' && root ? root : 'Top level';
+}
+
 /** The datasource-shaped run-target inputs. */
 export function TargetFields({
   kind,
   suiteId,
+  connection,
   canSample = false,
 }: {
   kind: TargetKind;
   suiteId?: string;
+  /** The suite's connection — enables the live browse pickers; typed entry works without it. */
+  connection?: Connection;
   /** Whether this connection's datasource accepts a `sampling` block (#595). */
   canSample?: boolean;
 }) {
   const form = Form.useFormInstance();
+  const rootLabel = storeRootLabel(connection);
   const mode = (Form.useWatch('target_mode', form) as 'single' | 'batch' | undefined) ?? 'single';
   const strategy =
     (Form.useWatch('target_strategy', form) as 'latest' | 'specific' | undefined) ?? 'latest';
@@ -252,6 +264,14 @@ export function TargetFields({
           </Form.Item>
           {mode === 'batch' ? (
             <>
+              {connection && (
+                <FileBrowserButton
+                  connectionId={connection.id}
+                  rootLabel={rootLabel}
+                  mode="folder"
+                  onPick={(prefix) => form.setFieldsValue({ target_prefix: prefix })}
+                />
+              )}
               <Form.Item
                 name="target_prefix"
                 label="Prefix (optional)"
@@ -287,6 +307,14 @@ export function TargetFields({
             </>
           ) : (
             <>
+              {connection && (
+                <FileBrowserButton
+                  connectionId={connection.id}
+                  rootLabel={rootLabel}
+                  mode="file"
+                  onPick={(path) => form.setFieldsValue({ target_path: path })}
+                />
+              )}
               <Form.Item name="target_path" label="File path">
                 <Input placeholder="container/path/to/data.csv" />
               </Form.Item>
@@ -317,6 +345,18 @@ export function TargetFields({
         </>
       ) : (
         <>
+          {kind === 'uc' && connection && (
+            <CatalogBrowserButton
+              connectionId={connection.id}
+              onPick={({ catalog, schema, table }) =>
+                form.setFieldsValue({
+                  target_catalog: catalog,
+                  target_schema: schema,
+                  target_table: table,
+                })
+              }
+            />
+          )}
           {kind === 'uc' && (
             <Form.Item name="target_catalog" label="Catalog">
               <Input placeholder="main" />

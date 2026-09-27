@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -102,13 +103,19 @@ WORKER_LOST_REASON = (
 )
 
 
+def dispatch_failed_values(
+    *, at: datetime | None = None, reason: str = DISPATCH_FAILED_REASON
+) -> dict[str, Any]:
+    """The canonical terminal-failed shape for a broker/dispatch failure, as column values."""
+    return {"status": "failed", "finished_at": at or datetime.now(UTC), "failure_reason": reason}
+
+
 def mark_dispatch_failed(
     run: Run, *, at: datetime | None = None, reason: str = DISPATCH_FAILED_REASON
 ) -> None:
-    """The canonical terminal-failed shape for a broker/dispatch failure."""
-    run.status = "failed"
-    run.finished_at = at or datetime.now(UTC)
-    run.failure_reason = reason
+    """Apply `dispatch_failed_values` to ``run``."""
+    for column, value in dispatch_failed_values(at=at, reason=reason).items():
+        setattr(run, column, value)
 
 
 def dispatch_or_fail(session: Session, run: Run, **log_context: str) -> bool:

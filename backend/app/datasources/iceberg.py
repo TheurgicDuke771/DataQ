@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, ClassVar, Literal
 
@@ -165,6 +165,30 @@ def scan_row_count(table: Any) -> int:
     ``int()`` because the value crosses a driver boundary.
     """
     return int(table.scan().count())
+
+
+@dataclass(frozen=True)
+class PlannedScan:
+    """What a full scan will read, from manifest metadata: rows, and data-file bytes
+    keyed by lower-cased file format (``parquet`` / ``orc`` / ``avro``)."""
+
+    rows: int
+    bytes_by_format: dict[str, int]
+
+
+def planned_scan(table: Any) -> PlannedScan:
+    """Plan the scan once and total its data files — manifest metadata, never a data read.
+
+    ``int()`` because both values cross a driver boundary.
+    """
+    rows = 0
+    by_format: dict[str, int] = {}
+    for task in table.scan().plan_files():
+        rows += int(task.file.record_count)
+        fmt = task.file.file_format
+        key = str(getattr(fmt, "value", fmt)).lower()
+        by_format[key] = by_format.get(key, 0) + int(task.file.file_size_in_bytes)
+    return PlannedScan(rows=rows, bytes_by_format=by_format)
 
 
 def planned_row_count(table: Any) -> int:
@@ -438,6 +462,22 @@ def _row_delete_guard(summary: Any) -> str | None:
         if count > 0:
             return f"row-level deletes present ({key}={count})"
     return None
+
+
+def summary_scan_fallback_reason(table: Any) -> str | None:
+    """Why a volume/freshness monitor would have to scan rather than answer from snapshot
+    metadata, or ``None`` when the metadata answers (or there is no snapshot to read).
+
+    Freshness can additionally fall back per file (missing bounds, attached delete files); that
+    is only visible by planning the scan and reads a single column.
+    """
+    snapshot = table.current_snapshot()
+    if snapshot is None:
+        return None
+    summary = getattr(snapshot, "summary", None)
+    if _summary_int(summary, "total-records") is None:
+        return "snapshot summary lacks total-records"
+    return _row_delete_guard(summary)
 
 
 def _volume_from_snapshot_summary(table: Any) -> tuple[int | None, dict[str, Any]]:

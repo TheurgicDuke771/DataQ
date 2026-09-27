@@ -250,7 +250,7 @@ class ColumnTrace:
         return not self.gaps and not self.truncated
 
 
-def _fold(namespace: str, column: str) -> str:
+def fold_column(namespace: str, column: str) -> str:
     """Case-fold a column the way its engine folds an unquoted identifier (ADR 0034 §6)."""
     return canonical_identity(namespace, column.strip())[1]
 
@@ -271,7 +271,7 @@ class _Namespaces:
                 self._by_id[aid] = str(ns)
 
     def fold(self, asset_id: uuid.UUID, column: str) -> str:
-        return _fold(self._by_id.get(asset_id, ""), column)
+        return fold_column(self._by_id.get(asset_id, ""), column)
 
 
 def _walk(

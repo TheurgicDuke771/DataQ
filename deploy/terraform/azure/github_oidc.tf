@@ -19,12 +19,13 @@ resource "azuread_application_federated_identity_credential" "github_deploy" {
   subject = "repo:${var.github_repo}:environment:${var.github_environment}"
 }
 
-# Least privilege: scope Contributor to ONLY the four deploy targets, not the whole RG — dataq-rg is
+# Least privilege: scope Contributor to ONLY the deploy targets, not the whole RG — dataq-rg is
 # SHARED with the harness.
 locals {
   github_deploy_targets = {
     api      = azurerm_container_app.api.id
     worker   = azurerm_container_app.worker.id
+    beat     = azurerm_container_app.beat.id
     migrate  = azurerm_container_app_job.migrate.id
     frontend = azurerm_container_app.frontend.id
   }

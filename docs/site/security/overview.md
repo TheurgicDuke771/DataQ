@@ -480,6 +480,41 @@ It is off by default, and deliberately: a fully-masked failing row is
 unactionable, so this is a trade you make for a regulated dataset rather than one
 made for you.
 
+### How much of a failing column the value classifier sees
+
+When nothing above decides a column — no tag, no policy entry, no personal-data
+name, not fail-closed — the value classifier decides it from the failing values:
+mostly e-mail addresses or encoded blobs mask it. The stored sample is capped at
+20 rows, so on a check failing thousands of rows the classifier is given a
+**population signal** instead: counts taken over up to the first **5,000**
+failing rows. That signal is what keeps a column masked when its first 20 failing
+values happen to look harmless and the rows behind them do not.
+
+| Lane | Where the population signal comes from |
+|---|---|
+| Flat files (ADLS, S3), Iceberg, the Unity Catalog DataFrame batch | The failing-row list the check already builds (up to 5,000 rows); no extra query |
+| Snowflake, Unity Catalog SQL pushdown | One **extra, bounded query** per failing check: the check's own failing condition, selecting only the tested column and the identifier column, `LIMIT 5000` |
+
+The extra query on the warehouse lanes is issued only when all of these hold:
+the check found more than 20 unexpected rows (including a check that still
+passes under `mostly`, whose sample is kept all the same), it tests a single
+column, and the value signal could actually change the outcome for the tested or
+identifier column — a column already masked by a tag, `pii_columns`, its name or
+fail-closed mode never pays for it. Zero-sample privacy mode never issues it:
+no sample is stored, so there is nothing to classify. The decision is made with the policy and tags **as of the
+run**; if they change later, a column that was decided without the query falls
+back to its 20 stored values.
+
+If that query fails, the check's result is unaffected and the column is
+classified from the 20 stored values, exactly as before the signal existed. The
+stored sample records that the population sample was attempted and failed, and
+the worker logs `gx_value_signal_sample_failed` at WARNING — the fallback is
+never silent.
+
+Without an identifier column, the flat-file lanes do not build a failing-row
+list, so they classify from the 20 stored values; the warehouse lanes still issue
+the bounded query for the tested column.
+
 ## Data residency
 
 Where data lives, and what can take it elsewhere. GDPR Ch. V asks a controller to
