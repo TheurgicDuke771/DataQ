@@ -103,23 +103,16 @@ def _resolve_adls_gen2(config: dict[str, Any], target: dict[str, Any]) -> AssetI
     return AssetIdentity(namespace=namespace, name=name)
 
 
-#: The public-cloud storage suffix. Every namespace persisted before #1680 was built against it, so
-#: a host under it (or not in `<account>.blob|dfs.<suffix>` form at all) keeps that exact shape.
-_AZURE_PUBLIC_STORAGE_SUFFIX = ".core.windows.net"
-
-
 def _adls_dfs_authority(host: str, account: str) -> str:
-    """The ABFS authority for an ADLS-compatible Blob/DFS ``host``: its DFS endpoint.
+    """The ABFS authority for an ADLS-compatible Blob/DFS ``host``.
 
-    Any other ADLS-compatible endpoint (a sovereign cloud, Fabric OneLake's
-    ``onelake.blob.fabric.microsoft.com``) is named after ITS DFS host, not the public cloud's.
+    Every Azure Storage host (`<account>.blob|dfs.core.<cloud suffix>`) and anything not in that
+    shape keeps the pre-#1680 `<account>.dfs.core.windows.net` form byte-for-byte — namespaces
+    persisted under it must not fork. Any other ADLS-compatible endpoint (Fabric OneLake's
+    ``onelake.blob.fabric.microsoft.com``) is named after its own DFS host.
     """
     labels = host.lower().split(".")
-    if (
-        len(labels) >= 3
-        and labels[1] in ("blob", "dfs")
-        and not host.lower().endswith(_AZURE_PUBLIC_STORAGE_SUFFIX)
-    ):
+    if len(labels) >= 3 and labels[1] in ("blob", "dfs") and labels[2] != "core":
         return ".".join([labels[0], "dfs", *labels[2:]])
     return f"{account}.dfs.core.windows.net"
 

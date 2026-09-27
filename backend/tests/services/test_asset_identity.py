@@ -197,8 +197,8 @@ def test_adls_account_from_url(account_url: str) -> None:
         ("https://onelake.blob.fabric.microsoft.com", "onelake.dfs.fabric.microsoft.com"),
         ("https://onelake.dfs.fabric.microsoft.com", "onelake.dfs.fabric.microsoft.com"),
         ("https://OneLake.Blob.Fabric.Microsoft.com", "onelake.dfs.fabric.microsoft.com"),
-        # A sovereign cloud.
-        ("https://acct.blob.core.chinacloudapi.cn", "acct.dfs.core.chinacloudapi.cn"),
+        # A sovereign cloud keeps the persisted legacy shape — no fork of existing assets.
+        ("https://acct.blob.core.chinacloudapi.cn", "acct.dfs.core.windows.net"),
         # Public cloud stays byte-stable with every namespace persisted before #1680.
         ("https://MyLake.blob.core.windows.net", "MyLake.dfs.core.windows.net"),
         # Not `<account>.blob|dfs.<suffix>` at all (an emulator): the legacy shape.

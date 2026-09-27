@@ -651,4 +651,36 @@ describe('ConnectionForm — ADLS service principal (#1680)', () => {
     await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
     expect(mockUpdate.mock.calls[0][1].secret).toBe('the-client-secret');
   });
+
+  it('stops asking for the secret once the switch to a service principal is undone', async () => {
+    // Ids typed under the abandoned mode must not linger as a "moved destination" — that would
+    // force re-entering, and so overwriting, a SAS for an edit that moved nothing.
+    const user = userEvent.setup();
+    mockUpdate.mockResolvedValue(legacySas);
+    render(
+      <AntApp>
+        <ConnectionForm
+          type="adls_gen2"
+          connection={legacySas}
+          onSaved={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </AntApp>,
+    );
+
+    await screen.findByLabelText('Container');
+    await selectOption(user, 'Service principal (Entra ID)');
+    await user.type(await screen.findByLabelText('Tenant ID'), 'tenant-guid');
+    await screen.findByText('Re-enter the credential to move this connection');
+    await selectOption(user, 'SAS token');
+
+    await waitFor(() =>
+      expect(
+        screen.queryByText('Re-enter the credential to move this connection'),
+      ).not.toBeInTheDocument(),
+    );
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalled());
+    expect(mockUpdate.mock.calls[0][1].secret).toBeUndefined();
+  });
 });
