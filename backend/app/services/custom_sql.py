@@ -73,10 +73,51 @@ def is_custom_sql(expectation_type: str) -> bool:
     return expectation_type == CUSTOM_SQL_EXPECTATION_TYPE
 
 
-def _strip_noncode(sql: str) -> tuple[str, bool]:
-    """Replace comments and string literals with spaces in a single left-to-right
-    pass, leaving only executable code. Returns ``(code, well_formed)``.
+#: Delimited-identifier quotes a dialect has beyond the standard ``"…"`` (opener → closer; a
+#: doubled closer escapes it). Inside one, ``'``, ``--``, ``/*`` and ``;`` are identifier text — a
+#: lexer that did not know that would read a later ``'`` as opening a string and hide the real
+#: code after it (``SELECT [a'] …; DELETE … --'`` looks like one SELECT otherwise).
+_IDENTIFIER_QUOTES: dict[str, tuple[tuple[str, str], ...]] = {
+    "unity_catalog": (("`", "`"),),
+    "mssql": (("[", "]"),),
+}
+#: Every distinct lexing, for a query whose dialect is not known (it must pass all of them).
+_ALL_IDENTIFIER_QUOTES: tuple[tuple[tuple[str, str], ...], ...] = (
+    (),
+    *dict.fromkeys(_IDENTIFIER_QUOTES.values()),
+)
+
+#: Keywords a dialect adds that reach another server, the file system or server control.
+_DIALECT_FORBIDDEN: dict[str, frozenset[str]] = {
+    "mssql": frozenset(
+        {
+            "openquery",  # runs a pass-through query — any statement — on a linked server
+            "openrowset",
+            "opendatasource",
+            "bulk",
+            "dbcc",
+            "waitfor",
+            "shutdown",
+            "kill",
+            "reconfigure",
+            "backup",
+            "restore",
+        }
+    ),
+}
+
+
+def _strip_noncode(
+    sql: str, identifier_quotes: tuple[tuple[str, str], ...] = ()
+) -> tuple[str, bool]:
+    """Replace comments, string literals and delimited identifiers with spaces in a single
+    left-to-right pass, leaving only executable code. Returns ``(code, well_formed)``.
+
+    A ``/*`` inside a block comment is not well formed: PostgreSQL and SQL Server NEST block
+    comments and MySQL / Snowflake do not, so where such a comment ends depends on the engine —
+    and a lexer that guesses the wrong end can be walked past real code.
     """
+    closers = dict(identifier_quotes)
     out: list[str] = []
     i, n = 0, len(sql)
     well_formed = True
@@ -92,10 +133,12 @@ def _strip_noncode(sql: str) -> tuple[str, bool]:
                 well_formed = False  # unterminated block comment
                 i = n
             else:
+                if sql.find("/*", i + 2, end) != -1:
+                    well_formed = False  # a nested comment: engines disagree where it ends
                 i = end + 2
             out.append(" ")
-        elif sql[i] in "'\"":
-            quote = sql[i]
+        elif sql[i] in "'\"" or sql[i] in closers:
+            quote = closers.get(sql[i], sql[i])
             i += 1
             closed = False
             while i < n:
@@ -108,7 +151,7 @@ def _strip_noncode(sql: str) -> tuple[str, bool]:
                     break
                 i += 1
             if not closed:
-                well_formed = False  # unterminated string literal
+                well_formed = False  # unterminated string literal / identifier
             out.append(" ")
         else:
             out.append(sql[i])
@@ -116,15 +159,33 @@ def _strip_noncode(sql: str) -> tuple[str, bool]:
     return "".join(out), well_formed
 
 
-def validate_query(raw_query: Any) -> None:
-    """Reject a non-read-only or multi-statement custom-SQL query (422)."""
+def validate_query(raw_query: Any, *, connection_type: str | None = None) -> None:
+    """Reject a non-read-only or multi-statement custom-SQL query (422).
+
+    ``connection_type`` selects the dialect's lexing (delimited identifiers) and its extra
+    forbidden keywords; without one the query must pass under EVERY dialect's rules.
+    """
     if not isinstance(raw_query, str) or not raw_query.strip():
         raise CustomSqlInvalidError(
             f"custom-SQL check requires a non-empty {QUERY_KEY!r}",
             detail={"query_key": QUERY_KEY},
         )
+    if connection_type is None:
+        lexings = _ALL_IDENTIFIER_QUOTES
+        forbidden_words = _FORBIDDEN_KEYWORDS.union(*_DIALECT_FORBIDDEN.values())
+    else:
+        lexings = (_IDENTIFIER_QUOTES.get(connection_type, ()),)
+        forbidden_words = _FORBIDDEN_KEYWORDS | _DIALECT_FORBIDDEN.get(connection_type, frozenset())
+    for identifier_quotes in lexings:
+        _validate_lexed(raw_query, identifier_quotes, forbidden_words)
 
-    code, well_formed = _strip_noncode(raw_query)
+
+def _validate_lexed(
+    raw_query: str,
+    identifier_quotes: tuple[tuple[str, str], ...],
+    forbidden_words: frozenset[str],
+) -> None:
+    code, well_formed = _strip_noncode(raw_query, identifier_quotes)
     if not well_formed:
         # An unterminated string/comment means the rest of the query was swallowed
         # as literal text — we can't reason about it, so fail closed.
@@ -154,7 +215,7 @@ def validate_query(raw_query: Any) -> None:
             detail={"query_key": QUERY_KEY, "first_keyword": first_kw or None},
         )
 
-    forbidden = sorted({w.lower() for w in _WORD.findall(analysis)} & _FORBIDDEN_KEYWORDS)
+    forbidden = sorted({w.lower() for w in _WORD.findall(analysis)} & forbidden_words)
     if forbidden:
         raise CustomSqlInvalidError(
             "custom-SQL must be read-only; remove the disallowed keyword(s)",
@@ -176,4 +237,4 @@ def validate_custom_sql_check(
                 "supported": sorted(SQL_QUERYABLE_TYPES),
             },
         )
-    validate_query(config.get(QUERY_KEY))
+    validate_query(config.get(QUERY_KEY), connection_type=connection_type)

@@ -8,6 +8,7 @@ from backend.app.services.custom_sql import (
     _FORBIDDEN_KEYWORDS,
     CUSTOM_SQL_EXPECTATION_TYPE,
     QUERY_KEY,
+    SQL_QUERYABLE_TYPES,
     CustomSqlInvalidError,
     is_custom_sql,
     validate_custom_sql_check,
@@ -131,7 +132,8 @@ class TestDatasourceGating:
                 connection_type="s3",
             )
         assert exc.value.detail["connection_type"] == "s3"
-        assert exc.value.detail["supported"] == ["postgres", "snowflake", "unity_catalog"]
+        assert exc.value.detail["supported"] == sorted(SQL_QUERYABLE_TYPES)
+        assert {"postgres", "mssql", "snowflake", "unity_catalog"} <= set(SQL_QUERYABLE_TYPES)
 
 
 # ─────────── forbidden-keyword set: isolate every member ────────────
@@ -343,3 +345,80 @@ def test_a_string_literal_touching_a_keyword_does_not_corrupt_it() -> None:
 
 # ── the survivors left standing, and why (#278 triage) ─────────────────────── The spike went 63
 # survivors → 29; every remaining one was examined and falls into the groups below.
+
+
+# ── dialect-aware lexing (#1679) ──────────────────────────────────────────────
+
+
+def test_tsql_bracket_identifiers_are_identifier_text() -> None:
+    """Inside `[…]` a quote, `;` or comment marker is part of a name, not code."""
+    query = "SELECT [Order Id], [it's], [a;b], [x--y], [p]]q] FROM {batch} WHERE [n] > 0"
+    validate_query(query, connection_type="mssql")
+    validate_custom_sql_check(
+        expectation_type=CUSTOM_SQL_EXPECTATION_TYPE,
+        config={QUERY_KEY: query},
+        connection_type="mssql",
+    )
+
+
+def test_a_bracket_cannot_open_a_fake_string_that_hides_a_statement() -> None:
+    """Read as plain SQL, `'] … --'` is ONE string literal; SQL Server reads `[a']` as a column
+    and then runs the DELETE. The T-SQL lexing must see the second statement.
+    """
+    attack = "SELECT [a'], 1 FROM {batch}; DELETE FROM t --'"
+    with pytest.raises(CustomSqlInvalidError):
+        validate_query(attack, connection_type="mssql")
+    with pytest.raises(CustomSqlInvalidError):
+        validate_custom_sql_check(
+            expectation_type=CUSTOM_SQL_EXPECTATION_TYPE,
+            config={QUERY_KEY: attack},
+            connection_type="mssql",
+        )
+
+
+def test_a_backtick_cannot_open_a_fake_string_on_databricks() -> None:
+    """The same shape through Databricks' backtick identifiers."""
+    attack = "SELECT `a'`, 1 FROM {batch}; DELETE FROM t --'"
+    with pytest.raises(CustomSqlInvalidError):
+        validate_query(attack, connection_type="unity_catalog")
+
+
+def test_an_unterminated_bracket_identifier_is_rejected() -> None:
+    with pytest.raises(CustomSqlInvalidError, match="unterminated"):
+        validate_query("SELECT [a FROM {batch}", connection_type="mssql")
+
+
+def test_an_unknown_dialect_must_pass_every_lexing() -> None:
+    """Valid T-SQL that is an unterminated string in every other dialect is refused when the
+    dialect is unknown — the strictest reading wins.
+    """
+    with pytest.raises(CustomSqlInvalidError):
+        validate_query("SELECT [it's] FROM {batch}")
+    with pytest.raises(CustomSqlInvalidError):
+        validate_query("SELECT [a'], 1 FROM {batch}; DELETE FROM t --'")
+
+
+def test_a_nested_block_comment_is_rejected_everywhere() -> None:
+    """PostgreSQL and SQL Server nest block comments, MySQL and Snowflake do not: under nesting
+    the `'` below is comment text and the DELETE runs; read flat, it opens a string hiding it.
+    """
+    attack = "SELECT 1 FROM {batch} /* /* */ ' */ ; DELETE FROM t; SELECT '"
+    for connection_type in (None, "postgres", "mssql", "snowflake", "unity_catalog"):
+        with pytest.raises(CustomSqlInvalidError, match="unterminated"):
+            validate_query(attack, connection_type=connection_type)
+    validate_query("SELECT 1 /* a */ FROM {batch} /* b */", connection_type="postgres")
+
+
+@pytest.mark.parametrize(
+    "keyword", ["openquery", "openrowset", "opendatasource", "dbcc", "waitfor", "bulk"]
+)
+def test_tsql_only_keywords_are_forbidden_on_mssql(keyword: str) -> None:
+    query = f"SELECT * FROM {{batch}} WHERE {keyword} = 1"
+    with pytest.raises(CustomSqlInvalidError) as exc:
+        validate_query(query, connection_type="mssql")
+    assert exc.value.detail["forbidden"] == [keyword]
+    # Not a keyword elsewhere — a column of that name stays usable.
+    validate_query(query, connection_type="postgres")
+    # Unknown dialect: every dialect's list applies.
+    with pytest.raises(CustomSqlInvalidError):
+        validate_query(query)
