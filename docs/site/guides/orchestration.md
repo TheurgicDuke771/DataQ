@@ -245,8 +245,11 @@ separately-gated `column_lineage` degrades honestly: table edges still land, wit
 Snowflake's column grain comes from `ACCESS_HISTORY`'s `objects_modified[].columns[].directSources`
 on **every** tier — including when `GET_LINEAGE` answers, whose table-domain rows carry no column
 names — as a refinement of the table edges, never a source of new ones; it only sees DML writes, so
-a view dependency never has pairs. *(The GET_LINEAGE + ACCESS_HISTORY composition is not yet
-live-verified.)*
+a view dependency never has pairs. Live-verified on an Enterprise account as a least-privileged
+reader role: the refinement runs on the `GET_LINEAGE` tier and records `captured`; an account whose
+writes are all COPY / `INSERT … VALUES` (empty `directSources`) and whose downstream layer is views
+honestly reads `none_recorded` on every edge. Column lineage *through views* exists in Snowflake
+(`GET_LINEAGE` at `COLUMN` domain) but is not read yet.
 
 **Why an edge has no pairs is always stated** (ADR 0034 amendment 2026-09-27). Every
 lineage edge on the asset page, `GET /assets/{id}` and MCP `get_asset` carries a
