@@ -941,20 +941,17 @@ Incident and pipeline-run counts stop growing because those tables are capped at
 #### Scheduler dispatch
 
 `dispatch_due_schedules`, claiming under `FOR UPDATE SKIP LOCKED`, with the
-enqueue seam stubbed so the measurement is the database side only:
+broker publish stubbed so the measurement is the database side only. Refreshed
+after the dispatcher was batched (see "v1.2 — batched schedule dispatch" below):
 
-| Due schedules | Wall | Per schedule |
-|---|---|---|
-| 10 | 0.04 s | 4.17 ms |
-| 1,000 | 2.15 s | 2.15 ms |
-| 10,000 | **23.59 s** | 2.36 ms |
+| Due schedules | Statements | Wall | Per schedule | Before batching |
+|---|---|---|---|---|
+| 10 | 5 | 0.018 s | 1.76 ms | 0.04 s |
+| 1,000 | 11 | 0.086 s | 0.09 ms | 2.15 s |
+| 10,000 | 101 | 0.74 s | 0.07 ms | 23.59 s |
 
-The dispatcher is **serial**: one `SELECT … LIMIT 1 FOR UPDATE SKIP LOCKED`, one
-cron advance, one run INSERT, one commit, per schedule, in a loop. The cost per
-schedule is flat, so the ceiling is arithmetic — at ~2.4 ms each, the 60-second
-beat tick is fully consumed at roughly 25,000 due schedules **on this machine**,
-with a local database and no network. A deployed worker on 1 CPU with a network
-round-trip per statement will reach that far sooner. Filed separately.
+`dispatch_statements` is gated `strict`: it is the round-trip count, and a
+return to one-schedule-at-a-time would multiply it by ~2,000 at the 10k tier.
 
 #### Flat-file batch resolution
 
@@ -1257,3 +1254,110 @@ The next step is a **materialised per-day rollup** — which the trend query
 already wants — read by the summary instead of the raw tables. That is a write
 path, a backfill and a staleness contract rather than a query rewrite, so it is
 tracked separately.
+
+## v1.2 — batched schedule dispatch
+
+> Measured **2026-09-27**. The regression tier above uses a database on the
+> development machine; this section puts a **real network round-trip** in front of
+> both PostgreSQL and Redis, because the dispatcher's cost was round-trips, not CPU.
+
+The dispatcher used to handle one due schedule per transaction: claim one row,
+advance it, insert its run, commit, publish, then write the task id back and
+commit again — about ten statements and thirteen database round-trips per
+schedule. It now works in batches of up to 500:
+
+1. one `SELECT … ORDER BY next_run_at LIMIT 500 FOR UPDATE SKIP LOCKED`;
+2. the suites and connections for the batch in one query;
+3. every advance in one `UPDATE … FROM unnest(…)`, and every queued run in one
+   multi-row `INSERT`, then **commit**;
+4. the broker publishes, one per run, **after** the commit;
+5. every task id written back in one `UPDATE … FROM unnest(…)`.
+
+Nothing about the semantics moved. The claim, the advance and the insert commit
+together, so a second dispatcher skips rows the first holds and a committed advance
+takes a schedule out of the due set — exactly-once, as before, but per batch.
+Publishing only after the commit means a batch that rolls back never reaches the
+broker, and its schedules are still due on the next tick. The next fire is still
+the next occurrence strictly after the tick's `now` in the schedule's own
+timezone (DST-aware, no backfill); it is computed once per distinct
+`(cron, timezone)` pair per tick rather than once per schedule.
+
+A tick also has a **budget** now, checked between batches: once 45 seconds have
+passed it claims no further batch,
+counts what is still due, and logs `schedules_dispatch_budget_exhausted` with that
+residual. The next tick picks the residual up. Before, a tick that could not
+finish simply ran into the next one — correct, because of `SKIP LOCKED`, but
+invisible, and holding two worker slots. Because publishing happens inside a
+batch, an unreachable broker could otherwise hold one batch for minutes (every
+publish runs Celery's retry cycle), so three consecutive publish failures end the
+batch — its remaining runs are failed without another attempt — and the tick.
+
+### Method
+
+A `socat` relay in a container on the compose network, with `tc netem` delay on
+its interface, in front of both PostgreSQL and Redis. The delay was calibrated
+against measured round-trips (`SELECT 1` and `PING`, median of 300): **0.5 ms,
+2.0 ms and 5.0 ms**. For reference, the compose ports without the relay measure
+0.19 ms. Azure intra-region PostgreSQL is typically 1–2 ms.
+
+Each cell is the median of three runs of the dispatcher against a scratch
+database, "stub" with the broker publish stubbed and "Redis" publishing every
+message for real (the Redis queue length was checked against the dispatched
+count after each run: no message was lost). The harness sets Celery's
+worker-child flag, so a publish behaves as it does in the worker, where the
+dispatch task runs. The "before" rows ran the pre-batching code
+through the same relay.
+
+| Round-trip | Due | Before, stub | Before, Redis | After, stub | After, Redis |
+|---|---|---|---|---|---|
+| none (0.19 ms) | 1,000 | 4.73 s | 5.44 s | 0.09 s | 0.52 s |
+| none (0.19 ms) | 10,000 | 63.0 s | — | 0.85 s | 4.0 s |
+| 0.5 ms | 1,000 | 9.26 s | 10.44 s | 0.09 s | 0.91 s |
+| 0.5 ms | 10,000 | 92.4 s | — | 0.88 s | 7.6 s |
+| 2 ms | 1,000 | 30.8 s | 34.9 s | 0.13 s | 2.41 s |
+| 2 ms | 10,000 | — | — | 1.16 s | 22.9 s |
+| 5 ms | 1,000 | 71.8 s | 77.5 s | 0.21 s | 6.20 s |
+| 5 ms | 10,000 | — | — | 1.78 s | **budget bound at 8,500–9,000** |
+
+The "before" 10k cells at 2 and 5 ms were not run: at a measured ~31–72 ms per
+schedule they would take 5–12 minutes each, and the per-schedule cost is flat.
+
+### The ceiling, in numbers a deployment can act on
+
+After batching, the database side is a few statements per 500 schedules; what
+is left per schedule is **one broker round-trip** for the publish. Publishing
+concurrently from a thread pool was tried and removed: Celery's `send_task` is not
+safe to call concurrently here, and the attempt deadlocked intermittently.
+
+| Round-trip to PostgreSQL and Redis | Before: schedules per 60 s tick | After: schedules per 45 s budget |
+|---|---|---|
+| 0.5 ms | ~5,800 | ~59,000 |
+| 2 ms | ~1,700 | ~19,700 |
+| 5 ms | ~780 | ~8,700 (measured: the budget bound at 8,500–9,000) |
+
+Past the budget the residual is logged and dispatched on the next tick, so a
+larger due set is delayed by a minute per budget-full of schedules rather than
+dropped or run twice.
+
+### What production shows
+
+Read from the deployed worker's logs on Azure (Log Analytics), not measured
+here. Beat has run as its own service since 2026-09-27 04:28 UTC; the dispatch
+task itself runs on the worker.
+
+| Window | Ticks | Due per tick | Task duration, p50 | p95 |
+|---|---|---|---|---|
+| since the beat split (1 h) | 58 | 0 | 0.155 s | 0.160 s |
+| since the beat split | 2 | 1 | 0.777 s | 0.805 s |
+| previous 30 days | 43,018 | 0 | 0.152 s | 0.156 s |
+| previous 30 days | 118 | 1 | 0.760 s | 0.813 s |
+
+That is the **pre-batching** code, and production never has more than one
+schedule due at once, so these numbers bound the fixed cost of a tick and of a
+single fire; they cannot show a per-schedule marginal cost at scale. A single
+fire adds ~0.6 s to a tick in production, far more than the ~70 ms per schedule
+measured locally at 5 ms — most likely a one-off per tick (such as the first
+broker connection) rather than a per-schedule cost, but with at most one
+schedule due per tick the logs cannot tell the two apart. A live
+ceiling measurement would need thousands of due schedules in the production
+database, which this work deliberately did not create.
