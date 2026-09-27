@@ -274,6 +274,7 @@ batches land measured against the new baseline.
 | ⬜ | [#1671](https://github.com/TheurgicDuke771/DataQ/issues/1671) a11y: non-color severity cues + colorblind-safe palette | ux |
 | ⬜ | [#1677](https://github.com/TheurgicDuke771/DataQ/issues/1677) JSON flat-file support (csv/parquet + json) | datasource |
 | 🟡 | [#1678](https://github.com/TheurgicDuke771/DataQ/issues/1678) Generic PostgreSQL adapter — the G-f cheap first win, dogfoodable — PR open (engine-generic SQL base, ADR 0045; live-verified vs PostgreSQL 16, CI dogfood battery) | datasource |
+| 🟡 | [#1685](https://github.com/TheurgicDuke771/DataQ/issues/1685) Trino adapter — the G-f federation multiplier — PR open (third engine on the ADR 0045 base; live-verified vs Trino 483 incl. TLS + private CA, password/JWT, access control; Athena split to [#2131](https://github.com/TheurgicDuke771/DataQ/issues/2131)) | datasource |
 | ⬜ | [#1686](https://github.com/TheurgicDuke771/DataQ/issues/1686) Run comparison — diff two runs of a suite | results |
 | ⬜ | [#1688](https://github.com/TheurgicDuke771/DataQ/issues/1688) Checks-as-code: dataq.yaml/JSON authoring contract + validate/apply/drift (phase 1 can ship alone) | gitops |
 | ⬜ | [#1664](https://github.com/TheurgicDuke771/DataQ/issues/1664) "Data Quality Control Plane" positioning copy (marketing + docs site) | docs |
