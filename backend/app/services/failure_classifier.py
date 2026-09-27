@@ -273,6 +273,10 @@ _AUTH_MARKERS: tuple[str, ...] = (
     # PostgreSQL SQLSTATE 28P01 — a wrong or changed password (#1678). Not 28000 (a pg_hba
     # refusal), which is a server policy about this client, not the credential's health.
     "password authentication failed",
+    # MySQL / MariaDB error 1045 — the login itself was refused. Keyed on the "(using password:"
+    # tail that only 1045 carries: 1044 ("… to database 'x'") is a missing grant, not a dead
+    # credential.
+    "(using password:",
     # Azure ADLS Gen2 / Blob.
     "authenticationfailed",
     "server failed to authenticate the request",

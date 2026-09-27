@@ -399,11 +399,16 @@ def _open_connection(connection: Connection, secret_store: SecretStore) -> Gener
         url, connect_args = _engine_args(connection, secret_store.get(connection.secret_ref))
     elif authenticates_without_secret(connection.type, connection.config):
         # A generic SQL engine configured with no authentication (Trino `auth_type: none`).
-        spec = SQL_ENGINES[connection.type]
-        url, connect_args = spec.engine_args(spec.validate_config(connection.config), None)
+        open_spec = SQL_ENGINES[connection.type]
+        url, connect_args = open_spec.engine_args(
+            open_spec.validate_config(connection.config), None
+        )
     else:
         raise ValueError("connection requires secret_ref for the credential")
     engine = create_engine(url, connect_args=connect_args)
+    spec = SQL_ENGINES.get(connection.type)
+    if spec is not None:
+        spec.prepare_engine(engine)  # the engine's session statements (read-only, UTC, …)
     try:
         with engine.connect() as conn:
             yield conn

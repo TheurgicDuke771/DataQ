@@ -417,8 +417,8 @@ class CatalogEntryRead(ApiModel):
 
 class CatalogBrowseRead(ApiModel):
     """One level of the catalog → schema → table tree (a generic SQL connection such as
-    PostgreSQL starts at `schema`: its database is fixed). `truncated` means more names exist
-    than `limit` — the list is then a prefix, and the target can still be typed by hand.
+    PostgreSQL or MySQL starts at `schema`: its database is fixed). `truncated` means more names
+    exist than `limit` — the list is then a prefix, and the target can still be typed by hand.
     """
 
     model_config = ConfigDict(populate_by_name=True)

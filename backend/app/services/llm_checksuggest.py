@@ -1,6 +1,6 @@
 """Profiler-driven, catalog-constrained check suggestions (ADR 0042, #1513).
 
-Scope: SQL-queryable connections only (Snowflake, Unity Catalog, PostgreSQL, Trino) — the
+Scope: SQL-queryable connections only (Snowflake, Unity Catalog, PostgreSQL, MySQL, Trino) — the
 same `SQL_QUERYABLE_TYPES` gate #1512 (SQL generation) uses; flat-file/Iceberg
 batch-target resolution is unrelated machinery a suggestion prompt doesn't
 need, so it stays a separate follow-up rather than blocking this one.

@@ -4,8 +4,8 @@ Two read-only, one-level-at-a-time listings through a connection's stored creden
 
 * **Unity Catalog** — catalogs → schemas → tables, from ``system.information_schema`` via the
   ADR 0040 enumeration seam, so a picked table is one the inventory sync would also see.
-* **The generic SQL engines** (PostgreSQL, Trino) — schemas → tables, from the engine's own
-  catalog query, the same one the inventory sync enumerates with.
+* **The generic SQL engines** (PostgreSQL, MySQL/MariaDB, Trino) — schemas → tables, from
+  the engine's own catalog query, the same one the inventory sync enumerates with.
 * **ADLS Gen2 / S3** — the folders and files directly under a prefix of the connection's one
   container/bucket.
 

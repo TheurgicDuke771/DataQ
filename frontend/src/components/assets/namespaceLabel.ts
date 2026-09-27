@@ -4,7 +4,15 @@
  */
 
 export type DatasourceKind =
-  'snowflake' | 'unity_catalog' | 'adls_gen2' | 's3' | 'iceberg' | 'postgres' | 'trino' | 'other';
+  | 'snowflake'
+  | 'unity_catalog'
+  | 'adls_gen2'
+  | 's3'
+  | 'iceberg'
+  | 'postgres'
+  | 'mysql'
+  | 'trino'
+  | 'other';
 
 interface SchemeSpec {
   prefix: string;
@@ -47,6 +55,7 @@ const SCHEMES: SchemeSpec[] = [
   { prefix: 's3://', kind: 's3', source: 'S3', instance: (rest) => rest },
   // `postgres://host:port` — the OpenLineage PostgreSQL namespace (#1678).
   { prefix: 'postgres://', kind: 'postgres', source: 'PostgreSQL', instance: (rest) => rest },
+  { prefix: 'mysql://', kind: 'mysql', source: 'MySQL', instance: (rest) => rest },
   // `trino://host:port` — the OpenLineage Trino namespace (#1685).
   { prefix: 'trino://', kind: 'trino', source: 'Trino', instance: (rest) => rest },
 ];

@@ -47,6 +47,28 @@ that silently doesn't work on the new engine.
    `WAREHOUSE_LINEAGE_CONNECTION_TYPES`, so an empty lineage graph reads "not observed".
    Native engines: GX only.
 
+## Amendment — MySQL / MariaDB, the second engine
+
+MySQL / MariaDB plugged in as one spec module (PyMySQL — MIT; the GPL drivers are
+excluded by ADR 0031) plus a registry entry, which is the test of decision 1. It needed
+three small base hooks, all generic: `url_database` (a MySQL schema IS a database, so the
+session connects to the target's schema to scope it), a shared `sslmode` vocabulary, and
+**`temp_table_types`** — GX checks uniqueness on MySQL by building session temporary
+tables, which a read-only transaction refuses, so that one type runs on its own GX
+session with the read-only guard off (`connect_args(read_only=False)`). Nothing a user
+wrote runs there; custom SQL stays on the guarded session. MySQL's read-only and UTC
+settings are two statements (the `transaction_read_only` *variable* is missing before
+MariaDB 11.1, so the portable `SET SESSION TRANSACTION READ ONLY` form is used), which
+PyMySQL's single `init_command` cannot carry — hence `session_statements`, applied to every
+engine DataQ builds (`prepare_engine`) and, for GX, through a **`GxConnectionSource`**
+handed to GX as its engines' `creator`. GX builds a fresh SQLAlchemy engine per execution
+engine and never disposes it, so an event hook on the engine it exposes never reached the
+one that validates — and each run left one idle server session behind until garbage
+collection (live-found on PostgreSQL: three runs, three backends). The source closes every
+connection a run opened. Decision 4 therefore reads
+"read only except where the engine's own check implementation needs temporary
+tables", and the docs say so.
+
 ## Amendment — Trino, the federation engine
 
 Trino plugged in as one spec module (`datasources/trino.py`, the Apache-2.0 `trino` client and
@@ -96,6 +118,8 @@ needs no `temp_table_types` entry.
   (JSON kept as text on the run path).
 - A new engine inherits the whole feature surface at once — which is the risk as well as the
   point: it is not "supported" until the same battery has run against it.
+- A spec's hooks are only kept when a live run proves them: MySQL does not need
+  PostgreSQL's JSON-as-text option (PyMySQL already returns JSON as text), so it has none.
 - A Trino connection covers whatever its catalog federates, so its checks are only as fast
   (and as costly) as the connector behind the catalog — a full scan of a Hive table is a
   full scan.

@@ -17,6 +17,12 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Added
 
+- **MySQL / MariaDB datasource.** Any MySQL or MariaDB server, on the same generic SQL
+  base as PostgreSQL and through the MIT-licensed PyMySQL driver: every SQL-capable check,
+  all monitors, the profiler, browsing and inventory sync. Sessions are read-only and UTC;
+  TLS is `require` by default. *Column values unique* needs the `CREATE TEMPORARY TABLES`
+  grant — see [Datasources & checks](../guides/datasources-checks.md#mysql-mariadb).
+
 - **Trino datasource.** Connect any Trino (or Starburst) cluster — one catalog per connection
   — and check whatever that catalog federates (Hive, Iceberg, PostgreSQL, Cassandra, Kafka…)
   with every SQL-capable check, all monitors, the profiler, schema → table browsing and

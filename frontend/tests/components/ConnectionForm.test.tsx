@@ -558,6 +558,39 @@ describe('ConnectionForm — PostgreSQL', () => {
   });
 });
 
+describe('ConnectionForm — MySQL / MariaDB', () => {
+  it('needs no schema field and sends the TLS mode picked', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue({ ...icebergConnection, type: 'mysql' });
+
+    render(
+      <AntApp>
+        <ConnectionForm type="mysql" onSaved={vi.fn()} onCancel={vi.fn()} />
+      </AntApp>,
+    );
+
+    await user.type(await screen.findByLabelText('Name'), 'orders-mysql');
+    await selectOption(user, 'DEV');
+    await user.type(screen.getByLabelText('Host'), 'db.internal');
+    await user.type(screen.getByLabelText('Database'), 'shop');
+    await user.type(screen.getByLabelText('User'), 'dq_reader');
+    // A MySQL schema is a database: there is no separate schema field to fill.
+    expect(screen.queryByLabelText(/Default schema/)).not.toBeInTheDocument();
+    await selectOption(user, 'disable', { index: 1 });
+    await user.type(screen.getByLabelText('Password'), 'pw');
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalled());
+    const payload = mockCreate.mock.calls[0][0];
+    expect(payload.type).toBe('mysql');
+    expect(payload.config).toMatchObject({
+      host: 'db.internal',
+      database: 'shop',
+      sslmode: 'disable',
+    });
+  });
+});
+
 describe('ConnectionForm — Trino', () => {
   const trinoConnection: Connection = {
     id: 'conn-tr-1',

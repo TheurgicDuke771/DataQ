@@ -581,8 +581,8 @@ def list_suites() -> list[dict[str, Any]]:
 
     Use this to discover what suites exist before drilling into results or
     triggering a run. Returns, per suite: its id, name, the datasource it runs
-    against (snowflake / adls / s3 / unity_catalog / iceberg / postgres / trino), the
-    environment (dev / qa / uat), how many checks it has, and the status + time of
+    against (snowflake / adls / s3 / unity_catalog / iceberg / postgres / mysql /
+    trino), the environment (dev / qa / uat), how many checks it has, and the status + time of
     its most recent run
     (null if it has never run). Scoped to suites the user owns or has a share on
     (a workspace-admin sees every suite).
@@ -1310,7 +1310,8 @@ def list_connections(type: str | None = None, env: str | None = None) -> list[di
     Use this for 'what are we connected to?', 'which connections are broken?', or
     to find the connection a suite should run against. Returns, per connection:
     its id, name, type (``snowflake`` / ``adls_gen2`` / ``s3`` / ``unity_catalog``
-    / ``iceberg`` / ``postgres`` / ``trino`` for datasources; ``adf`` / ``airflow`` / ``dbt`` for
+    / ``iceberg`` / ``postgres`` / ``mysql`` / ``trino`` for datasources; ``adf`` /
+    ``airflow`` / ``dbt`` for
     orchestration providers), environment, whether a credential is stored, and
     its health — when it was last polled or last ran, a classified error reason
     when it is failing, how many consecutive failures it has had, and when its
@@ -4134,8 +4135,8 @@ def profile_column(
     for an Iceberg table when passing an explicit ``table`` (Iceberg addresses
     ``namespace.table``); it defaults to the suite target's namespace when no
     explicit ``table``/``path`` is given, so it only needs passing alongside
-    your own ``table``. **Snowflake, Unity Catalog, PostgreSQL and Trino are profiled
-    in full; ADLS, S3 and Iceberg targets are profiled over a sample of at most
+    your own ``table``. **Snowflake, Unity Catalog, PostgreSQL, MySQL and Trino are
+    profiled in full; ADLS, S3 and Iceberg targets are profiled over a sample of at most
     100,000 rows.** When
     ``sampled`` is true, ``row_count`` is the number of rows **sampled** — not
     the size of the file or table — and every statistic describes only that
