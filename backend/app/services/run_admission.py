@@ -137,6 +137,72 @@ def _unity_catalog_estimate(
     )
 
 
+def _iceberg_estimate(
+    connection: Connection, target: ResolvedTarget, checks: list[Check]
+) -> MemoryEstimate | None:
+    """The native read materialises the whole current snapshot, so it is sized from the same
+    manifest plan the row-cap probe uses — metadata only, never a data read.
+
+    Rows alone are width-blind and file bytes alone are blind to dictionary-encoded strings,
+    which are small on disk and full-width in memory; the larger of the two is reserved.
+    """
+    from backend.app.datasources.iceberg import (
+        IcebergConfig,
+        iceberg_credentials,
+        load_iceberg_table,
+        planned_scan,
+        summary_scan_fallback_reason,
+    )
+    from backend.app.datasources.monitors import (
+        FRESHNESS,
+        VOLUME,
+    )
+
+    kinds = {c.kind for c in checks}
+    monitors = kinds & {FRESHNESS, VOLUME}
+    if "expectation" not in kinds and not monitors:
+        return None
+    config = IcebergConfig.model_validate(connection.config)
+    secret, catalog_secret = iceberg_credentials(config, connection.secret_ref, get_secret_store())
+    table = load_iceberg_table(config, secret, target.table, catalog_secret)
+    if "expectation" in kinds:
+        basis_prefix = "iceberg"
+    else:
+        # Monitors answer from snapshot metadata unless it cannot prove the answer; then the
+        # volume/freshness fallback scans (a merge-on-read count materialises the tasks).
+        reason = summary_scan_fallback_reason(table)
+        if reason is None:
+            log.info("run_admission_iceberg_metadata_only", connection_id=str(connection.id))
+            return None
+        log.info(
+            "run_admission_iceberg_monitor_fallback",
+            connection_id=str(connection.id),
+            reason=reason,
+        )
+        basis_prefix = "iceberg_monitor_fallback"
+    scan = planned_scan(table)
+    settings = get_settings()
+    cap = settings.iceberg_scan_row_cap
+    if cap > 0 and scan.rows > cap:
+        # Refused by the row-cap probe before anything is read, so it holds nothing.
+        return MemoryEstimate(bytes=0, basis="iceberg_over_cap")
+    by_rows = scan.rows * settings.run_admission_row_bytes
+    by_bytes = int(
+        sum(
+            size
+            * (
+                settings.run_admission_expansion_parquet
+                if fmt == "parquet"
+                else settings.run_admission_expansion_default
+            )
+            for fmt, size in scan.bytes_by_format.items()
+        )
+    )
+    if by_rows >= by_bytes:
+        return MemoryEstimate(bytes=by_rows, basis=f"{basis_prefix}_planned_rows")
+    return MemoryEstimate(bytes=by_bytes, basis=f"{basis_prefix}_file_bytes")
+
+
 def _comparison_bytes(checks: list[Check]) -> int:
     """Both sides of a comparison materialise in the worker whatever the datasource is
     (ADR 0015) — including on a pushdown connection, which otherwise holds nothing.
@@ -151,11 +217,11 @@ def _comparison_bytes(checks: list[Check]) -> int:
 def estimate_run_memory(session: Session, run: Run) -> MemoryEstimate | None:
     """What this run will hold in the worker, or ``None`` when admission does not apply.
 
-    ``None`` covers three cases, all deliberate: a pushdown lane with no comparison checks
-    (holds nothing), a run whose graph will not execute anyway (``_run_suite`` produces the
-    real error), and a datasource with no estimator yet — Iceberg, whose cheap
-    `scan().count()` probe lands separately. Each is logged, so an unmetered materialising
-    runner is visible rather than silent.
+    ``None`` covers three cases, all deliberate: a lane that holds no dataset in the worker
+    and has no comparison checks (pushdown, an Iceberg suite of monitors only), a run whose
+    graph will not execute anyway (``_run_suite`` produces the real error), and a datasource
+    type with no estimator. The last is logged, so an unmetered materialising runner is
+    visible rather than silent.
     """
     suite = session.get(Suite, run.suite_id)
     connection = session.get(Connection, suite.connection_id) if suite is not None else None
@@ -191,6 +257,8 @@ def _dataset_estimate(
         return _flat_file_estimate(connection, target)
     if connection.type == "unity_catalog":
         return _unity_catalog_estimate(connection, target, checks)
+    if connection.type == "iceberg":
+        return _iceberg_estimate(connection, target, checks)
     log.info(
         "run_admission_no_estimator",
         run_id=str(run.id),

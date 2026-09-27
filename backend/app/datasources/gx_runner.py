@@ -5,6 +5,7 @@ from __future__ import annotations
 import numbers
 import time
 from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import replace
 from decimal import Decimal
 from typing import Any
@@ -338,8 +339,14 @@ def _check_errored(exception_info: Any) -> tuple[bool, str | None]:
     return False, None
 
 
-def _expected_value(kwargs: Any) -> dict[str, Any] | None:
+def _expected_value(kwargs: Any, spec: CheckSpec | None = None) -> dict[str, Any] | None:
     cleaned = {key: value for key, value in dict(kwargs).items() if key not in _GX_INTERNAL_KWARGS}
+    if spec is not None and spec.authored_kwargs is not None:
+        # Report what the runner rewrote for the engine as authored (#1618); keys it left
+        # alone keep GX's own rendering.
+        for key, authored in spec.authored_kwargs.items():
+            if key in cleaned and spec.kwargs.get(key) != authored:
+                cleaned[key] = authored
     return cleaned or None
 
 
@@ -402,11 +409,16 @@ def _in_submission_order(results: list[Any]) -> list[Any]:
     return [result for _, result in indexed]
 
 
-def to_suite_outcome(gx_result: Any) -> SuiteOutcome:
-    """Map a GX ExpectationSuiteValidationResult onto our GX-agnostic DTO."""
+def to_suite_outcome(gx_result: Any, checks: Sequence[CheckSpec] | None = None) -> SuiteOutcome:
+    """Map a GX ExpectationSuiteValidationResult onto our GX-agnostic DTO.
+
+    ``checks`` are the submitted specs, matched to results by their ``dataq_index`` marker.
+    """
     outcomes: list[CheckOutcome] = []
     for check_result in _in_submission_order(list(gx_result.results)):
         config = check_result.expectation_config
+        index = _submission_index(check_result)
+        spec = checks[index] if checks and index is not None and index < len(checks) else None
         detail: dict[str, Any] = check_result.result or {}
         observed = _bounded_observed_value(detail)
         errored, error_message = _check_errored(getattr(check_result, "exception_info", None))
@@ -419,7 +431,7 @@ def to_suite_outcome(gx_result: Any) -> SuiteOutcome:
                 expectation_type=config.type,
                 success=bool(check_result.success),
                 observed_value=observed,
-                expected_value=_expected_value(config.kwargs) if config.kwargs else None,
+                expected_value=_expected_value(config.kwargs, spec) if config.kwargs else None,
                 sample_failures=_extract_sample_failures(detail),
                 errored=errored,
                 error_message=error_message,
@@ -452,7 +464,7 @@ def _execute(
     result = validation_definition.run(
         batch_parameters=batch_parameters, result_format=result_format
     )
-    return to_suite_outcome(result)
+    return to_suite_outcome(result, checks)
 
 
 def _is_sql_batch(batch_definition: Any) -> bool:

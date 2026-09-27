@@ -590,7 +590,7 @@ class UnityCatalogCheckRunner:
                     success=False,
                     errored=True,
                     error_message=reason,
-                    expected_value=dict(spec.kwargs) or None,
+                    expected_value=dict(spec.authored_kwargs or spec.kwargs) or None,
                 )
                 for spec in checks
             ],

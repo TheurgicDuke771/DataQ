@@ -70,15 +70,21 @@ variable "frontend_image_repo" {
 }
 
 variable "frontend_image_tag" {
-  description = "Frontend image tag to deploy. Use an IMMUTABLE tag in prod (ACA caches 'latest' at the node). Bump per deploy. (v1 = the ADR 0028 §5 SWA→Container-App cutover; v2 = nginx proxy_http_version 1.1 so ACA ingress stops 426ing the /api + /healthz proxy.) The live image is rolled out-of-band (ignore_changes on the container image), so this is the create-time default."
+  description = "Frontend image tag the frontend Container App is CREATED with (immutable tag). Later rollouts are out-of-band via deploy.yml (ignore_changes on the container image). No default, for the same reason as image_tag — pass the tag the live frontend runs (README.md, Apply)."
   type        = string
-  default     = "v2"
 }
 
 variable "image_tag" {
-  description = "Backend image tag to deploy. Use an IMMUTABLE tag in prod (ACA caches 'latest' at the node, so a same-tag rebuild won't be re-pulled on a new revision). Bump per deploy. (v3 = the #393 App-Insights logging-lock fix; v4 = login page + AZURE_ALLOW_GUEST_USERS support, PR #398; v5 = (superseded) ; v7 = #405 beat-lock + #406 KV AZURE_CLIENT_ID; v8 = Slack+email alerting #413; v9 = column-aware redaction #417 + the #383/#384/#395/#423 hardening batch; v10 = freshness/volume monitors #426 + authoring UI #437 + runs-table outcome #425 — the live prod image.)"
+  description = <<-DESC
+    Backend image tag the api / worker / beat apps and the migrate job are
+    CREATED with (immutable tag; later rollouts are out-of-band via
+    deploy.yml, ignore_changes on the container image). No default on purpose
+    — the AWS stack's #1349 reasoning: a hardcoded default (the old "v10", a
+    June image) is what a NEW app actually starts on, and #1811's beat split
+    would have made that stale image the only schedule dispatcher until the
+    next Deploy run. Pass the tag the live worker runs (README.md, Apply).
+  DESC
   type        = string
-  default     = "v10"
 }
 
 variable "azure_allow_guest_users" {
