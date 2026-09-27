@@ -298,8 +298,8 @@ class SnowflakeLineageProvider:
                         f"object_dependencies: could not read floor ({type(exc).__name__})"
                         + _TRANSIENT_SKIP_SUFFIX
                     )
-                edges, column_grain, column_note = self._refine_with_column_pairs(
-                    conn, namespace, database, top.edges
+                edges, column_grain, column_note, columns_authoritative = (
+                    self._refine_with_column_pairs(conn, namespace, database, top.edges)
                 )
                 return WarehouseLineageResult(
                     edges=edges,
@@ -308,6 +308,7 @@ class SnowflakeLineageProvider:
                     + "; ".join([*skipped, *([column_note] if column_note else [])]),
                     skipped_tiers=tuple(skipped),
                     column_grain=column_grain,
+                    columns_authoritative=columns_authoritative,
                     # `partial` (#1109) folds in a confirmed-vs-unclassified GET_LINEAGE blip from
                     # EARLIER in this same call (review finding on #1263: the first version of this
                     # branch dropped it, so a traversal already known-incomplete from its own per-
@@ -319,8 +320,10 @@ class SnowflakeLineageProvider:
                 (e.upstream.name, e.downstream.name): e for e in floor_for_top
             }
             merged_top.update({(e.upstream.name, e.downstream.name): e for e in top.edges})
-            edges, column_grain, column_note = self._refine_with_column_pairs(
-                conn, namespace, database, tuple(merged_top.values())
+            edges, column_grain, column_note, columns_authoritative = (
+                self._refine_with_column_pairs(
+                    conn, namespace, database, tuple(merged_top.values())
+                )
             )
             notes = []
             if skipped:
@@ -334,6 +337,7 @@ class SnowflakeLineageProvider:
                 skipped_tiers=tuple(skipped),
                 prunable=not partial,
                 column_grain=column_grain,
+                columns_authoritative=columns_authoritative,
             )
 
         # The two remaining sources are COMPLEMENTARY truths, not alternatives (#911 review — the
@@ -408,7 +412,7 @@ class SnowflakeLineageProvider:
         namespace: str,
         database: str,
         edges: tuple[LineageEdgePair, ...],
-    ) -> tuple[tuple[LineageEdgePair, ...], ColumnGrain, str | None]:
+    ) -> tuple[tuple[LineageEdgePair, ...], ColumnGrain | None, str | None, bool]:
         """Attach ACCESS_HISTORY column pairs to a GET_LINEAGE edge set (#1710).
 
         GET_LINEAGE is traversed at TABLE domain, whose rows carry NULL column names (every
@@ -416,9 +420,13 @@ class SnowflakeLineageProvider:
         comes only from here. Refinement, never a reason to fail the table edges — and never
         a source of NEW table edges: a DML-only edge GET_LINEAGE did not return stays out,
         so this cannot change what the table-level prune observes.
+
+        Returns ``(edges, column_grain, degrade_note, columns_authoritative)``: a TRANSIENT failure
+        is not authoritative (the refresh merges, keeping earlier pairs); a confirmed denial is
+        (pairs clear rather than freeze once a grant is revoked — the #911 rule).
         """
         if not edges:
-            return edges, ColumnGrain.CAPTURED, None
+            return edges, None, None, True  # nothing read, nothing to say about column grain
         try:
             observed = self._from_access_history(conn, namespace, database)
         except Exception as exc:
@@ -428,10 +436,13 @@ class SnowflakeLineageProvider:
                 source=self.source,
                 error_type=type(exc).__name__,
             )
+            transient = not isinstance(exc, _FeatureUnsupportedError) or exc.transient
             return (
                 edges,
                 ColumnGrain.UNAVAILABLE,
-                f"column detail unavailable — access_history: {reason}",
+                f"column detail unavailable — access_history: {reason}"
+                + (_TRANSIENT_SKIP_SUFFIX if transient else ""),
+                not transient,
             )
         pairs_by_edge = {
             (e.upstream.name, e.downstream.name): e.column_pairs for e in observed if e.column_pairs
@@ -456,7 +467,7 @@ class SnowflakeLineageProvider:
             edges_with_columns=matched,
             unanchored_table_pairs=len(pairs_by_edge),
         )
-        return tuple(refined), ColumnGrain.CAPTURED, None
+        return tuple(refined), ColumnGrain.CAPTURED, None, True
 
     @staticmethod
     def _unavailable_reason(exc: Exception, skipped: list[str]) -> str:

@@ -23,7 +23,6 @@ def _world(db_session: Any, *, grain: str | None = "captured") -> dict[str, Any]
         config={"account": "a"},
         secret_ref="kv",
         created_by=owner.id,
-        lineage_column_grain=grain,
     )
     db_session.add(conn)
     db_session.flush()
@@ -36,12 +35,14 @@ def _world(db_session: Any, *, grain: str | None = "captured") -> dict[str, Any]
                 source="snowflake",
                 connection_id=conn.id,
                 columns=[["EMAIL", "EMAIL"]],
+                column_grain=grain,
             ),
             LineageEdge(
                 upstream_asset_id=stg.id,
                 downstream_asset_id=mart.id,
                 source="snowflake",
                 connection_id=conn.id,
+                column_grain=grain,
             ),
         ]
     )
@@ -96,7 +97,7 @@ def test_trace_schema_bounds_its_inputs() -> None:
     assert tool is not None
     props = tool.parameters["properties"]
     assert props["column"]["minLength"] == 1 and props["column"]["maxLength"] == 255
-    assert props["direction"]["pattern"] == "^(upstream|downstream|both)$"
+    assert props["direction"]["enum"] == ["upstream", "downstream", "both"]
     assert props["max_depth"]["minimum"] == 1 and props["max_depth"]["maximum"] == 25
 
 

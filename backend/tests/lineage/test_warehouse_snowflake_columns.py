@@ -10,9 +10,16 @@ one. The live battery is recorded in the #1710 PR body.
 from __future__ import annotations
 
 import json
+import uuid
 from typing import Any
 
+import pytest
+from sqlalchemy import select
+from sqlalchemy.orm import Session, aliased
+
+from backend.app.db.models import Asset, Connection, LineageEdge, User
 from backend.app.lineage.warehouse import ColumnGrain, LineageTier
+from backend.app.lineage.warehouse_refresh import refresh_warehouse_edges
 from backend.app.lineage.warehouse_snowflake import SnowflakeLineageProvider
 from backend.tests.lineage.test_warehouse_snowflake import (
     _CONFIG,
@@ -98,8 +105,11 @@ def test_a_failed_column_refinement_keeps_the_table_edges_and_says_so() -> None:
     assert result.degraded_reason is not None
     assert "column detail unavailable — access_history" in result.degraded_reason
     assert "raw driver text" not in result.degraded_reason  # never raw text (#902)
-    # A column-read failure is not a table-edge observation failure.
+    # A column-read failure is not a table-edge observation failure…
     assert result.prunable is True
+    # …but a transient one must not license replacing stored pairs.
+    assert result.columns_authoritative is False
+    assert "transient" in result.degraded_reason
 
 
 def test_the_floor_failure_branch_is_refined_too() -> None:
@@ -156,3 +166,88 @@ def test_access_history_tier_that_read_nothing_still_captured_grain() -> None:
     )
     result = SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
     assert result.column_grain is ColumnGrain.CAPTURED
+
+
+# ── persistence: the refinement's failure mode must not wipe stored pairs ─────────────────
+
+
+@pytest.fixture
+def sf_connection(db_session: Session) -> Connection:
+    user = User(aad_object_id=uuid.uuid4().hex, email=f"u-{uuid.uuid4().hex[:8]}@x.io")
+    db_session.add(user)
+    db_session.flush()
+    conn = Connection(
+        name=f"sf-{uuid.uuid4().hex[:8]}",
+        type="snowflake",
+        env="dev",
+        config=dict(_CONFIG),
+        secret_ref="ref",
+        created_by=user.id,
+    )
+    db_session.add(conn)
+    db_session.flush()
+    return conn
+
+
+_STG = ("DATAQ_DB.RETAIL.ORDERS_HEADER", "DATAQ_DB.ANALYTICS_STG.STG_ORDERS")
+
+
+def _stored(db_session: Session, connection: Connection) -> dict[tuple[str, str], Any]:
+    up, down = aliased(Asset), aliased(Asset)
+    rows = db_session.execute(
+        select(up.name, down.name, LineageEdge.columns, LineageEdge.column_grain)
+        .join(up, up.id == LineageEdge.upstream_asset_id)
+        .join(down, down.id == LineageEdge.downstream_asset_id)
+        .where(LineageEdge.connection_id == connection.id)
+    ).all()
+    return {(u, d): (cols, grain) for u, d, cols, grain in rows}
+
+
+def _pull(db_session: Session, connection: Connection, conn: Any) -> None:
+    outcome = refresh_warehouse_edges(
+        db_session, connection=connection, provider=SnowflakeLineageProvider(), conn=conn
+    )
+    assert outcome is not None
+
+
+def _captured_pull(db_session: Session, connection: Connection) -> None:
+    _pull(
+        db_session,
+        connection,
+        _gl_orders_conn(
+            results={"ACCESS_HISTORY ah": [_ah_row(*_STG, [("CUSTOMER_ID", "CUSTOMER_ID")])]}
+        ),
+    )
+    key = (_sf("RETAIL", "ORDERS_HEADER"), _sf("ANALYTICS_STG", "STG_ORDERS"))
+    assert _stored(db_session, connection)[key] == ([["CUSTOMER_ID", "CUSTOMER_ID"]], "captured")
+
+
+def test_a_transient_refinement_failure_keeps_previously_stored_pairs(
+    db_session: Session, sf_connection: Connection
+) -> None:
+    _captured_pull(db_session, sf_connection)
+    result = SnowflakeLineageProvider().fetch_edges(
+        _gl_orders_conn(raises={"ACCESS_HISTORY": RuntimeError("blip")}), connection_config=_CONFIG
+    )
+    assert result.columns_authoritative is False and result.prunable is True
+    _pull(db_session, sf_connection, _gl_orders_conn(raises={"ACCESS_HISTORY": RuntimeError("b")}))
+    key = (_sf("RETAIL", "ORDERS_HEADER"), _sf("ANALYTICS_STG", "STG_ORDERS"))
+    # Pairs survive the blip, and so does the evidence that a pull once looked.
+    assert _stored(db_session, sf_connection)[key] == (
+        [["CUSTOMER_ID", "CUSTOMER_ID"]],
+        "captured",
+    )
+
+
+def test_a_confirmed_denial_clears_pairs_rather_than_freezing_them(
+    db_session: Session, sf_connection: Connection
+) -> None:
+    """The #911 rule: a revoked grant is permanent, so the pairs must not freeze at revocation."""
+    _captured_pull(db_session, sf_connection)
+    _pull(
+        db_session,
+        sf_connection,
+        _gl_orders_conn(raises={"ACCESS_HISTORY": _feature_unsupported_error()}),
+    )
+    key = (_sf("RETAIL", "ORDERS_HEADER"), _sf("ANALYTICS_STG", "STG_ORDERS"))
+    assert _stored(db_session, sf_connection)[key] == (None, "unavailable")

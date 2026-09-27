@@ -198,16 +198,25 @@ function TraceResult({ trace }: { trace: ColumnTrace }) {
   const cell = (id: string, col: string) => `${name(id)}.${col}`;
   return (
     <Flex vertical gap={8} data-testid="column-trace">
+      <Typography.Text type="secondary">
+        Trace of <Typography.Text code>{trace.column}</Typography.Text>
+      </Typography.Text>
       {!trace.complete && (
         <Alert
           type="warning"
           showIcon
           title="Partial trace"
-          description={
+          description={[
             trace.truncated
               ? 'The walk hit its depth/size cap; more columns may lie beyond it.'
-              : 'Some lineage edges on the way carry no column detail (listed below) — this column may cross them. Absence here is not evidence of no dependency.'
-          }
+              : '',
+            trace.gaps.length > 0
+              ? 'Some lineage edges on the way carry no column detail (listed below) — this column may cross them.'
+              : '',
+            'Absence here is not evidence of no dependency.',
+          ]
+            .filter(Boolean)
+            .join(' ')}
         />
       )}
       {trace.qualified_by.length > 0 && (

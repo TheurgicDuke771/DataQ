@@ -126,10 +126,18 @@ def test_combine_takes_the_strongest_statement() -> None:
 # ── the captured chain ──────────────────────────────────────────────────────
 
 
-def test_refresh_records_captured_grain_on_the_connection(
+def _grains(db_session: Session, connection: Connection) -> set[str | None]:
+    return set(
+        db_session.scalars(
+            select(LineageEdge.column_grain).where(LineageEdge.connection_id == connection.id)
+        )
+    )
+
+
+def test_refresh_stamps_captured_grain_on_every_observed_edge(
     db_session: Session, captured: Connection
 ) -> None:
-    assert captured.lineage_column_grain == "captured"
+    assert _grains(db_session, captured) == {"captured"}
 
 
 def test_upstream_trace_reaches_the_raw_origin(db_session: Session, captured: Connection) -> None:
@@ -195,6 +203,21 @@ def test_depth_cap_marks_the_trace_truncated(db_session: Session, captured: Conn
     assert trace.truncated and not trace.complete
     (origin,) = trace.origins
     assert origin.depth == 1 and origin.confirmed is False
+    # Every hop points at a node the result contains.
+    nodes = {(n.asset_id, n.column) for n in trace.upstream} | {(gold, "customer_id")}
+    assert all((h.upstream_asset_id, h.upstream_column) in nodes for h in trace.hops)
+
+
+def test_a_cap_with_nothing_beyond_it_is_not_truncated(
+    db_session: Session, captured: Connection
+) -> None:
+    """The chain is exactly 2 hops: a cap of 2 cuts nothing, so the trace is complete."""
+    gold = _asset_id(db_session, "gold", "feedback_sentiment")
+    trace = lc.trace_column(
+        db_session, gold, "customer_id", direction=lc.TraceDirection.UPSTREAM, max_depth=2
+    )
+    assert not trace.truncated and trace.complete
+    assert [o.confirmed for o in trace.origins] == [True]
 
 
 def test_a_non_column_source_edge_is_a_gap(db_session: Session, captured: Connection) -> None:
@@ -233,7 +256,7 @@ def test_failed_column_read_reads_unavailable(
         _FakeConn(column_raises=RuntimeError("PERMISSION_DENIED on column_lineage")),
     )
     assert outcome is not None
-    assert uc_connection.lineage_column_grain == "unavailable"
+    assert _grains(db_session, uc_connection) == {"unavailable"}
     gold = _asset_id(db_session, "gold", "feedback_sentiment")
     trace = lc.trace_column(db_session, gold, "customer_id", direction=lc.TraceDirection.UPSTREAM)
     assert trace.upstream_status is lc.TraceStatus.INCOMPLETE
@@ -243,12 +266,12 @@ def test_failed_column_read_reads_unavailable(
 def test_grain_never_recorded_reads_unknown(
     monkeypatch: pytest.MonkeyPatch, db_session: Session, captured: Connection
 ) -> None:
-    """A connection that has not refreshed since the column shipped must not claim a state."""
+    """An edge not refreshed since the column shipped must not claim a state."""
     for edge in db_session.scalars(
         select(LineageEdge).where(LineageEdge.connection_id == captured.id)
     ):
         edge.columns = None
-    captured.lineage_column_grain = None
+        edge.column_grain = None
     db_session.flush()
     gold = _asset_id(db_session, "gold", "feedback_sentiment")
     refs = lc.edge_columns(db_session, [(_asset_id(db_session, "silver", "feedback"), gold)])
@@ -264,7 +287,33 @@ def test_incremental_pull_with_no_new_events_keeps_the_recorded_grain(
     captured.lineage_watermark = datetime(2100, 1, 1, tzinfo=UTC)
     outcome = _refresh(monkeypatch, db_session, captured)
     assert outcome is not None and outcome.column_grain is None
-    assert captured.lineage_column_grain == "captured"
+    assert _grains(db_session, captured) == {"captured"}
+
+
+def test_an_edge_only_seen_in_a_failed_window_is_not_relabelled_by_a_later_success(
+    monkeypatch: pytest.MonkeyPatch, db_session: Session, uc_connection: Connection
+) -> None:
+    """Grain is per EDGE: a later pull that reads column lineage fine for OTHER edges must not
+    turn an edge nobody looked at into "looked, found none"."""
+    _refresh(monkeypatch, db_session, uc_connection, _FakeConn(column_raises=RuntimeError("x")))
+    raw = _asset_id(db_session, "raw", "feedback")
+    silver = _asset_id(db_session, "silver", "feedback")
+    ids = upsert_assets(db_session, [{"namespace": _NS, "name": _name("other", "t")}])
+    other = ids[(_NS, _name("other", "t"))]
+    # A later successful pull that observes only a different edge.
+    db_session.add(
+        LineageEdge(
+            upstream_asset_id=raw,
+            downstream_asset_id=other,
+            source="unity_catalog",
+            connection_id=uc_connection.id,
+            column_grain="captured",
+        )
+    )
+    db_session.flush()
+    refs = lc.edge_columns(db_session, [(raw, silver), (raw, other)])
+    assert refs[(raw, silver)].coverage is lc.ColumnCoverage.UNAVAILABLE
+    assert refs[(raw, other)].coverage is lc.ColumnCoverage.NONE_RECORDED
 
 
 def test_isolated_asset_has_no_table_lineage(db_session: Session, captured: Connection) -> None:
@@ -287,6 +336,7 @@ def _edge(
     *,
     connection: Connection,
     source: str = "snowflake",
+    grain: str | None = "captured",
 ) -> None:
     db_session.add(
         LineageEdge(
@@ -295,6 +345,7 @@ def _edge(
             source=source,
             connection_id=connection.id,
             columns=columns,
+            column_grain=grain,
         )
     )
     db_session.flush()
@@ -303,9 +354,8 @@ def _edge(
 @pytest.fixture
 def sf(db_session: Session, uc_connection: Connection) -> tuple[Connection, dict[str, uuid.UUID]]:
     uc_connection.type = "snowflake"
-    uc_connection.lineage_column_grain = "captured"
     ns = "snowflake://ACCT"
-    names = ["DB.S.A", "DB.S.B", "DB.S.C"]
+    names = ["DB.S.A", "DB.S.B", "DB.S.C", "DB.S.D"]
     ids = upsert_assets(db_session, [{"namespace": ns, "name": n} for n in names])
     return uc_connection, {n.rsplit(".", 1)[1]: ids[(ns, n)] for n in names}
 
@@ -344,16 +394,36 @@ def test_fan_in_both_parents_are_origins(
     assert all(o.confirmed for o in trace.origins)
 
 
-def test_malformed_and_json_null_columns_degrade_to_no_pairs(
+def test_malformed_columns_degrade_to_unknown_never_none_recorded(
     db_session: Session, sf: tuple[Connection, dict[str, uuid.UUID]]
 ) -> None:
     conn, a = sf
     _edge(db_session, a["A"], a["B"], {"not": "a list"}, connection=conn)
     _edge(db_session, a["B"], a["C"], [["X"], ["X", "X"], "junk"], connection=conn)
-    refs = lc.edge_columns(db_session, [(a["A"], a["B"]), (a["B"], a["C"])])
+    _edge(db_session, a["C"], a["D"], None, connection=conn)
+    refs = lc.edge_columns(db_session, [(a["A"], a["B"]), (a["B"], a["C"]), (a["C"], a["D"])])
+    # Corrupt data is not an observation of "no pairs".
     assert refs[(a["A"], a["B"])].pairs == ()
-    assert refs[(a["A"], a["B"])].coverage is lc.ColumnCoverage.NONE_RECORDED
+    assert refs[(a["A"], a["B"])].coverage is lc.ColumnCoverage.UNKNOWN
+    # The valid entries survive.
     assert refs[(a["B"], a["C"])].pairs == (("X", "X"),)
+    assert refs[(a["B"], a["C"])].coverage is lc.ColumnCoverage.RECORDED
+    # A genuinely empty, looked-at edge is none_recorded.
+    assert refs[(a["C"], a["D"])].coverage is lc.ColumnCoverage.NONE_RECORDED
+
+
+def test_a_gap_reached_twice_is_listed_once(
+    db_session: Session, sf: tuple[Connection, dict[str, uuid.UUID]]
+) -> None:
+    """Diamond: A is reached at depth 1 AND 2 (via B→D→A and C→A); its gap edge is one gap."""
+    conn, a = sf
+    _edge(db_session, a["B"], a["A"], [["B1", "X"]], connection=conn)
+    _edge(db_session, a["C"], a["A"], [["C1", "X"]], connection=conn)
+    _edge(db_session, a["B"], a["C"], [["B2", "C1"]], connection=conn)
+    _edge(db_session, a["D"], a["B"], None, connection=conn, source="dbt", grain=None)
+    trace = lc.trace_column(db_session, a["A"], "X", direction=lc.TraceDirection.UPSTREAM)
+    keys = [(g.upstream_asset_id, g.downstream_asset_id) for g in trace.gaps]
+    assert keys == [(a["D"], a["B"])]
 
 
 def test_node_cap_truncates(
@@ -367,3 +437,9 @@ def test_node_cap_truncates(
     trace = lc.trace_column(db_session, a["B"], "X", direction=lc.TraceDirection.UPSTREAM)
     assert len(trace.upstream) == 2
     assert trace.truncated and not trace.complete
+    # No hop may point at a node the cap refused.
+    nodes = {(n.asset_id, n.column) for n in trace.upstream}
+    assert len(trace.hops) == 2
+    assert all((h.upstream_asset_id, h.upstream_column) in nodes for h in trace.hops)
+    # B.X is fed by something the result does not show: it cannot be an unqualified origin.
+    assert all(o.confirmed for o in trace.origins)

@@ -19,7 +19,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
@@ -3425,7 +3425,7 @@ def _lineage_node_payload(node: Any) -> dict[str, Any]:
 def trace_column_lineage(
     asset_id: str,
     column: Annotated[str, Field(min_length=1, max_length=255)],
-    direction: Annotated[str, Field(pattern="^(upstream|downstream|both)$")] = "both",
+    direction: Literal["upstream", "downstream", "both"] = "both",
     max_depth: Annotated[int, Field(ge=1, le=lineage_columns.MAX_TRACE_DEPTH)] = (
         lineage_columns.DEFAULT_TRACE_DEPTH
     ),
@@ -3438,7 +3438,8 @@ def trace_column_lineage(
     it derives from — empty when no upstream hop was found; read `upstream_status` for why),
     `upstream` / `downstream` column nodes with hop `depth`, the `hops` themselves
     (`upstream_column` → `downstream_column`), the `assets` those nodes belong to, and
-    per-direction `upstream_status` / `downstream_status`.
+    per-direction `upstream_status` / `downstream_status` — `null` means that direction was not
+    requested via `direction`, which is "not asked", never a finding.
 
     Column lineage is only as complete as what the warehouse recorded, so read the result
     through its honesty fields before answering:

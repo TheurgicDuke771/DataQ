@@ -393,9 +393,6 @@ class Connection(Base):
     lineage_last_authoritative_refresh_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )
-    # #1710: `ColumnGrain` of the last pull that observed column grain. NULL = never recorded (the
-    # connection has not refreshed since this column shipped) — "unknown", never "none exist".
-    lineage_column_grain: Mapped[str | None] = mapped_column(String(32))
 
     # ── Inventory-sync outcome state (#1104), mirrors lineage_last_* ───────────── (the connection
     # test's SELECT 1 never exercises the enumeration query).
@@ -1028,6 +1025,10 @@ class LineageEdge(Base):
     # Column-level pairs (#901), union-merged on refresh (incremental sources only re-observe pairs
     # inside their window — never prune).
     columns: Mapped[list[Any] | None] = mapped_column(JSONB(none_as_null=True))
+    # #1710: whether a pull ever LOOKED at this edge's column grain (`ColumnGrain`), so an edge
+    # without pairs can say why. Per edge, not per connection: an incremental source only reads
+    # column lineage for the window an edge was seen in. NULL = never recorded → "unknown".
+    column_grain: Mapped[str | None] = mapped_column(String(32))
 
 
 class Incident(Base):
