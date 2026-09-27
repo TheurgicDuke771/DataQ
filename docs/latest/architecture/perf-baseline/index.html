@@ -2088,6 +2088,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#unity-catalog-tiers-measured" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Unity Catalog tiers — measured
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#what-is-explicitly-not-measured-here" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3237,6 +3248,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#unity-catalog-tiers-measured" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Unity Catalog tiers — measured
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#what-is-explicitly-not-measured-here" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3428,7 +3450,7 @@ it fails</em> when it does.</p>
 <td><strong>Unity Catalog</strong> — unaudited types / sampled suites</td>
 <td>frame load (<code>read_sql_table</code>)</td>
 <td>1M rows</td>
-<td><strong>1M → 2M</strong> (the scan-cap guardrail now refuses 2M cleanly instead of OOM)</td>
+<td><strong>1M → 2M</strong> on a 6-column table (the scan-cap guardrail now refuses 2M cleanly instead of OOM); the cap counts rows, not width — a 9-column 1M-row table already costs 1,689 MiB, so the effective ceiling falls with width</td>
 <td>child SIGKILL past the size cap</td>
 </tr>
 <tr>
@@ -5251,7 +5273,7 @@ for the row-boundary trim. Against the whole-object download this replaced, the
 vs 877 MiB) and less wall time; against the first, blindly-doubling version of
 the bounded read it is <strong>half the peak RSS</strong> (903 vs 1847 MiB) and <strong>2.4× faster</strong>.
 (The warehouse profiler's batched rank-join, the post-optimisation number this
-page records elsewhere, is not measured here — see the not-measured table
+page records elsewhere, is measured live in the Snowflake tiers section
 below.)</p>
 <h3 id="snowflake-tiers-measured">Snowflake tiers — measured<a class="headerlink" href="#snowflake-tiers-measured" title="Permanent link">¶</a></h3>
 <p>Run live with a read-only role against Snowflake's TPC-H sample share (<code>LINEITEM</code>
@@ -5307,6 +5329,69 @@ same 28 rows come back either way: the worker holds a verdict, not the table. Th
 wall clock is mostly the 13 round trips, not the scan. Peak RSS here is the
 process baseline (GX and the connector loaded), the same ~380 MiB an empty run
 costs.</p>
+<h3 id="unity-catalog-tiers-measured">Unity Catalog tiers — measured<a class="headerlink" href="#unity-catalog-tiers-measured" title="Permanent link">¶</a></h3>
+<p>Run live on 2026-09-27 against the Databricks sample catalog (<code>samples.tpch.part</code>,
+exactly 1,000,000 rows, 9 columns, six of them strings), read-only, so nothing
+was created in the workspace. Both cases ran over the <strong>same table and suite</strong>,
+differing only in <code>UC_SQL_PUSHDOWN</code>. The suite keeps the standard shape — not-null
+on <code>p_partkey</code> and <code>p_name</code>, between on <code>p_size</code> (1–50) and <code>p_retailprice</code>
+(0–3000), unique on <code>p_partkey</code> — supplied through <code>PERF_UC_SUITE_JSON</code>, with
+<code>PERF_UC_ROWS_1M</code> giving the true row count. Medians of 3 on the development rig,
+plus one run of each inside the container rig (1 CPU / 2 GiB, swap off). Serverless
+Starter warehouse (2X-Small), warm after the first run.</p>
+<table>
+<thead>
+<tr>
+<th>Tier</th>
+<th>Rows</th>
+<th>Checks</th>
+<th>Run wall</th>
+<th>Worker peak RSS (dev / 2 GiB rig)</th>
+<th>Statements</th>
+<th>Rows materialised in the worker</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>UC, SQL pushdown</td>
+<td>1,000,000</td>
+<td>5 / 5 pass</td>
+<td>12.0 s</td>
+<td>368 / 359 MiB</td>
+<td>17</td>
+<td>0</td>
+</tr>
+<tr>
+<td>UC, frame load (<code>UC_SQL_PUSHDOWN=false</code>)</td>
+<td>1,000,000</td>
+<td>5 / 5 pass</td>
+<td>26–36 s</td>
+<td>2,021 / <strong>1,689 MiB</strong></td>
+<td>9</td>
+<td>1,000,000</td>
+</tr>
+</tbody>
+</table>
+<p>Pushed down, the worker holds nothing — <code>frame_rows</code> is a measured 0 at the
+reader seam and peak RSS is the empty-run process baseline, the Snowflake regime.
+The frame lane holds the whole table: +1,330 MiB over that baseline inside the
+2 GiB rig (the dev-box number is higher; macOS's allocator is not the deployed
+one). It survived the rig, with ~350 MiB to spare <strong>for this one run in an
+otherwise idle process</strong>.</p>
+<p>That margin is the knee. The 2026-08-22 campaign's 6-column order-lines table
+cost ~860 bytes/row on this lane; this 9-column table costs ~1,390. Both the
+1.5M-row <code>RUN_MAX_SCAN_ROWS</code> cap and <code>run_admission</code>'s 1,024-byte/row UC frame
+estimate count rows, not width, so a table of this shape under the cap can still
+OOM the worker. Until the estimate accounts for width, treat the 1.5M cap as
+calibrated for narrow tables only.</p>
+<p>The pushdown lane issues more statements (17 vs 9 — GX evaluates each pushed-down
+metric on the warehouse, where the frame lane computes them in pandas) and still finishes in under half
+the frame lane's wall time. The frame lane's wall clock was bimodal across six
+runs in two batches (26.1–27.2 s and 32.3–36.4 s) while its peak RSS stayed within
+16 MiB, so the spread is the warehouse's fetch path, not the worker; another
+session was issuing small queries against the same warehouse during the first
+batch. The Databricks driver reports no <code>rowcount</code>, so <code>result_rows_unknown</code>
+equals <code>statements</code> on both lanes rather than posting a false zero.</p>
 <h3 id="what-is-explicitly-not-measured-here">What is explicitly NOT measured here<a class="headerlink" href="#what-is-explicitly-not-measured-here" title="Permanent link">¶</a></h3>
 <p>A tier that simply does not appear in a result set reads as "nothing to report",
 so the warehouse tiers are registered as real cases and emit an explicit
@@ -5327,17 +5412,17 @@ what each one waits for is a live warehouse and the environment naming it:</p>
 <td><code>PERF_SF_ACCOUNT</code> <code>PERF_SF_USER</code> <code>PERF_SF_ROLE</code> <code>PERF_SF_DATABASE</code> <code>PERF_SF_SCHEMA</code> <code>PERF_SF_WAREHOUSE</code> <code>PERF_SF_TABLE_1M</code> / <code>PERF_SF_TABLE_50M</code>, secret in <code>PERF_SF_SECRET</code></td>
 </tr>
 <tr>
-<td>Unity Catalog 1M, pushdown <strong>and</strong> frame-load</td>
-<td><code>UnityCatalogCheckRunner.run_checks</code> twice over the same table, the two cases differing only in <code>UC_SQL_PUSHDOWN</code> — the clean isolated comparison</td>
+<td>Unity Catalog 1M, pushdown <strong>and</strong> frame-load — <strong>measured above</strong></td>
+<td><code>UnityCatalogCheckRunner.run_checks</code> twice over the same table, the two cases differing only in <code>UC_SQL_PUSHDOWN</code> — the clean isolated comparison (or <code>PERF_UC_SUITE_JSON</code> + <code>PERF_UC_ROWS_1M</code> for a table the harness did not build)</td>
 <td><code>PERF_UC_WORKSPACE_URL</code> <code>PERF_UC_WAREHOUSE_ID</code> <code>PERF_UC_CATALOG</code> <code>PERF_UC_SCHEMA</code> <code>PERF_UC_TABLE_1M</code>, secret in <code>PERF_UC_SECRET</code></td>
 </tr>
 <tr>
-<td>Iceberg 1M, native <code>pyiceberg</code> snapshot</td>
+<td>Iceberg 1M, native <code>pyiceberg</code> snapshot — <strong>still not measured</strong> (the harness catalog was unreachable when the other tiers ran)</td>
 <td><code>IcebergCheckRunner.run_checks</code> against a real catalog</td>
 <td><code>PERF_ICEBERG_CATALOG_JSON</code> (the connection config) <code>PERF_ICEBERG_TABLE</code>, optional secret in <code>PERF_ICEBERG_SECRET</code></td>
 </tr>
 <tr>
-<td>Wide-table profiler on a warehouse (the batched rank-join)</td>
+<td>Wide-table profiler on a warehouse (the batched rank-join) — <strong>measured above</strong></td>
 <td><code>profile_service.profile_table</code>; the column listing is done first and is outside the clock</td>
 <td>the Snowflake set above plus <code>PERF_SF_WIDE_TABLE</code></td>
 </tr>
@@ -5352,9 +5437,10 @@ would restate the claim under test as its own evidence. Peak RSS is what answers
 <p>Secrets are read from the environment at run time only; a skip reason names the
 variable that is missing and never its value, and a test asserts no configured
 secret reaches an emitted row.</p>
-<p>The earlier sections of this page carry live warehouse numbers from the 2026-07
-and 2026-08 campaigns; what is missing is those tiers <em>inside the budget</em>, so a
-regression in them would be caught rather than re-measured by hand.</p>
+<p>The Snowflake, Unity Catalog and warehouse-profiler rows are now in the committed
+<code>baseline.json</code>, so <code>check --tag warehouse</code> against a configured warehouse gates
+their <code>statements</code> and <code>checks_evaluated</code> rather than leaving a regression to be
+re-measured by hand. Only the live Iceberg tier still emits <code>not_measured</code>.</p>
 <h3 id="the-iceberg-memory-curve-local-and-run-under-the-real-limit">The Iceberg memory curve — local, and run under the real limit<a class="headerlink" href="#the-iceberg-memory-curve-local-and-run-under-the-real-limit" title="Permanent link">¶</a></h3>
 <p>Finding where the Iceberg runner dies needs no warehouse at all, so it does not
 wait on a harness window. <code>perf_baseline gen-iceberg</code> builds a local sqlite
