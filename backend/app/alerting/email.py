@@ -12,6 +12,7 @@ from backend.app.alerting import render
 from backend.app.alerting.base import (
     CheckReport,
     ConnectionHealthReport,
+    IncidentCard,
     PollStalenessReport,
     RunReport,
 )
@@ -41,11 +42,85 @@ def render_subject(report: RunReport) -> str:
     )
 
 
+def _intro(report: RunReport) -> str:
+    target = f" ({report.target_label})" if report.target_label else ""
+    subject = f"{report.suite_name}{target}"
+    if report.run_status == "failed":
+        return (
+            f"DataQ couldn't finish checking {subject}, so this data wasn't verified. "
+            "Open the run for the reason."
+        )
+    problems = sum(1 for c in report.checks if c.status not in ("pass", "skip", "error"))
+    unverified = sum(1 for c in report.checks if c.status in ("skip", "error"))
+    if not problems and not unverified:
+        return f"DataQ checked {subject} and every check passed."
+    parts = []
+    if problems:
+        parts.append(
+            f"found {problems} problem{'s' if problems != 1 else ''} that "
+            f"{'needs' if problems == 1 else 'need'} attention"
+        )
+    if unverified:
+        parts.append(f"couldn't verify {unverified} check{'s' if unverified != 1 else ''}")
+    return f"DataQ checked {subject} and " + " and ".join(parts) + "."
+
+
+def _pair_incidents(
+    report: RunReport, shown: list[CheckReport]
+) -> tuple[dict[int, IncidentCard], list[IncidentCard]]:
+    """Pair each rendered check with its incident — by check id when the report
+    carries one, else by name — using each incident at most once, so duplicate
+    names can't show one incident twice and hide another. Anything left over is
+    returned to be listed on its own, never dropped.
+    """
+    remaining = list(report.incidents)
+    paired: dict[int, IncidentCard] = {}
+    for index, check in enumerate(shown):
+        if check.check_id is not None:
+            match = next((i for i in remaining if i.check_id == check.check_id), None)
+        else:
+            match = next((i for i in remaining if i.check_name == check.check_name), None)
+        if match is not None:
+            paired[index] = match
+            remaining.remove(match)
+    return paired, remaining
+
+
+def _failing(report: RunReport) -> list[CheckReport]:
+    return [c for c in report.checks if c.status != "pass"]
+
+
 def render_text_body(report: RunReport) -> str:
     """Plain-text body (the alternative for non-HTML clients)."""
-    lines = [
-        render_subject(report),
-        "",
+    lines = [render_subject(report), "", _intro(report), ""]
+    failing = _failing(report)
+    shown = failing[:_MAX_CHECK_LINES]
+    paired, others = _pair_incidents(report, shown)
+    for index, check in enumerate(shown):
+        lines.append(f"* {check.check_name} [{_STATUS_LABEL.get(check.status, check.status)}]")
+        summary = render.plain_check_summary(check)
+        if summary:
+            lines.append(f"  What we found: {summary}")
+        examples = render.check_sample_values(check)
+        if examples:
+            lines.append(f"  Examples: {examples.removeprefix('e.g. ')}")
+        incident = paired.get(index)
+        if incident is not None:
+            lines.extend(f"  {label}: {text}" for label, text in render.incident_facts(incident))
+        detail = render.check_detail(check)
+        if detail:
+            lines.append(f"  Technical details: {detail}")
+        lines.append("")
+    if len(failing) > _MAX_CHECK_LINES:
+        lines.append(f"…and {len(failing) - _MAX_CHECK_LINES} more — see the run for all of them.")
+    if others:
+        lines.append("Other open incidents:")
+        for card in others:
+            lines.append(f"* {card.check_name}")
+            lines.extend(f"  {label}: {text}" for label, text in render.incident_facts(card))
+        lines.append("")
+    lines += [
+        "Run details",
         f"Suite:       {report.suite_name}",
         f"Datasource:  {report.datasource_type}",
         f"Target:      {report.target_label}",
@@ -55,32 +130,109 @@ def render_text_body(report: RunReport) -> str:
     lines.extend(f"{label}: {value}" for label, value in render.run_metadata(report))
     if report.run_url:
         lines.append(f"View run: {report.run_url}")
-    lines.append("")
-    failing = [c for c in report.checks if c.status != "pass"]
-    if failing:
-        lines.append("Failing checks:")
-        lines.extend(_check_line(c) for c in failing[:_MAX_CHECK_LINES])
-        if len(failing) > _MAX_CHECK_LINES:
-            lines.append(f"  …and {len(failing) - _MAX_CHECK_LINES} more")
-    # Minimal incident references (ADR 0034 #761; rich formatting defers to #773).
-    if report.incidents:
-        lines.append("Incidents:")
-        lines.extend(f"  - {render.incident_line(card)}" for card in report.incidents)
     return "\n".join(lines)
+
+
+_STATUS_LABEL = {
+    "critical": "Critical",
+    "fail": "Failed",
+    "warn": "Warning",
+    "error": "Couldn't run",
+    "skip": "Skipped",
+}
+_STATUS_COLOUR = {
+    "critical": "#991b1b",
+    "fail": "#dc2626",
+    "warn": "#d97706",
+    "error": "#6b7280",
+    "skip": "#6b7280",
+}
+
+
+def _check_block(check: CheckReport, incident: IncidentCard | None) -> str:
+    colour = _STATUS_COLOUR.get(check.status, "#dc2626")
+    badge = (
+        f"<span style='display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;"
+        f"color:#fff;background:{colour};margin-left:8px;'>"
+        f"{_esc(_STATUS_LABEL.get(check.status, check.status))}</span>"
+    )
+    parts = [
+        f"<div style='font-size:15px;font-weight:600;color:#111827;'>{_esc(check.check_name)}"
+        f"{badge}</div>"
+    ]
+    summary = render.plain_check_summary(check)
+    if summary:
+        parts.append(f"<p style='margin:6px 0 0;font-size:14px;color:#111827;'>{_esc(summary)}</p>")
+    facts: list[tuple[str, str]] = []
+    examples = render.check_sample_values(check)
+    if examples:
+        facts.append(("Examples", examples.removeprefix("e.g. ")))
+    if incident is not None:
+        facts.extend(render.incident_facts(incident))
+    if facts:
+        parts.append(
+            "<table style='border-collapse:collapse;margin-top:6px;'>"
+            + "".join(
+                f"<tr><td style='padding:3px 12px 3px 0;font-size:13px;color:#6b7280;"
+                f"white-space:nowrap;vertical-align:top;'>{_esc(label)}</td>"
+                f"<td style='padding:3px 0;font-size:13px;color:#374151;'>{_esc(text)}</td></tr>"
+                for label, text in facts
+            )
+            + "</table>"
+        )
+    detail = render.check_detail(check)
+    if detail:
+        parts.append(
+            f"<p style='margin:6px 0 0;font-size:11px;color:#9ca3af;'>Technical details: "
+            f"{_esc(detail)}</p>"
+        )
+    return (
+        f"<div style='border-left:3px solid {colour};padding:8px 12px;margin:12px 0;"
+        f"background:#fafafa;'>{''.join(parts)}</div>"
+    )
 
 
 def render_html_body(report: RunReport) -> str:
     """Minimal HTML body (inline-styled, email-client safe)."""
     colour = "#16a34a" if report.success else "#dc2626"
-    th = (
-        "padding:6px 10px;text-align:left;border-bottom:2px solid #d1d5db;"
-        "font-size:13px;color:#374151;"
-    )
     td = _TD
     label_td = f"{td}color:#6b7280;white-space:nowrap;"
 
-    # Run-details table: base facts + shared run metadata (owner/env/trigger/…),
-    # dropping any metadata value that isn't set.
+    failing = _failing(report)
+    shown = failing[:_MAX_CHECK_LINES]
+    paired, others = _pair_incidents(report, shown)
+    blocks = "".join(_check_block(c, paired.get(i)) for i, c in enumerate(shown))
+    if len(failing) > _MAX_CHECK_LINES:
+        blocks += (
+            f"<p style='font-size:13px;color:#6b7280;'>…and {len(failing) - _MAX_CHECK_LINES} "
+            "more — see the run for all of them.</p>"
+        )
+    if others:
+        blocks += "<h3 style='margin:16px 0 0;font-size:15px;'>Other open incidents</h3>" + "".join(
+            "<div style='border-left:3px solid #9ca3af;padding:8px 12px;margin:12px 0;"
+            "background:#fafafa;'>"
+            f"<div style='font-size:15px;font-weight:600;'>{_esc(card.check_name)}</div>"
+            + "".join(
+                f"<p style='margin:3px 0;font-size:13px;color:#374151;'>"
+                f"<span style='color:#6b7280;'>{_esc(label)}:</span> {_esc(text)}</p>"
+                for label, text in render.incident_facts(card)
+            )
+            + "</div>"
+            for card in others
+        )
+    checks_section = (
+        f"<h3 style='margin:16px 0 0;font-size:15px;'>What needs attention</h3>{blocks}"
+        if blocks
+        else ""
+    )
+    button = (
+        f"<p style='margin:16px 0;'><a href='{_esc(report.run_url)}' "
+        f"style='display:inline-block;padding:8px 14px;background:#2563eb;color:#fff;"
+        f"border-radius:6px;text-decoration:none;font-size:14px;'>View full run →</a></p>"
+        if report.run_url
+        else ""
+    )
+    # Run-details table: base facts + shared run metadata (owner/env/trigger/…).
     detail_rows: list[tuple[str, str]] = [
         ("Suite", report.suite_name),
         ("Datasource", report.datasource_type or "—"),
@@ -89,7 +241,8 @@ def render_html_body(report: RunReport) -> str:
         *render.run_metadata(report),
     ]
     details = (
-        "<table style='border-collapse:collapse;margin-top:12px;'>"
+        "<h3 style='margin:16px 0 0;font-size:13px;color:#6b7280;'>Run details</h3>"
+        "<table style='border-collapse:collapse;margin-top:4px;'>"
         + "".join(
             f"<tr><td style='{label_td}'><b>{_esc(k)}</b></td>"
             f"<td style='{td}'>{_esc(v)}</td></tr>"
@@ -97,41 +250,11 @@ def render_html_body(report: RunReport) -> str:
         )
         + "</table>"
     )
-
-    # Failing-checks table with a header row (Status · Check · Details).
-    rows = "".join(
-        f"<tr><td style='{td}'><code>{_esc(c.status)}</code></td>"
-        f"<td style='{td}'>{_esc(c.check_name)}</td>"
-        f"<td style='{td}color:#6b7280;'>{_esc(render.check_detail(c))}</td></tr>"
-        for c in report.checks
-        if c.status != "pass"
-    )
-    checks_table = (
-        f"<h3 style='margin:16px 0 0;font-size:14px;'>Failing checks</h3>"
-        f"<table style='border-collapse:collapse;margin-top:6px;'>"
-        f"<thead><tr><th style='{th}'>Status</th><th style='{th}'>Check</th>"
-        f"<th style='{th}'>Details</th></tr></thead><tbody>{rows}</tbody></table>"
-        if rows
-        else ""
-    )
-    # Minimal incident references (ADR 0034 #761; rich formatting defers to #773).
-    incidents_block = (
-        "<p style='margin:12px 0 0;font-size:13px;color:#6b7280;'>"
-        + "<br/>".join(_esc(render.incident_line(card)) for card in report.incidents)
-        + "</p>"
-        if report.incidents
-        else ""
-    )
-    button = (
-        f"<p style='margin:16px 0 0;'><a href='{_esc(report.run_url)}' "
-        f"style='color:#2563eb;'>View run →</a></p>"
-        if report.run_url
-        else ""
-    )
     return (
-        f"<div style='font-family:system-ui,Arial,sans-serif;'>"
+        f"<div style='font-family:system-ui,Arial,sans-serif;max-width:680px;'>"
         f"<h2 style='color:{colour};margin:0 0 4px;'>{_esc(render_subject(report))}</h2>"
-        f"{details}{checks_table}{incidents_block}{button}</div>"
+        f"<p style='margin:0 0 8px;font-size:14px;color:#374151;'>{_esc(_intro(report))}</p>"
+        f"{checks_section}{button}{details}</div>"
     )
 
 
@@ -199,11 +322,6 @@ def render_staleness_html_body(report: PollStalenessReport) -> str:
         f"<p style='margin:0 0 12px;color:#4b5563;'>{_esc(render.staleness_impact(report))}</p>"
         f"<table style='border-collapse:collapse;'>{rows}</table></div>"
     )
-
-
-def _check_line(check: CheckReport) -> str:
-    detail = render.check_detail(check)
-    return f"  - [{check.status}] {check.check_name}" + (f" — {detail}" if detail else "")
 
 
 def _esc(value: str) -> str:
