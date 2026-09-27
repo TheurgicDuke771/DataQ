@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "2e5507a7726d",
+  "strategy": "manual-commit",
+  "branch": "docs/new-datasources-sweep-and-readme",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CLAUDE.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/2e/5507a7726d/0/metadata.json",
+      "transcript": "/2e/5507a7726d/0/full.jsonl",
+      "compact_transcript": "/2e/5507a7726d/0/transcript.jsonl",
+      "content_hash": "/2e/5507a7726d/0/content_hash.txt",
+      "prompt": "/2e/5507a7726d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 42,
+    "cache_creation_tokens": 35871,
+    "cache_read_tokens": 18131754,
+    "output_tokens": 15475,
+    "api_call_count": 21,
+    "subagent_tokens": {
+      "input_tokens": 2472,
+      "cache_creation_tokens": 12258135,
+      "cache_read_tokens": 627735569,
+      "output_tokens": 124343,
+      "api_call_count": 1234
+    }
+  }
+}
