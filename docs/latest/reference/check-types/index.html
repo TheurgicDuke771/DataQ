@@ -2550,7 +2550,7 @@ offers. Every GX type on this page is executed in CI on a dataframe batch, and o
 <tbody>
 <tr>
 <td>Check types in the editor</td>
-<td>35</td>
+<td>37</td>
 </tr>
 <tr>
 <td>GX expectation types vetted by the backend</td>
@@ -3015,6 +3015,24 @@ change it on any check.</p>
 <td><code>dmf:duplicate_count</code></td>
 <td>Snowflake’s system DUPLICATE_COUNT metric function, computed natively in the warehouse.</td>
 <td>Uniqueness</td>
+<td><code>column</code></td>
+<td>warn / fail / critical (fail or critical required)</td>
+<td>Snowflake</td>
+</tr>
+<tr>
+<td><strong>Blank count (DMF)</strong></td>
+<td><code>dmf:blank_count</code></td>
+<td>Snowflake’s system BLANK_COUNT metric function, computed natively in the warehouse — counts empty or space-only strings (not NULLs; tabs/newlines aren’t treated as blank). VARCHAR columns only.</td>
+<td>Completeness</td>
+<td><code>column</code></td>
+<td>warn / fail / critical (fail or critical required)</td>
+<td>Snowflake</td>
+</tr>
+<tr>
+<td><strong>Future timestamp percent (DMF)</strong></td>
+<td><code>dmf:future_timestamp_percent</code></td>
+<td>Snowflake’s system FUTURE_TIMESTAMP_PERCENT metric function (0–100): the share of rows dated after the evaluation time. DATE, TIMESTAMP_LTZ and TIMESTAMP_TZ columns only.</td>
+<td>Validity</td>
 <td><code>column</code></td>
 <td>warn / fail / critical (fail or critical required)</td>
 <td>Snowflake</td>

@@ -2106,11 +2106,16 @@ Snowflake is unaffected — its schema comes from the connection.
 ### Snowflake DMF (ADR 0036)
 
 On a Snowflake connection, the check editor offers a separate **Snowflake DMF**
-category for four types — null count, null percent, duplicate count, unique count —
-that run on Snowflake's own `SNOWFLAKE.CORE.*` **Data Metric Functions** instead of a
+category for six types — null count, null percent, duplicate count, unique count,
+blank count (VARCHAR columns; empty or space-only strings — not NULLs, and tabs/newlines
+aren't treated as blank) and future-timestamp percent (DATE / TIMESTAMP_LTZ /
+TIMESTAMP_TZ columns) — that run on Snowflake's own `SNOWFLAKE.CORE.*` **Data Metric Functions** instead of a
 GX expectation. Same authoring flow (pick the type, set the column); the difference
-is the `engine` the check runs on (`dmf` vs the default `gx`). Not offered on other
-datasources.
+is the `engine` the check runs on (`dmf` vs the default `gx`). Every type except unique
+count needs a fail or critical threshold, banded like any other metric. Not offered on other
+datasources. Snowflake's `ACCEPTED_VALUES` and `SCHEMA_CHANGE_COUNT` are not offered: both
+can only run as a DMF attached to the table on a schedule, not as the on-demand call DataQ
+makes (use the GX in-set check and the schema-drift monitor instead).
 
 ### Freshness monitor (all datasources — ADR 0012/0030)
 
@@ -2317,8 +2322,8 @@ anomaly / comparison** monitor kinds:
 
 - **GX expectations** — column- and table-shape rules (not-null, unique, in-set, row
   count, value ranges, …) from the GX catalog, with a form editor. On a Snowflake
-  connection, four of these (null count/percent, duplicate count, unique count) can
-  instead run on Snowflake's own **Data Metric Functions (DMF)** engine — a separate
+  connection, six column metrics (null count/percent, duplicate count, unique count, blank
+  count, future-timestamp percent) can instead run on Snowflake's own **Data Metric Functions (DMF)** engine — a separate
   category in the check editor, selected per check.
 - **Custom SQL** — an escape hatch for cross-column/join rules: rows returned = failures.
   Read-only, single-statement (enforced). SQL datasources only.
@@ -3458,7 +3463,7 @@ offers. Every GX type on this page is executed in CI on a dataframe batch, and o
 
 | | Count |
 |---|---|
-| Check types in the editor | 35 |
+| Check types in the editor | 37 |
 | GX expectation types vetted by the backend | 25 |
 
 How to read a row: **Parameters** are the editor's fields (`mostly` is GX's optional row
@@ -3562,6 +3567,8 @@ Snowflake's native Data Metric Functions, evaluated inside Snowflake.
 | **Null count (DMF)** | `dmf:null_count` | Snowflake’s system NULL_COUNT metric function, computed natively in the warehouse. | Completeness | `column` | warn / fail / critical (fail or critical required) | Snowflake |
 | **Null percent (DMF)** | `dmf:null_percent` | Snowflake’s system NULL_PERCENT metric function (0–100), computed natively in the warehouse. | Completeness | `column` | warn / fail / critical (fail or critical required) | Snowflake |
 | **Duplicate count (DMF)** | `dmf:duplicate_count` | Snowflake’s system DUPLICATE_COUNT metric function, computed natively in the warehouse. | Uniqueness | `column` | warn / fail / critical (fail or critical required) | Snowflake |
+| **Blank count (DMF)** | `dmf:blank_count` | Snowflake’s system BLANK_COUNT metric function, computed natively in the warehouse — counts empty or space-only strings (not NULLs; tabs/newlines aren’t treated as blank). VARCHAR columns only. | Completeness | `column` | warn / fail / critical (fail or critical required) | Snowflake |
+| **Future timestamp percent (DMF)** | `dmf:future_timestamp_percent` | Snowflake’s system FUTURE_TIMESTAMP_PERCENT metric function (0–100): the share of rows dated after the evaluation time. DATE, TIMESTAMP_LTZ and TIMESTAMP_TZ columns only. | Validity | `column` | warn / fail / critical (fail or critical required) | Snowflake |
 | **Unique count (DMF)** | `dmf:unique_count` | Snowflake’s system UNIQUE_COUNT metric function, computed natively in the warehouse. Degrades downward, so this type carries no thresholds — read the observed value directly. | Uniqueness | `column` | None — pass/fail only | Snowflake |
 
 ## Authorable outside the editor
@@ -3644,8 +3651,9 @@ row count is not a bandable metric), so `metric_value` is null by design, not by
 omission.
 
 ᵈ **Snowflake DMF** (ADR [0036](../adr/0036-connection-anchored-check-engines.md)) is the
-first platform-native check engine — an alternative `check.engine` for four expectation
-types (null count, null percent, duplicate count, unique count) that invokes Snowflake's
+first platform-native check engine — an alternative `check.engine` for six expectation
+types (null count, null percent, duplicate count, unique count, blank count, future-timestamp
+percent) plus the freshness monitor, invoking Snowflake's
 own `SNOWFLAKE.CORE.*` metric functions instead of a GX expectation. Engine is selected per
 check, on a Snowflake connection only; `kind` stays `expectation` either way. Testing or
 re-authenticating a Snowflake connection also probes DMF availability (Enterprise Edition +
@@ -8225,8 +8233,8 @@ Manual checklist (the mutating tail):
 ## Known limitations
 
 - **GX by default**, with platform-native engines connection-anchored per ADR 0036 — a
-  Snowflake connection additionally offers the **DMF** engine (four expectation types
-  currently); Databricks DQX and Dataplex are trigger-gated and not yet built. Batch-oriented
+  Snowflake connection additionally offers the **DMF** engine (six expectation types plus
+  freshness); Databricks DQX and Dataplex are trigger-gated and not yet built. Batch-oriented
   (not streaming).
 - **Single tenant**, suite-level access sharing **plus a stored workspace role** — Admin / Member / Viewer (ADR 0033); connection management is Admin-only. `WORKSPACE_ADMIN_EMAILS` is a bootstrap seed and lockout break-glass, not the day-to-day mechanism.
 - Interactive **datasource browsing** (container browser, 3-level UC catalog picker) is
@@ -12177,7 +12185,7 @@ DMF outcomes are metric-shaped and ride the existing result semantics unchanged:
 
 | Engine | Gate / trigger | Notes |
 |---|---|---|
-| **DMF** (Snowflake) | Build first | Ad-hoc `SELECT` invocation of system DMFs (`NULL_COUNT`, `NULL_PERCENT`, `DUPLICATE_COUNT`, `UNIQUE_COUNT`, `FRESHNESS`) mapped onto existing kinds; custom DMFs later. `ROW_COUNT` was on this list and is out — it has no ad-hoc form (2026-08-22 amendment in §4). **Constraint:** needs a live Snowflake with Enterprise features to build against. |
+| **DMF** (Snowflake) | Build first | Ad-hoc `SELECT` invocation of system DMFs (`NULL_COUNT`, `NULL_PERCENT`, `DUPLICATE_COUNT`, `UNIQUE_COUNT`, `FRESHNESS`, `BLANK_COUNT`, `FUTURE_TIMESTAMP_PERCENT`) mapped onto existing kinds; custom DMFs later. `ROW_COUNT` was on this list and is out — it has no ad-hoc form (2026-08-22 amendment in §4). `ACCEPTED_VALUES` and `SCHEMA_CHANGE_COUNT` are out for the same reason (Snowflake documents both as "can't call this function directly"; live-confirmed 2026-09-27: a direct call rejects `ACCEPTED_VALUES`'s lambda argument as a syntax error, and without it — or `SCHEMA_CHANGE_COUNT` with no argument — returns the sentinel `-1`, never a measurement. They need the attached, scheduled DMF model — warehouse-side attachment management, not yet built). Ad-hoc DMF arguments must be a bare column of a table or view: an expression, a `VALUES` list or a CTE is refused (`Invalid argument types` / `only supports table-like objects`). **Constraint:** needs a live Snowflake with Enterprise features to build against. |
 | **DQX** (Unity Catalog) | A real Databricks/streaming user, **plus** two prereqs | (a) a remote-execution design — DQX's value is Spark-side evaluation, so DataQ must submit work to the workspace, a new architectural capability (today's UC runner pulls into pandas); (b) the Databricks **Labs license check** against ADR 0031's no-source-available guardrail *before* it stays on any roadmap. |
 | **Dataplex** (BigQuery) | A BigQuery-as-datasource decision | BigQuery isn't a DataQ datasource; that decision dominates the cost and comes first. |
 | **Scheduled-native ingest** (DMF schedules / Dataplex scans) | Separate future ADR | Pull-provider shape; must first settle synthetic-runs vs sibling-measurements-table for `results.run_id`. |

@@ -368,11 +368,16 @@ Snowflake is unaffected — its schema comes from the connection.
 ### Snowflake DMF (ADR 0036)
 
 On a Snowflake connection, the check editor offers a separate **Snowflake DMF**
-category for four types — null count, null percent, duplicate count, unique count —
-that run on Snowflake's own `SNOWFLAKE.CORE.*` **Data Metric Functions** instead of a
+category for six types — null count, null percent, duplicate count, unique count,
+blank count (VARCHAR columns; empty or space-only strings — not NULLs, and tabs/newlines
+aren't treated as blank) and future-timestamp percent (DATE / TIMESTAMP_LTZ /
+TIMESTAMP_TZ columns) — that run on Snowflake's own `SNOWFLAKE.CORE.*` **Data Metric Functions** instead of a
 GX expectation. Same authoring flow (pick the type, set the column); the difference
-is the `engine` the check runs on (`dmf` vs the default `gx`). Not offered on other
-datasources.
+is the `engine` the check runs on (`dmf` vs the default `gx`). Every type except unique
+count needs a fail or critical threshold, banded like any other metric. Not offered on other
+datasources. Snowflake's `ACCEPTED_VALUES` and `SCHEMA_CHANGE_COUNT` are not offered: both
+can only run as a DMF attached to the table on a schedule, not as the on-demand call DataQ
+makes (use the GX in-set check and the schema-drift monitor instead).
 
 ### Freshness monitor (all datasources — ADR 0012/0030)
 
