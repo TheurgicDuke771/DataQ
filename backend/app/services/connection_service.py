@@ -922,9 +922,8 @@ def clear_misprobed_dmf_capabilities(session: Session, *, apply: bool) -> list[u
             and str(dmf.get("reason", "")).startswith(_MISPROBED_DMF_REASON_PREFIX)
         ):
             affected.append(conn.id)
-            if apply:
-                remaining = {k: v for k, v in capabilities.items() if k != "dmf"}
-                conn.engine_capabilities = remaining or None
+            remaining = {k: v for k, v in capabilities.items() if k != "dmf"}
+            conn.engine_capabilities = remaining or None
     if apply:
         session.commit()
     else:
