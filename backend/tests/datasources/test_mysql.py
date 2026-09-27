@@ -96,7 +96,11 @@ def test_prepare_engine_runs_the_session_statements_on_every_new_connection() ->
     from sqlalchemy import create_engine, text
     from sqlalchemy.exc import OperationalError
 
-    spec = replace(MYSQL, session_statements=lambda ro: ("PRAGMA query_only = ON",) if ro else ())
+    def statements(read_only: bool) -> tuple[str, ...]:
+        guard = ("PRAGMA query_only = ON",)
+        return guard if read_only else guard[:0]
+
+    spec = replace(MYSQL, session_statements=statements)
     guarded = spec.prepare_engine(create_engine("sqlite://"), read_only=True)
     with guarded.connect() as conn:
         with pytest.raises(OperationalError, match="readonly"):
