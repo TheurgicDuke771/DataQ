@@ -54,6 +54,8 @@ _MARKERS: tuple[tuple[FailureCategory, tuple[str, ...]], ...] = (
             "pg_hba.conf",
             "http 401",
             "http 403",
+            # Trino's client wording for a 401 (#1685).
+            "error 401:",
         ),
     ),
     (
@@ -282,6 +284,9 @@ _AUTH_MARKERS: tuple[str, ...] = (
     "expiredtoken",
     "tokenrefreshrequired",
     "unrecognizedclientexception",
+    # Trino: the client raises `HttpError("error 401: …")` for any rejected credential —
+    # a wrong password, an expired or badly-signed JWT (#1685).
+    "error 401:",
     # Generic HTTP shape — Iceberg REST catalogs, Databricks SQL, any HTTP driver.
     "http 401",
     "401 unauthorized",

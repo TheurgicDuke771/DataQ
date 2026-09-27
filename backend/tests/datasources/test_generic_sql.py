@@ -227,7 +227,7 @@ def test_an_identity_needs_a_table_and_a_valid_config() -> None:
 
 
 def test_postgres_is_registered_everywhere_a_sql_datasource_must_be() -> None:
-    assert GENERIC_SQL_TYPES == {"postgres"}
+    assert "postgres" in GENERIC_SQL_TYPES
     assert sql_engine("postgres") is POSTGRES
     assert sql_engine("snowflake") is None
     adapter = registry.get_connection_adapter("postgres")

@@ -42,7 +42,11 @@ from backend.app.datasources.snowflake import (
     build_connection_string,
 )
 from backend.app.datasources.sql import core_table, folding_identifier, is_sql_identifier
-from backend.app.datasources.sql_engines import SQL_ENGINES, default_schema
+from backend.app.datasources.sql_engines import (
+    SQL_ENGINES,
+    authenticates_without_secret,
+    default_schema,
+)
 from backend.app.datasources.unity_catalog import UnityCatalogConfig, build_databricks_url
 from backend.app.db.models import Connection
 from backend.app.services import credential_health
@@ -391,10 +395,14 @@ def _open_connection(connection: Connection, secret_store: SecretStore) -> Gener
     """Yield a live SQLAlchemy connection to the datasource, disposing the engine."""
     from sqlalchemy import create_engine
 
-    if not connection.secret_ref:
+    if connection.secret_ref:
+        url, connect_args = _engine_args(connection, secret_store.get(connection.secret_ref))
+    elif authenticates_without_secret(connection.type, connection.config):
+        # A generic SQL engine configured with no authentication (Trino `auth_type: none`).
+        spec = SQL_ENGINES[connection.type]
+        url, connect_args = spec.engine_args(spec.validate_config(connection.config), None)
+    else:
         raise ValueError("connection requires secret_ref for the credential")
-    secret = secret_store.get(connection.secret_ref)
-    url, connect_args = _engine_args(connection, secret)
     engine = create_engine(url, connect_args=connect_args)
     try:
         with engine.connect() as conn:
@@ -519,7 +527,11 @@ def resolve_profiler(
         )
     # Iceberg is credential-optional (like `build_iceberg_runner` / the ADLS/S3 adapters) — a local
     # warehouse or vended-credentials REST catalog has no secret.
-    if not isinstance(profiler, _IcebergProfiler) and not connection.secret_ref:
+    if (
+        not isinstance(profiler, _IcebergProfiler)
+        and not connection.secret_ref
+        and not authenticates_without_secret(connection.type, connection.config)
+    ):
         raise ProfileTargetInvalidError(
             "connection has no stored credential (secret_ref)", detail={"type": connection.type}
         )
