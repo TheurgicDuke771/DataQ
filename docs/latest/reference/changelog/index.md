@@ -37,6 +37,14 @@ the per-PR history lives in the repo's commit log and pull requests.
   TLS is `require` by default. *Column values unique* needs the `CREATE TEMPORARY TABLES`
   grant — see [Datasources & checks](../guides/datasources-checks.md#mysql-mariadb).
 
+- **Trino datasource.** Connect any Trino (or Starburst) cluster — one catalog per connection
+  — and check whatever that catalog federates (Hive, Iceberg, PostgreSQL, Cassandra, Kafka…)
+  with every SQL-capable check, all monitors, the profiler, schema → table browsing and
+  inventory sync. Password, JWT (its expiry is shown) or no authentication; TLS always verifies
+  the server, with an optional private CA bundle, and a credential is never sent in plaintext.
+  Trino has no read-only session, so give DataQ a Trino user with read-only access — see
+  [Datasources & checks](../guides/datasources-checks.md#trino).
+
 - **PostgreSQL datasource.** Connect any PostgreSQL server — self-hosted or a managed
   service — and run every SQL-capable check on it: GX expectations and custom SQL by pushdown,
   freshness / volume / anomaly / schema-drift monitors, comparisons, the column profiler,

@@ -996,6 +996,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#trino" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trino
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#identifier-casing-snowflake-unity-catalog-postgresql" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1057,10 +1068,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#browsing-for-a-run-target-unity-catalog-postgresql-mysql-adls-gen2-s3" class="md-nav__link">
+  <a href="#browsing-for-a-run-target-unity-catalog-postgresql-mysql-trino-adls-gen2-s3" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Browsing for a run target (Unity Catalog, PostgreSQL, MySQL, ADLS Gen2, S3)
+        Browsing for a run target (Unity Catalog, PostgreSQL, MySQL, Trino, ADLS Gen2, S3)
       
     </span>
   </a>
@@ -1090,10 +1101,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#custom-sql-snowflake-unity-catalog-postgresql-mysql-adr-0019" class="md-nav__link">
+  <a href="#custom-sql-snowflake-unity-catalog-postgresql-mysql-trino-adr-0019" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL — ADR 0019)
+        Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino — ADR 0019)
       
     </span>
   </a>
@@ -1145,10 +1156,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#anomaly-monitor-snowflake-unity-catalog-postgresql-mysql-adr-0012" class="md-nav__link">
+  <a href="#anomaly-monitor-snowflake-unity-catalog-postgresql-mysql-trino-adr-0012" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Anomaly monitor (Snowflake / Unity Catalog / PostgreSQL / MySQL — ADR 0012)
+        Anomaly monitor (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino — ADR 0012)
       
     </span>
   </a>
@@ -2638,6 +2649,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#trino" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trino
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#identifier-casing-snowflake-unity-catalog-postgresql" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2699,10 +2721,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#browsing-for-a-run-target-unity-catalog-postgresql-mysql-adls-gen2-s3" class="md-nav__link">
+  <a href="#browsing-for-a-run-target-unity-catalog-postgresql-mysql-trino-adls-gen2-s3" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Browsing for a run target (Unity Catalog, PostgreSQL, MySQL, ADLS Gen2, S3)
+        Browsing for a run target (Unity Catalog, PostgreSQL, MySQL, Trino, ADLS Gen2, S3)
       
     </span>
   </a>
@@ -2732,10 +2754,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#custom-sql-snowflake-unity-catalog-postgresql-mysql-adr-0019" class="md-nav__link">
+  <a href="#custom-sql-snowflake-unity-catalog-postgresql-mysql-trino-adr-0019" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL — ADR 0019)
+        Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino — ADR 0019)
       
     </span>
   </a>
@@ -2787,10 +2809,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#anomaly-monitor-snowflake-unity-catalog-postgresql-mysql-adr-0012" class="md-nav__link">
+  <a href="#anomaly-monitor-snowflake-unity-catalog-postgresql-mysql-trino-adr-0012" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Anomaly monitor (Snowflake / Unity Catalog / PostgreSQL / MySQL — ADR 0012)
+        Anomaly monitor (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino — ADR 0012)
       
     </span>
   </a>
@@ -2944,6 +2966,12 @@
 <td>✅</td>
 <td>✅</td>
 </tr>
+<tr>
+<td>Trino (any cluster, incl. Starburst — and every catalog it federates)</td>
+<td>host + port + catalog + user; password, JWT or none; TLS + optional private CA</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
 </tbody>
 </table>
 <h2 id="add-a-connection">Add a connection<a class="headerlink" href="#add-a-connection" title="Permanent link">¶</a></h2>
@@ -3014,7 +3042,8 @@ supported for the token (<code>login.microsoftonline.com</code>).</p>
 <h3 id="moving-a-connection-to-a-new-host">Moving a connection to a new host<a class="headerlink" href="#moving-a-connection-to-a-new-host" title="Permanent link">¶</a></h3>
 <p>Editing a field that decides <em>where</em> the credential is sent — Snowflake <code>account</code>, ADLS
 <code>account_url</code> / <code>auth_type</code> / <code>tenant_id</code> / <code>client_id</code>, S3/dbt <code>endpoint_url</code>, Unity Catalog <code>workspace_url</code>, Iceberg <code>catalog_uri</code> /
-<code>warehouse</code> / <code>properties</code> / <code>secret_property</code>, PostgreSQL / MySQL <code>host</code> / <code>port</code>, Airflow
+<code>warehouse</code> / <code>properties</code> / <code>secret_property</code>, PostgreSQL / MySQL <code>host</code> / <code>port</code>, Trino
+<code>host</code> / <code>port</code> / <code>sslmode</code> / <code>ca_bundle</code> / <code>auth_type</code>, Airflow
 <code>base_url</code>, dbt <code>artifacts_uri</code> —
 requires re-entering
 that credential in the same save. The edit form asks for it as soon as you change one of
@@ -3178,6 +3207,66 @@ managed services still default to).</p>
 <li><strong>No column tags, no warehouse-native lineage</strong> — as for PostgreSQL. Inventory sync and the
   schema browser list what <code>information_schema</code> shows the user, which is privilege-filtered.</li>
 </ul>
+<h3 id="trino">Trino<a class="headerlink" href="#trino" title="Permanent link">¶</a></h3>
+<p>One connection type for <strong>any Trino cluster</strong> — including Starburst — and through it every
+store the cluster federates (Hive, Iceberg, Delta, PostgreSQL, MySQL, Cassandra, MongoDB,
+Kafka topics…) with no per-store adapter on DataQ's side. It is the third engine on the
+generic SQL base. Live-verified against Trino 483 with the <code>memory</code>, <code>tpch</code> and <code>postgresql</code>
+connectors, over HTTPS with a private CA, the PASSWORD and JWT authenticators, and file-based
+access control.</p>
+<ul>
+<li><strong>Fields:</strong> host, port (default 443, or 8080 with TLS disabled), <strong>catalog</strong>, user, an
+  optional default schema (default <code>default</code>), and the auth type with its secret. A
+  connection reads <strong>one catalog</strong> — the counterpart of a PostgreSQL database — so a target
+  is <code>schema.table</code> inside it and its asset is <code>catalog.schema.table</code>. Add one connection per
+  catalog you want to check.</li>
+<li><strong>Authentication:</strong> <code>password</code> (Trino's PASSWORD authenticator — a password file, LDAP, …;
+  sent as HTTP basic), <code>jwt</code> (a bearer token; DataQ reads its <code>exp</code> and shows when it
+  expires, so rotate it with <strong>Re-authenticate</strong> before then), or <code>none</code> for a cluster
+  without authentication (no secret is stored; Trino still needs a user name). A password or
+  token is <strong>only ever sent over TLS</strong>: <code>password</code>/<code>jwt</code> with TLS disabled is refused when
+  you save, before anything is sent.</li>
+<li><strong>TLS:</strong> <code>verify-full</code> by default — the certificate and the host name are always checked;
+  there is no mode that encrypts without verifying. For a certificate from a <strong>private CA</strong>,
+  paste the CA's PEM into <strong>CA bundle</strong>: it replaces the system trust store for this
+  connection. Changing the host, port, TLS mode, CA bundle or auth type counts as moving the
+  credential, so the edit asks for it again (switching to <code>none</code> asks for nothing — the stored
+  one is simply no longer sent). The CA must be a well-formed X.509 CA (with a
+  <code>keyUsage</code> extension) — the worker's TLS stack verifies strictly.</li>
+<li><strong>Not read-only at the session — the credential is the guarantee.</strong> Trino has no session
+  or transaction read-only switch a client can set, so unlike PostgreSQL and MySQL, DataQ
+  cannot make the server refuse a write. Custom SQL still passes DataQ's validator, which
+  rejects writes and DDL — but the guarantee rests on <strong>the Trino user DataQ connects as</strong>:
+  give it read-only access in the cluster's access control, e.g. with file-based rules:</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"catalogs"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">"user"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dataq_reader"</span><span class="p">,</span><span class="w"> </span><span class="nt">"catalog"</span><span class="p">:</span><span class="w"> </span><span class="s2">"hive"</span><span class="p">,</span><span class="w"> </span><span class="nt">"allow"</span><span class="p">:</span><span class="w"> </span><span class="s2">"read-only"</span><span class="p">}],</span>
+<span class="w">  </span><span class="nt">"tables"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">"user"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dataq_reader"</span><span class="p">,</span><span class="w"> </span><span class="nt">"schema"</span><span class="p">:</span><span class="w"> </span><span class="s2">"sales"</span><span class="p">,</span><span class="w"> </span><span class="nt">"privileges"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"SELECT"</span><span class="p">]}]</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Listings (the schema browser, inventory sync) show what that access control lets the user
+  see.
+- <strong>Names are lower case.</strong> Trino folds every identifier to lower case — quoted or not — and
+  its catalogs report them that way, so the catalog, schema and table must be typed in
+  lower case (a mixed-case name is refused when you save). A connector over a store with
+  mixed-case names (PostgreSQL, MySQL) presents them lower-cased; on those catalogs enable the
+  connector's <code>case-insensitive-name-matching</code> so Trino can resolve them. A mixed-case
+  <strong>column</strong> name in a check works — it folds like any other.
+- <strong>Time zones.</strong> Every session runs in UTC, so a <code>timestamp</code> (no zone) column is read as
+  UTC wall-clock time; <code>timestamp with time zone</code> carries its own zone. Freshness is right
+  either way.
+- <strong>Everything runs on the cluster</strong> — expectations on a SQL batch (GX never creates
+  temporary tables on Trino; uniqueness is one aggregate query), monitors as scalar
+  aggregates, custom SQL as-is. A check costs whatever the query costs the catalog behind
+  it — a full scan of a large Hive table is a full scan.
+- <strong>Comparisons are byte-wise:</strong> <code>'a'</code> and <code>'A'</code> are different values (unlike MySQL's default
+  collation).
+- <strong>The profiler</strong> reports min/max, distinct count and top values as unavailable (null) for
+  types Trino cannot order — <code>json</code>, <code>map</code>, and anything containing one (<code>array(json)</code>, a
+  <code>row</code> with a <code>map</code> field), plus the sketch/digest and geometry types.
+- <strong>No column tags, no warehouse-native lineage.</strong> DataQ reads no column-classification
+  source from Trino, and Trino keeps no lineage log DataQ reads — lineage comes from dbt,
+  OpenLineage or a catalog, and an empty graph means "not observed".</p>
 <h3 id="identifier-casing-snowflake-unity-catalog-postgresql">Identifier casing (Snowflake / Unity Catalog / PostgreSQL)<a class="headerlink" href="#identifier-casing-snowflake-unity-catalog-postgresql" title="Permanent link">¶</a></h3>
 <p>Warehouses fold <strong>unquoted</strong> identifiers — Snowflake upper-cases them — so a column
 created as <code>order_ts</code> is really stored as <code>ORDER_TS</code>, while one created as
@@ -3329,7 +3418,7 @@ expectation can sit side by side, so the label is per check, not per run.</p>
 <li><strong>Add check</strong> opens a dedicated page (<code>/suites/&lt;id&gt;/checks/new</code>): pick a <strong>category</strong>,
    then the check type, then fill its config. The authoring paths:</li>
 </ol>
-<h3 id="browsing-for-a-run-target-unity-catalog-postgresql-mysql-adls-gen2-s3">Browsing for a run target (Unity Catalog, PostgreSQL, MySQL, ADLS Gen2, S3)<a class="headerlink" href="#browsing-for-a-run-target-unity-catalog-postgresql-mysql-adls-gen2-s3" title="Permanent link">¶</a></h3>
+<h3 id="browsing-for-a-run-target-unity-catalog-postgresql-mysql-trino-adls-gen2-s3">Browsing for a run target (Unity Catalog, PostgreSQL, MySQL, Trino, ADLS Gen2, S3)<a class="headerlink" href="#browsing-for-a-run-target-unity-catalog-postgresql-mysql-trino-adls-gen2-s3" title="Permanent link">¶</a></h3>
 <p>The suite form offers a picker beside the target fields; typing the target still works
 everywhere, and is the only way on Snowflake and Iceberg.</p>
 <ul>
@@ -3342,7 +3431,9 @@ everywhere, and is the only way on Snowflake and Iceberg.</p>
 <li><strong>PostgreSQL — Browse schemas…</strong> lists the schemas the user has <code>USAGE</code> on, then that
   schema's tables and views it can <code>SELECT</code> — the same query the inventory sync enumerates
   with. There is no catalog level: the connection pins one database. <strong>MySQL / MariaDB</strong>
-  works the same way, its schemas being the databases the user has privileges on.</li>
+  works the same way, its schemas being the databases the user has privileges on, and
+  <strong>Trino</strong> inside the connection's catalog, listing what the cluster's access control
+  lets the user see.</li>
 <li><strong>ADLS Gen2 / S3 — Browse files…</strong> (single-file mode) walks the folders of the
   connection's one container or bucket and fills <strong>File path</strong> with the file you pick.
   <strong>Browse folders…</strong> (batch mode) fills <strong>Prefix</strong> with the folder you are in.</li>
@@ -3405,7 +3496,7 @@ nothing to band — a <em>Volume</em> or <em>Anomaly</em> monitor measures that 
 and a learned baseline. <strong>Whole-table set comparisons</strong> (columns match an expected set or
 ordered list) are what the <em>Schema-drift</em> monitor does, against a captured baseline. For
 anything with no vetted type, write a custom-SQL check.</p>
-<h3 id="custom-sql-snowflake-unity-catalog-postgresql-mysql-adr-0019">Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL — ADR 0019)<a class="headerlink" href="#custom-sql-snowflake-unity-catalog-postgresql-mysql-adr-0019" title="Permanent link">¶</a></h3>
+<h3 id="custom-sql-snowflake-unity-catalog-postgresql-mysql-trino-adr-0019">Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino — ADR 0019)<a class="headerlink" href="#custom-sql-snowflake-unity-catalog-postgresql-mysql-trino-adr-0019" title="Permanent link">¶</a></h3>
 <p>A read-only SQL rule in the Monaco editor: <strong>any rows returned are failures</strong>. Use
 <code>{batch}</code> as a placeholder for the suite's target table
 (<code>SELECT * FROM {batch} WHERE amount &lt; 0</code>). Single read-only statement enforced
@@ -3418,7 +3509,7 @@ a two-part name would silently resolve against the session's default schema — 
 <em>different table</em>, quietly checked. A UC target without a schema therefore errors
 its custom-SQL checks (with that reason on the result) while every other check in
 the suite runs normally. Set the schema on the suite's run target to fix it.
-Snowflake, PostgreSQL and MySQL are unaffected — their schema comes from the connection.</p>
+Snowflake, PostgreSQL, MySQL and Trino are unaffected — their schema comes from the connection.</p>
 <h3 id="snowflake-dmf-adr-0036">Snowflake DMF (ADR 0036)<a class="headerlink" href="#snowflake-dmf-adr-0036" title="Permanent link">¶</a></h3>
 <p>On a Snowflake connection, the check editor offers a separate <strong>Snowflake DMF</strong>
 category for six types — null count, null percent, duplicate count, unique count,
@@ -3471,11 +3562,11 @@ whole prefix.</p>
 <p><em>Did the shape change under you?</em> Capture a <strong>baseline</strong> column-name/type snapshot,
 then each run diffs the live snapshot against it and flags any add / drop /
 type-change. Introspection is per-datasource, never a <code>CheckRunner</code>/GX pass or a
-data scan: <code>information_schema</code> for Snowflake/Unity Catalog/PostgreSQL/MySQL, the Parquet footer (or
+data scan: <code>information_schema</code> for Snowflake/Unity Catalog/PostgreSQL/MySQL/Trino, the Parquet footer (or
 a bounded CSV header sample) for ADLS Gen2/S3 flat files, and the loaded table's own
 metadata for Iceberg. Re-baseline explicitly once you've reviewed a drift and want
 it as the new normal — it is never re-baselined for you.</p>
-<h3 id="anomaly-monitor-snowflake-unity-catalog-postgresql-mysql-adr-0012">Anomaly monitor (Snowflake / Unity Catalog / PostgreSQL / MySQL — ADR 0012)<a class="headerlink" href="#anomaly-monitor-snowflake-unity-catalog-postgresql-mysql-adr-0012" title="Permanent link">¶</a></h3>
+<h3 id="anomaly-monitor-snowflake-unity-catalog-postgresql-mysql-trino-adr-0012">Anomaly monitor (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino — ADR 0012)<a class="headerlink" href="#anomaly-monitor-snowflake-unity-catalog-postgresql-mysql-trino-adr-0012" title="Permanent link">¶</a></h3>
 <p><em>Is this value abnormal for this dataset?</em> Where a volume monitor asks "is the row
 count inside a range I chose?", the anomaly monitor learns the range: it keeps a
 rolling mean/stddev of the target's own <strong>row count</strong> or <strong>freshness age</strong> and bands
@@ -3574,6 +3665,8 @@ the type your warehouse/catalog shows you:</p>
   there, so <code>type_</code> is the bare type name: <code>DECIMAL</code>, <code>VARCHAR</code>, <code>TINYINT</code> (a <code>BOOLEAN</code>).</li>
 <li><strong>PostgreSQL</strong> builds the same kind of SQL batch and compares the same way: a
   <code>numeric(12,2)</code> column is <code>NUMERIC(12, 2)</code>, a <code>timestamptz</code> is <code>TIMESTAMP WITH TIME ZONE</code>.</li>
+<li><strong>Trino</strong> compares the same way, in its own type names: <code>DECIMAL(12, 2)</code>, <code>VARCHAR</code>,
+  <code>TIMESTAMP(6)</code>, <code>TIMESTAMP(6) WITH TIME ZONE</code>, <code>BIGINT</code>.</li>
 <li><strong>Unity Catalog, ADLS Gen2 / S3, and Apache Iceberg</strong> all read the target into a
   pandas DataFrame first (<code>PandasExecutionEngine</code>). GX first tries an <strong>exact dtype
   match</strong>; only when the column's dtype is <code>object</code> and <code>type_</code> isn't
@@ -3614,6 +3707,11 @@ the type your warehouse/catalog shows you:</p>
 <td><code>DECIMAL</code> for <code>DECIMAL(12,2)</code>, <code>VARCHAR</code>, <code>INTEGER</code>, <code>TIMESTAMP</code>, <code>DATETIME</code>, <code>TINYINT</code> for <code>BOOLEAN</code></td>
 </tr>
 <tr>
+<td>Trino</td>
+<td>SQL (dialect-native)</td>
+<td><code>DECIMAL(12, 2)</code>, <code>VARCHAR</code> / <code>VARCHAR(20)</code>, <code>TIMESTAMP(6)</code>, <code>TIMESTAMP(6) WITH TIME ZONE</code>, <code>BIGINT</code></td>
+</tr>
+<tr>
 <td>Unity Catalog</td>
 <td>pandas DataFrame (not Arrow-backed)</td>
 <td><code>int64</code> for non-nullable <code>BIGINT</code> (<strong><code>float64</code> if the column contains NULLs</strong>); <code>object</code> or <code>str</code> for <code>STRING</code></td>
@@ -3631,7 +3729,7 @@ the type your warehouse/catalog shows you:</p>
 </tbody>
 </table>
 <p><strong>Calibration tip:</strong> don't guess — <strong>dry-run first</strong>, but know where the trail runs
-out. On <strong>Snowflake, PostgreSQL and the Arrow-backed sources</strong> (Parquet/Iceberg), a failing
+out. On <strong>Snowflake, PostgreSQL, Trino and the Arrow-backed sources</strong> (Parquet/Iceberg), a failing
 result's <code>observed_value</code> carries the <em>exact</em> string GX expected — copy it into
 <code>type_</code> and re-run to confirm green. On <strong>Unity Catalog / CSV</strong>, a wrong value-type
 guess (e.g. <code>int64</code> against a string column) falls to GX's row-wise compare, which

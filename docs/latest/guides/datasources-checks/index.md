@@ -11,6 +11,7 @@
 | Apache Iceberg | catalog URI + catalog type (REST/SQL/Glue/Hive) + optional storage credential | ✅ | ✅ |
 | PostgreSQL (any server — self-hosted or a managed service) | host + port + database + user, password; TLS mode | ✅ | ✅ |
 | MySQL / MariaDB (any server — self-hosted or a managed service) | host + port + database + user, password; TLS mode | ✅ | ✅ |
+| Trino (any cluster, incl. Starburst — and every catalog it federates) | host + port + catalog + user; password, JWT or none; TLS + optional private CA | ✅ | ✅ |
 
 ## Add a connection
 
@@ -70,7 +71,8 @@ supported for the token (`login.microsoftonline.com`).
 
 Editing a field that decides *where* the credential is sent — Snowflake `account`, ADLS
 `account_url` / `auth_type` / `tenant_id` / `client_id`, S3/dbt `endpoint_url`, Unity Catalog `workspace_url`, Iceberg `catalog_uri` /
-`warehouse` / `properties` / `secret_property`, PostgreSQL / MySQL `host` / `port`, Airflow
+`warehouse` / `properties` / `secret_property`, PostgreSQL / MySQL `host` / `port`, Trino
+`host` / `port` / `sslmode` / `ca_bundle` / `auth_type`, Airflow
 `base_url`, dbt `artifacts_uri` —
 requires re-entering
 that credential in the same save. The edit form asks for it as soon as you change one of
@@ -233,6 +235,70 @@ managed services still default to).
 - **No column tags, no warehouse-native lineage** — as for PostgreSQL. Inventory sync and the
   schema browser list what `information_schema` shows the user, which is privilege-filtered.
 
+### Trino
+
+One connection type for **any Trino cluster** — including Starburst — and through it every
+store the cluster federates (Hive, Iceberg, Delta, PostgreSQL, MySQL, Cassandra, MongoDB,
+Kafka topics…) with no per-store adapter on DataQ's side. It is the third engine on the
+generic SQL base. Live-verified against Trino 483 with the `memory`, `tpch` and `postgresql`
+connectors, over HTTPS with a private CA, the PASSWORD and JWT authenticators, and file-based
+access control.
+
+- **Fields:** host, port (default 443, or 8080 with TLS disabled), **catalog**, user, an
+  optional default schema (default `default`), and the auth type with its secret. A
+  connection reads **one catalog** — the counterpart of a PostgreSQL database — so a target
+  is `schema.table` inside it and its asset is `catalog.schema.table`. Add one connection per
+  catalog you want to check.
+- **Authentication:** `password` (Trino's PASSWORD authenticator — a password file, LDAP, …;
+  sent as HTTP basic), `jwt` (a bearer token; DataQ reads its `exp` and shows when it
+  expires, so rotate it with **Re-authenticate** before then), or `none` for a cluster
+  without authentication (no secret is stored; Trino still needs a user name). A password or
+  token is **only ever sent over TLS**: `password`/`jwt` with TLS disabled is refused when
+  you save, before anything is sent.
+- **TLS:** `verify-full` by default — the certificate and the host name are always checked;
+  there is no mode that encrypts without verifying. For a certificate from a **private CA**,
+  paste the CA's PEM into **CA bundle**: it replaces the system trust store for this
+  connection. Changing the host, port, TLS mode, CA bundle or auth type counts as moving the
+  credential, so the edit asks for it again (switching to `none` asks for nothing — the stored
+  one is simply no longer sent). The CA must be a well-formed X.509 CA (with a
+  `keyUsage` extension) — the worker's TLS stack verifies strictly.
+- **Not read-only at the session — the credential is the guarantee.** Trino has no session
+  or transaction read-only switch a client can set, so unlike PostgreSQL and MySQL, DataQ
+  cannot make the server refuse a write. Custom SQL still passes DataQ's validator, which
+  rejects writes and DDL — but the guarantee rests on **the Trino user DataQ connects as**:
+  give it read-only access in the cluster's access control, e.g. with file-based rules:
+
+  ```json
+  {
+    "catalogs": [{"user": "dataq_reader", "catalog": "hive", "allow": "read-only"}],
+    "tables": [{"user": "dataq_reader", "schema": "sales", "privileges": ["SELECT"]}]
+  }
+  ```
+
+  Listings (the schema browser, inventory sync) show what that access control lets the user
+  see.
+- **Names are lower case.** Trino folds every identifier to lower case — quoted or not — and
+  its catalogs report them that way, so the catalog, schema and table must be typed in
+  lower case (a mixed-case name is refused when you save). A connector over a store with
+  mixed-case names (PostgreSQL, MySQL) presents them lower-cased; on those catalogs enable the
+  connector's `case-insensitive-name-matching` so Trino can resolve them. A mixed-case
+  **column** name in a check works — it folds like any other.
+- **Time zones.** Every session runs in UTC, so a `timestamp` (no zone) column is read as
+  UTC wall-clock time; `timestamp with time zone` carries its own zone. Freshness is right
+  either way.
+- **Everything runs on the cluster** — expectations on a SQL batch (GX never creates
+  temporary tables on Trino; uniqueness is one aggregate query), monitors as scalar
+  aggregates, custom SQL as-is. A check costs whatever the query costs the catalog behind
+  it — a full scan of a large Hive table is a full scan.
+- **Comparisons are byte-wise:** `'a'` and `'A'` are different values (unlike MySQL's default
+  collation).
+- **The profiler** reports min/max, distinct count and top values as unavailable (null) for
+  types Trino cannot order — `json`, `map`, and anything containing one (`array(json)`, a
+  `row` with a `map` field), plus the sketch/digest and geometry types.
+- **No column tags, no warehouse-native lineage.** DataQ reads no column-classification
+  source from Trino, and Trino keeps no lineage log DataQ reads — lineage comes from dbt,
+  OpenLineage or a catalog, and an empty graph means "not observed".
+
 ### Identifier casing (Snowflake / Unity Catalog / PostgreSQL)
 
 Warehouses fold **unquoted** identifiers — Snowflake upper-cases them — so a column
@@ -392,7 +458,7 @@ expectation can sit side by side, so the label is per check, not per run.
 2. **Add check** opens a dedicated page (`/suites/<id>/checks/new`): pick a **category**,
    then the check type, then fill its config. The authoring paths:
 
-### Browsing for a run target (Unity Catalog, PostgreSQL, MySQL, ADLS Gen2, S3)
+### Browsing for a run target (Unity Catalog, PostgreSQL, MySQL, Trino, ADLS Gen2, S3)
 
 The suite form offers a picker beside the target fields; typing the target still works
 everywhere, and is the only way on Snowflake and Iceberg.
@@ -406,7 +472,9 @@ everywhere, and is the only way on Snowflake and Iceberg.
 - **PostgreSQL — Browse schemas…** lists the schemas the user has `USAGE` on, then that
   schema's tables and views it can `SELECT` — the same query the inventory sync enumerates
   with. There is no catalog level: the connection pins one database. **MySQL / MariaDB**
-  works the same way, its schemas being the databases the user has privileges on.
+  works the same way, its schemas being the databases the user has privileges on, and
+  **Trino** inside the connection's catalog, listing what the cluster's access control
+  lets the user see.
 - **ADLS Gen2 / S3 — Browse files…** (single-file mode) walks the folders of the
   connection's one container or bucket and fills **File path** with the file you pick.
   **Browse folders…** (batch mode) fills **Prefix** with the folder you are in.
@@ -482,7 +550,7 @@ and a learned baseline. **Whole-table set comparisons** (columns match an expect
 ordered list) are what the *Schema-drift* monitor does, against a captured baseline. For
 anything with no vetted type, write a custom-SQL check.
 
-### Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL — ADR 0019)
+### Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino — ADR 0019)
 
 A read-only SQL rule in the Monaco editor: **any rows returned are failures**. Use
 `{batch}` as a placeholder for the suite's target table
@@ -498,7 +566,7 @@ a two-part name would silently resolve against the session's default schema — 
 *different table*, quietly checked. A UC target without a schema therefore errors
 its custom-SQL checks (with that reason on the result) while every other check in
 the suite runs normally. Set the schema on the suite's run target to fix it.
-Snowflake, PostgreSQL and MySQL are unaffected — their schema comes from the connection.
+Snowflake, PostgreSQL, MySQL and Trino are unaffected — their schema comes from the connection.
 
 ### Snowflake DMF (ADR 0036)
 
@@ -548,12 +616,12 @@ whole prefix.
 *Did the shape change under you?* Capture a **baseline** column-name/type snapshot,
 then each run diffs the live snapshot against it and flags any add / drop /
 type-change. Introspection is per-datasource, never a `CheckRunner`/GX pass or a
-data scan: `information_schema` for Snowflake/Unity Catalog/PostgreSQL/MySQL, the Parquet footer (or
+data scan: `information_schema` for Snowflake/Unity Catalog/PostgreSQL/MySQL/Trino, the Parquet footer (or
 a bounded CSV header sample) for ADLS Gen2/S3 flat files, and the loaded table's own
 metadata for Iceberg. Re-baseline explicitly once you've reviewed a drift and want
 it as the new normal — it is never re-baselined for you.
 
-### Anomaly monitor (Snowflake / Unity Catalog / PostgreSQL / MySQL — ADR 0012)
+### Anomaly monitor (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino — ADR 0012)
 
 *Is this value abnormal for this dataset?* Where a volume monitor asks "is the row
 count inside a range I chose?", the anomaly monitor learns the range: it keeps a
@@ -637,6 +705,8 @@ the type your warehouse/catalog shows you:
   there, so `type_` is the bare type name: `DECIMAL`, `VARCHAR`, `TINYINT` (a `BOOLEAN`).
 - **PostgreSQL** builds the same kind of SQL batch and compares the same way: a
   `numeric(12,2)` column is `NUMERIC(12, 2)`, a `timestamptz` is `TIMESTAMP WITH TIME ZONE`.
+- **Trino** compares the same way, in its own type names: `DECIMAL(12, 2)`, `VARCHAR`,
+  `TIMESTAMP(6)`, `TIMESTAMP(6) WITH TIME ZONE`, `BIGINT`.
 - **Unity Catalog, ADLS Gen2 / S3, and Apache Iceberg** all read the target into a
   pandas DataFrame first (`PandasExecutionEngine`). GX first tries an **exact dtype
   match**; only when the column's dtype is `object` and `type_` isn't
@@ -657,12 +727,13 @@ the type your warehouse/catalog shows you:
 | Snowflake | SQL (dialect-native) | `DECIMAL(38, 0)` for `NUMBER`, `VARCHAR(16777216)` for `VARCHAR` |
 | PostgreSQL | SQL (dialect-native) | `NUMERIC(12, 2)` for `numeric(12,2)`, `TIMESTAMP WITH TIME ZONE` for `timestamptz`, `TEXT`, `INTEGER` |
 | MySQL / MariaDB | SQL (SQLAlchemy type class) | `DECIMAL` for `DECIMAL(12,2)`, `VARCHAR`, `INTEGER`, `TIMESTAMP`, `DATETIME`, `TINYINT` for `BOOLEAN` |
+| Trino | SQL (dialect-native) | `DECIMAL(12, 2)`, `VARCHAR` / `VARCHAR(20)`, `TIMESTAMP(6)`, `TIMESTAMP(6) WITH TIME ZONE`, `BIGINT` |
 | Unity Catalog | pandas DataFrame (not Arrow-backed) | `int64` for non-nullable `BIGINT` (**`float64` if the column contains NULLs**); `object` or `str` for `STRING` |
 | ADLS Gen2 / S3 (CSV) | pandas DataFrame (not Arrow-backed) | `int64`/`float64`/`bool` for numerics (**NULLs upcast integers to `float64`**); `object` or `str` for strings |
 | ADLS Gen2 / S3 (Parquet) / Iceberg | pandas DataFrame (Arrow-backed) | Arrow-flavored dtype names — confirm via a dry-run's `observed_value` |
 
 **Calibration tip:** don't guess — **dry-run first**, but know where the trail runs
-out. On **Snowflake, PostgreSQL and the Arrow-backed sources** (Parquet/Iceberg), a failing
+out. On **Snowflake, PostgreSQL, Trino and the Arrow-backed sources** (Parquet/Iceberg), a failing
 result's `observed_value` carries the *exact* string GX expected — copy it into
 `type_` and re-run to confirm green. On **Unity Catalog / CSV**, a wrong value-type
 guess (e.g. `int64` against a string column) falls to GX's row-wise compare, which

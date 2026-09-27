@@ -2517,6 +2517,7 @@
 <th style="text-align: center;">Unity Catalog</th>
 <th style="text-align: center;">PostgreSQLᵖ</th>
 <th style="text-align: center;">MySQL / MariaDBᵐ</th>
+<th style="text-align: center;">Trinoᵗ</th>
 <th style="text-align: center;">ADLS Gen2 (files)</th>
 <th style="text-align: center;">S3 (files)ˢ</th>
 <th style="text-align: center;">Iceberg</th>
@@ -2525,6 +2526,7 @@
 <tbody>
 <tr>
 <td>GX expectations (column / table shape)</td>
+<td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
@@ -2542,9 +2544,11 @@
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
 </tr>
 <tr>
 <td>Custom SQL (rows returned = failures)ᶜ</td>
+<td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
@@ -2562,9 +2566,11 @@
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
 </tr>
 <tr>
 <td>Freshness from <strong>file arrival time</strong> (no column — catches "no new file")</td>
+<td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
@@ -2582,9 +2588,11 @@
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
 </tr>
 <tr>
 <td>Anomaly monitor (z-score vs a learned baseline)ᵃ</td>
+<td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
@@ -2602,9 +2610,11 @@
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
 </tr>
 <tr>
 <td>Comparison / reconciliation (diff vs a baseline connection)</td>
+<td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
@@ -2622,11 +2632,13 @@
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
 </tr>
 <tr>
 <td>Browse for the run target (catalog → schema → table / folders → file)</td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅ (schema → table)</td>
 <td style="text-align: center;">✅ (schema → table)</td>
 <td style="text-align: center;">✅ (schema → table)</td>
 <td style="text-align: center;">✅</td>
@@ -2642,9 +2654,11 @@
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
 </tr>
 <tr>
 <td>Dry-run preview</td>
+<td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
@@ -2711,12 +2725,19 @@ without the read-only guard and needs the <code>CREATE TEMPORARY TABLES</code> g
 uniqueness, set membership and comparisons follow the column's collation (<code>'a'</code> and
 <code>'A'</code> are duplicates under the default case-insensitive one) — see
 <a href="../../guides/datasources-checks/#mysql-mariadb">Datasources &amp; checks</a>.</p>
+<p>ᵗ <strong>Trino</strong> — any cluster (incl. Starburst), one catalog per connection, and every store that
+catalog federates; everything runs by pushdown on the cluster. The same battery was
+<strong>executed</strong> against Trino 483 (the <code>memory</code> connector, and a mixed-case PostgreSQL table
+through the <code>postgresql</code> connector), plus HTTPS with a private CA, password and JWT
+authentication and file-based access control. Two engine facts: Trino has <strong>no read-only
+session</strong>, so the read-only guarantee is the Trino user's own access control; and every name is
+<strong>lower case</strong> — see <a href="../../guides/datasources-checks/#trino">Datasources &amp; checks</a>.</p>
 <p>ˢ <strong>S3 means AWS S3 <em>and</em> any S3-compatible store</strong> — MinIO, Ceph/RadosGW, Cloudflare R2,
 Wasabi, Backblaze B2, SeaweedFS or an on-prem gateway. Set the connection's optional
 endpoint URL; every row in this column applies identically either way. See
 <a href="../../guides/datasources-checks/#s3-compatible-object-stores">Datasources &amp; checks</a>.</p>
 <p>Custom SQL runs a SQL query, so it's <strong>SQL-datasource only</strong> (Snowflake, Unity Catalog, PostgreSQL,
-MySQL/MariaDB;
+MySQL/MariaDB, Trino;
 there is no flat-file support, and no issue currently tracks adding it — flat files get freshness/volume monitors instead (see the rows above);
 Iceberg is not SQL-queryable — reads go through <code>pyiceberg</code> scans, not a query engine).
 <strong>Comparison checks</strong> (ADR <a href="../../adr/0015-two-connection-comparison-check-model/">0015</a>)
@@ -2839,6 +2860,15 @@ five mechanisms:</p>
 <td style="text-align: center;">—⁴</td>
 </tr>
 <tr>
+<td>Trino</td>
+<td><code>trino://{host}:{port}</code> / <code>catalog.schema.table</code></td>
+<td style="text-align: center;">✅ (+ inventory sync)</td>
+<td style="text-align: center;">✅ by construction (dbt-trino names match; not yet live-verified)</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">—⁴</td>
+</tr>
+<tr>
 <td>PostgreSQL</td>
 <td><code>postgres://{host}:{port}</code> / <code>database.schema.table</code></td>
 <td style="text-align: center;">✅ (+ inventory sync)</td>
@@ -2863,7 +2893,7 @@ native <code>pyiceberg</code> connections have no dbt slice of their own.
 ³ Warehouse-native lineage reads a query engine's lineage view; a native <code>pyiceberg</code>
 connection has no engine to ask (an engine-registered Iceberg table is covered under its
 Snowflake/UC connection).
-⁴ PostgreSQL and MySQL keep no lineage log DataQ reads, so there is no warehouse-native pull; the
+⁴ PostgreSQL, MySQL and Trino keep no lineage log DataQ reads, so there is no warehouse-native pull; the
 inventory sync still enumerates its tables (ADR 0040).
 ² The lineage graph's node-kind contract reserves <code>bi_report</code>/<code>dashboard</code> — a BI node
 (e.g. a Power BI report downstream of a mart) becomes representable the moment a capable
