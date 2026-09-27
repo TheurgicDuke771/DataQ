@@ -206,7 +206,7 @@ def test_a_tiny_failure_rate_never_reads_as_zero_percent() -> None:
 
 
 def test_a_coarse_source_is_not_described_as_a_failed_refresh() -> None:
-    evidence = {
+    evidence: dict[str, Any] = {
         "upstream_pipeline_run": None,
         "sibling_checks": [],
         "downstream_blast_radius": {
