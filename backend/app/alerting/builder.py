@@ -35,6 +35,7 @@ from backend.app.services import (
     privacy_settings_service,
     run_service,
 )
+from backend.app.services.column_tags import effective_column_tags
 
 
 def _run_url(run_id: uuid.UUID) -> str | None:
@@ -104,7 +105,7 @@ def build_run_report(session: Session, run: Run) -> RunReport:
     checks = {c.id: c for c in session.scalars(select(Check).where(Check.suite_id == run.suite_id))}
     # The warehouse's own column classifications (G3, #433) — the same governance floor the REST and
     # MCP read paths apply.
-    tags = asset.column_tags if asset is not None else None
+    tags = effective_column_tags(session, asset)
     results: list[Result] = run_service.list_results(session, run.id)
     # Per-result `kind`/`engine` as of THIS result (#1880 review) — the same rule
     # `zero_sample_suppressed` needs on REST/MCP applies here: a `dmf`-engine check
@@ -202,7 +203,7 @@ def _incident_cards(
                 status=result.status,
                 occurrence_count=incident.occurrence_count,
                 is_new=incident.created_at == incident.last_seen_at,
-                evidence=incident_service.evidence_for_alert(incident),
+                evidence=incident_service.evidence_for_alert(incident, session),
                 narrative=llm_rca.latest_narrative_for_alert(session, incident),
             )
         )

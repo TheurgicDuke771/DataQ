@@ -87,6 +87,10 @@ class Settings(BaseSettings):
     # principal lacks those grants and the daily refresh should no-op instead of erroring per run.
     warehouse_lineage_enabled: bool = True
 
+    # Classification propagation through column lineage (#1710): a column whose recorded upstream
+    # column is tagged sensitive is masked too. Additive-only (never un-masks); false opts out.
+    lineage_classification_propagation: bool = True
+
     # Snowflake GET_LINEAGE seeds walked per refresh (#892) — a latency/cost bound.
     warehouse_lineage_max_seeds: int = 500
 

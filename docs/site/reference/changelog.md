@@ -17,6 +17,12 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Added
 
+- **Sensitive columns stay masked downstream.** If a warehouse tag marks a column sensitive,
+  every column that recorded column lineage shows is copied or derived from it is masked as well,
+  across REST, MCP, alerts and incident evidence. This only ever adds masking: a column's own tag
+  still wins, and nothing inherits `public`. `LINEAGE_CLASSIFICATION_PROPAGATION=false` turns it
+  off. See [security](../security/overview.md).
+
 - **Check suggestions know where a column comes from.** A suggested check on a column that
   is copied unchanged from an upstream table now says so — "an equivalent check already runs
   upstream" or "place it at the origin" — so one bad load fires one alert, not one per copy.

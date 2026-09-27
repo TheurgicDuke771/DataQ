@@ -25,6 +25,7 @@ from backend.app.db.models import (
 from backend.app.lineage.edges import downstream_assets
 from backend.app.orchestration import markers
 from backend.app.services import asset_view_service, run_service
+from backend.app.services.column_tags import effective_column_tags
 from backend.app.services.rollup import AGGREGATABLE_RUN_STATUSES
 
 log = get_logger(__name__)
@@ -170,7 +171,7 @@ def resolve_redaction_contexts(
     """
     suite = session.get(Suite, run.suite_id)
     policy = suite.column_policy if suite is not None else None
-    tags = asset.column_tags if asset is not None else None
+    tags = effective_column_tags(session, asset)
     historical = run_service.historical_check_context(session, results, checks)
     contexts: dict[uuid.UUID, RedactionContext] = {}
     for r in results:

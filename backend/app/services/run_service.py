@@ -1039,9 +1039,11 @@ def resolve_asset(session: Session, suite: Any, run: Any = None) -> Asset | None
 
 
 def asset_column_tags(session: Session, suite: Any, run: Any = None) -> dict[str, str] | None:
-    """The warehouse's own column classifications for a suite's asset (G3)."""
-    asset = resolve_asset(session, suite, run)
-    return asset.column_tags if asset is not None else None
+    """The warehouse's own column classifications for a suite's asset (G3), plus ``sensitive``
+    inherited through recorded column lineage (#1710 — additive-only)."""
+    from backend.app.services.column_tags import effective_column_tags
+
+    return effective_column_tags(session, resolve_asset(session, suite, run))
 
 
 def historical_check_context(

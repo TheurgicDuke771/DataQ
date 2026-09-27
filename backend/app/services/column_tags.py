@@ -220,3 +220,84 @@ def refresh_asset_column_tags(
             error_type=type(exc).__name__,
         )
         return None
+
+
+# ── lineage propagation (#1710, ADR 0034 amendment 2026-09-27) ──────────────────────────────
+
+
+def _cell_sensitive(tags: dict[str, str] | None, column: str) -> bool:
+    if not tags:
+        return False
+    verdict = tags.get(column) or tags.get(column.strip().lower())
+    return str(verdict or "").strip().lower() in _SENSITIVE_VALUES
+
+
+def inherited_sensitive(session: Any, asset: Asset) -> dict[str, list[tuple[Any, str]]]:
+    """Columns of ``asset`` that inherit ``sensitive`` from an upstream column through RECORDED
+    column lineage, with the upstream ``(asset_id, column)`` cells that justify it.
+
+    Additive-only by construction: a column with ANY own warehouse verdict (sensitive or public)
+    is skipped — the steward looked at this column, and their answer wins — and nothing ever
+    inherits ``public``. Only upstream assets whose tags DataQ has read (a suite ran on them)
+    contribute; an unread upstream contributes nothing, never a clearance.
+    """
+    from sqlalchemy import select
+
+    from backend.app.core.config import get_settings
+    from backend.app.lineage.columns import MAX_TRACE_DEPTH, upstream_column_sources
+
+    if not get_settings().lineage_classification_propagation:
+        return {}
+    walk = upstream_column_sources(session, asset.id, max_depth=MAX_TRACE_DEPTH)
+    if walk.truncated:
+        # Never below the own-tags floor, but a column beyond the cap is NOT inherited — say so.
+        log.warning("column_tags_propagation_truncated", asset_id=str(asset.id))
+    if not walk.sources:
+        return {}
+    upstream_ids = {aid for cells in walk.sources.values() for aid, _ in cells}
+    tags_by_asset: dict[Any, dict[str, str] | None] = dict(
+        session.execute(select(Asset.id, Asset.column_tags).where(Asset.id.in_(upstream_ids)))
+        .tuples()
+        .all()
+    )
+    own = {str(k).strip().lower() for k in (asset.column_tags or {})}
+    out: dict[str, list[tuple[Any, str]]] = {}
+    for column, cells in walk.sources.items():
+        key = column.strip().lower()
+        if key in own:
+            continue
+        hits = sorted(
+            (cell for cell in cells if _cell_sensitive(tags_by_asset.get(cell[0]), cell[1])),
+            key=lambda cell: (str(cell[0]), cell[1]),
+        )
+        if hits:
+            out[key] = hits
+    return out
+
+
+def effective_column_tags(session: Any, asset: Asset | None) -> dict[str, str] | None:
+    """The asset's own warehouse classifications PLUS ``sensitive`` inherited through column
+    lineage — the map every redaction read path uses as the governance floor.
+
+    Fail-soft to the asset's own tags (the pre-propagation floor) inside a SAVEPOINT, so a lineage
+    read error can neither remove masking the own tags provide nor poison the caller's session.
+    """
+    if asset is None:
+        return None
+    own = asset.column_tags
+    try:
+        with session.begin_nested():
+            inherited = inherited_sensitive(session, asset)
+    except Exception as exc:
+        log.warning(
+            "column_tags_propagation_failed",
+            asset_id=str(asset.id),
+            error_type=type(exc).__name__,
+        )
+        return own
+    if not inherited:
+        return own
+    merged = dict(own or {})
+    for column in inherited:
+        merged[column] = SENSITIVE
+    return merged
