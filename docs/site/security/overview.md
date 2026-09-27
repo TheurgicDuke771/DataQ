@@ -382,6 +382,21 @@ the **column itself**. An inherited tag is a statement about the container, and
 reading one as a per-column clearance would clear a whole schema from a single
 misplaced `public`.
 
+**A classification flows downstream through column lineage — masking only.** When recorded
+column-level lineage shows a column is copied or derived from an upstream column tagged
+sensitive, the downstream column is masked too, with no re-tagging and no re-profiling. The rule
+is additive-only:
+
+- Only `sensitive` travels. Nothing ever inherits a `public` clearance.
+- A column's **own** tag always wins, either way. If a steward has marked a downstream column
+  `public` (for example because it is hashed there), that decision stands.
+- Only *recorded* column pairs count. A table-level edge with no column detail does not carry a
+  classification, and nor does an upstream table whose tags DataQ has not read yet (tags are read
+  when a suite runs against the table).
+
+It can therefore mask more than the tags alone would, but never less. Set
+`LINEAGE_CLASSIFICATION_PROPAGATION=false` to turn it off.
+
 **The tag name is matched without its namespace**, and that is a constraint on
 you rather than a feature: DataQ honours a tag *named* `dataq_classification`
 wherever it lives, because knowing which database or schema should be

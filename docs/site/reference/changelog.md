@@ -17,6 +17,12 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Added
 
+- **Sensitive columns stay masked downstream.** If a warehouse tag marks a column sensitive,
+  every column that recorded column lineage shows is copied or derived from it is masked as well,
+  across REST, MCP, alerts and incident evidence. This only ever adds masking: a column's own tag
+  still wins, and nothing inherits `public`. `LINEAGE_CLASSIFICATION_PROPAGATION=false` turns it
+  off. See [security](../security/overview.md).
+
 - **Trace one column through lineage.** The asset page's *Column lineage* card (and
   `GET /assets/{id}/column-lineage`, MCP `trace_column_lineage`) follows a single column up to
   where it originates and down to every column derived from it. Every lineage edge now says
