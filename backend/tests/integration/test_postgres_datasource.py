@@ -83,6 +83,18 @@ def _seed_sql(schema: str, hidden: str) -> list[str]:
         f'CREATE TABLE "{schema}".orders_lc (id integer, loaded_at timestamptz)',
         f'INSERT INTO "{schema}".orders_lc VALUES (1, now()), (2, now()), (2, now())',
         f'CREATE VIEW "{schema}".big_orders AS SELECT * FROM "{schema}"."Orders" WHERE amount > 10',
+        # Types whose own name hides that they cannot aggregate: a domain over json, and arrays
+        # whose ELEMENT has no MIN/MAX or no equality.
+        f'CREATE DOMAIN "{schema}".payload_doc AS json',
+        f'CREATE TABLE "{schema}"."TypeEdges" (doc "{schema}".payload_doc, docs json[],'
+        " flags boolean[], tags text[])",
+        f'INSERT INTO "{schema}"."TypeEdges" VALUES'
+        " ('{\"a\": 1}', ARRAY['{}'::json], ARRAY[true], ARRAY['x', 'y']),"
+        " (NULL, NULL, ARRAY[false], ARRAY['z'])",
+        # A function with the SAME signature as a built-in, planted in the target schema by
+        # whoever can CREATE there. It must never be the one DataQ's SQL resolves to.
+        f'CREATE FUNCTION "{schema}".upper(text) RETURNS text'
+        " LANGUAGE sql IMMUTABLE AS $$ SELECT 'HIJACKED'::text $$",
         f'CREATE SCHEMA "{hidden}"',
         f'CREATE TABLE "{hidden}".secret_stuff (x integer)',
     ]
@@ -174,7 +186,10 @@ def test_every_session_is_read_only(pg: PgTarget) -> None:
     try:
         with engine.connect() as conn:
             assert conn.execute(text("SHOW default_transaction_read_only")).scalar() == "on"
-            assert conn.execute(text("SHOW search_path")).scalar() == f'"{pg.schema}",pg_catalog'
+            assert (
+                conn.execute(text("SHOW search_path")).scalar()
+                == f'pg_catalog,"{pg.schema}",public'
+            )
         with pytest.raises(DBAPIError, match="read-only transaction"):
             with engine.begin() as conn:
                 conn.execute(text("CREATE TEMP TABLE dq_write_probe (i integer)"))
@@ -471,6 +486,67 @@ def test_the_profile_survives_json_and_boolean_columns(pg: PgTarget) -> None:
     assert by_column["CustomerId"].top_values[0] == {"value": 12, "count": 2}
 
 
+def test_a_function_planted_in_the_target_schema_never_overrides_a_builtin(
+    pg: PgTarget,
+) -> None:
+    """pg_catalog is FIRST on the session's search_path, so `upper(text)` is the built-in even
+    though the target schema defines a same-signature `upper(text)` (the CVE-2018-1058 shape:
+    whoever can CREATE in a schema DataQ reads would otherwise run code under DataQ's credential).
+    """
+    runner = _runner(pg)
+    try:
+        [result] = runner.run_checks(
+            table="Orders",
+            schema=pg.schema,
+            checks=[
+                CheckSpec(
+                    CUSTOM_SQL_EXPECTATION_TYPE,
+                    {
+                        "unexpected_rows_query": (
+                            "SELECT * FROM {batch} WHERE upper(status) = 'HIJACKED'"
+                        )
+                    },
+                )
+            ],
+        ).checks
+    finally:
+        runner.close()
+    assert not result.errored, result.error_message
+    assert result.success is True
+
+
+def test_the_profile_survives_domains_over_json_and_arrays_of_unaggregatable_types(
+    pg: PgTarget,
+) -> None:
+    profile = profile_service.profile_table(
+        _connection(pg),
+        table="TypeEdges",
+        schema=pg.schema,
+        columns=["doc", "docs", "flags", "tags"],
+        top_n=2,
+        secret_store=_store(pg),
+    )
+    by_column = {column.column: column for column in profile.columns}
+    assert profile.row_count == 2
+    # A domain over json has neither MIN/MAX nor equality — nor does json[].
+    for name in ("doc", "docs"):
+        assert by_column[name].min_value is None and by_column[name].distinct_count is None
+        assert by_column[name].top_values == []
+    # boolean[] has equality (distinct works) but no MIN/MAX; text[] has both.
+    assert by_column["flags"].min_value is None and by_column["flags"].distinct_count == 2
+    assert by_column["tags"].min_value == ["x", "y"] and by_column["tags"].distinct_count == 2
+
+
+def test_schema_drift_resolves_the_target_exactly_as_spelled(pg: PgTarget) -> None:
+    """`ORDERS` is not `"Orders"` on PostgreSQL — every other path errors on it, so drift must
+    not quietly baseline the case-variant table instead.
+    """
+    with pytest.raises(schema_drift.SchemaIntrospectionError, match="not found"):
+        schema_drift.introspect_columns(
+            _connection(pg), table="ORDERS", schema=pg.schema, catalog=None, secret_store=_store(pg)
+        )
+
+
 def test_columns_schema_drift_and_comparison_reads(pg: PgTarget) -> None:
     connection, store = _connection(pg), _store(pg)
     columns = profile_service.list_table_columns(
@@ -534,7 +610,7 @@ def test_browse_walks_schemas_then_tables(db_session: Any, pg: PgTarget) -> None
     tables = browse_service.browse_catalog(connection, catalog=None, schema=pg.schema, **kwargs)
     assert top.level == "schema" and pg.schema in [e.name for e in top.entries]
     assert tables.level == "table"
-    assert [e.name for e in tables.entries] == ["Orders", "big_orders", "orders_lc"]
+    assert [e.name for e in tables.entries] == ["Orders", "TypeEdges", "big_orders", "orders_lc"]
     with pytest.raises(browse_service.BrowseInputInvalidError):
         browse_service.browse_catalog(connection, catalog="other_db", schema=None, **kwargs)
 

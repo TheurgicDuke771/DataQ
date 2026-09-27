@@ -14,6 +14,11 @@ export interface TextField {
   /** Helper text under the field. */
   extra?: string;
   /**
+   * A closed vocabulary: renders a clearable Select instead of free text, so a typo can't
+   * reach the backend and clearing it sends nothing (the backend default applies).
+   */
+  options?: string[];
+  /**
    * `toggle` only: the value an absent config key should be treated as. Must be applied by
    * merging into the config object before it reaches the form (see `withToggleDefaults`) —
    * a per-`Form.Item` `initialValue` is silently overwritten the moment `setFieldsValue`
@@ -169,9 +174,10 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
         name: 'sslmode',
         label: 'TLS mode',
         optional: true,
+        options: ['require', 'verify-full', 'verify-ca', 'disable'],
         extra:
-          'require (default) · verify-full · verify-ca · disable — verify-* checks the server ' +
-          'certificate against the system trust store',
+          'require when left empty · verify-* also checks the server certificate against the ' +
+          'system trust store · disable sends everything in plaintext',
       },
       {
         name: 'inventory_sync',

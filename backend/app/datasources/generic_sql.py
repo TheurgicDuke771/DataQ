@@ -84,6 +84,12 @@ class GenericSqlConfig(BaseModel):
     # Warehouse inventory sync (ADR 0040) — on by default; see SnowflakeConfig.
     inventory_sync: bool = True
 
+    @field_validator("port", "schema_", mode="before")
+    @classmethod
+    def _blank_is_unset(cls, value: Any) -> Any:
+        # A cleared optional form field arrives as "" — it means "use the default", not an error.
+        return None if isinstance(value, str) and not value.strip() else value
+
     @field_validator("host")
     @classmethod
     def _plain_host(cls, value: str) -> str:

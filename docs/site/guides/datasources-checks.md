@@ -135,13 +135,20 @@ Live-verified against PostgreSQL 16.
   GRANT SELECT ON ALL TABLES IN SCHEMA sales TO dataq_reader;
   ```
 
+- **Name resolution.** Each session's `search_path` is `pg_catalog`, then the target's schema,
+  then `public` — so an unqualified name in custom SQL resolves in the table's own schema, and
+  extension objects installed in `public` (citext, pg_trgm, PostGIS) still work. `pg_catalog`
+  comes first on purpose: a function planted in a schema DataQ reads can never override a
+  built-in DataQ's own SQL calls. Still, don't give untrusted roles `CREATE` on schemas DataQ
+  checks — a function with a *different* signature there is still callable by name.
 - **Everything runs in the database** — expectations on a SQL batch, monitors as scalar
   aggregates, custom SQL as-is — so no rows are loaded into the worker and a run target
   takes no sampling block.
 - **The profiler** reports min/max as unavailable (null) for types PostgreSQL has no MIN/MAX
   for — `boolean`, `json`/`jsonb`, `uuid`, geometric — and distinct count / top values as
   unavailable for types with no equality (`json`, `xml`, geometric), instead of failing the
-  whole profile. A JSON cell in a failing-row sample is shown as its JSON text.
+  whole profile. A domain is judged by the type it is a domain over, and an array by its
+  element type. A JSON cell in a failing-row sample is shown as its JSON text.
 - **No column tags.** PostgreSQL has no column-tag feature for DataQ to read, so its columns
   are classified by the suite's column policy and DataQ's own name/value checks only — see
   [security](../security/overview.md).

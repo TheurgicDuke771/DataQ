@@ -98,13 +98,20 @@ def _sql_columns(
     if catalog is not None:
         validate_identifier(catalog)
     prefix = f"{catalog}." if catalog else ""
+    # The generic SQL engines resolve a name exactly as spelled everywhere else (checks, monitors,
+    # profiler), so drift must too — a case-insensitive match would baseline a DIFFERENT table
+    # (`orders` for a target `Orders`) and report it clean while every other check errors.
+    match = (
+        "table_schema = :schema_name AND table_name = :table_name"
+        if connection.type in GENERIC_SQL_TYPES
+        else "UPPER(table_schema) = UPPER(:schema_name) AND UPPER(table_name) = UPPER(:table_name)"
+    )
     # Identifiers are validated above; every value is bound — so the Ruff S608 and bandit B608
     # markers on the line below are both intentional and both live.
     query = text(
         f"SELECT table_schema, table_name, column_name, data_type "  # noqa: S608  # nosec B608
         f"FROM {prefix}information_schema.columns "
-        "WHERE UPPER(table_schema) = UPPER(:schema_name) "
-        "AND UPPER(table_name) = UPPER(:table_name) "
+        f"WHERE {match} "
         "ORDER BY ordinal_position"
     )
     with _open_connection(connection, secret_store) as conn:

@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from typing import Any, ClassVar, Literal
 
+from pydantic import field_validator
+
 from backend.app.datasources.generic_sql import (
     ColumnCaps,
     GenericSqlConfig,
@@ -28,21 +30,21 @@ class PostgresConfig(GenericSqlConfig):
 
     sslmode: PostgresSslMode = "require"
 
+    @field_validator("sslmode", mode="before")
+    @classmethod
+    def _blank_sslmode_is_the_default(cls, value: Any) -> Any:
+        return (
+            "require" if value is None or (isinstance(value, str) and not value.strip()) else value
+        )
+
     def engine_default_schema(self) -> str:
         return "public"
 
 
 def _connect_args(config: PostgresConfig, timeout: int | None) -> dict[str, Any]:
     # `default_transaction_read_only` makes every transaction DataQ opens READ ONLY — the
-    # server refuses a write however it was smuggled into a query. `search_path` pins the
-    # connection's schema (quoted, so a mixed-case schema keeps its case) for the few paths that
-    # address a target unqualified; the identifier allowlist on `schema` keeps it injection-free.
-    # pg_catalog is named LAST so a user table can never be shadowed by a catalog relation of the
-    # same name (unnamed, PostgreSQL searches it first).
-    options = (
-        "-c default_transaction_read_only=on"
-        f' -c search_path="{config.default_schema}",pg_catalog'
-    )
+    # server refuses a write however it was smuggled into a query.
+    options = f"-c default_transaction_read_only=on -c search_path={_search_path(config)}"
     args: dict[str, Any] = {
         "sslmode": config.sslmode,
         "options": options,
@@ -55,6 +57,23 @@ def _connect_args(config: PostgresConfig, timeout: int | None) -> dict[str, Any]
     if timeout is not None:
         args["connect_timeout"] = timeout
     return args
+
+
+def _search_path(config: PostgresConfig) -> str:
+    """The session's `search_path`: pg_catalog, the connection's schema, then public.
+
+    pg_catalog is FIRST so a same-signature function or operator created in a writable schema
+    can never override a built-in DataQ's own SQL calls (the CVE-2018-1058 shape — it would run
+    with DataQ's read credential). The target schema is quoted so a mixed-case name keeps its
+    case; the identifier allowlist on `schema` keeps it injection-free. `public` stays last, as
+    in PostgreSQL's own default path, so extension objects installed there (citext's operators,
+    pg_trgm, PostGIS) still resolve in custom SQL.
+    """
+    schema = config.default_schema
+    parts = ["pg_catalog", f'"{schema}"']
+    if schema != "public":
+        parts.append("public")
+    return ",".join(parts)
 
 
 def _add_gx_datasource(
@@ -74,30 +93,46 @@ _ORDERABLE_CATEGORIES = frozenset("NSDTEAI")
 _UNGROUPABLE_TYPES = frozenset({"json", "xml"})
 _UNGROUPABLE_CATEGORIES = frozenset("G")
 
+# Per column: the BASE type (a domain resolved to what it is a domain over — its own name would
+# hide a domain over json) and, for an array, its element type (an array aggregates only as far as
+# its element does: `min(json[])` and `COUNT(DISTINCT xml[])` fail like their elements).
 _COLUMN_TYPES_SQL = (
-    "SELECT a.attname, t.typcategory, t.typname"
+    "SELECT a.attname, b.typcategory, b.typname, e.typcategory, e.typname"
     " FROM pg_catalog.pg_attribute a"
     " JOIN pg_catalog.pg_class c ON c.oid = a.attrelid"
     " JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace"
     " JOIN pg_catalog.pg_type t ON t.oid = a.atttypid"
+    " JOIN pg_catalog.pg_type b"
+    " ON b.oid = CASE WHEN t.typtype = 'd' THEN t.typbasetype ELSE t.oid END"
+    " LEFT JOIN pg_catalog.pg_type e ON e.oid = b.typelem AND b.typcategory = 'A'"
     " WHERE n.nspname = :schema AND c.relname = :table"
     " AND a.attnum > 0 AND NOT a.attisdropped"
 )
 
 
+def _caps(category: str, typname: str) -> ColumnCaps:
+    return ColumnCaps(
+        orderable=category in _ORDERABLE_CATEGORIES,
+        groupable=typname not in _UNGROUPABLE_TYPES and category not in _UNGROUPABLE_CATEGORIES,
+    )
+
+
 def _column_caps(conn: Any, schema: str, table: str) -> dict[str, ColumnCaps]:
     from sqlalchemy import text
 
-    # A domain carries its base type's category, so a domain over jsonb reads as jsonb does.
-    rows = conn.execute(text(_COLUMN_TYPES_SQL), {"schema": schema, "table": table}).all()
-    return {
-        str(name): ColumnCaps(
-            orderable=str(category) in _ORDERABLE_CATEGORIES,
-            groupable=str(typname) not in _UNGROUPABLE_TYPES
-            and str(category) not in _UNGROUPABLE_CATEGORIES,
-        )
-        for name, category, typname in rows
-    }
+    caps: dict[str, ColumnCaps] = {}
+    for name, category, typname, elem_category, elem_typname in conn.execute(
+        text(_COLUMN_TYPES_SQL), {"schema": schema, "table": table}
+    ).all():
+        own = _caps(str(category), str(typname))
+        if elem_typname is not None:
+            element = _caps(str(elem_category), str(elem_typname))
+            own = ColumnCaps(
+                orderable=own.orderable and element.orderable,
+                groupable=own.groupable and element.groupable,
+            )
+        caps[str(name)] = own
+    return caps
 
 
 # `has_*_privilege` filters to what the credential can actually use, the way Snowflake's

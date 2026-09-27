@@ -42,6 +42,8 @@ function ConfigTextField({
     >
       {field.type === 'tags' ? (
         <Select mode="tags" tokenSeparators={[',']} placeholder="Add one or more…" />
+      ) : field.options ? (
+        <Select allowClear options={field.options.map((value) => ({ value, label: value }))} />
       ) : (
         <Input />
       )}
