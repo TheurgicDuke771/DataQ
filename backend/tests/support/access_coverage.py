@@ -44,8 +44,9 @@ EXEMPT: Final[dict[str, str]] = {
     ),
     # Same shape as build_run_report above: redacts ONCE at incident-open/attach
     # time, before the card is stored on Incident.evidence (#1772). The later
-    # reads (get_incident REST/MCP, the RCA narrative prompt) consume that
-    # already-redacted stored snapshot — they never call a redactor themselves.
+    # reads (get_incident REST/MCP, the RCA narrative prompt, alert cards) serve
+    # that stored snapshot — re-masked on the way out by `_redacted_as_of_now`
+    # below, which can only narrow it.
     "services/incident_evidence.py::_failing_result_layer": (
         "the incident-sync write path, not a principal's read — no actor to attribute"
     ),
@@ -54,6 +55,13 @@ EXEMPT: Final[dict[str, str]] = {
     # any one of them.
     "services/incident_service.py::redact_stale_evidence": (
         "a one-time ops backfill rewriting stored snapshots, not a principal's read"
+    ),
+    # Read-time RE-masking of that stored snapshot (#1710): a classification that arrived after
+    # the snapshot was written (e.g. inherited through column lineage) still applies. It adds
+    # no new data to any read — redacting an already-redacted value can only narrow it — so it
+    # does not change whether the incident read itself is a regulated-data read.
+    "services/incident_service.py::_redacted_as_of_now": (
+        "masking-only re-redaction of an already-stored, already-redacted snapshot"
     ),
 }
 

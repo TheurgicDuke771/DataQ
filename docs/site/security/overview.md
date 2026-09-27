@@ -389,12 +389,18 @@ is additive-only:
 
 - Only `sensitive` travels. Nothing ever inherits a `public` clearance.
 - A column's **own** tag always wins, either way. If a steward has marked a downstream column
-  `public` (for example because it is hashed there), that decision stands.
+  `public` (for example because it is hashed there), that decision stands for that column. It does
+  not stop the walk, though: a further copy of a sensitive origin is still masked, which is the
+  conservative reading.
 - Only *recorded* column pairs count. A table-level edge with no column detail does not carry a
   classification, and nor does an upstream table whose tags DataQ has not read yet (tags are read
   when a suite runs against the table).
 
-It can therefore mask more than the tags alone would, but never less. Set
+It applies on every read path, including incident evidence and alert cards. Those are stored
+snapshots, so they are re-masked when read, which means a classification that arrives after the
+snapshot was written still applies. A lineage walk that hits its size cap logs
+`column_tags_propagation_truncated`; columns beyond the cap keep only their own tags. It can
+therefore mask more than the tags alone would, but never less. Set
 `LINEAGE_CLASSIFICATION_PROPAGATION=false` to turn it off.
 
 **The tag name is matched without its namespace**, and that is a constraint on

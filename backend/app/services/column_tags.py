@@ -244,11 +244,14 @@ def inherited_sensitive(session: Any, asset: Asset) -> dict[str, list[tuple[Any,
     from sqlalchemy import select
 
     from backend.app.core.config import get_settings
-    from backend.app.lineage.columns import upstream_column_sources
+    from backend.app.lineage.columns import MAX_TRACE_DEPTH, upstream_column_sources
 
     if not get_settings().lineage_classification_propagation:
         return {}
-    walk = upstream_column_sources(session, asset.id)
+    walk = upstream_column_sources(session, asset.id, max_depth=MAX_TRACE_DEPTH)
+    if walk.truncated:
+        # Never below the own-tags floor, but a column beyond the cap is NOT inherited — say so.
+        log.warning("column_tags_propagation_truncated", asset_id=str(asset.id))
     if not walk.sources:
         return {}
     upstream_ids = {aid for cells in walk.sources.values() for aid, _ in cells}

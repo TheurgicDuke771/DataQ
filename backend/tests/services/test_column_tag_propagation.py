@@ -233,6 +233,9 @@ def test_alert_report_masks_an_inherited_column(
     report = build_run_report(db_session, silver_run["run"])
     (check_report,) = report.checks
     assert "web" not in str(check_report.observed_value)
+    # The incident card's stored (pre-tag) evidence is re-redacted for delivery too.
+    (card,) = report.incidents
+    assert "web" not in str(card.evidence)
 
 
 def test_incident_evidence_context_carries_inherited_tags(
@@ -259,3 +262,63 @@ def test_stale_incident_backfill_masks_an_inherited_column(
     redact_stale_evidence(db_session)
     db_session.refresh(silver_run["incident"])
     assert "web" not in str(silver_run["incident"].evidence)
+
+
+def test_incident_evidence_is_re_redacted_at_read_time(
+    db_session: Session, silver_run: dict[str, Any]
+) -> None:
+    """The snapshot predates the upstream tag (stored unmasked); every reader masks it NOW."""
+    from backend.app.services.incident_service import evidence_for_alert, evidence_for_caller
+
+    incident = silver_run["incident"]
+    assert "web" in str(incident.evidence)  # stored snapshot is unmasked
+    for_caller = evidence_for_caller(db_session, incident, user_id=uuid.uuid4())
+    assert "web" not in str(for_caller)
+    assert "web" not in str(evidence_for_alert(incident, db_session))
+    # Control: without the upstream classification the same reader shows the value.
+    _tag(db_session, "raw", "feedback", None)
+    assert "web" in str(evidence_for_caller(db_session, incident, user_id=uuid.uuid4()))
+
+
+def test_a_truncated_walk_is_logged(
+    db_session: Session, captured: Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from structlog.testing import capture_logs
+
+    monkeypatch.setattr(
+        lineage_columns,
+        "upstream_column_sources",
+        lambda session, asset_id, **_: lineage_columns.UpstreamSources({}, truncated=True),
+    )
+    silver = _asset(db_session, "silver", "feedback")
+    monkeypatch.setattr(ct, "log", __import__("structlog").get_logger("column_tags"))
+    with capture_logs() as logs:
+        ct.inherited_sensitive(db_session, silver)
+    assert any(e["event"] == "column_tags_propagation_truncated" for e in logs)
+
+
+def test_snowflake_upper_folded_cells_match_lower_cased_tags(
+    db_session: Session, captured: Connection
+) -> None:
+    """Snowflake folds to UPPER while cached tags are lower-cased: both lookups must match."""
+    ns = "snowflake://ACCT"
+    ids = upsert_assets(db_session, [{"namespace": ns, "name": n} for n in ("D.S.UP", "D.S.DOWN")])
+    up, down = ids[(ns, "D.S.UP")], ids[(ns, "D.S.DOWN")]
+    db_session.add(
+        LineageEdge(
+            upstream_asset_id=up,
+            downstream_asset_id=down,
+            source="snowflake",
+            connection_id=captured.id,
+            columns=[["CUSTOMER_ID", "CUSTOMER_ID"]],
+            column_grain="captured",
+        )
+    )
+    upstream = db_session.get(Asset, up)
+    assert upstream is not None
+    upstream.column_tags = {"customer_id": ct.SENSITIVE}  # how `_merge` stores keys
+    db_session.flush()
+    downstream = db_session.get(Asset, down)
+    effective = ct.effective_column_tags(db_session, downstream)
+    assert run_service._tag_sensitive("customer_id", effective)
+    assert run_service._tag_sensitive("CUSTOMER_ID", effective)

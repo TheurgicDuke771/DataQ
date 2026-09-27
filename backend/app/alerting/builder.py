@@ -202,7 +202,7 @@ def _incident_cards(
                 status=result.status,
                 occurrence_count=incident.occurrence_count,
                 is_new=incident.created_at == incident.last_seen_at,
-                evidence=incident_service.evidence_for_alert(incident),
+                evidence=incident_service.evidence_for_alert(incident, session),
                 narrative=llm_rca.latest_narrative_for_alert(session, incident),
             )
         )

@@ -507,6 +507,41 @@ def _parse_sibling_suite_ids(
     return parsed
 
 
+def _redacted_as_of_now(
+    session: Session, incident: Incident, evidence: dict[str, Any]
+) -> dict[str, Any]:
+    """Re-apply the redaction ladder to the stored ``failing_result.observed_value`` at READ time.
+
+    The snapshot is redacted when it is written, but the governance floor can grow afterwards —
+    most commonly through lineage propagation (#1710): an upstream table's tags are cached only when
+    a suite runs on it, and column pairs arrive with the daily refresh. Redacting an
+    already-redacted value is a no-op, so this can only ever ADD masking to what is served.
+    """
+    failing = evidence.get("failing_result")
+    if not isinstance(failing, dict) or "observed_value" not in failing:
+        return evidence
+    suite = session.get(Suite, incident.suite_id)
+    asset = session.get(Asset, incident.asset_id)
+    check = session.get(Check, incident.check_id)
+    context = run_service.historical_check_context_at(
+        session,
+        {incident.id: (incident.check_id, incident.last_seen_at)},
+        {check.id: check} if check is not None else {},
+    )
+    tested_column, expectation_type = context.get(incident.id, (None, None))
+    observed = failing["observed_value"]
+    redacted = run_service.redact_observed_value(
+        observed,
+        tested_column=tested_column,
+        expectation_type=expectation_type,
+        policy=suite.column_policy if suite is not None else None,
+        tags=effective_column_tags(session, asset),
+    )
+    if redacted == observed:
+        return evidence
+    return {**evidence, "failing_result": {**failing, "observed_value": redacted}}
+
+
 def evidence_for_caller(
     session: Session, incident: Incident, *, user_id: uuid.UUID
 ) -> dict[str, Any] | None:
@@ -532,6 +567,7 @@ def evidence_for_caller(
     evidence = incident.evidence
     if not isinstance(evidence, dict):
         return evidence
+    evidence = _redacted_as_of_now(session, incident, evidence)
     siblings = evidence.get("same_asset_siblings")
     if not isinstance(siblings, list):
         return evidence
@@ -547,7 +583,7 @@ def evidence_for_caller(
     }
 
 
-def evidence_for_alert(incident: Incident) -> dict[str, Any] | None:
+def evidence_for_alert(incident: Incident, session: Session | None = None) -> dict[str, Any] | None:
     """The incident's evidence card for outbound alert delivery (#1635 review) —
     ``same_asset_siblings`` restricted to entries in the incident's OWN suite.
 
@@ -560,6 +596,8 @@ def evidence_for_alert(incident: Incident) -> dict[str, Any] | None:
     evidence = incident.evidence
     if not isinstance(evidence, dict):
         return evidence
+    if session is not None:
+        evidence = _redacted_as_of_now(session, incident, evidence)
     siblings = evidence.get("same_asset_siblings")
     if not isinstance(siblings, list):
         return evidence
