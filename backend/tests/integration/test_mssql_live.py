@@ -22,7 +22,12 @@ read by a ``db_datareader``-only SQL login — note the three different datetime
 Environment: ``DATAQ_MSSQL_LIVE_HOST`` / ``_DATABASE`` / ``_USER`` / ``_PASSWORD`` (SQL login);
 optionally ``_TENANT_ID`` / ``_CLIENT_ID`` / ``_CLIENT_SECRET`` (a service principal that is a
 ``db_datareader`` contained user) and ``_FABRIC_HOST`` / ``_FABRIC_DATABASE`` (a Fabric
-warehouse the same principal can reach). An auto-paused serverless database resumes on the first
+warehouse the same principal can reach). ``DATAQ_MSSQL_LIVE_DRIVER=odbc`` runs the whole lane on
+the user-installed ODBC lane instead (Microsoft ODBC Driver 18 + ``pyodbc`` on the path) and adds
+the Fabric Warehouse / Lakehouse SQL endpoint batteries (``_FABRIC_HOST`` with
+``_FABRIC_DATABASE`` for a warehouse holding the seed above minus ``OrderTsTz`` / ``Notes``, and
+``_FABRIC_LAKEHOUSE`` for a Lakehouse whose ``dbo.orders`` holds ``order_id, email, amount,
+order_ts`` with the same four rows). An auto-paused serverless database resumes on the first
 login, which the fixture waits out.
 """
 
@@ -77,8 +82,14 @@ def _env(name: str) -> str | None:
     return os.environ.get(f"{_ENV}{name}") or None
 
 
+DRIVER = _env("DRIVER") or "python-tds"
+ODBC = DRIVER == "odbc"
+_pytds_only = pytest.mark.skipif(ODBC, reason="python-tds lane behaviour")
+_odbc_only = pytest.mark.skipif(not ODBC, reason="ODBC lane behaviour")
+
+
 def _sql_config() -> dict[str, Any]:
-    return {"host": HOST, "database": _env("DATABASE"), "user": _env("USER")}
+    return {"host": HOST, "database": _env("DATABASE"), "user": _env("USER"), "driver": DRIVER}
 
 
 def _sp_config() -> dict[str, Any]:
@@ -88,6 +99,7 @@ def _sp_config() -> dict[str, Any]:
         "auth_type": "entra_service_principal",
         "tenant_id": _env("TENANT_ID"),
         "client_id": _env("CLIENT_ID"),
+        "driver": DRIVER,
     }
 
 
@@ -193,13 +205,18 @@ def test_a_service_principal_connects_with_a_token_and_a_bad_secret_is_a_dead_cr
 
 
 def test_connecting_by_ip_is_refused_by_the_hostname_check() -> None:
+    """python-tds: DataQ's own validator. ODBC lane: the driver's (Encrypt=yes,
+    TrustServerCertificate=no) — both must refuse a certificate that does not name the host.
+    """
     assert HOST is not None
     address = socket.gethostbyname(HOST)
-    with pytest.raises(Exception, match="Certificate does not match host name") as exc:
+    message = "subject name does not match host name" if ODBC else "does not match host name"
+    with pytest.raises(Exception, match=message) as exc:
         get_connection_adapter("mssql").test({**_sql_config(), "host": address}, _password())
     assert classify_failure_category(exc.value) is FailureCategory.CONNECTIVITY
 
 
+@_pytds_only  # a private CA is a python-tds option; the ODBC lane uses the OS trust store
 def test_a_server_certificate_outside_the_configured_ca_is_refused() -> None:
     with pytest.raises(Exception, match="certificate verify failed") as exc:
         get_connection_adapter("mssql").test(
@@ -210,6 +227,7 @@ def test_a_server_certificate_outside_the_configured_ca_is_refused() -> None:
 
 @pytest.mark.skipif(not _env("FABRIC_HOST"), reason="no Fabric endpoint configured")
 @_needs_sp
+@_pytds_only
 def test_fabric_on_the_python_tds_lane_reports_the_known_limitation() -> None:
     """#2126: python-tds's routed login to Fabric is rejected. The user sees why and the fix
     (the ODBC lane) — never the driver's "system update" error.
@@ -605,3 +623,169 @@ def test_a_suite_run_persists_results_end_to_end(db_session: Any) -> None:
     assert by_check[checks[2].id].observed_value == {"row_count": 4, "deviation_pct": 0.0}
     assert by_check[checks[3].id].status == "pass"
     assert by_check[checks[3].id].metric_value is not None
+
+
+# ───────────────────────────── Fabric (ODBC lane) ─────────────────────────────
+
+_FABRIC_HOST = _env("FABRIC_HOST")
+_needs_fabric = pytest.mark.skipif(
+    not (ODBC and _FABRIC_HOST and _env("CLIENT_SECRET")),
+    reason="Fabric runs on the ODBC lane with a service principal",
+)
+
+
+def _fabric(database: str | None) -> tuple[dict[str, Any], str]:
+    secret = _env("CLIENT_SECRET")
+    assert secret is not None and database is not None
+    return {**_sp_config(), "host": _FABRIC_HOST, "database": database}, secret
+
+
+# (database env var, table, the columns the battery reads) — the Warehouse keeps the Azure SQL
+# names; the Lakehouse table was loaded from a CSV, so it is lower case with `float` amounts.
+_FABRIC_ITEMS = {
+    "warehouse": ("FABRIC_DATABASE", "Orders", "OrderId", "CustomerEmail", "Amount", "OrderTs"),
+    "lakehouse": ("FABRIC_LAKEHOUSE", "orders", "order_id", "email", "amount", "order_ts"),
+}
+
+
+@_needs_fabric
+@pytest.mark.parametrize("item", sorted(_FABRIC_ITEMS))
+def test_fabric_item_battery(item: str, db_session: Any) -> None:
+    """Test Connection, the SQL batch (incl. custom SQL), freshness/volume, the profiler,
+    inventory/browse and a persisted run — against a Fabric SQL endpoint, on the ODBC lane.
+    """
+    env_db, table, key, email, amount, ts = _FABRIC_ITEMS[item]
+    database = _env(env_db)
+    if database is None:
+        pytest.skip(f"{_ENV}{env_db} not set")
+    config, secret = _fabric(database)
+    for attempt in range(4):  # a Fabric endpoint's first login after idle can be slow
+        try:
+            get_connection_adapter("mssql").test(config, secret)
+            break
+        except Exception:
+            if attempt == 3:
+                raise
+            time.sleep(15)
+
+    store = FakeSecretStore({"mssql-ref": secret})
+    runner: Any = build_check_runner(
+        conn_type="mssql", config=config, secret_ref="mssql-ref", secret_store=store
+    )
+    try:
+        checks = [
+            CheckSpec("expect_column_values_to_not_be_null", {"column": email}),
+            # Not uniqueness: GX builds a #temp table for it, which Fabric refuses (refused at
+            # author time on a Fabric host — see FABRIC_TEMP_TABLE_TYPES).
+            CheckSpec(
+                "expect_column_values_to_be_in_set", {"column": key, "value_set": [1, 2, 3, 4]}
+            ),
+            CheckSpec(
+                "expect_column_values_to_be_between",
+                {"column": amount, "min_value": -10, "max_value": 100000},
+            ),
+            CheckSpec("expect_table_row_count_to_be_between", {"min_value": 4, "max_value": 4}),
+            CheckSpec(
+                CUSTOM_SQL_EXPECTATION_TYPE,
+                {"unexpected_rows_query": f"SELECT * FROM {{batch}} WHERE [{amount}] < 0"},
+            ),
+        ]
+        outcome = runner.run_checks(table=table, schema="dbo", checks=checks, index_columns=[key])
+        got = [("errored" if r.errored else r.success) for r in outcome.checks]
+        assert got == [False, True, True, True, False], [r.error_message for r in outcome.checks]
+        fresh, volume = runner.run_monitors(
+            table=table,
+            schema="dbo",
+            monitors=[
+                MonitorSpec("freshness", {"column": ts}),
+                MonitorSpec("volume", {"min_rows": 1, "max_rows": 10}),
+            ],
+        )
+    finally:
+        runner.close()
+    now = dt.datetime.now(dt.UTC)
+    latest = dt.datetime(2026, 9, 27, 8, tzinfo=dt.UTC)
+    assert fresh.metric_value == pytest.approx((now - latest).total_seconds() / 3600, abs=0.2)
+    assert volume.observed_value == {"row_count": 4, "deviation_pct": 0.0}
+
+    connection = Connection(
+        id=uuid.uuid4(),
+        name="fabric",
+        type="mssql",
+        env="dev",
+        config=config,
+        secret_ref="mssql-ref",
+    )
+    profile = profile_service.profile_table(
+        connection,
+        table=table,
+        schema="dbo",
+        columns=[amount, email],
+        top_n=2,
+        secret_store=store,
+    )
+    by_column = {c.column: c for c in profile.columns}
+    assert profile.row_count == 4
+    assert float(by_column[amount].min_value) == -3.0
+    assert by_column[email].distinct_count == 2
+    with profile_service._open_connection(connection, store) as conn:
+        schemas = generic_sql.schema_names(_SPEC, conn, limit=None)
+        identities = get_table_enumerator("mssql").enumerate_tables(  # type: ignore[union-attr]
+            conn, connection_config=config
+        )
+    # Fabric's own `queryinsights` / `sys` views are never offered.
+    assert schemas == ["dbo"]
+    assert {i.name for i in identities} == {f"{database}.dbo.{table}"}
+
+    owner = User(aad_object_id=uuid.uuid4().hex, email=f"fb-{uuid.uuid4().hex[:6]}@ex")
+    db_session.add(owner)
+    db_session.flush()
+    stored = Connection(
+        name=f"fb-{uuid.uuid4().hex[:6]}",
+        type="mssql",
+        env="dev",
+        config=config,
+        secret_ref="mssql-ref",
+        created_by=owner.id,
+    )
+    db_session.add(stored)
+    db_session.flush()
+    suite = Suite(name="fabric", connection_id=stored.id, created_by=owner.id)
+    db_session.add(suite)
+    db_session.flush()
+    persisted = [
+        Check(
+            suite_id=suite.id,
+            name="email",
+            kind="expectation",
+            expectation_type="expect_column_values_to_not_be_null",
+            config={"column": email},
+        ),
+        Check(
+            suite_id=suite.id,
+            name="rows",
+            kind="volume",
+            expectation_type="monitor:volume",
+            config={"min_rows": 1, "max_rows": 100},
+        ),
+    ]
+    db_session.add_all(persisted)
+    db_session.flush()
+    run = Run(suite_id=suite.id, status="queued")
+    db_session.add(run)
+    db_session.commit()
+    runner = build_check_runner(
+        conn_type="mssql", config=config, secret_ref="mssql-ref", secret_store=store
+    )
+    try:
+        run_service.execute_run(
+            db_session, run=run, checks=persisted, runner=runner, table=table, schema="dbo"
+        )
+    finally:
+        runner.close()
+    assert run.status == "succeeded"
+    statuses = {
+        r.check_id: r.status
+        for r in db_session.scalars(select(Result).where(Result.run_id == run.id))
+    }
+    assert statuses == {persisted[0].id: "fail", persisted[1].id: "pass"}

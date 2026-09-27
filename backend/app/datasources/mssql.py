@@ -26,6 +26,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import struct
 import tempfile
 import threading
 from dataclasses import dataclass
@@ -249,6 +250,34 @@ FABRIC_LOGIN_PREREQUISITES = (
 )
 
 
+#: Expectation types whose GX SQL Server metrics build `#temp` tables, which a Fabric SQL
+#: endpoint refuses ("The query references an object that is not supported in distributed
+#: processing mode", 15816 — live-verified on a Warehouse and a Lakehouse SQL endpoint).
+FABRIC_TEMP_TABLE_TYPES = frozenset(
+    {
+        "expect_column_values_to_be_unique",
+        "expect_compound_columns_to_be_unique",
+        "expect_select_column_values_to_be_unique_within_record",
+        "expect_column_pair_values_a_to_be_greater_than_b",
+        "expect_column_pair_values_to_be_equal",
+        "expect_column_pair_values_to_be_in_set",
+        "expect_multicolumn_sum_to_equal",
+    }
+)
+FABRIC_TEMP_TABLE_REASON = (
+    "Great Expectations evaluates it on SQL Server through a temporary table, which a Microsoft "
+    "Fabric SQL endpoint does not support. Use a custom-SQL check instead (for uniqueness: "
+    "SELECT col FROM {batch} GROUP BY col HAVING COUNT(*) > 1)."
+)
+
+
+def _config_unsupported(config: GenericSqlConfig) -> tuple[frozenset[str], str]:
+    assert isinstance(config, MssqlConfig)
+    if is_fabric_host(config.host):
+        return FABRIC_TEMP_TABLE_TYPES, FABRIC_TEMP_TABLE_REASON
+    return frozenset(), ""
+
+
 def _explain_failure(config: GenericSqlConfig, exc: BaseException) -> str | None:
     assert isinstance(config, MssqlConfig)
     if not is_fabric_host(config.host):
@@ -265,8 +294,9 @@ def _explain_failure(config: GenericSqlConfig, exc: BaseException) -> str | None
 
 def _connect_args(config: MssqlConfig, timeout: int | None, **_: Any) -> dict[str, Any]:
     if config.driver == "odbc":
-        # pyodbc's `timeout` is the login timeout. Encryption rides the URL (Encrypt=yes).
-        return {} if timeout is None else {"timeout": timeout}
+        # pyodbc's `timeout` is the login timeout; a run waits out a slow first login (a Fabric
+        # SQL endpoint or a paused serverless database — live-found), a Test does not.
+        return {"timeout": 60 if timeout is None else timeout}
     from backend.app.datasources import mssql_tds
 
     mssql_tds.install()
@@ -280,6 +310,23 @@ def _connect_args(config: MssqlConfig, timeout: int | None, **_: Any) -> dict[st
         # takes up to a minute; a run waits for it, a Test Connection does not.
         "login_timeout": 60 if timeout is None else timeout,
     }
+
+
+def _odbc_value(value: str) -> str:
+    """An ODBC connection-string value, braced so `;` / `=` / `{` inside it stay literal."""
+    return "{" + value.replace("}", "}}") + "}"
+
+
+#: msodbcsql's pre-connect attribute for an Entra access token (`msodbcsql.h`).
+SQL_COPT_SS_ACCESS_TOKEN = 1256
+
+
+def odbc_access_token(token: str) -> bytes:
+    """An access token in the shape msodbcsql expects: UTF-16-LE bytes behind a 4-byte
+    little-endian length.
+    """
+    encoded = token.encode("utf-16-le")
+    return struct.pack(f"<I{len(encoded)}s", len(encoded), encoded)
 
 
 def _token_callable(config: MssqlConfig, secret: str) -> Any:
@@ -313,11 +360,28 @@ class MssqlEngineSpec(SqlEngineSpec):
                 "Encrypt": "yes",
                 "TrustServerCertificate": "no",
             }
+            # A service principal logs in with a token DataQ mints (`engine_args`), exactly as
+            # on the python-tds lane — not the driver's own `ActiveDirectoryServicePrincipal`,
+            # which on a wrong client secret hangs until the login timeout (live-found) instead
+            # of failing with Entra's own AADSTS error. So no credential rides this URL — and it
+            # is spelled as a raw `odbc_connect` string, because SQLAlchemy adds
+            # `Trusted_Connection=Yes` to a user-less pyodbc URL, which the driver refuses beside
+            # an access token (FA005, live-found).
             if entra:
-                query["Authentication"] = "ActiveDirectoryServicePrincipal"
+                odbc = ";".join(
+                    f"{key}={_odbc_value(value)}"
+                    for key, value in (
+                        ("Driver", config.odbc_driver),
+                        ("Server", f"{config.host},{config.effective_port}"),
+                        ("Database", config.database),
+                        ("Encrypt", "yes"),
+                        ("TrustServerCertificate", "no"),
+                    )
+                )
+                return URL.create("mssql+pyodbc", query={"odbc_connect": odbc})
             return URL.create(
                 "mssql+pyodbc",
-                username=config.client_id if entra else config.user,
+                username=config.user,
                 password=secret,
                 host=config.host,
                 port=config.effective_port,
@@ -343,12 +407,20 @@ class MssqlEngineSpec(SqlEngineSpec):
             if problem is not None:
                 raise KnownDatasourceLimitationError(problem)
         url, connect_args = super().engine_args(config, secret, **kwargs)
-        if config.driver == "python-tds" and config.auth_type == "entra_service_principal":
+        if config.auth_type == "entra_service_principal":
             assert secret is not None  # `requires_secret`: every SQL Server mode has one
-            connect_args = {
-                **connect_args,
-                "access_token_callable": _token_callable(config, secret),
-            }
+            token = _token_callable(config, secret)
+            if config.driver == "python-tds":
+                # Called once per physical login: every new connection gets a fresh token.
+                connect_args = {**connect_args, "access_token_callable": token}
+            else:
+                # pyodbc takes the token as a pre-connect attribute, fixed for the engine's
+                # life. DataQ's engines live for one run / test / profile, well inside a token's
+                # lifetime; minting here also fails a dead secret fast, with Entra's AADSTS text.
+                connect_args = {
+                    **connect_args,
+                    "attrs_before": {SQL_COPT_SS_ACCESS_TOKEN: odbc_access_token(token())},
+                }
         return url, connect_args
 
 
@@ -395,7 +467,9 @@ def _column_caps(conn: Any, schema: str, table: str) -> dict[str, ColumnCaps]:
 # credential can actually SELECT. A schema is listed when it holds such a table, so the browser
 # never offers the fixed-role schemas (db_datareader, …) every database carries.
 _READABLE = (
-    "TABLE_SCHEMA NOT IN ('sys', 'INFORMATION_SCHEMA')"
+    # `queryinsights` is Fabric's own query-history schema (live-found on a Fabric Warehouse and
+    # Lakehouse SQL endpoint): system views, never a user's table.
+    "TABLE_SCHEMA NOT IN ('sys', 'INFORMATION_SCHEMA', 'queryinsights')"
     " AND HAS_PERMS_BY_NAME(QUOTENAME(TABLE_SCHEMA) + N'.' + QUOTENAME(TABLE_NAME),"
     " 'OBJECT', 'SELECT') = 1"
 )
@@ -449,6 +523,7 @@ MSSQL = MssqlEngineSpec(
             "expect_column_values_to_not_match_regex_list",
         }
     ),
+    config_unsupported_expectation_types=_config_unsupported,
     unsupported_reason=(
         "T-SQL has no regular-expression operator Great Expectations can translate to. Use a "
         "custom-SQL check with LIKE or PATINDEX instead."

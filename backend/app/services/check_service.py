@@ -133,6 +133,13 @@ def _connection_type(session: Session, suite: Suite) -> str:
     return connection.type
 
 
+def _connection_config(session: Session, suite: Suite) -> dict[str, Any]:
+    """The suite's connection config — for gaps that depend on where it points."""
+    connection = session.get(Connection, suite.connection_id)
+    assert connection is not None
+    return dict(connection.config or {})
+
+
 def validate_kind(kind: str) -> None:
     """Reject an unsupported check kind (422). Shared by CRUD and suite import."""
     if kind not in _V1_SUPPORTED_KINDS:
@@ -587,7 +594,12 @@ def reject_thresholds_on_unbanded(
     )
 
 
-def reject_dataframe_only_expectation(expectation_type: str, *, connection_type: str) -> None:
+def reject_dataframe_only_expectation(
+    expectation_type: str,
+    *,
+    connection_type: str,
+    connection_config: dict[str, Any] | None = None,
+) -> None:
     """422 for an expectation GX cannot evaluate on this connection's SQL batch (#1509) — a
     dataframe-only type, or one the engine's dialect has no translation for (#1679: regex on
     SQL Server).
@@ -606,6 +618,23 @@ def reject_dataframe_only_expectation(expectation_type: str, *, connection_type:
             f"{spec.unsupported_reason}",
             detail={"expectation_type": expectation_type, "field": "expectation_type"},
         )
+    if (
+        spec is not None
+        and connection_config is not None
+        and spec.config_unsupported_expectation_types is not None
+    ):
+        try:
+            validated = spec.validate_config(connection_config)
+        except ValueError:
+            validated = None  # an unvalidatable stored config is the connection's problem
+        if validated is not None:
+            types, reason = spec.config_unsupported_expectation_types(validated)
+            if expectation_type in types:
+                raise CheckConfigInvalidError(
+                    f"{expectation_type} cannot run against this {spec.display_name} "
+                    f"connection: {reason}",
+                    detail={"expectation_type": expectation_type, "field": "expectation_type"},
+                )
     if expectation_type not in DATAFRAME_ONLY_EXPECTATION_TYPES:
         return
     if connection_type not in SQL_BATCH_CONNECTION_TYPES:
@@ -787,7 +816,9 @@ def create_check(
         validate_expectation_check(expectation_type, config)
         _reject_row_count_on_sampled_suite(session, suite, expectation_type)
         reject_dataframe_only_expectation(
-            expectation_type, connection_type=_connection_type(session, suite)
+            expectation_type,
+            connection_type=_connection_type(session, suite),
+            connection_config=_connection_config(session, suite),
         )
     reject_thresholds_on_unbanded(
         expectation_type,
@@ -909,7 +940,9 @@ def _validate_kind_specific_config(
         suite = get_suite(session, suite_id)
         _reject_row_count_on_sampled_suite(session, suite, expectation_type)
         reject_dataframe_only_expectation(
-            expectation_type, connection_type=_connection_type(session, suite)
+            expectation_type,
+            connection_type=_connection_type(session, suite),
+            connection_config=_connection_config(session, suite),
         )
 
 

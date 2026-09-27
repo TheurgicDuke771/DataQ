@@ -346,14 +346,93 @@ def test_odbc_lane_sql_auth_url_forces_verified_encryption(
     assert url.query["driver"] == "ODBC Driver 18 for SQL Server"
     assert "Authentication" not in url.query
     assert args == {"timeout": 7}
+    assert MSSQL.connect_args(_config(driver="odbc"), None) == {"timeout": 60}
 
 
-def test_odbc_lane_service_principal_is_driver_native(fake_pyodbc: types.ModuleType) -> None:
-    url_string, args = MSSQL.engine_args(_config(_SP, driver="odbc"), "secret")
+def test_odbc_lane_service_principal_presents_a_dataq_minted_token(
+    fake_pyodbc: types.ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Not the driver's own ActiveDirectoryServicePrincipal: that hangs to the login timeout on a
+    wrong secret (live-found). DataQ mints the token, so a dead secret fails fast with AADSTS.
+    """
+    import azure.identity
+
+    _FakeCredential.instances = []
+    monkeypatch.setattr(azure.identity, "ClientSecretCredential", _FakeCredential)
+    url_string, args = MSSQL.engine_args(_config(_SP, driver="odbc"), "the-client-secret")
     url = make_url(url_string)
-    assert url.query["Authentication"] == "ActiveDirectoryServicePrincipal"
-    assert (url.username, url.password) == (_CLIENT, "secret")
+    assert (url.username, url.password) == (None, None)
+    assert "the-client-secret" not in url_string
+    # A raw ODBC string, so SQLAlchemy cannot add Trusted_Connection (refused beside a token).
+    odbc = str(url.query["odbc_connect"])
+    assert odbc == (
+        "Driver={ODBC Driver 18 for SQL Server};Server={srv.database.windows.net,1433};"
+        "Database={dq};Encrypt={yes};TrustServerCertificate={no}"
+    )
+    from sqlalchemy.dialects.mssql.pyodbc import MSDialect_pyodbc
+
+    (cargs,), _ = MSDialect_pyodbc().create_connect_args(url)  # type: ignore[no-untyped-call]
+    assert "Trusted_Connection" not in cargs and "Authentication" not in cargs
+    (credential,) = _FakeCredential.instances
+    assert credential.scopes == ["https://database.windows.net/.default"]
+    assert args["attrs_before"] == {
+        mssql.SQL_COPT_SS_ACCESS_TOKEN: mssql.odbc_access_token("the-access-token")
+    }
     assert "access_token_callable" not in args
+
+
+def test_the_odbc_access_token_struct_is_length_prefixed_utf16() -> None:
+    packed = mssql.odbc_access_token("ab")
+    assert packed == (4).to_bytes(4, "little") + "ab".encode("utf-16-le")
+
+
+def test_a_dead_secret_on_the_odbc_lane_fails_before_any_connection(
+    fake_pyodbc: types.ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import azure.identity
+
+    class _Refusing(_FakeCredential):
+        def get_token(self, scope: str) -> Any:
+            raise RuntimeError("AADSTS7000215: Invalid client secret provided.")
+
+    monkeypatch.setattr(azure.identity, "ClientSecretCredential", _Refusing)
+    with pytest.raises(RuntimeError, match="AADSTS7000215") as exc:
+        MSSQL.engine_args(_config(_SP, driver="odbc"), "wrong")
+    assert is_auth_failure(exc.value)
+
+
+# ───────────────────────────── Fabric gaps ─────────────────────────────
+
+
+@pytest.mark.parametrize("expectation_type", sorted(mssql.FABRIC_TEMP_TABLE_TYPES))
+def test_temp_table_types_are_refused_for_a_fabric_host_only(expectation_type: str) -> None:
+    from backend.app.services.check_service import (
+        CheckConfigInvalidError,
+        reject_dataframe_only_expectation,
+    )
+
+    fabric = {**_SP, "host": _FABRIC_HOST}
+    with pytest.raises(CheckConfigInvalidError, match="temporary table") as exc:
+        reject_dataframe_only_expectation(
+            expectation_type, connection_type="mssql", connection_config=fabric
+        )
+    assert "custom-SQL" in exc.value.message
+    # The same type on Azure SQL / SQL Server is fine, and so is a Fabric host when no config
+    # is known (the engine-wide gate only).
+    reject_dataframe_only_expectation(
+        expectation_type, connection_type="mssql", connection_config=dict(_SP)
+    )
+    reject_dataframe_only_expectation(expectation_type, connection_type="mssql")
+
+
+def test_ordinary_types_stay_allowed_on_fabric() -> None:
+    from backend.app.services.check_service import reject_dataframe_only_expectation
+
+    reject_dataframe_only_expectation(
+        "expect_column_values_to_not_be_null",
+        connection_type="mssql",
+        connection_config={**_SP, "host": _FABRIC_HOST},
+    )
 
 
 # ───────────────────────────── honest failures ─────────────────────────────
@@ -625,3 +704,10 @@ def test_tls_cannot_be_weakened_by_the_base_sslmode() -> None:
     for weaker in ("disable", "require", "verify-ca"):
         with pytest.raises(ValidationError, match="always verifies"):
             _config(sslmode=weaker)
+
+
+def test_the_catalog_never_offers_system_schemas() -> None:
+    """Fabric adds `queryinsights` system views to INFORMATION_SCHEMA (live-found)."""
+    for sql in (MSSQL.catalog.schemas_sql, MSSQL.catalog.tables_sql):
+        assert "'sys', 'INFORMATION_SCHEMA', 'queryinsights'" in sql
+        assert "HAS_PERMS_BY_NAME" in sql

@@ -289,6 +289,12 @@ class SqlEngineSpec:
     #: with ``unsupported_reason`` saying why and what to use instead.
     unsupported_expectation_types: frozenset[str] = frozenset()
     unsupported_reason: str = ""
+    #: ``config`` → ``(types, reason)`` for a gap that depends on WHERE the connection points
+    #: rather than on the engine (a Fabric SQL endpoint refuses the temp tables GX's multi-column
+    #: SQL Server metrics build). ``None`` = no config-dependent gaps.
+    config_unsupported_expectation_types: (
+        Callable[[GenericSqlConfig], tuple[frozenset[str], str]] | None
+    ) = None
 
     def validate_config(self, raw: dict[str, Any]) -> GenericSqlConfig:
         return self.config_model.model_validate(raw)

@@ -41,12 +41,14 @@ def _suite_id(
     db_session: Any,
     conn_type: str = "snowflake",
     target: dict[str, Any] | None = None,
+    config: dict[str, Any] | None = None,
 ) -> str:
     """Create a connection (ORM) + suite (API) and return the suite id."""
     owner = User(aad_object_id=uuid.uuid4().hex, email=f"owner-{uuid.uuid4().hex[:8]}@example.com")
     db_session.add(owner)
     db_session.flush()
-    config = {"account": "ab12345.eu-west-1"} if conn_type == "snowflake" else {}
+    if config is None:
+        config = {"account": "ab12345.eu-west-1"} if conn_type == "snowflake" else {}
     conn = Connection(
         name=f"{conn_type}-{uuid.uuid4().hex[:8]}",
         type=conn_type,
@@ -2910,6 +2912,35 @@ def test_regex_is_refused_on_sql_server_and_names_the_alternative(
     postgres = _suite_id(client, db_session, conn_type="postgres")
     on_postgres = client.post(f"/api/v1/suites/{postgres}/checks", json=_REGEX_PAYLOAD)
     assert on_postgres.status_code == 201
+
+
+def test_temp_table_types_are_refused_on_a_fabric_connection(
+    client: TestClient, db_session: Any
+) -> None:
+    """GX builds a #temp table for uniqueness on SQL Server; a Fabric SQL endpoint refuses it
+    (live-found, error 15816). Refused at author time for a Fabric host only (#1679).
+    """
+    fabric = {
+        "host": "abc.datawarehouse.fabric.microsoft.com",
+        "database": "wh",
+        "auth_type": "entra_service_principal",
+        "tenant_id": "11111111-2222-3333-4444-555555555555",
+        "client_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    }
+    unique = {
+        "name": "u",
+        "expectation_type": "expect_column_values_to_be_unique",
+        "config": {"column": "id"},
+    }
+    sid = _suite_id(client, db_session, conn_type="mssql", config=fabric)
+    refused = client.post(f"/api/v1/suites/{sid}/checks", json=unique)
+    assert refused.status_code == 422
+    assert "temporary table" in refused.json()["error"]["message"]
+    azure = _suite_id(
+        client, db_session, conn_type="mssql", config={**fabric, "host": "srv.database.windows.net"}
+    )
+    allowed = client.post(f"/api/v1/suites/{azure}/checks", json=unique)
+    assert allowed.status_code == 201
 
 
 # ─────────────── server-side expectation_type allowlist (#1510) ───────────────
