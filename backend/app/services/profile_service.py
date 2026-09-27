@@ -398,13 +398,21 @@ class _SharedConnections:
         return conn
 
     def recover(self, connection: Connection, conn: Any) -> None:
-        """After a failed statement: drop a dead connection, else roll back and keep it."""
-        if getattr(conn, "invalidated", False) or getattr(conn, "closed", False):
-            held = self._live.pop(self._key(connection), None)
-            if held is not None:
-                self._close(held[1])
-            return
-        _recover_transaction(conn)
+        """After a failed statement: roll back and keep a live connection, drop a dead one.
+
+        Liveness is probed, not read off ``invalidated``: the Snowflake and Databricks dialects
+        do not classify disconnects, so a dropped session is never flagged there.
+        """
+        if not (getattr(conn, "invalidated", False) or getattr(conn, "closed", False)):
+            _recover_transaction(conn)
+            try:
+                conn.execute(select(literal_column("1"))).close()
+                return
+            except Exception as exc:
+                log.warning("profile_shared_connection_dropped", error_type=type(exc).__name__)
+        held = self._live.pop(self._key(connection), None)
+        if held is not None:
+            self._close(held[1])
 
     @staticmethod
     def _close(opener: AbstractContextManager[Any]) -> None:

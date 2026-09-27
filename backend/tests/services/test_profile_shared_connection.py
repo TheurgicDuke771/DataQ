@@ -36,10 +36,18 @@ class _FakeConn:
         self.n = n
         self.invalidated = False
         self.closed = False
+        self.dead = False
         self.rollbacks = 0
+        self.pings = 0
 
     def rollback(self) -> None:
         self.rollbacks += 1
+
+    def execute(self, _stmt: Any) -> Any:
+        self.pings += 1
+        if self.dead:
+            raise OperationalError("select 1", {}, Exception("session expired"))
+        return type("Result", (), {"close": lambda _self: None})()
 
 
 class _Opener:
@@ -140,6 +148,7 @@ def test_a_failed_statement_rolls_back_and_keeps_the_login(opener: _Opener) -> N
         again = _use(connection)
     assert len(opener.opened) == 1
     assert again.rollbacks == 1
+    assert again.pings == 1  # a live connection is probed, then kept
 
 
 def test_a_dead_connection_is_dropped_and_the_next_call_logs_in_again(opener: _Opener) -> None:
@@ -154,6 +163,20 @@ def test_a_dead_connection_is_dropped_and_the_next_call_logs_in_again(opener: _O
         assert opener.closed == [conn]  # the dead one was released, not leaked to scope exit
     assert len(opener.opened) == 2
     assert opener.closed == [conn, again]
+
+
+def test_a_dead_session_the_dialect_never_flagged_is_still_dropped(opener: _Opener) -> None:
+    """Snowflake and Databricks don't classify disconnects, so `invalidated` stays False."""
+    connection = _connection()
+    with shared_connection():
+        with pytest.raises(OperationalError):
+            with profile_service._datasource_connection(connection, FakeSecretStore()) as conn:
+                conn.dead = True
+                raise OperationalError("select", {}, Exception("session expired"))
+        again = _use(connection)
+        assert again is not conn
+        assert conn.pings == 1
+    assert len(opener.opened) == 2
 
 
 def test_a_failed_login_is_not_cached(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -400,3 +423,30 @@ def test_checksuggest_prompt_lists_and_profiles_on_one_login(
     )
     assert "Row count: 3" in prompt
     assert len(logins) == 1
+
+
+@_needs_pg
+def test_a_session_killed_mid_scope_is_replaced_by_a_fresh_login(
+    db_session: Any, warehouse_table: str, logins: list[object]
+) -> None:
+    """The server drops the shared session; the next call must log in again, not reuse it."""
+    owner = admin_user(db_session, prefix="shared")
+    connection = _connection_of(db_session, _sql_suite(db_session, owner, warehouse_table))
+    store = FakeSecretStore({"ref": "pw"})
+    target = {"table": warehouse_table, "schema": "public"}
+    killer = create_engine(TEST_DATABASE_URL or "")
+    with shared_connection():
+        profile_service.list_columns(connection, session=db_session, secret_store=store, **target)
+        pid = logins[-1].info.backend_pid  # type: ignore[attr-defined]
+        with killer.begin() as conn:
+            conn.execute(text("SELECT pg_terminate_backend(:pid)"), {"pid": pid})
+        with pytest.raises(ProfileFailedError):
+            profile_service.list_columns(
+                connection, session=db_session, secret_store=store, **target
+            )
+        columns = profile_service.list_columns(
+            connection, session=db_session, secret_store=store, **target
+        )
+    killer.dispose()
+    assert columns == ["id", "email", "qty"]
+    assert len(logins) == 3  # the scope's login, the killer's, and the replacement
