@@ -44,7 +44,7 @@ anomaly / comparison** monitor kinds:
   a timestamp inside the data cannot see.
 - **Volume monitor** — row count within an expected range (did the load land whole?).
   Freshness + volume are the auto-monitor kinds and run on **every** datasource: the SQL
-  datasources (Snowflake / Unity Catalog), Apache Iceberg (computed natively via a
+  datasources (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server), Apache Iceberg (computed natively via a
   `pyiceberg` scan rather than SQL), and ADLS Gen2 / S3 flat files.
 - **Schema-drift monitor** — flags a column added, dropped, or type-changed against a
   stored baseline (did the shape change under you?). Also runs on **every** datasource —
@@ -62,7 +62,7 @@ anomaly / comparison** monitor kinds:
 - **Column profiler** — nulls, distinct count, min/max, and top values for a column, on
   any datasource — the baseline you set thresholds from.
 - **Dry-run preview** — run one check against live data **without persisting**, on every
-  datasource with a runner (Snowflake / UC / flat files / Iceberg).
+  datasource with a runner (Snowflake / UC / the generic SQL engines / flat files / Iceberg).
 - **Severity thresholds** — band a check into **warn / fail / critical** from the observed
   unexpected-% (ADR 0005/0016); leave blank for binary pass/fail.
 - **Check version history** — every edit is versioned and viewable per check.

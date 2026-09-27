@@ -128,7 +128,7 @@ erDiagram
     connections {
         uuid id PK
         string name "unique per env"
-        string type "snowflake / adls_gen2 / s3 / unity_catalog / iceberg / adf / airflow / dbt"
+        string type "snowflake / adls_gen2 / s3 / unity_catalog / iceberg / postgres / mysql / trino / mssql / adf / airflow / dbt"
         string env "dev / qa / uat / prod"
         jsonb config "non-secret datasource config"
         string secret_ref "SecretStore key, never the credential"

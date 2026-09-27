@@ -31,7 +31,7 @@ The options were compared on five criteria: licence against MIT distribution and
 
 ## Spike outcome (2026-09-27, live)
 
-The spike ran against a free-offer Azure SQL Database and a Fabric trial workspace (Warehouse + Lakehouse), reached from outside Azure. `python-tds 1.17.1` + `sqlalchemy-pytds 1.0.2`.
+The spike ran against an Azure SQL Database and a Microsoft Fabric Warehouse + Lakehouse, reached from outside Azure. `python-tds 1.17.1` + `sqlalchemy-pytds 1.0.2`.
 
 **Azure SQL: passes every criterion.**
 - Entra user token, Entra service-principal token and SQL login all connect.
@@ -86,9 +86,7 @@ The spike ran against a free-offer Azure SQL Database and a Fabric trial workspa
 - Adapter work is more than the `ConnectionAdapter` alone. It also touches: the `CheckRunner` on the shared `gx_runner`; `monitors.py`, where Core `Select` quoting is already dialect-driven; the `tsql` dialect in the custom-SQL validator; sampling; `enumerate_tables` (ADR 0040) over `INFORMATION_SCHEMA`; the profiler; the connection-spec UI; and the per-connection-type value sets in a migration. It should be split into issues once the spike passes.
 - Supply-chain risk moves to two single-maintainer packages. Mitigations: exact pins, the rule-39 quarterly audit, and the option to vendor the dialect.
 - Pure-Python TDS is slower than ODBC on large row transfers. DataQ pushes aggregates down and caps samples, so the spike should measure this but it is not expected to decide anything.
-- **Test harness:** SQL Server Developer and Express images are proprietary EULA, which the harness rule (no commercial licence, even in the harness) keeps out. The Azure SQL Database free offer is a hosted service. It runs no licensed binary on our side and costs nothing within its monthly allowance, so it avoids that problem. It does tie the live lane to Azure. For Azure-free CI of the SQL-auth path, **Babelfish for PostgreSQL** (Apache-2.0, speaks TDS on 1433) is worth a follow-up spike. It cannot stand in for Entra or Fabric.
-
-## Alternatives considered
+- **Test harness:*- **Testing:** SQL Server Developer and Express images carry a proprietary EULA, so they stay out of the test tooling. A hosted Azure SQL database runs no licensed binary on our side. For Azure-free CI of the SQL-auth path, **Babelfish for PostgreSQL** (Apache-2.0, speaks TDS on 1433) is a possible stand-in; it cannot stand in for Entra or Fabric.considered
 
 - **(a) `pyodbc` + msodbcsql18 in the published image.** The most proven path, first-class in GX, and the one Microsoft documents for Fabric. Rejected as the *default* for the licence reasons above. It remains the documented fallback if the spike fails, under its own ADR.
 - **(a′) Keep `pyodbc` but make msodbcsql18 bring-your-own**, installed in a derived image the operator builds. **Adopted as the optional Fabric lane (Decision 1a)**, not as the only path: python-tds keeps the type working in the image we publish for SQL Server and Azure SQL.

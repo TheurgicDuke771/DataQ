@@ -703,3 +703,13 @@ All user-approved. Done by Claude, with the owner's `az` login.
   - Warehouse `dataq_wh.dbo.Orders` (4 rows, created via ODBC as the SP);
   - Lakehouse `dataq_lh` table `orders` (loaded from `Files/orders`, CSV/Parquet uploaded by the SP).
   - **Teardown** (still pending, per the earlier entry): Azure SQL server + firewall rule, KV `mssql-test-*`, the Fabric Administrator role on `dataq-admin`, and the trial workspace.
+
+## 2026-09-28 — teardown of the #1679/#1680 test resources (user-directed)
+
+- **Fabric:** trial workspace `dataq-fabric-test` deleted by the SP through the Fabric REST API (HTTP 200). This removed Warehouse `dataq_wh`, Lakehouse `dataq_lh` and all their test data. The SP now sees no workspaces.
+- **Entra:**
+  - the **Fabric Administrator** role assignment on `dataq-admin` is removed, and the user holds no directory roles;
+  - `usageLocation=IN` **stays**. Graph refuses to clear it while the free `POWER_BI_STANDARD` licence from the trial sign-up is assigned. That licence costs nothing, and the trial capacity lapses on its own.
+- **Azure SQL:** server `dataq-mssql-645a5b` deleted, which also removed database `dataq_test` and firewall rule `claude-maint-20260928`. `az sql server list -g dataq-rg` is empty. The `Microsoft.Sql` provider stays registered (it has no cost).
+- **Key Vault:** `mssql-test-sqladmin` and `mssql-test-reader` deleted **and purged**; no active or soft-deleted copies remain.
+- **Left in place:** the maintainer-machine ODBC Driver 18 (Homebrew) and its trusted formula. Remove with `brew uninstall msodbcsql18 && odbcinst -u -d -n "ODBC Driver 18 for SQL Server" && brew untrust --formula microsoft/mssql-release/msodbcsql18`.

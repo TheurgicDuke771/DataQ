@@ -59,7 +59,7 @@ the per-PR history lives in the repo's commit log and pull requests.
   check runs by pushdown, plus monitors, comparisons, the profiler, schema → table browsing and
   inventory sync. TLS is always on and always verified (certificate and hostname). The default
   driver is pure-Python and shipped; Fabric SQL endpoints currently need an optional ODBC lane
-  you install yourself (live-verified on a Fabric Warehouse and Lakehouse SQL endpoint), and
+  you install yourself, and
   DataQ tells you so instead of showing a driver error. On Fabric, the uniqueness and
   column-pair expectations are refused (Fabric does not support the temporary table GX builds
   for them). Regex

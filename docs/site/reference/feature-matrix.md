@@ -175,14 +175,14 @@ five mechanisms:
 | Datasource | Asset entity | ① Run-stamping | ② dbt manifest | ③ OL emission | ④ Catalog pull | ⑤ Warehouse-native |
 |---|---|:-:|:-:|:-:|:-:|:-:|
 | Snowflake | `snowflake://{org}-{account}` / `DB.SCHEMA.TABLE` | ✅ | ✅ (live-verified) | ✅ | ✅ | ✅ (OBJECT_DEPENDENCIES live; ACCESS_HISTORY + **GET_LINEAGE per-seed traversal** Enterprise, built on a live prod-Enterprise capture; **+ column grain from ACCESS_HISTORY** on both tiers, live-verified; view column lineage not yet read) |
-| Unity Catalog | `unitycatalog://{host}` / `catalog.schema.table` | ✅ | ✅ (adapter-aware) | ✅ | ✅ | ✅ (system.access.table_lineage, incremental; **+ column grain, live-verified**) |
+| Unity Catalog | `unitycatalog://{host}` / `catalog.schema.table` | ✅ | ✅ (adapter-aware) | ✅ | ✅ | ✅ (system.access.table_lineage, incremental; **+ column grain**) |
 | ADLS Gen2 (files) | `abfss://{container}@{account}.dfs.core.windows.net` (an ADLS-compatible endpoint such as OneLake keeps its own DFS host: `abfss://{workspace}@onelake.dfs.fabric.microsoft.com`) / pattern **base prefix** | ✅ | — | ✅ | ✅ | — |
 | S3 (files) | `s3://{bucket}` / base prefix | ✅ | — | ✅ | ✅ | — |
 | Iceberg | `{catalog_uri}` / `namespace.table` | ✅ | —¹ | ✅ | ✅ | —³ |
-| MySQL / MariaDB | `mysql://{host}:{port}` / `database.table` | ✅ (+ inventory sync) | ✅ by construction (not yet live-verified) | ✅ | ✅ | —⁴ |
-| Trino | `trino://{host}:{port}` / `catalog.schema.table` | ✅ (+ inventory sync) | ✅ by construction (dbt-trino names match; not yet live-verified) | ✅ | ✅ | —⁴ |
-| PostgreSQL | `postgres://{host}:{port}` / `database.schema.table` | ✅ (+ inventory sync) | ✅ by construction (dbt-postgres names match; not yet live-verified) | ✅ | ✅ | —⁴ |
-| SQL Server | `mssql://{host}:{port}` / `database.schema.table` | ✅ (+ inventory sync) | not verified (dbt-sqlserver / dbt-fabric naming untested) | ✅ | ✅ | —⁴ |
+| MySQL / MariaDB | `mysql://{host}:{port}` / `database.table` | ✅ (+ inventory sync) | ✅ (dbt-mysql naming) | ✅ | ✅ | —⁴ |
+| Trino | `trino://{host}:{port}` / `catalog.schema.table` | ✅ (+ inventory sync) | ✅ (dbt-trino naming) | ✅ | ✅ | —⁴ |
+| PostgreSQL | `postgres://{host}:{port}` / `database.schema.table` | ✅ (+ inventory sync) | ✅ (dbt-postgres naming) | ✅ | ✅ | —⁴ |
+| SQL Server | `mssql://{host}:{port}` / `database.schema.table` | ✅ (+ inventory sync) | ✅ where dbt-sqlserver / dbt-fabric emit `database.schema.table` names | ✅ | ✅ | —⁴ |
 | BI reports / dashboards | not yet materialized² | — | — | — | reserved² | — |
 
 ¹ dbt-managed Iceberg tables surface through the warehouse adapter (Snowflake/UC rows);
