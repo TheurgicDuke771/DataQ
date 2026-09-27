@@ -12,7 +12,7 @@ import uuid
 from typing import Any
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from backend.app.db.models import Check, Connection, Share, Suite, User
@@ -146,6 +146,37 @@ def test_a_check_on_the_suggestions_own_asset_is_not_upstream(
     assert out["recommendation"] == lp.PLACE_AT_ORIGIN
 
 
+def test_a_cycle_back_to_the_suggestions_own_asset_is_not_upstream_coverage(
+    db_session: Session, world: dict[str, Any]
+) -> None:
+    """A.X → B.X → A.X: the walk comes back to the start; the start's own check is not an
+    upstream equivalent."""
+    from backend.app.db.models import LineageEdge
+    from backend.app.services.asset_service import upsert_assets
+
+    ns = "snowflake://ACCT"
+    ids = upsert_assets(db_session, [{"namespace": ns, "name": n} for n in ("D.S.A", "D.S.B")])
+    a, b = ids[(ns, "D.S.A")], ids[(ns, "D.S.B")]
+    for up, down in ((a, b), (b, a)):
+        db_session.add(
+            LineageEdge(
+                upstream_asset_id=up,
+                downstream_asset_id=down,
+                source="snowflake",
+                connection_id=world["conn"].id,
+                columns=[["X", "X"]],
+                column_grain="captured",
+            )
+        )
+    own = _suite(db_session, world["conn"], world["me"], a)
+    _check(db_session, own, UNIQUE, "X")
+    out = lp.placement_for(
+        db_session, asset_id=a, column="X", expectation_type=UNIQUE, user_id=world["me"].id
+    )
+    assert out["equivalent_upstream_checks"] == []
+    assert out["recommendation"] != lp.ALREADY_COVERED_UPSTREAM
+
+
 def test_no_lineage_means_no_recommendation(db_session: Session, world: dict[str, Any]) -> None:
     out = lp.placement_for(
         db_session,
@@ -168,7 +199,7 @@ def test_annotate_is_fail_soft_per_suggestion_and_keeps_the_session_usable(
     def flaky(session: Session, **kw: Any) -> Any:
         calls.append(kw["column"])
         if kw["column"] == "boom":
-            session.execute(select(1 / 0))  # a real DB error inside the savepoint
+            session.execute(text("SELECT 1 / 0"))  # a real Postgres error inside the savepoint
         return real(session, **kw)
 
     monkeypatch.setattr(lp, "placement_for", flaky)
@@ -184,6 +215,8 @@ def test_annotate_is_fail_soft_per_suggestion_and_keeps_the_session_usable(
     assert suggestions[1]["lineage"]["recommendation"] == lp.PLACE_AT_ORIGIN
     assert "lineage" not in suggestions[2]
     assert calls == ["boom", "customer_id"]
+    # The aborted statement was contained by the SAVEPOINT: the outer transaction still works.
+    assert db_session.execute(text("SELECT 1")).scalar() == 1
 
 
 def test_annotate_skips_a_suite_with_no_asset(db_session: Session, world: dict[str, Any]) -> None:
