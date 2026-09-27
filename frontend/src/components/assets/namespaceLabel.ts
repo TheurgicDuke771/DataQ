@@ -11,6 +11,7 @@ export type DatasourceKind =
   | 'iceberg'
   | 'postgres'
   | 'mysql'
+  | 'trino'
   | 'mssql'
   | 'other';
 
@@ -56,6 +57,8 @@ const SCHEMES: SchemeSpec[] = [
   // `postgres://host:port` — the OpenLineage PostgreSQL namespace (#1678).
   { prefix: 'postgres://', kind: 'postgres', source: 'PostgreSQL', instance: (rest) => rest },
   { prefix: 'mysql://', kind: 'mysql', source: 'MySQL', instance: (rest) => rest },
+  // `trino://host:port` — the OpenLineage Trino namespace (#1685).
+  { prefix: 'trino://', kind: 'trino', source: 'Trino', instance: (rest) => rest },
   // `mssql://host:port` — the OpenLineage SQL Server namespace (#1679).
   { prefix: 'mssql://', kind: 'mssql', source: 'SQL Server', instance: (rest) => rest },
 ];

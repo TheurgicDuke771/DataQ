@@ -143,6 +143,7 @@ describe('datasourceKind', () => {
     ['s3://bucket', 's3'],
     ['postgres://db.internal:5432', 'postgres'],
     ['mysql://db.internal:3306', 'mysql'],
+    ['trino://trino.internal:443', 'trino'],
     // An Iceberg SQL-catalog DSN is NOT the PostgreSQL datasource namespace.
     ['postgresql://u@h/db', 'other'],
     ['mssql://srv:1433', 'mssql'],
@@ -164,6 +165,7 @@ describe('datasourceKind', () => {
       's3://bucket',
       'postgres://db.internal:5432',
       'mysql://db.internal:3306',
+      'trino://trino.internal:443',
       'mssql://srv:1433',
     ]) {
       expect(datasourceKind(ns)).not.toBe('other');

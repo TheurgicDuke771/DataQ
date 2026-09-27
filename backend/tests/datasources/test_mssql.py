@@ -100,7 +100,7 @@ def test_defaults_are_the_safe_ones() -> None:
     assert config.driver == "python-tds"  # the shipped, MIT lane — never the ODBC one by default
     assert config.effective_port == 1433
     assert config.default_schema == "dbo"
-    assert config.ca_certificate is None
+    assert config.ca_bundle is None
     assert config.inventory_sync is True
 
 
@@ -169,18 +169,18 @@ def test_host_is_a_bare_hostname(host: str) -> None:
         _config(host=host)
 
 
-def test_ca_certificate_must_be_pem_certificates() -> None:
-    assert _config(ca_certificate=_pem()).ca_certificate is not None
+def test_ca_bundle_must_be_pem_certificates() -> None:
+    assert _config(ca_bundle=_pem()).ca_bundle is not None
     for bad in ("not a cert", "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----"):
         with pytest.raises(ValidationError, match="PEM"):
-            _config(ca_certificate=bad)
+            _config(ca_bundle=bad)
     with pytest.raises(ValidationError, match="too large"):
-        _config(ca_certificate="x" * (65 * 1024))
+        _config(ca_bundle="x" * (65 * 1024))
 
 
 def test_a_private_ca_is_for_the_python_tds_lane_only() -> None:
     with pytest.raises(ValidationError, match="python-tds driver only"):
-        _config(driver="odbc", ca_certificate=_pem())
+        _config(driver="odbc", ca_bundle=_pem())
 
 
 def test_unknown_lane_and_auth_are_refused() -> None:
@@ -243,11 +243,11 @@ def test_tls_is_always_on_with_hostname_verification() -> None:
 
 def test_a_private_ca_is_written_once_and_used_as_the_only_trust() -> None:
     pem = _pem()
-    first = MSSQL.connect_args(_config(ca_certificate=pem), 10)["cafile"]
-    second = MSSQL.connect_args(_config(ca_certificate=pem), 10)["cafile"]
+    first = MSSQL.connect_args(_config(ca_bundle=pem), 10)["cafile"]
+    second = MSSQL.connect_args(_config(ca_bundle=pem), 10)["cafile"]
     assert first == second
     assert Path(first).read_text() == pem
-    other = MSSQL.connect_args(_config(ca_certificate=_pem()), 10)["cafile"]
+    other = MSSQL.connect_args(_config(ca_bundle=_pem()), 10)["cafile"]
     assert other != first
 
 
@@ -265,7 +265,7 @@ def test_a_planted_file_at_a_guessable_path_is_never_trusted() -> None:
     planted = Path(tempfile.gettempdir()) / f"dataq-mssql-ca-{digest}.pem"
     planted.write_text("attacker CA")
     try:
-        path = Path(MSSQL.connect_args(_config(ca_certificate=pem), 10)["cafile"])
+        path = Path(MSSQL.connect_args(_config(ca_bundle=pem), 10)["cafile"])
         assert path != planted
         assert path.read_text() == pem
         assert stat.S_IMODE(os.stat(path.parent).st_mode) == 0o700
@@ -537,7 +537,7 @@ def test_every_field_that_moves_the_credential_is_a_destination() -> None:
             "auth_type",
             "tenant_id",
             "client_id",
-            "ca_certificate",
+            "ca_bundle",
             "driver",
         )
     }

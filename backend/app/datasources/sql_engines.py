@@ -14,8 +14,11 @@ from backend.app.datasources.generic_sql import GenericSqlConfig, SqlEngineSpec
 from backend.app.datasources.mssql import MSSQL
 from backend.app.datasources.mysql import MYSQL
 from backend.app.datasources.postgres import POSTGRES
+from backend.app.datasources.trino import TRINO
 
-SQL_ENGINES: dict[str, SqlEngineSpec] = {spec.conn_type: spec for spec in (POSTGRES, MYSQL, MSSQL)}
+SQL_ENGINES: dict[str, SqlEngineSpec] = {
+    spec.conn_type: spec for spec in (POSTGRES, MYSQL, TRINO, MSSQL)
+}
 
 GENERIC_SQL_TYPES: frozenset[str] = frozenset(SQL_ENGINES)
 
@@ -40,3 +43,11 @@ def default_schema(conn_type: str, config: dict[str, Any]) -> str | None:
         return None
     validated: GenericSqlConfig = spec.validate_config(config)
     return validated.default_schema
+
+
+def authenticates_without_secret(conn_type: str, config: dict[str, Any]) -> bool:
+    """Whether a generic SQL connection of this config needs no stored secret at all (Trino
+    ``auth_type: none``) — so a missing ``secret_ref`` is its normal state, not a broken one.
+    """
+    spec = SQL_ENGINES.get(conn_type)
+    return spec is not None and not spec.validate_config(config).requires_secret()

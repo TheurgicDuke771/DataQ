@@ -23,7 +23,7 @@ from backend.app.datasources.iceberg import (
     read_iceberg_dataframe,
 )
 from backend.app.datasources.sampling import enforce_byte_cap
-from backend.app.datasources.sql_engines import GENERIC_SQL_TYPES
+from backend.app.datasources.sql_engines import GENERIC_SQL_TYPES, authenticates_without_secret
 from backend.app.db.models import Connection
 from backend.app.services.custom_sql import validate_query
 from backend.app.services.profile_service import (
@@ -96,7 +96,9 @@ def _sql_read(
 ) -> Any:
     import pandas as pd
 
-    if not connection.secret_ref:
+    if not connection.secret_ref and not authenticates_without_secret(
+        connection.type, connection.config
+    ):
         # Pre-check so a credential-less connection is the same clean 422 the
         # flat-file path gives, not `_open_connection`'s bare ValueError 500.
         raise DatasetReadUnsupportedError(

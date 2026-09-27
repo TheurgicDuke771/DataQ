@@ -20,6 +20,7 @@ from backend.app.services.connection_service import (
     ConnectionSecretWriteError,
     ConnectionTestFailedError,
 )
+from backend.tests.support.certs import self_signed_ca_pem
 from backend.tests.support.fake_secret_store import FakeSecretStore
 
 _SF_CONFIG = {
@@ -2255,6 +2256,74 @@ def test_renaming_a_connection_never_moves_its_secret_ref(
     assert conn.secret_ref == original_ref
     assert store.data[original_ref] == "rotated"
     assert would_be not in store.data, "rotation wrote to a second, orphaned key"
+
+
+# ────────── a Trino connection's secret is required per auth mode (#1685) ────────
+
+_TRINO: dict[str, Any] = {"host": "trino.internal", "catalog": "hive", "user": "dq_reader"}
+_TRINO_OPEN: dict[str, Any] = {**_TRINO, "auth_type": "none", "sslmode": "disable"}
+
+
+def _trino(
+    db_session: Any, store: FakeSecretStore, *, config: dict[str, Any], secret: str | None
+) -> Connection:
+    return svc.create_connection(
+        db_session,
+        name=f"lake-{uuid.uuid4().hex[:6]}",
+        conn_type="trino",
+        env="dev",
+        config=dict(config),
+        secret=secret,
+        created_by=_user(db_session).id,
+        secret_store=store,
+    )
+
+
+def test_a_trino_connection_that_authenticates_needs_its_secret_at_create(db_session: Any) -> None:
+    store = FakeSecretStore()
+    with pytest.raises(svc.ConnectionConfigInvalidError) as exc:
+        _trino(db_session, store, config=_TRINO, secret=None)
+    assert exc.value.detail["required"] == ["secret"]
+    # Without authentication there is nothing to store.
+    assert _trino(db_session, store, config=_TRINO_OPEN, secret=None).secret_ref is None
+
+
+def test_switching_to_password_auth_without_a_password_is_refused(db_session: Any) -> None:
+    store = FakeSecretStore()
+    conn = _trino(db_session, store, config=_TRINO_OPEN, secret=None)
+    with pytest.raises(svc.ConnectionConfigInvalidError):
+        svc.update_connection(db_session, conn.id, config=dict(_TRINO), secret_store=store)
+    updated = svc.update_connection(
+        db_session, conn.id, config=dict(_TRINO), secret="pw", secret_store=store
+    )
+    assert updated.secret_ref is not None and "auth_type" not in updated.config  # the default
+
+
+def test_a_stored_password_is_never_re_sent_as_a_bearer_token(db_session: Any) -> None:
+    store = FakeSecretStore()
+    conn = _trino(db_session, store, config=_TRINO, secret="pw")
+    with pytest.raises(svc.CredentialRedirectError) as exc:
+        svc.update_connection(
+            db_session, conn.id, config={**_TRINO, "auth_type": "jwt"}, secret_store=store
+        )
+    assert exc.value.detail["fields"] == ["auth_type"]
+    # Trusting another CA moves the credential just as surely as another host.
+    with pytest.raises(svc.CredentialRedirectError):
+        svc.update_connection(
+            db_session,
+            conn.id,
+            config={**_TRINO, "ca_bundle": self_signed_ca_pem()},
+            secret_store=store,
+        )
+
+
+def test_dropping_authentication_sends_the_stored_secret_nowhere(db_session: Any) -> None:
+    store = FakeSecretStore()
+    conn = _trino(db_session, store, config=_TRINO, secret="pw")
+    updated = svc.update_connection(
+        db_session, conn.id, config=dict(_TRINO_OPEN), secret_store=store
+    )
+    assert updated.config["auth_type"] == "none"
 
 
 class _KnownLimitationAdapter(_PassAdapter):

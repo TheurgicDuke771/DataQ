@@ -37,6 +37,8 @@ from backend.app.datasources.monitors import FRESHNESS, VOLUME, run_monitors_ove
 from backend.app.datasources.sql import LazyEngine, is_sql_identifier
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from sqlalchemy.engine import URL
 
 log = get_logger(__name__)
@@ -80,6 +82,12 @@ class GenericSqlConfig(BaseModel):
     #: The engine's identifier length limit. Enforced, not left to the server: PostgreSQL
     #: silently TRUNCATES a longer name, which would resolve a different object.
     max_identifier_length: ClassVar[int]
+    #: The engine folds every identifier to lower case, quoted or not, and its catalog reports
+    #: names that way (Trino) — so a configured or targeted name must be lower case to join.
+    names_are_lower_case: ClassVar[bool] = False
+    #: Some configs of this engine authenticate with no stored secret (Trino ``auth_type:
+    #: none``); `requires_secret` then says which.
+    secret_optional: ClassVar[bool] = False
 
     host: str
     port: int | None = Field(default=None, ge=1, le=65535)
@@ -131,12 +139,31 @@ class GenericSqlConfig(BaseModel):
     def _schema_identifier(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        if not is_sql_identifier(value) or len(value) > cls.max_identifier_length:
-            raise ValueError(
-                "schema must be a plain SQL identifier (letters, digits, _ and $; not "
-                f"starting with a digit) of at most {cls.max_identifier_length} characters"
-            )
+        cls._check_identifier(value, "schema")
         return value
+
+    @classmethod
+    def _check_identifier(cls, value: str, label: str) -> None:
+        """Raise unless ``value`` is a name this engine addresses as spelled (see
+        `identifier_problem`)."""
+        problem = cls.identifier_problem(value)
+        if problem is not None:
+            raise ValueError(f"{label} {problem}")
+
+    @classmethod
+    def identifier_problem(cls, value: str) -> str | None:
+        """Why ``value`` is not an identifier this engine resolves as spelled, or ``None``."""
+        if not is_sql_identifier(value) or len(value) > cls.max_identifier_length:
+            return (
+                "must be a plain SQL identifier (letters, digits, _ and $; not starting with a "
+                f"digit) of at most {cls.max_identifier_length} characters"
+            )
+        if cls.names_are_lower_case and value != value.lower():
+            return (
+                f"must be lower case — this engine reports every name in lower case, so "
+                f"{value!r} is {value.lower()!r}"
+            )
+        return None
 
     @property
     def effective_port(self) -> int:
@@ -156,6 +183,10 @@ class GenericSqlConfig(BaseModel):
         (MySQL) connects to the schema instead, which is how its session gets scoped.
         """
         return self.database
+
+    def requires_secret(self) -> bool:
+        """Whether this config authenticates with the connection's stored secret."""
+        return True
 
 
 @dataclass(frozen=True)
@@ -231,14 +262,19 @@ class SqlEngineSpec:
     #: whose driver can only carry ONE init statement (PyMySQL's `init_command`) but needs two,
     #: each spelled in the syntax every server version accepts. ``None`` = `connect_args` does it.
     session_statements: Callable[[bool], tuple[str, ...]] | None = None
+    #: ``(config, secret)`` → the DBAPI ``connect_args`` that authenticate, for an engine whose
+    #: driver takes an auth OBJECT rather than a URL password (Trino: basic or a JWT bearer).
+    #: When set, the secret is never put in the URL. ``None`` = the password rides the URL.
+    auth_connect_args: Callable[[Any, str | None], dict[str, Any]] | None = None
+    #: ``(config, secret)`` → when the credential stops working (a JWT's ``exp``), or ``None``.
+    credential_expiry: Callable[[Any, str | None], datetime | None] | None = None
+    #: #1401: the config fields that decide which server receives the secret — and, for an
+    #: engine with a custom CA option, whose certificate is trusted to be that server.
+    destination_fields: tuple[str, ...] = ("host", "port")
     #: Whether a SESSION can be scoped to the run target's schema (a PostgreSQL ``search_path``,
     #: a MySQL default database). SQL Server cannot — a login's default schema is fixed on the
     #: server — so there GX is handed the schema instead.
     session_schema: bool = True
-    #: Per credential slot, the config fields that decide where the secret is sent (#1401).
-    destination_fields: dict[str, tuple[str, ...]] = field(
-        default_factory=lambda: {"secret": ("host", "port")}
-    )
     #: What the connection's one secret is called in messages.
     credential_noun: str = "password"
     #: Turns a failure whose cause the ENGINE knows (a documented driver limitation, a missing
@@ -266,27 +302,41 @@ class SqlEngineSpec:
             return config
         return self.validate_config({**config.model_dump(by_alias=True), "schema": schema})
 
-    def url(self, config: GenericSqlConfig, secret: str) -> URL:
+    def url(self, config: GenericSqlConfig, secret: str | None) -> URL:
         """The SQLAlchemy URL — built with `URL.create`, which escapes every part."""
         from sqlalchemy.engine import URL
 
         return URL.create(
             self.drivername,
             username=config.user,
-            password=secret,
+            password=None if self.auth_connect_args is not None else secret,
             host=config.host,
             port=config.effective_port,
             database=config.url_database(),
         )
 
-    def url_string(self, config: GenericSqlConfig, secret: str) -> str:
+    def url_string(self, config: GenericSqlConfig, secret: str | None) -> str:
         """`url` rendered with the password, for GX (which takes a string). Never log it."""
         return self.url(config, secret).render_as_string(hide_password=False)
+
+    def session_connect_args(
+        self,
+        config: GenericSqlConfig,
+        secret: str | None,
+        timeout: int | None,
+        *,
+        read_only: bool = True,
+    ) -> dict[str, Any]:
+        """`connect_args` plus, for an engine that authenticates by object, its auth args."""
+        args = self.connect_args(config, timeout, read_only=read_only)
+        if self.auth_connect_args is not None:
+            args = {**args, **self.auth_connect_args(config, secret)}
+        return args
 
     def engine_args(
         self,
         config: GenericSqlConfig,
-        secret: str,
+        secret: str | None,
         *,
         timeout: int | None = CONNECT_TIMEOUT,
         read_only: bool = True,
@@ -294,8 +344,8 @@ class SqlEngineSpec:
         """``(url, connect_args)`` for a SQLAlchemy engine. An engine built from these must also go
         through `prepare_engine`, which applies `session_statements`.
         """
-        return self.url_string(config, secret), self.connect_args(
-            config, timeout, read_only=read_only
+        return self.url_string(config, secret), self.session_connect_args(
+            config, secret, timeout, read_only=read_only
         )
 
     def prepare_engine(self, engine: Any, *, read_only: bool = True) -> Any:
@@ -322,7 +372,7 @@ class SqlEngineSpec:
     def create_engine(
         self,
         config: GenericSqlConfig,
-        secret: str,
+        secret: str | None,
         *,
         timeout: int | None = CONNECT_TIMEOUT,
         read_only: bool = True,
@@ -376,22 +426,32 @@ class GenericSqlConnectionAdapter:
 
     def __init__(self, spec: SqlEngineSpec) -> None:
         self.spec = spec
-        # #1401: e.g. the host and port decide which server receives the password.
-        self.destination_fields: dict[str, tuple[str, ...]] = spec.destination_fields
+        # #1401: the fields that decide which server receives the secret.
+        self.destination_fields: dict[str, tuple[str, ...]] = {"secret": spec.destination_fields}
+        # Read by the connection service: may a connection of this type store no secret at all?
+        # (`test` then decides per config — `requires_secret`.)
+        self.secret_optional: bool = spec.config_model.secret_optional
 
     def validate_config(self, raw: dict[str, Any]) -> GenericSqlConfig:
         return self.spec.validate_config(raw)
 
+    def credential_expiry(self, raw: dict[str, Any], secret: str, **_: Any) -> datetime | None:
+        """When the stored credential stops working (#838) — only an engine whose secret states
+        its own lifetime (a JWT) knows; a password never does."""
+        if self.spec.credential_expiry is None:
+            return None
+        return self.spec.credential_expiry(self.validate_config(raw), secret)
+
     def test(self, raw: dict[str, Any], secret: str | None, **_: Any) -> None:
         """Open a session and run ``SELECT 1``; raise on any failure."""
-        if secret is None:
+        config = self.validate_config(raw)
+        if secret is None and config.requires_secret():
             raise ValueError(
                 f"a {self.spec.credential_noun} is required to test a "
                 f"{self.spec.display_name} connection"
             )
         from sqlalchemy import text
 
-        config = self.validate_config(raw)
         try:
             engine = self.spec.create_engine(config, secret)
             try:
@@ -414,7 +474,7 @@ class GenericSqlCheckRunner:
     # The run path hands a `value_signal_gate` only to runners advertising it (#2014).
     accepts_value_signal_gate: ClassVar[bool] = True
 
-    def __init__(self, spec: SqlEngineSpec, config: GenericSqlConfig, secret: str) -> None:
+    def __init__(self, spec: SqlEngineSpec, config: GenericSqlConfig, secret: str | None) -> None:
         self._spec = spec
         self._config = config
         self._secret = secret
@@ -531,7 +591,9 @@ class GenericSqlCheckRunner:
                 f"{self._spec.conn_type}-{table}",
                 self._spec.url_string(scoped, self._secret),
                 {
-                    "connect_args": self._spec.connect_args(scoped, None, read_only=read_only),
+                    "connect_args": self._spec.session_connect_args(
+                        scoped, self._secret, None, read_only=read_only
+                    ),
                     "creator": connections.connect,
                     **self._spec.run_engine_options,
                 },
@@ -584,7 +646,12 @@ class GxConnectionSource:
     """
 
     def __init__(
-        self, spec: SqlEngineSpec, config: GenericSqlConfig, secret: str, *, read_only: bool
+        self,
+        spec: SqlEngineSpec,
+        config: GenericSqlConfig,
+        secret: str | None,
+        *,
+        read_only: bool,
     ) -> None:
         from sqlalchemy.pool import NullPool
 
@@ -642,9 +709,11 @@ def build_generic_sql_runner(
     secret_store: SecretStore,
 ) -> GenericSqlCheckRunner:
     """Build a runner from a `Connection` row's config + secret_ref."""
-    if not secret_ref:
-        raise ValueError(f"{spec.display_name} connection requires secret_ref for the password")
     validated = spec.validate_config(config)
+    if not secret_ref:
+        if validated.requires_secret():
+            raise ValueError(f"{spec.display_name} connection requires secret_ref for the password")
+        return GenericSqlCheckRunner(spec, validated, None)
     return GenericSqlCheckRunner(spec, validated, secret_store.get(secret_ref))
 
 
@@ -668,8 +737,9 @@ def table_rows(
     return [(str(s), str(t)) for s, t in rows if s and t]
 
 
-# No LIMIT is a "no limit" bind value both engines accept as a plain integer.
-_NO_LIMIT = 2**62
+# "No limit" as a bind value every engine accepts: Trino refuses an ORDER BY … LIMIT above
+# 2^31 - 1 (live-found), so the largest 32-bit signed integer rather than anything wider.
+_NO_LIMIT = 2**31 - 1
 
 
 def _limit(limit: int | None) -> int:

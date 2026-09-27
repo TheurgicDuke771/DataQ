@@ -208,6 +208,7 @@ const KIND_ICON: Record<DatasourceKind, ReactNode> = {
   iceberg: <GoldOutlined />,
   postgres: <DatabaseOutlined />,
   mysql: <DatabaseOutlined />,
+  trino: <DatabaseOutlined />,
   mssql: <DatabaseOutlined />,
   other: <FileOutlined />,
 };

@@ -133,7 +133,7 @@ class TestDatasourceGating:
             )
         assert exc.value.detail["connection_type"] == "s3"
         assert exc.value.detail["supported"] == sorted(SQL_QUERYABLE_TYPES)
-        assert {"postgres", "mysql", "mssql", "snowflake", "unity_catalog"} <= set(
+        assert {"postgres", "mysql", "mssql", "trino", "snowflake", "unity_catalog"} <= set(
             SQL_QUERYABLE_TYPES
         )
 

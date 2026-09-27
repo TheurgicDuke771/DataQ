@@ -17,6 +17,7 @@ export function targetKind(type: ConnectionType): TargetKind | null {
     case 'snowflake':
     case 'postgres':
     case 'mysql':
+    case 'trino':
     case 'mssql':
       return 'sql';
     case 'unity_catalog':
@@ -87,6 +88,7 @@ export function isBatchTarget(target: Record<string, unknown> | null): boolean {
 export const SCHEMA_BROWSE_TYPES: ReadonlySet<ConnectionType> = new Set([
   'postgres',
   'mysql',
+  'trino',
   'mssql',
 ]);
 
@@ -99,6 +101,8 @@ export function sqlTargetPlaceholders(type: ConnectionType | undefined): {
   if (type === 'postgres') return { schema: 'public', table: 'orders' };
   // A MySQL schema is a database; blank means the connection's own.
   if (type === 'mysql') return { schema: 'shop', table: 'orders' };
+  // Trino reports every name lower case, and only accepts it that way.
+  if (type === 'trino') return { schema: 'sales', table: 'orders' };
   if (type === 'mssql') return { schema: 'dbo', table: 'Orders' };
   return { schema: 'PUBLIC', table: 'ANALYTICS.ORDERS' };
 }

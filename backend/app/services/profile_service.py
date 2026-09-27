@@ -42,7 +42,11 @@ from backend.app.datasources.snowflake import (
     build_connection_string,
 )
 from backend.app.datasources.sql import core_table, folding_identifier, is_sql_identifier
-from backend.app.datasources.sql_engines import SQL_ENGINES, default_schema
+from backend.app.datasources.sql_engines import (
+    SQL_ENGINES,
+    authenticates_without_secret,
+    default_schema,
+)
 from backend.app.datasources.unity_catalog import UnityCatalogConfig, build_databricks_url
 from backend.app.db.models import Connection
 from backend.app.services import credential_health
@@ -391,10 +395,16 @@ def _open_connection(connection: Connection, secret_store: SecretStore) -> Gener
     """Yield a live SQLAlchemy connection to the datasource, disposing the engine."""
     from sqlalchemy import create_engine
 
-    if not connection.secret_ref:
+    if connection.secret_ref:
+        url, connect_args = _engine_args(connection, secret_store.get(connection.secret_ref))
+    elif authenticates_without_secret(connection.type, connection.config):
+        # A generic SQL engine configured with no authentication (Trino `auth_type: none`).
+        open_spec = SQL_ENGINES[connection.type]
+        url, connect_args = open_spec.engine_args(
+            open_spec.validate_config(connection.config), None
+        )
+    else:
         raise ValueError("connection requires secret_ref for the credential")
-    secret = secret_store.get(connection.secret_ref)
-    url, connect_args = _engine_args(connection, secret)
     engine = create_engine(url, connect_args=connect_args)
     spec = SQL_ENGINES.get(connection.type)
     if spec is not None:
@@ -522,7 +532,11 @@ def resolve_profiler(
         )
     # Iceberg is credential-optional (like `build_iceberg_runner` / the ADLS/S3 adapters) — a local
     # warehouse or vended-credentials REST catalog has no secret.
-    if not isinstance(profiler, _IcebergProfiler) and not connection.secret_ref:
+    if (
+        not isinstance(profiler, _IcebergProfiler)
+        and not connection.secret_ref
+        and not authenticates_without_secret(connection.type, connection.config)
+    ):
         raise ProfileTargetInvalidError(
             "connection has no stored credential (secret_ref)", detail={"type": connection.type}
         )
@@ -645,13 +659,20 @@ def _fetch_top_values(
 
 
 def _column_caps(
-    connection: Connection, conn: Any, *, schema: str, table: str
+    connection: Connection, conn: Any, *, schema: str, table: str, columns: list[str]
 ) -> dict[str, ColumnCaps]:
-    """Per-column aggregate capability, for engines that declare it (#1678); ``{}`` otherwise."""
+    """Per-column aggregate capability, for engines that declare it (#1678); ``{}`` otherwise.
+    Keyed by ``columns`` as the caller spelled them.
+    """
     spec = SQL_ENGINES.get(connection.type)
     if spec is None or spec.column_caps is None:
         return {}
-    return spec.column_caps(conn, schema, table)
+    if not spec.config_model.names_are_lower_case:
+        return spec.column_caps(conn, schema, table)
+    # An engine that folds every name (Trino) resolves `Events.Payload` as `events.payload` and
+    # its catalog reports it that way — so look the names up folded, whatever the caller typed.
+    caps = spec.column_caps(conn, schema.lower(), table.lower())
+    return {column: caps[column.lower()] for column in columns if column.lower() in caps}
 
 
 def profile_table(
@@ -682,7 +703,9 @@ def profile_table(
             # A catalog-qualified (3-part, Unity Catalog) target needs the live connection's dialect
             # to quote the catalog/schema (#936).
             dialect = conn.dialect if catalog is not None else None
-            caps = _column_caps(connection, conn, schema=effective_schema, table=table)
+            caps = _column_caps(
+                connection, conn, schema=effective_schema, table=table, columns=columns
+            )
             unorderable = frozenset(c for c, cap in caps.items() if not cap.orderable)
             ungroupable = frozenset(c for c, cap in caps.items() if not cap.groupable)
             aggregate = (

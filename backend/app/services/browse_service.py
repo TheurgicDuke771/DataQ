@@ -4,8 +4,8 @@ Two read-only, one-level-at-a-time listings through a connection's stored creden
 
 * **Unity Catalog** — catalogs → schemas → tables, from ``system.information_schema`` via the
   ADR 0040 enumeration seam, so a picked table is one the inventory sync would also see.
-* **The generic SQL engines** (PostgreSQL, MySQL/MariaDB) — schemas → tables, from the engine's own
-  catalog query, the same one the inventory sync enumerates with.
+* **The generic SQL engines** (PostgreSQL, MySQL/MariaDB, Trino) — schemas → tables, from
+  the engine's own catalog query, the same one the inventory sync enumerates with.
 * **ADLS Gen2 / S3** — the folders and files directly under a prefix of the connection's one
   container/bucket.
 
@@ -27,7 +27,11 @@ from backend.app.core.secrets import SecretStore
 from backend.app.datasources import flatfile, generic_sql
 from backend.app.datasources.generic_sql import SqlEngineSpec
 from backend.app.datasources.sql import is_sql_identifier
-from backend.app.datasources.sql_engines import GENERIC_SQL_TYPES, sql_engine
+from backend.app.datasources.sql_engines import (
+    GENERIC_SQL_TYPES,
+    authenticates_without_secret,
+    sql_engine,
+)
 from backend.app.db.models import Connection
 from backend.app.lineage.warehouse_unity_catalog import UnityCatalogLineageProvider
 from backend.app.services import credential_health
@@ -158,7 +162,8 @@ def browse_catalog(
         raise BrowseInputInvalidError("schema requires a catalog", detail={"field": "schema"})
     catalog = _identifier(catalog, "catalog")
     schema = _identifier(schema, "schema")
-    _require_credential(connection)
+    if not authenticates_without_secret(connection.type, connection.config):
+        _require_credential(connection)
     level: Literal["catalog", "schema", "table"]
     if spec is not None:
         level = "schema" if schema is None else "table"

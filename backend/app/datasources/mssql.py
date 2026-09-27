@@ -83,7 +83,7 @@ class MssqlConfig(GenericSqlConfig):
     odbc_driver: str = DEFAULT_ODBC_DRIVER
     #: A private CA bundle (PEM) the server's certificate must chain to, instead of the public
     #: roots — python-tds lane only (the ODBC driver reads the OS trust store).
-    ca_certificate: str | None = None
+    ca_bundle: str | None = None
 
     #: TLS with certificate AND hostname verification is the only mode (ADR 0044 §3) — the base's
     #: `require` / `disable` are refused rather than silently ignored.
@@ -99,7 +99,7 @@ class MssqlConfig(GenericSqlConfig):
             "sslmode can only be verify-full"
         )
 
-    @field_validator("tenant_id", "client_id", "ca_certificate", "user", mode="before")
+    @field_validator("tenant_id", "client_id", "ca_bundle", "user", mode="before")
     @classmethod
     def _blank_optional_is_unset(cls, value: Any) -> Any:
         return None if isinstance(value, str) and not value.strip() else value
@@ -137,7 +137,7 @@ class MssqlConfig(GenericSqlConfig):
             raise ValueError("odbc_driver must be an installed ODBC driver's name")
         return value
 
-    @field_validator("ca_certificate")
+    @field_validator("ca_bundle")
     @classmethod
     def _ca_is_pem_certificates(cls, value: str | None) -> str | None:
         if value is None:
@@ -145,13 +145,13 @@ class MssqlConfig(GenericSqlConfig):
         from cryptography import x509
 
         if len(value) > _MAX_CA_PEM:
-            raise ValueError("ca_certificate is too large for a CA bundle")
+            raise ValueError("ca_bundle is too large for a CA bundle")
         try:
             certificates = x509.load_pem_x509_certificates(value.encode("ascii"))
         except (ValueError, UnicodeEncodeError):
-            raise ValueError("ca_certificate must be one or more PEM certificates") from None
+            raise ValueError("ca_bundle must be one or more PEM certificates") from None
         if not certificates:
-            raise ValueError("ca_certificate must be one or more PEM certificates")
+            raise ValueError("ca_bundle must be one or more PEM certificates")
         return value
 
     @model_validator(mode="after")
@@ -168,9 +168,9 @@ class MssqlConfig(GenericSqlConfig):
                 raise ValueError("Entra service-principal auth needs tenant_id and client_id")
             if self.user is not None:
                 raise ValueError("a service principal logs in as its client_id — leave user empty")
-        if self.driver == "odbc" and self.ca_certificate is not None:
+        if self.driver == "odbc" and self.ca_bundle is not None:
             raise ValueError(
-                "ca_certificate applies to the python-tds driver only; on the ODBC lane install "
+                "ca_bundle applies to the python-tds driver only; on the ODBC lane install "
                 "the CA in the image's trust store"
             )
         return self
@@ -193,11 +193,11 @@ def _ca_file(config: MssqlConfig) -> str:
     could plant a file of their own CA first and have it trusted.
     """
     global _ca_dir
-    if config.ca_certificate is None:
+    if config.ca_bundle is None:
         import certifi
 
         return str(certifi.where())
-    pem = config.ca_certificate.encode("ascii")
+    pem = config.ca_bundle.encode("ascii")
     with _ca_lock:
         if _ca_dir is None:
             _ca_dir = tempfile.mkdtemp(prefix="dataq-mssql-ca-")
@@ -302,7 +302,7 @@ class MssqlEngineSpec(SqlEngineSpec):
     lane it rides, and an Entra token in place of a password.
     """
 
-    def url(self, config: GenericSqlConfig, secret: str) -> URL:
+    def url(self, config: GenericSqlConfig, secret: str | None) -> URL:
         from sqlalchemy.engine import URL
 
         assert isinstance(config, MssqlConfig)
@@ -335,7 +335,7 @@ class MssqlEngineSpec(SqlEngineSpec):
         return super().url(config, secret)
 
     def engine_args(
-        self, config: GenericSqlConfig, secret: str, **kwargs: Any
+        self, config: GenericSqlConfig, secret: str | None, **kwargs: Any
     ) -> tuple[str, dict[str, Any]]:
         assert isinstance(config, MssqlConfig)
         if config.driver == "odbc":
@@ -344,6 +344,7 @@ class MssqlEngineSpec(SqlEngineSpec):
                 raise KnownDatasourceLimitationError(problem)
         url, connect_args = super().engine_args(config, secret, **kwargs)
         if config.driver == "python-tds" and config.auth_type == "entra_service_principal":
+            assert secret is not None  # `requires_secret`: every SQL Server mode has one
             connect_args = {
                 **connect_args,
                 "access_token_callable": _token_callable(config, secret),
@@ -428,17 +429,15 @@ MSSQL = MssqlEngineSpec(
     # client secret itself goes to tenant_id's token endpoint as client_id; auth_type decides
     # which kind of credential the one stored secret is; a private CA decides whose certificate
     # counts as that host; and the driver lane decides which client presents it.
-    destination_fields={
-        "secret": (
-            "host",
-            "port",
-            "auth_type",
-            "tenant_id",
-            "client_id",
-            "ca_certificate",
-            "driver",
-        )
-    },
+    destination_fields=(
+        "host",
+        "port",
+        "auth_type",
+        "tenant_id",
+        "client_id",
+        "ca_bundle",
+        "driver",
+    ),
     credential_noun="password or client secret",
     # T-SQL has no regular-expression operator GX can translate to (live-verified: all four
     # error on every run on Azure SQL).

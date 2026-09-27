@@ -203,7 +203,7 @@ def test_connecting_by_ip_is_refused_by_the_hostname_check() -> None:
 def test_a_server_certificate_outside_the_configured_ca_is_refused() -> None:
     with pytest.raises(Exception, match="certificate verify failed") as exc:
         get_connection_adapter("mssql").test(
-            {**_sql_config(), "ca_certificate": _unrelated_ca()}, _password()
+            {**_sql_config(), "ca_bundle": _unrelated_ca()}, _password()
         )
     assert classify_failure_category(exc.value) is FailureCategory.CONNECTIVITY
 

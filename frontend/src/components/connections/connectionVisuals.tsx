@@ -25,6 +25,7 @@ const TYPE_VISUAL: Record<ConnectionType, { icon: ReactNode; color: string }> = 
   iceberg: { icon: <DatabaseOutlined />, color: '#2596be' },
   postgres: { icon: <DatabaseOutlined />, color: '#336791' },
   mysql: { icon: <DatabaseOutlined />, color: '#00758f' },
+  trino: { icon: <DatabaseOutlined />, color: '#dd00a1' },
   mssql: { icon: <DatabaseOutlined />, color: '#a91d22' },
   adf: { icon: <DeploymentUnitOutlined />, color: '#0078d4' },
   airflow: { icon: <NodeIndexOutlined />, color: '#017cee' },
