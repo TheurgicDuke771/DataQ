@@ -2247,6 +2247,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#amendment-sql-server-2026-09-27" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Amendment — SQL Server (2026-09-27)
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2412,6 +2423,28 @@ needs no <code>temp_table_types</code> entry.</p>
 <li>Snowflake and Unity Catalog keep their own adapters; they are not migrated onto the base
   (their auth, catalogs and lineage differ too much to gain from it).</li>
 </ul>
+<h2 id="amendment-sql-server-2026-09-27">Amendment — SQL Server (2026-09-27)<a class="headerlink" href="#amendment-sql-server-2026-09-27" title="Permanent link">¶</a></h2>
+<p>The SQL Server / T-SQL engine (<a href="../0044-mssql-tds-driver-and-entra-auth/">ADR 0044</a>) is the
+first engine that breaks three of the assumptions above, and each became an optional spec hook
+rather than a special case:</p>
+<ul>
+<li><strong>§4 does not hold for it.</strong> TDS has no session-level read-only setting, so a SQL Server
+  session is <em>not</em> read-only at the server. The guard there is the ADR 0019 validator — now
+  lexing each engine's own delimited identifiers (<code>[…]</code>, <code>`…`</code>) — plus a <code>db_datareader</code>
+  login, which the docs require. The base's promise is restated per engine, not assumed.</li>
+<li><strong>§5's session scoping does not exist.</strong> A login's default schema is fixed on the server, so
+  <code>session_schema = False</code> hands GX the schema instead; SQL Server's usual case-insensitive
+  collations resolve it whatever GX's casing (a mixed-case schema on a case-sensitive
+  collation is a documented limitation).</li>
+<li><strong>One secret can be two kinds of credential.</strong> An Entra service principal's client secret
+  goes to a token endpoint, not the server, so the spec owns its URL and connect args (a
+  subclass overriding <code>url</code> / <code>engine_args</code>), declares its own <code>destination_fields</code>, and names
+  its secret (<code>credential_noun</code>).</li>
+</ul>
+<p>Two more hooks came with it: <code>explain_failure</code>, which turns a failure the engine <em>knows</em> (a
+documented driver limitation, a missing optional driver) into a DataQ-authored message shown
+verbatim; and <code>unsupported_expectation_types</code>, for an allowlisted type the dialect has no GX
+translation for (regex on T-SQL), refused at author time rather than erroring on every run.</p>
 
 
 

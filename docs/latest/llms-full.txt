@@ -1775,6 +1775,7 @@ If you **repoint a suite to a different target** after a policy exists, DataQ do
 | PostgreSQL (any server — self-hosted or a managed service) | host + port + database + user, password; TLS mode | ✅ | ✅ |
 | MySQL / MariaDB (any server — self-hosted or a managed service) | host + port + database + user, password; TLS mode | ✅ | ✅ |
 | Trino (any cluster, incl. Starburst — and every catalog it federates) | host + port + catalog + user; password, JWT or none; TLS + optional private CA | ✅ | ✅ |
+| SQL Server / T-SQL (SQL Server, Azure SQL, Synapse; Fabric SQL via the ODBC lane) | host + port + database; SQL login (user, password) or Entra service principal (tenant + client ID, client secret) | ✅ | ✅ |
 
 ## Add a connection
 
@@ -1835,7 +1836,8 @@ supported for the token (`login.microsoftonline.com`).
 Editing a field that decides *where* the credential is sent — Snowflake `account`, ADLS
 `account_url` / `auth_type` / `tenant_id` / `client_id`, S3/dbt `endpoint_url`, Unity Catalog `workspace_url`, Iceberg `catalog_uri` /
 `warehouse` / `properties` / `secret_property`, PostgreSQL / MySQL `host` / `port`, Trino
-`host` / `port` / `sslmode` / `ca_bundle` / `auth_type`, Airflow
+`host` / `port` / `sslmode` / `ca_bundle` / `auth_type`, SQL Server `host` / `port` / `auth_type` /
+`tenant_id` / `client_id` / `ca_bundle` / `driver`, Airflow
 `base_url`, dbt `artifacts_uri` —
 requires re-entering
 that credential in the same save. The edit form asks for it as soon as you change one of
@@ -2061,6 +2063,123 @@ access control.
 - **No column tags, no warehouse-native lineage.** DataQ reads no column-classification
   source from Trino, and Trino keeps no lineage log DataQ reads — lineage comes from dbt,
   OpenLineage or a catalog, and an empty graph means "not observed".
+
+### SQL Server / Azure SQL / Fabric (T-SQL)
+
+One connection type (`mssql`) for **anything that speaks SQL Server's TDS protocol** — SQL
+Server itself, Azure SQL Database, Synapse dedicated pools, and the Microsoft Fabric SQL
+endpoints (Warehouse, Lakehouse SQL analytics endpoint, SQL database in Fabric). It is named for
+the engine, not a cloud (ADR [0010](../adr/0010-provider-agnostic-infrastructure-seams.md)),
+and sits on the same generic SQL base as PostgreSQL. The driver decision and its trade-offs are
+[ADR 0044](../adr/0044-mssql-tds-driver-and-entra-auth.md). Live-verified against Azure SQL
+Database with both auth modes on both driver lanes, and against a Microsoft Fabric Warehouse and
+Lakehouse SQL analytics endpoint on the ODBC lane.
+
+- **Fields:** host (a bare hostname — e.g. `myserver.database.windows.net`; no scheme, port or
+  `\instance`: connect to a named instance by its port), port (default 1433), database, an
+  optional default schema (default `dbo`), and one of two **auth modes**:
+    - **SQL login** — `user`, and the password as the secret. SQL Server, Azure SQL, Synapse.
+    - **Entra service principal** — `tenant_id` and `client_id`, and the client secret as the
+      secret. DataQ asks Entra ID for a token for `https://database.windows.net/` and presents
+      it at login; the client secret never goes to the database server. Azure SQL, Synapse and
+      Fabric. The principal must exist in the database (`CREATE USER [app-name] FROM EXTERNAL
+      PROVIDER`) with read access. DataQ cannot read a client secret's expiry — track it in
+      Entra ID and re-authenticate before it lapses. Managed identity and certificate
+      credentials are not supported yet.
+- **TLS is always on and always verified.** There is no TLS mode to choose: every connection is
+  encrypted, the server certificate must chain to a trusted CA (the public roots DataQ ships,
+  or a **private CA certificate** you paste into the connection for a self-hosted server), and
+  the hostname must match the certificate. Connecting by IP address fails for that reason — use
+  the name on the certificate. The shipped driver speaks TLS 1.2; TDS 8 "strict" encryption is
+  not supported yet.
+- **Read only — by grant, not by session.** Like Trino and unlike PostgreSQL and MySQL, SQL Server has no
+  per-session read-only switch, so DataQ **cannot make the server refuse a write**. The guards
+  are the custom-SQL validator (which understands T-SQL `[bracket]` identifiers and refuses
+  `OPENQUERY`/`OPENROWSET`/`OPENDATASOURCE`, `BULK`, `DBCC`, `WAITFOR`, `BACKUP`/`RESTORE`
+  and the rest of the ADR 0019 list) and **the login you give DataQ, which must be read-only**:
+
+  ```sql
+  -- in the target database
+  CREATE USER dataq_reader FOR LOGIN dataq_reader;   -- or FROM EXTERNAL PROVIDER for Entra
+  ALTER ROLE db_datareader ADD MEMBER dataq_reader;
+  ```
+
+  Nothing else is needed: the session-scoped `#temp` tables some SQL Server queries use need no
+  extra grant (verified with a `db_datareader`-only login).
+- **Two driver lanes** (`driver`):
+    - **`python-tds`** (default) — pure-Python and MIT-licensed, shipped in the DataQ image. It
+      covers SQL Server, Azure SQL and Synapse.
+    - **`odbc`** — Microsoft ODBC Driver 18 through `pyodbc`. DataQ **does not ship** this
+      driver (its licence does not allow us to redistribute it — ADR 0044), so this lane only
+      works in an image **you** build on top of DataQ's — a sketch (DataQ's CI does not build
+      or test it, since doing so would mean accepting the driver's licence):
+
+      ```dockerfile
+      FROM ghcr.io/theurgicduke771/dataq-backend:latest
+      USER root
+      RUN apt-get update && ACCEPT_EULA=Y apt-get install -y --no-install-recommends \
+            msodbcsql18 unixodbc && pip install pyodbc && rm -rf /var/lib/apt/lists/*
+      USER 10001
+      ```
+
+      (add Microsoft's apt repository first, as Microsoft's install guide describes). Pick
+      `odbc` on the connection; an optional `odbc_driver` names a different installed driver.
+      If the lane is chosen but the driver or `pyodbc` is missing, **Test** says exactly that
+      and how to fix it. On this lane the driver's own certificate checking applies (encryption
+      required, server certificate and hostname verified against the image's trust store —
+      connecting by IP is refused here too). A service principal still logs in with a token
+      DataQ requests from Entra ID, so a wrong client secret fails at once with Entra's own
+      error rather than a login timeout.
+- **Microsoft Fabric SQL endpoints need the ODBC lane today.** Over the default `python-tds`
+  driver, Fabric rejects the login after routing it (a known incompatibility in that driver,
+  still being worked on); Test and runs say so and point at the ODBC lane instead of showing the
+  raw driver error. Fabric accepts Entra ID only, and
+  two things are set up on the Fabric side: the tenant setting **Service principals can use
+  Fabric APIs**, and a workspace role (or item permission) for the principal. If Fabric refuses
+  the principal's login on the ODBC lane, Test names those two prerequisites.
+
+  On a Fabric Warehouse or Lakehouse SQL endpoint, **seven expectation types are not
+  available**: *Column values unique*, *Compound columns unique*, *Values unique within
+  record*, *Column A greater than B*, *Column pair equal*, *Column pair in set* and
+  *Multicolumn sum*. Great Expectations evaluates them on SQL Server through a temporary table,
+  which Fabric refuses, so DataQ refuses them when you save the check on a Fabric connection
+  (the editor still lists them — the save explains why). Use custom SQL instead, e.g.
+  `SELECT id FROM {batch} GROUP BY id HAVING COUNT(*) > 1` for uniqueness. A Fabric endpoint's
+  first login after it has been idle can take longer than Test Connection's 10 seconds — test
+  again; runs wait up to a minute.
+- **Everything runs in the database**, as on PostgreSQL. A run target takes no sampling block
+  (so no `TABLESAMPLE`). Freshness reads `datetimeoffset` as the instant it is (offset
+  honoured), `datetime2`/`datetime` as UTC, and `date` as midnight UTC.
+- **Regular expressions are not available**: T-SQL has no regex operator Great Expectations can
+  translate to, so the four regex expectations are refused when you save them (and hidden in
+  the editor). Use a custom-SQL check with `LIKE` or `PATINDEX`. Value-length checks use
+  T-SQL `LEN`, which ignores trailing spaces.
+- **Type checks** (`to_be_of_type`, `in_type_list`) compare the bare type name: `DECIMAL` for
+  `decimal(12,2)`, `INTEGER` for `int`, `NVARCHAR`, `DATETIME2`, `DATETIMEOFFSET`, `BIT`.
+- **The profiler** reports min/max as unavailable (null) for types SQL Server has no MIN/MAX for
+  — `bit`, `xml`, `geography`/`geometry`, `text`/`ntext`/`image`, `json`, `vector` — and distinct
+  count / top values as unavailable for all of those except `bit`.
+- **Names** resolve under the database's collation. On the usual case-insensitive collations
+  any casing reaches the object; on a **case-sensitive** collation, a mixed-case *schema* in a
+  run target is not supported (the check engine lower-cases it), though mixed-case tables and
+  columns are. A **Fabric Warehouse** is case-sensitive by default, so keep its schema names
+  lower-case (or use `dbo`) until this is lifted. A comparison check's SQL side must also name
+  every computed column and leave out `ORDER BY` — SQL Server refuses both inside the derived
+  table DataQ reads it through.
+- **No column tags.** DataQ does not read SQL Server's sensitivity classifications
+  (`sys.sensitivity_classifications`) yet — reading them needs a permission a reader login
+  usually lacks, and without it the catalog view silently returns nothing, which DataQ would
+  otherwise report as "no sensitive columns". Columns are classified by the suite's column
+  policy and DataQ's own checks. There is no warehouse-native lineage either.
+- **Inventory sync and browsing** list the tables and views in `INFORMATION_SCHEMA` that the
+  login can `SELECT`; the fixed-role schemas every database carries (`db_datareader`, …) are
+  never offered.
+- **Speed.** The shipped driver is pure Python. DataQ pushes aggregates to the server and caps
+  samples, so this rarely matters, but every query is one network round trip — a suite run
+  from a region far from the database is dominated by latency, not by the database.
+- **Azure SQL serverless** databases pause when idle. The first login resumes them, which can
+  take up to a minute: a run waits for it, a Test Connection gives up after 10 seconds — test
+  again once the database is awake.
 
 ### Identifier casing (Snowflake / Unity Catalog / PostgreSQL)
 
@@ -2491,6 +2610,7 @@ the type your warehouse/catalog shows you:
 | PostgreSQL | SQL (dialect-native) | `NUMERIC(12, 2)` for `numeric(12,2)`, `TIMESTAMP WITH TIME ZONE` for `timestamptz`, `TEXT`, `INTEGER` |
 | MySQL / MariaDB | SQL (SQLAlchemy type class) | `DECIMAL` for `DECIMAL(12,2)`, `VARCHAR`, `INTEGER`, `TIMESTAMP`, `DATETIME`, `TINYINT` for `BOOLEAN` |
 | Trino | SQL (dialect-native) | `DECIMAL(12, 2)`, `VARCHAR` / `VARCHAR(20)`, `TIMESTAMP(6)`, `TIMESTAMP(6) WITH TIME ZONE`, `BIGINT` |
+| SQL Server | SQL (SQLAlchemy type name) | `DECIMAL` for `decimal(12,2)`, `INTEGER` for `int`, `NVARCHAR`, `DATETIME2`, `DATETIMEOFFSET`, `BIT` |
 | Unity Catalog | pandas DataFrame (not Arrow-backed) | `int64` for non-nullable `BIGINT` (**`float64` if the column contains NULLs**); `object` or `str` for `STRING` |
 | ADLS Gen2 / S3 (CSV) | pandas DataFrame (not Arrow-backed) | `int64`/`float64`/`bool` for numerics (**NULLs upcast integers to `float64`**); `object` or `str` for strings |
 | ADLS Gen2 / S3 (Parquet) / Iceberg | pandas DataFrame (Arrow-backed) | Arrow-flavored dtype names — confirm via a dry-run's `observed_value` |
@@ -3645,6 +3765,29 @@ the per-PR history lives in the repo's commit log and pull requests.
   a new engine-generic SQL base (ADR [0045](../adr/0045-engine-generic-sql-datasource-base.md)).
   See [Datasources & checks](../guides/datasources-checks.md#postgresql).
 
+- **SQL Server / Azure SQL / Fabric datasource.** One `mssql` connection type for anything that
+  speaks SQL Server's TDS protocol — SQL Server, Azure SQL Database, Synapse, and Microsoft
+  Fabric SQL endpoints — with a SQL login or an Entra ID service principal. Every SQL-capable
+  check runs by pushdown, plus monitors, comparisons, the profiler, schema → table browsing and
+  inventory sync. TLS is always on and always verified (certificate and hostname). The default
+  driver is pure-Python and shipped; Fabric SQL endpoints currently need an optional ODBC lane
+  you install yourself (live-verified on a Fabric Warehouse and Lakehouse SQL endpoint), and
+  DataQ tells you so instead of showing a driver error. On Fabric, the uniqueness and
+  column-pair expectations are refused (Fabric does not support the temporary table GX builds
+  for them). Regex
+  expectations are not available on SQL Server. ADR
+  [0044](../adr/0044-mssql-tds-driver-and-entra-auth.md); see
+  [Datasources & checks](../guides/datasources-checks.md#sql-server-azure-sql-fabric-t-sql).
+
+### Security
+
+- **The custom-SQL guard now lexes each engine's own quoting.** A T-SQL `[bracket]` or a
+  Databricks `` `backtick` `` identifier containing a quote could make the read-only check
+  mistake a following statement for part of a string; the guard now reads those identifiers
+  as identifiers, rejects a nested block comment (engines disagree where one ends), and on
+  SQL Server also refuses `OPENQUERY`, `OPENROWSET`, `OPENDATASOURCE`, `BULK`, `DBCC` and
+  `WAITFOR`. A query whose engine is unknown must pass every engine's rules.
+
 - **Sensitive columns stay masked downstream.** If a warehouse tag marks a column sensitive,
   every column that recorded column lineage shows is copied or derived from it is masked as well,
   across REST, MCP, alerts and incident evidence. This only ever adds masking: a column's own tag
@@ -3815,11 +3958,11 @@ Great Expectations built-ins that look at the values in one or more columns. Eac
 | **Column values not in set** | `expect_column_values_to_not_be_in_set` | No value is one of a forbidden set — e.g. a status that should never reach this table, or placeholder values like “N/A” and “UNKNOWN”. | Validity | `column`, `value_set`, `mostly` *(optional)* | warn / fail / critical | All datasources · SQL pushdown on Unity Catalog |
 | **Column value lengths in range** | `expect_column_value_lengths_to_be_between` | String lengths fall within [min, max]. | Validity | `column`, `min_value` *(optional)*, `max_value` *(optional)*, `mostly` *(optional)* | warn / fail / critical | All datasources · SQL pushdown on Unity Catalog |
 | **Column value lengths equal** | `expect_column_value_lengths_to_equal` | Every value is exactly the given number of characters — for a fixed-width code (ISO country, SKU, account number). | Validity | `column`, `value`, `mostly` *(optional)* | warn / fail / critical | All datasources · SQL pushdown on Unity Catalog |
-| **Column values match regex** | `expect_column_values_to_match_regex` | Every value matches the given regular expression. | Validity | `column`, `regex`, `mostly` *(optional)* | warn / fail / critical | All datasources · SQL pushdown on Unity Catalog |
-| **Column values do not match regex** | `expect_column_values_to_not_match_regex` | No value matches the given regular expression — for catching a pattern that should never appear (a stray delimiter, an unredacted identifier). | Validity | `column`, `regex`, `mostly` *(optional)* | warn / fail / critical | All datasources · SQL pushdown on Unity Catalog |
-| **Column values match a list of regexes** | `expect_column_values_to_match_regex_list` | Every value matches the regexes in the list — by default ANY one of them is enough, for a column carrying several legitimate formats (e.g. two phone-number conventions). | Validity | `column`, `regex_list`, `match_on` *(optional)*, `mostly` *(optional)* | warn / fail / critical | All datasources · SQL pushdown on Unity Catalog |
-| **Column values match none of a list of regexes** | `expect_column_values_to_not_match_regex_list` | No value matches ANY regex in the list — a deny-list of forbidden formats. | Validity | `column`, `regex_list`, `mostly` *(optional)* | warn / fail / critical | All datasources · SQL pushdown on Unity Catalog |
-| **Column values are valid JSON** | `expect_column_values_to_be_json_parseable` | Every value parses as JSON — for a payload/metadata column stored as text. Not offered on Snowflake, PostgreSQL, MySQL or Trino: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there (or, on Snowflake, a VARIANT column). | Validity | `column`, `mostly` *(optional)* | warn / fail / critical | ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg — not Snowflake, PostgreSQL, MySQL / MariaDB, Trino (no SQL implementation; refused at author time) |
+| **Column values match regex** | `expect_column_values_to_match_regex` | Every value matches the given regular expression. | Validity | `column`, `regex`, `mostly` *(optional)* | warn / fail / critical | Snowflake, ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL / MariaDB, Trino — not SQL Server (no translation for that SQL dialect; refused at author time) · SQL pushdown on Unity Catalog |
+| **Column values do not match regex** | `expect_column_values_to_not_match_regex` | No value matches the given regular expression — for catching a pattern that should never appear (a stray delimiter, an unredacted identifier). | Validity | `column`, `regex`, `mostly` *(optional)* | warn / fail / critical | Snowflake, ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL / MariaDB, Trino — not SQL Server (no translation for that SQL dialect; refused at author time) · SQL pushdown on Unity Catalog |
+| **Column values match a list of regexes** | `expect_column_values_to_match_regex_list` | Every value matches the regexes in the list — by default ANY one of them is enough, for a column carrying several legitimate formats (e.g. two phone-number conventions). | Validity | `column`, `regex_list`, `match_on` *(optional)*, `mostly` *(optional)* | warn / fail / critical | Snowflake, ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL / MariaDB, Trino — not SQL Server (no translation for that SQL dialect; refused at author time) · SQL pushdown on Unity Catalog |
+| **Column values match none of a list of regexes** | `expect_column_values_to_not_match_regex_list` | No value matches ANY regex in the list — a deny-list of forbidden formats. | Validity | `column`, `regex_list`, `mostly` *(optional)* | warn / fail / critical | Snowflake, ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL / MariaDB, Trino — not SQL Server (no translation for that SQL dialect; refused at author time) · SQL pushdown on Unity Catalog |
+| **Column values are valid JSON** | `expect_column_values_to_be_json_parseable` | Every value parses as JSON — for a payload/metadata column stored as text. Not offered on Snowflake, PostgreSQL, MySQL, Trino or SQL Server: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there (or, on Snowflake, a VARIANT column). | Validity | `column`, `mostly` *(optional)* | warn / fail / critical | ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg — not Snowflake, PostgreSQL, MySQL / MariaDB, Trino, SQL Server (no SQL implementation; refused at author time) |
 | **Column values are of type** | `expect_column_values_to_be_of_type` | Every value in the column matches the given data type. | Validity | `column`, `type_`, `mostly` *(optional)* | warn / fail / critical | All datasources |
 | **Column values are of one of several types** | `expect_column_values_to_be_in_type_list` | Every value in the column matches at least one of the given data types — the tolerant sibling of “Column values are of type”, for a column whose type legitimately varies by datasource or load. | Validity | `column`, `type_list`, `mostly` *(optional)* | warn / fail / critical | All datasources |
 | **Compound columns unique** | `expect_compound_columns_to_be_unique` | The COMBINATION of values across the listed columns is distinct on every row — a multi-column primary or business key. Each column on its own may repeat freely. | Uniqueness | `column_list`, `mostly` *(optional)* | warn / fail / critical | All datasources · SQL pushdown on Unity Catalog |
@@ -3829,7 +3972,7 @@ Great Expectations built-ins that look at the values in one or more columns. Eac
 | **Columns sum to a total** | `expect_multicolumn_sum_to_equal` | Row by row, the listed columns add up to the given total — e.g. subtotal + tax + shipping = total. | Validity | `column_list`, `sum_total`, `mostly` *(optional)* | warn / fail / critical | All datasources · SQL pushdown on Unity Catalog |
 | **Column distinct values in set** | `expect_column_distinct_values_to_be_in_set` | Every DISTINCT value present in the column is one of an allowed set — reports WHICH unexpected values exist rather than how many rows carry them. Use “Column values in set” when you care about the row count. | Validity | `column`, `value_set` | None — pass/fail only | All datasources · SQL pushdown on Unity Catalog |
 | **Column distinct values contain set** | `expect_column_distinct_values_to_contain_set` | Every value in the given set appears at least once in the column — catches a category that stopped arriving. The column may also contain other values. | Completeness | `column`, `value_set` | None — pass/fail only | All datasources · SQL pushdown on Unity Catalog |
-| **Column values match a date format** | `expect_column_values_to_match_strftime_format` | Every value parses under the given strftime format — for a date or timestamp stored as text. Not offered on Snowflake, PostgreSQL, MySQL or Trino: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there. | Validity | `column`, `strftime_format`, `mostly` *(optional)* | warn / fail / critical | ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg — not Snowflake, PostgreSQL, MySQL / MariaDB, Trino (no SQL implementation; refused at author time) |
+| **Column values match a date format** | `expect_column_values_to_match_strftime_format` | Every value parses under the given strftime format — for a date or timestamp stored as text. Not offered on Snowflake, PostgreSQL, MySQL, Trino or SQL Server: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there. | Validity | `column`, `strftime_format`, `mostly` *(optional)* | warn / fail / critical | ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg — not Snowflake, PostgreSQL, MySQL / MariaDB, Trino, SQL Server (no SQL implementation; refused at author time) |
 
 ## Table shape
 
@@ -3869,7 +4012,7 @@ Is today's value unusual against a rolling baseline of this check's own history?
 
 | Check | Type | What it checks | Dimension | Parameters | Thresholds | Runs on |
 |---|---|---|---|---|---|---|
-| **Anomaly** | `monitor:anomaly` | Learns a rolling baseline (mean/stddev) from this check’s own metric history and flags how far this run deviates (a z-score). Reports skip, never a fake pass/fail, until enough history accrues. | — (set it yourself) | `target_metric`, `column`, `window` *(optional)*, `min_points` *(optional)*, `seasonality` *(optional)* | warn / fail / critical (fail or critical required) | Snowflake, Unity Catalog, PostgreSQL, MySQL / MariaDB, Trino |
+| **Anomaly** | `monitor:anomaly` | Learns a rolling baseline (mean/stddev) from this check’s own metric history and flags how far this run deviates (a z-score). Reports skip, never a fake pass/fail, until enough history accrues. | — (set it yourself) | `target_metric`, `column`, `window` *(optional)*, `min_points` *(optional)*, `seasonality` *(optional)* | warn / fail / critical (fail or critical required) | Snowflake, Unity Catalog, PostgreSQL, MySQL / MariaDB, Trino, SQL Server |
 
 ## Comparison
 
@@ -3886,7 +4029,7 @@ Any predicate you can write in SQL, validated before it runs.
 
 | Check | Type | What it checks | Dimension | Parameters | Thresholds | Runs on |
 |---|---|---|---|---|---|---|
-| **Custom SQL** | `unexpected_rows_expectation` | A SQL query that should return no rows — any rows it returns are failures. | — (set it yourself) | `unexpected_rows_query` | warn / fail / critical | Snowflake, Unity Catalog, PostgreSQL, MySQL / MariaDB, Trino |
+| **Custom SQL** | `unexpected_rows_expectation` | A SQL query that should return no rows — any rows it returns are failures. | — (set it yourself) | `unexpected_rows_query` | warn / fail / critical | Snowflake, Unity Catalog, PostgreSQL, MySQL / MariaDB, Trino, SQL Server |
 
 ## Snowflake DMF
 
@@ -3933,21 +4076,21 @@ One-page reference: what runs where. For the readable tour of everything DataQ o
 
 ## Check kinds × datasources
 
-| Check kind | Snowflake | Unity Catalog | PostgreSQLᵖ | MySQL / MariaDBᵐ | Trinoᵗ | ADLS Gen2 (files) | S3 (files)ˢ | Iceberg |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
-| GX expectations (column / table shape) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Snowflake DMF (native metric functions)ᵈ | ✅ | — | — | — | — | — | — | — |
-| Custom SQL (rows returned = failures)ᶜ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — |
-| Freshness monitor (hours since latest timestamp) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Freshness from **file arrival time** (no column — catches "no new file") | — | — | — | — | — | ✅ | ✅ | — |
-| Volume monitor (row count in range) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Anomaly monitor (z-score vs a learned baseline)ᵃ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — |
-| Schema-drift monitor (column add/drop/type-change vs a stored baseline)ᵇ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Comparison / reconciliation (diff vs a baseline connection) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Column profiler (nulls, distinct, min/max, top values) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Browse for the run target (catalog → schema → table / folders → file) | — | ✅ | ✅ (schema → table) | ✅ (schema → table) | ✅ (schema → table) | ✅ | ✅ | — |
-| DQ dimension on checks + asset scorecard (coverage + score) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Dry-run preview | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Check kind | Snowflake | Unity Catalog | PostgreSQLᵖ | MySQL / MariaDBᵐ | Trinoᵗ | SQL Serverᵉ | ADLS Gen2 (files) | S3 (files)ˢ | Iceberg |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| GX expectations (column / table shape) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (no regex) | ✅ | ✅ | ✅ |
+| Snowflake DMF (native metric functions)ᵈ | ✅ | — | — | — | — | — | — | — | — |
+| Custom SQL (rows returned = failures)ᶜ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — |
+| Freshness monitor (hours since latest timestamp) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Freshness from **file arrival time** (no column — catches "no new file") | — | — | — | — | — | — | ✅ | ✅ | — |
+| Volume monitor (row count in range) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Anomaly monitor (z-score vs a learned baseline)ᵃ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — |
+| Schema-drift monitor (column add/drop/type-change vs a stored baseline)ᵇ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Comparison / reconciliation (diff vs a baseline connection) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Column profiler (nulls, distinct, min/max, top values) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Browse for the run target (catalog → schema → table / folders → file) | — | ✅ | ✅ (schema → table) | ✅ (schema → table) | ✅ (schema → table) | ✅ (schema → table) | ✅ | ✅ | — |
+| DQ dimension on checks + asset scorecard (coverage + score) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Dry-run preview | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 ᵃ **Live-verified.** The anomaly monitor learns a rolling mean/stddev of the
 target's own row count or freshness age (optionally per weekday) and bands each
@@ -4019,13 +4162,29 @@ authentication and file-based access control. Two engine facts: Trino has **no r
 session**, so the read-only guarantee is the Trino user's own access control; and every name is
 **lower case** — see [Datasources & checks](../guides/datasources-checks.md#trino).
 
+ᵉ **SQL Server** — SQL Server, Azure SQL Database, Synapse and (through the optional,
+user-installed ODBC lane) Microsoft Fabric SQL endpoints; SQL login or Entra service principal;
+TLS always verified; everything by pushdown. Like Trino and unlike PostgreSQL and MySQL, sessions are **not**
+read-only at the server (TDS has no such setting) — the login must be a `db_datareader`. Every
+ticked row was verified by an **executed** run against a live Azure SQL database with both auth
+modes (every SQL-capable expectation type, custom SQL, freshness over
+`datetimeoffset`/`datetime2`/`date`, volume, anomaly measurement, profiler, schema drift,
+comparison reads, inventory enumeration, browsing and a persisted suite run), on both the
+python-tds and the ODBC lane, plus a Fabric Warehouse and Lakehouse SQL endpoint on the ODBC
+lane (where seven multi-column / uniqueness types are refused — GX builds a temporary table
+Fabric does not support). That battery is
+an opt-in live lane (`tests/integration/test_mssql_live.py`), not CI — no SQL Server can run in
+CI without a commercial licence. The four regex expectations are refused on SQL Server (no T-SQL
+translation in GX), and Fabric SQL endpoints need the user-installed ODBC lane — see
+[Datasources & checks](../guides/datasources-checks.md#sql-server-azure-sql-fabric-t-sql).
+
 ˢ **S3 means AWS S3 *and* any S3-compatible store** — MinIO, Ceph/RadosGW, Cloudflare R2,
 Wasabi, Backblaze B2, SeaweedFS or an on-prem gateway. Set the connection's optional
 endpoint URL; every row in this column applies identically either way. See
 [Datasources & checks](../guides/datasources-checks.md#s3-compatible-object-stores).
 
 Custom SQL runs a SQL query, so it's **SQL-datasource only** (Snowflake, Unity Catalog, PostgreSQL,
-MySQL/MariaDB, Trino;
+MySQL/MariaDB, Trino, SQL Server;
 there is no flat-file support, and no issue currently tracks adding it — flat files get freshness/volume monitors instead (see the rows above);
 Iceberg is not SQL-queryable — reads go through `pyiceberg` scans, not a query engine).
 **Comparison checks** (ADR [0015](../adr/0015-two-connection-comparison-check-model.md))
@@ -4093,6 +4252,7 @@ five mechanisms:
 | MySQL / MariaDB | `mysql://{host}:{port}` / `database.table` | ✅ (+ inventory sync) | ✅ by construction (not yet live-verified) | ✅ | ✅ | —⁴ |
 | Trino | `trino://{host}:{port}` / `catalog.schema.table` | ✅ (+ inventory sync) | ✅ by construction (dbt-trino names match; not yet live-verified) | ✅ | ✅ | —⁴ |
 | PostgreSQL | `postgres://{host}:{port}` / `database.schema.table` | ✅ (+ inventory sync) | ✅ by construction (dbt-postgres names match; not yet live-verified) | ✅ | ✅ | —⁴ |
+| SQL Server | `mssql://{host}:{port}` / `database.schema.table` | ✅ (+ inventory sync) | not verified (dbt-sqlserver / dbt-fabric naming untested) | ✅ | ✅ | —⁴ |
 | BI reports / dashboards | not yet materialized² | — | — | — | reserved² | — |
 
 ¹ dbt-managed Iceberg tables surface through the warehouse adapter (Snowflake/UC rows);
@@ -4100,7 +4260,7 @@ native `pyiceberg` connections have no dbt slice of their own.
 ³ Warehouse-native lineage reads a query engine's lineage view; a native `pyiceberg`
 connection has no engine to ask (an engine-registered Iceberg table is covered under its
 Snowflake/UC connection).
-⁴ PostgreSQL, MySQL and Trino keep no lineage log DataQ reads, so there is no warehouse-native pull; the
+⁴ PostgreSQL, MySQL, Trino and SQL Server keep no lineage log DataQ reads, so there is no warehouse-native pull; the
 inventory sync still enumerates its tables (ADR 0040).
 ² The lineage graph's node-kind contract reserves `bi_report`/`dashboard` — a BI node
 (e.g. a Power BI report downstream of a mart) becomes representable the moment a capable
@@ -4960,7 +5120,7 @@ flowchart LR
         Files["ADLS Gen2 · S3 · flat files"]
         UC["Unity Catalog · Databricks"]
         Iceberg["Apache Iceberg · native pyiceberg read<br/>object storage + catalog"]
-        PGDS["PostgreSQL · MySQL / MariaDB · Trino<br/>generic SQL base, pushdown"]
+        PGDS["PostgreSQL · MySQL / MariaDB · Trino · SQL Server<br/>generic SQL base, pushdown"]
     end
 
     Web -->|HTTPS| Frontend
@@ -5537,7 +5697,7 @@ flowchart LR
         APPI["App Insights (PII-redacted logs + traces)"]
     end
     subgraph egress["🌐 Outbound — credentials fetched from Key Vault per use"]
-        DS["Datasources — Snowflake · ADLS · S3 · Unity Catalog · Iceberg · PostgreSQL · MySQL · Trino"]
+        DS["Datasources — Snowflake · ADLS · S3 · Unity Catalog · Iceberg · PostgreSQL · MySQL · Trino · SQL Server"]
         AL["Teams / Slack webhooks · SMTP"]
         OAPI["ADF / Airflow REST APIs (polling)"]
         LLM["LLM provider — Anthropic / OpenAI-compat<br/>(off by default; masked profiler stats or a<br/>redacted observed_value only — never raw samples)"]
@@ -7298,6 +7458,18 @@ DataQ runs checks *against* your data; it is **not** a copy of your data. What i
   that stack has no custom domain and therefore no certificate the load balancer could serve.
   The second one does cross the AWS network, so it is a real, tracked gap rather than a
   contained one.
+- **To your datasources:** each connection type's own transport. A **SQL Server** connection
+  (SQL Server, Azure SQL, Synapse, Fabric) is **always** encrypted and **always** verifies the
+  server certificate and its hostname — there is no setting that turns either off. The shipped
+  driver's own hostname check is broken on current pyOpenSSL, so DataQ replaces it with its own
+  (DNS subject-alternative names, a wildcard only as one whole left-most label, an IP only
+  against an IP entry, never the certificate's CN) — live-verified to refuse a connection made
+  by IP address and one whose certificate chains to an untrusted CA. PostgreSQL and MySQL connections
+  default to `require`; see [Datasources & checks](../guides/datasources-checks.md).
+- **Datasource writes:** PostgreSQL and MySQL sessions are read-only at the server. **Trino
+  and SQL Server have no equivalent session setting**, so there the protection is the
+  custom-SQL validator plus the account's own access control — on SQL Server a
+  `db_datareader`-only login, as the datasource guide shows.
 - **At rest:** PostgreSQL, the object stores, and the secret store (Key Vault / AWS Secrets
   Manager) encrypt at rest in both reference deployments. The AWS cache (ElastiCache — the
   Celery broker and rate-limit counters, not a data store) currently does **not**.
@@ -7464,12 +7636,19 @@ confirm your DataQ connection role can still read both tags.
 
 ### Where it applies
 
-Only **Snowflake** and **Unity Catalog** have a column-tag concept. PostgreSQL, MySQL, Trino, ADLS,
+Only **Snowflake** and **Unity Catalog** have a column-tag source DataQ reads. PostgreSQL, MySQL, Trino, ADLS,
 S3, Iceberg and flat files have no authoritative source to read, so for those the
 classification remains the suite's own policy, the name/value classifier, and
 fail-closed mode. This is a limit of the platforms, not a gap in the
 implementation, and it is stated here so nobody plans around a guarantee that
 cannot exist.
+
+**SQL Server is different, and the gap there is DataQ's.** SQL Server and Azure SQL do have
+column sensitivity classifications (`sys.sensitivity_classifications`), but DataQ does not read
+them yet: a login without the permission to see them gets an empty result rather than an error,
+which would read as "nothing is sensitive" — the silent failure the Snowflake check above guards
+against. Until that is built with the same care, SQL Server columns are classified like
+PostgreSQL's.
 
 ### How fresh it is
 
@@ -7509,7 +7688,7 @@ values happen to look harmless and the rows behind them do not.
 | Lane | Where the population signal comes from |
 |---|---|
 | Flat files (ADLS, S3), Iceberg, the Unity Catalog DataFrame batch | The failing-row list the check already builds (up to 5,000 rows); no extra query |
-| Snowflake, PostgreSQL, MySQL, Trino, Unity Catalog SQL pushdown | One **extra, bounded query** per failing check: the check's own failing condition, selecting only the tested column and the identifier column, `LIMIT 5000` |
+| Snowflake, PostgreSQL, MySQL, Trino, SQL Server, Unity Catalog SQL pushdown | One **extra, bounded query** per failing check: the check's own failing condition, selecting only the tested column and the identifier column, `LIMIT 5000` |
 
 The extra query on the warehouse lanes is issued only when all of these hold:
 the check found more than 20 unexpected rows (including a check that still
@@ -14064,3 +14243,27 @@ needs no `temp_table_types` entry.
   full scan.
 - Snowflake and Unity Catalog keep their own adapters; they are not migrated onto the base
   (their auth, catalogs and lineage differ too much to gain from it).
+
+## Amendment — SQL Server (2026-09-27)
+
+The SQL Server / T-SQL engine ([ADR 0044](0044-mssql-tds-driver-and-entra-auth.md)) is the
+first engine that breaks three of the assumptions above, and each became an optional spec hook
+rather than a special case:
+
+- **§4 does not hold for it.** TDS has no session-level read-only setting, so a SQL Server
+  session is *not* read-only at the server. The guard there is the ADR 0019 validator — now
+  lexing each engine's own delimited identifiers (`[…]`, `` `…` ``) — plus a `db_datareader`
+  login, which the docs require. The base's promise is restated per engine, not assumed.
+- **§5's session scoping does not exist.** A login's default schema is fixed on the server, so
+  `session_schema = False` hands GX the schema instead; SQL Server's usual case-insensitive
+  collations resolve it whatever GX's casing (a mixed-case schema on a case-sensitive
+  collation is a documented limitation).
+- **One secret can be two kinds of credential.** An Entra service principal's client secret
+  goes to a token endpoint, not the server, so the spec owns its URL and connect args (a
+  subclass overriding `url` / `engine_args`), declares its own `destination_fields`, and names
+  its secret (`credential_noun`).
+
+Two more hooks came with it: `explain_failure`, which turns a failure the engine *knows* (a
+documented driver limitation, a missing optional driver) into a DataQ-authored message shown
+verbatim; and `unsupported_expectation_types`, for an allowlisted type the dialect has no GX
+translation for (regex on T-SQL), refused at author time rather than erroring on every run.

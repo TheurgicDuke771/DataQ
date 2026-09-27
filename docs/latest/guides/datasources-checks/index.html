@@ -1007,6 +1007,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#sql-server-azure-sql-fabric-t-sql" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SQL Server / Azure SQL / Fabric (T-SQL)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#identifier-casing-snowflake-unity-catalog-postgresql" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2660,6 +2671,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#sql-server-azure-sql-fabric-t-sql" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SQL Server / Azure SQL / Fabric (T-SQL)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#identifier-casing-snowflake-unity-catalog-postgresql" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2972,6 +2994,12 @@
 <td>✅</td>
 <td>✅</td>
 </tr>
+<tr>
+<td>SQL Server / T-SQL (SQL Server, Azure SQL, Synapse; Fabric SQL via the ODBC lane)</td>
+<td>host + port + database; SQL login (user, password) or Entra service principal (tenant + client ID, client secret)</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
 </tbody>
 </table>
 <h2 id="add-a-connection">Add a connection<a class="headerlink" href="#add-a-connection" title="Permanent link">¶</a></h2>
@@ -3043,7 +3071,8 @@ supported for the token (<code>login.microsoftonline.com</code>).</p>
 <p>Editing a field that decides <em>where</em> the credential is sent — Snowflake <code>account</code>, ADLS
 <code>account_url</code> / <code>auth_type</code> / <code>tenant_id</code> / <code>client_id</code>, S3/dbt <code>endpoint_url</code>, Unity Catalog <code>workspace_url</code>, Iceberg <code>catalog_uri</code> /
 <code>warehouse</code> / <code>properties</code> / <code>secret_property</code>, PostgreSQL / MySQL <code>host</code> / <code>port</code>, Trino
-<code>host</code> / <code>port</code> / <code>sslmode</code> / <code>ca_bundle</code> / <code>auth_type</code>, Airflow
+<code>host</code> / <code>port</code> / <code>sslmode</code> / <code>ca_bundle</code> / <code>auth_type</code>, SQL Server <code>host</code> / <code>port</code> / <code>auth_type</code> /
+<code>tenant_id</code> / <code>client_id</code> / <code>ca_bundle</code> / <code>driver</code>, Airflow
 <code>base_url</code>, dbt <code>artifacts_uri</code> —
 requires re-entering
 that credential in the same save. The edit form asks for it as soon as you change one of
@@ -3267,6 +3296,122 @@ access control.</p>
 - <strong>No column tags, no warehouse-native lineage.</strong> DataQ reads no column-classification
   source from Trino, and Trino keeps no lineage log DataQ reads — lineage comes from dbt,
   OpenLineage or a catalog, and an empty graph means "not observed".</p>
+<h3 id="sql-server-azure-sql-fabric-t-sql">SQL Server / Azure SQL / Fabric (T-SQL)<a class="headerlink" href="#sql-server-azure-sql-fabric-t-sql" title="Permanent link">¶</a></h3>
+<p>One connection type (<code>mssql</code>) for <strong>anything that speaks SQL Server's TDS protocol</strong> — SQL
+Server itself, Azure SQL Database, Synapse dedicated pools, and the Microsoft Fabric SQL
+endpoints (Warehouse, Lakehouse SQL analytics endpoint, SQL database in Fabric). It is named for
+the engine, not a cloud (ADR <a href="../../adr/0010-provider-agnostic-infrastructure-seams/">0010</a>),
+and sits on the same generic SQL base as PostgreSQL. The driver decision and its trade-offs are
+<a href="../../adr/0044-mssql-tds-driver-and-entra-auth/">ADR 0044</a>. Live-verified against Azure SQL
+Database with both auth modes on both driver lanes, and against a Microsoft Fabric Warehouse and
+Lakehouse SQL analytics endpoint on the ODBC lane.</p>
+<ul>
+<li><strong>Fields:</strong> host (a bare hostname — e.g. <code>myserver.database.windows.net</code>; no scheme, port or
+  <code>\instance</code>: connect to a named instance by its port), port (default 1433), database, an
+  optional default schema (default <code>dbo</code>), and one of two <strong>auth modes</strong>:<ul>
+<li><strong>SQL login</strong> — <code>user</code>, and the password as the secret. SQL Server, Azure SQL, Synapse.</li>
+<li><strong>Entra service principal</strong> — <code>tenant_id</code> and <code>client_id</code>, and the client secret as the
+  secret. DataQ asks Entra ID for a token for <code>https://database.windows.net/</code> and presents
+  it at login; the client secret never goes to the database server. Azure SQL, Synapse and
+  Fabric. The principal must exist in the database (<code>CREATE USER [app-name] FROM EXTERNAL
+  PROVIDER</code>) with read access. DataQ cannot read a client secret's expiry — track it in
+  Entra ID and re-authenticate before it lapses. Managed identity and certificate
+  credentials are not supported yet.</li>
+</ul>
+</li>
+<li><strong>TLS is always on and always verified.</strong> There is no TLS mode to choose: every connection is
+  encrypted, the server certificate must chain to a trusted CA (the public roots DataQ ships,
+  or a <strong>private CA certificate</strong> you paste into the connection for a self-hosted server), and
+  the hostname must match the certificate. Connecting by IP address fails for that reason — use
+  the name on the certificate. The shipped driver speaks TLS 1.2; TDS 8 "strict" encryption is
+  not supported yet.</li>
+<li><strong>Read only — by grant, not by session.</strong> Like Trino and unlike PostgreSQL and MySQL, SQL Server has no
+  per-session read-only switch, so DataQ <strong>cannot make the server refuse a write</strong>. The guards
+  are the custom-SQL validator (which understands T-SQL <code>[bracket]</code> identifiers and refuses
+  <code>OPENQUERY</code>/<code>OPENROWSET</code>/<code>OPENDATASOURCE</code>, <code>BULK</code>, <code>DBCC</code>, <code>WAITFOR</code>, <code>BACKUP</code>/<code>RESTORE</code>
+  and the rest of the ADR 0019 list) and <strong>the login you give DataQ, which must be read-only</strong>:</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="c1">-- in the target database</span>
+<span class="k">CREATE</span><span class="w"> </span><span class="k">USER</span><span class="w"> </span><span class="n">dataq_reader</span><span class="w"> </span><span class="k">FOR</span><span class="w"> </span><span class="n">LOGIN</span><span class="w"> </span><span class="n">dataq_reader</span><span class="p">;</span><span class="w">   </span><span class="c1">-- or FROM EXTERNAL PROVIDER for Entra</span>
+<span class="k">ALTER</span><span class="w"> </span><span class="k">ROLE</span><span class="w"> </span><span class="n">db_datareader</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="n">MEMBER</span><span class="w"> </span><span class="n">dataq_reader</span><span class="p">;</span>
+</code></pre></div>
+<p>Nothing else is needed: the session-scoped <code>#temp</code> tables some SQL Server queries use need no
+  extra grant (verified with a <code>db_datareader</code>-only login).
+- <strong>Two driver lanes</strong> (<code>driver</code>):
+    - <strong><code>python-tds</code></strong> (default) — pure-Python and MIT-licensed, shipped in the DataQ image. It
+      covers SQL Server, Azure SQL and Synapse.
+    - <strong><code>odbc</code></strong> — Microsoft ODBC Driver 18 through <code>pyodbc</code>. DataQ <strong>does not ship</strong> this
+      driver (its licence does not allow us to redistribute it — ADR 0044), so this lane only
+      works in an image <strong>you</strong> build on top of DataQ's — a sketch (DataQ's CI does not build
+      or test it, since doing so would mean accepting the driver's licence):</p>
+<div class="highlight"><pre><span></span><code>  ```dockerfile
+  FROM ghcr.io/theurgicduke771/dataq-backend:latest
+  USER root
+  RUN apt-get update &amp;&amp; ACCEPT_EULA=Y apt-get install -y --no-install-recommends \
+        msodbcsql18 unixodbc &amp;&amp; pip install pyodbc &amp;&amp; rm -rf /var/lib/apt/lists/*
+  USER 10001
+  ```
+
+  (add Microsoft's apt repository first, as Microsoft's install guide describes). Pick
+  `odbc` on the connection; an optional `odbc_driver` names a different installed driver.
+  If the lane is chosen but the driver or `pyodbc` is missing, **Test** says exactly that
+  and how to fix it. On this lane the driver's own certificate checking applies (encryption
+  required, server certificate and hostname verified against the image's trust store —
+  connecting by IP is refused here too). A service principal still logs in with a token
+  DataQ requests from Entra ID, so a wrong client secret fails at once with Entra's own
+  error rather than a login timeout.
+</code></pre></div>
+<ul>
+<li><strong>Microsoft Fabric SQL endpoints need the ODBC lane today.</strong> Over the default <code>python-tds</code>
+  driver, Fabric rejects the login after routing it (a known incompatibility in that driver,
+  still being worked on); Test and runs say so and point at the ODBC lane instead of showing the
+  raw driver error. Fabric accepts Entra ID only, and
+  two things are set up on the Fabric side: the tenant setting <strong>Service principals can use
+  Fabric APIs</strong>, and a workspace role (or item permission) for the principal. If Fabric refuses
+  the principal's login on the ODBC lane, Test names those two prerequisites.</li>
+</ul>
+<p>On a Fabric Warehouse or Lakehouse SQL endpoint, <strong>seven expectation types are not
+  available</strong>: <em>Column values unique</em>, <em>Compound columns unique</em>, <em>Values unique within
+  record</em>, <em>Column A greater than B</em>, <em>Column pair equal</em>, <em>Column pair in set</em> and
+  <em>Multicolumn sum</em>. Great Expectations evaluates them on SQL Server through a temporary table,
+  which Fabric refuses, so DataQ refuses them when you save the check on a Fabric connection
+  (the editor still lists them — the save explains why). Use custom SQL instead, e.g.
+  <code>SELECT id FROM {batch} GROUP BY id HAVING COUNT(*) &gt; 1</code> for uniqueness. A Fabric endpoint's
+  first login after it has been idle can take longer than Test Connection's 10 seconds — test
+  again; runs wait up to a minute.
+- <strong>Everything runs in the database</strong>, as on PostgreSQL. A run target takes no sampling block
+  (so no <code>TABLESAMPLE</code>). Freshness reads <code>datetimeoffset</code> as the instant it is (offset
+  honoured), <code>datetime2</code>/<code>datetime</code> as UTC, and <code>date</code> as midnight UTC.
+- <strong>Regular expressions are not available</strong>: T-SQL has no regex operator Great Expectations can
+  translate to, so the four regex expectations are refused when you save them (and hidden in
+  the editor). Use a custom-SQL check with <code>LIKE</code> or <code>PATINDEX</code>. Value-length checks use
+  T-SQL <code>LEN</code>, which ignores trailing spaces.
+- <strong>Type checks</strong> (<code>to_be_of_type</code>, <code>in_type_list</code>) compare the bare type name: <code>DECIMAL</code> for
+  <code>decimal(12,2)</code>, <code>INTEGER</code> for <code>int</code>, <code>NVARCHAR</code>, <code>DATETIME2</code>, <code>DATETIMEOFFSET</code>, <code>BIT</code>.
+- <strong>The profiler</strong> reports min/max as unavailable (null) for types SQL Server has no MIN/MAX for
+  — <code>bit</code>, <code>xml</code>, <code>geography</code>/<code>geometry</code>, <code>text</code>/<code>ntext</code>/<code>image</code>, <code>json</code>, <code>vector</code> — and distinct
+  count / top values as unavailable for all of those except <code>bit</code>.
+- <strong>Names</strong> resolve under the database's collation. On the usual case-insensitive collations
+  any casing reaches the object; on a <strong>case-sensitive</strong> collation, a mixed-case <em>schema</em> in a
+  run target is not supported (the check engine lower-cases it), though mixed-case tables and
+  columns are. A <strong>Fabric Warehouse</strong> is case-sensitive by default, so keep its schema names
+  lower-case (or use <code>dbo</code>) until this is lifted. A comparison check's SQL side must also name
+  every computed column and leave out <code>ORDER BY</code> — SQL Server refuses both inside the derived
+  table DataQ reads it through.
+- <strong>No column tags.</strong> DataQ does not read SQL Server's sensitivity classifications
+  (<code>sys.sensitivity_classifications</code>) yet — reading them needs a permission a reader login
+  usually lacks, and without it the catalog view silently returns nothing, which DataQ would
+  otherwise report as "no sensitive columns". Columns are classified by the suite's column
+  policy and DataQ's own checks. There is no warehouse-native lineage either.
+- <strong>Inventory sync and browsing</strong> list the tables and views in <code>INFORMATION_SCHEMA</code> that the
+  login can <code>SELECT</code>; the fixed-role schemas every database carries (<code>db_datareader</code>, …) are
+  never offered.
+- <strong>Speed.</strong> The shipped driver is pure Python. DataQ pushes aggregates to the server and caps
+  samples, so this rarely matters, but every query is one network round trip — a suite run
+  from a region far from the database is dominated by latency, not by the database.
+- <strong>Azure SQL serverless</strong> databases pause when idle. The first login resumes them, which can
+  take up to a minute: a run waits for it, a Test Connection gives up after 10 seconds — test
+  again once the database is awake.</p>
 <h3 id="identifier-casing-snowflake-unity-catalog-postgresql">Identifier casing (Snowflake / Unity Catalog / PostgreSQL)<a class="headerlink" href="#identifier-casing-snowflake-unity-catalog-postgresql" title="Permanent link">¶</a></h3>
 <p>Warehouses fold <strong>unquoted</strong> identifiers — Snowflake upper-cases them — so a column
 created as <code>order_ts</code> is really stored as <code>ORDER_TS</code>, while one created as
@@ -3710,6 +3855,11 @@ the type your warehouse/catalog shows you:</p>
 <td>Trino</td>
 <td>SQL (dialect-native)</td>
 <td><code>DECIMAL(12, 2)</code>, <code>VARCHAR</code> / <code>VARCHAR(20)</code>, <code>TIMESTAMP(6)</code>, <code>TIMESTAMP(6) WITH TIME ZONE</code>, <code>BIGINT</code></td>
+</tr>
+<tr>
+<td>SQL Server</td>
+<td>SQL (SQLAlchemy type name)</td>
+<td><code>DECIMAL</code> for <code>decimal(12,2)</code>, <code>INTEGER</code> for <code>int</code>, <code>NVARCHAR</code>, <code>DATETIME2</code>, <code>DATETIMEOFFSET</code>, <code>BIT</code></td>
 </tr>
 <tr>
 <td>Unity Catalog</td>

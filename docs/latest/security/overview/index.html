@@ -3255,6 +3255,18 @@ are the reason this mode is opt-in rather than the default:</p>
   that stack has no custom domain and therefore no certificate the load balancer could serve.
   The second one does cross the AWS network, so it is a real, tracked gap rather than a
   contained one.</li>
+<li><strong>To your datasources:</strong> each connection type's own transport. A <strong>SQL Server</strong> connection
+  (SQL Server, Azure SQL, Synapse, Fabric) is <strong>always</strong> encrypted and <strong>always</strong> verifies the
+  server certificate and its hostname — there is no setting that turns either off. The shipped
+  driver's own hostname check is broken on current pyOpenSSL, so DataQ replaces it with its own
+  (DNS subject-alternative names, a wildcard only as one whole left-most label, an IP only
+  against an IP entry, never the certificate's CN) — live-verified to refuse a connection made
+  by IP address and one whose certificate chains to an untrusted CA. PostgreSQL and MySQL connections
+  default to <code>require</code>; see <a href="../../guides/datasources-checks/">Datasources &amp; checks</a>.</li>
+<li><strong>Datasource writes:</strong> PostgreSQL and MySQL sessions are read-only at the server. <strong>Trino
+  and SQL Server have no equivalent session setting</strong>, so there the protection is the
+  custom-SQL validator plus the account's own access control — on SQL Server a
+  <code>db_datareader</code>-only login, as the datasource guide shows.</li>
 <li><strong>At rest:</strong> PostgreSQL, the object stores, and the secret store (Key Vault / AWS Secrets
   Manager) encrypt at rest in both reference deployments. The AWS cache (ElastiCache — the
   Celery broker and rate-limit counters, not a data store) currently does <strong>not</strong>.</li>
@@ -3470,12 +3482,18 @@ see a tag gets zero rows, not an error, so the column would look untagged and fa
 back to the name heuristic. If you restrict tag visibility in your own account,
 confirm your DataQ connection role can still read both tags.</p>
 <h3 id="where-it-applies">Where it applies<a class="headerlink" href="#where-it-applies" title="Permanent link">¶</a></h3>
-<p>Only <strong>Snowflake</strong> and <strong>Unity Catalog</strong> have a column-tag concept. PostgreSQL, MySQL, Trino, ADLS,
+<p>Only <strong>Snowflake</strong> and <strong>Unity Catalog</strong> have a column-tag source DataQ reads. PostgreSQL, MySQL, Trino, ADLS,
 S3, Iceberg and flat files have no authoritative source to read, so for those the
 classification remains the suite's own policy, the name/value classifier, and
 fail-closed mode. This is a limit of the platforms, not a gap in the
 implementation, and it is stated here so nobody plans around a guarantee that
 cannot exist.</p>
+<p><strong>SQL Server is different, and the gap there is DataQ's.</strong> SQL Server and Azure SQL do have
+column sensitivity classifications (<code>sys.sensitivity_classifications</code>), but DataQ does not read
+them yet: a login without the permission to see them gets an empty result rather than an error,
+which would read as "nothing is sensitive" — the silent failure the Snowflake check above guards
+against. Until that is built with the same care, SQL Server columns are classified like
+PostgreSQL's.</p>
 <h3 id="how-fresh-it-is">How fresh it is<a class="headerlink" href="#how-fresh-it-is" title="Permanent link">¶</a></h3>
 <p>Tags are read <strong>on each run</strong> of a suite against that table and cached on the
 asset. So a newly-classified column takes effect from the suite's next run —
@@ -3516,7 +3534,7 @@ values happen to look harmless and the rows behind them do not.</p>
 <td>The failing-row list the check already builds (up to 5,000 rows); no extra query</td>
 </tr>
 <tr>
-<td>Snowflake, PostgreSQL, MySQL, Trino, Unity Catalog SQL pushdown</td>
+<td>Snowflake, PostgreSQL, MySQL, Trino, SQL Server, Unity Catalog SQL pushdown</td>
 <td>One <strong>extra, bounded query</strong> per failing check: the check's own failing condition, selecting only the tested column and the identifier column, <code>LIMIT 5000</code></td>
 </tr>
 </tbody>
