@@ -2486,7 +2486,7 @@
 <p><strong>Saving a connection returns <code>422 credential_redirect</code>, or the edit form suddenly asks for
 the credential again.</strong></p>
 <p>You changed a field that decides where the credential is sent — a host, URL, or URI
-(Snowflake <code>account</code>, ADLS <code>account_url</code>, S3/dbt <code>endpoint_url</code>, Unity Catalog
+(Snowflake <code>account</code>, ADLS <code>account_url</code> / <code>auth_type</code> / <code>tenant_id</code> / <code>client_id</code>, S3/dbt <code>endpoint_url</code>, Unity Catalog
 <code>workspace_url</code>, Iceberg <code>catalog_uri</code> / <code>warehouse</code> / <code>properties</code> / <code>secret_property</code>,
 Airflow <code>base_url</code>, dbt
 <code>artifacts_uri</code>). Re-enter the credential in the same save and it will go through;

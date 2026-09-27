@@ -3200,7 +3200,7 @@ are the reason this mode is opt-in rather than the default:</p>
   connection, but may never introduce or repoint one. Otherwise a caller could name someone
   else's secret and have the server resolve it on their behalf.</li>
 <li><strong>A stored credential is never sent to a destination the caller changed.</strong> Editing a config
-  field that decides where a credential goes — Snowflake <code>account</code>, ADLS <code>account_url</code>,
+  field that decides where a credential goes — Snowflake <code>account</code>, ADLS <code>account_url</code>/<code>auth_type</code>/<code>tenant_id</code>/<code>client_id</code>,
   S3/dbt <code>endpoint_url</code>, Unity Catalog <code>workspace_url</code>, Iceberg <code>catalog_uri</code>/<code>warehouse</code>/
   <code>properties</code>/<code>secret_property</code>, Airflow <code>base_url</code>, dbt <code>artifacts_uri</code> — requires re-supplying that
   credential in the same request, or the update is rejected (<code>422 credential_redirect</code>).

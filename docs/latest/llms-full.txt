@@ -1768,7 +1768,7 @@ If you **repoint a suite to a different target** after a policy exists, DataQ do
 | Datasource | Connection | Check authoring | Execution |
 |---|---|---|---|
 | Snowflake (DEV/QA/UAT) | account + user + key/PAT | ✅ | ✅ |
-| ADLS Gen2 (flat files) | account URL + container, SAS | ✅ | ✅ |
+| ADLS Gen2 (flat files) — and ADLS-compatible endpoints such as [Fabric OneLake](#onelake-fabric-lakehouse-files) | account URL + container, SAS **or** Entra service principal | ✅ | ✅ |
 | AWS S3 **and S3-compatible** (flat files) | bucket + region, access key (+ optional endpoint) | ✅ | ✅ |
 | Unity Catalog (Databricks) | workspace URL + warehouse + PAT | ✅ | ✅ |
 | Apache Iceberg | catalog URI + catalog type (REST/SQL/Glue/Hive) + optional storage credential | ✅ | ✅ |
@@ -1793,10 +1793,46 @@ atomically via **Re-auth**. Leave the passphrase blank for an unencrypted key.
 Key-pair connections also require **Role** (the GX key-pair form mandates one for suite
 runs, so it is validated when the connection is saved).
 
+ADLS Gen2 supports two auth modes: a **SAS token** (the default, and what every connection
+created before this option existed uses) and an **Entra ID service principal** — the
+directory (**Tenant ID**) and application (**Client ID**) IDs, plus the app's **client secret**
+as the credential. A service principal needs a *data* role on the container (e.g. *Storage
+Blob Data Reader*); **Test** lists one entry to prove it, because the container-properties call
+alone also succeeds for a principal that holds only the control-plane *Contributor* role and
+would then fail every read. DataQ cannot read a client secret's expiry — it lives in Entra ID —
+so the connection card says **expiry not visible** instead of counting down; track it where the
+secret was created and **Re-auth** before it lapses. A wrong or expired client secret is
+recorded as a rejected credential; a wrong tenant or client ID, or a missing data role, is
+reported as a configuration or permission problem instead.
+
+### OneLake (Fabric lakehouse files)
+
+Microsoft Fabric OneLake serves the same Blob API, so an **ADLS Gen2** connection reads a
+lakehouse's `Files/` area — CSV and Parquet, with every flat-file check, freshness (including
+arrival-time), volume, the profiler, browsing and batch targets. There is no separate
+connection type:
+
+| Field | Value |
+|---|---|
+| Account URL | `https://onelake.blob.fabric.microsoft.com` |
+| Container | the Fabric **workspace** name or ID |
+| Auth type | **Service principal** — OneLake does not accept a stored SAS (its SAS is user-delegated and lasts at most an hour) |
+| Run target path | `<lakehouse>.Lakehouse/Files/<folder>/<file>`, e.g. `sales.Lakehouse/Files/orders/orders_2026-09-27.csv` |
+
+Prerequisites, in Fabric: the tenant setting *Service principals can use Fabric APIs* must be
+enabled, and the service principal must be a member of the workspace (Viewer is enough to
+read). OneLake reports a workspace the principal cannot see as **not found**, so a
+"table/path does not exist" failure on a correct workspace name usually means a missing
+workspace role. A batch target's prefix must reach inside an item
+(`<lakehouse>.Lakehouse/Files/...`): OneLake refuses a flat listing of the workspace root,
+though **Browse** starts there fine. Assets from OneLake are named
+`abfss://<workspace>@onelake.dfs.fabric.microsoft.com/...`. Only public-cloud Entra ID is
+supported for the token (`login.microsoftonline.com`).
+
 ### Moving a connection to a new host
 
 Editing a field that decides *where* the credential is sent — Snowflake `account`, ADLS
-`account_url`, S3/dbt `endpoint_url`, Unity Catalog `workspace_url`, Iceberg `catalog_uri` /
+`account_url` / `auth_type` / `tenant_id` / `client_id`, S3/dbt `endpoint_url`, Unity Catalog `workspace_url`, Iceberg `catalog_uri` /
 `warehouse` / `properties` / `secret_property`, PostgreSQL / MySQL `host` / `port`, Airflow
 `base_url`, dbt `artifacts_uri` —
 requires re-entering
@@ -3492,6 +3528,10 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Fixed
 
+- **A batch-target preview no longer comes back empty just because signing in was slow.** The
+  preview's time budget now starts when the store returns its first object, not before the
+  client authenticates; a service principal's token request alone could use the whole budget.
+
 - **The batch-target preview no longer scans unbounded, or matches a regex it hasn't
   vetted, in the API process.** The suite editor's live "resolves to" hint now stops at a
   small object-count/wall-clock budget (`BATCH_PREVIEW_MAX_OBJECTS`/`_MAX_SECONDS`) and
@@ -3501,6 +3541,16 @@ the per-PR history lives in the repo's commit log and pull requests.
   a superseded preview request instead of merely ignoring its answer.
 
 ### Added
+
+- **ADLS Gen2 connections can authenticate as an Entra ID service principal — which also
+  opens Microsoft Fabric OneLake lakehouse files.** Pick *Service principal* and give the
+  tenant ID, client ID and client secret; point the account URL at
+  `https://onelake.blob.fabric.microsoft.com` with the workspace as the container to run any
+  flat-file check, freshness, volume, profile or browse against `<lakehouse>.Lakehouse/Files/`.
+  SAS connections are unchanged. Changing the tenant, client, auth type or account URL
+  requires re-entering the secret. A client secret's expiry is not readable by DataQ, so the
+  connection card says so rather than showing nothing. See
+  [OneLake](../guides/datasources-checks.md#onelake-fabric-lakehouse-files).
 
 - **MySQL / MariaDB datasource.** Any MySQL or MariaDB server, on the same generic SQL
   base as PostgreSQL and through the MIT-licensed PyMySQL driver: every SQL-capable check,
@@ -3950,7 +4000,7 @@ five mechanisms:
 |---|---|:-:|:-:|:-:|:-:|:-:|
 | Snowflake | `snowflake://{org}-{account}` / `DB.SCHEMA.TABLE` | ✅ | ✅ (live-verified) | ✅ | ✅ | ✅ (OBJECT_DEPENDENCIES live; ACCESS_HISTORY + **GET_LINEAGE per-seed traversal** Enterprise, built on a live prod-Enterprise capture; **+ column grain from ACCESS_HISTORY** on both tiers, live-verified; view column lineage not yet read) |
 | Unity Catalog | `unitycatalog://{host}` / `catalog.schema.table` | ✅ | ✅ (adapter-aware) | ✅ | ✅ | ✅ (system.access.table_lineage, incremental; **+ column grain, live-verified**) |
-| ADLS Gen2 (files) | `abfss://{container}@{account}.dfs.core.windows.net` / pattern **base prefix** | ✅ | — | ✅ | ✅ | — |
+| ADLS Gen2 (files) | `abfss://{container}@{account}.dfs.core.windows.net` (an ADLS-compatible endpoint such as OneLake keeps its own DFS host: `abfss://{workspace}@onelake.dfs.fabric.microsoft.com`) / pattern **base prefix** | ✅ | — | ✅ | ✅ | — |
 | S3 (files) | `s3://{bucket}` / base prefix | ✅ | — | ✅ | ✅ | — |
 | Iceberg | `{catalog_uri}` / `namespace.table` | ✅ | —¹ | ✅ | ✅ | —³ |
 | MySQL / MariaDB | `mysql://{host}:{port}` / `database.table` | ✅ (+ inventory sync) | ✅ by construction (not yet live-verified) | ✅ | ✅ | —⁴ |
@@ -4297,7 +4347,7 @@ Orchestration connections carry `null` here — theirs is the poll health above.
 status first.
 
 **Moving a connection to a new host.** A `PATCH` that changes a field deciding *where* the
-credential is sent — `account` (Snowflake), `account_url` (ADLS), `endpoint_url` (S3, dbt),
+credential is sent — `account` (Snowflake), `account_url` / `auth_type` / `tenant_id` / `client_id` (ADLS), `endpoint_url` (S3, dbt),
 `workspace_url` (Unity Catalog), `catalog_uri` / `warehouse` / `properties` /
 `secret_property` (Iceberg),
 `base_url` (Airflow), `artifacts_uri` (dbt) — must re-supply that credential in the same
@@ -7104,7 +7154,7 @@ are the reason this mode is opt-in rather than the default:
   connection, but may never introduce or repoint one. Otherwise a caller could name someone
   else's secret and have the server resolve it on their behalf.
 - **A stored credential is never sent to a destination the caller changed.** Editing a config
-  field that decides where a credential goes — Snowflake `account`, ADLS `account_url`,
+  field that decides where a credential goes — Snowflake `account`, ADLS `account_url`/`auth_type`/`tenant_id`/`client_id`,
   S3/dbt `endpoint_url`, Unity Catalog `workspace_url`, Iceberg `catalog_uri`/`warehouse`/
   `properties`/`secret_property`, Airflow `base_url`, dbt `artifacts_uri` — requires re-supplying that
   credential in the same request, or the update is rejected (`422 credential_redirect`).
@@ -8654,7 +8704,7 @@ Common problems and where to look. For deeper telemetry (logs, traces, where the
 the credential again.**
 
 You changed a field that decides where the credential is sent — a host, URL, or URI
-(Snowflake `account`, ADLS `account_url`, S3/dbt `endpoint_url`, Unity Catalog
+(Snowflake `account`, ADLS `account_url` / `auth_type` / `tenant_id` / `client_id`, S3/dbt `endpoint_url`, Unity Catalog
 `workspace_url`, Iceberg `catalog_uri` / `warehouse` / `properties` / `secret_property`,
 Airflow `base_url`, dbt
 `artifacts_uri`). Re-enter the credential in the same save and it will go through;

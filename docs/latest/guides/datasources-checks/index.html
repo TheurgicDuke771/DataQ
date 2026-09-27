@@ -930,6 +930,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#onelake-fabric-lakehouse-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OneLake (Fabric lakehouse files)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#moving-a-connection-to-a-new-host" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2561,6 +2572,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#onelake-fabric-lakehouse-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OneLake (Fabric lakehouse files)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#moving-a-connection-to-a-new-host" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2887,8 +2909,8 @@
 <td>✅</td>
 </tr>
 <tr>
-<td>ADLS Gen2 (flat files)</td>
-<td>account URL + container, SAS</td>
+<td>ADLS Gen2 (flat files) — and ADLS-compatible endpoints such as <a href="#onelake-fabric-lakehouse-files">Fabric OneLake</a></td>
+<td>account URL + container, SAS <strong>or</strong> Entra service principal</td>
 <td>✅</td>
 <td>✅</td>
 </tr>
@@ -2938,9 +2960,60 @@ paste the PEM private key; if the key is passphrase-protected (PKCS#8), fill the
 atomically via <strong>Re-auth</strong>. Leave the passphrase blank for an unencrypted key.
 Key-pair connections also require <strong>Role</strong> (the GX key-pair form mandates one for suite
 runs, so it is validated when the connection is saved).</p>
+<p>ADLS Gen2 supports two auth modes: a <strong>SAS token</strong> (the default, and what every connection
+created before this option existed uses) and an <strong>Entra ID service principal</strong> — the
+directory (<strong>Tenant ID</strong>) and application (<strong>Client ID</strong>) IDs, plus the app's <strong>client secret</strong>
+as the credential. A service principal needs a <em>data</em> role on the container (e.g. <em>Storage
+Blob Data Reader</em>); <strong>Test</strong> lists one entry to prove it, because the container-properties call
+alone also succeeds for a principal that holds only the control-plane <em>Contributor</em> role and
+would then fail every read. DataQ cannot read a client secret's expiry — it lives in Entra ID —
+so the connection card says <strong>expiry not visible</strong> instead of counting down; track it where the
+secret was created and <strong>Re-auth</strong> before it lapses. A wrong or expired client secret is
+recorded as a rejected credential; a wrong tenant or client ID, or a missing data role, is
+reported as a configuration or permission problem instead.</p>
+<h3 id="onelake-fabric-lakehouse-files">OneLake (Fabric lakehouse files)<a class="headerlink" href="#onelake-fabric-lakehouse-files" title="Permanent link">¶</a></h3>
+<p>Microsoft Fabric OneLake serves the same Blob API, so an <strong>ADLS Gen2</strong> connection reads a
+lakehouse's <code>Files/</code> area — CSV and Parquet, with every flat-file check, freshness (including
+arrival-time), volume, the profiler, browsing and batch targets. There is no separate
+connection type:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Account URL</td>
+<td><code>https://onelake.blob.fabric.microsoft.com</code></td>
+</tr>
+<tr>
+<td>Container</td>
+<td>the Fabric <strong>workspace</strong> name or ID</td>
+</tr>
+<tr>
+<td>Auth type</td>
+<td><strong>Service principal</strong> — OneLake does not accept a stored SAS (its SAS is user-delegated and lasts at most an hour)</td>
+</tr>
+<tr>
+<td>Run target path</td>
+<td><code>&lt;lakehouse&gt;.Lakehouse/Files/&lt;folder&gt;/&lt;file&gt;</code>, e.g. <code>sales.Lakehouse/Files/orders/orders_2026-09-27.csv</code></td>
+</tr>
+</tbody>
+</table>
+<p>Prerequisites, in Fabric: the tenant setting <em>Service principals can use Fabric APIs</em> must be
+enabled, and the service principal must be a member of the workspace (Viewer is enough to
+read). OneLake reports a workspace the principal cannot see as <strong>not found</strong>, so a
+"table/path does not exist" failure on a correct workspace name usually means a missing
+workspace role. A batch target's prefix must reach inside an item
+(<code>&lt;lakehouse&gt;.Lakehouse/Files/...</code>): OneLake refuses a flat listing of the workspace root,
+though <strong>Browse</strong> starts there fine. Assets from OneLake are named
+<code>abfss://&lt;workspace&gt;@onelake.dfs.fabric.microsoft.com/...</code>. Only public-cloud Entra ID is
+supported for the token (<code>login.microsoftonline.com</code>).</p>
 <h3 id="moving-a-connection-to-a-new-host">Moving a connection to a new host<a class="headerlink" href="#moving-a-connection-to-a-new-host" title="Permanent link">¶</a></h3>
 <p>Editing a field that decides <em>where</em> the credential is sent — Snowflake <code>account</code>, ADLS
-<code>account_url</code>, S3/dbt <code>endpoint_url</code>, Unity Catalog <code>workspace_url</code>, Iceberg <code>catalog_uri</code> /
+<code>account_url</code> / <code>auth_type</code> / <code>tenant_id</code> / <code>client_id</code>, S3/dbt <code>endpoint_url</code>, Unity Catalog <code>workspace_url</code>, Iceberg <code>catalog_uri</code> /
 <code>warehouse</code> / <code>properties</code> / <code>secret_property</code>, PostgreSQL / MySQL <code>host</code> / <code>port</code>, Airflow
 <code>base_url</code>, dbt <code>artifacts_uri</code> —
 requires re-entering

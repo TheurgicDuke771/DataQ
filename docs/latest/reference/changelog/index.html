@@ -2422,16 +2422,34 @@ the per-PR history lives in the repo's commit log and pull requests.</p>
 <h2 id="unreleased">Unreleased<a class="headerlink" href="#unreleased" title="Permanent link">¶</a></h2>
 <h3 id="fixed">Fixed<a class="headerlink" href="#fixed" title="Permanent link">¶</a></h3>
 <ul>
-<li><strong>The batch-target preview no longer scans unbounded, or matches a regex it hasn't
+<li>
+<p><strong>A batch-target preview no longer comes back empty just because signing in was slow.</strong> The
+  preview's time budget now starts when the store returns its first object, not before the
+  client authenticates; a service principal's token request alone could use the whole budget.</p>
+</li>
+<li>
+<p><strong>The batch-target preview no longer scans unbounded, or matches a regex it hasn't
   vetted, in the API process.</strong> The suite editor's live "resolves to" hint now stops at a
   small object-count/wall-clock budget (<code>BATCH_PREVIEW_MAX_OBJECTS</code>/<code>_MAX_SECONDS</code>) and
   reports <code>truncated</code> honestly instead of scanning until it can be sure; a batch pattern is
   refused up front if it is too long or shaped for catastrophic regex backtracking (the
   same check applies whether the pattern is being saved or previewed). The frontend cancels
-  a superseded preview request instead of merely ignoring its answer.</li>
+  a superseded preview request instead of merely ignoring its answer.</p>
+</li>
 </ul>
 <h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">¶</a></h3>
 <ul>
+<li>
+<p><strong>ADLS Gen2 connections can authenticate as an Entra ID service principal — which also
+  opens Microsoft Fabric OneLake lakehouse files.</strong> Pick <em>Service principal</em> and give the
+  tenant ID, client ID and client secret; point the account URL at
+  <code>https://onelake.blob.fabric.microsoft.com</code> with the workspace as the container to run any
+  flat-file check, freshness, volume, profile or browse against <code>&lt;lakehouse&gt;.Lakehouse/Files/</code>.
+  SAS connections are unchanged. Changing the tenant, client, auth type or account URL
+  requires re-entering the secret. A client secret's expiry is not readable by DataQ, so the
+  connection card says so rather than showing nothing. See
+  <a href="../../guides/datasources-checks/#onelake-fabric-lakehouse-files">OneLake</a>.</p>
+</li>
 <li>
 <p><strong>MySQL / MariaDB datasource.</strong> Any MySQL or MariaDB server, on the same generic SQL
   base as PostgreSQL and through the MIT-licensed PyMySQL driver: every SQL-capable check,

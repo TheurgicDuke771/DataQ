@@ -2730,7 +2730,7 @@ Orchestration connections carry <code>null</code> here — theirs is the poll he
 <code>GET /admin/health</code> returns the same shape for every datasource connection at once, worst
 status first.</p>
 <p><strong>Moving a connection to a new host.</strong> A <code>PATCH</code> that changes a field deciding <em>where</em> the
-credential is sent — <code>account</code> (Snowflake), <code>account_url</code> (ADLS), <code>endpoint_url</code> (S3, dbt),
+credential is sent — <code>account</code> (Snowflake), <code>account_url</code> / <code>auth_type</code> / <code>tenant_id</code> / <code>client_id</code> (ADLS), <code>endpoint_url</code> (S3, dbt),
 <code>workspace_url</code> (Unity Catalog), <code>catalog_uri</code> / <code>warehouse</code> / <code>properties</code> /
 <code>secret_property</code> (Iceberg),
 <code>base_url</code> (Airflow), <code>artifacts_uri</code> (dbt) — must re-supply that credential in the same
