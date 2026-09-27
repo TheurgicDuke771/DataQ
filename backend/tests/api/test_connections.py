@@ -156,7 +156,7 @@ def test_a_blank_secret_is_rejected_rather_than_written(
 
 def test_create_unknown_type_returns_422(client: tuple[TestClient, FakeSecretStore]) -> None:
     api, _ = client
-    resp = api.post("/api/v1/connections", json=_create_payload(type="mssql"))
+    resp = api.post("/api/v1/connections", json=_create_payload(type="oracle"))
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "connection_config_invalid"
 
@@ -685,7 +685,7 @@ def test_draft_test_iceberg_sql_catalog_with_catalog_secret_injects_password(
 
 def test_draft_test_unknown_type_returns_422(client: tuple[TestClient, FakeSecretStore]) -> None:
     api, _ = client
-    resp = api.post("/api/v1/connections/test", json=_draft_payload(type="mssql"))
+    resp = api.post("/api/v1/connections/test", json=_draft_payload(type="oracle"))
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "connection_config_invalid"
 

@@ -53,6 +53,29 @@ the per-PR history lives in the repo's commit log and pull requests.
   a new engine-generic SQL base (ADR [0045](../adr/0045-engine-generic-sql-datasource-base.md)).
   See [Datasources & checks](../guides/datasources-checks.md#postgresql).
 
+- **SQL Server / Azure SQL / Fabric datasource.** One `mssql` connection type for anything that
+  speaks SQL Server's TDS protocol — SQL Server, Azure SQL Database, Synapse, and Microsoft
+  Fabric SQL endpoints — with a SQL login or an Entra ID service principal. Every SQL-capable
+  check runs by pushdown, plus monitors, comparisons, the profiler, schema → table browsing and
+  inventory sync. TLS is always on and always verified (certificate and hostname). The default
+  driver is pure-Python and shipped; Fabric SQL endpoints currently need an optional ODBC lane
+  you install yourself (live-verified on a Fabric Warehouse and Lakehouse SQL endpoint), and
+  DataQ tells you so instead of showing a driver error. On Fabric, the uniqueness and
+  column-pair expectations are refused (Fabric does not support the temporary table GX builds
+  for them). Regex
+  expectations are not available on SQL Server. ADR
+  [0044](../adr/0044-mssql-tds-driver-and-entra-auth.md); see
+  [Datasources & checks](../guides/datasources-checks.md#sql-server-azure-sql-fabric-t-sql).
+
+### Security
+
+- **The custom-SQL guard now lexes each engine's own quoting.** A T-SQL `[bracket]` or a
+  Databricks `` `backtick` `` identifier containing a quote could make the read-only check
+  mistake a following statement for part of a string; the guard now reads those identifiers
+  as identifiers, rejects a nested block comment (engines disagree where one ends), and on
+  SQL Server also refuses `OPENQUERY`, `OPENROWSET`, `OPENDATASOURCE`, `BULK`, `DBCC` and
+  `WAITFOR`. A query whose engine is unknown must pass every engine's rules.
+
 - **Sensitive columns stay masked downstream.** If a warehouse tag marks a column sensitive,
   every column that recorded column lineage shows is copied or derived from it is masked as well,
   across REST, MCP, alerts and incident evidence. This only ever adds masking: a column's own tag

@@ -581,7 +581,7 @@ def list_suites() -> list[dict[str, Any]]:
 
     Use this to discover what suites exist before drilling into results or
     triggering a run. Returns, per suite: its id, name, the datasource it runs
-    against (snowflake / adls / s3 / unity_catalog / iceberg / postgres / mysql /
+    against (snowflake / adls / s3 / unity_catalog / iceberg / postgres / mysql / mssql /
     trino), the environment (dev / qa / uat), how many checks it has, and the status + time of
     its most recent run
     (null if it has never run). Scoped to suites the user owns or has a share on
@@ -1310,7 +1310,7 @@ def list_connections(type: str | None = None, env: str | None = None) -> list[di
     Use this for 'what are we connected to?', 'which connections are broken?', or
     to find the connection a suite should run against. Returns, per connection:
     its id, name, type (``snowflake`` / ``adls_gen2`` / ``s3`` / ``unity_catalog``
-    / ``iceberg`` / ``postgres`` / ``mysql`` / ``trino`` for datasources; ``adf`` /
+    / ``iceberg`` / ``postgres`` / ``mysql`` / ``trino`` / ``mssql`` for datasources; ``adf`` /
     ``airflow`` / ``dbt`` for
     orchestration providers), environment, whether a credential is stored, and
     its health — when it was last polled or last ran, a classified error reason
@@ -2901,7 +2901,11 @@ def test_connection(connection_id: str) -> dict[str, Any]:
     A failure is deliberately **unclassified**: the driver's own message can
     carry DSN and credential fragments, so it is withheld. Do not speculate
     about the cause — report that the probe failed and that the server logs
-    carry the detail. This is different from ``list_connections``, whose
+    carry the detail. The one exception is a cause DataQ itself recognises (for
+    example a Microsoft Fabric SQL endpoint on the default SQL Server driver, or
+    an optional driver the connection needs but the server lacks): then the
+    error message after ``connection test failed:`` states it and names the
+    fix, and you can relay it as written. This is different from ``list_connections``, whose
     ``last_run_error``/``last_poll_error`` ARE classified (from the connection's
     last real run/poll, not a live probe) — prefer that tool when you want a
     reason rather than a pass/fail.

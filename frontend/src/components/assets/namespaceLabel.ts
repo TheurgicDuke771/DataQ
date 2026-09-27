@@ -12,6 +12,7 @@ export type DatasourceKind =
   | 'postgres'
   | 'mysql'
   | 'trino'
+  | 'mssql'
   | 'other';
 
 interface SchemeSpec {
@@ -58,6 +59,8 @@ const SCHEMES: SchemeSpec[] = [
   { prefix: 'mysql://', kind: 'mysql', source: 'MySQL', instance: (rest) => rest },
   // `trino://host:port` — the OpenLineage Trino namespace (#1685).
   { prefix: 'trino://', kind: 'trino', source: 'Trino', instance: (rest) => rest },
+  // `mssql://host:port` — the OpenLineage SQL Server namespace (#1679).
+  { prefix: 'mssql://', kind: 'mssql', source: 'SQL Server', instance: (rest) => rest },
 ];
 
 /** Catalog schemes whose URI has no *database* in it — the host itself is the catalog. */

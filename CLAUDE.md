@@ -6,11 +6,11 @@
 
 ## 1. Project summary
 
-**DataQ** is a single-tenant data quality monitoring platform built around Great Expectations (GX Core). It runs DQ checks across **7 datasources** and integrates with **3 orchestration providers**.
+**DataQ** is a single-tenant data quality monitoring platform built around Great Expectations (GX Core). It runs DQ checks across **9 datasources** and integrates with **3 orchestration providers**.
 
 | Layer | Components |
 |---|---|
-| **Datasources (you can write checks against)** | Snowflake (DEV/QA/UAT), ADLS Gen2, AWS S3 **and any S3-compatible store** (MinIO/Ceph/R2/Wasabi/Backblaze, via the optional `endpoint_url` — #1063), Unity Catalog (Databricks), Apache Iceberg (native `pyiceberg` read — ADR 0030), PostgreSQL, MySQL/MariaDB and Trino (any server/cluster, on the engine-generic SQL base — ADR 0045) |
+| **Datasources (you can write checks against)** | Snowflake (DEV/QA/UAT), ADLS Gen2, AWS S3 **and any S3-compatible store** (MinIO/Ceph/R2/Wasabi/Backblaze, via the optional `endpoint_url` — #1063), Unity Catalog (Databricks), Apache Iceberg (native `pyiceberg` read — ADR 0030), PostgreSQL, MySQL/MariaDB and Trino (any server/cluster, on the engine-generic SQL base — ADR 0045), SQL Server / Azure SQL / Synapse / Fabric SQL (`mssql`, same base — ADR 0044) |
 | **Orchestration providers (monitor + trigger only — NOT datasources)** | Azure Data Factory (ADF), Apache Airflow, dbt (ADR 0029) |
 | **Backend** | FastAPI + Celery + Redis + PostgreSQL + Alembic |
 | **Frontend** | React + Vite + Ant Design + Monaco editor (generic OIDC — `oidc-client-ts`) |
@@ -104,6 +104,7 @@ DataQ/
 - Apache Iceberg (native `pyiceberg` read — ADR 0030; engine-registered Iceberg tables also work zero-code under the `snowflake`/`unity_catalog` connections)
 - PostgreSQL — any server, self-hosted or managed (#1678). The first engine on the **engine-generic SQL base** (ADR 0045, `datasources/generic_sql.py` + one `SqlEngineSpec` per engine, registry in `sql_engines.py`): pushdown only, read-only sessions, every SQL capability set derives from `GENERIC_SQL_TYPES`. MySQL/MariaDB (#1684, PyMySQL — never a GPL driver) is the second engine — **never copy the Snowflake adapter**.
 - Trino — any cluster (incl. Starburst), one catalog per connection (#1685), the federation multiplier on the same base. **No read-only session exists on Trino** — the Trino user's access control is the guarantee; names must be lower case; password/JWT only over verified TLS. Amazon Athena was split out to #2131.
+- SQL Server / T-SQL (`mssql`, #1679, ADR 0044) — SQL Server, Azure SQL, Synapse, Fabric SQL on the same base. Driver `python-tds` (MIT, shipped) with DataQ's own hostname validator + named-instance fix (`datasources/mssql_tds.py`); TLS always verified; SQL login or Entra service principal. **Not read-only at the session** (TDS has no such setting) — the custom-SQL gate + a `db_datareader` login are the guard. Fabric needs the user-installed ODBC lane until #2126; DataQ never ships msodbcsql18/pyodbc.
 
 **Orchestration providers** are NOT datasources. They are workflow engines whose pipelines/DAGs we observe and react to. Their *only* three responsibilities in DataQ:
 

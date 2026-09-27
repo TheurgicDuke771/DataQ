@@ -392,7 +392,10 @@ def _validate_freshness_suggestion(
 
 
 def _validate_one(
-    connection_type: str, raw: dict[str, Any], known_columns: set[str]
+    connection_type: str,
+    raw: dict[str, Any],
+    known_columns: set[str],
+    connection_config: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any] | None, str | None]:
     """One suggestion through the same gate a human's `create_check` reaches,
     plus the one check `create_check` cannot make — that the named column is a
@@ -421,7 +424,9 @@ def _validate_one(
     try:
         check_service.validate_expectation_check(expectation_type, config)
         check_service.reject_dataframe_only_expectation(
-            expectation_type, connection_type=connection_type
+            expectation_type,
+            connection_type=connection_type,
+            connection_config=connection_config,
         )
     except check_service.CheckConfigInvalidError as exc:
         return None, exc.message
@@ -509,7 +514,9 @@ def validate_output(
                 }
             )
             continue
-        ok, reason = _validate_one(connection_type, raw, known_columns)
+        ok, reason = _validate_one(
+            connection_type, raw, known_columns, dict(connection.config or {})
+        )
         if ok is None:
             rejected.append({"expectation_type": raw.get("expectation_type"), "reason": reason})
             continue

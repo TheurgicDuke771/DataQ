@@ -200,7 +200,9 @@ def import_suite(
             # document must not smuggle in checks a direct POST would 422.
             validate_expectation_check(c["expectation_type"], c["config"])
             reject_dataframe_only_expectation(
-                c["expectation_type"], connection_type=connection.type
+                c["expectation_type"],
+                connection_type=connection.type,
+                connection_config=dict(connection.config or {}),
             )
         reject_thresholds_on_unbanded(
             c["expectation_type"],

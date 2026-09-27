@@ -78,6 +78,8 @@ _MARKERS: tuple[tuple[FailureCategory, tuple[str, ...]], ...] = (
             "max retries exceeded",
             "failed to establish a new connection",
             "ssl",
+            # python-tds's hostname check (ADR 0044) — a TLS refusal, reported without "ssl".
+            "certificate does not match host name",
             # Upstream-down HTTP statuses (#1285).
             "bad gateway",
             "service unavailable",
@@ -277,12 +279,16 @@ _AUTH_MARKERS: tuple[str, ...] = (
     # tail that only 1045 carries: 1044 ("… to database 'x'") is a missing grant, not a dead
     # credential.
     "(using password:",
+    # SQL Server error 18456 — the login itself was refused (#1679). The server sends 18456
+    # after a 4060 too, and the drivers join the two messages, so `_AUTH_VETOES` keeps a
+    # missing database grant from reading as a dead credential.
+    "login failed for user",
     # Azure ADLS Gen2 / Blob.
     "authenticationfailed",
     "server failed to authenticate the request",
     "signature did not match",
     "invalid_client",
-    # Entra ID service principal (ADLS `service_principal`): wrong / expired client secret.
+    # Entra ID service principal (ADLS, SQL Server): wrong / expired client secret.
     "aadsts7000215",
     "aadsts7000222",
     # AWS S3 (and S3-compatible stores, which reuse the same error codes).
@@ -300,6 +306,11 @@ _AUTH_MARKERS: tuple[str, ...] = (
     "invalid credential",
     "credentials could not be resolved",
 )
+
+# Text that says the credential WORKED even though an auth marker is also present: SQL Server
+# error 4060 ("Cannot open database … requested by the login") — the login is valid, the
+# database is missing or not granted — arrives joined with an 18456 "Login failed for user".
+_AUTH_VETOES: tuple[str, ...] = ("requested by the login",)
 
 #: The one fixed, secret-free reason a credential-health failure is recorded with.
 AUTH_FAILURE_REASON = (
@@ -330,6 +341,8 @@ def is_auth_failure(exc: BaseException) -> bool:
             break
         seen.add(id(current))
         haystack = f"{type(current).__name__}: {current}".lower()
+        if any(veto in haystack for veto in _AUTH_VETOES):
+            return False
         if any(marker in haystack for marker in _AUTH_MARKERS):
             return True
         current = current.__cause__ or current.__context__

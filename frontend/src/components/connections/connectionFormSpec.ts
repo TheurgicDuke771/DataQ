@@ -9,6 +9,7 @@ export interface TextField {
   /**
    * `tags` renders a free-entry multi-value input whose config value is a `string[]` (e.g. dbt's
    * `jobs`); `toggle` renders a Switch whose config value is a boolean (e.g.
+   * `inventory_sync`); `textarea` renders a multi-line input (e.g. a PEM CA bundle).
    */
   type?: 'text' | 'tags' | 'toggle' | 'textarea';
   /** Helper text under the field. */
@@ -319,6 +320,83 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
       },
     ],
     destinationFields: ['host', 'port', 'sslmode', 'ca_bundle', 'auth_type'],
+  },
+  mssql: {
+    // One engine-generic adapter for anything that speaks SQL Server's TDS protocol (#1679,
+    // ADR 0044) — SQL Server, Azure SQL, Synapse, Fabric SQL. TLS is always verified.
+    textFields: [
+      {
+        name: 'host',
+        label: 'Host',
+        extra:
+          'Hostname only — e.g. myserver.database.windows.net or ' +
+          '<id>.datawarehouse.fabric.microsoft.com (no scheme, port or \\instance)',
+      },
+      { name: 'port', label: 'Port', optional: true, extra: 'Defaults to 1433' },
+      { name: 'database', label: 'Database' },
+      {
+        name: 'schema',
+        label: 'Default schema',
+        optional: true,
+        extra: 'Where an unqualified run target resolves — defaults to dbo',
+      },
+      {
+        name: 'driver',
+        label: 'Driver',
+        optional: true,
+        options: ['python-tds', 'odbc'],
+        extra:
+          'python-tds (default) ships with DataQ. odbc uses Microsoft ODBC Driver 18, which you ' +
+          'must install in your own DataQ image — needed today for Microsoft Fabric SQL endpoints.',
+      },
+      {
+        name: 'ca_bundle',
+        label: 'Private CA certificate',
+        optional: true,
+        type: 'textarea',
+        extra:
+          'PEM of the CA your server certificate chains to, for a self-hosted server — leave ' +
+          'empty for public CAs (Azure SQL, Fabric). python-tds driver only.',
+      },
+      {
+        name: 'inventory_sync',
+        label: 'Inventory sync',
+        type: 'toggle',
+        optional: true,
+        default: true,
+        extra: 'Daily sync of every table this login can read into the asset view.',
+      },
+    ],
+    defaultConfig: { driver: 'python-tds' },
+    auth: [
+      {
+        value: 'sql',
+        label: 'SQL login',
+        secretLabel: 'Password',
+        extraFields: [{ name: 'user', label: 'User' }],
+      },
+      {
+        value: 'entra_service_principal',
+        label: 'Service principal (Entra ID)',
+        secretLabel: 'Client secret',
+        extraFields: [
+          { name: 'tenant_id', label: 'Tenant ID' },
+          { name: 'client_id', label: 'Client ID' },
+        ],
+        expiryNotReadable:
+          "DataQ cannot read a client secret's expiry — track it in Entra ID, where it was " +
+          'created, and re-authenticate before it lapses.',
+      },
+    ],
+    destinationFields: [
+      'host',
+      'port',
+      'auth_type',
+      'tenant_id',
+      'client_id',
+      'ca_bundle',
+      'driver',
+    ],
   },
   iceberg: {
     // Native pyiceberg read (ADR 0030).

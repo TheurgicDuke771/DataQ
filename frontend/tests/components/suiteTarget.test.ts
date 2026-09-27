@@ -23,6 +23,7 @@ describe('targetKind', () => {
       ['postgres', 'sql'],
       ['mysql', 'sql'],
       ['trino', 'sql'],
+      ['mssql', 'sql'],
       ['unity_catalog', 'uc'],
       ['iceberg', 'iceberg'],
       ['adls_gen2', 'flatfile'],
@@ -40,6 +41,7 @@ describe('sqlTargetPlaceholders', () => {
     expect(sqlTargetPlaceholders('postgres')).toEqual({ schema: 'public', table: 'orders' });
     expect(sqlTargetPlaceholders('mysql')).toEqual({ schema: 'shop', table: 'orders' });
     expect(sqlTargetPlaceholders('trino')).toEqual({ schema: 'sales', table: 'orders' });
+    expect(sqlTargetPlaceholders('mssql')).toEqual({ schema: 'dbo', table: 'Orders' });
     expect(sqlTargetPlaceholders('unity_catalog')).toEqual({ schema: 'default', table: 'orders' });
     expect(sqlTargetPlaceholders('snowflake')).toEqual({
       schema: 'PUBLIC',
@@ -50,7 +52,7 @@ describe('sqlTargetPlaceholders', () => {
 
 describe('SCHEMA_BROWSE_TYPES', () => {
   it('offers the schema-rooted browser on the generic SQL engines only', () => {
-    expect([...SCHEMA_BROWSE_TYPES]).toEqual(['postgres', 'mysql', 'trino']);
+    expect([...SCHEMA_BROWSE_TYPES]).toEqual(['postgres', 'mysql', 'trino', 'mssql']);
   });
 });
 

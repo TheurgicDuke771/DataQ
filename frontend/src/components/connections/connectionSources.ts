@@ -20,6 +20,7 @@ export const SOURCE_CATEGORY: Record<ConnectionType, SourceCategory> = {
   postgres: 'Databases',
   mysql: 'Databases',
   trino: 'Databases',
+  mssql: 'Databases',
   adls_gen2: 'Cloud Storage',
   s3: 'Cloud Storage',
 };
@@ -32,6 +33,7 @@ export const CONNECTION_BLURB: Record<ConnectionType, string> = {
   postgres: 'Any PostgreSQL server — self-hosted or managed',
   mysql: 'Any MySQL or MariaDB server — self-hosted or managed',
   trino: 'Any Trino or Starburst cluster — and every catalog it federates',
+  mssql: 'SQL Server, Azure SQL, Synapse and Fabric SQL endpoints',
   adls_gen2: 'Azure Data Lake Storage',
   s3: 'Object storage buckets',
   adf: 'Trigger & monitor pipeline runs',

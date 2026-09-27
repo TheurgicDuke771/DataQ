@@ -33,6 +33,7 @@ CONNECTION_TYPES = (
     "postgres",
     "mysql",
     "trino",
+    "mssql",
     "adf",
     "airflow",
     "dbt",

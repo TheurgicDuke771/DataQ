@@ -77,6 +77,9 @@ module = [
     "pandas.*",
     "croniter",
     "trino.*",
+    "pytds",
+    "pytds.*",
+    "pyodbc",
 ]
 ignore_missing_imports = true
 # None of these are in the slim CI typecheck deps, so CI sees them as Any. Several do

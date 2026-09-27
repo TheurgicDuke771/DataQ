@@ -175,6 +175,11 @@ export interface ExpectationSpec {
    * flag only keeps it out of the picker.
    */
   dataframeOnly?: boolean;
+  /**
+   * Connection types whose SQL dialect GX has no translation for this type on (regex on SQL
+   * Server). Mirrors the backend engine spec's `unsupported_expectation_types`, which 422s it.
+   */
+  unsupportedOn?: ConnectionType[];
 }
 
 /** Freshness's type — same string for both engines, so it's a choice rather than a second entry. */
@@ -269,6 +274,11 @@ const SQL_ENGINE_TYPE_HINT =
 const CLASS_NAME_TYPE_HINT =
   'Use the SQLAlchemy type name for the column — e.g. `DECIMAL` for DECIMAL(12,2), `VARCHAR`, `INTEGER`, `TIMESTAMP`, `DATETIME`; a BOOLEAN column is TINYINT(1), so `TINYINT`. Run a dry-run: a passing result’s observed_value shows the name GX matched.';
 
+// SQL Server: GX matches the SQLAlchemy type NAME, not a rendered type string (live-verified:
+// `DECIMAL` passes for a decimal(12,2) column, `DATETIMEOFFSET` for a datetimeoffset one).
+const MSSQL_TYPE_HINT =
+  'Use the type name without its size — e.g. `DECIMAL` for decimal(12,2) (not `DECIMAL(12, 2)`), `INTEGER` for int (not `INT`), `NVARCHAR`, `DATETIME2`, `DATETIMEOFFSET`, `BIT`. Run a dry-run: the result’s observed_value shows the exact name GX reads.';
+
 const DATAFRAME_ENGINE_TYPE_HINT =
   'Compares pandas dtypes or Python value type names — numerics report `int64`/`float64` (integer columns containing NULLs report `float64`); string columns on Unity Catalog and CSV reads are `object` dtype, so `object` or `str` both pass, while Parquet/Iceberg reads are Arrow-backed and can report different names. Dry-run to calibrate: a failing result’s observed_value shows the expected dtype — but if Observed shows “—”, your guess fell to GX’s row-wise compare; use `object` or a Python value type name (full cheat-sheet in the check-authoring docs).';
 
@@ -282,6 +292,7 @@ export const TYPE_FIELD_NAMES: string[] = [TYPE_FIELD_NAME, TYPE_LIST_FIELD_NAME
 export function typeFieldHint(connectionType: ConnectionType | undefined): string {
   if (!connectionType || !DATASOURCE_CATEGORY[connectionType]) return TYPE_FIELD_DEFAULT_HELP;
   if (connectionType === 'mysql') return CLASS_NAME_TYPE_HINT;
+  if (connectionType === 'mssql') return MSSQL_TYPE_HINT;
   return runsSqlBatch(connectionType) ? SQL_ENGINE_TYPE_HINT : DATAFRAME_ENGINE_TYPE_HINT;
 }
 
@@ -383,6 +394,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
   },
   {
     type: 'expect_column_values_to_match_regex',
+    unsupportedOn: ['mssql'],
     dimension: 'validity',
     label: 'Column values match regex',
     description: 'Every value matches the given regular expression.',
@@ -391,6 +403,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
   },
   {
     type: 'expect_column_values_to_not_match_regex',
+    unsupportedOn: ['mssql'],
     dimension: 'validity',
     label: 'Column values do not match regex',
     description:
@@ -400,6 +413,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
   },
   {
     type: 'expect_column_values_to_match_regex_list',
+    unsupportedOn: ['mssql'],
     dimension: 'validity',
     label: 'Column values match a list of regexes',
     description:
@@ -419,6 +433,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
   },
   {
     type: 'expect_column_values_to_not_match_regex_list',
+    unsupportedOn: ['mssql'],
     dimension: 'validity',
     label: 'Column values match none of a list of regexes',
     description: 'No value matches ANY regex in the list — a deny-list of forbidden formats.',
@@ -440,7 +455,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     dataframeOnly: true,
     label: 'Column values are valid JSON',
     description:
-      'Every value parses as JSON — for a payload/metadata column stored as text. Not offered on Snowflake, PostgreSQL, MySQL or Trino: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there (or, on Snowflake, a VARIANT column).',
+      'Every value parses as JSON — for a payload/metadata column stored as text. Not offered on Snowflake, PostgreSQL, MySQL, Trino or SQL Server: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there (or, on Snowflake, a VARIANT column).',
     category: 'Column values',
     fields: [COLUMN, MOSTLY],
   },
@@ -606,7 +621,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     dataframeOnly: true,
     label: 'Column values match a date format',
     description:
-      'Every value parses under the given strftime format — for a date or timestamp stored as text. Not offered on Snowflake, PostgreSQL, MySQL or Trino: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there.',
+      'Every value parses under the given strftime format — for a date or timestamp stored as text. Not offered on Snowflake, PostgreSQL, MySQL, Trino or SQL Server: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there.',
     category: 'Column values',
     fields: [
       COLUMN,
@@ -949,7 +964,12 @@ export function expectationsByCategoryFor(
   // offering a type the backend then 422s wastes a whole filled-in form.
   const sqlBatch = connectionType === undefined || runsSqlBatch(connectionType);
   const specAllowed = (spec: ExpectationSpec): boolean =>
-    spec.type === alwaysIncludeType || !spec.dataframeOnly || !sqlBatch;
+    spec.type === alwaysIncludeType ||
+    ((!spec.dataframeOnly || !sqlBatch) &&
+      !(
+        spec.unsupportedOn &&
+        (connectionType === undefined || spec.unsupportedOn.includes(connectionType))
+      ));
   return EXPECTATIONS_BY_CATEGORY.filter((g) => allowed(g.category)).map((g) => ({
     category: g.category,
     specs: g.specs.filter(specAllowed),

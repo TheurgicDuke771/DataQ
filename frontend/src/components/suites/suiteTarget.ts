@@ -18,6 +18,7 @@ export function targetKind(type: ConnectionType): TargetKind | null {
     case 'postgres':
     case 'mysql':
     case 'trino':
+    case 'mssql':
       return 'sql';
     case 'unity_catalog':
       return 'uc';
@@ -88,6 +89,7 @@ export const SCHEMA_BROWSE_TYPES: ReadonlySet<ConnectionType> = new Set([
   'postgres',
   'mysql',
   'trino',
+  'mssql',
 ]);
 
 /** Placeholder hints for the SQL target fields, in each engine's own name case. */
@@ -101,6 +103,7 @@ export function sqlTargetPlaceholders(type: ConnectionType | undefined): {
   if (type === 'mysql') return { schema: 'shop', table: 'orders' };
   // Trino reports every name lower case, and only accepts it that way.
   if (type === 'trino') return { schema: 'sales', table: 'orders' };
+  if (type === 'mssql') return { schema: 'dbo', table: 'Orders' };
   return { schema: 'PUBLIC', table: 'ANALYTICS.ORDERS' };
 }
 
