@@ -2525,8 +2525,8 @@ cloud-conditional code paths</strong>, and the same container images run everywh
 </tbody>
 </table>
 <h2 id="features">Features<a class="headerlink" href="#features" title="Permanent link">¶</a></h2>
-<p>The application feature set — suites/checks across all five datasources, every monitor kind,
-assets/lineage/incidents, alerting, scheduling, the 47-tool MCP server, PATs, rate limiting —
+<p>The application feature set — suites/checks across all nine datasource types, every monitor kind,
+assets/lineage/incidents, alerting, scheduling, the 51-tool MCP server, PATs, rate limiting —
 is the <strong>same code everywhere</strong>. Where the installations genuinely differ:</p>
 <table>
 <thead>
@@ -2542,7 +2542,13 @@ is the <strong>same code everywhere</strong>. Where the installations genuinely 
 <td>Datasource runs</td>
 <td>live-verified: Snowflake, Unity Catalog, ADLS, S3/S3-compatible, Iceberg</td>
 <td>live-verified: Snowflake, Unity Catalog, native S3</td>
-<td>flat files, MinIO, Unity Catalog (Free Edition), Iceberg; no live warehouse required</td>
+<td>flat files, MinIO, Unity Catalog (Free Edition), Iceberg, PostgreSQL / MySQL / MariaDB / Trino containers; no live warehouse required</td>
+</tr>
+<tr>
+<td>PostgreSQL, MySQL/MariaDB, Trino, SQL Server, OneLake</td>
+<td>✅</td>
+<td>✅</td>
+<td>✅ (SQL Server's optional ODBC lane needs the driver installed by the operator)</td>
 </tr>
 <tr>
 <td>Assets / lineage / incidents / DQ scorecard</td>

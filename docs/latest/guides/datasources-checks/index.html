@@ -3158,8 +3158,7 @@ incidents (decided in
 <p>One connection type for <strong>any PostgreSQL server</strong> — self-hosted, or a managed service on any
 cloud. It is named for the engine, never for a vendor that hosts it (ADR
 <a href="../../adr/0010-provider-agnostic-infrastructure-seams/">0010</a>), and is the first engine on
-DataQ's generic SQL datasource base, which the MySQL/MariaDB and Trino adapters reuse.
-Live-verified against PostgreSQL 16.</p>
+DataQ's generic SQL datasource base, which the MySQL/MariaDB, Trino and SQL Server adapters reuse.</p>
 <ul>
 <li><strong>Fields:</strong> host (a bare hostname or IP — no scheme, port or path), port (default 5432),
   database, user, an optional default schema (default <code>public</code>: where a target with no
@@ -3203,8 +3202,8 @@ Live-verified against PostgreSQL 16.</p>
 <h3 id="mysql-mariadb">MySQL / MariaDB<a class="headerlink" href="#mysql-mariadb" title="Permanent link">¶</a></h3>
 <p>One connection type for <strong>any MySQL or MariaDB server</strong>, on the same generic SQL base as
 PostgreSQL. The driver is <strong>PyMySQL</strong> (MIT); the GPL-licensed MySQL drivers are never used.
-Live-verified against MySQL 8.4, MariaDB 11.8 and MariaDB 10.6 (the long-term line many
-managed services still default to).</p>
+Works with MySQL 8 and MariaDB 10.6 and later, including the long-term line many managed
+services still default to.</p>
 <ul>
 <li><strong>Fields:</strong> host, port (default 3306), database, user, and the password as the secret. A
   MySQL <em>schema</em> is a database, so a run target's optional schema names another database
@@ -3240,9 +3239,8 @@ managed services still default to).</p>
 <p>One connection type for <strong>any Trino cluster</strong> — including Starburst — and through it every
 store the cluster federates (Hive, Iceberg, Delta, PostgreSQL, MySQL, Cassandra, MongoDB,
 Kafka topics…) with no per-store adapter on DataQ's side. It is the third engine on the
-generic SQL base. Live-verified against Trino 483 with the <code>memory</code>, <code>tpch</code> and <code>postgresql</code>
-connectors, over HTTPS with a private CA, the PASSWORD and JWT authenticators, and file-based
-access control.</p>
+generic SQL base. Supports HTTPS (including a private CA), password and JWT authentication,
+and whatever access control the cluster enforces.</p>
 <ul>
 <li><strong>Fields:</strong> host, port (default 443, or 8080 with TLS disabled), <strong>catalog</strong>, user, an
   optional default schema (default <code>default</code>), and the auth type with its secret. A
@@ -3302,9 +3300,9 @@ Server itself, Azure SQL Database, Synapse dedicated pools, and the Microsoft Fa
 endpoints (Warehouse, Lakehouse SQL analytics endpoint, SQL database in Fabric). It is named for
 the engine, not a cloud (ADR <a href="../../adr/0010-provider-agnostic-infrastructure-seams/">0010</a>),
 and sits on the same generic SQL base as PostgreSQL. The driver decision and its trade-offs are
-<a href="../../adr/0044-mssql-tds-driver-and-entra-auth/">ADR 0044</a>. Live-verified against Azure SQL
-Database with both auth modes on both driver lanes, and against a Microsoft Fabric Warehouse and
-Lakehouse SQL analytics endpoint on the ODBC lane.</p>
+<a href="../../adr/0044-mssql-tds-driver-and-entra-auth/">ADR 0044</a>. SQL Server, Azure SQL Database and
+Synapse work with either auth mode on either driver lane; Microsoft Fabric Warehouse and Lakehouse
+SQL analytics endpoints work on the ODBC lane.</p>
 <ul>
 <li><strong>Fields:</strong> host (a bare hostname — e.g. <code>myserver.database.windows.net</code>; no scheme, port or
   <code>\instance</code>: connect to a named instance by its port), port (default 1433), database, an

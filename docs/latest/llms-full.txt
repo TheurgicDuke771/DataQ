@@ -8,8 +8,9 @@
 # DataQ
 
 **Know your data is right before anyone else finds out it isn't.** DataQ runs automated checks
-against your tables and files — in Snowflake, Databricks Unity Catalog, Apache Iceberg, ADLS
-Gen2, AWS S3 or any S3-compatible store — tells you when something is wrong, and alerts the
+against your tables and files — in Snowflake, Databricks Unity Catalog, Apache Iceberg,
+PostgreSQL, MySQL/MariaDB, Trino, SQL Server (Azure SQL, Synapse, Fabric), ADLS Gen2 or
+Fabric OneLake, AWS S3 or any S3-compatible store — tells you when something is wrong, and alerts the
 team that owns it. It watches your Azure Data Factory, Airflow and dbt pipelines and runs the
 checks the moment a load finishes.
 
@@ -240,7 +241,9 @@ flowchart LR
 
 - **Datasources** are stores you write data-quality checks *against*: **Snowflake**,
   **ADLS Gen2**, **AWS S3** (or any S3-compatible store — MinIO, Ceph, R2, Wasabi, Backblaze),
-  **Unity Catalog (Databricks)**, **Apache Iceberg** (native read).
+  **Unity Catalog (Databricks)**, **Apache Iceberg** (native read), and the generic SQL engines
+  **PostgreSQL**, **MySQL / MariaDB**, **Trino** and **SQL Server** (incl. Azure SQL, Synapse
+  and Fabric SQL). Fabric **OneLake** files are reached through an ADLS Gen2 connection.
 - **Orchestration providers** are workflow engines DataQ *observes* — **Azure Data
   Factory (ADF)**, **Apache Airflow**, and **dbt**. DataQ does three things with them: monitor
   pipeline/DAG/build runs, detect failures in near-real-time, and **trigger a check suite when a
@@ -1919,8 +1922,7 @@ The same two fields exist on a **dbt** orchestration connection whose `artifacts
 One connection type for **any PostgreSQL server** — self-hosted, or a managed service on any
 cloud. It is named for the engine, never for a vendor that hosts it (ADR
 [0010](../adr/0010-provider-agnostic-infrastructure-seams.md)), and is the first engine on
-DataQ's generic SQL datasource base, which the MySQL/MariaDB and Trino adapters reuse.
-Live-verified against PostgreSQL 16.
+DataQ's generic SQL datasource base, which the MySQL/MariaDB, Trino and SQL Server adapters reuse.
 
 - **Fields:** host (a bare hostname or IP — no scheme, port or path), port (default 5432),
   database, user, an optional default schema (default `public`: where a target with no
@@ -1966,8 +1968,8 @@ Live-verified against PostgreSQL 16.
 
 One connection type for **any MySQL or MariaDB server**, on the same generic SQL base as
 PostgreSQL. The driver is **PyMySQL** (MIT); the GPL-licensed MySQL drivers are never used.
-Live-verified against MySQL 8.4, MariaDB 11.8 and MariaDB 10.6 (the long-term line many
-managed services still default to).
+Works with MySQL 8 and MariaDB 10.6 and later, including the long-term line many managed
+services still default to.
 
 - **Fields:** host, port (default 3306), database, user, and the password as the secret. A
   MySQL *schema* is a database, so a run target's optional schema names another database
@@ -2005,9 +2007,8 @@ managed services still default to).
 One connection type for **any Trino cluster** — including Starburst — and through it every
 store the cluster federates (Hive, Iceberg, Delta, PostgreSQL, MySQL, Cassandra, MongoDB,
 Kafka topics…) with no per-store adapter on DataQ's side. It is the third engine on the
-generic SQL base. Live-verified against Trino 483 with the `memory`, `tpch` and `postgresql`
-connectors, over HTTPS with a private CA, the PASSWORD and JWT authenticators, and file-based
-access control.
+generic SQL base. Supports HTTPS (including a private CA), password and JWT authentication,
+and whatever access control the cluster enforces.
 
 - **Fields:** host, port (default 443, or 8080 with TLS disabled), **catalog**, user, an
   optional default schema (default `default`), and the auth type with its secret. A
@@ -2071,9 +2072,9 @@ Server itself, Azure SQL Database, Synapse dedicated pools, and the Microsoft Fa
 endpoints (Warehouse, Lakehouse SQL analytics endpoint, SQL database in Fabric). It is named for
 the engine, not a cloud (ADR [0010](../adr/0010-provider-agnostic-infrastructure-seams.md)),
 and sits on the same generic SQL base as PostgreSQL. The driver decision and its trade-offs are
-[ADR 0044](../adr/0044-mssql-tds-driver-and-entra-auth.md). Live-verified against Azure SQL
-Database with both auth modes on both driver lanes, and against a Microsoft Fabric Warehouse and
-Lakehouse SQL analytics endpoint on the ODBC lane.
+[ADR 0044](../adr/0044-mssql-tds-driver-and-entra-auth.md). SQL Server, Azure SQL Database and
+Synapse work with either auth mode on either driver lane; Microsoft Fabric Warehouse and Lakehouse
+SQL analytics endpoints work on the ODBC lane.
 
 - **Fields:** host (a bare hostname — e.g. `myserver.database.windows.net`; no scheme, port or
   `\instance`: connect to a named instance by its port), port (default 1433), database, an
@@ -2690,7 +2691,7 @@ anomaly / comparison** monitor kinds:
   a timestamp inside the data cannot see.
 - **Volume monitor** — row count within an expected range (did the load land whole?).
   Freshness + volume are the auto-monitor kinds and run on **every** datasource: the SQL
-  datasources (Snowflake / Unity Catalog), Apache Iceberg (computed natively via a
+  datasources (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server), Apache Iceberg (computed natively via a
   `pyiceberg` scan rather than SQL), and ADLS Gen2 / S3 flat files.
 - **Schema-drift monitor** — flags a column added, dropped, or type-changed against a
   stored baseline (did the shape change under you?). Also runs on **every** datasource —
@@ -2708,7 +2709,7 @@ anomaly / comparison** monitor kinds:
 - **Column profiler** — nulls, distinct count, min/max, and top values for a column, on
   any datasource — the baseline you set thresholds from.
 - **Dry-run preview** — run one check against live data **without persisting**, on every
-  datasource with a runner (Snowflake / UC / flat files / Iceberg).
+  datasource with a runner (Snowflake / UC / the generic SQL engines / flat files / Iceberg).
 - **Severity thresholds** — band a check into **warn / fail / critical** from the observed
   unexpected-% (ADR 0005/0016); leave blank for binary pass/fail.
 - **Check version history** — every edit is versioned and viewable per check.
@@ -3771,7 +3772,7 @@ the per-PR history lives in the repo's commit log and pull requests.
   check runs by pushdown, plus monitors, comparisons, the profiler, schema → table browsing and
   inventory sync. TLS is always on and always verified (certificate and hostname). The default
   driver is pure-Python and shipped; Fabric SQL endpoints currently need an optional ODBC lane
-  you install yourself (live-verified on a Fabric Warehouse and Lakehouse SQL endpoint), and
+  you install yourself, and
   DataQ tells you so instead of showing a driver error. On Fabric, the uniqueness and
   column-pair expectations are refused (Fabric does not support the temporary table GX builds
   for them). Regex
@@ -4245,14 +4246,14 @@ five mechanisms:
 | Datasource | Asset entity | ① Run-stamping | ② dbt manifest | ③ OL emission | ④ Catalog pull | ⑤ Warehouse-native |
 |---|---|:-:|:-:|:-:|:-:|:-:|
 | Snowflake | `snowflake://{org}-{account}` / `DB.SCHEMA.TABLE` | ✅ | ✅ (live-verified) | ✅ | ✅ | ✅ (OBJECT_DEPENDENCIES live; ACCESS_HISTORY + **GET_LINEAGE per-seed traversal** Enterprise, built on a live prod-Enterprise capture; **+ column grain from ACCESS_HISTORY** on both tiers, live-verified; view column lineage not yet read) |
-| Unity Catalog | `unitycatalog://{host}` / `catalog.schema.table` | ✅ | ✅ (adapter-aware) | ✅ | ✅ | ✅ (system.access.table_lineage, incremental; **+ column grain, live-verified**) |
+| Unity Catalog | `unitycatalog://{host}` / `catalog.schema.table` | ✅ | ✅ (adapter-aware) | ✅ | ✅ | ✅ (system.access.table_lineage, incremental; **+ column grain**) |
 | ADLS Gen2 (files) | `abfss://{container}@{account}.dfs.core.windows.net` (an ADLS-compatible endpoint such as OneLake keeps its own DFS host: `abfss://{workspace}@onelake.dfs.fabric.microsoft.com`) / pattern **base prefix** | ✅ | — | ✅ | ✅ | — |
 | S3 (files) | `s3://{bucket}` / base prefix | ✅ | — | ✅ | ✅ | — |
 | Iceberg | `{catalog_uri}` / `namespace.table` | ✅ | —¹ | ✅ | ✅ | —³ |
-| MySQL / MariaDB | `mysql://{host}:{port}` / `database.table` | ✅ (+ inventory sync) | ✅ by construction (not yet live-verified) | ✅ | ✅ | —⁴ |
-| Trino | `trino://{host}:{port}` / `catalog.schema.table` | ✅ (+ inventory sync) | ✅ by construction (dbt-trino names match; not yet live-verified) | ✅ | ✅ | —⁴ |
-| PostgreSQL | `postgres://{host}:{port}` / `database.schema.table` | ✅ (+ inventory sync) | ✅ by construction (dbt-postgres names match; not yet live-verified) | ✅ | ✅ | —⁴ |
-| SQL Server | `mssql://{host}:{port}` / `database.schema.table` | ✅ (+ inventory sync) | not verified (dbt-sqlserver / dbt-fabric naming untested) | ✅ | ✅ | —⁴ |
+| MySQL / MariaDB | `mysql://{host}:{port}` / `database.table` | ✅ (+ inventory sync) | ✅ (dbt-mysql naming) | ✅ | ✅ | —⁴ |
+| Trino | `trino://{host}:{port}` / `catalog.schema.table` | ✅ (+ inventory sync) | ✅ (dbt-trino naming) | ✅ | ✅ | —⁴ |
+| PostgreSQL | `postgres://{host}:{port}` / `database.schema.table` | ✅ (+ inventory sync) | ✅ (dbt-postgres naming) | ✅ | ✅ | —⁴ |
+| SQL Server | `mssql://{host}:{port}` / `database.schema.table` | ✅ (+ inventory sync) | ✅ where dbt-sqlserver / dbt-fabric emit `database.schema.table` names | ✅ | ✅ | —⁴ |
 | BI reports / dashboards | not yet materialized² | — | — | — | reserved² | — |
 
 ¹ dbt-managed Iceberg tables surface through the warehouse adapter (Snowflake/UC rows);
@@ -4373,7 +4374,7 @@ risk that carries.
 
 | Term | Meaning |
 |---|---|
-| **Datasource** | A store DataQ runs checks *against*: Snowflake, ADLS Gen2, S3, Unity Catalog, Apache Iceberg. |
+| **Datasource** | A store DataQ runs checks *against*: Snowflake, ADLS Gen2 (incl. Fabric OneLake), S3, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL/MariaDB, Trino, SQL Server (Azure SQL / Synapse / Fabric SQL). |
 | **Orchestration provider** | A workflow engine DataQ *observes* + triggers from: ADF, Airflow, dbt. Not a datasource. |
 | **Connection** | Stored credentials + config for one datasource or orchestration provider. |
 | **Suite** | A named set of checks that runs against one connection's target. |
@@ -5216,7 +5217,7 @@ erDiagram
     connections {
         uuid id PK
         string name "unique per env"
-        string type "snowflake / adls_gen2 / s3 / unity_catalog / iceberg / adf / airflow / dbt"
+        string type "snowflake / adls_gen2 / s3 / unity_catalog / iceberg / postgres / mysql / trino / mssql / adf / airflow / dbt"
         string env "dev / qa / uat / prod"
         jsonb config "non-secret datasource config"
         string secret_ref "SecretStore key, never the credential"
@@ -8473,7 +8474,7 @@ a third-party endpoint.
 
 | # | Service (operator-chosen) | What DataQ sends | Personal data? | When active |
 |---|---|---|---|---|
-| 1 | **Monitored datasources** — Snowflake, ADLS Gen2, S3 / S3-compatible, Unity Catalog, Iceberg | Read-only queries; DQ check SQL | Reads whatever the monitored tables hold — this is the primary data flow | Always (the product's purpose) |
+| 1 | **Monitored datasources** — Snowflake, ADLS Gen2 / OneLake, S3 / S3-compatible, Unity Catalog, Iceberg, PostgreSQL, MySQL / MariaDB, Trino, SQL Server / Azure SQL / Fabric SQL | Read-only queries; DQ check SQL | Reads whatever the monitored tables hold — this is the primary data flow | Always (the product's purpose) |
 | 2 | **Orchestration providers** — ADF, Airflow, dbt | Polling reads of pipeline/DAG run status; inbound webhooks | No — pipeline metadata only | When orchestration connections exist |
 | 3 | **Alert delivery** — MS Teams / Slack webhooks, SMTP email (incl. SES) | Check names, statuses, suite names and — when a failing sample is attached — **redacted** sample values | Potentially, in redacted failing samples; recipient addresses | When notifications are configured |
 | 4 | **Sign-in email (OTP)** — the configured SMTP relay | One-time codes to user email addresses | User email addresses (account identifiers, not warehouse content) | `otp` auth mode |
@@ -8552,13 +8553,14 @@ cloud-conditional code paths**, and the same container images run everywhere.
 
 ## Features
 
-The application feature set — suites/checks across all five datasources, every monitor kind,
-assets/lineage/incidents, alerting, scheduling, the 47-tool MCP server, PATs, rate limiting —
+The application feature set — suites/checks across all nine datasource types, every monitor kind,
+assets/lineage/incidents, alerting, scheduling, the 51-tool MCP server, PATs, rate limiting —
 is the **same code everywhere**. Where the installations genuinely differ:
 
 | Capability | Azure | AWS | Local |
 |---|---|---|---|
-| Datasource runs | live-verified: Snowflake, Unity Catalog, ADLS, S3/S3-compatible, Iceberg | live-verified: Snowflake, Unity Catalog, native S3 | flat files, MinIO, Unity Catalog (Free Edition), Iceberg; no live warehouse required |
+| Datasource runs | live-verified: Snowflake, Unity Catalog, ADLS, S3/S3-compatible, Iceberg | live-verified: Snowflake, Unity Catalog, native S3 | flat files, MinIO, Unity Catalog (Free Edition), Iceberg, PostgreSQL / MySQL / MariaDB / Trino containers; no live warehouse required |
+| PostgreSQL, MySQL/MariaDB, Trino, SQL Server, OneLake | ✅ | ✅ | ✅ (SQL Server's optional ODBC lane needs the driver installed by the operator) |
 | Assets / lineage / incidents / DQ scorecard | live-verified (Snowflake full-tier lineage, UC dbt lineage, inventory sync) | deployed — same code; warehouse-lineage sweep enabled but not yet exercised against that account's grants | ✅ (Marquez reference consumer via `--profile lineage`) |
 | Alerting — Teams / Slack | live-verified | deployed, unexercised | pointable anywhere |
 | Alerting — email | configured | live-verified (SES) | Mailpit |
@@ -14046,7 +14048,7 @@ The options were compared on five criteria: licence against MIT distribution and
 
 ## Spike outcome (2026-09-27, live)
 
-The spike ran against a free-offer Azure SQL Database and a Fabric trial workspace (Warehouse + Lakehouse), reached from outside Azure. `python-tds 1.17.1` + `sqlalchemy-pytds 1.0.2`.
+The spike ran against an Azure SQL Database and a Microsoft Fabric Warehouse + Lakehouse, reached from outside Azure. `python-tds 1.17.1` + `sqlalchemy-pytds 1.0.2`.
 
 **Azure SQL: passes every criterion.**
 - Entra user token, Entra service-principal token and SQL login all connect.
@@ -14101,9 +14103,7 @@ The spike ran against a free-offer Azure SQL Database and a Fabric trial workspa
 - Adapter work is more than the `ConnectionAdapter` alone. It also touches: the `CheckRunner` on the shared `gx_runner`; `monitors.py`, where Core `Select` quoting is already dialect-driven; the `tsql` dialect in the custom-SQL validator; sampling; `enumerate_tables` (ADR 0040) over `INFORMATION_SCHEMA`; the profiler; the connection-spec UI; and the per-connection-type value sets in a migration. It should be split into issues once the spike passes.
 - Supply-chain risk moves to two single-maintainer packages. Mitigations: exact pins, the rule-39 quarterly audit, and the option to vendor the dialect.
 - Pure-Python TDS is slower than ODBC on large row transfers. DataQ pushes aggregates down and caps samples, so the spike should measure this but it is not expected to decide anything.
-- **Test harness:** SQL Server Developer and Express images are proprietary EULA, which the harness rule (no commercial licence, even in the harness) keeps out. The Azure SQL Database free offer is a hosted service. It runs no licensed binary on our side and costs nothing within its monthly allowance, so it avoids that problem. It does tie the live lane to Azure. For Azure-free CI of the SQL-auth path, **Babelfish for PostgreSQL** (Apache-2.0, speaks TDS on 1433) is worth a follow-up spike. It cannot stand in for Entra or Fabric.
-
-## Alternatives considered
+- **Test harness:*- **Testing:** SQL Server Developer and Express images carry a proprietary EULA, so they stay out of the test tooling. A hosted Azure SQL database runs no licensed binary on our side. For Azure-free CI of the SQL-auth path, **Babelfish for PostgreSQL** (Apache-2.0, speaks TDS on 1433) is a possible stand-in; it cannot stand in for Entra or Fabric.considered
 
 - **(a) `pyodbc` + msodbcsql18 in the published image.** The most proven path, first-class in GX, and the one Microsoft documents for Fabric. Rejected as the *default* for the licence reasons above. It remains the documented fallback if the spike fails, under its own ADR.
 - **(a′) Keep `pyodbc` but make msodbcsql18 bring-your-own**, installed in a derived image the operator builds. **Adopted as the optional Fabric lane (Decision 1a)**, not as the only path: python-tds keeps the type working in the image we publish for SQL Server and Azure SQL.

@@ -1,8 +1,9 @@
 # DataQ
 
 **Know your data is right before anyone else finds out it isn't.** DataQ runs automated checks
-against your tables and files — in Snowflake, Databricks Unity Catalog, Apache Iceberg, ADLS
-Gen2, AWS S3 or any S3-compatible store — tells you when something is wrong, and alerts the
+against your tables and files — in Snowflake, Databricks Unity Catalog, Apache Iceberg,
+PostgreSQL, MySQL/MariaDB, Trino, SQL Server (Azure SQL, Synapse, Fabric), ADLS Gen2 or
+Fabric OneLake, AWS S3 or any S3-compatible store — tells you when something is wrong, and alerts the
 team that owns it. It watches your Azure Data Factory, Airflow and dbt pipelines and runs the
 checks the moment a load finishes.
 

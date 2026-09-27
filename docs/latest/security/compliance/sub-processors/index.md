@@ -27,7 +27,7 @@ a third-party endpoint.
 
 | # | Service (operator-chosen) | What DataQ sends | Personal data? | When active |
 |---|---|---|---|---|
-| 1 | **Monitored datasources** — Snowflake, ADLS Gen2, S3 / S3-compatible, Unity Catalog, Iceberg | Read-only queries; DQ check SQL | Reads whatever the monitored tables hold — this is the primary data flow | Always (the product's purpose) |
+| 1 | **Monitored datasources** — Snowflake, ADLS Gen2 / OneLake, S3 / S3-compatible, Unity Catalog, Iceberg, PostgreSQL, MySQL / MariaDB, Trino, SQL Server / Azure SQL / Fabric SQL | Read-only queries; DQ check SQL | Reads whatever the monitored tables hold — this is the primary data flow | Always (the product's purpose) |
 | 2 | **Orchestration providers** — ADF, Airflow, dbt | Polling reads of pipeline/DAG run status; inbound webhooks | No — pipeline metadata only | When orchestration connections exist |
 | 3 | **Alert delivery** — MS Teams / Slack webhooks, SMTP email (incl. SES) | Check names, statuses, suite names and — when a failing sample is attached — **redacted** sample values | Potentially, in redacted failing samples; recipient addresses | When notifications are configured |
 | 4 | **Sign-in email (OTP)** — the configured SMTP relay | One-time codes to user email addresses | User email addresses (account identifiers, not warehouse content) | `otp` auth mode |

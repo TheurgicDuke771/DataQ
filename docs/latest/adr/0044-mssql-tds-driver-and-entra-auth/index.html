@@ -2236,17 +2236,6 @@
   
 </li>
       
-        <li class="md-nav__item">
-  <a href="#alternatives-considered" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Alternatives considered
-      
-    </span>
-  </a>
-  
-</li>
-      
     </ul>
   
 </nav>
@@ -2368,7 +2357,7 @@
 <p><strong>What the ODBC 18 EULA asks of a redistributor</strong> (read from the licence text itself, not a summary; this is not legal advice): §1(a) grants use "to develop and test your applications", and anything beyond that depends on the distributable-code clause. §2(a)(i) makes only code <em>on the REDIST list</em> distributable, and I could not find a REDIST list that names the Linux <code>msodbcsql18</code> package. §2(b)(ii) requires that "distributors and external end users … agree to terms that protect it and Microsoft at least as much as this agreement". §2(b)(iii) requires the distributor to "indemnify, defend, and hold harmless Microsoft". §4(e) forbids distributing the software except as distributable code. The pass-through and indemnity obligations would attach to anyone who pulls the GHCR image, which cannot be squared with ADR 0031's plain MIT, no-strings distribution. The rule-40 list names copyleft and source-available licences; a closed proprietary binary is further from MIT than either of those, so shipping it would need its own ADR-level exception.</p>
 <p><strong>Common practice</strong> is to accept the EULA in the image build, as the Bitnami Airflow image does behind an <code>INSTALL_MSSQL_CLIENT</code> switch. Microsoft now ships the same ODBC 18 binaries through PyPI in <code>mssql-python-odbc</code>. That shows Microsoft tolerates redistribution. It does not remove the obligations above from the party that redistributes.</p>
 <h2 id="spike-outcome-2026-09-27-live">Spike outcome (2026-09-27, live)<a class="headerlink" href="#spike-outcome-2026-09-27-live" title="Permanent link">¶</a></h2>
-<p>The spike ran against a free-offer Azure SQL Database and a Fabric trial workspace (Warehouse + Lakehouse), reached from outside Azure. <code>python-tds 1.17.1</code> + <code>sqlalchemy-pytds 1.0.2</code>.</p>
+<p>The spike ran against an Azure SQL Database and a Microsoft Fabric Warehouse + Lakehouse, reached from outside Azure. <code>python-tds 1.17.1</code> + <code>sqlalchemy-pytds 1.0.2</code>.</p>
 <p><strong>Azure SQL: passes every criterion.</strong>
 - Entra user token, Entra service-principal token and SQL login all connect.
 - TLS with the <code>certifi</code> bundle works. The server refuses a connection without TLS.
@@ -2416,11 +2405,12 @@
 <li>Adapter work is more than the <code>ConnectionAdapter</code> alone. It also touches: the <code>CheckRunner</code> on the shared <code>gx_runner</code>; <code>monitors.py</code>, where Core <code>Select</code> quoting is already dialect-driven; the <code>tsql</code> dialect in the custom-SQL validator; sampling; <code>enumerate_tables</code> (ADR 0040) over <code>INFORMATION_SCHEMA</code>; the profiler; the connection-spec UI; and the per-connection-type value sets in a migration. It should be split into issues once the spike passes.</li>
 <li>Supply-chain risk moves to two single-maintainer packages. Mitigations: exact pins, the rule-39 quarterly audit, and the option to vendor the dialect.</li>
 <li>Pure-Python TDS is slower than ODBC on large row transfers. DataQ pushes aggregates down and caps samples, so the spike should measure this but it is not expected to decide anything.</li>
-<li><strong>Test harness:</strong> SQL Server Developer and Express images are proprietary EULA, which the harness rule (no commercial licence, even in the harness) keeps out. The Azure SQL Database free offer is a hosted service. It runs no licensed binary on our side and costs nothing within its monthly allowance, so it avoids that problem. It does tie the live lane to Azure. For Azure-free CI of the SQL-auth path, <strong>Babelfish for PostgreSQL</strong> (Apache-2.0, speaks TDS on 1433) is worth a follow-up spike. It cannot stand in for Entra or Fabric.</li>
-</ul>
-<h2 id="alternatives-considered">Alternatives considered<a class="headerlink" href="#alternatives-considered" title="Permanent link">¶</a></h2>
-<ul>
-<li><strong>(a) <code>pyodbc</code> + msodbcsql18 in the published image.</strong> The most proven path, first-class in GX, and the one Microsoft documents for Fabric. Rejected as the <em>default</em> for the licence reasons above. It remains the documented fallback if the spike fails, under its own ADR.</li>
+<li>
+<p><strong>Test harness:*- </strong>Testing:<strong> SQL Server Developer and Express images carry a proprietary EULA, so they stay out of the test tooling. A hosted Azure SQL database runs no licensed binary on our side. For Azure-free CI of the SQL-auth path, </strong>Babelfish for PostgreSQL** (Apache-2.0, speaks TDS on 1433) is a possible stand-in; it cannot stand in for Entra or Fabric.considered</p>
+</li>
+<li>
+<p><strong>(a) <code>pyodbc</code> + msodbcsql18 in the published image.</strong> The most proven path, first-class in GX, and the one Microsoft documents for Fabric. Rejected as the <em>default</em> for the licence reasons above. It remains the documented fallback if the spike fails, under its own ADR.</p>
+</li>
 <li><strong>(a′) Keep <code>pyodbc</code> but make msodbcsql18 bring-your-own</strong>, installed in a derived image the operator builds. <strong>Adopted as the optional Fabric lane (Decision 1a)</strong>, not as the only path: python-tds keeps the type working in the image we publish for SQL Server and Azure SQL.</li>
 <li><strong>(b) <code>pymssql</code>.</strong> Its licence is acceptable, but it has no Entra token support, so it cannot reach Fabric at all. Rejected.</li>
 <li><strong>(c) <code>mssql-python</code>.</strong> Microsoft's modern driver, GA, and handles Entra natively. Its hard dependency on the proprietary <code>mssql-python-odbc</code> gives it the same licence problem as (a), delivered through pip, where the rule-40 licence sweep would flag it as <em>Other/Proprietary</em>. Its SQLAlchemy dialect also needs SQLAlchemy 2.1. Rejected for now. It is the preferred successor to (a) if a proprietary driver is ever accepted.</li>

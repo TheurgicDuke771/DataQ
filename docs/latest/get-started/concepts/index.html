@@ -2415,7 +2415,9 @@
 <ul>
 <li><strong>Datasources</strong> are stores you write data-quality checks <em>against</em>: <strong>Snowflake</strong>,
   <strong>ADLS Gen2</strong>, <strong>AWS S3</strong> (or any S3-compatible store — MinIO, Ceph, R2, Wasabi, Backblaze),
-  <strong>Unity Catalog (Databricks)</strong>, <strong>Apache Iceberg</strong> (native read).</li>
+  <strong>Unity Catalog (Databricks)</strong>, <strong>Apache Iceberg</strong> (native read), and the generic SQL engines
+  <strong>PostgreSQL</strong>, <strong>MySQL / MariaDB</strong>, <strong>Trino</strong> and <strong>SQL Server</strong> (incl. Azure SQL, Synapse
+  and Fabric SQL). Fabric <strong>OneLake</strong> files are reached through an ADLS Gen2 connection.</li>
 <li><strong>Orchestration providers</strong> are workflow engines DataQ <em>observes</em> — <strong>Azure Data
   Factory (ADF)</strong>, <strong>Apache Airflow</strong>, and <strong>dbt</strong>. DataQ does three things with them: monitor
   pipeline/DAG/build runs, detect failures in near-real-time, and <strong>trigger a check suite when a

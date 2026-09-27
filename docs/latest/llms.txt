@@ -8,7 +8,7 @@ lists which).
 
 ## Home
 
-- [Home](https://theurgicduke771.github.io/DataQ/docs/latest/index.md): against your tables and files — in Snowflake, Databricks Unity Catalog, Apache Iceberg, ADLS
+- [Home](https://theurgicduke771.github.io/DataQ/docs/latest/index.md): against your tables and files — in Snowflake, Databricks Unity Catalog, Apache Iceberg,
 
 ## Get started
 

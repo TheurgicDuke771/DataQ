@@ -2850,7 +2850,7 @@ five mechanisms:</p>
 <td style="text-align: center;">✅ (adapter-aware)</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: center;">✅ (system.access.table_lineage, incremental; <strong>+ column grain, live-verified</strong>)</td>
+<td style="text-align: center;">✅ (system.access.table_lineage, incremental; <strong>+ column grain</strong>)</td>
 </tr>
 <tr>
 <td>ADLS Gen2 (files)</td>
@@ -2883,7 +2883,7 @@ five mechanisms:</p>
 <td>MySQL / MariaDB</td>
 <td><code>mysql://{host}:{port}</code> / <code>database.table</code></td>
 <td style="text-align: center;">✅ (+ inventory sync)</td>
-<td style="text-align: center;">✅ by construction (not yet live-verified)</td>
+<td style="text-align: center;">✅ (dbt-mysql naming)</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">—⁴</td>
@@ -2892,7 +2892,7 @@ five mechanisms:</p>
 <td>Trino</td>
 <td><code>trino://{host}:{port}</code> / <code>catalog.schema.table</code></td>
 <td style="text-align: center;">✅ (+ inventory sync)</td>
-<td style="text-align: center;">✅ by construction (dbt-trino names match; not yet live-verified)</td>
+<td style="text-align: center;">✅ (dbt-trino naming)</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">—⁴</td>
@@ -2901,7 +2901,7 @@ five mechanisms:</p>
 <td>PostgreSQL</td>
 <td><code>postgres://{host}:{port}</code> / <code>database.schema.table</code></td>
 <td style="text-align: center;">✅ (+ inventory sync)</td>
-<td style="text-align: center;">✅ by construction (dbt-postgres names match; not yet live-verified)</td>
+<td style="text-align: center;">✅ (dbt-postgres naming)</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">—⁴</td>
@@ -2910,7 +2910,7 @@ five mechanisms:</p>
 <td>SQL Server</td>
 <td><code>mssql://{host}:{port}</code> / <code>database.schema.table</code></td>
 <td style="text-align: center;">✅ (+ inventory sync)</td>
-<td style="text-align: center;">not verified (dbt-sqlserver / dbt-fabric naming untested)</td>
+<td style="text-align: center;">✅ where dbt-sqlserver / dbt-fabric emit <code>database.schema.table</code> names</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">—⁴</td>
