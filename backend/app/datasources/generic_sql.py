@@ -19,7 +19,7 @@ import ipaddress
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -58,6 +58,11 @@ def _is_ipv6(host: str) -> bool:
     return True
 
 
+#: The TLS modes every generic engine offers, in libpq's vocabulary. ``require`` is the default:
+#: a mode that silently downgrades to plaintext when the server lacks TLS (libpq's ``prefer``,
+#: PyMySQL's default) is not offered at all, and ``disable`` must be chosen explicitly.
+SslMode = Literal["disable", "require", "verify-ca", "verify-full"]
+
 #: Seconds a login / connect may take before the test, profiler or browse gives up.
 CONNECT_TIMEOUT = 10
 
@@ -83,6 +88,14 @@ class GenericSqlConfig(BaseModel):
     schema_: str | None = Field(default=None, alias="schema")
     # Warehouse inventory sync (ADR 0040) — on by default; see SnowflakeConfig.
     inventory_sync: bool = True
+    sslmode: SslMode = "require"
+
+    @field_validator("sslmode", mode="before")
+    @classmethod
+    def _blank_sslmode_is_the_default(cls, value: Any) -> Any:
+        return (
+            "require" if value is None or (isinstance(value, str) and not value.strip()) else value
+        )
 
     @field_validator("port", "schema_", mode="before")
     @classmethod
@@ -133,6 +146,12 @@ class GenericSqlConfig(BaseModel):
         """The engine's own default schema when the connection names none."""
         raise NotImplementedError
 
+    def url_database(self) -> str:
+        """The database the session connects to. An engine where a schema IS a database
+        (MySQL) connects to the schema instead, which is how its session gets scoped.
+        """
+        return self.database
+
 
 @dataclass(frozen=True)
 class ColumnCaps:
@@ -146,6 +165,15 @@ class ColumnCaps:
 
 #: `(conn, schema, table)` → the per-column capabilities of a live table.
 ColumnCapsReader = Callable[[Any, str, str], dict[str, ColumnCaps]]
+
+
+class ConnectArgs(Protocol):
+    """``(config, timeout, *, read_only)`` → DBAPI ``connect_args`` for one session."""
+
+    def __call__(
+        self, config: Any, timeout: int | None, *, read_only: bool = True
+    ) -> dict[str, Any]: ...
+
 
 #: `(context, name, connection_string, engine_kwargs)` → a registered GX SQL datasource.
 GxDatasourceFactory = Callable[[Any, str, str, dict[str, Any]], Any]
@@ -175,8 +203,9 @@ class SqlEngineSpec:
     config_model: type[GenericSqlConfig]
     drivername: str
     gx_datasource: GxDatasourceFactory
-    #: DBAPI ``connect_args`` for a session: TLS, timeout, and the session-level READ ONLY guard.
-    connect_args: Callable[[Any, int | None], dict[str, Any]]
+    #: DBAPI ``connect_args`` for a session: TLS, timeout, and the session-level READ ONLY guard
+    #: (on unless the caller asks otherwise — only `temp_table_types` ever does).
+    connect_args: ConnectArgs
     #: OpenLineage namespace scheme (``postgres://host:port``).
     namespace_scheme: str
     #: Whether the asset name carries the database ahead of the schema (``db.schema.table``).
@@ -189,6 +218,10 @@ class SqlEngineSpec:
     #: Extra ``create_engine`` keyword arguments for the RUN path's engines (GX's and the
     #: monitors'), e.g. how the driver hands back JSON cells.
     run_engine_options: dict[str, Any] = field(default_factory=dict)
+    #: Expectation types GX evaluates on this dialect by creating session TEMPORARY tables, which a
+    #: read-only session refuses (GX's MySQL uniqueness check). They run in a separate GX session
+    #: without the read-only guard; nothing a user wrote runs there — custom SQL never does.
+    temp_table_types: frozenset[str] = frozenset()
 
     def validate_config(self, raw: dict[str, Any]) -> GenericSqlConfig:
         return self.config_model.model_validate(raw)
@@ -212,7 +245,7 @@ class SqlEngineSpec:
             password=secret,
             host=config.host,
             port=config.effective_port,
-            database=config.database,
+            database=config.url_database(),
         )
 
     def url_string(self, config: GenericSqlConfig, secret: str) -> str:
@@ -311,6 +344,45 @@ class GenericSqlCheckRunner:
         index_columns: list[str] | None = None,
         value_signal_gate: ValueSignalGate | None = None,
     ) -> SuiteOutcome:
+        temp_types = self._spec.temp_table_types
+        writable = [i for i, spec in enumerate(checks) if spec.expectation_type in temp_types]
+        if not writable:
+            return self._run_batch(
+                table=table,
+                schema=schema,
+                checks=checks,
+                index_columns=index_columns,
+                value_signal_gate=value_signal_gate,
+                read_only=True,
+            )
+        guarded = [i for i in range(len(checks)) if i not in set(writable)]
+        by_position: dict[int, CheckOutcome] = {}
+        success = True
+        for positions, read_only in ((guarded, True), (writable, False)):
+            if not positions:
+                continue
+            outcome = self._run_batch(
+                table=table,
+                schema=schema,
+                checks=[checks[i] for i in positions],
+                index_columns=index_columns,
+                value_signal_gate=value_signal_gate,
+                read_only=read_only,
+            )
+            success = success and outcome.success
+            by_position.update(zip(positions, outcome.checks, strict=True))
+        return SuiteOutcome(success=success, checks=[by_position[i] for i in range(len(checks))])
+
+    def _run_batch(
+        self,
+        *,
+        table: str,
+        schema: str | None,
+        checks: list[CheckSpec],
+        index_columns: list[str] | None,
+        value_signal_gate: ValueSignalGate | None,
+        read_only: bool,
+    ) -> SuiteOutcome:
         import great_expectations as gx
 
         from backend.app.datasources.gx_runner import run_expectations
@@ -325,7 +397,7 @@ class GenericSqlCheckRunner:
             f"{self._spec.conn_type}-{table}",
             self._spec.url_string(scoped, self._secret),
             {
-                "connect_args": self._spec.connect_args(scoped, None),
+                "connect_args": self._spec.connect_args(scoped, None, read_only=read_only),
                 **self._spec.run_engine_options,
             },
         )

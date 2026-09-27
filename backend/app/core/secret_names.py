@@ -43,6 +43,7 @@ _TYPE_WORDS: Final = {
     "dbt": ("dbt",),
     "s3": ("s3", "aws", "amazon"),
     "postgres": ("postgres", "postgresql", "pg"),
+    "mysql": ("mysql", "mariadb"),
 }
 
 
