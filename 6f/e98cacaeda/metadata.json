@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "6fe98cacaeda",
+  "strategy": "manual-commit",
+  "branch": "fix/readable-email-alerts",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/alerting/render.py",
+    "backend/tests/alerting/test_render_plain.py",
+    "docs/site/guides/notifications.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/6f/e98cacaeda/0/metadata.json",
+      "transcript": "/6f/e98cacaeda/0/full.jsonl",
+      "compact_transcript": "/6f/e98cacaeda/0/transcript.jsonl",
+      "content_hash": "/6f/e98cacaeda/0/content_hash.txt",
+      "prompt": "/6f/e98cacaeda/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 90,
+    "cache_creation_tokens": 71797,
+    "cache_read_tokens": 18287200,
+    "output_tokens": 33559,
+    "api_call_count": 49,
+    "subagent_tokens": {
+      "input_tokens": 1332,
+      "cache_creation_tokens": 2804772,
+      "cache_read_tokens": 245677050,
+      "output_tokens": 63097,
+      "api_call_count": 666
+    }
+  }
+}
