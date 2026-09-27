@@ -1950,6 +1950,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#how-much-of-a-failing-column-the-value-classifier-sees" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How much of a failing column the value classifier sees
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2758,6 +2769,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#how-much-of-a-failing-column-the-value-classifier-sees" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How much of a failing column the value classifier sees
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3453,6 +3475,49 @@ name heuristic.</p>
 <p>It is off by default, and deliberately: a fully-masked failing row is
 unactionable, so this is a trade you make for a regulated dataset rather than one
 made for you.</p>
+<h3 id="how-much-of-a-failing-column-the-value-classifier-sees">How much of a failing column the value classifier sees<a class="headerlink" href="#how-much-of-a-failing-column-the-value-classifier-sees" title="Permanent link">¶</a></h3>
+<p>When nothing above decides a column — no tag, no policy entry, no personal-data
+name, not fail-closed — the value classifier decides it from the failing values:
+mostly e-mail addresses or encoded blobs mask it. The stored sample is capped at
+20 rows, so on a check failing thousands of rows the classifier is given a
+<strong>population signal</strong> instead: counts taken over up to the first <strong>5,000</strong>
+failing rows. That signal is what keeps a column masked when its first 20 failing
+values happen to look harmless and the rows behind them do not.</p>
+<table>
+<thead>
+<tr>
+<th>Lane</th>
+<th>Where the population signal comes from</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Flat files (ADLS, S3), Iceberg, the Unity Catalog DataFrame batch</td>
+<td>The failing-row list the check already builds (up to 5,000 rows); no extra query</td>
+</tr>
+<tr>
+<td>Snowflake, Unity Catalog SQL pushdown</td>
+<td>One <strong>extra, bounded query</strong> per failing check: the check's own failing condition, selecting only the tested column and the identifier column, <code>LIMIT 5000</code></td>
+</tr>
+</tbody>
+</table>
+<p>The extra query on the warehouse lanes is issued only when all of these hold:
+the check found more than 20 unexpected rows (including a check that still
+passes under <code>mostly</code>, whose sample is kept all the same), it tests a single
+column, and the value signal could actually change the outcome for the tested or
+identifier column — a column already masked by a tag, <code>pii_columns</code>, its name or
+fail-closed mode never pays for it. Zero-sample privacy mode never issues it:
+no sample is stored, so there is nothing to classify. The decision is made with the policy and tags <strong>as of the
+run</strong>; if they change later, a column that was decided without the query falls
+back to its 20 stored values.</p>
+<p>If that query fails, the check's result is unaffected and the column is
+classified from the 20 stored values, exactly as before the signal existed. The
+stored sample records that the population sample was attempted and failed, and
+the worker logs <code>gx_value_signal_sample_failed</code> at WARNING — the fallback is
+never silent.</p>
+<p>Without an identifier column, the flat-file lanes do not build a failing-row
+list, so they classify from the 20 stored values; the warehouse lanes still issue
+the bounded query for the tested column.</p>
 <h2 id="data-residency">Data residency<a class="headerlink" href="#data-residency" title="Permanent link">¶</a></h2>
 <p>Where data lives, and what can take it elsewhere. GDPR Ch. V asks a controller to
 answer both; this section describes <strong>how DataQ answers them</strong>, and
