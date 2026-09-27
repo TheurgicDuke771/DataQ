@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from dataclasses import replace
 from typing import Any
 
 from sqlalchemy import select
@@ -254,13 +255,29 @@ def test_slack_payload_carries_incident_line() -> None:
     assert "Incident 12345678 (not-null id) — fail, occurrence 3" in blob
 
 
-def test_email_bodies_carry_incident_line() -> None:
+def test_email_bodies_carry_incident_under_its_check() -> None:
+    """#2108: the incident renders as labelled facts under its own check block."""
     report = _report_with_incidents([_card()])
     text = render_text_body(report)
-    assert "Incidents:" in text
-    assert "Incident 12345678 (not-null id) — fail, new" in text
+    assert "  Incident: 12345678 — new problem, first time this check has failed." in text
+    assert "Other open incidents" not in text
     html = render_html_body(report)
-    assert "Incident 12345678 (not-null id) — fail, new" in html
+    assert "12345678 — new problem, first time this check has failed." in html
+    assert "Other open incidents" not in html
+
+
+def test_email_never_drops_an_incident_without_a_matching_check() -> None:
+    """An incident whose check isn't among the rendered failing checks (renamed
+    check, or past the line cap) is listed on its own rather than vanishing.
+    """
+    orphan = replace(_card(is_new=False, occurrence_count=7), check_name="renamed check")
+    report = _report_with_incidents([orphan])
+    text = render_text_body(report)
+    assert "Other open incidents:" in text
+    assert "* renamed check" in text
+    assert "12345678 — ongoing, failed on 7 runs so far." in text
+    html = render_html_body(report)
+    assert "Other open incidents" in html and "renamed check" in html
 
 
 def test_teams_card_carries_incident_fact() -> None:
