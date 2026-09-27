@@ -595,3 +595,30 @@ case that bites, since the product cannot know them and will never warn.
   - AWS: `Retail Snowflake DEV` — `reauth` returned `{"ok":true}`.
 - **Independent verification pass** (`POST /connections/{id}/test`, separate from reauth's own probe) — all four rotated connections returned `{"ok":true}` on both clouds. The unrelated `probe-snowflake-dev` connection (no secret, not rotated) still correctly 502s as "no stored credential to test with" — expected, unchanged state.
 - Expected state after: all four production Snowflake connections (3 Azure + 1 AWS) are live on the new `DATAQ_READER` PAT, verified green by both the reauth probe and a separate `/test` call. The old PAT that all three Azure connections previously shared is no longer referenced by any connection; Key Vault/Secrets Manager retain prior secret versions (rotation is reversible). No connection using `DATAQ_ADMIN` or `DATAQ_LOADER` exists today, so those two new PATs are unused by DataQ connections as of this rotation.
+
+## 2026-09-27 — Databricks unblocked, #1989 live-verified, ADF credential fix (#1826), Azure beat split + deploy `6e3737c2`
+
+- ~03:5xZ UTC: **Databricks token inventory** (metadata only, via `/api/2.0/token/list`). Three live PATs:
+  - `conn-unity-catalog-qa` expires **2026-09-30**. It backs KV `conn-unity-catalog-qa-5135eb21`, confirmed by hash comparison, no value shown.
+  - `conn-unity-catalog-retail` expires 2026-10-09.
+  - `databricks-token-harness` expires 2026-11-20.
+
+  All three authenticate (200). **Rotate the QA token before 09-30 and the retail token before 10-09, including every copy.**
+- ~04:0xZ: **Databricks `resource-gatekeeper` block cleared.** Warehouse `b6403b6e3734f0ce` went STOPPED → RUNNING HEALTHY in ~20 s, a UC count query succeeded, and the warehouse was stopped again. No browser login was needed this time.
+- ~04:1xZ: **#1989 live verification** on UC, read-only, `dataq_retail.gold.feedback_sentiment`, run with `databricks-sql-connector` 4.5.0 (isolated install) and 4.4.0. The `LIMIT` sits on both failing-row queries and 20 rows were produced; custom SQL `observed_value` = 195; freshness narrows correctly. Evidence is on #1989 (closed). Findings filed as #2082 and #2083. Note that the maintainer's local `dataq` conda env was still on connector 4.4.0.
+- 04:24Z: **#1826 fixed. Written by Claude, user-approved.** The ADF connections authenticate as `dataq-terraform-sp`, whose secret was rotated on 2026-08-22 (`rotated-2026-08-22-exposure`, hint `z8A`, expires 2027-08-22). That rotation never reached the per-connection KV copies. Set **KV `conn-adf-dev-5f2a3c17` and `conn-adf-qa-e032e40b`** to the current secret, inline with nothing printed. Both now mint ARM tokens (401 → 200), and the 04:28Z poll showed ADF `queryPipelineRuns` succeeding.
+
+  This was written straight to Key Vault rather than through `POST /connections/{id}/reauth` (the preferred path, per the 2026-09-08 entry), because no Azure admin PAT was at hand. So there is no `connection_versions` or audit row for it. **Any future rotation of `dataq-terraform-sp` must update both `conn-adf-*` secrets.**
+- 04:27Z: repo variable `BEAT_APP_NAME=dataq-app-beat` set, then **`tofu apply` on `deploy/terraform/azure/`**:
+  - `azurerm_container_app.beat` created, run with `-var image_tag=<the live worker SHA>`. A bare apply would have created it on the stale `v10` default (#2090, PR #2091).
+  - The worker was updated to drop `-B`.
+  - Beat logged `beat: Starting...` at 04:28:52Z.
+- 04:29Z: **Azure Deploy** run 36294441799 on `6e3737c2`. Migrate `Succeeded`, api/worker rolled, then it **failed at `Deploy beat`**: the GitHub deploy identity had no role on the new app (#2093). Applied the single `github_deploy_contributor["beat"]` role assignment (PR #2094) and re-ran Deploy (run 36294852656). **Green.**
+- **Post-deploy:**
+  - All four apps on `6e3737c2`, checked per service.
+  - Public smoke: healthz/SPA/deep-link 200; `/api/v1/me` and `/mcp/` 401; `/docs` serves the SPA shell; 6/6 security headers.
+  - 15 minutes after the roll: beat sent 35 tasks, the worker received and completed 37, and there were 0 non-Airflow errors.
+  - **No authenticated write probe was run**, because no Azure PAT was at hand.
+- **Still open:**
+  - **Every Snowflake PAT in Key Vault expired around 09-23 (#2085).** Prod Snowflake connections are down until the user mints new ones.
+  - **The AWS CLI credential on the maintainer machine is invalid,** so the AWS apply and deploy for the beat split are pending.
