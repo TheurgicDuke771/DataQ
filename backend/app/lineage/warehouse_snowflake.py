@@ -14,6 +14,7 @@ from backend.app.core.config import get_settings
 from backend.app.core.logging import get_logger
 from backend.app.lineage.warehouse import (
     MAX_COLUMN_PAIRS_PER_EDGE,
+    ColumnGrain,
     LineageEdgePair,
     LineageTier,
     WarehouseLineageResult,
@@ -297,11 +298,16 @@ class SnowflakeLineageProvider:
                         f"object_dependencies: could not read floor ({type(exc).__name__})"
                         + _TRANSIENT_SKIP_SUFFIX
                     )
+                edges, column_grain, column_note = self._refine_with_column_pairs(
+                    conn, namespace, database, top.edges
+                )
                 return WarehouseLineageResult(
-                    edges=top.edges,
+                    edges=edges,
                     tier=LineageTier.SNOWFLAKE_GET_LINEAGE,
-                    degraded_reason="floor unavailable — " + "; ".join(skipped),
+                    degraded_reason="floor unavailable — "
+                    + "; ".join([*skipped, *([column_note] if column_note else [])]),
                     skipped_tiers=tuple(skipped),
+                    column_grain=column_grain,
                     # `partial` (#1109) folds in a confirmed-vs-unclassified GET_LINEAGE blip from
                     # EARLIER in this same call (review finding on #1263: the first version of this
                     # branch dropped it, so a traversal already known-incomplete from its own per-
@@ -313,12 +319,21 @@ class SnowflakeLineageProvider:
                 (e.upstream.name, e.downstream.name): e for e in floor_for_top
             }
             merged_top.update({(e.upstream.name, e.downstream.name): e for e in top.edges})
+            edges, column_grain, column_note = self._refine_with_column_pairs(
+                conn, namespace, database, tuple(merged_top.values())
+            )
+            notes = []
+            if skipped:
+                notes.append("partial traversal — " + "; ".join(skipped))
+            if column_note:
+                notes.append(column_note)
             return WarehouseLineageResult(
-                edges=tuple(merged_top.values()),
+                edges=edges,
                 tier=LineageTier.SNOWFLAKE_GET_LINEAGE,
-                degraded_reason=("partial traversal — " + "; ".join(skipped)) if skipped else None,
+                degraded_reason="; ".join(notes) if notes else None,
                 skipped_tiers=tuple(skipped),
                 prunable=not partial,
+                column_grain=column_grain,
             )
 
         # The two remaining sources are COMPLEMENTARY truths, not alternatives (#911 review — the
@@ -332,9 +347,11 @@ class SnowflakeLineageProvider:
             raise WarehouseLineageUnavailableError(self._unavailable_reason(exc, skipped)) from exc
 
         dml: tuple[LineageEdgePair, ...] = ()
+        column_grain = ColumnGrain.CAPTURED
         try:
             dml = self._from_access_history(conn, namespace, database)
         except _FeatureUnsupportedError as exc:
+            column_grain = ColumnGrain.UNAVAILABLE
             # Carry the REAL reason (edition gate vs missing grant, #902) — the same
             # honesty rule the tier-1 skip already follows. #1309/#1307: `exc` is already
             # labelled ACCESS_HISTORY's own grant by `_from_access_history` at raise time
@@ -382,7 +399,64 @@ class SnowflakeLineageProvider:
             ),
             skipped_tiers=tuple(skipped),
             prunable=not partial,
+            column_grain=column_grain,
         )
+
+    def _refine_with_column_pairs(
+        self,
+        conn: Any,
+        namespace: str,
+        database: str,
+        edges: tuple[LineageEdgePair, ...],
+    ) -> tuple[tuple[LineageEdgePair, ...], ColumnGrain, str | None]:
+        """Attach ACCESS_HISTORY column pairs to a GET_LINEAGE edge set (#1710).
+
+        GET_LINEAGE is traversed at TABLE domain, whose rows carry NULL column names (every
+        captured live row is table-grain), so on an account where it answers, column grain
+        comes only from here. Refinement, never a reason to fail the table edges — and never
+        a source of NEW table edges: a DML-only edge GET_LINEAGE did not return stays out,
+        so this cannot change what the table-level prune observes.
+        """
+        if not edges:
+            return edges, ColumnGrain.CAPTURED, None
+        try:
+            observed = self._from_access_history(conn, namespace, database)
+        except Exception as exc:
+            reason = str(exc) if isinstance(exc, _FeatureUnsupportedError) else type(exc).__name__
+            log.warning(
+                "warehouse_lineage_column_grain_failed",
+                source=self.source,
+                error_type=type(exc).__name__,
+            )
+            return (
+                edges,
+                ColumnGrain.UNAVAILABLE,
+                f"column detail unavailable — access_history: {reason}",
+            )
+        pairs_by_edge = {
+            (e.upstream.name, e.downstream.name): e.column_pairs for e in observed if e.column_pairs
+        }
+        refined: list[LineageEdgePair] = []
+        matched = 0
+        for edge in edges:
+            extra = pairs_by_edge.pop((edge.upstream.name, edge.downstream.name), ())
+            if not extra:
+                refined.append(edge)
+                continue
+            matched += 1
+            union = sorted(set(edge.column_pairs) | set(extra))[:MAX_COLUMN_PAIRS_PER_EDGE]
+            refined.append(
+                LineageEdgePair(
+                    upstream=edge.upstream, downstream=edge.downstream, column_pairs=tuple(union)
+                )
+            )
+        log.info(
+            "warehouse_lineage_column_grain",
+            source=self.source,
+            edges_with_columns=matched,
+            unanchored_table_pairs=len(pairs_by_edge),
+        )
+        return tuple(refined), ColumnGrain.CAPTURED, None
 
     @staticmethod
     def _unavailable_reason(exc: Exception, skipped: list[str]) -> str:

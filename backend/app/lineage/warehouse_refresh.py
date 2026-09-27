@@ -41,6 +41,7 @@ from backend.app.core.secrets import SecretStore
 from backend.app.db.models import Connection, LineageEdge
 from backend.app.lineage.warehouse import (
     MAX_COLUMN_PAIRS_PER_EDGE,
+    ColumnGrain,
     LineageTier,
     WarehouseLineageProvider,
     WarehouseLineageResult,
@@ -85,6 +86,8 @@ class WarehouseRefreshOutcome:
     # is derived by comparing the two: a second, strictly-later wall-clock reading would make
     # every healthy pruning connection compare as permanently suspended.
     refreshed_at: datetime | None = None
+    # #1710 — what the pull learned about column grain; None = nothing new (keep the stored state).
+    column_grain: ColumnGrain | None = None
 
 
 def refresh_warehouse_edges(
@@ -250,6 +253,7 @@ def _persist(
         prune_suspended_since=connection.lineage_last_authoritative_refresh_at,
         prune_forced=prune_forced,
         refreshed_at=refresh_started_at,
+        column_grain=result.column_grain,
     )
 
 
@@ -321,6 +325,8 @@ def refresh_connection_lineage(
     connection.lineage_last_error = None
     if outcome.new_watermark is not None:
         connection.lineage_watermark = outcome.new_watermark
+    if outcome.column_grain is not None:
+        connection.lineage_column_grain = str(outcome.column_grain)
     session.commit()
     return outcome
 

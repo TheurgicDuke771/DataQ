@@ -393,6 +393,9 @@ class Connection(Base):
     lineage_last_authoritative_refresh_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )
+    # #1710: `ColumnGrain` of the last pull that observed column grain. NULL = never recorded (the
+    # connection has not refreshed since this column shipped) — "unknown", never "none exist".
+    lineage_column_grain: Mapped[str | None] = mapped_column(String(32))
 
     # ── Inventory-sync outcome state (#1104), mirrors lineage_last_* ───────────── (the connection
     # test's SELECT 1 never exercises the enumeration query).

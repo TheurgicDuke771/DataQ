@@ -15,7 +15,11 @@ from structlog.typing import EventDict
 
 from backend.app.core.config import get_settings
 from backend.app.lineage import warehouse_snowflake
-from backend.app.lineage.warehouse import LineageTier, WarehouseLineageUnavailableError
+from backend.app.lineage.warehouse import (
+    ColumnGrain,
+    LineageTier,
+    WarehouseLineageUnavailableError,
+)
 from backend.app.lineage.warehouse_snowflake import (
     _EPHEMERAL_STITCH_MAX_DEPTH,
     SnowflakeLineageProvider,
@@ -298,7 +302,7 @@ def test_access_history_unions_with_the_floor_never_replaces_it() -> None:
     result = SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
     assert result.tier == LineageTier.SNOWFLAKE_ACCESS_HISTORY
     assert result.freshness_lag is not None  # the 2-3h latency is surfaced
-    assert result.tier.is_column_level
+    assert result.column_grain == ColumnGrain.CAPTURED
     pairs = {(e.upstream.name, e.downstream.name) for e in result.edges}
     # The DML edge is present…
     assert (
