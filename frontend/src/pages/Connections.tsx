@@ -397,6 +397,15 @@ function ConnectionCard({
                 </Tooltip>
               ) : connection.engine_capabilities.dmf.available ? (
                 <Badge status="success" text="DMF available" />
+              ) : connection.engine_capabilities.dmf.available === null ? (
+                <Tooltip
+                  title={
+                    connection.engine_capabilities.dmf.reason ??
+                    "DMF availability couldn't be determined"
+                  }
+                >
+                  <Badge status="default" text="DMF: couldn't determine" />
+                </Tooltip>
               ) : (
                 <Tooltip
                   title={connection.engine_capabilities.dmf.reason ?? 'DMF is not available'}

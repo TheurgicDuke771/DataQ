@@ -604,6 +604,9 @@ class _ScalarResult:
     def scalar(self) -> object:
         return self._value
 
+    def first(self) -> object:
+        return self._value
+
 
 class _FakeScalarConn:
     """Not a `_FakeConn` subclass — `.execute(...)` here returns an object with
@@ -611,16 +614,18 @@ class _FakeScalarConn:
     where `_FakeConn.execute` returns `None`.
     """
 
-    def __init__(self, executed: list[str], *, scalar: object = 3600, raises: bool = False) -> None:
+    def __init__(self, executed: list[str], *, raises: bool = False) -> None:
         self._executed = executed
-        self._scalar = scalar
         self._raises = raises
 
     def execute(self, statement: object) -> _ScalarResult:
-        self._executed.append(str(statement))
+        sql = str(statement)
+        self._executed.append(sql)
+        if "INFORMATION_SCHEMA.COLUMNS" in sql:
+            return _ScalarResult(("RETAIL", "ORDERS", "ID"))
         if self._raises:
             raise RuntimeError("Insufficient privileges to operate on data metric function")
-        return _ScalarResult(self._scalar)
+        return _ScalarResult((0,))
 
     def __enter__(self) -> "_FakeScalarConn":
         return self
@@ -646,7 +651,7 @@ def test_adapter_probe_dmf_available(monkeypatch: pytest.MonkeyPatch) -> None:
     engine = _FakeScalarEngine([])
     monkeypatch.setattr("sqlalchemy.create_engine", lambda url, **kw: engine)
     result = SnowflakeConnectionAdapter().probe_dmf(_CONFIG, "p@ss")
-    assert result == {"available": True}
+    assert result == {"available": True, "status": "available"}
     assert engine.disposed is True
 
 

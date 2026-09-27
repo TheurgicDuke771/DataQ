@@ -389,6 +389,23 @@ describe('Connections', () => {
     expect(await screen.findByText('DMF unavailable')).toBeInTheDocument();
   });
 
+  it('shows an undetermined probe as "couldn\'t determine", not as unavailable', async () => {
+    mockList.mockResolvedValue([
+      conn({
+        id: 'c1',
+        name: 'sf-dmf-unknown',
+        engine_capabilities: {
+          dmf: { available: null, status: 'undetermined', reason: 'no table to probe with' },
+        },
+      }),
+    ]);
+
+    renderPage();
+
+    expect(await screen.findByText("DMF: couldn't determine")).toBeInTheDocument();
+    expect(screen.queryByText('DMF unavailable')).not.toBeInTheDocument();
+  });
+
   it('never renders a DMF badge for a non-snowflake connection', async () => {
     mockList.mockResolvedValue([conn({ id: 'c1', name: 's3-lake', type: 's3' })]);
 

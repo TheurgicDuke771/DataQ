@@ -191,7 +191,10 @@ export interface Connection {
 
 /** The `engine_capabilities.dmf` shape a Snowflake connection test/reauth writes. */
 export interface DmfCapability {
-  available: boolean;
+  /** `null` = the probe couldn't decide (e.g. no table to probe with) — not "unavailable". */
+  available: boolean | null;
+  /** Absent on rows written before the tri-state probe. */
+  status?: 'available' | 'no_privilege' | 'unsupported_edition' | 'undetermined';
   /** Classified, safe-to-display remediation — never a raw driver/exception message. */
   reason?: string;
 }
