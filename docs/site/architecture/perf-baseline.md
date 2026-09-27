@@ -992,9 +992,11 @@ back against the same datasource; they now run inside
 `profile_service.shared_connection()`, which reuses one live connection per
 datasource for the whole block. SQL generation with `include_profile`
 and additional tables previously paid a login per list and per profile, and now
-pays one. A failed statement inside the scope is rolled back and the connection
-kept, unless the driver has invalidated it, in which case the next call logs in
-again.
+pays one. After a failed statement inside the scope, the connection is rolled back
+and probed with `SELECT 1`. If it still answers it is kept; if not, it is dropped
+and the next call logs in again. The probe is needed because the Snowflake and
+Databricks dialects never mark a dropped session as invalidated. That was measured
+on Unity Catalog, where a dropped session still read `invalidated=False`.
 
 Measured live against Unity Catalog (Free Edition SQL warehouse, warm,
 `dataq_retail.gold.feedback_sentiment`, 7 columns), counting driver sessions
