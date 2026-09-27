@@ -34,9 +34,24 @@ _TRIGGER_LABELS = {
 }
 
 
+def format_number(value: float | int) -> str:
+    """At most 2 decimals, thousands separators, trailing zeros dropped —
+    ``99.4232987`` → ``99.42``, ``34480`` → ``34,480``, ``10.0`` → ``10``. A
+    non-zero value that 2 decimals would erase keeps 2 significant figures
+    (``0.004``, ``0.0021``) so a real failure never reads as ``0``.
+    """
+    if isinstance(value, bool):
+        return str(value)
+    number = float(value)
+    if number != 0 and abs(number) < 0.01:
+        return f"{number:.2g}"
+    text = f"{round(number, 2):,.2f}"
+    return text.rstrip("0").rstrip(".") if "." in text else text
+
+
 def _scalar(value: Any) -> str:
     """A compact one-line string for a JSON scalar, truncated if long."""
-    text = f"{value:g}" if isinstance(value, float) else str(value)
+    text = format_number(value) if isinstance(value, float) else str(value)
     return text if len(text) <= _MAX_SCALAR else text[: _MAX_SCALAR - 1] + "…"
 
 
@@ -67,11 +82,11 @@ def check_sample_note(check: CheckReport) -> str:
         return "sample suppressed (zero-sample privacy mode)"
     sample = check.sample_summary or {}
     pct = sample.get("unexpected_percent")
-    if pct is not None:
-        return f"{pct}% unexpected"
+    if isinstance(pct, int | float):
+        return f"{format_number(pct)}% unexpected"
     count = sample.get("unexpected_count")
-    if count is not None:
-        return f"{count} unexpected"
+    if isinstance(count, int | float):
+        return f"{format_number(count)} unexpected"
     return ""
 
 
@@ -250,6 +265,226 @@ def incident_line(card: IncidentCard) -> str:
     if narrative:
         line = f"{line} · {narrative}"
     return line
+
+
+_ROW_RULE_PHRASES = {
+    "expect_column_values_to_be_unique": "have a duplicate {col}",
+    "expect_column_values_to_not_be_null": "are missing {col}",
+    "expect_column_values_to_be_null": "have a {col} where none is expected",
+    "expect_column_values_to_be_between": "have {col} outside the allowed range{range}",
+    "expect_column_values_to_be_in_set": "have a {col} that isn't on the allowed list",
+    "expect_column_values_to_not_be_in_set": "have a {col} that is on the blocked list",
+    "expect_column_values_to_match_regex": "have {col} in an unexpected format",
+    "expect_column_values_to_not_match_regex": "have {col} in a disallowed format",
+    "expect_column_values_to_match_regex_list": "have {col} in an unexpected format",
+    "expect_column_values_to_not_match_regex_list": "have {col} in a disallowed format",
+    "expect_column_value_lengths_to_be_between": "have {col} with an unexpected length",
+    "expect_column_value_lengths_to_equal": "have {col} with an unexpected length",
+}
+
+
+_SINGULAR = {"have": "has", "are": "is"}
+
+
+def _bound(value: Any) -> str:
+    return format_number(value) if isinstance(value, int | float) else str(value)
+
+
+def _range_text(expected: dict[str, Any]) -> str:
+    low, high = expected.get("min_value"), expected.get("max_value")
+    if low is not None and high is not None:
+        return f" ({_bound(low)} to {_bound(high)})"
+    if low is not None:
+        return f" (at least {_bound(low)})"
+    if high is not None:
+        return f" (at most {_bound(high)})"
+    return ""
+
+
+def _friendly_age(hours: float) -> str:
+    if hours < 1:
+        return f"{format_number(hours * 60)} minutes"
+    if hours < 48:
+        return f"{format_number(hours)} hours"
+    return f"{format_number(hours / 24)} days"
+
+
+def _friendly_timestamp(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        when = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return when.strftime("%d %b %Y, %H:%M") + (" UTC" if when.utcoffset() is not None else "")
+
+
+def _rows_phrase(sample: dict[str, Any]) -> str | None:
+    count, pct = sample.get("unexpected_count"), sample.get("unexpected_percent")
+    count = count if isinstance(count, int | float) else None
+    pct = pct if isinstance(pct, int | float) else None
+    if count is not None:
+        rows = f"{format_number(count)} {'row' if count == 1 else 'rows'}"
+        return f"{rows} ({format_number(pct)}%)" if pct is not None else rows
+    if pct is not None:
+        return f"{format_number(pct)}% of rows"
+    return None
+
+
+def plain_check_summary(check: CheckReport) -> str:
+    """One plain-English sentence a non-engineer can act on (#2108), or ``""``
+    when the result carries nothing to describe — the caller then falls back
+    to the technical detail. Never states a count the result doesn't carry.
+    """
+    if check.status == "error":
+        return "This check couldn't run, so this data wasn't verified. Open the run for the reason."
+    if check.status == "skip":
+        return "This check was skipped, so this data wasn't verified."
+    expected = check.expected_value or {}
+    observed = check.observed_value or {}
+    monitor = expected.get("monitor") or check.expectation_type.removeprefix("monitor:")
+    if monitor == "freshness" and isinstance(observed.get("age_hours"), int | float):
+        text = f"The newest record is {_friendly_age(observed['age_hours'])} old"
+        when = _friendly_timestamp(observed.get("max_timestamp"))
+        return text + (f" (last updated {when})." if when else ".")
+    if check.expectation_type == "expect_table_row_count_to_be_between":
+        rows = observed.get("observed_value")
+        if isinstance(rows, int | float):
+            return (
+                f"The table has {format_number(rows)} rows, outside the expected range"
+                f"{_range_text(expected)}."
+            )
+    rows_text = _rows_phrase(check.sample_summary or {})
+    if check.expectation_type == "unexpected_rows_expectation":
+        count = observed.get("observed_value")
+        if isinstance(count, int | float):
+            noun = "row matches" if count == 1 else "rows match"
+            return f"{format_number(count)} {noun} this rule's failure condition."
+    phrase = _ROW_RULE_PHRASES.get(check.expectation_type)
+    column = expected.get("column")
+    if phrase and isinstance(column, str) and rows_text:
+        text = phrase.format(col=column, range=_range_text(expected))
+        if (check.sample_summary or {}).get("unexpected_count") == 1:
+            verb, _, rest = text.partition(" ")
+            text = f"{_SINGULAR.get(verb, verb)} {rest}"
+        return f"{rows_text} {text}."
+    if rows_text:
+        return f"{rows_text} didn't meet this rule."
+    return ""
+
+
+def _lineage_caveat(qualifiers: list[str]) -> str:
+    """One honest sentence for the qualifiers `_blast_radius_clause` lists in
+    full, keeping what each one actually says: a failing refresh, a stale one, a
+    coarse (view-level) one, and a suspended prune — the last risks EXTRA
+    tables, the rest MISSING or outdated ones, never merged into one direction.
+    """
+    failing = sum(1 for q in qualifiers if "failing" in q)
+    stale = sum(1 for q in qualifiers if "has not refreshed recently" in q)
+    coarse = sum(1 for q in qualifiers if "is coarse" in q)
+    extra = any("pruned removed edges" in q for q in qualifiers)
+    unknown = (
+        len(qualifiers)
+        - failing
+        - stale
+        - coarse
+        - sum(1 for q in qualifiers if "pruned removed edges" in q)
+    )
+
+    def sources(n: int) -> str:
+        return f"{n} lineage source{'s' if n != 1 else ''}"
+
+    problems = []
+    if failing:
+        problems.append(f"{sources(failing)} couldn't be refreshed")
+    if stale:
+        problems.append(
+            f"{sources(stale)} {'hasn' if stale == 1 else 'haven'}'t refreshed recently"
+        )
+    if coarse:
+        problems.append(
+            f"{sources(coarse)} only record{'s' if coarse == 1 else ''} view-level lineage"
+        )
+    if unknown > 0:
+        problems.append(f"{sources(unknown)} reported a problem")
+    notes = []
+    if problems:
+        notes.append(", ".join(problems) + ", so this list may be incomplete or out of date")
+    if extra:
+        notes.append("it may also include tables that no longer depend on this one")
+    return "; ".join(notes)
+
+
+def incident_facts(card: IncidentCard) -> list[tuple[str, str]]:
+    """The incident context as short labelled facts (#2108) — the same evidence
+    `incident_line` packs into one line, each layer still stating its own
+    absence rather than being dropped (#1647).
+    """
+    facts: list[tuple[str, str]] = [
+        (
+            "Incident",
+            f"{card.incident_id.hex[:8]} — "
+            + (
+                "new problem, first time this check has failed."
+                if card.is_new
+                else f"ongoing, failed on {format_number(card.occurrence_count)} runs so far."
+            ),
+        )
+    ]
+    evidence = card.evidence if isinstance(card.evidence, dict) else None
+    if evidence is None:
+        facts.append(("Context", "Not available for this incident."))
+    else:
+        pipeline = evidence.get("upstream_pipeline_run")
+        if pipeline is None:
+            facts.append(("Triggered by", "A manual or scheduled run (no upstream pipeline)."))
+        elif not isinstance(pipeline, dict):
+            facts.append(("Triggered by", "Not available."))
+        else:
+            facts.append(
+                (
+                    "Triggered by",
+                    f"{pipeline.get('provider', 'pipeline')} run "
+                    f"({pipeline.get('status', 'status unknown')}).",
+                )
+            )
+        siblings = evidence.get("sibling_checks")
+        if isinstance(siblings, list):
+            failing = [
+                s for s in siblings if isinstance(s, dict) and s.get("status") not in (None, "pass")
+            ]
+            if not siblings:
+                text = "This was the only check in the run."
+            elif failing:
+                text = f"{len(failing)} of {len(siblings)} other checks also failed."
+            else:
+                text = f"All {len(siblings)} other checks passed."
+            facts.append(("Same run", text))
+        else:
+            facts.append(("Same run", "Not available."))
+        blast = evidence.get("downstream_blast_radius")
+        if isinstance(blast, dict | list):
+            assets, qualifiers = blast_radius_assets_and_qualifiers(blast)
+            names = [a.get("name") for a in assets if isinstance(a, dict) and a.get("name")]
+            if assets:
+                text = f"May affect {len(assets)} downstream table{'s' if len(assets) != 1 else ''}"
+                if names:
+                    more = len(assets) - min(len(names), 3)
+                    text += ": " + ", ".join(str(n) for n in names[:3])
+                    text += f" and {more} more" if more > 0 else ""
+                text += "."
+            else:
+                text = "No downstream tables are recorded."
+            caveat = _lineage_caveat(qualifiers)
+            if caveat:
+                text += f" Note: {caveat}."
+            facts.append(("Downstream", text))
+        else:
+            facts.append(("Downstream", "Not available."))
+    narrative = narrative_clause(card.narrative)
+    if narrative:
+        facts.append(("AI summary", narrative.removeprefix("AI summary: ")))
+    return facts
 
 
 def triggered_source(triggered_by: str | None) -> str:

@@ -186,6 +186,37 @@ def test_run_suite_unity_catalog_threads_target_catalog(monkeypatch: pytest.Monk
     assert len(session.added) == 1
 
 
+def test_run_suite_builds_the_value_signal_gate_from_policy_and_tags(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#2014: the gate the SQL lanes consult is built from the suite's column policy AND the
+    asset's warehouse tags as they stand at run time — not from either alone."""
+    from backend.app.db.models import Asset
+    from backend.app.services import column_tags
+
+    run, suite, connection, checks = _graph(1)
+    suite.column_policy = {"pii_columns": ["email"], "identifier_column": "order_id"}
+    asset = Asset(id=uuid.uuid4(), column_tags={"field_7": "restricted"})
+    suite.asset_id = asset.id
+    session = FakeSession(run=run, suite=suite, connection=connection, checks=checks)
+    session._objs[Asset] = asset
+    monkeypatch.setattr(column_tags, "refresh_asset_column_tags", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        tasks, "build_check_runner", lambda **_kw: FakeRunner(SuiteOutcome(True, []))
+    )
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(run_service, "execute_run", lambda *_a, **kw: captured.update(kw))
+
+    tasks._run_suite(_sess(session), run_id=run.id)
+
+    gate = captured["value_signal_gate"]
+    assert captured["index_columns"] == ["order_id"]
+    assert gate("email") is False  # policy decides
+    assert gate("field_7") is False  # warehouse tag decides
+    assert gate("order_id") is True  # identifier: the values decide
+    assert gate("channel") is True
+
+
 # ───────────────────────── failure paths ───────────────────────────
 
 

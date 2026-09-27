@@ -67,13 +67,24 @@ in production — this page is the reference.)
 | POST | `/connections/{id}/test` | Test live connectivity. |
 | POST | `/connections/{id}/reauth` | Rotate the credential and verify. |
 | GET | `/connections/{id}/versions` | Config-change history (ADR 0020 snapshots — never credentials). |
+| GET | `/connections/{id}/browse/catalog` | Unity Catalog only: one level of catalogs → schemas → tables (`?catalog=&schema=&limit=`). |
+| GET | `/connections/{id}/browse/files` | ADLS Gen2 / S3 only: the folders and files directly under `?prefix=` in the connection's container/bucket. |
 
 **Roles (ADR 0033).** Connections are shared infrastructure holding credentials, so the gates
 here are the sharpest in the API: **create, update, delete, re-auth and the unsaved-draft
 `POST /connections/test` are Admin-only**; the saved-connection `POST /connections/{id}/test`
-is Member+; list and read are open to any authenticated user (responses carry `has_secret`,
-never secret material). A Member's PAT hitting `POST /connections` gets `403` regardless of
+is Member+, as are the two `browse/*` listings (they open the datasource with the stored
+credential, and a Member is exactly who points a new suite at a connection); list and read are
+open to any authenticated user (responses carry `has_secret`, never secret material). A Member's PAT hitting `POST /connections` gets `403` regardless of
 any suite grant — the two axes are independent.
+
+**Browsing.** Both `browse/*` listings return **names only** — no credential, no cell
+value — one level per call. `limit` defaults to 200 (max 500); a level holding more than that
+comes back with `truncated: true`, so the list is a prefix of the level, never presented as all
+of it. Catalog entries carry `selectable: false` when the name is not a plain SQL identifier
+(DataQ cannot target it, so it is shown but not pickable). A `prefix` with a control character,
+backslash, leading `/`, or an empty/`.`/`..` segment is refused with `422 browse_input_invalid`;
+a listing failure is `502 browse_failed` with a classified, secret-free `detail.reason`.
 
 **Credential health.** Each datasource connection in `GET /connections` carries a
 `credential_health` object — `status` (`healthy` / `failing` / `unknown`),

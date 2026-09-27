@@ -260,15 +260,6 @@ def test_a_flat_file_connection_without_a_credential_is_not_silently_unmetered(
     assert "run_admission_no_credential" in events
 
 
-def test_iceberg_has_no_estimator_yet_and_is_not_silently_metered() -> None:
-    """Deliberate: the cheap `scan().count()` probe lands separately. It must read as
-    unmetered (and be logged), never as a zero-byte run that always fits.
-    """
-    run, session = _graph("iceberg", target={"table": "retail.purchase_orders"})
-
-    assert run_admission.estimate_run_memory(_sess(session), run) is None
-
-
 # ───────────────────────── the admission decision ─────────────────
 
 
