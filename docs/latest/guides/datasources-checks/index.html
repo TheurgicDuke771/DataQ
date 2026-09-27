@@ -1024,6 +1024,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#browsing-for-a-run-target-unity-catalog-adls-gen2-s3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Browsing for a run target (Unity Catalog, ADLS Gen2, S3)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#gx-expectation-all-datasources" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2622,6 +2633,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#browsing-for-a-run-target-unity-catalog-adls-gen2-s3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Browsing for a run target (Unity Catalog, ADLS Gen2, S3)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#gx-expectation-all-datasources" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3085,10 +3107,35 @@ expectation can sit side by side, so the label is per check, not per run.</p>
 <h2 id="author-a-check">Author a check<a class="headerlink" href="#author-a-check" title="Permanent link">¶</a></h2>
 <ol>
 <li>Create (or open) a <strong>suite</strong> and point it at a <strong>target</strong> — a table (Snowflake/UC), a
-   file/path or batch pattern (ADLS/S3), or an Iceberg <code>namespace.table</code>.</li>
+   file/path or batch pattern (ADLS/S3), or an Iceberg <code>namespace.table</code>. On Unity Catalog,
+   ADLS Gen2 and S3 you can <strong>browse</strong> for it instead of typing it — see below.</li>
 <li><strong>Add check</strong> opens a dedicated page (<code>/suites/&lt;id&gt;/checks/new</code>): pick a <strong>category</strong>,
    then the check type, then fill its config. The authoring paths:</li>
 </ol>
+<h3 id="browsing-for-a-run-target-unity-catalog-adls-gen2-s3">Browsing for a run target (Unity Catalog, ADLS Gen2, S3)<a class="headerlink" href="#browsing-for-a-run-target-unity-catalog-adls-gen2-s3" title="Permanent link">¶</a></h3>
+<p>The suite form offers a picker beside the target fields; typing the target still works
+everywhere, and is the only way on Snowflake and Iceberg.</p>
+<ul>
+<li><strong>Unity Catalog — Browse catalog…</strong> lists catalogs, then the chosen catalog's schemas,
+  then that schema's tables; picking a table fills <strong>Catalog</strong>, <strong>Schema</strong> and <strong>Table</strong>.
+  The names come from <code>system.information_schema</code>, so the list is what the connection's
+  credential can see — a table it has no privilege on is not shown, and an empty level
+  means "nothing visible to this credential", not "nothing exists". The <code>system</code>,
+  <code>samples</code> and <code>__databricks_internal</code> catalogs are never listed.</li>
+<li><strong>ADLS Gen2 / S3 — Browse files…</strong> (single-file mode) walks the folders of the
+  connection's one container or bucket and fills <strong>File path</strong> with the file you pick.
+  <strong>Browse folders…</strong> (batch mode) fills <strong>Prefix</strong> with the folder you are in.</li>
+</ul>
+<p>Each level is <strong>one bounded request</strong> of up to 200 names. When a level holds more, the
+picker says so ("Showing the first 200 … there are more") rather than presenting a partial
+list as the whole thing — type the name into the field instead. A name DataQ cannot target
+(anything that is not a plain identifier: letters, digits, <code>_</code> and <code>$</code>, not starting with a
+digit) is listed but not pickable, since a suite pointed at it could not run.</p>
+<p>Browsing opens the datasource with the connection's stored credential, so it needs the
+<strong>Member</strong> role (the same bar as testing a connection); Viewers cannot author suites and do
+not get the picker. Only names, sizes and timestamps come back — never a credential or a
+row. The same listings are available over the REST API as
+<code>GET /connections/{id}/browse/catalog</code> and <code>GET /connections/{id}/browse/files</code>.</p>
 <h3 id="gx-expectation-all-datasources">GX expectation (all datasources)<a class="headerlink" href="#gx-expectation-all-datasources" title="Permanent link">¶</a></h3>
 <p>Pick a <em>Column values</em> / <em>Table shape</em> expectation (e.g. <code>Column values not null</code>), name
 it, set the column, and optionally band severity with <strong>Warn ≥ / Fail ≥ / Critical ≥</strong>

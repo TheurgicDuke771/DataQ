@@ -2433,6 +2433,15 @@ the per-PR history lives in the repo's commit log and pull requests.</p>
 <h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">¶</a></h3>
 <ul>
 <li>
+<p><strong>Browse for a run target instead of typing it.</strong> On a Unity Catalog suite, <strong>Browse
+  catalog…</strong> walks catalogs → schemas → tables and fills all three fields; on an ADLS Gen2 or
+  S3 suite, <strong>Browse files…</strong> (single file) or <strong>Browse folders…</strong> (batch prefix) walks the
+  connection's container or bucket. Each level is one bounded listing (up to 200 names) and
+  says so when there are more; a name DataQ cannot target is shown but not pickable. Nothing
+  is saved until you save the suite, and the typed fields keep working exactly as before.
+  Needs the Member role, like testing a connection.</p>
+</li>
+<li>
 <p><strong>Offboarding is one guided pass.</strong> Admin → Members → <strong>Offboard</strong> hands a departing
   member's suites to somebody else, revokes every API key and browser session they hold,
   and withdraws their membership — in a single transaction, so a half-finished departure
