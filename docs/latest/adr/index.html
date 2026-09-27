@@ -2636,6 +2636,11 @@
 <td>MSSQL / T-SQL adapter driver + auth — <strong><code>python-tds</code> + <code>sqlalchemy-pytds</code> (MIT, pure Python, FEDAUTH token) by default</strong> for SQL Server / Azure SQL / Synapse, with the adapter shipping its own SAN hostname validator and named-instance routing fix (both driver defects found in the live spike); <strong>Fabric SQL endpoints via an optional ODBC lane</strong> (<code>mssql+pyodbc</code> when the operator installs msodbcsql18 — never redistributed by DataQ) because python-tds's routed login to Fabric fails; one engine-generic <code>mssql</code> type with <code>sql</code> / <code>entra_service_principal</code> auth, <code>destination_fields</code> host/port/tenant_id/auth_type</td>
 <td>Accepted</td>
 </tr>
+<tr>
+<td><a href="0045-engine-generic-sql-datasource-base/">0045</a></td>
+<td>Engine-generic SQL datasource base — one config/adapter/runner/enumerator parameterized by a <strong><code>SqlEngineSpec</code></strong> (driver, GX datasource factory, <code>connect_args</code>, namespace scheme, catalog queries, optional profiler and run-engine hooks), one registry every SQL capability set derives from; <strong>pushdown only</strong> (no sampling), <strong>read-only sessions</strong> at the server, names resolved <strong>exactly as spelled</strong> (GX session scoped to the target schema, never a lower-cased GX schema), identifier limits enforced at save time; honest gaps — no column-tag source, no warehouse-native lineage (enumeration only, via a separate <code>TableEnumerator</code> seam), GX engine only; PostgreSQL first, MySQL/MariaDB and Trino next</td>
+<td>Accepted</td>
+</tr>
 </tbody>
 </table>
 

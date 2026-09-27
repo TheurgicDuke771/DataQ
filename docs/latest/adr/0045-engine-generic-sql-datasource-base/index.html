@@ -7,13 +7,9 @@
       
       
       
-        <link rel="canonical" href="https://theurgicduke771.github.io/DataQ/docs/latest/reference/check-types/">
+        <link rel="canonical" href="https://theurgicduke771.github.io/DataQ/docs/latest/adr/0045-engine-generic-sql-datasource-base/">
       
       
-        <link rel="prev" href="../">
-      
-      
-        <link rel="next" href="../feature-matrix/">
       
       
         
@@ -24,7 +20,7 @@
     
     
       
-        <title>Check types - DataQ</title>
+        <title>ADR 0045 — Engine-generic SQL datasource base - DataQ</title>
       
     
     
@@ -87,7 +83,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#check-types" class="md-skip">
+        <a href="#adr-0045-engine-generic-sql-datasource-base" class="md-skip">
           Skip to content
         </a>
       
@@ -127,7 +123,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Check types
+              ADR 0045 — Engine-generic SQL datasource base
             
           </span>
         </div>
@@ -300,13 +296,11 @@
   
   
   
-    
-  
   
     
     
-      <li class="md-tabs__item md-tabs__item--active">
-        <a href="../" class="md-tabs__link">
+      <li class="md-tabs__item">
+        <a href="../../reference/" class="md-tabs__link">
           
   
   
@@ -1126,8 +1120,6 @@
       
   
   
-    
-  
   
   
     
@@ -1153,23 +1145,20 @@
     
     
       
-        
-        
-      
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked="">
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4">
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../" class="md-nav__link ">
+            <a href="../../reference/" class="md-nav__link ">
               
   
   
@@ -1187,13 +1176,13 @@
             </a>
             
               
-              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="">
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
                 <span class="md-nav__icon md-icon"></span>
               </label>
             
           </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_4">
             <span class="md-nav__icon md-icon"></span>
             
@@ -1210,37 +1199,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Check types
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../reference/check-types/" class="md-nav__link">
         
   
   
@@ -1256,147 +1218,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
-      
-        <li class="md-nav__item">
-  <a href="#column-values" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Column values
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#table-shape" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Table shape
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#freshness" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Freshness
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#volume" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Volume
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#schema" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Schema
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#anomaly" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Anomaly
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#comparison" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Comparison
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#custom-sql" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Custom SQL
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#snowflake-dmf" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Snowflake DMF
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#authorable-outside-the-editor" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Authorable outside the editor
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#not-offered-and-why" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Not offered, and why
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1409,7 +1230,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../feature-matrix/" class="md-nav__link">
+      <a href="../../reference/feature-matrix/" class="md-nav__link">
         
   
   
@@ -1437,7 +1258,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../rest-api/" class="md-nav__link">
+      <a href="../../reference/rest-api/" class="md-nav__link">
         
   
   
@@ -1465,7 +1286,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mcp-tools/" class="md-nav__link">
+      <a href="../../reference/mcp-tools/" class="md-nav__link">
         
   
   
@@ -1493,7 +1314,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../glossary/" class="md-nav__link">
+      <a href="../../reference/glossary/" class="md-nav__link">
         
   
   
@@ -1521,7 +1342,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../changelog/" class="md-nav__link">
+      <a href="../../reference/changelog/" class="md-nav__link">
         
   
   
@@ -1663,7 +1484,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../adr/" class="md-nav__link">
+      <a href="../" class="md-nav__link">
         
   
   
@@ -2372,10 +2193,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
       
         <li class="md-nav__item">
-  <a href="#column-values" class="md-nav__link">
+  <a href="#context" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Column values
+        Context
       
     </span>
   </a>
@@ -2383,10 +2204,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#table-shape" class="md-nav__link">
+  <a href="#decision" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Table shape
+        Decision
       
     </span>
   </a>
@@ -2394,98 +2215,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#freshness" class="md-nav__link">
+  <a href="#consequences" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Freshness
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#volume" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Volume
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#schema" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Schema
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#anomaly" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Anomaly
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#comparison" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Comparison
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#custom-sql" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Custom SQL
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#snowflake-dmf" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Snowflake DMF
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#authorable-outside-the-editor" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Authorable outside the editor
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#not-offered-and-why" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Not offered, and why
+        Consequences
       
     </span>
   </a>
@@ -2520,9 +2253,9 @@
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17.5 15.5c0 1.11-.89 2-2 2s-2-.89-2-2 .9-2 2-2 2 .9 2 2m-9-2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.89 2-2-.89-2-2-2M23 15v3c0 .55-.45 1-1 1h-1v1c0 1.11-.89 2-2 2H5a2 2 0 0 1-2-2v-1H2c-.55 0-1-.45-1-1v-3c0-.55.45-1 1-1h1c0-3.87 3.13-7 7-7h1V5.73c-.6-.34-1-.99-1-1.73 0-1.1.9-2 2-2s2 .9 2 2c0 .74-.4 1.39-1 1.73V7h1c3.87 0 7 3.13 7 7h1c.55 0 1 .45 1 1m-2 1h-2v-2c0-2.76-2.24-5-5-5h-4c-2.76 0-5 2.24-5 5v2H3v1h2v3h14v-3h2z"></path></svg> Ask AI <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7.41 8.58 12 13.17l4.59-4.59L18 10l-6 6-6-6z"></path></svg>
         </button>
         <div class="dq-ask__menu" role="menu" hidden="">
-          <a href="https://claude.ai/new?q=Read%20https%3A//theurgicduke771.github.io/DataQ/docs/latest/reference/check-types/index.md%20%28the%20DataQ%20documentation%20page%20%22Check%20types%22%29%20and%20help%20me%20with%20questions%20about%20it." target="_blank" rel="noopener">Claude</a>
-          <a href="https://chatgpt.com/?q=Read%20https%3A//theurgicduke771.github.io/DataQ/docs/latest/reference/check-types/index.md%20%28the%20DataQ%20documentation%20page%20%22Check%20types%22%29%20and%20help%20me%20with%20questions%20about%20it." target="_blank" rel="noopener">ChatGPT</a>
-          <a href="https://github.com/copilot?prompt=Read%20https%3A//theurgicduke771.github.io/DataQ/docs/latest/reference/check-types/index.md%20%28the%20DataQ%20documentation%20page%20%22Check%20types%22%29%20and%20help%20me%20with%20questions%20about%20it." target="_blank" rel="noopener">GitHub Copilot</a>
+          <a href="https://claude.ai/new?q=Read%20https%3A//theurgicduke771.github.io/DataQ/docs/latest/adr/0045-engine-generic-sql-datasource-base/index.md%20%28the%20DataQ%20documentation%20page%20%22ADR%200045%20%E2%80%94%20Engine-generic%20SQL%20datasource%20base%22%29%20and%20help%20me%20with%20questions%20about%20it." target="_blank" rel="noopener">Claude</a>
+          <a href="https://chatgpt.com/?q=Read%20https%3A//theurgicduke771.github.io/DataQ/docs/latest/adr/0045-engine-generic-sql-datasource-base/index.md%20%28the%20DataQ%20documentation%20page%20%22ADR%200045%20%E2%80%94%20Engine-generic%20SQL%20datasource%20base%22%29%20and%20help%20me%20with%20questions%20about%20it." target="_blank" rel="noopener">ChatGPT</a>
+          <a href="https://github.com/copilot?prompt=Read%20https%3A//theurgicduke771.github.io/DataQ/docs/latest/adr/0045-engine-generic-sql-datasource-base/index.md%20%28the%20DataQ%20documentation%20page%20%22ADR%200045%20%E2%80%94%20Engine-generic%20SQL%20datasource%20base%22%29%20and%20help%20me%20with%20questions%20about%20it." target="_blank" rel="noopener">GitHub Copilot</a>
           <a href="../../guides/mcp-setup/" title="Cursor, Claude Desktop and others read these pages over MCP">Connect your assistant (MCP)</a>
         </div>
       </div>
@@ -2536,532 +2269,67 @@
   
 
 
-<h1 id="check-types">Check types<a class="headerlink" href="#check-types" title="Permanent link">¶</a></h1>
-<p>Every kind of check DataQ can author, generated from the check editor's catalog and the
-backend's vetted allowlist — so this page cannot drift from what the product actually
-offers. Every GX type on this page is executed in CI on a dataframe batch, and on a SQL batch too unless its row says it is dataframe-only.</p>
-<table>
-<thead>
-<tr>
-<th></th>
-<th>Count</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Check types in the editor</td>
-<td>37</td>
-</tr>
-<tr>
-<td>GX expectation types vetted by the backend</td>
-<td>25</td>
-</tr>
-</tbody>
-</table>
-<p>How to read a row: <strong>Parameters</strong> are the editor's fields (<code>mostly</code> is GX's optional row
-tolerance, a fraction). <strong>Thresholds</strong> are the severity bands read from the result.
-<strong>Dimension</strong> is the default data-quality dimension the check is classified under; you can
-change it on any check.</p>
-<h2 id="column-values">Column values<a class="headerlink" href="#column-values" title="Permanent link">¶</a></h2>
-<p>Great Expectations built-ins that look at the values in one or more columns. Each returns an unexpected-% that the warn / fail / critical severity bands read.</p>
-<table>
-<thead>
-<tr>
-<th>Check</th>
-<th>Type</th>
-<th>What it checks</th>
-<th>Dimension</th>
-<th>Parameters</th>
-<th>Thresholds</th>
-<th>Runs on</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>Column values not null</strong></td>
-<td><code>expect_column_values_to_not_be_null</code></td>
-<td>Every value in the column is non-null.</td>
-<td>Completeness</td>
-<td><code>column</code>, <code>mostly</code> <em>(optional)</em></td>
-<td>warn / fail / critical</td>
-<td>All datasources · SQL pushdown on Unity Catalog</td>
-</tr>
-<tr>
-<td><strong>Column values unique</strong></td>
-<td><code>expect_column_values_to_be_unique</code></td>
-<td>Values in the column are distinct (no duplicates).</td>
-<td>Uniqueness</td>
-<td><code>column</code>, <code>mostly</code> <em>(optional)</em></td>
-<td>warn / fail / critical</td>
-<td>All datasources · SQL pushdown on Unity Catalog</td>
-</tr>
-<tr>
-<td><strong>Column values in range</strong></td>
-<td><code>expect_column_values_to_be_between</code></td>
-<td>Numeric values fall within [min, max].</td>
-<td>Validity</td>
-<td><code>column</code>, <code>min_value</code> <em>(optional)</em>, <code>max_value</code> <em>(optional)</em>, <code>mostly</code> <em>(optional)</em></td>
-<td>warn / fail / critical</td>
-<td>All datasources · SQL pushdown on Unity Catalog</td>
-</tr>
-<tr>
-<td><strong>Column values in set</strong></td>
-<td><code>expect_column_values_to_be_in_set</code></td>
-<td>Every value is one of an allowed set.</td>
-<td>Validity</td>
-<td><code>column</code>, <code>value_set</code>, <code>mostly</code> <em>(optional)</em></td>
-<td>warn / fail / critical</td>
-<td>All datasources · SQL pushdown on Unity Catalog</td>
-</tr>
-<tr>
-<td><strong>Column values null</strong></td>
-<td><code>expect_column_values_to_be_null</code></td>
-<td>Every value in the column is null — for a deprecated or not-yet-populated column that should stay empty. The inverse of “Column values not null”.</td>
-<td>Validity</td>
-<td><code>column</code>, <code>mostly</code> <em>(optional)</em></td>
-<td>warn / fail / critical</td>
-<td>All datasources · SQL pushdown on Unity Catalog</td>
-</tr>
-<tr>
-<td><strong>Column values not in set</strong></td>
-<td><code>expect_column_values_to_not_be_in_set</code></td>
-<td>No value is one of a forbidden set — e.g. a status that should never reach this table, or placeholder values like “N/A” and “UNKNOWN”.</td>
-<td>Validity</td>
-<td><code>column</code>, <code>value_set</code>, <code>mostly</code> <em>(optional)</em></td>
-<td>warn / fail / critical</td>
-<td>All datasources · SQL pushdown on Unity Catalog</td>
-</tr>
-<tr>
-<td><strong>Column value lengths in range</strong></td>
-<td><code>expect_column_value_lengths_to_be_between</code></td>
-<td>String lengths fall within [min, max].</td>
-<td>Validity</td>
-<td><code>column</code>, <code>min_value</code> <em>(optional)</em>, <code>max_value</code> <em>(optional)</em>, <code>mostly</code> <em>(optional)</em></td>
-<td>warn / fail / critical</td>
-<td>All datasources · SQL pushdown on Unity Catalog</td>
-</tr>
-<tr>
-<td><strong>Column value lengths equal</strong></td>
-<td><code>expect_column_value_lengths_to_equal</code></td>
-<td>Every value is exactly the given number of characters — for a fixed-width code (ISO country, SKU, account number).</td>
-<td>Validity</td>
-<td><code>column</code>, <code>value</code>, <code>mostly</code> <em>(optional)</em></td>
-<td>warn / fail / critical</td>
-<td>All datasources · SQL pushdown on Unity Catalog</td>
-</tr>
-<tr>
-<td><strong>Column values match regex</strong></td>
-<td><code>expect_column_values_to_match_regex</code></td>
-<td>Every value matches the given regular expression.</td>
-<td>Validity</td>
-<td><code>column</code>, <code>regex</code>, <code>mostly</code> <em>(optional)</em></td>
-<td>warn / fail / critical</td>
-<td>All datasources · SQL pushdown on Unity Catalog</td>
-</tr>
-<tr>
-<td><strong>Column values do not match regex</strong></td>
-<td><code>expect_column_values_to_not_match_regex</code></td>
-<td>No value matches the given regular expression — for catching a pattern that should never appear (a stray delimiter, an unredacted identifier).</td>
-<td>Validity</td>
-<td><code>column</code>, <code>regex</code>, <code>mostly</code> <em>(optional)</em></td>
-<td>warn / fail / critical</td>
-<td>All datasources · SQL pushdown on Unity Catalog</td>
-</tr>
-<tr>
-<td><strong>Column values match a list of regexes</strong></td>
-<td><code>expect_column_values_to_match_regex_list</code></td>
-<td>Every value matches the regexes in the list — by default ANY one of them is enough, for a column carrying several legitimate formats (e.g. two phone-number conventions).</td>
-<td>Validity</td>
-<td><code>column</code>, <code>regex_list</code>, <code>match_on</code> <em>(optional)</em>, <code>mostly</code> <em>(optional)</em></td>
-<td>warn / fail / critical</td>
-<td>All datasources · SQL pushdown on Unity Catalog</td>
-</tr>
-<tr>
-<td><strong>Column values match none of a list of regexes</strong></td>
-<td><code>expect_column_values_to_not_match_regex_list</code></td>
-<td>No value matches ANY regex in the list — a deny-list of forbidden formats.</td>
-<td>Validity</td>
-<td><code>column</code>, <code>regex_list</code>, <code>mostly</code> <em>(optional)</em></td>
-<td>warn / fail / critical</td>
-<td>All datasources · SQL pushdown on Unity Catalog</td>
-</tr>
-<tr>
-<td><strong>Column values are valid JSON</strong></td>
-<td><code>expect_column_values_to_be_json_parseable</code></td>
-<td>Every value parses as JSON — for a payload/metadata column stored as text. Not offered on Snowflake or PostgreSQL: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there (or, on Snowflake, a VARIANT column).</td>
-<td>Validity</td>
-<td><code>column</code>, <code>mostly</code> <em>(optional)</em></td>
-<td>warn / fail / critical</td>
-<td>ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg — not Snowflake, PostgreSQL (no SQL implementation; refused at author time)</td>
-</tr>
-<tr>
-<td><strong>Column values are of type</strong></td>
-<td><code>expect_column_values_to_be_of_type</code></td>
-<td>Every value in the column matches the given data type.</td>
-<td>Validity</td>
-<td><code>column</code>, <code>type_</code>, <code>mostly</code> <em>(optional)</em></td>
-<td>warn / fail / critical</td>
-<td>All datasources</td>
-</tr>
-<tr>
-<td><strong>Column values are of one of several types</strong></td>
-<td><code>expect_column_values_to_be_in_type_list</code></td>
-<td>Every value in the column matches at least one of the given data types — the tolerant sibling of “Column values are of type”, for a column whose type legitimately varies by datasource or load.</td>
-<td>Validity</td>
-<td><code>column</code>, <code>type_list</code>, <code>mostly</code> <em>(optional)</em></td>
-<td>warn / fail / critical</td>
-<td>All datasources</td>
-</tr>
-<tr>
-<td><strong>Compound columns unique</strong></td>
-<td><code>expect_compound_columns_to_be_unique</code></td>
-<td>The COMBINATION of values across the listed columns is distinct on every row — a multi-column primary or business key. Each column on its own may repeat freely.</td>
-<td>Uniqueness</td>
-<td><code>column_list</code>, <code>mostly</code> <em>(optional)</em></td>
-<td>warn / fail / critical</td>
-<td>All datasources · SQL pushdown on Unity Catalog</td>
-</tr>
-<tr>
-<td><strong>Column A greater than column B</strong></td>
-<td><code>expect_column_pair_values_a_to_be_greater_than_b</code></td>
-<td>Row by row, column A is greater than column B — e.g. ended_at &gt; started_at, or total &gt;= discount.</td>
-<td>Validity</td>
-<td><code>column_A</code>, <code>column_B</code>, <code>or_equal</code> <em>(optional)</em>, <code>mostly</code> <em>(optional)</em></td>
-<td>warn / fail / critical</td>
-<td>All datasources · SQL pushdown on Unity Catalog</td>
-</tr>
-<tr>
-<td><strong>Column A equals column B</strong></td>
-<td><code>expect_column_pair_values_to_be_equal</code></td>
-<td>Row by row, the two columns hold the same value — e.g. a denormalised copy that must agree with its source, or a total that must match a recomputed one.</td>
-<td>Validity</td>
-<td><code>column_A</code>, <code>column_B</code>, <code>mostly</code> <em>(optional)</em></td>
-<td>warn / fail / critical</td>
-<td>All datasources · SQL pushdown on Unity Catalog</td>
-</tr>
-<tr>
-<td><strong>Values unique within each row</strong></td>
-<td><code>expect_select_column_values_to_be_unique_within_record</code></td>
-<td>Within a single row, the listed columns all hold different values — e.g. a transfer whose source and destination account must not be the same. This is per-row; use “Compound columns unique” for uniqueness ACROSS rows.</td>
-<td>Uniqueness</td>
-<td><code>column_list</code>, <code>mostly</code> <em>(optional)</em></td>
-<td>warn / fail / critical</td>
-<td>All datasources · SQL pushdown on Unity Catalog</td>
-</tr>
-<tr>
-<td><strong>Columns sum to a total</strong></td>
-<td><code>expect_multicolumn_sum_to_equal</code></td>
-<td>Row by row, the listed columns add up to the given total — e.g. subtotal + tax + shipping = total.</td>
-<td>Validity</td>
-<td><code>column_list</code>, <code>sum_total</code>, <code>mostly</code> <em>(optional)</em></td>
-<td>warn / fail / critical</td>
-<td>All datasources · SQL pushdown on Unity Catalog</td>
-</tr>
-<tr>
-<td><strong>Column distinct values in set</strong></td>
-<td><code>expect_column_distinct_values_to_be_in_set</code></td>
-<td>Every DISTINCT value present in the column is one of an allowed set — reports WHICH unexpected values exist rather than how many rows carry them. Use “Column values in set” when you care about the row count.</td>
-<td>Validity</td>
-<td><code>column</code>, <code>value_set</code></td>
-<td>None — pass/fail only</td>
-<td>All datasources · SQL pushdown on Unity Catalog</td>
-</tr>
-<tr>
-<td><strong>Column distinct values contain set</strong></td>
-<td><code>expect_column_distinct_values_to_contain_set</code></td>
-<td>Every value in the given set appears at least once in the column — catches a category that stopped arriving. The column may also contain other values.</td>
-<td>Completeness</td>
-<td><code>column</code>, <code>value_set</code></td>
-<td>None — pass/fail only</td>
-<td>All datasources · SQL pushdown on Unity Catalog</td>
-</tr>
-<tr>
-<td><strong>Column values match a date format</strong></td>
-<td><code>expect_column_values_to_match_strftime_format</code></td>
-<td>Every value parses under the given strftime format — for a date or timestamp stored as text. Not offered on Snowflake or PostgreSQL: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there.</td>
-<td>Validity</td>
-<td><code>column</code>, <code>strftime_format</code>, <code>mostly</code> <em>(optional)</em></td>
-<td>warn / fail / critical</td>
-<td>ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg — not Snowflake, PostgreSQL (no SQL implementation; refused at author time)</td>
-</tr>
-</tbody>
-</table>
-<h2 id="table-shape">Table shape<a class="headerlink" href="#table-shape" title="Permanent link">¶</a></h2>
-<p>Whole-table expectations.</p>
-<table>
-<thead>
-<tr>
-<th>Check</th>
-<th>Type</th>
-<th>What it checks</th>
-<th>Dimension</th>
-<th>Parameters</th>
-<th>Thresholds</th>
-<th>Runs on</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>Table row count in range</strong></td>
-<td><code>expect_table_row_count_to_be_between</code></td>
-<td>The table’s row count falls within [min, max].</td>
-<td>Completeness</td>
-<td><code>min_value</code> <em>(optional)</em>, <code>max_value</code> <em>(optional)</em></td>
-<td>warn / fail / critical</td>
-<td>All datasources · SQL pushdown on Unity Catalog</td>
-</tr>
-</tbody>
-</table>
-<h2 id="freshness">Freshness<a class="headerlink" href="#freshness" title="Permanent link">¶</a></h2>
-<p>How stale is the target? Measured from a timestamp column (or file arrival time on flat files), reported in hours, banded by age. Requires a fail or critical threshold.</p>
-<table>
-<thead>
-<tr>
-<th>Check</th>
-<th>Type</th>
-<th>What it checks</th>
-<th>Dimension</th>
-<th>Parameters</th>
-<th>Thresholds</th>
-<th>Runs on</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>Freshness</strong></td>
-<td><code>monitor:freshness</code></td>
-<td>How stale is the target? Measures hours since the latest timestamp in the data — or, on a flat file with no column set, since the file last landed.</td>
-<td>Timeliness</td>
-<td><code>column</code></td>
-<td>warn / fail / critical (fail or critical required)</td>
-<td>All datasources</td>
-</tr>
-</tbody>
-</table>
-<h2 id="volume">Volume<a class="headerlink" href="#volume" title="Permanent link">¶</a></h2>
-<p>Did the load deliver the expected row count? Banded by count. Requires a fail or critical threshold.</p>
-<table>
-<thead>
-<tr>
-<th>Check</th>
-<th>Type</th>
-<th>What it checks</th>
-<th>Dimension</th>
-<th>Parameters</th>
-<th>Thresholds</th>
-<th>Runs on</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>Volume</strong></td>
-<td><code>monitor:volume</code></td>
-<td>Did the load deliver the expected row count? Flags a count outside an allowed range.</td>
-<td>Completeness</td>
-<td><code>min_rows</code>, <code>max_rows</code></td>
-<td>warn / fail / critical</td>
-<td>All datasources</td>
-</tr>
-</tbody>
-</table>
-<h2 id="schema">Schema<a class="headerlink" href="#schema" title="Permanent link">¶</a></h2>
-<p>Did the table's columns change against a captured baseline?</p>
-<table>
-<thead>
-<tr>
-<th>Check</th>
-<th>Type</th>
-<th>What it checks</th>
-<th>Dimension</th>
-<th>Parameters</th>
-<th>Thresholds</th>
-<th>Runs on</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>Schema drift</strong></td>
-<td><code>monitor:schema_drift</code></td>
-<td>Did the table’s column shape change? Diffs the live columns (names + types) against a baseline captured on the first run. Works on every datasource — warehouses via information_schema, flat files via the file header/footer, Iceberg from table metadata.</td>
-<td>Consistency</td>
-<td><code>ignore_columns</code> <em>(optional)</em></td>
-<td>warn / fail / critical</td>
-<td>All datasources</td>
-</tr>
-</tbody>
-</table>
-<h2 id="anomaly">Anomaly<a class="headerlink" href="#anomaly" title="Permanent link">¶</a></h2>
-<p>Is today's value unusual against a rolling baseline of this check's own history? Skips until enough history exists.</p>
-<table>
-<thead>
-<tr>
-<th>Check</th>
-<th>Type</th>
-<th>What it checks</th>
-<th>Dimension</th>
-<th>Parameters</th>
-<th>Thresholds</th>
-<th>Runs on</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>Anomaly</strong></td>
-<td><code>monitor:anomaly</code></td>
-<td>Learns a rolling baseline (mean/stddev) from this check’s own metric history and flags how far this run deviates (a z-score). Reports skip, never a fake pass/fail, until enough history accrues.</td>
-<td>— (set it yourself)</td>
-<td><code>target_metric</code>, <code>column</code>, <code>window</code> <em>(optional)</em>, <code>min_points</code> <em>(optional)</em>, <code>seasonality</code> <em>(optional)</em></td>
-<td>warn / fail / critical (fail or critical required)</td>
-<td>Snowflake, Unity Catalog, PostgreSQL</td>
-</tr>
-</tbody>
-</table>
-<h2 id="comparison">Comparison<a class="headerlink" href="#comparison" title="Permanent link">¶</a></h2>
-<p>Reconcile the suite's target against a second dataset, possibly on another connection.</p>
-<table>
-<thead>
-<tr>
-<th>Check</th>
-<th>Type</th>
-<th>What it checks</th>
-<th>Dimension</th>
-<th>Parameters</th>
-<th>Thresholds</th>
-<th>Runs on</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>Records reconciliation</strong></td>
-<td><code>comparison:records</code></td>
-<td>Diff this suite’s dataset (the target under test) against a baseline on another connection, joined on key columns — matched / mismatched / additional-per-side ROW buckets.</td>
-<td>Consistency</td>
-<td>—</td>
-<td>warn / fail / critical</td>
-<td>All datasources</td>
-</tr>
-<tr>
-<td><strong>Column-level reconciliation</strong></td>
-<td><code>comparison:columns</code></td>
-<td>Same key-joined diff, counted per VALUE: each column reports its own matched / mismatched / additional-per-side counts. Pick this when you need to know WHICH columns drift, not just which rows.</td>
-<td>Consistency</td>
-<td>—</td>
-<td>warn / fail / critical</td>
-<td>All datasources</td>
-</tr>
-</tbody>
-</table>
-<h2 id="custom-sql">Custom SQL<a class="headerlink" href="#custom-sql" title="Permanent link">¶</a></h2>
-<p>Any predicate you can write in SQL, validated before it runs.</p>
-<table>
-<thead>
-<tr>
-<th>Check</th>
-<th>Type</th>
-<th>What it checks</th>
-<th>Dimension</th>
-<th>Parameters</th>
-<th>Thresholds</th>
-<th>Runs on</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>Custom SQL</strong></td>
-<td><code>unexpected_rows_expectation</code></td>
-<td>A SQL query that should return no rows — any rows it returns are failures.</td>
-<td>— (set it yourself)</td>
-<td><code>unexpected_rows_query</code></td>
-<td>warn / fail / critical</td>
-<td>Snowflake, Unity Catalog, PostgreSQL</td>
-</tr>
-</tbody>
-</table>
-<h2 id="snowflake-dmf">Snowflake DMF<a class="headerlink" href="#snowflake-dmf" title="Permanent link">¶</a></h2>
-<p>Snowflake's native Data Metric Functions, evaluated inside Snowflake.</p>
-<table>
-<thead>
-<tr>
-<th>Check</th>
-<th>Type</th>
-<th>What it checks</th>
-<th>Dimension</th>
-<th>Parameters</th>
-<th>Thresholds</th>
-<th>Runs on</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>Null count (DMF)</strong></td>
-<td><code>dmf:null_count</code></td>
-<td>Snowflake’s system NULL_COUNT metric function, computed natively in the warehouse.</td>
-<td>Completeness</td>
-<td><code>column</code></td>
-<td>warn / fail / critical (fail or critical required)</td>
-<td>Snowflake</td>
-</tr>
-<tr>
-<td><strong>Null percent (DMF)</strong></td>
-<td><code>dmf:null_percent</code></td>
-<td>Snowflake’s system NULL_PERCENT metric function (0–100), computed natively in the warehouse.</td>
-<td>Completeness</td>
-<td><code>column</code></td>
-<td>warn / fail / critical (fail or critical required)</td>
-<td>Snowflake</td>
-</tr>
-<tr>
-<td><strong>Duplicate count (DMF)</strong></td>
-<td><code>dmf:duplicate_count</code></td>
-<td>Snowflake’s system DUPLICATE_COUNT metric function, computed natively in the warehouse.</td>
-<td>Uniqueness</td>
-<td><code>column</code></td>
-<td>warn / fail / critical (fail or critical required)</td>
-<td>Snowflake</td>
-</tr>
-<tr>
-<td><strong>Blank count (DMF)</strong></td>
-<td><code>dmf:blank_count</code></td>
-<td>Snowflake’s system BLANK_COUNT metric function, computed natively in the warehouse — counts empty or space-only strings (not NULLs; tabs/newlines aren’t treated as blank). VARCHAR columns only.</td>
-<td>Completeness</td>
-<td><code>column</code></td>
-<td>warn / fail / critical (fail or critical required)</td>
-<td>Snowflake</td>
-</tr>
-<tr>
-<td><strong>Future timestamp percent (DMF)</strong></td>
-<td><code>dmf:future_timestamp_percent</code></td>
-<td>Snowflake’s system FUTURE_TIMESTAMP_PERCENT metric function (0–100): the share of rows dated after the evaluation time. DATE, TIMESTAMP_LTZ and TIMESTAMP_TZ columns only.</td>
-<td>Validity</td>
-<td><code>column</code></td>
-<td>warn / fail / critical (fail or critical required)</td>
-<td>Snowflake</td>
-</tr>
-<tr>
-<td><strong>Unique count (DMF)</strong></td>
-<td><code>dmf:unique_count</code></td>
-<td>Snowflake’s system UNIQUE_COUNT metric function, computed natively in the warehouse. Degrades downward, so this type carries no thresholds — read the observed value directly.</td>
-<td>Uniqueness</td>
-<td><code>column</code></td>
-<td>None — pass/fail only</td>
-<td>Snowflake</td>
-</tr>
-</tbody>
-</table>
-<h2 id="authorable-outside-the-editor">Authorable outside the editor<a class="headerlink" href="#authorable-outside-the-editor" title="Permanent link">¶</a></h2>
-<p>Vetted by the backend but with no editor widget: usable over the REST API, MCP and
-suite import, which hand the backend raw JSON.</p>
+<h1 id="adr-0045-engine-generic-sql-datasource-base">ADR 0045 — Engine-generic SQL datasource base<a class="headerlink" href="#adr-0045-engine-generic-sql-datasource-base" title="Permanent link">¶</a></h1>
 <ul>
-<li><code>expect_column_pair_values_to_be_in_set</code></li>
+<li><strong>Status:</strong> Accepted (2026-09-27)</li>
+<li><strong>Date:</strong> 2026-09-27</li>
+<li><strong>Deciders:</strong> @TheurgicDuke771</li>
+<li><strong>Related:</strong> ADR <a href="../0010-provider-agnostic-infrastructure-seams/">0010</a> / <a href="../0013-marketplace-distribution-and-anti-lock-in/">0013</a> (named for the engine, never a hosting vendor), <a href="../0019-custom-sql-check-kind/">0019</a> (custom SQL), <a href="../0036-connection-anchored-check-engines/">0036</a> (engines are connection capabilities — these offer GX only), <a href="../0040-warehouse-inventory-sync-table-enumeration-seam/">0040</a> (table enumeration).</li>
 </ul>
-<h2 id="not-offered-and-why">Not offered, and why<a class="headerlink" href="#not-offered-and-why" title="Permanent link">¶</a></h2>
-<p><strong>Scalar aggregates</strong> (<code>expect_column_mean_to_be_between</code> and its siblings) report one number
-and no unexpected-%, so severity bands have nothing to band — a Volume or Anomaly monitor
-measures that shape with trends and a learned baseline. <strong>Whole-table column-set
-comparisons</strong> are what the Schema-drift monitor does against a captured baseline. For
-anything else, write a custom-SQL check.</p>
-<hr>
-<p><em>Generated by <code>scripts/docs/gen-check-catalog.py</code> — edit the catalog or the allowlist, not this page.</em></p>
+<h2 id="context">Context<a class="headerlink" href="#context" title="Permanent link">¶</a></h2>
+<p>Theme 8 queues several SQL datasources that GX reaches through a SQLAlchemy dialect and DataQ
+reaches with host / port / database / user + password: PostgreSQL first, then MySQL/MariaDB,
+then Trino. Snowflake and Unity Catalog each got a hand-written adapter, runner and a set of
+entries scattered across the capability sets (custom SQL, monitors, pushdown admission,
+profiling, schema drift, inventory, browsing, asset identity). Copying that shape per engine
+would make "add a datasource" a dozen-file edit every time — and one missed set is a feature
+that silently doesn't work on the new engine.</p>
+<h2 id="decision">Decision<a class="headerlink" href="#decision" title="Permanent link">¶</a></h2>
+<ol>
+<li><strong>One generic base</strong> (<code>datasources/generic_sql.py</code>): a config model, a <code>ConnectionAdapter</code>,
+   a <code>CheckRunner</code> and the catalog helpers, parameterized by a <strong><code>SqlEngineSpec</code></strong> — the only
+   thing an engine supplies: its config subclass (TLS vocabulary, default port, identifier
+   limit), driver name, GX datasource factory, <code>connect_args</code>, OpenLineage namespace scheme,
+   whether the asset name carries the database, its catalog queries, and optional hooks
+   (per-column aggregate capability for the profiler, run-path engine options).</li>
+<li><strong>One registry</strong> (<code>datasources/sql_engines.py</code>). Every capability set that names SQL
+   datasources derives from <code>GENERIC_SQL_TYPES</code> instead of restating it. Adding an engine is
+   one spec module plus one registry entry, a migration widening the connection-type CHECK,
+   and the frontend form spec.</li>
+<li><strong>Pushdown only.</strong> Expectations run on one GX SQL batch, monitors as scalar Core
+   aggregates; nothing is materialised in the worker, so the run target takes no sampling
+   block and run admission treats the type as pushdown.</li>
+<li><strong>Read only at the session.</strong> Every session DataQ opens is read-only at the server
+   (PostgreSQL <code>default_transaction_read_only</code>), so a side effect that slips past the ADR 0019
+   validator still cannot write.</li>
+<li><strong>Names are resolved exactly as spelled</strong>, by the rule <code>sql.folding_identifier</code> already
+   applies: an all-lower-case name is sent bare, anything else quoted. GX lower-cases an
+   unquoted schema, so the GX session is <strong>scoped to the target's schema</strong> (a PostgreSQL
+   <code>search_path</code>, re-validated through the identifier allowlist before it reaches the session)
+   and GX gets no schema at all. Asset identity keeps parts verbatim, so a suite target and an
+   enumerated table join byte-for-byte.</li>
+<li><strong>Identifier limits are enforced at save time.</strong> PostgreSQL silently truncates a name past
+   63 characters, which would resolve a different object; the target resolver refuses it.</li>
+<li><strong>Honest gaps, not silent ones.</strong> No column-tag source (classification falls back to the
+   suite policy and DataQ's own checks). No warehouse-native lineage: the engines get the
+   ADR 0040 <em>enumeration</em> half through a separate <code>TableEnumerator</code> seam and stay out of
+   <code>WAREHOUSE_LINEAGE_CONNECTION_TYPES</code>, so an empty lineage graph reads "not observed".
+   Native engines: GX only.</li>
+</ol>
+<h2 id="consequences">Consequences<a class="headerlink" href="#consequences" title="Permanent link">¶</a></h2>
+<ul>
+<li>Every behaviour is verified against a <strong>real server through the real driver</strong> — for a
+  value that crosses a driver boundary, only a live run is evidence: the
+  PostgreSQL battery dogfoods the test suite's own database, as a least-privileged role, in
+  CI. Two driver-boundary defects were found that way on the first run and are now hooks on
+  the spec rather than special cases: <code>min(jsonb)</code>/<code>min(boolean)</code> do not exist (per-column
+  profiler capability), and psycopg2's decoded JSON cells crash GX's result formatting
+  (JSON kept as text on the run path).</li>
+<li>A new engine inherits the whole feature surface at once — which is the risk as well as the
+  point: it is not "supported" until the same battery has run against it.</li>
+<li>Snowflake and Unity Catalog keep their own adapters; they are not migrated onto the base
+  (their auth, catalogs and lineage differ too much to gain from it).</li>
+</ul>
 
 
 
@@ -3095,44 +2363,6 @@ anything else, write a custom-SQL check.</p>
       
         <footer class="md-footer">
   
-    
-      
-      <nav class="md-footer__inner md-grid" aria-label="Footer">
-        
-          
-          <a href="../" class="md-footer__link md-footer__link--prev" aria-label="Previous: Reference">
-            <div class="md-footer__button md-icon">
-              
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"></path></svg>
-            </div>
-            <div class="md-footer__title">
-              <span class="md-footer__direction">
-                Previous
-              </span>
-              <div class="md-ellipsis">
-                Reference
-              </div>
-            </div>
-          </a>
-        
-        
-          
-          <a href="../feature-matrix/" class="md-footer__link md-footer__link--next" aria-label="Next: Feature matrix">
-            <div class="md-footer__title">
-              <span class="md-footer__direction">
-                Next
-              </span>
-              <div class="md-ellipsis">
-                Feature matrix
-              </div>
-            </div>
-            <div class="md-footer__button md-icon">
-              
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"></path></svg>
-            </div>
-          </a>
-        
-      </nav>
     
   
   <div class="md-footer-meta md-typeset">

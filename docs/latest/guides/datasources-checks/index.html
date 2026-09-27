@@ -963,10 +963,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#identifier-casing-snowflake-unity-catalog" class="md-nav__link">
+  <a href="#postgresql" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Identifier casing (Snowflake / Unity Catalog)
+        PostgreSQL
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#identifier-casing-snowflake-unity-catalog-postgresql" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Identifier casing (Snowflake / Unity Catalog / PostgreSQL)
       
     </span>
   </a>
@@ -1024,10 +1035,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#browsing-for-a-run-target-unity-catalog-adls-gen2-s3" class="md-nav__link">
+  <a href="#browsing-for-a-run-target-unity-catalog-postgresql-adls-gen2-s3" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Browsing for a run target (Unity Catalog, ADLS Gen2, S3)
+        Browsing for a run target (Unity Catalog, PostgreSQL, ADLS Gen2, S3)
       
     </span>
   </a>
@@ -1057,10 +1068,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#custom-sql-snowflake-unity-catalog-adr-0019" class="md-nav__link">
+  <a href="#custom-sql-snowflake-unity-catalog-postgresql-adr-0019" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Custom SQL (Snowflake / Unity Catalog — ADR 0019)
+        Custom SQL (Snowflake / Unity Catalog / PostgreSQL — ADR 0019)
       
     </span>
   </a>
@@ -1112,10 +1123,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#anomaly-monitor-snowflake-unity-catalog-adr-0012" class="md-nav__link">
+  <a href="#anomaly-monitor-snowflake-unity-catalog-postgresql-adr-0012" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Anomaly monitor (Snowflake / Unity Catalog — ADR 0012)
+        Anomaly monitor (Snowflake / Unity Catalog / PostgreSQL — ADR 0012)
       
     </span>
   </a>
@@ -2572,10 +2583,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#identifier-casing-snowflake-unity-catalog" class="md-nav__link">
+  <a href="#postgresql" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Identifier casing (Snowflake / Unity Catalog)
+        PostgreSQL
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#identifier-casing-snowflake-unity-catalog-postgresql" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Identifier casing (Snowflake / Unity Catalog / PostgreSQL)
       
     </span>
   </a>
@@ -2633,10 +2655,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#browsing-for-a-run-target-unity-catalog-adls-gen2-s3" class="md-nav__link">
+  <a href="#browsing-for-a-run-target-unity-catalog-postgresql-adls-gen2-s3" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Browsing for a run target (Unity Catalog, ADLS Gen2, S3)
+        Browsing for a run target (Unity Catalog, PostgreSQL, ADLS Gen2, S3)
       
     </span>
   </a>
@@ -2666,10 +2688,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#custom-sql-snowflake-unity-catalog-adr-0019" class="md-nav__link">
+  <a href="#custom-sql-snowflake-unity-catalog-postgresql-adr-0019" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Custom SQL (Snowflake / Unity Catalog — ADR 0019)
+        Custom SQL (Snowflake / Unity Catalog / PostgreSQL — ADR 0019)
       
     </span>
   </a>
@@ -2721,10 +2743,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#anomaly-monitor-snowflake-unity-catalog-adr-0012" class="md-nav__link">
+  <a href="#anomaly-monitor-snowflake-unity-catalog-postgresql-adr-0012" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Anomaly monitor (Snowflake / Unity Catalog — ADR 0012)
+        Anomaly monitor (Snowflake / Unity Catalog / PostgreSQL — ADR 0012)
       
     </span>
   </a>
@@ -2866,6 +2888,12 @@
 <td>✅</td>
 <td>✅</td>
 </tr>
+<tr>
+<td>PostgreSQL (any server — self-hosted or a managed service)</td>
+<td>host + port + database + user, password; TLS mode</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
 </tbody>
 </table>
 <h2 id="add-a-connection">Add a connection<a class="headerlink" href="#add-a-connection" title="Permanent link">¶</a></h2>
@@ -2885,7 +2913,8 @@ runs, so it is validated when the connection is saved).</p>
 <h3 id="moving-a-connection-to-a-new-host">Moving a connection to a new host<a class="headerlink" href="#moving-a-connection-to-a-new-host" title="Permanent link">¶</a></h3>
 <p>Editing a field that decides <em>where</em> the credential is sent — Snowflake <code>account</code>, ADLS
 <code>account_url</code>, S3/dbt <code>endpoint_url</code>, Unity Catalog <code>workspace_url</code>, Iceberg <code>catalog_uri</code> /
-<code>warehouse</code> / <code>properties</code> / <code>secret_property</code>, Airflow <code>base_url</code>, dbt <code>artifacts_uri</code> —
+<code>warehouse</code> / <code>properties</code> / <code>secret_property</code>, PostgreSQL <code>host</code> / <code>port</code>, Airflow
+<code>base_url</code>, dbt <code>artifacts_uri</code> —
 requires re-entering
 that credential in the same save. The edit form asks for it as soon as you change one of
 those fields; through the API the request is rejected with <code>422 credential_redirect</code> until
@@ -2966,7 +2995,53 @@ incidents (decided in
 <a href="../../adr/0040-warehouse-inventory-sync-table-enumeration-seam/">ADR 0040</a> §6).</p>
 <p>The same two fields exist on a <strong>dbt</strong> orchestration connection whose <code>artifacts_uri</code> is
 <code>s3://…</code>, so the artifacts poll can read from the same store.</p>
-<h3 id="identifier-casing-snowflake-unity-catalog">Identifier casing (Snowflake / Unity Catalog)<a class="headerlink" href="#identifier-casing-snowflake-unity-catalog" title="Permanent link">¶</a></h3>
+<h3 id="postgresql">PostgreSQL<a class="headerlink" href="#postgresql" title="Permanent link">¶</a></h3>
+<p>One connection type for <strong>any PostgreSQL server</strong> — self-hosted, or a managed service on any
+cloud. It is named for the engine, never for a vendor that hosts it (ADR
+<a href="../../adr/0010-provider-agnostic-infrastructure-seams/">0010</a>), and is the first engine on
+DataQ's generic SQL datasource base, which the MySQL/MariaDB and Trino adapters reuse.
+Live-verified against PostgreSQL 16.</p>
+<ul>
+<li><strong>Fields:</strong> host (a bare hostname or IP — no scheme, port or path), port (default 5432),
+  database, user, an optional default schema (default <code>public</code>: where a target with no
+  schema resolves), and the password as the connection's secret.</li>
+<li><strong>TLS:</strong> <code>require</code> by default. <code>verify-full</code> / <code>verify-ca</code> also check the server
+  certificate, against the system trust store. <code>disable</code> must be chosen explicitly; libpq's
+  <code>prefer</code> — which silently falls back to plaintext — is not offered.</li>
+<li><strong>Read only, always.</strong> Every session DataQ opens sets <code>default_transaction_read_only</code>, so
+  the server itself refuses a write, whatever a query contains. Give DataQ its own login role
+  anyway, with no more than it needs:</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="k">CREATE</span><span class="w"> </span><span class="k">ROLE</span><span class="w"> </span><span class="n">dataq_reader</span><span class="w"> </span><span class="n">LOGIN</span><span class="w"> </span><span class="n">PASSWORD</span><span class="w"> </span><span class="s1">'…'</span><span class="p">;</span>
+<span class="k">GRANT</span><span class="w"> </span><span class="k">CONNECT</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="k">DATABASE</span><span class="w"> </span><span class="n">shop</span><span class="w"> </span><span class="k">TO</span><span class="w"> </span><span class="n">dataq_reader</span><span class="p">;</span>
+<span class="k">GRANT</span><span class="w"> </span><span class="k">USAGE</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="k">SCHEMA</span><span class="w"> </span><span class="n">sales</span><span class="w"> </span><span class="k">TO</span><span class="w"> </span><span class="n">dataq_reader</span><span class="p">;</span>
+<span class="k">GRANT</span><span class="w"> </span><span class="k">SELECT</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="k">ALL</span><span class="w"> </span><span class="n">TABLES</span><span class="w"> </span><span class="k">IN</span><span class="w"> </span><span class="k">SCHEMA</span><span class="w"> </span><span class="n">sales</span><span class="w"> </span><span class="k">TO</span><span class="w"> </span><span class="n">dataq_reader</span><span class="p">;</span>
+</code></pre></div>
+<ul>
+<li><strong>Name resolution.</strong> Each session's <code>search_path</code> is <code>pg_catalog</code>, then the target's schema,
+  then <code>public</code> — so an unqualified name in custom SQL resolves in the table's own schema, and
+  extension objects installed in <code>public</code> (citext, pg_trgm, PostGIS) still work. <code>pg_catalog</code>
+  comes first on purpose: a function planted in a schema DataQ reads can never override a
+  built-in DataQ's own SQL calls. Still, don't give untrusted roles <code>CREATE</code> on schemas DataQ
+  checks — a function with a <em>different</em> signature there is still callable by name.</li>
+<li><strong>Everything runs in the database</strong> — expectations on a SQL batch, monitors as scalar
+  aggregates, custom SQL as-is — so no rows are loaded into the worker and a run target
+  takes no sampling block.</li>
+<li><strong>The profiler</strong> reports min/max as unavailable (null) for types PostgreSQL has no MIN/MAX
+  for — <code>boolean</code>, <code>json</code>/<code>jsonb</code>, <code>uuid</code>, geometric — and distinct count / top values as
+  unavailable for types with no equality (<code>json</code>, <code>xml</code>, geometric), instead of failing the
+  whole profile. A domain is judged by the type it is a domain over, and an array by its
+  element type. A JSON cell in a failing-row sample is shown as its JSON text.</li>
+<li><strong>No column tags.</strong> PostgreSQL has no column-tag feature for DataQ to read, so its columns
+  are classified by the suite's column policy and DataQ's own name/value checks only — see
+  <a href="../../security/overview/">security</a>.</li>
+<li><strong>Inventory sync</strong> enumerates the tables, views, materialized views and foreign tables the
+  user can <code>SELECT</code>, in schemas it has <code>USAGE</code> on (partitions are left out — their parent is
+  what a check targets). There is <strong>no warehouse-native lineage</strong>: PostgreSQL keeps no lineage
+  log to read, so a PostgreSQL asset's lineage comes from dbt, OpenLineage or a catalog, and
+  an empty graph means "not observed", not "nothing feeds this table".</li>
+</ul>
+<h3 id="identifier-casing-snowflake-unity-catalog-postgresql">Identifier casing (Snowflake / Unity Catalog / PostgreSQL)<a class="headerlink" href="#identifier-casing-snowflake-unity-catalog-postgresql" title="Permanent link">¶</a></h3>
 <p>Warehouses fold <strong>unquoted</strong> identifiers — Snowflake upper-cases them — so a column
 created as <code>order_ts</code> is really stored as <code>ORDER_TS</code>, while one created as
 <code>"Amount"</code> is stored mixed-case and is only reachable quoted.</p>
@@ -2984,6 +3059,11 @@ the aggregate/top-values queries, and freshness/volume monitors alike.</p>
   nor <code>"order"</code> (wrong case) reaches.</li>
 </ul>
 <p>In both cases, alias the column in a view and point the check at that.</p>
+<p><strong>PostgreSQL</strong> folds unquoted names to <em>lower</em>-case, so the same rule gives the natural
+result there: <code>order_id</code> is sent bare, while <code>CustomerId</code> or <code>Sales</code> (created quoted) are
+quoted and matched exactly. PostgreSQL silently <strong>truncates</strong> a name longer than 63
+characters, which could resolve a different object — so a longer table or schema name is
+refused when the suite is saved.</p>
 <p>One more caveat: in a <strong>three-part</strong> <code>catalog.schema.table</code> target, only the table
 gets quoted — a mixed-case <em>catalog or schema</em> still folds. This affects nobody
 today (Unity Catalog is the only three-part datasource and it resolves identifiers
@@ -3106,13 +3186,13 @@ read. Within one run a volume monitor (pushed down, exact) and a sampled
 expectation can sit side by side, so the label is per check, not per run.</p>
 <h2 id="author-a-check">Author a check<a class="headerlink" href="#author-a-check" title="Permanent link">¶</a></h2>
 <ol>
-<li>Create (or open) a <strong>suite</strong> and point it at a <strong>target</strong> — a table (Snowflake/UC), a
+<li>Create (or open) a <strong>suite</strong> and point it at a <strong>target</strong> — a table (Snowflake/UC/PostgreSQL), a
    file/path or batch pattern (ADLS/S3), or an Iceberg <code>namespace.table</code>. On Unity Catalog,
-   ADLS Gen2 and S3 you can <strong>browse</strong> for it instead of typing it — see below.</li>
+   PostgreSQL, ADLS Gen2 and S3 you can <strong>browse</strong> for it instead of typing it — see below.</li>
 <li><strong>Add check</strong> opens a dedicated page (<code>/suites/&lt;id&gt;/checks/new</code>): pick a <strong>category</strong>,
    then the check type, then fill its config. The authoring paths:</li>
 </ol>
-<h3 id="browsing-for-a-run-target-unity-catalog-adls-gen2-s3">Browsing for a run target (Unity Catalog, ADLS Gen2, S3)<a class="headerlink" href="#browsing-for-a-run-target-unity-catalog-adls-gen2-s3" title="Permanent link">¶</a></h3>
+<h3 id="browsing-for-a-run-target-unity-catalog-postgresql-adls-gen2-s3">Browsing for a run target (Unity Catalog, PostgreSQL, ADLS Gen2, S3)<a class="headerlink" href="#browsing-for-a-run-target-unity-catalog-postgresql-adls-gen2-s3" title="Permanent link">¶</a></h3>
 <p>The suite form offers a picker beside the target fields; typing the target still works
 everywhere, and is the only way on Snowflake and Iceberg.</p>
 <ul>
@@ -3122,6 +3202,9 @@ everywhere, and is the only way on Snowflake and Iceberg.</p>
   credential can see — a table it has no privilege on is not shown, and an empty level
   means "nothing visible to this credential", not "nothing exists". The <code>system</code>,
   <code>samples</code> and <code>__databricks_internal</code> catalogs are never listed.</li>
+<li><strong>PostgreSQL — Browse schemas…</strong> lists the schemas the user has <code>USAGE</code> on, then that
+  schema's tables and views it can <code>SELECT</code> — the same query the inventory sync enumerates
+  with. There is no catalog level: the connection pins one database.</li>
 <li><strong>ADLS Gen2 / S3 — Browse files…</strong> (single-file mode) walks the folders of the
   connection's one container or bucket and fills <strong>File path</strong> with the file you pick.
   <strong>Browse folders…</strong> (batch mode) fills <strong>Prefix</strong> with the folder you are in.</li>
@@ -3184,7 +3267,7 @@ nothing to band — a <em>Volume</em> or <em>Anomaly</em> monitor measures that 
 and a learned baseline. <strong>Whole-table set comparisons</strong> (columns match an expected set or
 ordered list) are what the <em>Schema-drift</em> monitor does, against a captured baseline. For
 anything with no vetted type, write a custom-SQL check.</p>
-<h3 id="custom-sql-snowflake-unity-catalog-adr-0019">Custom SQL (Snowflake / Unity Catalog — ADR 0019)<a class="headerlink" href="#custom-sql-snowflake-unity-catalog-adr-0019" title="Permanent link">¶</a></h3>
+<h3 id="custom-sql-snowflake-unity-catalog-postgresql-adr-0019">Custom SQL (Snowflake / Unity Catalog / PostgreSQL — ADR 0019)<a class="headerlink" href="#custom-sql-snowflake-unity-catalog-postgresql-adr-0019" title="Permanent link">¶</a></h3>
 <p>A read-only SQL rule in the Monaco editor: <strong>any rows returned are failures</strong>. Use
 <code>{batch}</code> as a placeholder for the suite's target table
 (<code>SELECT * FROM {batch} WHERE amount &lt; 0</code>). Single read-only statement enforced
@@ -3197,7 +3280,7 @@ a two-part name would silently resolve against the session's default schema — 
 <em>different table</em>, quietly checked. A UC target without a schema therefore errors
 its custom-SQL checks (with that reason on the result) while every other check in
 the suite runs normally. Set the schema on the suite's run target to fix it.
-Snowflake is unaffected — its schema comes from the connection.</p>
+Snowflake and PostgreSQL are unaffected — their schema comes from the connection.</p>
 <h3 id="snowflake-dmf-adr-0036">Snowflake DMF (ADR 0036)<a class="headerlink" href="#snowflake-dmf-adr-0036" title="Permanent link">¶</a></h3>
 <p>On a Snowflake connection, the check editor offers a separate <strong>Snowflake DMF</strong>
 category for six types — null count, null percent, duplicate count, unique count,
@@ -3250,11 +3333,11 @@ whole prefix.</p>
 <p><em>Did the shape change under you?</em> Capture a <strong>baseline</strong> column-name/type snapshot,
 then each run diffs the live snapshot against it and flags any add / drop /
 type-change. Introspection is per-datasource, never a <code>CheckRunner</code>/GX pass or a
-data scan: <code>information_schema</code> for Snowflake/Unity Catalog, the Parquet footer (or
+data scan: <code>information_schema</code> for Snowflake/Unity Catalog/PostgreSQL, the Parquet footer (or
 a bounded CSV header sample) for ADLS Gen2/S3 flat files, and the loaded table's own
 metadata for Iceberg. Re-baseline explicitly once you've reviewed a drift and want
 it as the new normal — it is never re-baselined for you.</p>
-<h3 id="anomaly-monitor-snowflake-unity-catalog-adr-0012">Anomaly monitor (Snowflake / Unity Catalog — ADR 0012)<a class="headerlink" href="#anomaly-monitor-snowflake-unity-catalog-adr-0012" title="Permanent link">¶</a></h3>
+<h3 id="anomaly-monitor-snowflake-unity-catalog-postgresql-adr-0012">Anomaly monitor (Snowflake / Unity Catalog / PostgreSQL — ADR 0012)<a class="headerlink" href="#anomaly-monitor-snowflake-unity-catalog-postgresql-adr-0012" title="Permanent link">¶</a></h3>
 <p><em>Is this value abnormal for this dataset?</em> Where a volume monitor asks "is the row
 count inside a range I chose?", the anomaly monitor learns the range: it keeps a
 rolling mean/stddev of the target's own <strong>row count</strong> or <strong>freshness age</strong> and bands
@@ -3349,6 +3432,8 @@ the type your warehouse/catalog shows you:</p>
   <code>type_</code> against the <strong>fully-qualified dialect type</strong>, not the short column type. A
   <code>NUMBER</code> column reports as <code>DECIMAL(38, 0)</code>; <code>VARCHAR</code> reports as <code>VARCHAR(16777216)</code>.
   Plugging in <code>NUMBER</code> or <code>DECIMAL</code> alone fails every time.</li>
+<li><strong>PostgreSQL</strong> builds the same kind of SQL batch and compares the same way: a
+  <code>numeric(12,2)</code> column is <code>NUMERIC(12, 2)</code>, a <code>timestamptz</code> is <code>TIMESTAMP WITH TIME ZONE</code>.</li>
 <li><strong>Unity Catalog, ADLS Gen2 / S3, and Apache Iceberg</strong> all read the target into a
   pandas DataFrame first (<code>PandasExecutionEngine</code>). GX first tries an <strong>exact dtype
   match</strong>; only when the column's dtype is <code>object</code> and <code>type_</code> isn't
@@ -3379,6 +3464,11 @@ the type your warehouse/catalog shows you:</p>
 <td><code>DECIMAL(38, 0)</code> for <code>NUMBER</code>, <code>VARCHAR(16777216)</code> for <code>VARCHAR</code></td>
 </tr>
 <tr>
+<td>PostgreSQL</td>
+<td>SQL (dialect-native)</td>
+<td><code>NUMERIC(12, 2)</code> for <code>numeric(12,2)</code>, <code>TIMESTAMP WITH TIME ZONE</code> for <code>timestamptz</code>, <code>TEXT</code>, <code>INTEGER</code></td>
+</tr>
+<tr>
 <td>Unity Catalog</td>
 <td>pandas DataFrame (not Arrow-backed)</td>
 <td><code>int64</code> for non-nullable <code>BIGINT</code> (<strong><code>float64</code> if the column contains NULLs</strong>); <code>object</code> or <code>str</code> for <code>STRING</code></td>
@@ -3396,7 +3486,7 @@ the type your warehouse/catalog shows you:</p>
 </tbody>
 </table>
 <p><strong>Calibration tip:</strong> don't guess — <strong>dry-run first</strong>, but know where the trail runs
-out. On <strong>Snowflake and the Arrow-backed sources</strong> (Parquet/Iceberg), a failing
+out. On <strong>Snowflake, PostgreSQL and the Arrow-backed sources</strong> (Parquet/Iceberg), a failing
 result's <code>observed_value</code> carries the <em>exact</em> string GX expected — copy it into
 <code>type_</code> and re-run to confirm green. On <strong>Unity Catalog / CSV</strong>, a wrong value-type
 guess (e.g. <code>int64</code> against a string column) falls to GX's row-wise compare, which

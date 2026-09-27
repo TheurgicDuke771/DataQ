@@ -2515,6 +2515,7 @@
 <th>Check kind</th>
 <th style="text-align: center;">Snowflake</th>
 <th style="text-align: center;">Unity Catalog</th>
+<th style="text-align: center;">PostgreSQLᵖ</th>
 <th style="text-align: center;">ADLS Gen2 (files)</th>
 <th style="text-align: center;">S3 (files)ˢ</th>
 <th style="text-align: center;">Iceberg</th>
@@ -2528,6 +2529,7 @@
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
 </tr>
 <tr>
 <td>Snowflake DMF (native metric functions)ᵈ</td>
@@ -2536,9 +2538,11 @@
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
 </tr>
 <tr>
 <td>Custom SQL (rows returned = failures)ᶜ</td>
+<td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">—</td>
@@ -2552,9 +2556,11 @@
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
 </tr>
 <tr>
 <td>Freshness from <strong>file arrival time</strong> (no column — catches "no new file")</td>
+<td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">✅</td>
@@ -2568,9 +2574,11 @@
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
 </tr>
 <tr>
 <td>Anomaly monitor (z-score vs a learned baseline)ᵃ</td>
+<td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">—</td>
@@ -2584,9 +2592,11 @@
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
 </tr>
 <tr>
 <td>Comparison / reconciliation (diff vs a baseline connection)</td>
+<td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
@@ -2600,11 +2610,13 @@
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
 </tr>
 <tr>
 <td>Browse for the run target (catalog → schema → table / folders → file)</td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅ (schema → table)</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">—</td>
@@ -2616,9 +2628,11 @@
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
 </tr>
 <tr>
 <td>Dry-run preview</td>
+<td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
@@ -2666,11 +2680,20 @@ grant) and stores the result on the connection — surfaced on the connection li
 rather than a hard gate, in the check editor's engine picker. The probe reads zero rows of one
 table the connection's role can already see; if the role can see none, or the probe fails for a
 reason unrelated to DMFs, the connection shows "couldn't determine" rather than "unavailable".</p>
+<p>ᵖ <strong>PostgreSQL</strong> — any server, self-hosted or managed; everything runs by pushdown
+on read-only sessions. Every row was verified by an <strong>executed</strong> run against a real
+PostgreSQL 16 through the connection's own least-privileged role, and the suite's CI
+re-runs that battery (every SQL-capable expectation type, custom SQL, freshness over
+<code>timestamptz</code>/<code>timestamp</code>/<code>date</code>, volume, anomaly measurement, profiler, schema drift,
+comparison reads,
+inventory enumeration and browsing) against the test database on every change. The
+profiler reports min/max as unavailable for types PostgreSQL cannot order (<code>boolean</code>,
+<code>jsonb</code>, …) — see <a href="../../guides/datasources-checks/#postgresql">Datasources &amp; checks</a>.</p>
 <p>ˢ <strong>S3 means AWS S3 <em>and</em> any S3-compatible store</strong> — MinIO, Ceph/RadosGW, Cloudflare R2,
 Wasabi, Backblaze B2, SeaweedFS or an on-prem gateway. Set the connection's optional
 endpoint URL; every row in this column applies identically either way. See
 <a href="../../guides/datasources-checks/#s3-compatible-object-stores">Datasources &amp; checks</a>.</p>
-<p>Custom SQL runs a SQL query, so it's <strong>SQL-datasource only</strong> (Snowflake, Unity Catalog;
+<p>Custom SQL runs a SQL query, so it's <strong>SQL-datasource only</strong> (Snowflake, Unity Catalog, PostgreSQL;
 there is no flat-file support, and no issue currently tracks adding it — flat files get freshness/volume monitors instead (see the rows above);
 Iceberg is not SQL-queryable — reads go through <code>pyiceberg</code> scans, not a query engine).
 <strong>Comparison checks</strong> (ADR <a href="../../adr/0015-two-connection-comparison-check-model/">0015</a>)
@@ -2784,6 +2807,15 @@ five mechanisms:</p>
 <td style="text-align: center;">—³</td>
 </tr>
 <tr>
+<td>PostgreSQL</td>
+<td><code>postgres://{host}:{port}</code> / <code>database.schema.table</code></td>
+<td style="text-align: center;">✅ (+ inventory sync)</td>
+<td style="text-align: center;">✅ by construction (dbt-postgres names match; not yet live-verified)</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">—⁴</td>
+</tr>
+<tr>
 <td>BI reports / dashboards</td>
 <td>not yet materialized²</td>
 <td style="text-align: center;">—</td>
@@ -2799,6 +2831,8 @@ native <code>pyiceberg</code> connections have no dbt slice of their own.
 ³ Warehouse-native lineage reads a query engine's lineage view; a native <code>pyiceberg</code>
 connection has no engine to ask (an engine-registered Iceberg table is covered under its
 Snowflake/UC connection).
+⁴ PostgreSQL keeps no lineage log to read, so there is no warehouse-native pull; the
+inventory sync still enumerates its tables (ADR 0040).
 ² The lineage graph's node-kind contract reserves <code>bi_report</code>/<code>dashboard</code> — a BI node
 (e.g. a Power BI report downstream of a mart) becomes representable the moment a capable
 catalog (Purview/DataHub) lands behind the seam plus an <code>assets.kind</code> column; no schema or

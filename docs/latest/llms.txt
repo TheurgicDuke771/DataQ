@@ -120,6 +120,7 @@ lists which).
 - [ADR 0042 — `LLMProvider` seam: outbound LLM, BYO credential, default-off](https://theurgicduke771.github.io/DataQ/docs/latest/adr/0042-llm-provider-seam/index.md): Adds a new infrastructure seam in the ADR [0010](0010-provider-agnostic-infrastructure-seams.md) family (`ConnectionAdapter`, `SecretStore`, `OrchestrationProvi
 - [ADR 0043 — In-app workspace membership (`workspace_members`)](https://theurgicduke771.github.io/DataQ/docs/latest/adr/0043-in-app-workspace-membership/index.md): So removing an address from `AUTH_OTP_ALLOWED_EMAILS` stops new sign-in codes (`otp_service.is_signup_eligible`, at both the request and the verify step) and st
 - [ADR 0044 — MSSQL / T-SQL adapter: TDS driver choice and Entra service-principal auth](https://theurgicduke771.github.io/DataQ/docs/latest/adr/0044-mssql-tds-driver-and-entra-auth/index.md): The Theme-8 MSSQL row adds one `mssql` datasource type covering everything that speaks SQL Server's TDS protocol on port 1433: SQL Server itself, Azure SQL Data
+- [ADR 0045 — Engine-generic SQL datasource base](https://theurgicduke771.github.io/DataQ/docs/latest/adr/0045-engine-generic-sql-datasource-base/index.md): Theme 8 queues several SQL datasources that GX reaches through a SQLAlchemy dialect and DataQ
 
 ## Optional
 

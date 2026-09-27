@@ -1154,7 +1154,7 @@
         "type": "object"
       },
       "CatalogBrowseRead": {
-        "description": "One level of the catalog \u2192 schema \u2192 table tree. `truncated` means more names exist\nthan `limit` \u2014 the list is then a prefix, and the target can still be typed by hand.",
+        "description": "One level of the catalog \u2192 schema \u2192 table tree (a generic SQL connection such as\nPostgreSQL starts at `schema`: its database is fixed). `truncated` means more names exist\nthan `limit` \u2014 the list is then a prefix, and the target can still be typed by hand.",
         "properties": {
           "catalog": {
             "anyOf": [
@@ -11080,7 +11080,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "List one level of a Unity Catalog connection's catalogs/schemas/tables",
+        "summary": "List one level of a Unity Catalog (catalogs/schemas/tables) or generic SQL (schemas/tables) connection",
         "tags": [
           "connections"
         ]
