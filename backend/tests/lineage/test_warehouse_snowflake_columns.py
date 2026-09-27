@@ -1,10 +1,10 @@
 """#1710: column grain on the Snowflake GET_LINEAGE tier (ACCESS_HISTORY refinement).
 
-UNVERIFIED LIVE: the composition under test (GET_LINEAGE table edges + ACCESS_HISTORY column
-pairs) could not be run against Snowflake — the harness credentials are expired (#2085). The
-GET_LINEAGE rows are the real capture (all table-grain: NULL column names at TABLE domain, which
-is WHY this refinement exists); the ACCESS_HISTORY `columns` blob shape is the #908 live-tuned
-one. The live battery is recorded in the #1710 PR body.
+The GET_LINEAGE rows are the real capture (all table-grain: NULL column names at TABLE domain —
+re-confirmed live 2026-09-27, which is WHY this refinement exists); the ACCESS_HISTORY `columns`
+blob shape is the #908 live-tuned one. Live (2026-09-27, DATAQ_READER): the refinement ran on the
+GET_LINEAGE tier and stamped `captured`; the account has no DML with non-empty `directSources`, so
+the pair-ATTACH path is exercised only here (creating qualifying DML would be a live write).
 """
 
 from __future__ import annotations

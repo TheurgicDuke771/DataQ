@@ -227,8 +227,12 @@ been recording **no column pairs at all**. `GET_LINEAGE`'s table edges are now r
 not return is not added, so the table-level prune observation is unchanged. A failed refinement
 leaves the table edges intact and records `unavailable`; a *transient* failure additionally stops
 the snapshot refresh from replacing stored pairs (it merges instead), while a confirmed denial
-still replaces — pairs clear rather than freeze once a grant is revoked. *Live verification of this composition is
-outstanding* (the test account's credentials had expired); the parser itself was live-tuned.
+still replaces — pairs clear rather than freeze once a grant is revoked. Live-verified (2026-09-27, a
+least-privileged reader role): the refinement runs on the GET_LINEAGE tier and records `captured`,
+but that account's writes carry no `directSources` and its downstream layer is views, so every edge
+honestly reads `none_recorded`. `GET_LINEAGE` at `COLUMN` domain *does* return view column lineage
+(probed live); reading it is a separate, budgeted follow-up — the coverage vocabulary already
+accommodates edges moving from `none_recorded` to `recorded`.
 
 **4. The column name is matched with its engine's unquoted-identifier fold** (§6's fold, applied to
 the column: Snowflake UPPER, Unity Catalog lower, exact elsewhere). The column's existence on the
