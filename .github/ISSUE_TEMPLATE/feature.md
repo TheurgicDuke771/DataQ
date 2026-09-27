@@ -17,7 +17,7 @@ assignees: []
 ## Scope
 
 - Component(s): <!-- backend / frontend / celery / mcp / orchestration / datasource adapter / docs -->
-- Affected datasource(s): <!-- snowflake / adls / s3 / unity_catalog / iceberg / all / n/a -->
+- Affected datasource(s): <!-- snowflake / adls / s3 / unity_catalog / iceberg / postgres / mysql / trino / mssql / all / n/a -->
 - Affected orchestration provider(s): <!-- adf / airflow / dbt / all / n/a -->
 - Schema migration required? <!-- yes (describe) / no -->
 - New external dependency? <!-- yes (name + license) / no -->

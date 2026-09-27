@@ -25,13 +25,14 @@ cloud-conditional code paths**, and the same container images run everywhere.
 
 ## Features
 
-The application feature set — suites/checks across all five datasources, every monitor kind,
-assets/lineage/incidents, alerting, scheduling, the 47-tool MCP server, PATs, rate limiting —
+The application feature set — suites/checks across all nine datasource types, every monitor kind,
+assets/lineage/incidents, alerting, scheduling, the 51-tool MCP server, PATs, rate limiting —
 is the **same code everywhere**. Where the installations genuinely differ:
 
 | Capability | Azure | AWS | Local |
 |---|---|---|---|
-| Datasource runs | live-verified: Snowflake, Unity Catalog, ADLS, S3/S3-compatible, Iceberg | live-verified: Snowflake, Unity Catalog, native S3 | flat files, MinIO, Unity Catalog (Free Edition), Iceberg; no live warehouse required |
+| Datasource runs | live-verified: Snowflake, Unity Catalog, ADLS, S3/S3-compatible, Iceberg | live-verified: Snowflake, Unity Catalog, native S3 | flat files, MinIO, Unity Catalog (Free Edition), Iceberg, PostgreSQL / MySQL / MariaDB / Trino containers; no live warehouse required |
+| New SQL engines (PostgreSQL, MySQL/MariaDB, Trino, SQL Server) + OneLake | deployed — live-verified in development against real servers (containers, an Azure SQL database, a Fabric trial workspace), not yet against a production connection | deployed, unexercised | ✅ (SQL Server's ODBC lane needs the operator-installed driver) |
 | Assets / lineage / incidents / DQ scorecard | live-verified (Snowflake full-tier lineage, UC dbt lineage, inventory sync) | deployed — same code; warehouse-lineage sweep enabled but not yet exercised against that account's grants | ✅ (Marquez reference consumer via `--profile lineage`) |
 | Alerting — Teams / Slack | live-verified | deployed, unexercised | pointable anywhere |
 | Alerting — email | configured | live-verified (SES) | Mailpit |
