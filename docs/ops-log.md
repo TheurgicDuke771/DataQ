@@ -637,6 +637,21 @@ case that bites, since the product cannot know them and will never warn.
   - AWS `Retail Snowflake DEV`: blocked on AWS CLI credentials.
   - The local mirror: empty, so there was nothing to update.
 
+## 2026-09-27 (afternoon) — Azure deployed `c7acda64`, #2112 cleanup applied
+
+- **Pre-deploy:** \`tofu plan\` on \`deploy/terraform/azure/\` with the live image tags (#2091 procedure) returned **No changes**.
+- 08:2xZ: **Azure Deploy** run 36306076403 on \`c7acda64\` → green. The delta is 22 merged PRs, including the #1710 additive migration \`81e4ec4c408b\` (\`lineage_edges.column_grain\`, nullable). Migrate job \`Succeeded\` 08:27Z.
+- **Post-deploy checks:**
+  - All four apps on \`c7acda64\`, checked per service.
+  - Public smoke: healthz/SPA/deep-link 200; \`/api/v1/me\` and \`/mcp/\` 401; \`/docs\` serves the SPA shell; 6/6 security headers.
+  - After the roll, beat dispatched 12 tasks, the worker completed 13, and api/worker/beat logged 0 error-level lines outside Airflow (the harness is stopped).
+- **Redis blip:** 7 Redis \`Connection refused\` lines from 08:29:03 to 08:29:31Z, during the roll only. The same pattern appeared on the morning roll, and the Redis app did not restart. Filed as #2119.
+- **#2112 cleanup (user-approved).** \`backend.scripts.clear_misprobed_dmf_capability\` was run through a one-off \`dataq-app-migrate\` override: \`--command=python\` with a space-free \`runpy\` one-liner in \`--args\`, which avoids az's dash-token bug for \`--apply\`, plus \`--env-vars DATABASE_URL=secretref:database-url\`.
+  - Dry run (\`dataq-app-migrate-5vw1qq0\`): would clear 3 connections.
+  - Apply (\`dataq-app-migrate-mqqa9h9\`): **cleared 3**.
+  - The three prod Snowflake connections were then re-tested through \`/test\` (\`{"ok":true}\` ×3). The new probe now stores \`engine_capabilities.dmf = {"status": "available", "available": true}\` on Payments / Orders / Retail, replacing the false "DMF unavailable".
+- **Other:** a live Snowflake write for #1928, authorized by the user. It was a session-scoped \`TEMPORARY\` table \`DATAQ_DB.ANALYTICS_STG.BLANK_PROBE_2086\` as \`DATAQ_LOADER\`, dropped explicitly afterwards; \`SHOW TABLES\` returns nothing. It showed BLANK_COUNT counts '' and space-only strings, but not tab/newline-only strings or NULL.
+
 ## 2026-09-27 (evening) — Azure SQL free-offer test DB for #1679 (ADR 0044 spike) + Fabric trial prep (#1679/#1680)
 
 All user-approved. Done by Claude, with the owner's `az` login.
