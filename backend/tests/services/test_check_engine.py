@@ -161,6 +161,14 @@ def test_dmf_bandable_metric_requires_a_positive_threshold() -> None:
         _compat(fail_threshold=None)
 
 
+@pytest.mark.parametrize("expectation_type", ["dmf:blank_count", "dmf:future_timestamp_percent"])
+def test_new_dmf_metrics_are_banded_and_require_a_threshold(expectation_type: str) -> None:
+    # #1928: each carries an authored expectation value banded by the severity tiers.
+    _compat(expectation_type=expectation_type)
+    with pytest.raises(CheckConfigInvalidError):
+        _compat(expectation_type=expectation_type, fail_threshold=None)
+
+
 def test_dmf_unique_count_refuses_thresholds() -> None:
     # derive_status bands higher-as-worse; a unique count degrades DOWNWARD, so
     # a threshold would invert its meaning — informational metric only.

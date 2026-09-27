@@ -840,6 +840,35 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     },
   },
   {
+    type: 'dmf:blank_count',
+    engine: 'dmf',
+    dimension: 'completeness',
+    label: 'Blank count (DMF)',
+    description:
+      'Snowflake’s system BLANK_COUNT metric function, computed natively in the warehouse — counts empty or space-only strings (not NULLs; tabs/newlines aren’t treated as blank). VARCHAR columns only.',
+    category: 'Snowflake DMF',
+    fields: [COLUMN],
+    thresholds: {
+      help: 'Band the blank-value count (higher = worse). A fail or critical threshold is required.',
+      requireFailOrCritical: true,
+    },
+  },
+  {
+    type: 'dmf:future_timestamp_percent',
+    engine: 'dmf',
+    dimension: 'validity',
+    label: 'Future timestamp percent (DMF)',
+    description:
+      'Snowflake’s system FUTURE_TIMESTAMP_PERCENT metric function (0–100): the share of rows dated after the evaluation time. DATE, TIMESTAMP_LTZ and TIMESTAMP_TZ columns only.',
+    category: 'Snowflake DMF',
+    fields: [COLUMN],
+    thresholds: {
+      help: 'Band the future-dated percent (0–100, higher = worse). A fail or critical threshold is required.',
+      max: 100,
+      requireFailOrCritical: true,
+    },
+  },
+  {
     type: 'dmf:unique_count',
     engine: 'dmf',
     noThresholds: true,
