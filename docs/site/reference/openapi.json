@@ -1154,7 +1154,7 @@
         "type": "object"
       },
       "CatalogBrowseRead": {
-        "description": "One level of the catalog \u2192 schema \u2192 table tree (a generic SQL connection such as\nPostgreSQL starts at `schema`: its database is fixed). `truncated` means more names exist\nthan `limit` \u2014 the list is then a prefix, and the target can still be typed by hand.",
+        "description": "One level of the catalog \u2192 schema \u2192 table tree (a generic SQL connection such as\nPostgreSQL or MySQL starts at `schema`: its database is fixed). `truncated` means more names\nexist than `limit` \u2014 the list is then a prefix, and the target can still be typed by hand.",
         "properties": {
           "catalog": {
             "anyOf": [

@@ -47,6 +47,19 @@ that silently doesn't work on the new engine.
    `WAREHOUSE_LINEAGE_CONNECTION_TYPES`, so an empty lineage graph reads "not observed".
    Native engines: GX only.
 
+## Amendment — MySQL / MariaDB, the second engine
+
+MySQL / MariaDB plugged in as one spec module (PyMySQL — MIT; the GPL drivers are
+excluded by ADR 0031) plus a registry entry, which is the test of decision 1. It needed
+three small base hooks, all generic: `url_database` (a MySQL schema IS a database, so the
+session connects to the target's schema to scope it), a shared `sslmode` vocabulary, and
+**`temp_table_types`** — GX checks uniqueness on MySQL by building session temporary
+tables, which a read-only transaction refuses, so that one type runs on its own GX
+session with the read-only guard off (`connect_args(read_only=False)`). Nothing a user
+wrote runs there; custom SQL stays on the guarded session. Decision 4 therefore reads
+"read only except where the engine's own check implementation needs temporary
+tables", and the docs say so.
+
 ## Consequences
 
 - Every behaviour is verified against a **real server through the real driver** — for a
@@ -58,5 +71,7 @@ that silently doesn't work on the new engine.
   (JSON kept as text on the run path).
 - A new engine inherits the whole feature surface at once — which is the risk as well as the
   point: it is not "supported" until the same battery has run against it.
+- A spec's hooks are only kept when a live run proves them: MySQL does not need
+  PostgreSQL's JSON-as-text option (PyMySQL already returns JSON as text), so it has none.
 - Snowflake and Unity Catalog keep their own adapters; they are not migrated onto the base
   (their auth, catalogs and lineage differ too much to gain from it).
