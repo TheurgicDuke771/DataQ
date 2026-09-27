@@ -136,6 +136,7 @@ describe('datasourceKind', () => {
     ['abfss://c@a.dfs.core.windows.net', 'adls_gen2'],
     ['s3://bucket', 's3'],
     ['postgres://db.internal:5432', 'postgres'],
+    ['trino://trino.internal:443', 'trino'],
     // An Iceberg SQL-catalog DSN is NOT the PostgreSQL datasource namespace.
     ['postgresql://u@h/db', 'other'],
     ['file', 'other'],
@@ -153,6 +154,7 @@ describe('datasourceKind', () => {
       'abfss://c@a.dfs.core.windows.net',
       's3://bucket',
       'postgres://db.internal:5432',
+      'trino://trino.internal:443',
     ]) {
       expect(datasourceKind(ns)).not.toBe('other');
       expect(namespaceLabel(ns)).toContain(' · ');

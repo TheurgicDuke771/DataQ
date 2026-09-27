@@ -10,7 +10,7 @@ export interface TextField {
    * `tags` renders a free-entry multi-value input whose config value is a `string[]` (e.g. dbt's
    * `jobs`); `toggle` renders a Switch whose config value is a boolean (e.g.
    */
-  type?: 'text' | 'tags' | 'toggle';
+  type?: 'text' | 'tags' | 'toggle' | 'textarea';
   /** Helper text under the field. */
   extra?: string;
   /**
@@ -32,6 +32,8 @@ export interface AuthOption {
   label: string;
   /** Label for the secret this mode needs. */
   secretLabel: string;
+  /** The mode authenticates with no secret at all (e.g. Trino `none`): no secret field. */
+  noSecret?: boolean;
   /** Secret is a multi-line PEM key rather than a single-line password. */
   multilineSecret?: boolean;
   /** An extra config field this mode needs (e.g. Airflow basic → username). */
@@ -190,6 +192,67 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
     ],
     secretLabel: 'Password',
     destinationFields: ['host', 'port'],
+  },
+  trino: {
+    // Any Trino / Starburst cluster (#1685) on the generic SQL base; a connection pins one catalog.
+    textFields: [
+      { name: 'host', label: 'Host', extra: 'Hostname or IP only — no scheme, port or path' },
+      {
+        name: 'port',
+        label: 'Port',
+        optional: true,
+        extra: 'Defaults to 443, or 8080 with TLS disabled',
+      },
+      {
+        name: 'catalog',
+        label: 'Catalog',
+        extra: 'The Trino catalog this connection reads, in lower case (e.g. hive, iceberg)',
+      },
+      { name: 'user', label: 'User' },
+      {
+        name: 'schema',
+        label: 'Default schema',
+        optional: true,
+        extra: 'Where an unqualified run target resolves (lower case) — defaults to default',
+      },
+      {
+        name: 'sslmode',
+        label: 'TLS mode',
+        optional: true,
+        options: ['verify-full', 'disable'],
+        extra:
+          'verify-full when left empty — the certificate and host name are always checked · ' +
+          'disable is plaintext and allows only auth type None',
+      },
+      {
+        name: 'ca_bundle',
+        label: 'CA bundle (PEM)',
+        optional: true,
+        type: 'textarea',
+        extra:
+          'For a server certificate issued by a private CA — replaces the system trust ' +
+          'store for this connection',
+      },
+      {
+        name: 'inventory_sync',
+        label: 'Inventory sync',
+        type: 'toggle',
+        optional: true,
+        default: true,
+        extra: 'Daily sync of every table this user can read in the catalog into the asset view.',
+      },
+    ],
+    auth: [
+      { value: 'password', label: 'Password', secretLabel: 'Password' },
+      { value: 'jwt', label: 'JWT', secretLabel: 'JWT (bearer token)' },
+      {
+        value: 'none',
+        label: 'None — the cluster trusts the user name',
+        secretLabel: 'Credential (unused while the auth type is None)',
+        noSecret: true,
+      },
+    ],
+    destinationFields: ['host', 'port', 'sslmode', 'ca_bundle'],
   },
   iceberg: {
     // Native pyiceberg read (ADR 0030).
