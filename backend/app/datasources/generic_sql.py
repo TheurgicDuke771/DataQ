@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from backend.app.core.errors import SafeMonitorError
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.base import (
@@ -103,7 +104,11 @@ class GenericSqlConfig(BaseModel):
 
     @field_validator("database", "user")
     @classmethod
-    def _plain_name(cls, value: str) -> str:
+    def _plain_name(cls, value: str | None) -> str | None:
+        # `None` only reaches here where an engine made the field optional (an SQL Server
+        # service principal has no `user`); the engine's own validator decides if it may be.
+        if value is None:
+            return None
         if not value or len(value) > _MAX_NAME or _CONTROL.search(value):
             raise ValueError(f"must be 1-{_MAX_NAME} characters with no control characters")
         return value
@@ -189,6 +194,28 @@ class SqlEngineSpec:
     #: Extra ``create_engine`` keyword arguments for the RUN path's engines (GX's and the
     #: monitors'), e.g. how the driver hands back JSON cells.
     run_engine_options: dict[str, Any] = field(default_factory=dict)
+    #: Whether a SESSION can be scoped to the run target's schema (a PostgreSQL ``search_path``,
+    #: a MySQL default database). SQL Server cannot — a login's default schema is fixed on the
+    #: server — so there GX is handed the schema instead.
+    session_schema: bool = True
+    #: Per credential slot, the config fields that decide where the secret is sent (#1401).
+    destination_fields: dict[str, tuple[str, ...]] = field(
+        default_factory=lambda: {"secret": ("host", "port")}
+    )
+    #: What the connection's one secret is called in messages.
+    credential_noun: str = "password"
+    #: Turns a failure whose cause the ENGINE knows (a documented driver limitation, a missing
+    #: optional driver) into a DataQ-authored message that is safe to show verbatim. ``None`` —
+    #: or a ``None`` return — leaves the failure to the generic classifier.
+    explain_failure: Callable[[GenericSqlConfig, BaseException], str | None] | None = None
+    #: How the SQL generator names the dialect to the model, when ``"<display_name> SQL"`` would
+    #: not say enough (T-SQL has no LIMIT and quotes with brackets).
+    llm_dialect: str | None = None
+    #: Allowlisted expectation types GX has no translation for on this dialect — refused at
+    #: author time (a check that saves cleanly and errors on every run is the alternative),
+    #: with ``unsupported_reason`` saying why and what to use instead.
+    unsupported_expectation_types: frozenset[str] = frozenset()
+    unsupported_reason: str = ""
 
     def validate_config(self, raw: dict[str, Any]) -> GenericSqlConfig:
         return self.config_model.model_validate(raw)
@@ -241,14 +268,33 @@ class SqlEngineSpec:
         return ".".join(parts)
 
 
+class KnownDatasourceLimitationError(SafeMonitorError, RuntimeError):
+    """A failure the engine explained (`SqlEngineSpec.explain_failure`), or a precondition it
+    checked: the message is DataQ-authored, so it reaches the user verbatim. The driver error, if
+    any, stays the ``__cause__`` for the server log.
+    """
+
+
+def explained(spec: SqlEngineSpec, config: GenericSqlConfig, exc: Exception) -> Exception:
+    """``exc``, or the engine's explanation of it when it has one."""
+    if spec.explain_failure is None or isinstance(exc, SafeMonitorError):
+        return exc
+    message = spec.explain_failure(config, exc)
+    if not message:
+        return exc
+    log.warning(
+        "generic_sql_failure_explained", conn_type=spec.conn_type, error_type=type(exc).__name__
+    )
+    return KnownDatasourceLimitationError(message)
+
+
 class GenericSqlConnectionAdapter:
     """`ConnectionAdapter` for one generic SQL engine — config validation + a ``SELECT 1``."""
 
     def __init__(self, spec: SqlEngineSpec) -> None:
         self.spec = spec
-
-    # #1401: the host and port decide which server receives the password.
-    destination_fields: ClassVar[dict[str, tuple[str, ...]]] = {"secret": ("host", "port")}
+        # #1401: e.g. the host and port decide which server receives the password.
+        self.destination_fields: dict[str, tuple[str, ...]] = spec.destination_fields
 
     def validate_config(self, raw: dict[str, Any]) -> GenericSqlConfig:
         return self.spec.validate_config(raw)
@@ -257,18 +303,25 @@ class GenericSqlConnectionAdapter:
         """Open a session and run ``SELECT 1``; raise on any failure."""
         if secret is None:
             raise ValueError(
-                f"a password is required to test a {self.spec.display_name} connection"
+                f"a {self.spec.credential_noun} is required to test a "
+                f"{self.spec.display_name} connection"
             )
         from sqlalchemy import create_engine, text
 
         config = self.validate_config(raw)
-        url, connect_args = self.spec.engine_args(config, secret)
-        engine = create_engine(url, connect_args=connect_args)
         try:
-            with engine.connect() as conn:
-                conn.execute(text("SELECT 1"))
-        finally:
-            engine.dispose()
+            url, connect_args = self.spec.engine_args(config, secret)
+            engine = create_engine(url, connect_args=connect_args)
+            try:
+                with engine.connect() as conn:
+                    conn.execute(text("SELECT 1"))
+            finally:
+                engine.dispose()
+        except Exception as exc:
+            reason = explained(self.spec, config, exc)
+            if reason is exc:
+                raise
+            raise reason from exc
 
 
 class GenericSqlCheckRunner:
@@ -311,14 +364,44 @@ class GenericSqlCheckRunner:
         index_columns: list[str] | None = None,
         value_signal_gate: ValueSignalGate | None = None,
     ) -> SuiteOutcome:
+        try:
+            return self._run_checks(
+                table=table,
+                schema=schema,
+                checks=checks,
+                index_columns=index_columns,
+                value_signal_gate=value_signal_gate,
+            )
+        except Exception as exc:
+            reason = explained(self._spec, self._config, exc)
+            if reason is exc:
+                raise
+            raise reason from exc
+
+    def _run_checks(
+        self,
+        *,
+        table: str,
+        schema: str | None,
+        checks: list[CheckSpec],
+        index_columns: list[str] | None,
+        value_signal_gate: ValueSignalGate | None,
+    ) -> SuiteOutcome:
         import great_expectations as gx
 
         from backend.app.datasources.gx_runner import run_expectations
 
         # GX lower-cases an unquoted schema name, which on an engine that resolves names exactly
-        # as spelled retargets a mixed-case schema. So the SESSION is scoped to the target's
-        # schema instead (the engine's default schema) and GX gets no schema at all.
-        scoped = self._spec.scoped_config(self._config, schema)
+        # as spelled retargets a mixed-case schema. So where the engine can, the SESSION is
+        # scoped to the target's schema instead (the engine's default schema) and GX gets no
+        # schema at all. Where it cannot (SQL Server), GX gets the schema — which its default
+        # case-insensitive collations resolve whatever GX's casing.
+        if self._spec.session_schema:
+            scoped = self._spec.scoped_config(self._config, schema)
+            gx_schema = None
+        else:
+            scoped = self._config
+            gx_schema = schema or self._config.default_schema
         connections = GxConnectionSource(self._spec, scoped, self._secret)
         context = gx.get_context(mode="ephemeral")
         datasource: Any = None
@@ -335,7 +418,7 @@ class GenericSqlCheckRunner:
                 },
             )
             asset = datasource.add_table_asset(
-                name=table, table_name=gx_table_name(table), schema_name=None
+                name=table, table_name=gx_table_name(table), schema_name=gx_schema
             )
             batch_definition = asset.add_batch_definition_whole_table(name="whole_table")
             return run_expectations(
@@ -355,13 +438,19 @@ class GenericSqlCheckRunner:
         self, *, table: str, schema: str | None, monitors: list[MonitorSpec]
     ) -> list[CheckOutcome]:
         """Evaluate freshness/volume monitors via scalar SQL aggregates (no GX)."""
-        return run_monitors_over_engine(
-            self._engine.get(),
-            table=table,
-            schema=schema or self._config.default_schema,
-            catalog=None,
-            monitors=monitors,
-        )
+        try:
+            return run_monitors_over_engine(
+                self._engine.get(),
+                table=table,
+                schema=schema or self._config.default_schema,
+                catalog=None,
+                monitors=monitors,
+            )
+        except Exception as exc:
+            reason = explained(self._spec, self._config, exc)
+            if reason is exc:
+                raise
+            raise reason from exc
 
 
 class GxConnectionSource:

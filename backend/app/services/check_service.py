@@ -391,7 +391,7 @@ def _validate_side_query(query: Any, *, connection_type: str, field: str) -> Non
             detail={"field": field, "supported": sorted(SQL_QUERYABLE_TYPES)},
         )
     try:
-        validate_query(query)
+        validate_query(query, connection_type=connection_type)
     except CustomSqlInvalidError as exc:
         raise CheckConfigInvalidError(
             f"invalid comparison query in {field}: {exc.message}",
@@ -588,15 +588,24 @@ def reject_thresholds_on_unbanded(
 
 
 def reject_dataframe_only_expectation(expectation_type: str, *, connection_type: str) -> None:
-    """422 for an expectation GX cannot evaluate on this connection's SQL batch (#1509).
+    """422 for an expectation GX cannot evaluate on this connection's SQL batch (#1509) — a
+    dataframe-only type, or one the engine's dialect has no translation for (#1679: regex on
+    SQL Server).
 
     Hiding it in the editor is not enough — the API, MCP and suite import all reach the same
     rows, and the alternative is a check that saves cleanly and errors on every run. Takes the
     connection type rather than a Suite so import (which has no Suite yet) shares this gate
     instead of hand-rolling a second copy.
     """
-    from backend.app.datasources.sql_engines import SQL_BATCH_CONNECTION_TYPES
+    from backend.app.datasources.sql_engines import SQL_BATCH_CONNECTION_TYPES, sql_engine
 
+    spec = sql_engine(connection_type)
+    if spec is not None and expectation_type in spec.unsupported_expectation_types:
+        raise CheckConfigInvalidError(
+            f"{expectation_type} cannot run against a {spec.display_name} connection: "
+            f"{spec.unsupported_reason}",
+            detail={"expectation_type": expectation_type, "field": "expectation_type"},
+        )
     if expectation_type not in DATAFRAME_ONLY_EXPECTATION_TYPES:
         return
     if connection_type not in SQL_BATCH_CONNECTION_TYPES:

@@ -143,7 +143,7 @@ def test_create_without_secret_leaves_secret_ref_null(db_session: Any) -> None:
 
 def test_create_unknown_type_raises_config_invalid(db_session: Any) -> None:
     with pytest.raises(ConnectionConfigInvalidError):
-        _create(db_session, FakeSecretStore(), conn_type="mssql")
+        _create(db_session, FakeSecretStore(), conn_type="oracle")
 
 
 def test_create_invalid_config_raises_config_invalid(db_session: Any) -> None:
@@ -724,7 +724,7 @@ def test_draft_test_secret_optional_adapter_normalizes_blank_string_to_none(
 def test_draft_test_unknown_type_raises_config_invalid(db_session: Any) -> None:
     with pytest.raises(ConnectionConfigInvalidError):
         svc.test_draft_connection(
-            "mssql", env="dev", config={}, secret="p@ss", secret_store=FakeSecretStore()
+            "oracle", env="dev", config={}, secret="p@ss", secret_store=FakeSecretStore()
         )
 
 
@@ -2156,3 +2156,49 @@ def test_renaming_a_connection_never_moves_its_secret_ref(
     assert conn.secret_ref == original_ref
     assert store.data[original_ref] == "rotated"
     assert would_be not in store.data, "rotation wrote to a second, orphaned key"
+
+
+class _KnownLimitationAdapter(_PassAdapter):
+    """An adapter that recognised the failure and said why in DataQ's own words (#1679)."""
+
+    def test(self, raw: dict[str, Any], secret: str, **_: Any) -> None:
+        from backend.app.datasources.generic_sql import KnownDatasourceLimitationError
+
+        try:
+            raise RuntimeError("driver text with host=secret-host;pwd=hunter2")
+        except RuntimeError as exc:
+            raise KnownDatasourceLimitationError("Use the ODBC driver lane instead.") from exc
+
+
+def test_a_dataq_authored_failure_reason_reaches_the_client(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A SAFE message is shown (a known limitation and its fix); the driver text never is."""
+    store = FakeSecretStore()
+    conn = _create(db_session, store)
+    monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _KnownLimitationAdapter())
+    with pytest.raises(ConnectionTestFailedError) as saved:
+        svc.test_connection(db_session, conn.id, secret_store=store)
+    assert saved.value.message == "connection test failed: Use the ODBC driver lane instead."
+    with pytest.raises(ConnectionTestFailedError) as draft:
+        svc.test_draft_connection(
+            "snowflake",
+            env="dev",
+            config=dict(_SF_CONFIG),
+            secret="p@ss",
+            secret_store=store,
+        )
+    assert draft.value.message == "connection test failed: Use the ODBC driver lane instead."
+    for exc in (saved.value, draft.value):
+        assert "hunter2" not in str(exc) and "secret-host" not in str(exc)
+
+
+def test_an_unrecognised_failure_still_says_only_that_it_failed(
+    db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = FakeSecretStore()
+    conn = _create(db_session, store)
+    monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _FailAdapter())
+    with pytest.raises(ConnectionTestFailedError) as excinfo:
+        svc.test_connection(db_session, conn.id, secret_store=store)
+    assert excinfo.value.message == "connection test failed"

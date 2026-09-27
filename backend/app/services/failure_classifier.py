@@ -76,6 +76,8 @@ _MARKERS: tuple[tuple[FailureCategory, tuple[str, ...]], ...] = (
             "max retries exceeded",
             "failed to establish a new connection",
             "ssl",
+            # python-tds's hostname check (ADR 0044) — a TLS refusal, reported without "ssl".
+            "certificate does not match host name",
             # Upstream-down HTTP statuses (#1285).
             "bad gateway",
             "service unavailable",
@@ -271,6 +273,14 @@ _AUTH_MARKERS: tuple[str, ...] = (
     # PostgreSQL SQLSTATE 28P01 — a wrong or changed password (#1678). Not 28000 (a pg_hba
     # refusal), which is a server policy about this client, not the credential's health.
     "password authentication failed",
+    # SQL Server error 18456 — the login itself was refused (#1679). Not the bare "login
+    # failed": error 4060 ("Cannot open database requested by the login. The login failed.") is
+    # a missing database grant, not a dead credential.
+    "login failed for user",
+    # Microsoft Entra ID: an invalid / expired client secret, or an unknown application.
+    "aadsts7000215",
+    "aadsts7000222",
+    "aadsts700016",
     # Azure ADLS Gen2 / Blob.
     "authenticationfailed",
     "server failed to authenticate the request",

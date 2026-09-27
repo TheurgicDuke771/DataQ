@@ -2880,6 +2880,38 @@ def test_patching_a_check_into_a_dataframe_only_type_is_refused_too(
     assert stored.expectation_type == "expect_column_values_to_not_be_null"
 
 
+_REGEX_PAYLOAD: dict[str, Any] = {
+    "name": "email shape",
+    "expectation_type": "expect_column_values_to_match_regex",
+    "config": {"column": "email", "regex": "@"},
+}
+
+
+def test_regex_is_refused_on_sql_server_and_names_the_alternative(
+    client: TestClient, db_session: Any
+) -> None:
+    """T-SQL has no regex operator GX can translate to — live-verified: the check errors on every
+    run. Refused at author time on create AND patch (#1679); still fine on other SQL engines.
+    """
+    sid = _suite_id(client, db_session, conn_type="mssql")
+    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_REGEX_PAYLOAD)
+    assert resp.status_code == 422
+    message = resp.json()["error"]["message"]
+    assert "SQL Server" in message and "LIKE or PATINDEX" in message
+    created = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()
+    patched = client.patch(
+        f'/api/v1/suites/{sid}/checks/{created["id"]}',
+        json={
+            "expectation_type": _REGEX_PAYLOAD["expectation_type"],
+            "config": _REGEX_PAYLOAD["config"],
+        },
+    )
+    assert patched.status_code == 422
+    postgres = _suite_id(client, db_session, conn_type="postgres")
+    on_postgres = client.post(f"/api/v1/suites/{postgres}/checks", json=_REGEX_PAYLOAD)
+    assert on_postgres.status_code == 201
+
+
 # ─────────────── server-side expectation_type allowlist (#1510) ───────────────
 
 #: A real GX built-in DataQ deliberately does not enable (#1602 — a scalar aggregate).

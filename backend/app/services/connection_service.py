@@ -14,7 +14,7 @@ from sqlalchemy import func, select, true
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from backend.app.core.errors import DataQError, jsonable_errors
+from backend.app.core.errors import DataQError, SafeMonitorError, jsonable_errors
 from backend.app.core.logging import get_logger
 from backend.app.core.secret_names import connection_secret_ref
 from backend.app.core.secrets import SecretNotFoundError, SecretStore, SecretWriteError
@@ -956,6 +956,16 @@ def _persist_engine_capabilities(
     )
 
 
+def _test_failure_message(exc: BaseException) -> str:
+    """What a failed test tells the client: the driver's own text never (it can carry DSN or
+    credential fragments), a DataQ-authored `SafeMonitorError` message — a known driver
+    limitation, a missing optional driver — always.
+    """
+    if isinstance(exc, SafeMonitorError) and str(exc):
+        return f"connection test failed: {exc}"
+    return "connection test failed"
+
+
 def test_connection(
     session: Session,
     connection_id: uuid.UUID,
@@ -1000,9 +1010,9 @@ def test_connection(
             error_type=type(exc).__name__,
         )
         # Don't echo the adapter exception to the client — it can carry DSN / credential fragments
-        # (it's also kept out of the logs above).
+        # (it's also kept out of the logs above). A DataQ-authored SAFE message is the exception.
         raise ConnectionTestFailedError(
-            "connection test failed", detail={"connection_id": str(connection_id)}
+            _test_failure_message(exc), detail={"connection_id": str(connection_id)}
         ) from exc
 
     log.info("connection_test_succeeded", connection_id=str(connection_id))
@@ -1059,7 +1069,7 @@ def test_draft_connection(
         # Same rationale as `test_connection`: never echo the adapter exception to the client
         # (DSN/credential fragments), original kept as __cause__ for the server-side traceback only.
         raise ConnectionTestFailedError(
-            "connection test failed", detail={"type": conn_type}
+            _test_failure_message(exc), detail={"type": conn_type}
         ) from exc
 
     log.info("connection_draft_test_succeeded", type=conn_type)
