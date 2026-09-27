@@ -596,6 +596,56 @@ def test_reauth_connection_also_stores_dmf_capability(
     assert conn.engine_capabilities == {"dmf": {"available": True}}
 
 
+# ──────── #2112: clearing the pre-fix probe's false "DMF unavailable" ───────
+
+_MISPROBED = {
+    "available": False,
+    "reason": "Snowflake's FRESHNESS data metric function accepts DATE, TIMESTAMP_LTZ and "
+    "TIMESTAMP_TZ columns only — this column's type (commonly TIMESTAMP_NTZ) is not supported "
+    "by the DMF. Use the GX-engine freshness monitor for this column instead.",
+}
+
+
+def test_clear_misprobed_dmf_dry_run_reports_without_writing(db_session: Any) -> None:
+    conn = _create(db_session, FakeSecretStore())
+    conn.engine_capabilities = {"dmf": _MISPROBED}
+    db_session.commit()
+    assert svc.clear_misprobed_dmf_capabilities(db_session, apply=False) == [conn.id]
+    db_session.refresh(conn)
+    assert conn.engine_capabilities == {"dmf": _MISPROBED}
+
+
+def test_clear_misprobed_dmf_apply_clears_only_the_bogus_rows(db_session: Any) -> None:
+    store = FakeSecretStore()
+    bogus = _create(db_session, store)
+    genuine = _create(db_session, store, name="sf-no-grant")
+    fine = _create(db_session, store, name="sf-ok")
+    bogus.engine_capabilities = {"dmf": _MISPROBED, "other": {"x": 1}}
+    genuine.engine_capabilities = {
+        "dmf": {"available": False, "reason": "the connection's role cannot invoke …"}
+    }
+    fine.engine_capabilities = {"dmf": {"available": True}}
+    db_session.commit()
+
+    assert svc.clear_misprobed_dmf_capabilities(db_session, apply=True) == [bogus.id]
+    for c in (bogus, genuine, fine):
+        db_session.refresh(c)
+    assert bogus.engine_capabilities == {"other": {"x": 1}}
+    assert genuine.engine_capabilities["dmf"]["available"] is False
+    assert fine.engine_capabilities == {"dmf": {"available": True}}
+    # Idempotent.
+    assert svc.clear_misprobed_dmf_capabilities(db_session, apply=True) == []
+
+
+def test_clear_misprobed_dmf_leaves_an_empty_capability_map_as_null(db_session: Any) -> None:
+    conn = _create(db_session, FakeSecretStore())
+    conn.engine_capabilities = {"dmf": _MISPROBED}
+    db_session.commit()
+    svc.clear_misprobed_dmf_capabilities(db_session, apply=True)
+    db_session.refresh(conn)
+    assert conn.engine_capabilities is None
+
+
 # ───────────────── draft connection test — unsaved probe (#351) ────────────
 
 

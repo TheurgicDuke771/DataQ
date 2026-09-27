@@ -900,6 +900,38 @@ def _capability_probe_kwargs(adapter: Any, capabilities: dict[str, Any]) -> dict
     return {"capability_probe": _run}
 
 
+# What the pre-#2112 probe stored for EVERY role that could run DMFs: its own statement tripped
+# the bare-column rule and was classified as a FRESHNESS column-type problem.
+_MISPROBED_DMF_REASON_PREFIX = "Snowflake's FRESHNESS data metric function accepts"
+
+
+def clear_misprobed_dmf_capabilities(session: Session, *, apply: bool) -> list[uuid.UUID]:
+    """Drop the `dmf` capability the pre-#2112 probe wrongly stored, so the connection reads
+    "not yet tested" until its next test re-probes it. Returns the affected connection ids;
+    writes only when ``apply``.
+    """
+    affected: list[uuid.UUID] = []
+    for conn in session.scalars(
+        select(Connection).where(Connection.type == "snowflake").with_for_update()
+    ):
+        capabilities = conn.engine_capabilities or {}
+        dmf = capabilities.get("dmf")
+        if (
+            isinstance(dmf, dict)
+            and dmf.get("available") is False
+            and str(dmf.get("reason", "")).startswith(_MISPROBED_DMF_REASON_PREFIX)
+        ):
+            affected.append(conn.id)
+            if apply:
+                remaining = {k: v for k, v in capabilities.items() if k != "dmf"}
+                conn.engine_capabilities = remaining or None
+    if apply:
+        session.commit()
+    else:
+        session.rollback()
+    return affected
+
+
 def _persist_engine_capabilities(
     session: Session, conn: Connection, capabilities: dict[str, Any]
 ) -> None:
