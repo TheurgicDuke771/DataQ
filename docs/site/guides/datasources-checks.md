@@ -9,6 +9,7 @@
 | AWS S3 **and S3-compatible** (flat files) | bucket + region, access key (+ optional endpoint) | ✅ | ✅ |
 | Unity Catalog (Databricks) | workspace URL + warehouse + PAT | ✅ | ✅ |
 | Apache Iceberg | catalog URI + catalog type (REST/SQL/Glue/Hive) + optional storage credential | ✅ | ✅ |
+| PostgreSQL (any server — self-hosted or a managed service) | host + port + database + user, password; TLS mode | ✅ | ✅ |
 
 ## Add a connection
 
@@ -68,7 +69,8 @@ supported for the token (`login.microsoftonline.com`).
 
 Editing a field that decides *where* the credential is sent — Snowflake `account`, ADLS
 `account_url` / `auth_type` / `tenant_id` / `client_id`, S3/dbt `endpoint_url`, Unity Catalog `workspace_url`, Iceberg `catalog_uri` /
-`warehouse` / `properties` / `secret_property`, Airflow `base_url`, dbt `artifacts_uri` —
+`warehouse` / `properties` / `secret_property`, PostgreSQL `host` / `port`, Airflow
+`base_url`, dbt `artifacts_uri` —
 requires re-entering
 that credential in the same save. The edit form asks for it as soon as you change one of
 those fields; through the API the request is rejected with `422 credential_redirect` until
@@ -144,7 +146,55 @@ incidents (decided in
 The same two fields exist on a **dbt** orchestration connection whose `artifacts_uri` is
 `s3://…`, so the artifacts poll can read from the same store.
 
-### Identifier casing (Snowflake / Unity Catalog)
+### PostgreSQL
+
+One connection type for **any PostgreSQL server** — self-hosted, or a managed service on any
+cloud. It is named for the engine, never for a vendor that hosts it (ADR
+[0010](../adr/0010-provider-agnostic-infrastructure-seams.md)), and is the first engine on
+DataQ's generic SQL datasource base, which the MySQL/MariaDB and Trino adapters reuse.
+Live-verified against PostgreSQL 16.
+
+- **Fields:** host (a bare hostname or IP — no scheme, port or path), port (default 5432),
+  database, user, an optional default schema (default `public`: where a target with no
+  schema resolves), and the password as the connection's secret.
+- **TLS:** `require` by default. `verify-full` / `verify-ca` also check the server
+  certificate, against the system trust store. `disable` must be chosen explicitly; libpq's
+  `prefer` — which silently falls back to plaintext — is not offered.
+- **Read only, always.** Every session DataQ opens sets `default_transaction_read_only`, so
+  the server itself refuses a write, whatever a query contains. Give DataQ its own login role
+  anyway, with no more than it needs:
+
+  ```sql
+  CREATE ROLE dataq_reader LOGIN PASSWORD '…';
+  GRANT CONNECT ON DATABASE shop TO dataq_reader;
+  GRANT USAGE ON SCHEMA sales TO dataq_reader;
+  GRANT SELECT ON ALL TABLES IN SCHEMA sales TO dataq_reader;
+  ```
+
+- **Name resolution.** Each session's `search_path` is `pg_catalog`, then the target's schema,
+  then `public` — so an unqualified name in custom SQL resolves in the table's own schema, and
+  extension objects installed in `public` (citext, pg_trgm, PostGIS) still work. `pg_catalog`
+  comes first on purpose: a function planted in a schema DataQ reads can never override a
+  built-in DataQ's own SQL calls. Still, don't give untrusted roles `CREATE` on schemas DataQ
+  checks — a function with a *different* signature there is still callable by name.
+- **Everything runs in the database** — expectations on a SQL batch, monitors as scalar
+  aggregates, custom SQL as-is — so no rows are loaded into the worker and a run target
+  takes no sampling block.
+- **The profiler** reports min/max as unavailable (null) for types PostgreSQL has no MIN/MAX
+  for — `boolean`, `json`/`jsonb`, `uuid`, geometric — and distinct count / top values as
+  unavailable for types with no equality (`json`, `xml`, geometric), instead of failing the
+  whole profile. A domain is judged by the type it is a domain over, and an array by its
+  element type. A JSON cell in a failing-row sample is shown as its JSON text.
+- **No column tags.** PostgreSQL has no column-tag feature for DataQ to read, so its columns
+  are classified by the suite's column policy and DataQ's own name/value checks only — see
+  [security](../security/overview.md).
+- **Inventory sync** enumerates the tables, views, materialized views and foreign tables the
+  user can `SELECT`, in schemas it has `USAGE` on (partitions are left out — their parent is
+  what a check targets). There is **no warehouse-native lineage**: PostgreSQL keeps no lineage
+  log to read, so a PostgreSQL asset's lineage comes from dbt, OpenLineage or a catalog, and
+  an empty graph means "not observed", not "nothing feeds this table".
+
+### Identifier casing (Snowflake / Unity Catalog / PostgreSQL)
 
 Warehouses fold **unquoted** identifiers — Snowflake upper-cases them — so a column
 created as `order_ts` is really stored as `ORDER_TS`, while one created as
@@ -165,6 +215,12 @@ the aggregate/top-values queries, and freshness/volume monitors alike.
   nor `"order"` (wrong case) reaches.
 
 In both cases, alias the column in a view and point the check at that.
+
+**PostgreSQL** folds unquoted names to *lower*-case, so the same rule gives the natural
+result there: `order_id` is sent bare, while `CustomerId` or `Sales` (created quoted) are
+quoted and matched exactly. PostgreSQL silently **truncates** a name longer than 63
+characters, which could resolve a different object — so a longer table or schema name is
+refused when the suite is saved.
 
 One more caveat: in a **three-part** `catalog.schema.table` target, only the table
 gets quoted — a mixed-case *catalog or schema* still folds. This affects nobody
@@ -291,13 +347,13 @@ expectation can sit side by side, so the label is per check, not per run.
 
 ## Author a check
 
-1. Create (or open) a **suite** and point it at a **target** — a table (Snowflake/UC), a
+1. Create (or open) a **suite** and point it at a **target** — a table (Snowflake/UC/PostgreSQL), a
    file/path or batch pattern (ADLS/S3), or an Iceberg `namespace.table`. On Unity Catalog,
-   ADLS Gen2 and S3 you can **browse** for it instead of typing it — see below.
+   PostgreSQL, ADLS Gen2 and S3 you can **browse** for it instead of typing it — see below.
 2. **Add check** opens a dedicated page (`/suites/<id>/checks/new`): pick a **category**,
    then the check type, then fill its config. The authoring paths:
 
-### Browsing for a run target (Unity Catalog, ADLS Gen2, S3)
+### Browsing for a run target (Unity Catalog, PostgreSQL, ADLS Gen2, S3)
 
 The suite form offers a picker beside the target fields; typing the target still works
 everywhere, and is the only way on Snowflake and Iceberg.
@@ -308,6 +364,9 @@ everywhere, and is the only way on Snowflake and Iceberg.
   credential can see — a table it has no privilege on is not shown, and an empty level
   means "nothing visible to this credential", not "nothing exists". The `system`,
   `samples` and `__databricks_internal` catalogs are never listed.
+- **PostgreSQL — Browse schemas…** lists the schemas the user has `USAGE` on, then that
+  schema's tables and views it can `SELECT` — the same query the inventory sync enumerates
+  with. There is no catalog level: the connection pins one database.
 - **ADLS Gen2 / S3 — Browse files…** (single-file mode) walks the folders of the
   connection's one container or bucket and fills **File path** with the file you pick.
   **Browse folders…** (batch mode) fills **Prefix** with the folder you are in.
@@ -383,7 +442,7 @@ and a learned baseline. **Whole-table set comparisons** (columns match an expect
 ordered list) are what the *Schema-drift* monitor does, against a captured baseline. For
 anything with no vetted type, write a custom-SQL check.
 
-### Custom SQL (Snowflake / Unity Catalog — ADR 0019)
+### Custom SQL (Snowflake / Unity Catalog / PostgreSQL — ADR 0019)
 
 A read-only SQL rule in the Monaco editor: **any rows returned are failures**. Use
 `{batch}` as a placeholder for the suite's target table
@@ -399,7 +458,7 @@ a two-part name would silently resolve against the session's default schema — 
 *different table*, quietly checked. A UC target without a schema therefore errors
 its custom-SQL checks (with that reason on the result) while every other check in
 the suite runs normally. Set the schema on the suite's run target to fix it.
-Snowflake is unaffected — its schema comes from the connection.
+Snowflake and PostgreSQL are unaffected — their schema comes from the connection.
 
 ### Snowflake DMF (ADR 0036)
 
@@ -449,12 +508,12 @@ whole prefix.
 *Did the shape change under you?* Capture a **baseline** column-name/type snapshot,
 then each run diffs the live snapshot against it and flags any add / drop /
 type-change. Introspection is per-datasource, never a `CheckRunner`/GX pass or a
-data scan: `information_schema` for Snowflake/Unity Catalog, the Parquet footer (or
+data scan: `information_schema` for Snowflake/Unity Catalog/PostgreSQL, the Parquet footer (or
 a bounded CSV header sample) for ADLS Gen2/S3 flat files, and the loaded table's own
 metadata for Iceberg. Re-baseline explicitly once you've reviewed a drift and want
 it as the new normal — it is never re-baselined for you.
 
-### Anomaly monitor (Snowflake / Unity Catalog — ADR 0012)
+### Anomaly monitor (Snowflake / Unity Catalog / PostgreSQL — ADR 0012)
 
 *Is this value abnormal for this dataset?* Where a volume monitor asks "is the row
 count inside a range I chose?", the anomaly monitor learns the range: it keeps a
@@ -534,6 +593,8 @@ the type your warehouse/catalog shows you:
   `type_` against the **fully-qualified dialect type**, not the short column type. A
   `NUMBER` column reports as `DECIMAL(38, 0)`; `VARCHAR` reports as `VARCHAR(16777216)`.
   Plugging in `NUMBER` or `DECIMAL` alone fails every time.
+- **PostgreSQL** builds the same kind of SQL batch and compares the same way: a
+  `numeric(12,2)` column is `NUMERIC(12, 2)`, a `timestamptz` is `TIMESTAMP WITH TIME ZONE`.
 - **Unity Catalog, ADLS Gen2 / S3, and Apache Iceberg** all read the target into a
   pandas DataFrame first (`PandasExecutionEngine`). GX first tries an **exact dtype
   match**; only when the column's dtype is `object` and `type_` isn't
@@ -552,12 +613,13 @@ the type your warehouse/catalog shows you:
 | Datasource | Engine | `type_` guidance |
 |---|---|---|
 | Snowflake | SQL (dialect-native) | `DECIMAL(38, 0)` for `NUMBER`, `VARCHAR(16777216)` for `VARCHAR` |
+| PostgreSQL | SQL (dialect-native) | `NUMERIC(12, 2)` for `numeric(12,2)`, `TIMESTAMP WITH TIME ZONE` for `timestamptz`, `TEXT`, `INTEGER` |
 | Unity Catalog | pandas DataFrame (not Arrow-backed) | `int64` for non-nullable `BIGINT` (**`float64` if the column contains NULLs**); `object` or `str` for `STRING` |
 | ADLS Gen2 / S3 (CSV) | pandas DataFrame (not Arrow-backed) | `int64`/`float64`/`bool` for numerics (**NULLs upcast integers to `float64`**); `object` or `str` for strings |
 | ADLS Gen2 / S3 (Parquet) / Iceberg | pandas DataFrame (Arrow-backed) | Arrow-flavored dtype names — confirm via a dry-run's `observed_value` |
 
 **Calibration tip:** don't guess — **dry-run first**, but know where the trail runs
-out. On **Snowflake and the Arrow-backed sources** (Parquet/Iceberg), a failing
+out. On **Snowflake, PostgreSQL and the Arrow-backed sources** (Parquet/Iceberg), a failing
 result's `observed_value` carries the *exact* string GX expected — copy it into
 `type_` and re-run to confirm green. On **Unity Catalog / CSV**, a wrong value-type
 guess (e.g. `int64` against a string column) falls to GX's row-wise compare, which

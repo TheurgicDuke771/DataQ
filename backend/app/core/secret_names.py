@@ -42,6 +42,7 @@ _TYPE_WORDS: Final = {
     "iceberg": ("iceberg", "apache"),
     "dbt": ("dbt",),
     "s3": ("s3", "aws", "amazon"),
+    "postgres": ("postgres", "postgresql", "pg"),
 }
 
 

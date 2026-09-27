@@ -103,53 +103,71 @@ const UNSELECTABLE_HINT =
   "Can't be picked — DataQ targets only plain names (letters, digits, _ and $; not starting with a digit).";
 
 export interface PickedTable {
-  catalog: string;
+  /** Absent on a schema-rooted tree (a generic SQL connection pins its database). */
+  catalog?: string;
   schema: string;
   table: string;
 }
 
+type Level = 'catalog' | 'schema' | 'table';
+
+const LEVEL_NOUN: Record<Level, string> = {
+  catalog: 'catalogs',
+  schema: 'schemas',
+  table: 'tables',
+};
+
+const LEVEL_ICON: Record<Level, ReactNode> = {
+  catalog: <DatabaseOutlined />,
+  schema: <FolderOutlined />,
+  table: <TableOutlined />,
+};
+
 /**
- * Unity Catalog run-target picker: catalogs → schemas → tables, one level per request. The typed
- * fields stay the source of truth — picking a table only fills them.
+ * Run-target picker, one level per request: catalogs → schemas → tables on Unity Catalog, or
+ * schemas → tables (`root="schema"`) on a generic SQL connection such as PostgreSQL, whose
+ * connection pins one database. The typed fields stay the source of truth — picking a table
+ * only fills them.
  */
 export function CatalogBrowserButton({
   connectionId,
   onPick,
+  root = 'catalog',
 }: {
   connectionId: string;
   onPick: (picked: PickedTable) => void;
+  root?: 'catalog' | 'schema';
 }) {
   const [open, setOpen] = useState(false);
   const [generation, setGeneration] = useState(0);
   const [path, setPath] = useState<string[]>([]);
-  const [catalog, schema] = path;
-  const key = JSON.stringify([generation, connectionId, ...path]);
+  const levels: Level[] = root === 'catalog' ? ['catalog', 'schema', 'table'] : ['schema', 'table'];
+  const level = levels[path.length];
+  const catalog = root === 'catalog' ? path[0] : undefined;
+  const schema = root === 'catalog' ? path[1] : path[0];
+  const key = JSON.stringify([generation, connectionId, root, ...path]);
   const load = useListing<CatalogBrowse>(open, key, (signal) =>
     browseCatalog(connectionId, { catalog, schema }, signal),
   );
 
-  const noun = path.length === 0 ? 'catalogs' : path.length === 1 ? 'schemas' : 'tables';
-  const icon =
-    path.length === 0 ? (
-      <DatabaseOutlined />
-    ) : path.length === 1 ? (
-      <FolderOutlined />
-    ) : (
-      <TableOutlined />
-    );
-  const emptyText =
-    path.length === 0
-      ? "No catalogs are visible to this connection's credential."
-      : path.length === 1
-        ? `No schemas in ${catalog} are visible to this connection's credential.`
-        : `No tables in ${catalog}.${schema} are visible to this connection's credential.`;
+  const noun = LEVEL_NOUN[level];
+  const icon = LEVEL_ICON[level];
+  const within = path.join('.');
+  const emptyText = within
+    ? `No ${noun} in ${within} are visible to this connection's credential.`
+    : `No ${noun} are visible to this connection's credential.`;
+  const rootLabel = root === 'catalog' ? 'Catalogs' : 'Schemas';
 
   const choose = (name: string) => {
-    if (path.length < 2) {
+    if (level !== 'table') {
       setPath([...path, name]);
       return;
     }
-    onPick({ catalog: catalog as string, schema: schema as string, table: name });
+    onPick({
+      ...(catalog !== undefined ? { catalog } : {}),
+      schema: schema as string,
+      table: name,
+    });
     setOpen(false);
   };
 
@@ -165,7 +183,7 @@ export function CatalogBrowserButton({
         }}
         style={{ marginBottom: 12 }}
       >
-        Browse catalog…
+        {root === 'catalog' ? 'Browse catalog…' : 'Browse schemas…'}
       </Button>
       <Modal
         title="Pick a table"
@@ -179,9 +197,9 @@ export function CatalogBrowserButton({
           items={[
             {
               title: path.length ? (
-                <Crumb label="Catalogs" onClick={() => setPath([])} />
+                <Crumb label={rootLabel} onClick={() => setPath([])} />
               ) : (
-                'Catalogs'
+                rootLabel
               ),
             },
             ...path.map((part, i) => ({

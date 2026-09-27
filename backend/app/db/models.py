@@ -30,6 +30,7 @@ CONNECTION_TYPES = (
     "s3",
     "unity_catalog",
     "iceberg",
+    "postgres",
     "adf",
     "airflow",
     "dbt",

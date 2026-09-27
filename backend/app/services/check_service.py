@@ -595,7 +595,7 @@ def reject_dataframe_only_expectation(expectation_type: str, *, connection_type:
     connection type rather than a Suite so import (which has no Suite yet) shares this gate
     instead of hand-rolling a second copy.
     """
-    from backend.app.datasources.gx_runner import SQL_BATCH_CONNECTION_TYPES
+    from backend.app.datasources.sql_engines import SQL_BATCH_CONNECTION_TYPES
 
     if expectation_type not in DATAFRAME_ONLY_EXPECTATION_TYPES:
         return

@@ -263,7 +263,7 @@ const TYPE_FIELD_DEFAULT_HELP =
 // GX's `expect_column_values_to_be_of_type` validates against a *different* type vocabulary
 // depending on which execution engine the runner builds its GX batch on.
 const SQL_ENGINE_TYPE_HINT =
-  'Use the engine’s fully-qualified type exactly as the dialect reports it — e.g. Snowflake NUMBER is `DECIMAL(38, 0)`. Run a dry-run: the failing result’s observed_value shows the exact expected string.';
+  'Use the engine’s fully-qualified type exactly as the dialect reports it — e.g. Snowflake NUMBER is `DECIMAL(38, 0)`, a PostgreSQL numeric(12,2) is `NUMERIC(12, 2)`. Run a dry-run: the failing result’s observed_value shows the exact expected string.';
 
 const DATAFRAME_ENGINE_TYPE_HINT =
   'Compares pandas dtypes or Python value type names — numerics report `int64`/`float64` (integer columns containing NULLs report `float64`); string columns on Unity Catalog and CSV reads are `object` dtype, so `object` or `str` both pass, while Parquet/Iceberg reads are Arrow-backed and can report different names. Dry-run to calibrate: a failing result’s observed_value shows the expected dtype — but if Observed shows “—”, your guess fell to GX’s row-wise compare; use `object` or a Python value type name (full cheat-sheet in the check-authoring docs).';
@@ -277,7 +277,7 @@ export const TYPE_FIELD_NAMES: string[] = [TYPE_FIELD_NAME, TYPE_LIST_FIELD_NAME
 /** Datasource-tailored help for the `type_` field (issue #768. */
 export function typeFieldHint(connectionType: ConnectionType | undefined): string {
   if (!connectionType || !DATASOURCE_CATEGORY[connectionType]) return TYPE_FIELD_DEFAULT_HELP;
-  return connectionType === 'snowflake' ? SQL_ENGINE_TYPE_HINT : DATAFRAME_ENGINE_TYPE_HINT;
+  return runsSqlBatch(connectionType) ? SQL_ENGINE_TYPE_HINT : DATAFRAME_ENGINE_TYPE_HINT;
 }
 
 export const EXPECTATION_CATALOG: ExpectationSpec[] = [
@@ -435,7 +435,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     dataframeOnly: true,
     label: 'Column values are valid JSON',
     description:
-      'Every value parses as JSON — for a payload/metadata column stored as text. Not offered on Snowflake: Great Expectations implements this one only for dataframe batches, so a SQL warehouse would error on every run. Use a custom-SQL check (or a VARIANT column) there.',
+      'Every value parses as JSON — for a payload/metadata column stored as text. Not offered on Snowflake or PostgreSQL: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there (or, on Snowflake, a VARIANT column).',
     category: 'Column values',
     fields: [COLUMN, MOSTLY],
   },
@@ -601,7 +601,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     dataframeOnly: true,
     label: 'Column values match a date format',
     description:
-      'Every value parses under the given strftime format — for a date or timestamp stored as text. Not offered on Snowflake: Great Expectations implements this one only for dataframe batches, so a SQL warehouse would error on every run. Use a custom-SQL check there.',
+      'Every value parses under the given strftime format — for a date or timestamp stored as text. Not offered on Snowflake or PostgreSQL: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there.',
     category: 'Column values',
     fields: [
       COLUMN,
@@ -904,7 +904,7 @@ const CUSTOM_SQL_CATEGORY: ExpectationCategory = 'Custom SQL';
 
 /**
  * Anomaly (#593) is gated the SAME as Custom SQL — `isSqlQueryable` and the backend's
- * `ANOMALY_CAPABLE_TYPES` are both exactly `{snowflake, unity_catalog}`.
+ * `ANOMALY_CAPABLE_TYPES` are both exactly the SQL-queryable set.
  */
 const ANOMALY_CATEGORY: ExpectationCategory = 'Anomaly';
 

@@ -26,6 +26,7 @@ from backend.app.core.logging import get_logger
 from backend.app.core.memory_budget import Admission, MemoryBudget, get_memory_budget
 from backend.app.core.secrets import get_secret_store
 from backend.app.datasources.base import ResolvedTarget
+from backend.app.datasources.sql_engines import GENERIC_SQL_TYPES
 from backend.app.db.models import COMPARISON_KIND, Check, Connection, Run, Suite
 from backend.app.services import run_target
 
@@ -37,7 +38,7 @@ AWAITING_MEMORY = "awaiting_worker_memory"
 
 #: Datasource types that push their work down and hold no dataset in the worker. A bypass
 #: here is a claim about the runner, not a gap — see `_dataset_estimate` for the unmetered case.
-PUSHDOWN_TYPES: frozenset[str] = frozenset({"snowflake"})
+PUSHDOWN_TYPES: frozenset[str] = frozenset({"snowflake", *GENERIC_SQL_TYPES})
 
 
 @dataclass(frozen=True)

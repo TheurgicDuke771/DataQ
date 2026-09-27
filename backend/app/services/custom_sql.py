@@ -7,6 +7,7 @@ import string
 from typing import Any
 
 from backend.app.core.errors import DataQError
+from backend.app.datasources.sql_engines import GENERIC_SQL_TYPES
 
 # Trailing characters a single statement may end with (whitespace + a closing semicolon).
 _TRAILING_CHARS = string.whitespace + ";"
@@ -18,7 +19,7 @@ QUERY_KEY = "unexpected_rows_query"
 
 # Datasources GX can run SQL against (ADR 0019). Flat files (adls_gen2 / s3) are
 # DataFrame assets; orchestration types (adf / airflow) aren't datasources at all.
-SQL_QUERYABLE_TYPES = frozenset({"snowflake", "unity_catalog"})
+SQL_QUERYABLE_TYPES = frozenset({"snowflake", "unity_catalog", *GENERIC_SQL_TYPES})
 
 # Statement keywords that mutate data, schema, permissions, or transaction state.
 _FORBIDDEN_KEYWORDS = frozenset(

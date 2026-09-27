@@ -31,6 +31,14 @@ the per-PR history lives in the repo's commit log and pull requests.
   connection card says so rather than showing nothing. See
   [OneLake](../guides/datasources-checks.md#onelake-fabric-lakehouse-files).
 
+- **PostgreSQL datasource.** Connect any PostgreSQL server — self-hosted or a managed
+  service — and run every SQL-capable check on it: GX expectations and custom SQL by pushdown,
+  freshness / volume / anomaly / schema-drift monitors, comparisons, the column profiler,
+  schema → table browsing for the run target, and inventory sync into the asset view. TLS is
+  `require` by default and every session is read-only at the server. It is the first engine on
+  a new engine-generic SQL base (ADR [0045](../adr/0045-engine-generic-sql-datasource-base.md)).
+  See [Datasources & checks](../guides/datasources-checks.md#postgresql).
+
 - **Sensitive columns stay masked downstream.** If a warehouse tag marks a column sensitive,
   every column that recorded column lineage shows is copied or derived from it is masked as well,
   across REST, MCP, alerts and incident evidence. This only ever adds masking: a column's own tag

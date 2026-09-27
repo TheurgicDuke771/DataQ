@@ -11,6 +11,10 @@ describe('namespaceLabel', () => {
       expect(namespaceLabel('snowflake://ACMEORG-TEST01')).toBe('Snowflake · ACMEORG-TEST01');
     });
 
+    it('names a PostgreSQL server by host:port (#1678)', () => {
+      expect(namespaceLabel('postgres://db.internal:5432')).toBe('PostgreSQL · db.internal:5432');
+    });
+
     it('shortens a Databricks workspace host to the workspace id', () => {
       expect(namespaceLabel('unitycatalog://dbc-1234abcd-5678.cloud.databricks.com')).toBe(
         'Databricks · dbc-1234abcd-5678',
@@ -131,6 +135,8 @@ describe('datasourceKind', () => {
     ['unitycatalog://h.example.com', 'unity_catalog'],
     ['abfss://c@a.dfs.core.windows.net', 'adls_gen2'],
     ['s3://bucket', 's3'],
+    ['postgres://db.internal:5432', 'postgres'],
+    // An Iceberg SQL-catalog DSN is NOT the PostgreSQL datasource namespace.
     ['postgresql://u@h/db', 'other'],
     ['file', 'other'],
     ['nonsense', 'other'],
@@ -146,6 +152,7 @@ describe('datasourceKind', () => {
       'unitycatalog://h.example.com',
       'abfss://c@a.dfs.core.windows.net',
       's3://bucket',
+      'postgres://db.internal:5432',
     ]) {
       expect(datasourceKind(ns)).not.toBe('other');
       expect(namespaceLabel(ns)).toContain(' · ');

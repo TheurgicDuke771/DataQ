@@ -113,8 +113,8 @@ class CheckRunner(Protocol):
 @runtime_checkable
 class MonitorRunner(Protocol):
     """A datasource runner that can also evaluate **monitor** kinds by running
-    scalar aggregates against the table — Snowflake / Unity Catalog (SQL) and
-    Iceberg (native scan) today.
+    scalar aggregates against the table — Snowflake / Unity Catalog / the generic SQL
+    engines (SQL) and Iceberg (native scan) today.
     """
 
     supported_monitor_kinds: frozenset[str]

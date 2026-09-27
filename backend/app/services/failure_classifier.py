@@ -50,6 +50,8 @@ _MARKERS: tuple[tuple[FailureCategory, tuple[str, ...]], ...] = (
             "insufficient permission",
             "grant",
             "login failed",
+            # PostgreSQL: the server's host-based auth refused this client/user/database (#1678).
+            "pg_hba.conf",
             "http 401",
             "http 403",
         ),
@@ -67,6 +69,9 @@ _MARKERS: tuple[tuple[FailureCategory, tuple[str, ...]], ...] = (
             "unreachable",
             "temporary failure in name resolution",
             "name or service not known",
+            # libpq's DNS failure, on Linux and macOS respectively (#1678).
+            "could not translate host name",
+            "nodename nor servname",
             "getaddrinfo",
             "max retries exceeded",
             "failed to establish a new connection",
@@ -82,6 +87,7 @@ _MARKERS: tuple[tuple[FailureCategory, tuple[str, ...]], ...] = (
         FailureCategory.CONFIG,
         (
             "does not exist",
+            "doesn't exist",
             "no such",
             "not found",
             "cannot be found",
@@ -262,6 +268,9 @@ _AUTH_MARKERS: tuple[str, ...] = (
     # Databricks / Unity Catalog: an invalid or revoked PAT.
     "invalid access token",
     "pat is invalid",
+    # PostgreSQL SQLSTATE 28P01 — a wrong or changed password (#1678). Not 28000 (a pg_hba
+    # refusal), which is a server policy about this client, not the credential's health.
+    "password authentication failed",
     # Azure ADLS Gen2 / Blob.
     "authenticationfailed",
     "server failed to authenticate the request",
