@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b9qza3m0g</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/636954bf-9316-4764-b6a2-2c4b520126ab/tasks/b9qza3m0g.output</output-file>
+<status>completed</status>
+<summary>Background command "Re-run the Azure Deploy and wait for it" completed (exit code 0)</summary>
+</task-notification>
