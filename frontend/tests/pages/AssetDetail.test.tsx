@@ -425,7 +425,7 @@ describe('AssetDetail page', () => {
     renderPage({ isAdmin: true });
     await userEvent.click(await screen.findByRole('button', { name: /Reassign owner/ }));
     // Open the antd Select and pick a user from the portal-rendered dropdown.
-    await userEvent.click(await screen.findByRole('combobox'));
+    await userEvent.click(await screen.findByRole('combobox', { name: 'Asset owner' }));
     await userEvent.click(await screen.findByText('Olivia Owner'));
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith('a1', { owner_user_id: 'u-2' }));
