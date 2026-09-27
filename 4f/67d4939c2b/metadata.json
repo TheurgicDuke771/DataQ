@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "4f67d4939c2b",
+  "strategy": "manual-commit",
+  "branch": "docs/ops-log-mssql-fabric",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/4f/67d4939c2b/0/metadata.json",
+      "transcript": "/4f/67d4939c2b/0/full.jsonl",
+      "compact_transcript": "/4f/67d4939c2b/0/transcript.jsonl",
+      "content_hash": "/4f/67d4939c2b/0/content_hash.txt",
+      "prompt": "/4f/67d4939c2b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 22,
+    "cache_creation_tokens": 63241,
+    "cache_read_tokens": 7324198,
+    "output_tokens": 11587,
+    "api_call_count": 12,
+    "subagent_tokens": {
+      "input_tokens": 34,
+      "cache_creation_tokens": 618528,
+      "cache_read_tokens": 10034244,
+      "output_tokens": 3768,
+      "api_call_count": 17
+    }
+  }
+}
