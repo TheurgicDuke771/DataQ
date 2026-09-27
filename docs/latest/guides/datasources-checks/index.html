@@ -974,6 +974,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#mysql-mariadb" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MySQL / MariaDB
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#identifier-casing-snowflake-unity-catalog-postgresql" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1035,10 +1046,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#browsing-for-a-run-target-unity-catalog-postgresql-adls-gen2-s3" class="md-nav__link">
+  <a href="#browsing-for-a-run-target-unity-catalog-postgresql-mysql-adls-gen2-s3" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Browsing for a run target (Unity Catalog, PostgreSQL, ADLS Gen2, S3)
+        Browsing for a run target (Unity Catalog, PostgreSQL, MySQL, ADLS Gen2, S3)
       
     </span>
   </a>
@@ -1068,10 +1079,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#custom-sql-snowflake-unity-catalog-postgresql-adr-0019" class="md-nav__link">
+  <a href="#custom-sql-snowflake-unity-catalog-postgresql-mysql-adr-0019" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Custom SQL (Snowflake / Unity Catalog / PostgreSQL — ADR 0019)
+        Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL — ADR 0019)
       
     </span>
   </a>
@@ -1123,10 +1134,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#anomaly-monitor-snowflake-unity-catalog-postgresql-adr-0012" class="md-nav__link">
+  <a href="#anomaly-monitor-snowflake-unity-catalog-postgresql-mysql-adr-0012" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Anomaly monitor (Snowflake / Unity Catalog / PostgreSQL — ADR 0012)
+        Anomaly monitor (Snowflake / Unity Catalog / PostgreSQL / MySQL — ADR 0012)
       
     </span>
   </a>
@@ -2594,6 +2605,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#mysql-mariadb" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MySQL / MariaDB
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#identifier-casing-snowflake-unity-catalog-postgresql" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2655,10 +2677,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#browsing-for-a-run-target-unity-catalog-postgresql-adls-gen2-s3" class="md-nav__link">
+  <a href="#browsing-for-a-run-target-unity-catalog-postgresql-mysql-adls-gen2-s3" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Browsing for a run target (Unity Catalog, PostgreSQL, ADLS Gen2, S3)
+        Browsing for a run target (Unity Catalog, PostgreSQL, MySQL, ADLS Gen2, S3)
       
     </span>
   </a>
@@ -2688,10 +2710,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#custom-sql-snowflake-unity-catalog-postgresql-adr-0019" class="md-nav__link">
+  <a href="#custom-sql-snowflake-unity-catalog-postgresql-mysql-adr-0019" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Custom SQL (Snowflake / Unity Catalog / PostgreSQL — ADR 0019)
+        Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL — ADR 0019)
       
     </span>
   </a>
@@ -2743,10 +2765,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#anomaly-monitor-snowflake-unity-catalog-postgresql-adr-0012" class="md-nav__link">
+  <a href="#anomaly-monitor-snowflake-unity-catalog-postgresql-mysql-adr-0012" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Anomaly monitor (Snowflake / Unity Catalog / PostgreSQL — ADR 0012)
+        Anomaly monitor (Snowflake / Unity Catalog / PostgreSQL / MySQL — ADR 0012)
       
     </span>
   </a>
@@ -2894,6 +2916,12 @@
 <td>✅</td>
 <td>✅</td>
 </tr>
+<tr>
+<td>MySQL / MariaDB (any server — self-hosted or a managed service)</td>
+<td>host + port + database + user, password; TLS mode</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
 </tbody>
 </table>
 <h2 id="add-a-connection">Add a connection<a class="headerlink" href="#add-a-connection" title="Permanent link">¶</a></h2>
@@ -2913,7 +2941,7 @@ runs, so it is validated when the connection is saved).</p>
 <h3 id="moving-a-connection-to-a-new-host">Moving a connection to a new host<a class="headerlink" href="#moving-a-connection-to-a-new-host" title="Permanent link">¶</a></h3>
 <p>Editing a field that decides <em>where</em> the credential is sent — Snowflake <code>account</code>, ADLS
 <code>account_url</code>, S3/dbt <code>endpoint_url</code>, Unity Catalog <code>workspace_url</code>, Iceberg <code>catalog_uri</code> /
-<code>warehouse</code> / <code>properties</code> / <code>secret_property</code>, PostgreSQL <code>host</code> / <code>port</code>, Airflow
+<code>warehouse</code> / <code>properties</code> / <code>secret_property</code>, PostgreSQL / MySQL <code>host</code> / <code>port</code>, Airflow
 <code>base_url</code>, dbt <code>artifacts_uri</code> —
 requires re-entering
 that credential in the same save. The edit form asks for it as soon as you change one of
@@ -3040,6 +3068,42 @@ Live-verified against PostgreSQL 16.</p>
   what a check targets). There is <strong>no warehouse-native lineage</strong>: PostgreSQL keeps no lineage
   log to read, so a PostgreSQL asset's lineage comes from dbt, OpenLineage or a catalog, and
   an empty graph means "not observed", not "nothing feeds this table".</li>
+</ul>
+<h3 id="mysql-mariadb">MySQL / MariaDB<a class="headerlink" href="#mysql-mariadb" title="Permanent link">¶</a></h3>
+<p>One connection type for <strong>any MySQL or MariaDB server</strong>, on the same generic SQL base as
+PostgreSQL. The driver is <strong>PyMySQL</strong> (MIT); the GPL-licensed MySQL drivers are never used.
+Live-verified against MySQL 8.4, MariaDB 11.8 and MariaDB 10.6 (the long-term line many
+managed services still default to).</p>
+<ul>
+<li><strong>Fields:</strong> host, port (default 3306), database, user, and the password as the secret. A
+  MySQL <em>schema</em> is a database, so a run target's optional schema names another database
+  (it defaults to the connection's).</li>
+<li><strong>TLS:</strong> the same modes as PostgreSQL, <code>require</code> by default. <code>require</code> encrypts and refuses a
+  server without TLS (PyMySQL's own default would quietly fall back to plaintext); <code>verify-*</code>
+  also checks the certificate against the system trust store, so a server with MySQL's
+  self-generated certificate fails them.</li>
+<li><strong>Read only, UTC.</strong> Every session runs <code>SET SESSION TRANSACTION READ ONLY</code> (the statement
+  every version accepts — the <code>transaction_read_only</code> variable does not exist before
+  MariaDB 11.1) and sets <code>time_zone = '+00:00'</code>, so a
+  <code>TIMESTAMP</code> column comes back in UTC and freshness is right whatever the server's zone is
+  (<code>DATETIME</code> has no zone and is read as UTC). <strong>One exception:</strong> GX checks uniqueness on
+  MySQL by copying the column into session temporary tables, which a read-only transaction
+  refuses — so <em>Column values unique</em> runs on its own session without the read-only guard.
+  No SQL you wrote ever runs there. It needs the <code>CREATE TEMPORARY TABLES</code> grant; without it
+  that one check errors and the rest of the suite is unaffected:</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="k">CREATE</span><span class="w"> </span><span class="k">USER</span><span class="w"> </span><span class="s1">'dataq_reader'</span><span class="o">@</span><span class="s1">'%'</span><span class="w"> </span><span class="n">IDENTIFIED</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="s1">'…'</span><span class="p">;</span>
+<span class="k">GRANT</span><span class="w"> </span><span class="k">SELECT</span><span class="p">,</span><span class="w"> </span><span class="k">SHOW</span><span class="w"> </span><span class="k">VIEW</span><span class="p">,</span><span class="w"> </span><span class="k">CREATE</span><span class="w"> </span><span class="k">TEMPORARY</span><span class="w"> </span><span class="n">TABLES</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="n">shop</span><span class="p">.</span><span class="o">*</span><span class="w"> </span><span class="k">TO</span><span class="w"> </span><span class="s1">'dataq_reader'</span><span class="o">@</span><span class="s1">'%'</span><span class="p">;</span>
+</code></pre></div>
+<ul>
+<li><strong>Collation decides equality.</strong> Uniqueness, set membership and comparisons follow the
+  column's collation: under the default case-insensitive one, <code>'a'</code> and <code>'A'</code> are duplicates.
+  Column names are case-insensitive; <strong>table and database names are case-sensitive</strong> on a Linux
+  server (<code>lower_case_table_names=0</code>), so type them exactly as the server shows them.</li>
+<li><strong>Types:</strong> <code>BOOLEAN</code> is <code>TINYINT(1)</code> (values <code>0</code>/<code>1</code>); MariaDB's <code>JSON</code> is <code>LONGTEXT</code>, which is
+  what schema drift reports for it.</li>
+<li><strong>No column tags, no warehouse-native lineage</strong> — as for PostgreSQL. Inventory sync and the
+  schema browser list what <code>information_schema</code> shows the user, which is privilege-filtered.</li>
 </ul>
 <h3 id="identifier-casing-snowflake-unity-catalog-postgresql">Identifier casing (Snowflake / Unity Catalog / PostgreSQL)<a class="headerlink" href="#identifier-casing-snowflake-unity-catalog-postgresql" title="Permanent link">¶</a></h3>
 <p>Warehouses fold <strong>unquoted</strong> identifiers — Snowflake upper-cases them — so a column
@@ -3192,7 +3256,7 @@ expectation can sit side by side, so the label is per check, not per run.</p>
 <li><strong>Add check</strong> opens a dedicated page (<code>/suites/&lt;id&gt;/checks/new</code>): pick a <strong>category</strong>,
    then the check type, then fill its config. The authoring paths:</li>
 </ol>
-<h3 id="browsing-for-a-run-target-unity-catalog-postgresql-adls-gen2-s3">Browsing for a run target (Unity Catalog, PostgreSQL, ADLS Gen2, S3)<a class="headerlink" href="#browsing-for-a-run-target-unity-catalog-postgresql-adls-gen2-s3" title="Permanent link">¶</a></h3>
+<h3 id="browsing-for-a-run-target-unity-catalog-postgresql-mysql-adls-gen2-s3">Browsing for a run target (Unity Catalog, PostgreSQL, MySQL, ADLS Gen2, S3)<a class="headerlink" href="#browsing-for-a-run-target-unity-catalog-postgresql-mysql-adls-gen2-s3" title="Permanent link">¶</a></h3>
 <p>The suite form offers a picker beside the target fields; typing the target still works
 everywhere, and is the only way on Snowflake and Iceberg.</p>
 <ul>
@@ -3204,7 +3268,8 @@ everywhere, and is the only way on Snowflake and Iceberg.</p>
   <code>samples</code> and <code>__databricks_internal</code> catalogs are never listed.</li>
 <li><strong>PostgreSQL — Browse schemas…</strong> lists the schemas the user has <code>USAGE</code> on, then that
   schema's tables and views it can <code>SELECT</code> — the same query the inventory sync enumerates
-  with. There is no catalog level: the connection pins one database.</li>
+  with. There is no catalog level: the connection pins one database. <strong>MySQL / MariaDB</strong>
+  works the same way, its schemas being the databases the user has privileges on.</li>
 <li><strong>ADLS Gen2 / S3 — Browse files…</strong> (single-file mode) walks the folders of the
   connection's one container or bucket and fills <strong>File path</strong> with the file you pick.
   <strong>Browse folders…</strong> (batch mode) fills <strong>Prefix</strong> with the folder you are in.</li>
@@ -3267,7 +3332,7 @@ nothing to band — a <em>Volume</em> or <em>Anomaly</em> monitor measures that 
 and a learned baseline. <strong>Whole-table set comparisons</strong> (columns match an expected set or
 ordered list) are what the <em>Schema-drift</em> monitor does, against a captured baseline. For
 anything with no vetted type, write a custom-SQL check.</p>
-<h3 id="custom-sql-snowflake-unity-catalog-postgresql-adr-0019">Custom SQL (Snowflake / Unity Catalog / PostgreSQL — ADR 0019)<a class="headerlink" href="#custom-sql-snowflake-unity-catalog-postgresql-adr-0019" title="Permanent link">¶</a></h3>
+<h3 id="custom-sql-snowflake-unity-catalog-postgresql-mysql-adr-0019">Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL — ADR 0019)<a class="headerlink" href="#custom-sql-snowflake-unity-catalog-postgresql-mysql-adr-0019" title="Permanent link">¶</a></h3>
 <p>A read-only SQL rule in the Monaco editor: <strong>any rows returned are failures</strong>. Use
 <code>{batch}</code> as a placeholder for the suite's target table
 (<code>SELECT * FROM {batch} WHERE amount &lt; 0</code>). Single read-only statement enforced
@@ -3280,7 +3345,7 @@ a two-part name would silently resolve against the session's default schema — 
 <em>different table</em>, quietly checked. A UC target without a schema therefore errors
 its custom-SQL checks (with that reason on the result) while every other check in
 the suite runs normally. Set the schema on the suite's run target to fix it.
-Snowflake and PostgreSQL are unaffected — their schema comes from the connection.</p>
+Snowflake, PostgreSQL and MySQL are unaffected — their schema comes from the connection.</p>
 <h3 id="snowflake-dmf-adr-0036">Snowflake DMF (ADR 0036)<a class="headerlink" href="#snowflake-dmf-adr-0036" title="Permanent link">¶</a></h3>
 <p>On a Snowflake connection, the check editor offers a separate <strong>Snowflake DMF</strong>
 category for six types — null count, null percent, duplicate count, unique count,
@@ -3333,11 +3398,11 @@ whole prefix.</p>
 <p><em>Did the shape change under you?</em> Capture a <strong>baseline</strong> column-name/type snapshot,
 then each run diffs the live snapshot against it and flags any add / drop /
 type-change. Introspection is per-datasource, never a <code>CheckRunner</code>/GX pass or a
-data scan: <code>information_schema</code> for Snowflake/Unity Catalog/PostgreSQL, the Parquet footer (or
+data scan: <code>information_schema</code> for Snowflake/Unity Catalog/PostgreSQL/MySQL, the Parquet footer (or
 a bounded CSV header sample) for ADLS Gen2/S3 flat files, and the loaded table's own
 metadata for Iceberg. Re-baseline explicitly once you've reviewed a drift and want
 it as the new normal — it is never re-baselined for you.</p>
-<h3 id="anomaly-monitor-snowflake-unity-catalog-postgresql-adr-0012">Anomaly monitor (Snowflake / Unity Catalog / PostgreSQL — ADR 0012)<a class="headerlink" href="#anomaly-monitor-snowflake-unity-catalog-postgresql-adr-0012" title="Permanent link">¶</a></h3>
+<h3 id="anomaly-monitor-snowflake-unity-catalog-postgresql-mysql-adr-0012">Anomaly monitor (Snowflake / Unity Catalog / PostgreSQL / MySQL — ADR 0012)<a class="headerlink" href="#anomaly-monitor-snowflake-unity-catalog-postgresql-mysql-adr-0012" title="Permanent link">¶</a></h3>
 <p><em>Is this value abnormal for this dataset?</em> Where a volume monitor asks "is the row
 count inside a range I chose?", the anomaly monitor learns the range: it keeps a
 rolling mean/stddev of the target's own <strong>row count</strong> or <strong>freshness age</strong> and bands
@@ -3432,6 +3497,8 @@ the type your warehouse/catalog shows you:</p>
   <code>type_</code> against the <strong>fully-qualified dialect type</strong>, not the short column type. A
   <code>NUMBER</code> column reports as <code>DECIMAL(38, 0)</code>; <code>VARCHAR</code> reports as <code>VARCHAR(16777216)</code>.
   Plugging in <code>NUMBER</code> or <code>DECIMAL</code> alone fails every time.</li>
+<li><strong>MySQL / MariaDB</strong> build a SQL batch too, but GX compares the SQLAlchemy type <em>class</em>
+  there, so <code>type_</code> is the bare type name: <code>DECIMAL</code>, <code>VARCHAR</code>, <code>TINYINT</code> (a <code>BOOLEAN</code>).</li>
 <li><strong>PostgreSQL</strong> builds the same kind of SQL batch and compares the same way: a
   <code>numeric(12,2)</code> column is <code>NUMERIC(12, 2)</code>, a <code>timestamptz</code> is <code>TIMESTAMP WITH TIME ZONE</code>.</li>
 <li><strong>Unity Catalog, ADLS Gen2 / S3, and Apache Iceberg</strong> all read the target into a
@@ -3467,6 +3534,11 @@ the type your warehouse/catalog shows you:</p>
 <td>PostgreSQL</td>
 <td>SQL (dialect-native)</td>
 <td><code>NUMERIC(12, 2)</code> for <code>numeric(12,2)</code>, <code>TIMESTAMP WITH TIME ZONE</code> for <code>timestamptz</code>, <code>TEXT</code>, <code>INTEGER</code></td>
+</tr>
+<tr>
+<td>MySQL / MariaDB</td>
+<td>SQL (SQLAlchemy type class)</td>
+<td><code>DECIMAL</code> for <code>DECIMAL(12,2)</code>, <code>VARCHAR</code>, <code>INTEGER</code>, <code>TIMESTAMP</code>, <code>DATETIME</code>, <code>TINYINT</code> for <code>BOOLEAN</code></td>
 </tr>
 <tr>
 <td>Unity Catalog</td>

@@ -2215,6 +2215,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#amendment-mysql-mariadb-the-second-engine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Amendment — MySQL / MariaDB, the second engine
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#consequences" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2316,6 +2327,26 @@ that silently doesn't work on the new engine.</p>
    <code>WAREHOUSE_LINEAGE_CONNECTION_TYPES</code>, so an empty lineage graph reads "not observed".
    Native engines: GX only.</li>
 </ol>
+<h2 id="amendment-mysql-mariadb-the-second-engine">Amendment — MySQL / MariaDB, the second engine<a class="headerlink" href="#amendment-mysql-mariadb-the-second-engine" title="Permanent link">¶</a></h2>
+<p>MySQL / MariaDB plugged in as one spec module (PyMySQL — MIT; the GPL drivers are
+excluded by ADR 0031) plus a registry entry, which is the test of decision 1. It needed
+three small base hooks, all generic: <code>url_database</code> (a MySQL schema IS a database, so the
+session connects to the target's schema to scope it), a shared <code>sslmode</code> vocabulary, and
+<strong><code>temp_table_types</code></strong> — GX checks uniqueness on MySQL by building session temporary
+tables, which a read-only transaction refuses, so that one type runs on its own GX
+session with the read-only guard off (<code>connect_args(read_only=False)</code>). Nothing a user
+wrote runs there; custom SQL stays on the guarded session. MySQL's read-only and UTC
+settings are two statements (the <code>transaction_read_only</code> <em>variable</em> is missing before
+MariaDB 11.1, so the portable <code>SET SESSION TRANSACTION READ ONLY</code> form is used), which
+PyMySQL's single <code>init_command</code> cannot carry — hence <code>session_statements</code>, applied to every
+engine DataQ builds (<code>prepare_engine</code>) and, for GX, through a <strong><code>GxConnectionSource</code></strong>
+handed to GX as its engines' <code>creator</code>. GX builds a fresh SQLAlchemy engine per execution
+engine and never disposes it, so an event hook on the engine it exposes never reached the
+one that validates — and each run left one idle server session behind until garbage
+collection (live-found on PostgreSQL: three runs, three backends). The source closes every
+connection a run opened. Decision 4 therefore reads
+"read only except where the engine's own check implementation needs temporary
+tables", and the docs say so.</p>
 <h2 id="consequences">Consequences<a class="headerlink" href="#consequences" title="Permanent link">¶</a></h2>
 <ul>
 <li>Every behaviour is verified against a <strong>real server through the real driver</strong> — for a
@@ -2327,6 +2358,8 @@ that silently doesn't work on the new engine.</p>
   (JSON kept as text on the run path).</li>
 <li>A new engine inherits the whole feature surface at once — which is the risk as well as the
   point: it is not "supported" until the same battery has run against it.</li>
+<li>A spec's hooks are only kept when a live run proves them: MySQL does not need
+  PostgreSQL's JSON-as-text option (PyMySQL already returns JSON as text), so it has none.</li>
 <li>Snowflake and Unity Catalog keep their own adapters; they are not migrated onto the base
   (their auth, catalogs and lineage differ too much to gain from it).</li>
 </ul>

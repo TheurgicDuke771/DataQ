@@ -2433,6 +2433,13 @@ the per-PR history lives in the repo's commit log and pull requests.</p>
 <h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">¶</a></h3>
 <ul>
 <li>
+<p><strong>MySQL / MariaDB datasource.</strong> Any MySQL or MariaDB server, on the same generic SQL
+  base as PostgreSQL and through the MIT-licensed PyMySQL driver: every SQL-capable check,
+  all monitors, the profiler, browsing and inventory sync. Sessions are read-only and UTC;
+  TLS is <code>require</code> by default. <em>Column values unique</em> needs the <code>CREATE TEMPORARY TABLES</code>
+  grant — see <a href="../../guides/datasources-checks/#mysql-mariadb">Datasources &amp; checks</a>.</p>
+</li>
+<li>
 <p><strong>PostgreSQL datasource.</strong> Connect any PostgreSQL server — self-hosted or a managed
   service — and run every SQL-capable check on it: GX expectations and custom SQL by pushdown,
   freshness / volume / anomaly / schema-drift monitors, comparisons, the column profiler,

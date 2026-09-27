@@ -1773,6 +1773,7 @@ If you **repoint a suite to a different target** after a policy exists, DataQ do
 | Unity Catalog (Databricks) | workspace URL + warehouse + PAT | ✅ | ✅ |
 | Apache Iceberg | catalog URI + catalog type (REST/SQL/Glue/Hive) + optional storage credential | ✅ | ✅ |
 | PostgreSQL (any server — self-hosted or a managed service) | host + port + database + user, password; TLS mode | ✅ | ✅ |
+| MySQL / MariaDB (any server — self-hosted or a managed service) | host + port + database + user, password; TLS mode | ✅ | ✅ |
 
 ## Add a connection
 
@@ -1796,7 +1797,7 @@ runs, so it is validated when the connection is saved).
 
 Editing a field that decides *where* the credential is sent — Snowflake `account`, ADLS
 `account_url`, S3/dbt `endpoint_url`, Unity Catalog `workspace_url`, Iceberg `catalog_uri` /
-`warehouse` / `properties` / `secret_property`, PostgreSQL `host` / `port`, Airflow
+`warehouse` / `properties` / `secret_property`, PostgreSQL / MySQL `host` / `port`, Airflow
 `base_url`, dbt `artifacts_uri` —
 requires re-entering
 that credential in the same save. The edit form asks for it as soon as you change one of
@@ -1920,6 +1921,44 @@ Live-verified against PostgreSQL 16.
   what a check targets). There is **no warehouse-native lineage**: PostgreSQL keeps no lineage
   log to read, so a PostgreSQL asset's lineage comes from dbt, OpenLineage or a catalog, and
   an empty graph means "not observed", not "nothing feeds this table".
+
+### MySQL / MariaDB
+
+One connection type for **any MySQL or MariaDB server**, on the same generic SQL base as
+PostgreSQL. The driver is **PyMySQL** (MIT); the GPL-licensed MySQL drivers are never used.
+Live-verified against MySQL 8.4, MariaDB 11.8 and MariaDB 10.6 (the long-term line many
+managed services still default to).
+
+- **Fields:** host, port (default 3306), database, user, and the password as the secret. A
+  MySQL *schema* is a database, so a run target's optional schema names another database
+  (it defaults to the connection's).
+- **TLS:** the same modes as PostgreSQL, `require` by default. `require` encrypts and refuses a
+  server without TLS (PyMySQL's own default would quietly fall back to plaintext); `verify-*`
+  also checks the certificate against the system trust store, so a server with MySQL's
+  self-generated certificate fails them.
+- **Read only, UTC.** Every session runs `SET SESSION TRANSACTION READ ONLY` (the statement
+  every version accepts — the `transaction_read_only` variable does not exist before
+  MariaDB 11.1) and sets `time_zone = '+00:00'`, so a
+  `TIMESTAMP` column comes back in UTC and freshness is right whatever the server's zone is
+  (`DATETIME` has no zone and is read as UTC). **One exception:** GX checks uniqueness on
+  MySQL by copying the column into session temporary tables, which a read-only transaction
+  refuses — so *Column values unique* runs on its own session without the read-only guard.
+  No SQL you wrote ever runs there. It needs the `CREATE TEMPORARY TABLES` grant; without it
+  that one check errors and the rest of the suite is unaffected:
+
+  ```sql
+  CREATE USER 'dataq_reader'@'%' IDENTIFIED BY '…';
+  GRANT SELECT, SHOW VIEW, CREATE TEMPORARY TABLES ON shop.* TO 'dataq_reader'@'%';
+  ```
+
+- **Collation decides equality.** Uniqueness, set membership and comparisons follow the
+  column's collation: under the default case-insensitive one, `'a'` and `'A'` are duplicates.
+  Column names are case-insensitive; **table and database names are case-sensitive** on a Linux
+  server (`lower_case_table_names=0`), so type them exactly as the server shows them.
+- **Types:** `BOOLEAN` is `TINYINT(1)` (values `0`/`1`); MariaDB's `JSON` is `LONGTEXT`, which is
+  what schema drift reports for it.
+- **No column tags, no warehouse-native lineage** — as for PostgreSQL. Inventory sync and the
+  schema browser list what `information_schema` shows the user, which is privilege-filtered.
 
 ### Identifier casing (Snowflake / Unity Catalog / PostgreSQL)
 
@@ -2080,7 +2119,7 @@ expectation can sit side by side, so the label is per check, not per run.
 2. **Add check** opens a dedicated page (`/suites/<id>/checks/new`): pick a **category**,
    then the check type, then fill its config. The authoring paths:
 
-### Browsing for a run target (Unity Catalog, PostgreSQL, ADLS Gen2, S3)
+### Browsing for a run target (Unity Catalog, PostgreSQL, MySQL, ADLS Gen2, S3)
 
 The suite form offers a picker beside the target fields; typing the target still works
 everywhere, and is the only way on Snowflake and Iceberg.
@@ -2093,7 +2132,8 @@ everywhere, and is the only way on Snowflake and Iceberg.
   `samples` and `__databricks_internal` catalogs are never listed.
 - **PostgreSQL — Browse schemas…** lists the schemas the user has `USAGE` on, then that
   schema's tables and views it can `SELECT` — the same query the inventory sync enumerates
-  with. There is no catalog level: the connection pins one database.
+  with. There is no catalog level: the connection pins one database. **MySQL / MariaDB**
+  works the same way, its schemas being the databases the user has privileges on.
 - **ADLS Gen2 / S3 — Browse files…** (single-file mode) walks the folders of the
   connection's one container or bucket and fills **File path** with the file you pick.
   **Browse folders…** (batch mode) fills **Prefix** with the folder you are in.
@@ -2169,7 +2209,7 @@ and a learned baseline. **Whole-table set comparisons** (columns match an expect
 ordered list) are what the *Schema-drift* monitor does, against a captured baseline. For
 anything with no vetted type, write a custom-SQL check.
 
-### Custom SQL (Snowflake / Unity Catalog / PostgreSQL — ADR 0019)
+### Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL — ADR 0019)
 
 A read-only SQL rule in the Monaco editor: **any rows returned are failures**. Use
 `{batch}` as a placeholder for the suite's target table
@@ -2185,7 +2225,7 @@ a two-part name would silently resolve against the session's default schema — 
 *different table*, quietly checked. A UC target without a schema therefore errors
 its custom-SQL checks (with that reason on the result) while every other check in
 the suite runs normally. Set the schema on the suite's run target to fix it.
-Snowflake and PostgreSQL are unaffected — their schema comes from the connection.
+Snowflake, PostgreSQL and MySQL are unaffected — their schema comes from the connection.
 
 ### Snowflake DMF (ADR 0036)
 
@@ -2235,12 +2275,12 @@ whole prefix.
 *Did the shape change under you?* Capture a **baseline** column-name/type snapshot,
 then each run diffs the live snapshot against it and flags any add / drop /
 type-change. Introspection is per-datasource, never a `CheckRunner`/GX pass or a
-data scan: `information_schema` for Snowflake/Unity Catalog/PostgreSQL, the Parquet footer (or
+data scan: `information_schema` for Snowflake/Unity Catalog/PostgreSQL/MySQL, the Parquet footer (or
 a bounded CSV header sample) for ADLS Gen2/S3 flat files, and the loaded table's own
 metadata for Iceberg. Re-baseline explicitly once you've reviewed a drift and want
 it as the new normal — it is never re-baselined for you.
 
-### Anomaly monitor (Snowflake / Unity Catalog / PostgreSQL — ADR 0012)
+### Anomaly monitor (Snowflake / Unity Catalog / PostgreSQL / MySQL — ADR 0012)
 
 *Is this value abnormal for this dataset?* Where a volume monitor asks "is the row
 count inside a range I chose?", the anomaly monitor learns the range: it keeps a
@@ -2320,6 +2360,8 @@ the type your warehouse/catalog shows you:
   `type_` against the **fully-qualified dialect type**, not the short column type. A
   `NUMBER` column reports as `DECIMAL(38, 0)`; `VARCHAR` reports as `VARCHAR(16777216)`.
   Plugging in `NUMBER` or `DECIMAL` alone fails every time.
+- **MySQL / MariaDB** build a SQL batch too, but GX compares the SQLAlchemy type *class*
+  there, so `type_` is the bare type name: `DECIMAL`, `VARCHAR`, `TINYINT` (a `BOOLEAN`).
 - **PostgreSQL** builds the same kind of SQL batch and compares the same way: a
   `numeric(12,2)` column is `NUMERIC(12, 2)`, a `timestamptz` is `TIMESTAMP WITH TIME ZONE`.
 - **Unity Catalog, ADLS Gen2 / S3, and Apache Iceberg** all read the target into a
@@ -2341,6 +2383,7 @@ the type your warehouse/catalog shows you:
 |---|---|---|
 | Snowflake | SQL (dialect-native) | `DECIMAL(38, 0)` for `NUMBER`, `VARCHAR(16777216)` for `VARCHAR` |
 | PostgreSQL | SQL (dialect-native) | `NUMERIC(12, 2)` for `numeric(12,2)`, `TIMESTAMP WITH TIME ZONE` for `timestamptz`, `TEXT`, `INTEGER` |
+| MySQL / MariaDB | SQL (SQLAlchemy type class) | `DECIMAL` for `DECIMAL(12,2)`, `VARCHAR`, `INTEGER`, `TIMESTAMP`, `DATETIME`, `TINYINT` for `BOOLEAN` |
 | Unity Catalog | pandas DataFrame (not Arrow-backed) | `int64` for non-nullable `BIGINT` (**`float64` if the column contains NULLs**); `object` or `str` for `STRING` |
 | ADLS Gen2 / S3 (CSV) | pandas DataFrame (not Arrow-backed) | `int64`/`float64`/`bool` for numerics (**NULLs upcast integers to `float64`**); `object` or `str` for strings |
 | ADLS Gen2 / S3 (Parquet) / Iceberg | pandas DataFrame (Arrow-backed) | Arrow-flavored dtype names — confirm via a dry-run's `observed_value` |
@@ -3459,6 +3502,12 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Added
 
+- **MySQL / MariaDB datasource.** Any MySQL or MariaDB server, on the same generic SQL
+  base as PostgreSQL and through the MIT-licensed PyMySQL driver: every SQL-capable check,
+  all monitors, the profiler, browsing and inventory sync. Sessions are read-only and UTC;
+  TLS is `require` by default. *Column values unique* needs the `CREATE TEMPORARY TABLES`
+  grant — see [Datasources & checks](../guides/datasources-checks.md#mysql-mariadb).
+
 - **PostgreSQL datasource.** Connect any PostgreSQL server — self-hosted or a managed
   service — and run every SQL-capable check on it: GX expectations and custom SQL by pushdown,
   freshness / volume / anomaly / schema-drift monitors, comparisons, the column profiler,
@@ -3641,7 +3690,7 @@ Great Expectations built-ins that look at the values in one or more columns. Eac
 | **Column values do not match regex** | `expect_column_values_to_not_match_regex` | No value matches the given regular expression — for catching a pattern that should never appear (a stray delimiter, an unredacted identifier). | Validity | `column`, `regex`, `mostly` *(optional)* | warn / fail / critical | All datasources · SQL pushdown on Unity Catalog |
 | **Column values match a list of regexes** | `expect_column_values_to_match_regex_list` | Every value matches the regexes in the list — by default ANY one of them is enough, for a column carrying several legitimate formats (e.g. two phone-number conventions). | Validity | `column`, `regex_list`, `match_on` *(optional)*, `mostly` *(optional)* | warn / fail / critical | All datasources · SQL pushdown on Unity Catalog |
 | **Column values match none of a list of regexes** | `expect_column_values_to_not_match_regex_list` | No value matches ANY regex in the list — a deny-list of forbidden formats. | Validity | `column`, `regex_list`, `mostly` *(optional)* | warn / fail / critical | All datasources · SQL pushdown on Unity Catalog |
-| **Column values are valid JSON** | `expect_column_values_to_be_json_parseable` | Every value parses as JSON — for a payload/metadata column stored as text. Not offered on Snowflake or PostgreSQL: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there (or, on Snowflake, a VARIANT column). | Validity | `column`, `mostly` *(optional)* | warn / fail / critical | ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg — not Snowflake, PostgreSQL (no SQL implementation; refused at author time) |
+| **Column values are valid JSON** | `expect_column_values_to_be_json_parseable` | Every value parses as JSON — for a payload/metadata column stored as text. Not offered on Snowflake, PostgreSQL or MySQL: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there (or, on Snowflake, a VARIANT column). | Validity | `column`, `mostly` *(optional)* | warn / fail / critical | ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg — not Snowflake, PostgreSQL, MySQL / MariaDB (no SQL implementation; refused at author time) |
 | **Column values are of type** | `expect_column_values_to_be_of_type` | Every value in the column matches the given data type. | Validity | `column`, `type_`, `mostly` *(optional)* | warn / fail / critical | All datasources |
 | **Column values are of one of several types** | `expect_column_values_to_be_in_type_list` | Every value in the column matches at least one of the given data types — the tolerant sibling of “Column values are of type”, for a column whose type legitimately varies by datasource or load. | Validity | `column`, `type_list`, `mostly` *(optional)* | warn / fail / critical | All datasources |
 | **Compound columns unique** | `expect_compound_columns_to_be_unique` | The COMBINATION of values across the listed columns is distinct on every row — a multi-column primary or business key. Each column on its own may repeat freely. | Uniqueness | `column_list`, `mostly` *(optional)* | warn / fail / critical | All datasources · SQL pushdown on Unity Catalog |
@@ -3651,7 +3700,7 @@ Great Expectations built-ins that look at the values in one or more columns. Eac
 | **Columns sum to a total** | `expect_multicolumn_sum_to_equal` | Row by row, the listed columns add up to the given total — e.g. subtotal + tax + shipping = total. | Validity | `column_list`, `sum_total`, `mostly` *(optional)* | warn / fail / critical | All datasources · SQL pushdown on Unity Catalog |
 | **Column distinct values in set** | `expect_column_distinct_values_to_be_in_set` | Every DISTINCT value present in the column is one of an allowed set — reports WHICH unexpected values exist rather than how many rows carry them. Use “Column values in set” when you care about the row count. | Validity | `column`, `value_set` | None — pass/fail only | All datasources · SQL pushdown on Unity Catalog |
 | **Column distinct values contain set** | `expect_column_distinct_values_to_contain_set` | Every value in the given set appears at least once in the column — catches a category that stopped arriving. The column may also contain other values. | Completeness | `column`, `value_set` | None — pass/fail only | All datasources · SQL pushdown on Unity Catalog |
-| **Column values match a date format** | `expect_column_values_to_match_strftime_format` | Every value parses under the given strftime format — for a date or timestamp stored as text. Not offered on Snowflake or PostgreSQL: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there. | Validity | `column`, `strftime_format`, `mostly` *(optional)* | warn / fail / critical | ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg — not Snowflake, PostgreSQL (no SQL implementation; refused at author time) |
+| **Column values match a date format** | `expect_column_values_to_match_strftime_format` | Every value parses under the given strftime format — for a date or timestamp stored as text. Not offered on Snowflake, PostgreSQL or MySQL: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there. | Validity | `column`, `strftime_format`, `mostly` *(optional)* | warn / fail / critical | ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg — not Snowflake, PostgreSQL, MySQL / MariaDB (no SQL implementation; refused at author time) |
 
 ## Table shape
 
@@ -3691,7 +3740,7 @@ Is today's value unusual against a rolling baseline of this check's own history?
 
 | Check | Type | What it checks | Dimension | Parameters | Thresholds | Runs on |
 |---|---|---|---|---|---|---|
-| **Anomaly** | `monitor:anomaly` | Learns a rolling baseline (mean/stddev) from this check’s own metric history and flags how far this run deviates (a z-score). Reports skip, never a fake pass/fail, until enough history accrues. | — (set it yourself) | `target_metric`, `column`, `window` *(optional)*, `min_points` *(optional)*, `seasonality` *(optional)* | warn / fail / critical (fail or critical required) | Snowflake, Unity Catalog, PostgreSQL |
+| **Anomaly** | `monitor:anomaly` | Learns a rolling baseline (mean/stddev) from this check’s own metric history and flags how far this run deviates (a z-score). Reports skip, never a fake pass/fail, until enough history accrues. | — (set it yourself) | `target_metric`, `column`, `window` *(optional)*, `min_points` *(optional)*, `seasonality` *(optional)* | warn / fail / critical (fail or critical required) | Snowflake, Unity Catalog, PostgreSQL, MySQL / MariaDB |
 
 ## Comparison
 
@@ -3708,7 +3757,7 @@ Any predicate you can write in SQL, validated before it runs.
 
 | Check | Type | What it checks | Dimension | Parameters | Thresholds | Runs on |
 |---|---|---|---|---|---|---|
-| **Custom SQL** | `unexpected_rows_expectation` | A SQL query that should return no rows — any rows it returns are failures. | — (set it yourself) | `unexpected_rows_query` | warn / fail / critical | Snowflake, Unity Catalog, PostgreSQL |
+| **Custom SQL** | `unexpected_rows_expectation` | A SQL query that should return no rows — any rows it returns are failures. | — (set it yourself) | `unexpected_rows_query` | warn / fail / critical | Snowflake, Unity Catalog, PostgreSQL, MySQL / MariaDB |
 
 ## Snowflake DMF
 
@@ -3755,21 +3804,21 @@ One-page reference: what runs where. For the readable tour of everything DataQ o
 
 ## Check kinds × datasources
 
-| Check kind | Snowflake | Unity Catalog | PostgreSQLᵖ | ADLS Gen2 (files) | S3 (files)ˢ | Iceberg |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|
-| GX expectations (column / table shape) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Snowflake DMF (native metric functions)ᵈ | ✅ | — | — | — | — | — |
-| Custom SQL (rows returned = failures)ᶜ | ✅ | ✅ | ✅ | — | — | — |
-| Freshness monitor (hours since latest timestamp) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Freshness from **file arrival time** (no column — catches "no new file") | — | — | — | ✅ | ✅ | — |
-| Volume monitor (row count in range) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Anomaly monitor (z-score vs a learned baseline)ᵃ | ✅ | ✅ | ✅ | — | — | — |
-| Schema-drift monitor (column add/drop/type-change vs a stored baseline)ᵇ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Comparison / reconciliation (diff vs a baseline connection) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Column profiler (nulls, distinct, min/max, top values) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Browse for the run target (catalog → schema → table / folders → file) | — | ✅ | ✅ (schema → table) | ✅ | ✅ | — |
-| DQ dimension on checks + asset scorecard (coverage + score) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Dry-run preview | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Check kind | Snowflake | Unity Catalog | PostgreSQLᵖ | MySQL / MariaDBᵐ | ADLS Gen2 (files) | S3 (files)ˢ | Iceberg |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| GX expectations (column / table shape) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Snowflake DMF (native metric functions)ᵈ | ✅ | — | — | — | — | — | — |
+| Custom SQL (rows returned = failures)ᶜ | ✅ | ✅ | ✅ | ✅ | — | — | — |
+| Freshness monitor (hours since latest timestamp) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Freshness from **file arrival time** (no column — catches "no new file") | — | — | — | — | ✅ | ✅ | — |
+| Volume monitor (row count in range) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Anomaly monitor (z-score vs a learned baseline)ᵃ | ✅ | ✅ | ✅ | ✅ | — | — | — |
+| Schema-drift monitor (column add/drop/type-change vs a stored baseline)ᵇ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Comparison / reconciliation (diff vs a baseline connection) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Column profiler (nulls, distinct, min/max, top values) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Browse for the run target (catalog → schema → table / folders → file) | — | ✅ | ✅ (schema → table) | ✅ (schema → table) | ✅ | ✅ | — |
+| DQ dimension on checks + asset scorecard (coverage + score) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Dry-run preview | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 ᵃ **Live-verified.** The anomaly monitor learns a rolling mean/stddev of the
 target's own row count or freshness age (optionally per weekday) and bands each
@@ -3824,12 +3873,22 @@ inventory enumeration and browsing) against the test database on every change. T
 profiler reports min/max as unavailable for types PostgreSQL cannot order (`boolean`,
 `jsonb`, …) — see [Datasources & checks](../guides/datasources-checks.md#postgresql).
 
+ᵐ **MySQL / MariaDB** — any server, on the same generic SQL base as PostgreSQL, through
+the MIT-licensed PyMySQL driver. The same battery was **executed** against MySQL 8.4,
+MariaDB 11.8 and MariaDB 10.6, each through its own least-privileged user. Two engine facts to know: GX's
+MySQL uniqueness check builds session temporary tables, so it runs on its own session
+without the read-only guard and needs the `CREATE TEMPORARY TABLES` grant; and
+uniqueness, set membership and comparisons follow the column's collation (`'a'` and
+`'A'` are duplicates under the default case-insensitive one) — see
+[Datasources & checks](../guides/datasources-checks.md#mysql-mariadb).
+
 ˢ **S3 means AWS S3 *and* any S3-compatible store** — MinIO, Ceph/RadosGW, Cloudflare R2,
 Wasabi, Backblaze B2, SeaweedFS or an on-prem gateway. Set the connection's optional
 endpoint URL; every row in this column applies identically either way. See
 [Datasources & checks](../guides/datasources-checks.md#s3-compatible-object-stores).
 
-Custom SQL runs a SQL query, so it's **SQL-datasource only** (Snowflake, Unity Catalog, PostgreSQL;
+Custom SQL runs a SQL query, so it's **SQL-datasource only** (Snowflake, Unity Catalog, PostgreSQL,
+MySQL/MariaDB;
 there is no flat-file support, and no issue currently tracks adding it — flat files get freshness/volume monitors instead (see the rows above);
 Iceberg is not SQL-queryable — reads go through `pyiceberg` scans, not a query engine).
 **Comparison checks** (ADR [0015](../adr/0015-two-connection-comparison-check-model.md))
@@ -3894,6 +3953,7 @@ five mechanisms:
 | ADLS Gen2 (files) | `abfss://{container}@{account}.dfs.core.windows.net` / pattern **base prefix** | ✅ | — | ✅ | ✅ | — |
 | S3 (files) | `s3://{bucket}` / base prefix | ✅ | — | ✅ | ✅ | — |
 | Iceberg | `{catalog_uri}` / `namespace.table` | ✅ | —¹ | ✅ | ✅ | —³ |
+| MySQL / MariaDB | `mysql://{host}:{port}` / `database.table` | ✅ (+ inventory sync) | ✅ by construction (not yet live-verified) | ✅ | ✅ | —⁴ |
 | PostgreSQL | `postgres://{host}:{port}` / `database.schema.table` | ✅ (+ inventory sync) | ✅ by construction (dbt-postgres names match; not yet live-verified) | ✅ | ✅ | —⁴ |
 | BI reports / dashboards | not yet materialized² | — | — | — | reserved² | — |
 
@@ -3902,7 +3962,7 @@ native `pyiceberg` connections have no dbt slice of their own.
 ³ Warehouse-native lineage reads a query engine's lineage view; a native `pyiceberg`
 connection has no engine to ask (an engine-registered Iceberg table is covered under its
 Snowflake/UC connection).
-⁴ PostgreSQL keeps no lineage log to read, so there is no warehouse-native pull; the
+⁴ PostgreSQL and MySQL keep no lineage log DataQ reads, so there is no warehouse-native pull; the
 inventory sync still enumerates its tables (ADR 0040).
 ² The lineage graph's node-kind contract reserves `bi_report`/`dashboard` — a BI node
 (e.g. a Power BI report downstream of a mart) becomes representable the moment a capable
@@ -4762,7 +4822,7 @@ flowchart LR
         Files["ADLS Gen2 · S3 · flat files"]
         UC["Unity Catalog · Databricks"]
         Iceberg["Apache Iceberg · native pyiceberg read<br/>object storage + catalog"]
-        PGDS["PostgreSQL · generic SQL base<br/>any server, read-only sessions"]
+        PGDS["PostgreSQL · MySQL / MariaDB<br/>generic SQL base, read-only sessions"]
     end
 
     Web -->|HTTPS| Frontend
@@ -5339,7 +5399,7 @@ flowchart LR
         APPI["App Insights (PII-redacted logs + traces)"]
     end
     subgraph egress["🌐 Outbound — credentials fetched from Key Vault per use"]
-        DS["Datasources — Snowflake · ADLS · S3 · Unity Catalog · Iceberg · PostgreSQL"]
+        DS["Datasources — Snowflake · ADLS · S3 · Unity Catalog · Iceberg · PostgreSQL · MySQL"]
         AL["Teams / Slack webhooks · SMTP"]
         OAPI["ADF / Airflow REST APIs (polling)"]
         LLM["LLM provider — Anthropic / OpenAI-compat<br/>(off by default; masked profiler stats or a<br/>redacted observed_value only — never raw samples)"]
@@ -7266,7 +7326,7 @@ confirm your DataQ connection role can still read both tags.
 
 ### Where it applies
 
-Only **Snowflake** and **Unity Catalog** have a column-tag concept. PostgreSQL, ADLS,
+Only **Snowflake** and **Unity Catalog** have a column-tag concept. PostgreSQL, MySQL, ADLS,
 S3, Iceberg and flat files have no authoritative source to read, so for those the
 classification remains the suite's own policy, the name/value classifier, and
 fail-closed mode. This is a limit of the platforms, not a gap in the
@@ -7311,7 +7371,7 @@ values happen to look harmless and the rows behind them do not.
 | Lane | Where the population signal comes from |
 |---|---|
 | Flat files (ADLS, S3), Iceberg, the Unity Catalog DataFrame batch | The failing-row list the check already builds (up to 5,000 rows); no extra query |
-| Snowflake, PostgreSQL, Unity Catalog SQL pushdown | One **extra, bounded query** per failing check: the check's own failing condition, selecting only the tested column and the identifier column, `LIMIT 5000` |
+| Snowflake, PostgreSQL, MySQL, Unity Catalog SQL pushdown | One **extra, bounded query** per failing check: the check's own failing condition, selecting only the tested column and the identifier column, `LIMIT 5000` |
 
 The extra query on the warehouse lanes is issued only when all of these hold:
 the check found more than 20 unexpected rows (including a check that still
@@ -8791,7 +8851,7 @@ Each ADR captures a single significant architecture decision: the context, the d
 | [0042](0042-llm-provider-seam.md) | `LLMProvider` seam — outbound LLM for authoring assistance (NL→SQL generation, check suggestions, future RCA narrative), **admin-configured, BYO credential, default-OFF**; two wire impls only (`anthropic` official SDK + `openai_compatible` httpx — the latter covers Azure OpenAI, Bedrock chat-completions, and local Ollama/vLLM/TGI; no model server in the image per 0025); structured output is a `native \| prompt_json` capability ladder and **never a trust boundary** — callers re-validate, generated SQL rides the 0019 validator + dry-run, suggestions the server-side allowlist; config = `llm_settings` DB singleton behind `require_workspace_admin`, API key write-only in `SecretStore` with the credential-destination re-supply rule on `base_url`; execution worker-side through `llm_invocations` (poll + audit + token/cost record; G4 posture reads it); prompt context = schema + masked aggregate profiler stats only, never sample rows; rejected: proxying a vendor key we own, bundling weights, MCP exposure, per-feature providers | Accepted |
 | [0043](0043-in-app-workspace-membership.md) | In-app workspace membership — one `workspace_members` table an admin manages from Admin → Members; **empty table = today's behaviour, non-empty = member if in the env allowlist OR the table**, checked on every request at four points (`_upsert_user`, OTP session resolve, PAT resolve, OTP eligibility) so removing someone stops their browser session and their PATs on the next request; env allowlists become a starting seed plus an emergency way in that can only grant (OTP mode still needs a non-empty one to boot); the first row imports every existing user as a **provisional** member shown for review, never a silent backfill; last-admin removal refused, self-removal confirmed; `initial_role` applies only when the user row is first created; the IdP account stays a prerequisite — DataQ controls its own door only; REST denies with 403, `/mcp` with 401 | Accepted |
 | [0044](0044-mssql-tds-driver-and-entra-auth.md) | MSSQL / T-SQL adapter driver + auth — **`python-tds` + `sqlalchemy-pytds` (MIT, pure Python, FEDAUTH token) by default** for SQL Server / Azure SQL / Synapse, with the adapter shipping its own SAN hostname validator and named-instance routing fix (both driver defects found in the live spike); **Fabric SQL endpoints via an optional ODBC lane** (`mssql+pyodbc` when the operator installs msodbcsql18 — never redistributed by DataQ) because python-tds's routed login to Fabric fails; one engine-generic `mssql` type with `sql` / `entra_service_principal` auth, `destination_fields` host/port/tenant_id/auth_type | Accepted |
-| [0045](0045-engine-generic-sql-datasource-base.md) | Engine-generic SQL datasource base — one config/adapter/runner/enumerator parameterized by a **`SqlEngineSpec`** (driver, GX datasource factory, `connect_args`, namespace scheme, catalog queries, optional profiler and run-engine hooks), one registry every SQL capability set derives from; **pushdown only** (no sampling), **read-only sessions** at the server, names resolved **exactly as spelled** (GX session scoped to the target schema, never a lower-cased GX schema), identifier limits enforced at save time; honest gaps — no column-tag source, no warehouse-native lineage (enumeration only, via a separate `TableEnumerator` seam), GX engine only; PostgreSQL first, MySQL/MariaDB and Trino next | Accepted |
+| [0045](0045-engine-generic-sql-datasource-base.md) | Engine-generic SQL datasource base — one config/adapter/runner/enumerator parameterized by a **`SqlEngineSpec`** (driver, GX datasource factory, `connect_args`, namespace scheme, catalog queries, optional profiler and run-engine hooks), one registry every SQL capability set derives from; **pushdown only** (no sampling), **read-only sessions** at the server, names resolved **exactly as spelled** (GX session scoped to the target schema, never a lower-cased GX schema), identifier limits enforced at save time; honest gaps — no column-tag source, no warehouse-native lineage (enumeration only, via a separate `TableEnumerator` seam), GX engine only; PostgreSQL first, then MySQL/MariaDB (amendment: `temp_table_types` — GX's MySQL uniqueness check runs on its own non-read-only session; `url_database`), Trino next | Accepted |
 
 
 ---
@@ -13788,6 +13848,28 @@ that silently doesn't work on the new engine.
    `WAREHOUSE_LINEAGE_CONNECTION_TYPES`, so an empty lineage graph reads "not observed".
    Native engines: GX only.
 
+## Amendment — MySQL / MariaDB, the second engine
+
+MySQL / MariaDB plugged in as one spec module (PyMySQL — MIT; the GPL drivers are
+excluded by ADR 0031) plus a registry entry, which is the test of decision 1. It needed
+three small base hooks, all generic: `url_database` (a MySQL schema IS a database, so the
+session connects to the target's schema to scope it), a shared `sslmode` vocabulary, and
+**`temp_table_types`** — GX checks uniqueness on MySQL by building session temporary
+tables, which a read-only transaction refuses, so that one type runs on its own GX
+session with the read-only guard off (`connect_args(read_only=False)`). Nothing a user
+wrote runs there; custom SQL stays on the guarded session. MySQL's read-only and UTC
+settings are two statements (the `transaction_read_only` *variable* is missing before
+MariaDB 11.1, so the portable `SET SESSION TRANSACTION READ ONLY` form is used), which
+PyMySQL's single `init_command` cannot carry — hence `session_statements`, applied to every
+engine DataQ builds (`prepare_engine`) and, for GX, through a **`GxConnectionSource`**
+handed to GX as its engines' `creator`. GX builds a fresh SQLAlchemy engine per execution
+engine and never disposes it, so an event hook on the engine it exposes never reached the
+one that validates — and each run left one idle server session behind until garbage
+collection (live-found on PostgreSQL: three runs, three backends). The source closes every
+connection a run opened. Decision 4 therefore reads
+"read only except where the engine's own check implementation needs temporary
+tables", and the docs say so.
+
 ## Consequences
 
 - Every behaviour is verified against a **real server through the real driver** — for a
@@ -13799,5 +13881,7 @@ that silently doesn't work on the new engine.
   (JSON kept as text on the run path).
 - A new engine inherits the whole feature surface at once — which is the risk as well as the
   point: it is not "supported" until the same battery has run against it.
+- A spec's hooks are only kept when a live run proves them: MySQL does not need
+  PostgreSQL's JSON-as-text option (PyMySQL already returns JSON as text), so it has none.
 - Snowflake and Unity Catalog keep their own adapters; they are not migrated onto the base
   (their auth, catalogs and lineage differ too much to gain from it).
