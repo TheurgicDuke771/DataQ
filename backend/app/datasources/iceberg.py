@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, ClassVar, Literal
 
@@ -165,6 +165,30 @@ def scan_row_count(table: Any) -> int:
     ``int()`` because the value crosses a driver boundary.
     """
     return int(table.scan().count())
+
+
+@dataclass(frozen=True)
+class PlannedScan:
+    """What a full scan will read, from manifest metadata: rows, and data-file bytes
+    keyed by lower-cased file format (``parquet`` / ``orc`` / ``avro``)."""
+
+    rows: int
+    bytes_by_format: dict[str, int]
+
+
+def planned_scan(table: Any) -> PlannedScan:
+    """Plan the scan once and total its data files — manifest metadata, never a data read.
+
+    ``int()`` because both values cross a driver boundary.
+    """
+    rows = 0
+    by_format: dict[str, int] = {}
+    for task in table.scan().plan_files():
+        rows += int(task.file.record_count)
+        fmt = task.file.file_format
+        key = str(getattr(fmt, "value", fmt)).lower()
+        by_format[key] = by_format.get(key, 0) + int(task.file.file_size_in_bytes)
+    return PlannedScan(rows=rows, bytes_by_format=by_format)
 
 
 def planned_row_count(table: Any) -> int:
