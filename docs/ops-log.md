@@ -637,6 +637,21 @@ case that bites, since the product cannot know them and will never warn.
   - AWS `Retail Snowflake DEV`: blocked on AWS CLI credentials.
   - The local mirror: empty, so there was nothing to update.
 
+## 2026-09-27 (afternoon) — Azure deployed `c7acda64`, #2112 cleanup applied
+
+- **Pre-deploy:** \`tofu plan\` on \`deploy/terraform/azure/\` with the live image tags (#2091 procedure) returned **No changes**.
+- 08:2xZ: **Azure Deploy** run 36306076403 on \`c7acda64\` → green. The delta is 22 merged PRs, including the #1710 additive migration \`81e4ec4c408b\` (\`lineage_edges.column_grain\`, nullable). Migrate job \`Succeeded\` 08:27Z.
+- **Post-deploy checks:**
+  - All four apps on \`c7acda64\`, checked per service.
+  - Public smoke: healthz/SPA/deep-link 200; \`/api/v1/me\` and \`/mcp/\` 401; \`/docs\` serves the SPA shell; 6/6 security headers.
+  - After the roll, beat dispatched 12 tasks, the worker completed 13, and api/worker/beat logged 0 error-level lines outside Airflow (the harness is stopped).
+- **Redis blip:** 7 Redis \`Connection refused\` lines from 08:29:03 to 08:29:31Z, during the roll only. The same pattern appeared on the morning roll, and the Redis app did not restart. Filed as #2119.
+- **#2112 cleanup (user-approved).** \`backend.scripts.clear_misprobed_dmf_capability\` was run through a one-off \`dataq-app-migrate\` override: \`--command=python\` with a space-free \`runpy\` one-liner in \`--args\`, which avoids az's dash-token bug for \`--apply\`, plus \`--env-vars DATABASE_URL=secretref:database-url\`.
+  - Dry run (\`dataq-app-migrate-5vw1qq0\`): would clear 3 connections.
+  - Apply (\`dataq-app-migrate-mqqa9h9\`): **cleared 3**.
+  - The three prod Snowflake connections were then re-tested through \`/test\` (\`{"ok":true}\` ×3). The new probe now stores \`engine_capabilities.dmf = {"status": "available", "available": true}\` on Payments / Orders / Retail, replacing the false "DMF unavailable".
+- **Other:** a live Snowflake write for #1928, authorized by the user. It was a session-scoped \`TEMPORARY\` table \`DATAQ_DB.ANALYTICS_STG.BLANK_PROBE_2086\` as \`DATAQ_LOADER\`, dropped explicitly afterwards; \`SHOW TABLES\` returns nothing. It showed BLANK_COUNT counts '' and space-only strings, but not tab/newline-only strings or NULL.
+
 ## 2026-09-27 (evening) — Azure SQL free-offer test DB for #1679 (ADR 0044 spike) + Fabric trial prep (#1679/#1680)
 
 All user-approved. Done by Claude, with the owner's `az` login.
@@ -662,6 +677,32 @@ All user-approved. Done by Claude, with the owner's `az` login.
   - `az sql db delete`, `az sql server delete`, delete the firewall rule;
   - purge `mssql-test-sqladmin` / `mssql-test-reader`;
   - remove the Fabric Administrator assignment.
+
+## 2026-09-27/28 — new datasources shipped + two Azure deploys (`730fc215`, `517b407b`)
+
+- **Azure Deploy, run 36338726892, `730fc215`:** adds PostgreSQL (#1678), MySQL/MariaDB (#1684) and ADLS service-principal auth for OneLake (#1680).
+  - Migrations `4c80e6795811` and `d0cccce55833` widen the connection-type check constraint (additive). Migrate `Succeeded` 17:57Z.
+  - `tofu plan` beforehand showed output-only changes.
+  - All four apps on the SHA, smoke green, 6/6 headers.
+  - Draft `/connections/test` confirmed prod recognises `postgres`, `mysql` and ADLS `service_principal`. Nothing was persisted.
+  - A live Snowflake suite run `succeeded`.
+- **2026-09-28:** the Azure SQL test server's single-IP firewall rule was replaced, user-approved:
+  - `claude-maint-20260927` deleted;
+  - `claude-maint-20260928` added for the maintainer's new egress IP (the only rule).
+- **Azure Deploy, run 36346556533, `517b407b`:** adds Trino (#1685) and SQL Server / Azure SQL / Fabric (#1679).
+  - Migrations `1a95d7c34808` and `0b451979c77d` (additive). Migrate `Succeeded` 20:04Z.
+  - New runtime pins: `python-tds`, `sqlalchemy-pytds`, `pyOpenSSL`, `certifi`, `trino`, `PyMySQL`. **No ODBC driver is in the image** (ADR 0044 Decision 1a).
+  - All four apps on the SHA, smoke green, 6/6 headers.
+  - Prod recognises `trino` and `mssql`.
+  - A live Snowflake suite run `succeeded`. Post-roll: 0 non-Airflow errors, beat 10 sent, worker 12 completed.
+- **Maintainer-machine only (not infra):**
+  - Microsoft ODBC Driver 18 installed via Homebrew (`brew trust --formula microsoft/mssql-release/msodbcsql18`, EULA accepted at the user's instruction), to live-test the ODBC lane.
+  - `pyodbc` sits in an isolated scratch path, not the conda env.
+  - Uninstall: `brew uninstall msodbcsql18 && odbcinst -u -d -n "ODBC Driver 18 for SQL Server"`.
+- **Fabric test data** in trial workspace `dataq-fabric-test`:
+  - Warehouse `dataq_wh.dbo.Orders` (4 rows, created via ODBC as the SP);
+  - Lakehouse `dataq_lh` table `orders` (loaded from `Files/orders`, CSV/Parquet uploaded by the SP).
+  - **Teardown** (still pending, per the earlier entry): Azure SQL server + firewall rule, KV `mssql-test-*`, the Fabric Administrator role on `dataq-admin`, and the trial workspace.
 
 ## 2026-09-28 — teardown of the #1679/#1680 test resources (user-directed)
 
