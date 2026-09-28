@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "910d40819524",
+  "strategy": "manual-commit",
+  "branch": "docs/ops-log-aws-it-teardown",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/ops-log.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/91/0d40819524/0/metadata.json",
+      "transcript": "/91/0d40819524/0/full.jsonl",
+      "compact_transcript": "/91/0d40819524/0/transcript.jsonl",
+      "content_hash": "/91/0d40819524/0/content_hash.txt",
+      "prompt": "/91/0d40819524/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 14,
+    "cache_creation_tokens": 4447,
+    "cache_read_tokens": 2558490,
+    "output_tokens": 3484,
+    "api_call_count": 7
+  }
+}
