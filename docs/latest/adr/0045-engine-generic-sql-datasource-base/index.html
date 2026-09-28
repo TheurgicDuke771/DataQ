@@ -2329,6 +2329,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#amendment-amazon-redshift-2026-09-28" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Amendment — Amazon Redshift (2026-09-28)
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2540,6 +2551,33 @@ the first with no server to open a session on. It needed two small hooks and one
 reads, inventory, browsing and an end-to-end persisted run were <strong>executed</strong> against a live
 Athena workgroup as a least-privileged IAM user. Every check is a billed query, which the guide
 states.</p>
+<h2 id="amendment-amazon-redshift-2026-09-28">Amendment — Amazon Redshift (2026-09-28)<a class="headerlink" href="#amendment-amazon-redshift-2026-09-28" title="Permanent link">¶</a></h2>
+<p>Redshift is the sixth engine. It speaks the PostgreSQL protocol, so §4 holds as on PostgreSQL:
+the libpq startup options carry <code>default_transaction_read_only</code> and the <code>search_path</code>, and
+Redshift honours both (a write by the reader was refused live). The dialect is
+<code>redshift+psycopg2</code> from <code>sqlalchemy-redshift</code> (MIT), which GX's Redshift datasource requires;
+every TLS mode verifies against the Amazon CA bundle it ships. Three hooks were added:</p>
+<ul>
+<li><strong><code>gx_schema_with_session</code></strong> (a spec flag). GX's Redshift column-type lookup reads
+  <code>information_schema.columns</code> by table name alone when it is given no schema, so a table with
+  the same name in another schema merged its columns into the target's and every
+  multi-column check failed on a column that did not exist. The session stays scoped to the
+  schema and GX is handed it as well. That breaks this ADR's "never a lower-cased GX schema"
+  rule only in form: Redshift names are lower case, and a test refuses the flag on an engine
+  whose names are not.</li>
+<li><strong><code>columns_view</code></strong> (a spec field). Schema drift reads <code>svv_columns</code> rather than
+  <code>information_schema.columns</code>, which omits late-binding views. The profiler's type
+  capabilities read it too.</li>
+<li><strong><code>namespace_authority</code></strong> (a spec hook). OpenLineage names a Redshift dataset
+  <code>redshift://&lt;cluster&gt;.&lt;region&gt;:&lt;port&gt;</code>; the cluster or workgroup and the region are read from
+  an AWS endpoint, and any other host is kept as configured.</li>
+</ul>
+<p>The catalog differs from PostgreSQL's: <code>pg_class</code> has no <code>relispartition</code>, <code>pg_type</code> no
+<code>typcategory</code>, and a leader-node catalog cannot be joined to <code>svv_mv_info</code>, so a materialized
+view is listed as a view. Every SQL-batch expectation type, custom SQL, the monitors, the
+profiler over a table and a late-binding view, schema drift, comparison reads, inventory,
+browsing and an end-to-end persisted run were <strong>executed</strong> against a Redshift Serverless
+workgroup as a user granted only <code>USAGE</code> and <code>SELECT</code> on one schema.</p>
 
 
 

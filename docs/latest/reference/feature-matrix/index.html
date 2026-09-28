@@ -2580,6 +2580,7 @@
 <th style="text-align: center;">Trinoᵗ</th>
 <th style="text-align: center;">SQL Serverᵉ</th>
 <th style="text-align: center;">Athenaᵒ</th>
+<th style="text-align: center;">Redshiftʳ</th>
 <th style="text-align: center;">ADLS Gen2 (files)</th>
 <th style="text-align: center;">S3 (files)ˢ</th>
 <th style="text-align: center;">Iceberg</th>
@@ -2598,10 +2599,12 @@
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
 </tr>
 <tr>
 <td>Snowflake DMF (native metric functions)ᵈ</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
@@ -2624,9 +2627,11 @@
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
 </tr>
 <tr>
 <td>Custom SQL (rows returned = failures)ᶜ</td>
+<td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
@@ -2650,9 +2655,11 @@
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
 </tr>
 <tr>
 <td>Freshness from <strong>file arrival time</strong> (no column — catches "no new file")</td>
+<td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">—</td>
@@ -2676,9 +2683,11 @@
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
 </tr>
 <tr>
 <td>Anomaly monitor (z-score vs a learned baseline)ᵃ</td>
+<td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
@@ -2702,9 +2711,11 @@
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
 </tr>
 <tr>
 <td>Comparison / reconciliation (diff vs a baseline connection)</td>
+<td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
@@ -2728,6 +2739,7 @@
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
 </tr>
 <tr>
 <td>Browse for the run target (catalog → schema → table / folders → file)</td>
@@ -2738,6 +2750,7 @@
 <td style="text-align: center;">✅ (schema → table)</td>
 <td style="text-align: center;">✅ (schema → table)</td>
 <td style="text-align: center;">✅ (database → table)</td>
+<td style="text-align: center;">✅ (schema → table)</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅ (namespace → table)</td>
@@ -2754,9 +2767,11 @@
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
 </tr>
 <tr>
 <td>Dry-run preview</td>
+<td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
@@ -2838,6 +2853,13 @@ volume and anomaly monitors, the profiler, schema drift, comparison reads, inven
 browsing and an end-to-end persisted run. Two engine facts: <strong>every check is a billed
 query</strong> (Athena charges per byte scanned, with a per-query minimum), and there is <strong>no
 read-only session</strong> — the IAM policy is the guarantee (a write by the reader was refused).</p>
+<p>ʳ <strong>Amazon Redshift</strong> — provisioned clusters and Serverless workgroups. <strong>Live-verified</strong>
+against a Redshift Serverless workgroup as a user granted only <code>USAGE</code> and <code>SELECT</code> on one
+schema: every SQL-batch expectation type, custom SQL (including over <code>SUPER</code> paths), the
+freshness (<code>TIMESTAMP</code>, <code>TIMESTAMPTZ</code>, <code>DATE</code>), volume and anomaly monitors, the profiler over a
+table and a late-binding view, schema drift, comparison reads, inventory, browsing and an
+end-to-end persisted run. Sessions are read-only at the server (a write by the reader was
+refused); a materialized view is listed as a view.</p>
 <p>ᵗ <strong>Trino</strong> — any cluster (incl. Starburst), one catalog per connection, and every store that
 catalog federates; everything runs by pushdown on the cluster. The same battery was
 <strong>executed</strong> against Trino 483 (the <code>memory</code> connector, and a mixed-case PostgreSQL table

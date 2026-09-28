@@ -3321,10 +3321,12 @@ are the reason this mode is opt-in rather than the default:</p>
   driver's own hostname check is broken on current pyOpenSSL, so DataQ replaces it with its own
   (DNS subject-alternative names, a wildcard only as one whole left-most label, an IP only
   against an IP entry, never the certificate's CN) — live-verified to refuse a connection made
-  by IP address and one whose certificate chains to an untrusted CA. PostgreSQL and MySQL connections
-  default to <code>require</code>; see <a href="../../guides/datasources-checks/">Datasources &amp; checks</a>.</li>
-<li><strong>Datasource writes:</strong> PostgreSQL and MySQL sessions are read-only at the server. <strong>Trino,
-  SQL Server and Athena have no equivalent session setting</strong>, so there the protection is the
+  by IP address and one whose certificate chains to an untrusted CA. PostgreSQL, MySQL and
+  Redshift connections default to <code>require</code>; on Redshift every TLS mode, <code>require</code> included,
+  checks the certificate chain against Amazon's certificate authorities. See
+  <a href="../../guides/datasources-checks/">Datasources &amp; checks</a>.</li>
+<li><strong>Datasource writes:</strong> PostgreSQL, MySQL and Redshift sessions are read-only at the server.
+  <strong>Trino, SQL Server and Athena have no equivalent session setting</strong>, so there the protection is the
   custom-SQL validator plus the account's own access control — on SQL Server a
   <code>db_datareader</code>-only login, on Athena an IAM policy that can only read, as the datasource
   guide shows.</li>
@@ -3543,7 +3545,7 @@ see a tag gets zero rows, not an error, so the column would look untagged and fa
 back to the name heuristic. If you restrict tag visibility in your own account,
 confirm your DataQ connection role can still read both tags.</p>
 <h3 id="where-it-applies">Where it applies<a class="headerlink" href="#where-it-applies" title="Permanent link">¶</a></h3>
-<p>Only <strong>Snowflake</strong> and <strong>Unity Catalog</strong> have a column-tag source DataQ reads. PostgreSQL, MySQL, Trino, SQL Server, Athena, ADLS,
+<p>Only <strong>Snowflake</strong> and <strong>Unity Catalog</strong> have a column-tag source DataQ reads. PostgreSQL, MySQL, Trino, SQL Server, Athena, Redshift, ADLS,
 S3, Iceberg and flat files have no authoritative source to read, so for those the
 classification remains the suite's own policy, the name/value classifier, and
 fail-closed mode. This is a limit of the platforms, not a gap in the
@@ -3595,7 +3597,7 @@ values happen to look harmless and the rows behind them do not.</p>
 <td>The failing rows of the table already in memory (up to 5,000): from the failing-row list the check builds when an identifier column is set, otherwise read directly off the in-memory table. No extra query either way</td>
 </tr>
 <tr>
-<td>Snowflake, PostgreSQL, MySQL, Trino, SQL Server, Athena, Unity Catalog SQL pushdown</td>
+<td>Snowflake, PostgreSQL, MySQL, Trino, SQL Server, Athena, Redshift, Unity Catalog SQL pushdown</td>
 <td>One <strong>extra, bounded query</strong> per failing check: the check's own failing condition, selecting only the tested column and the identifier column, <code>LIMIT 5000</code></td>
 </tr>
 </tbody>

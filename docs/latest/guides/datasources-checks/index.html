@@ -1020,6 +1020,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#amazon-redshift" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Amazon Redshift
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#sql-server-azure-sql-fabric-t-sql" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1125,10 +1136,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#custom-sql-snowflake-unity-catalog-postgresql-mysql-trino-sql-server-athena-adr-0019" class="md-nav__link">
+  <a href="#custom-sql-snowflake-unity-catalog-postgresql-mysql-trino-sql-server-athena-redshift-adr-0019" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server / Athena — ADR 0019)
+        Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server / Athena / Redshift — ADR 0019)
       
     </span>
   </a>
@@ -2764,6 +2775,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#amazon-redshift" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Amazon Redshift
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#sql-server-azure-sql-fabric-t-sql" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2869,10 +2891,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#custom-sql-snowflake-unity-catalog-postgresql-mysql-trino-sql-server-athena-adr-0019" class="md-nav__link">
+  <a href="#custom-sql-snowflake-unity-catalog-postgresql-mysql-trino-sql-server-athena-redshift-adr-0019" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server / Athena — ADR 0019)
+        Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server / Athena / Redshift — ADR 0019)
       
     </span>
   </a>
@@ -3110,6 +3132,12 @@
 <td>✅</td>
 <td>✅</td>
 </tr>
+<tr>
+<td>Amazon Redshift (provisioned clusters and Serverless workgroups)</td>
+<td>endpoint + port + database + user, password; TLS mode</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
 </tbody>
 </table>
 <h2 id="add-a-connection">Add a connection<a class="headerlink" href="#add-a-connection" title="Permanent link">¶</a></h2>
@@ -3268,7 +3296,8 @@ incidents (decided in
 <p>One connection type for <strong>any PostgreSQL server</strong> — self-hosted, or a managed service on any
 cloud. It is named for the engine, never for a vendor that hosts it (ADR
 <a href="../../adr/0010-provider-agnostic-infrastructure-seams/">0010</a>), and is the first engine on
-DataQ's generic SQL datasource base, which the MySQL/MariaDB, Trino and SQL Server adapters reuse.</p>
+DataQ's generic SQL datasource base, which the MySQL/MariaDB, Trino, SQL Server, Athena and
+Redshift adapters reuse.</p>
 <ul>
 <li><strong>Fields:</strong> host (a bare hostname or IP — no scheme, port or path), port (default 5432),
   database, user, an optional default schema (default <code>public</code>: where a target with no
@@ -3444,6 +3473,38 @@ SQL base, like Trino (Athena's own engine is Trino-based).</p>
   must be typed that way (a mixed-case name is refused when you save).
 - <strong>Type names</strong> for <code>to_be_of_type</code> are the bare Athena names: <code>DECIMAL</code>, <code>TIMESTAMP</code>,
   <code>VARCHAR</code>, <code>BIGINT</code>.
+- <strong>No column tags, no warehouse-native lineage.</strong> Lineage comes from dbt, OpenLineage or a
+  catalog, and an empty graph means "not observed".</p>
+<h3 id="amazon-redshift">Amazon Redshift<a class="headerlink" href="#amazon-redshift" title="Permanent link">¶</a></h3>
+<p>Provisioned clusters and Redshift Serverless workgroups, on the generic SQL base. Redshift
+speaks the PostgreSQL protocol, so it behaves like the PostgreSQL connection in most respects.</p>
+<ul>
+<li><strong>Fields:</strong> the <strong>endpoint</strong> host (the cluster's or workgroup's, without <code>:5439/dev</code>), port
+  (default 5439), database, a database user, an optional default schema (default <code>public</code>),
+  and the user's password as the connection's secret. IAM authentication is not supported:
+  create a database user for DataQ.</li>
+<li><strong>TLS:</strong> <code>require</code> by default, and every TLS mode checks the server's certificate chain
+  against Amazon's certificate authorities. <code>verify-full</code> also checks the hostname.</li>
+<li><strong>Read only, always.</strong> As on PostgreSQL, every session sets <code>default_transaction_read_only</code>,
+  so Redshift itself refuses a write. Give DataQ a user that can only read what it checks:</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="k">CREATE</span><span class="w"> </span><span class="k">USER</span><span class="w"> </span><span class="n">dataq_reader</span><span class="w"> </span><span class="n">PASSWORD</span><span class="w"> </span><span class="s1">'…'</span><span class="p">;</span>
+<span class="k">GRANT</span><span class="w"> </span><span class="k">USAGE</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="k">SCHEMA</span><span class="w"> </span><span class="n">sales</span><span class="w"> </span><span class="k">TO</span><span class="w"> </span><span class="n">dataq_reader</span><span class="p">;</span>
+<span class="k">GRANT</span><span class="w"> </span><span class="k">SELECT</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="k">ALL</span><span class="w"> </span><span class="n">TABLES</span><span class="w"> </span><span class="k">IN</span><span class="w"> </span><span class="k">SCHEMA</span><span class="w"> </span><span class="n">sales</span><span class="w"> </span><span class="k">TO</span><span class="w"> </span><span class="n">dataq_reader</span><span class="p">;</span>
+</code></pre></div>
+<p><code>GRANT … ON ALL TABLES</code> covers only the tables that exist when you run it; add
+  <code>ALTER DEFAULT PRIVILEGES IN SCHEMA sales GRANT SELECT ON TABLES TO dataq_reader</code> for tables
+  created later.
+- <strong>Names are lower case.</strong> Redshift folds every name to lower case, so schemas and tables must
+  be typed that way (a mixed-case name is refused when you save). A cluster that enables
+  <code>enable_case_sensitive_identifier</code> is not supported.
+- <strong>Views.</strong> Late-binding views (<code>WITH NO SCHEMA BINDING</code>) work everywhere, including the
+  profiler and schema drift. A <strong>materialized view is listed as a view</strong> when you browse or in
+  the inventory: Redshift's system catalog cannot tell the two apart in a single query.
+- <strong>The profiler</strong> reports min/max as unavailable for <code>BOOLEAN</code>, <code>SUPER</code>, <code>GEOMETRY</code>,
+  <code>GEOGRAPHY</code> and <code>HLLSKETCH</code> (Redshift has no MIN/MAX for them, and MIN over <code>SUPER</code> returns
+  nothing useful), and distinct count / top values as unavailable for the spatial and sketch
+  types, which have no equality.
 - <strong>No column tags, no warehouse-native lineage.</strong> Lineage comes from dbt, OpenLineage or a
   catalog, and an empty graph means "not observed".</p>
 <h3 id="sql-server-azure-sql-fabric-t-sql">SQL Server / Azure SQL / Fabric (T-SQL)<a class="headerlink" href="#sql-server-azure-sql-fabric-t-sql" title="Permanent link">¶</a></h3>
@@ -3801,7 +3862,7 @@ nothing to band — a <em>Volume</em> or <em>Anomaly</em> monitor measures that 
 and a learned baseline. <strong>Whole-table set comparisons</strong> (columns match an expected set or
 ordered list) are what the <em>Schema-drift</em> monitor does, against a captured baseline. For
 anything with no vetted type, write a custom-SQL check.</p>
-<h3 id="custom-sql-snowflake-unity-catalog-postgresql-mysql-trino-sql-server-athena-adr-0019">Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server / Athena — ADR 0019)<a class="headerlink" href="#custom-sql-snowflake-unity-catalog-postgresql-mysql-trino-sql-server-athena-adr-0019" title="Permanent link">¶</a></h3>
+<h3 id="custom-sql-snowflake-unity-catalog-postgresql-mysql-trino-sql-server-athena-redshift-adr-0019">Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server / Athena / Redshift — ADR 0019)<a class="headerlink" href="#custom-sql-snowflake-unity-catalog-postgresql-mysql-trino-sql-server-athena-redshift-adr-0019" title="Permanent link">¶</a></h3>
 <p>A read-only SQL rule in the Monaco editor: <strong>any rows returned are failures</strong>. Use
 <code>{batch}</code> as a placeholder for the suite's target table
 (<code>SELECT * FROM {batch} WHERE amount &lt; 0</code>). Single read-only statement enforced
@@ -4051,6 +4112,11 @@ the type your warehouse/catalog shows you:</p>
 <td>Amazon Athena</td>
 <td>SQL (bare type name)</td>
 <td><code>DECIMAL</code>, <code>TIMESTAMP</code>, <code>VARCHAR</code>, <code>BIGINT</code>, <code>BOOLEAN</code></td>
+</tr>
+<tr>
+<td>Amazon Redshift</td>
+<td>SQL (bare type name)</td>
+<td><code>DECIMAL</code> (not <code>NUMERIC</code>), <code>VARCHAR</code>, <code>BIGINT</code>, <code>TIMESTAMP</code>, <code>TIMESTAMPTZ</code>, <code>DATE</code>, <code>BOOLEAN</code>, <code>SUPER</code>, <code>GEOMETRY</code>; a <code>VARBYTE</code> column reads as <code>VARCHAR</code></td>
 </tr>
 <tr>
 <td>SQL Server</td>
