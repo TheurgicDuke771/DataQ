@@ -455,7 +455,7 @@ def test_the_real_blob_sdk_authenticates_two_clients_with_one_token(
     monkeypatch.setattr(azid, "ClientSecretCredential", _FakeCredential)
     sent: list[str] = []
 
-    class _Response(HttpResponse):
+    class _Response(HttpResponse):  # type: ignore[misc]
         def __init__(self, request: Any) -> None:
             super().__init__(request, None)
             self.status_code = 200
@@ -466,7 +466,7 @@ def test_the_real_blob_sdk_authenticates_two_clients_with_one_token(
         def body(self) -> bytes:
             return b""
 
-    class _Transport(HttpTransport):
+    class _Transport(HttpTransport):  # type: ignore[misc]
         def send(self, request: Any, **_: Any) -> Any:
             sent.append(request.headers["Authorization"])
             return _Response(request)
