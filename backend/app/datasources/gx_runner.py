@@ -219,15 +219,16 @@ def _needs_population_signal(
     return any(gate(name) for name in (column, *(index_columns or ())))
 
 
-def _population_rows(validator: Any, spec: CheckSpec, index_columns: list[str] | None) -> Any:
-    """The first `_VALUE_SIGNAL_SUMMARY_ROW_CAP` failing rows of ONE check, as locator dicts.
+def _population_metric(validator: Any, spec: CheckSpec, index_columns: list[str] | None) -> Any:
+    """The metric whose value is the first `_VALUE_SIGNAL_SUMMARY_ROW_CAP` failing rows of ONE
+    check, as locator dicts.
 
-    GX's own `<map_metric>.unexpected_index_list` metric, resolved alone: the statement is GX's
-    locator query — a SQLAlchemy Core ``SELECT <index cols>, <column> ... WHERE <GX's unexpected
-    condition> LIMIT n`` compiled by the connection's dialect — so it samples exactly the
-    population the frame lane summarises, with no hand-built SQL or identifier quoting here.
-    Only this metric's dependency graph runs (column reflection, a ``COUNT(*)``, the LIMITed
-    select) — never the check's own unexpected-count scan again.
+    GX's own `<map_metric>.unexpected_index_list`: the statement is GX's locator query — a
+    SQLAlchemy Core ``SELECT <index cols>, <column> ... WHERE <GX's unexpected condition> LIMIT n``
+    compiled by the connection's dialect — so it samples exactly the population the frame lane
+    summarises, with no hand-built SQL or identifier quoting here. Only this metric's dependency
+    graph runs (column reflection, a ``COUNT(*)``, the LIMITed select) — never the check's own
+    unexpected-count scan again.
     """
     expectation = _to_gx_expectation(spec)
     map_metric = getattr(expectation, "map_metric", None)
@@ -245,7 +246,26 @@ def _population_rows(validator: Any, spec: CheckSpec, index_columns: list[str] |
     metric = dependencies.get_metric_configuration(f"{map_metric}.unexpected_index_list")
     if metric is None:
         raise LookupError(f"{spec.expectation_type} has no unexpected_index_list metric")
-    return validator.get_metric(metric)
+    return metric
+
+
+def _population_rows_batched(
+    validator: Any, specs: dict[int, CheckSpec], index_columns: list[str] | None
+) -> dict[int, Any]:
+    """Every pending check's population rows in ONE metric-graph resolution (#2107).
+
+    Resolved per check, each paid its own reflection, ``COUNT(*)`` and graph resolution — ~3 s a
+    check on Snowflake / UC for ~0.2 s of warehouse work. Together, GX dedupes the shared
+    dependencies and resolves the graph once.
+    """
+    metrics = {i: _population_metric(validator, spec, index_columns) for i, spec in specs.items()}
+    # Keyed by metric id: `get_metrics` re-keys by metric NAME, which two checks can share.
+    resolved, aborted = validator.compute_metrics(
+        list(metrics.values()), runtime_configuration=None, min_graph_edges_pbar_enable=0
+    )
+    if aborted:
+        raise RuntimeError(f"{len(aborted)} population metric(s) aborted")
+    return {i: resolved[metric.id] for i, metric in metrics.items()}
 
 
 def _batch_validator(batch_definition: Any, batch_parameters: dict[str, Any] | None) -> Any:
@@ -279,31 +299,48 @@ def _attach_population_signal(
     if not pending:
         return outcome
     updated = list(outcome.checks)
-    validator: Any = None
+    started = time.monotonic()
+    rows_by_check: dict[int, Any] = {}
+    failed: dict[int, str] = {}
+    try:
+        validator = _batch_validator(batch_definition, batch_parameters)
+        try:
+            rows_by_check = _population_rows_batched(
+                validator, {i: checks[i] for i in pending}, index_columns
+            )
+        except Exception:
+            # One check's metric must not cost every other check its summary: retry singly.
+            for i in pending:
+                try:
+                    rows_by_check.update(
+                        _population_rows_batched(validator, {i: checks[i]}, index_columns)
+                    )
+                except Exception as exc:
+                    failed[i] = type(exc).__name__
+    except Exception as exc:
+        failed = {i: type(exc).__name__ for i in pending}
+    duration_ms = int((time.monotonic() - started) * 1000)
     for i in pending:
         spec, check = checks[i], updated[i]
         assert check.sample_failures is not None  # narrowed by `_needs_population_signal`
-        started = time.monotonic()
-        try:
-            if validator is None:
-                validator = _batch_validator(batch_definition, batch_parameters)
-            rows = _population_rows(validator, spec, index_columns)
-            summary = _value_signal_summary_by_column(rows if isinstance(rows, list) else [])
-        except Exception as exc:
+        if i in failed:
             log.warning(
                 "gx_value_signal_sample_failed",
                 expectation_type=spec.expectation_type,
-                error_type=type(exc).__name__,
+                error_type=failed[i],
             )
             sample = {**check.sample_failures, VALUE_SIGNAL_STATUS_KEY: VALUE_SIGNAL_SAMPLE_FAILED}
         else:
+            rows = rows_by_check.get(i)
             log.info(
                 "gx_value_signal_sampled",
                 expectation_type=spec.expectation_type,
                 rows=len(rows) if isinstance(rows, list) else 0,
                 limit=_VALUE_SIGNAL_SUMMARY_ROW_CAP,
-                duration_ms=int((time.monotonic() - started) * 1000),
+                duration_ms=duration_ms,
+                checks_in_batch=len(pending),
             )
+            summary = _value_signal_summary_by_column(rows if isinstance(rows, list) else [])
             if not summary:
                 continue
             sample = {**check.sample_failures, VALUE_SIGNAL_SUMMARY_KEY: summary}
