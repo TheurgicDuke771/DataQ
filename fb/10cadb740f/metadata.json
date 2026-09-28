@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "fb10cadb740f",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-2128-dbt-adls-service-principal",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/orchestration/dbt.py",
+    "backend/tests/services/test_connection_service.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/fb/10cadb740f/0/metadata.json",
+      "transcript": "/fb/10cadb740f/0/full.jsonl",
+      "compact_transcript": "/fb/10cadb740f/0/transcript.jsonl",
+      "content_hash": "/fb/10cadb740f/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 14,
+    "cache_creation_tokens": 7730,
+    "cache_read_tokens": 3711282,
+    "output_tokens": 3920,
+    "api_call_count": 7
+  }
+}
