@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "35956bbfe7a7",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-2144-uc-arrow-read",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/datasources/unity_catalog.py",
+    "backend/tests/datasources/test_unity_catalog.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/35/956bbfe7a7/0/metadata.json",
+      "transcript": "/35/956bbfe7a7/0/full.jsonl",
+      "compact_transcript": "/35/956bbfe7a7/0/transcript.jsonl",
+      "content_hash": "/35/956bbfe7a7/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 14,
+    "cache_creation_tokens": 10157,
+    "cache_read_tokens": 2875615,
+    "output_tokens": 6537,
+    "api_call_count": 7
+  }
+}
