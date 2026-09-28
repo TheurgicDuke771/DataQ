@@ -748,7 +748,7 @@ def _add_exact_schema_table_asset(datasource: Any, *, table: str, schema: str) -
             except Exception as query_error:
                 # An error message, not a query.
                 raise TestConnectionError(
-                    f"Attempt to connect to table: {self.qualified_name} failed because the test "  # noqa: S608
+                    f"Attempt to connect to table: {self.qualified_name} failed because the test "  # noqa: S608  # nosec B608
                     "query failed. Ensure the table exists and the user has access to select "
                     f"data from the table: {query_error}"
                 ) from query_error
