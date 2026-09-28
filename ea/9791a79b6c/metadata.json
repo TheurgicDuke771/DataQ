@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "ea9791a79b6c",
+  "strategy": "manual-commit",
+  "branch": "perf/issue-2107-population-query",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/datasources/gx_runner.py",
+    "backend/tests/datasources/test_gx_sql_value_signal.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ea/9791a79b6c/0/metadata.json",
+      "transcript": "/ea/9791a79b6c/0/full.jsonl",
+      "compact_transcript": "/ea/9791a79b6c/0/transcript.jsonl",
+      "content_hash": "/ea/9791a79b6c/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 42,
+    "cache_creation_tokens": 29574,
+    "cache_read_tokens": 11091828,
+    "output_tokens": 19537,
+    "api_call_count": 21
+  }
+}
