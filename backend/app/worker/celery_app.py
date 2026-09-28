@@ -64,12 +64,28 @@ def _rediss_safe_url(url: str) -> str:
     return f"{url}{separator}ssl_cert_reqs=required"
 
 
+#: Beat's publishes ride out a broker gap of ~35 s instead of kombu's default ~0.6 s — the Redis
+#: refusals seen during an Azure roll lasted ~30 s (#2119). Beat only: it has no caller waiting,
+#: while a request-path publish (a webhook, run-now) must fail fast rather than hold a request
+#: thread and its database session through an outage.
+BEAT_PUBLISH_RETRY_POLICY: dict[str, float] = {
+    "max_retries": 10,
+    "interval_start": 0,
+    "interval_step": 1,
+    "interval_max": 5,
+}
+
+
 def create_celery_app() -> Celery:
     settings = get_settings()
     app = Celery(
         "dataq",
         broker=_rediss_safe_url(settings.redis_url),
-        backend=_rediss_safe_url(settings.redis_url),
+        # No result backend: nothing reads a task result — run, check and poll state live in
+        # Postgres. With one, every task wrote STARTED and its result to Redis and every
+        # `send_task` subscribed to the result before publishing, each one more round-trip that
+        # failed on its own during a Redis gap (#2119, "Exception raised outside body").
+        backend=None,
     )
     app.conf.update(
         task_serializer="json",
@@ -77,19 +93,7 @@ def create_celery_app() -> Celery:
         accept_content=["json"],
         timezone="UTC",
         enable_utc=True,
-        # No task result is ever read — run, check and poll state live in Postgres — so none is
-        # stored: a result or STARTED write was one more Redis round-trip per task that could fail
-        # on its own, as it did mid-roll on Azure (#2119, "Exception raised outside body").
         task_ignore_result=True,
-        # A publish (beat's schedule, the API's run trigger) rides out a broker gap of ~35 s
-        # instead of kombu's default ~0.6 s — the Redis refusals seen during an Azure roll
-        # lasted ~30 s (#2119). Each sleep grows by 1 s, capped at 5 s.
-        task_publish_retry_policy={
-            "max_retries": 10,
-            "interval_start": 0,
-            "interval_step": 1,
-            "interval_max": 5,
-        },
         # Fair dispatch-time interleaving, not a concurrency fix: a worker
         # consuming both queues fetches from "llm" and "celery" in round-robin
         # rather than draining "celery" strictly FIFO, so a QUEUED run_suite
@@ -215,6 +219,8 @@ def create_celery_app() -> Celery:
             },
         },
     )
+    for entry in app.conf.beat_schedule.values():
+        entry.setdefault("options", {})["retry_policy"] = BEAT_PUBLISH_RETRY_POLICY
     app.autodiscover_tasks(["backend.app.worker"])
     return app
 
@@ -281,7 +287,7 @@ def _dispatch_startup_tasks(**_kwargs: Any) -> None:
     log = get_logger(__name__)
     for name in _ON_BEAT_START:
         try:
-            celery_app.send_task(name)
+            celery_app.send_task(name, retry_policy=BEAT_PUBLISH_RETRY_POLICY)
         except Exception:  # pragma: no cover - defensive; startup must not fail on broker
             log.exception("startup_task_dispatch_failed", task=name)
 
