@@ -187,7 +187,47 @@ def test_a_unity_catalog_pushdown_suite_bypasses_admission(
     assert run_admission.estimate_run_memory(_sess(session), run) is None
 
 
-def test_a_unity_catalog_frame_suite_is_bounded_by_the_row_cap() -> None:
+def test_a_unity_catalog_frame_suite_reserves_the_frame_byte_cap() -> None:
+    # #2087: the runner refuses any frame estimated over this cap, width included, so it is the
+    # bound — rows x a flat per-row cost undercounts a wide table by 2x or more.
+    run, session = _graph(
+        "unity_catalog",
+        target={"catalog": "main", "schema": "gold", "table": "orders"},
+        expectation_types=("expect_column_values_to_be_of_type",),
+    )
+
+    estimate = run_admission.estimate_run_memory(_sess(session), run)
+
+    assert estimate is not None
+    assert estimate.basis == "uc_frame_byte_cap"
+    assert estimate.bytes == get_settings().run_max_frame_bytes
+
+
+def test_a_lowered_row_cap_keeps_a_small_unity_catalog_reservation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # An operator who lowered the row cap had small reservations that fit beside each other;
+    # reserving the whole frame cap would serialise every one of those runs.
+    monkeypatch.setenv("RUN_MAX_SCAN_ROWS", "100000")
+    get_settings.cache_clear()
+    run, session = _graph(
+        "unity_catalog",
+        target={"catalog": "main", "schema": "gold", "table": "orders"},
+        expectation_types=("expect_column_values_to_be_of_type",),
+    )
+
+    estimate = run_admission.estimate_run_memory(_sess(session), run)
+
+    assert estimate is not None
+    assert estimate.basis == "uc_frame_row_cap"
+    assert estimate.bytes == 100_000 * get_settings().run_admission_row_bytes
+
+
+def test_a_unity_catalog_frame_suite_falls_back_to_the_row_cap_without_a_frame_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RUN_MAX_FRAME_BYTES", "0")
+    get_settings.cache_clear()
     run, session = _graph(
         "unity_catalog",
         target={"catalog": "main", "schema": "gold", "table": "orders"},
@@ -200,6 +240,24 @@ def test_a_unity_catalog_frame_suite_is_bounded_by_the_row_cap() -> None:
     assert estimate.basis == "uc_frame_row_cap"
     settings = get_settings()
     assert estimate.bytes == settings.run_max_scan_rows * settings.run_admission_row_bytes
+
+
+def test_a_unity_catalog_frame_suite_with_no_cap_at_all_runs_alone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RUN_MAX_FRAME_BYTES", "0")
+    monkeypatch.setenv("RUN_MAX_SCAN_ROWS", "0")
+    get_settings.cache_clear()
+    run, session = _graph(
+        "unity_catalog",
+        target={"catalog": "main", "schema": "gold", "table": "orders"},
+        expectation_types=("expect_column_values_to_be_of_type",),
+    )
+
+    estimate = run_admission.estimate_run_memory(_sess(session), run)
+
+    assert estimate is not None
+    assert estimate.basis == "uc_frame_unbounded" and estimate.exclusive
 
 
 def test_an_over_cap_object_is_clamped_to_the_cap_it_will_be_refused_at(

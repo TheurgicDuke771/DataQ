@@ -30,6 +30,7 @@ from backend.app.datasources.monitors import (
 )
 from backend.app.datasources.sampling import (
     SamplingDrawError,
+    enforce_frame_cap,
     enforce_row_cap,
     enforce_sample_cap,
     sampling_record,
@@ -241,6 +242,50 @@ def _sample_percent(rows: int, total: int) -> float:
     return max(min(100.0, percent), _MIN_SAMPLE_PERCENT)
 
 
+#: Peak worker bytes per cell on the frame lane, by SQL type (#2087: 2 GiB rig, 400k-row views
+#: of samples.tpch). The read's per-cell Python objects dominate, not the final dtype — a
+#: DECIMAL lands as float64 yet costs twice an integer, so this keys on the SQL type.
+_BOOL_CELL_BYTES = 90
+_DATE_CELL_BYTES = 95
+_NUMBER_CELL_BYTES = 140
+_TIMESTAMP_CELL_BYTES = 150
+_DECIMAL_CELL_BYTES = 270
+#: Strings (and any type not listed above) scale with their length.
+_TEXT_CELL_BYTES = 130
+_TEXT_BYTES_PER_CHAR = 3
+_LENGTH_SAMPLE_ROWS = 1000
+
+
+def _fixed_cell_bytes(column_type: Any) -> int | None:
+    """The per-cell cost of a fixed-width SQL type, or ``None`` for a length-dependent one."""
+    from sqlalchemy import types
+
+    if isinstance(column_type, types.TypeDecorator):
+        column_type = column_type.impl_instance
+    if isinstance(column_type, types.Boolean):
+        return _BOOL_CELL_BYTES
+    if isinstance(column_type, types.DateTime):
+        return _TIMESTAMP_CELL_BYTES
+    if isinstance(column_type, types.Date):
+        return _DATE_CELL_BYTES
+    if isinstance(column_type, types.Float | types.Integer):
+        return _NUMBER_CELL_BYTES
+    if isinstance(column_type, types.Numeric):
+        return _DECIMAL_CELL_BYTES
+    return None
+
+
+def frame_row_bytes(column_types: dict[str, Any], mean_lengths: dict[str, float]) -> int:
+    """Estimated peak worker bytes per row of a frame-lane read (#2087)."""
+    total = 0
+    for name, column_type in column_types.items():
+        fixed = _fixed_cell_bytes(column_type)
+        if fixed is None:
+            fixed = _TEXT_CELL_BYTES + int(_TEXT_BYTES_PER_CHAR * mean_lengths.get(name, 0.0))
+        total += fixed
+    return total
+
+
 def format_sample_percent(percent: float) -> str:
     """Render ``percent`` as a fixed-point DECIMAL literal Databricks will parse."""
     return f"{percent:.{_SAMPLE_PERCENT_DECIMALS}f}"
@@ -312,6 +357,41 @@ class UnityCatalogCheckRunner:
                 conn.execute(select(func.count()).select_from(target)).scalar_one()
             )
 
+    def _probe_row_bytes(self, *, table: str, schema: str | None) -> int:
+        """Reflect the column types and sample text lengths — the width probe (live seam, #2087)."""
+        import pandas as pd
+        from sqlalchemy import inspect, text
+
+        engine = self._engine.get()
+        columns = {c["name"]: c["type"] for c in inspect(engine).get_columns(table, schema=schema)}
+        variable = [name for name, kind in columns.items() if _fixed_cell_bytes(kind) is None]
+        lengths: dict[str, float] = {}
+        if variable:
+            quote = engine.dialect.identifier_preparer.quote
+            qualified = qualified_sql_name(
+                table=table,
+                schema=schema,
+                catalog=self._catalog if schema else None,
+                dialect=engine.dialect,
+            )
+            # Column names come from reflection and are dialect-quoted; the limit is an `int`.
+            statement = (
+                f"SELECT {', '.join(quote(n) for n in variable)} "  # noqa: S608  # nosec B608
+                f"FROM {qualified} LIMIT {_LENGTH_SAMPLE_ROWS}"
+            )
+            head = pd.read_sql_query(text(statement), engine)
+            for name in variable:
+                values = head[name].dropna() if name in head else head.iloc[:0, 0]
+                lengths[name] = float(values.astype(str).str.len().mean()) if len(values) else 0.0
+        return frame_row_bytes(columns, lengths)
+
+    def _enforce_frame_cap(self, rows: int, *, table: str, schema: str | None) -> None:
+        cap = get_settings().run_max_frame_bytes
+        if cap <= 0:
+            return
+        row_bytes = self._probe_row_bytes(table=table, schema=schema)
+        enforce_frame_cap(rows, row_bytes=row_bytes, cap=cap, target=f"table {table!r}")
+
     def _read_sampled_table(
         self, *, table: str, schema: str | None, sample: SampleSpec
     ) -> tuple[Any, dict[str, Any]]:
@@ -373,12 +453,13 @@ class UnityCatalogCheckRunner:
         settings = get_settings()
         if self._sampling is not None:
             enforce_sample_cap(self._sampling, cap=settings.run_max_scan_rows)
+            self._enforce_frame_cap(self._sampling.rows, table=table, schema=schema)
             return self._read_sampled_table(table=table, schema=schema, sample=self._sampling)
         cap = settings.run_max_scan_rows
-        if cap > 0:
-            enforce_row_cap(
-                self._count_rows(table=table, schema=schema), cap=cap, target=f"table {table!r}"
-            )
+        if cap > 0 or settings.run_max_frame_bytes > 0:
+            rows = self._count_rows(table=table, schema=schema)
+            enforce_row_cap(rows, cap=cap, target=f"table {table!r}")
+            self._enforce_frame_cap(rows, table=table, schema=schema)
         return self._read_table(table=table, schema=schema), None
 
     def run_checks(
