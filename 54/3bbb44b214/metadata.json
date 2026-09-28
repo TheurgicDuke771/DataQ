@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "543bbb44b214",
+  "strategy": "manual-commit",
+  "branch": "docs/progress-2026-09-28-databricks-wave",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/54/3bbb44b214/0/metadata.json",
+      "transcript": "/54/3bbb44b214/0/full.jsonl",
+      "compact_transcript": "/54/3bbb44b214/0/transcript.jsonl",
+      "content_hash": "/54/3bbb44b214/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 10,
+    "cache_creation_tokens": 6908,
+    "cache_read_tokens": 3299617,
+    "output_tokens": 3237,
+    "api_call_count": 5
+  }
+}
