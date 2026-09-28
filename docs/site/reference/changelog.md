@@ -5,6 +5,18 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ## Unreleased
 
+### Added
+
+- **Python client and CLI (`dataq-client`).** `pip install dataq-client`, then
+  `dataq run <suite> --wait` gates a CI step on a suite's result with a documented exit code
+  (0 ok · 1 warn · 2 fail · 3 run error · 4 client error). The Python API keeps a run's
+  lifecycle and its worst severity as separate fields, and exposes every REST endpoint through
+  a layer generated from the API's own specification. See
+  [Python client & CLI](../guides/python-client.md).
+- **API compatibility policy.** What stays stable across upgrades for the REST API, MCP tools,
+  the suite export document and the Python client, and how a breaking change is announced. See
+  [API compatibility](api-compatibility.md).
+
 ### Fixed
 
 - **A batch-target preview no longer comes back empty just because signing in was slow.** The

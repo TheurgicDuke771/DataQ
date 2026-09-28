@@ -50,9 +50,11 @@ Task-shaped pages: each answers one "how do I…" question. If you are new, star
 
     ---
 
-    Personal access tokens for the REST API and MCP clients.
+    Personal access tokens for the REST API and MCP clients, and a Python client and CLI that
+    gates a CI step on a suite's result.
 
-    [:octicons-arrow-right-24: API keys](api-keys.md)
+    [:octicons-arrow-right-24: API keys](api-keys.md) ·
+    [:octicons-arrow-right-24: Python client & CLI](python-client.md)
 
 -   :material-shield-account:{ .lg .middle } **Run the workspace**
 
