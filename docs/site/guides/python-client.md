@@ -5,8 +5,9 @@ pipelines, notebooks and schedulers. Its most common use is gating a deploy on a
 result: trigger a suite, wait for it, and fail the pipeline step if a check failed.
 
 ```bash
-# A released version: the wheel attached to the DataQ release matching your server
-pip install https://github.com/TheurgicDuke771/DataQ/releases/download/v1.2.0/dataq_client-1.2.0-py3-none-any.whl
+# A released version: the wheel attached to the DataQ release matching your server's version
+VERSION=1.2.0   # your DataQ server's version
+pip install "https://github.com/TheurgicDuke771/DataQ/releases/download/v$VERSION/dataq_client-$VERSION-py3-none-any.whl"
 
 # The latest from main
 pip install "git+https://github.com/TheurgicDuke771/DataQ.git@main#subdirectory=packages/dataq-client"
@@ -15,8 +16,9 @@ pip install "git+https://github.com/TheurgicDuke771/DataQ.git@main#subdirectory=
 git clone https://github.com/TheurgicDuke771/DataQ.git && pip install -e DataQ/packages/dataq-client
 ```
 
-The client is not published to PyPI. Each DataQ release carries its wheel and sdist as release
-assets; install the one matching your server's version.
+The client is not published to PyPI. Each [DataQ release](https://github.com/TheurgicDuke771/DataQ/releases) from 1.2.0 on carries its wheel
+and sdist as release assets; install the one matching your server's version. Until your server's
+release carries one, install from `main`.
 
 It authenticates with a [personal access token](api-keys.md), which acts as the user who minted
 it, with the same workspace role and per-suite grants.
@@ -45,11 +47,12 @@ A GitHub Actions step:
 ```yaml
 - name: Data-quality gate
   run: |
-    pip install https://github.com/TheurgicDuke771/DataQ/releases/download/v1.2.0/dataq_client-1.2.0-py3-none-any.whl
+    pip install "https://github.com/TheurgicDuke771/DataQ/releases/download/v$DATAQ_VERSION/dataq_client-$DATAQ_VERSION-py3-none-any.whl"
     dataq run "$SUITE_ID" --wait
   env:
     DATAQ_URL: ${{ vars.DATAQ_URL }}
     DATAQ_PAT: ${{ secrets.DATAQ_PAT }}
+    DATAQ_VERSION: 1.2.0   # your server's version
     SUITE_ID: 7c1e…
 ```
 

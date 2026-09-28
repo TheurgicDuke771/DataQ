@@ -43,13 +43,16 @@ jobs:
         run: python -m build packages/dataq-client --outdir dist
 
       - name: Attach to the GitHub Release
-        # Creates the release when the tag has none yet (its notes can be edited afterwards);
-        # otherwise adds the files to the existing one. --clobber makes a re-run idempotent.
+        # Adds the files to the tag's release. When the tag has none yet, creates it as a DRAFT —
+        # nobody is notified of placeholder notes; the maintainer fills in the notes and publishes
+        # it (the release checklist). A create that loses a race with a hand-made release falls
+        # back to uploading to that one. --clobber makes a re-run idempotent.
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" \
-              --notes "Python client: install with \`pip install\` and the \`dataq_client-*.whl\` below."
+            gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "$GITHUB_REF_NAME" \
+              --notes "Draft: add the curated notes, then publish." \
+              || gh release view "$GITHUB_REF_NAME" >/dev/null
           fi
           gh release upload "$GITHUB_REF_NAME" dist/* --clobber
