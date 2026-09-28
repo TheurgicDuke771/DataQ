@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "3daf403166c9",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-2084-dmf-accepted-values",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/datasources/snowflake.py",
+    "backend/app/datasources/snowflake_dmf.py",
+    "backend/app/services/check_dimension.py",
+    "backend/app/services/check_service.py",
+    "backend/tests/datasources/test_catalog_gx_contract.py",
+    "backend/tests/datasources/test_snowflake_dmf.py",
+    "backend/tests/fixtures/expectation_catalog.json",
+    "docs/site/guides/datasources-checks.md",
+    "docs/site/reference/check-types.md",
+    "docs/site/reference/feature-matrix.md",
+    "frontend/src/components/checks/expectationCatalog.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/3d/af403166c9/0/metadata.json",
+      "transcript": "/3d/af403166c9/0/full.jsonl",
+      "compact_transcript": "/3d/af403166c9/0/transcript.jsonl",
+      "content_hash": "/3d/af403166c9/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 26,
+    "cache_creation_tokens": 21854,
+    "cache_read_tokens": 11658252,
+    "output_tokens": 16182,
+    "api_call_count": 13
+  }
+}
