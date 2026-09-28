@@ -774,3 +774,20 @@ User-approved. Needed to reach the harness Iceberg SQL catalog (`iceberg_catalog
 - The table was then purged and namespace `dataq_perf` dropped. The leftover (empty) `warehouse/dataq_perf` directory was deleted, and a re-check shows it gone. `retail` is the only namespace left.
 - **19:21:12Z** — rule `claude-perf-2088` deleted. The server's only remaining rule is `allow-azure-services`.
 - Credentials (`conn-iceberg-harness-dev-97324ba4` and `iceberg-catalog-password`) were read inline from Key Vault. They were never printed or written.
+
+## 2026-09-28 — Azure SQL free-offer test DB re-created for #2137 / #2138 / #2141
+
+User-approved (§1). Same shape as the #1679 server, which was torn down earlier today.
+
+- **20:28:43Z — logical server `dataq-mssql-8ea065`** (`dataq-rg`, westus2), TLS 1.2 minimum, tag `purpose=dataq-2137-it`.
+  - Entra admin: the owner account.
+  - SQL admin `dataqadmin`; its password was generated straight into KV `mssql-test-sqladmin` and never printed.
+- **Database `dataq_test`**: free offer (`useFreeLimit=true`, `AutoPause` on exhaustion), serverless GP_S_Gen5, local backup redundancy.
+  - **Collation `Latin1_General_100_CS_AS_SC_UTF8`** (case-sensitive), which #2137 needs.
+  - It cannot bill: it pauses when the monthly free allowance runs out.
+- **20:30:00Z — firewall rule `claude-maint-20260928b`**: the maintainer's IP only.
+- **Inside `dataq_test`:**
+  - contained SQL user `dataq_reader`, a `db_datareader` member; its password was generated straight into KV `mssql-test-reader`;
+  - seed tables `dbo.Orders` (the live battery's 4 rows) and `Sales.Orders` (3 rows, the mixed-case schema).
+- **Expected state:** the server and database exist and auto-pause at $0; both KV secrets exist; nothing in prod changed.
+- **Teardown when #2137/#2138 are done:** delete the database, the server and the firewall rule; purge both KV secrets.
