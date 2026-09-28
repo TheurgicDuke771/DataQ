@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "2e493a17c4f8",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2177-datetime64-spelling",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/core/jsonsafe.py",
+    "backend/tests/core/test_jsonsafe.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/2e/493a17c4f8/0/metadata.json",
+      "transcript": "/2e/493a17c4f8/0/full.jsonl",
+      "compact_transcript": "/2e/493a17c4f8/0/transcript.jsonl",
+      "content_hash": "/2e/493a17c4f8/0/content_hash.txt",
+      "prompt": "/2e/493a17c4f8/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 4,
+    "cache_creation_tokens": 3224,
+    "cache_read_tokens": 1594765,
+    "output_tokens": 2078,
+    "api_call_count": 2
+  }
+}
