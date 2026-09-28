@@ -1,0 +1,13 @@
+<task-notification>
+<task-id>bx5qvxt70</task-id>
+<summary>Monitor event: "Watch the RDS recovery status"</summary>
+<event>rds: configuring-enhanced-monitoring</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bx5qvxt70</task-id>
+<summary>Monitor event: "Watch the RDS recovery status"</summary>
+<event>[Monitor expired after 5m with 2 events delivered. Re-arm it if you still need the watch.]</event>
+</task-notification>
