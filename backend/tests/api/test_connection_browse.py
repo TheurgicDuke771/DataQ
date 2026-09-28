@@ -265,9 +265,9 @@ def test_browsing_the_wrong_kind_of_connection_is_422(
     fake_store_listing: dict[str, Any],
 ) -> None:
     actor, headers = as_role("member")
-    snowflake = _connection(db_session, actor, secret_store, "snowflake")
+    s3 = _connection(db_session, actor, secret_store, "s3")
     uc = _connection(db_session, actor, secret_store, "unity_catalog")
-    catalog = client.get(f"/api/v1/connections/{snowflake.id}/browse/catalog", headers=headers)
+    catalog = client.get(f"/api/v1/connections/{s3.id}/browse/catalog", headers=headers)
     files = client.get(f"/api/v1/connections/{uc.id}/browse/files", headers=headers)
     assert (catalog.status_code, files.status_code) == (422, 422)
     assert catalog.json()["error"]["code"] == "browse_unsupported"

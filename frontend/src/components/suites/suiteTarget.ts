@@ -81,11 +81,12 @@ export function isBatchTarget(target: Record<string, unknown> | null): boolean {
 }
 
 /**
- * `sql` datasources whose connection can be browsed schemas → tables (#466) — mirrors the
- * generic SQL half of the backend `browse_service.TABLE_BROWSE_TYPES` (a connection that pins
+ * `sql` datasources whose connection can be browsed schemas → tables — mirrors the
+ * schema-rooted half of the backend `browse_service.TABLE_BROWSE_TYPES` (a connection that pins
  * one database has no catalog level).
  */
 export const SCHEMA_BROWSE_TYPES: ReadonlySet<ConnectionType> = new Set([
+  'snowflake',
   'postgres',
   'mysql',
   'trino',

@@ -51,8 +51,8 @@ describe('sqlTargetPlaceholders', () => {
 });
 
 describe('SCHEMA_BROWSE_TYPES', () => {
-  it('offers the schema-rooted browser on the generic SQL engines only', () => {
-    expect([...SCHEMA_BROWSE_TYPES]).toEqual(['postgres', 'mysql', 'trino', 'mssql']);
+  it('offers the schema-rooted browser on Snowflake and the generic SQL engines', () => {
+    expect([...SCHEMA_BROWSE_TYPES]).toEqual(['snowflake', 'postgres', 'mysql', 'trino', 'mssql']);
   });
 });
 

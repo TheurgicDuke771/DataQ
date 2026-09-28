@@ -5085,16 +5085,15 @@ def test_browse_connection_refuses_the_other_kinds_arguments(
         server.browse_connection(str(tables.id), prefix="raw/")
 
 
-def test_browse_connection_says_a_snowflake_connection_is_unsupported(
+def test_browse_connection_says_an_orchestration_connection_is_unsupported(
     db_session: Any, monkeypatch: Any
 ) -> None:
     user = _user(db_session)
-    suite = _suite(db_session, user)
-    db_session.commit()
+    connection = _connection_of_type(db_session, user, "airflow", {})
     _as(monkeypatch, db_session, user)
 
-    with pytest.raises(ToolError, match="not supported for 'snowflake'"):
-        server.browse_connection(str(suite.connection_id))
+    with pytest.raises(ToolError, match="not supported for 'airflow'"):
+        server.browse_connection(str(connection.id))
 
 
 def test_browse_connection_relays_the_classified_failure_reason(
@@ -5124,9 +5123,8 @@ def test_browse_connection_says_unsupported_before_complaining_about_prefix(
     db_session: Any, monkeypatch: Any
 ) -> None:
     user = _user(db_session)
-    suite = _suite(db_session, user)
-    db_session.commit()
+    connection = _connection_of_type(db_session, user, "airflow", {})
     _as(monkeypatch, db_session, user)
 
-    with pytest.raises(ToolError, match="not supported for 'snowflake'"):
-        server.browse_connection(str(suite.connection_id), prefix="raw/")
+    with pytest.raises(ToolError, match="not supported for 'airflow'"):
+        server.browse_connection(str(connection.id), prefix="raw/")

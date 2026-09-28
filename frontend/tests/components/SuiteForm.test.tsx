@@ -979,11 +979,59 @@ describe('SuiteForm — browse pickers', () => {
     await waitFor(() => expect(screen.getByLabelText('Prefix (optional)')).toHaveValue('raw/'));
   });
 
-  it('offers no browser for a datasource it cannot list, keeping typed entry', async () => {
+  function schemaThenTable(schema: string, table: string) {
+    mockBrowseCatalog
+      .mockResolvedValueOnce({
+        level: 'schema',
+        catalog: null,
+        schema: null,
+        entries: [{ name: schema, selectable: true }],
+        truncated: false,
+        limit: 200,
+      })
+      .mockResolvedValueOnce({
+        level: 'table',
+        catalog: null,
+        schema,
+        entries: [{ name: table, selectable: true }],
+        truncated: false,
+        limit: 200,
+      });
+  }
+
+  it('browses a Snowflake connection schema-first into schema and table', async () => {
     const user = userEvent.setup();
+    schemaThenTable('RETAIL', 'ORDERS_HEADER');
     renderForm();
     await pickConnection(user, /sf-dev/);
-    expect(await screen.findByLabelText('Table')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Browse/ })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: /Browse schemas/ }));
+    await user.click(await screen.findByRole('button', { name: /RETAIL/ }));
+    await user.click(await screen.findByRole('button', { name: /ORDERS_HEADER/ }));
+
+    await waitFor(() => expect(screen.getByLabelText('Table')).toHaveValue('ORDERS_HEADER'));
+    expect(screen.getByLabelText('Schema (optional)')).toHaveValue('RETAIL');
+    expect(mockBrowseCatalog.mock.calls[0][0]).toBe(snowflakeConnection.id);
+  });
+
+  it('browses an Iceberg connection into namespace and table', async () => {
+    const user = userEvent.setup();
+    const iceberg: Connection = {
+      id: 'conn-ice',
+      name: 'ice-dev',
+      type: 'iceberg',
+      env: 'dev',
+      config: {},
+      has_secret: false,
+      created_by: 'u1',
+    };
+    schemaThenTable('retail', 'purchase_orders');
+    renderForm({ connections: [iceberg] });
+    await pickConnection(user, /ice-dev/);
+    await user.click(await screen.findByRole('button', { name: /Browse schemas/ }));
+    await user.click(await screen.findByRole('button', { name: /retail/ }));
+    await user.click(await screen.findByRole('button', { name: /purchase_orders/ }));
+
+    await waitFor(() => expect(screen.getByLabelText('Table')).toHaveValue('purchase_orders'));
+    expect(screen.getByLabelText('Namespace (optional)')).toHaveValue('retail');
   });
 });

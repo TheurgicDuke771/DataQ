@@ -338,6 +338,15 @@ export function TargetFields({
           {/* Iceberg addresses a table by `namespace.table` (no SQL schema). Put the
               namespace in its own field — don't also dot-qualify Table, or the two
               fold to `namespace.namespace.table`. */}
+          {connection && (
+            <CatalogBrowserButton
+              connectionId={connection.id}
+              root="schema"
+              onPick={({ schema, table }) =>
+                form.setFieldsValue({ target_namespace: schema, target_table: table })
+              }
+            />
+          )}
           <Form.Item name="target_namespace" label="Namespace (optional)">
             <Input placeholder="sales" />
           </Form.Item>

@@ -570,15 +570,15 @@ expectation can sit side by side, so the label is per check, not per run.
 ## Author a check
 
 1. Create (or open) a **suite** and point it at a **target** — a table (Snowflake/UC/PostgreSQL), a
-   file/path or batch pattern (ADLS/S3), or an Iceberg `namespace.table`. On Unity Catalog,
-   PostgreSQL, ADLS Gen2 and S3 you can **browse** for it instead of typing it — see below.
+   file/path or batch pattern (ADLS/S3), or an Iceberg `namespace.table`. On every datasource
+   you can **browse** for it instead of typing it — see below.
 2. **Add check** opens a dedicated page (`/suites/<id>/checks/new`): pick a **category**,
    then the check type, then fill its config. The authoring paths:
 
-### Browsing for a run target (Unity Catalog, PostgreSQL, MySQL, Trino, ADLS Gen2, S3)
+### Browsing for a run target
 
-The suite form offers a picker beside the target fields; typing the target still works
-everywhere, and is the only way on Snowflake and Iceberg.
+The suite form offers a picker beside the target fields on every datasource; typing the
+target still works everywhere.
 
 - **Unity Catalog — Browse catalog…** lists catalogs, then the chosen catalog's schemas,
   then that schema's tables; picking a table fills **Catalog**, **Schema** and **Table**.
@@ -591,7 +591,13 @@ everywhere, and is the only way on Snowflake and Iceberg.
   with. There is no catalog level: the connection pins one database. **MySQL / MariaDB**
   works the same way, its schemas being the databases the user has privileges on, and
   **Trino** inside the connection's catalog, listing what the cluster's access control
-  lets the user see.
+  lets the user see. **SQL Server / Azure SQL** likewise, inside the connection's database.
+- **Snowflake — Browse schemas…** lists the schemas of the connection's database, then a
+  schema's tables and views, from that database's `INFORMATION_SCHEMA` — already filtered
+  to what the connection's role can see.
+- **Iceberg — Browse schemas…** lists the catalog's top-level namespaces, then a namespace's
+  tables, and fills **Namespace** and **Table**. It reads catalog metadata only, never a data
+  file. Nested namespaces are not listed — type a nested one in.
 - **ADLS Gen2 / S3 — Browse files…** (single-file mode) walks the folders of the
   connection's one container or bucket and fills **File path** with the file you pick.
   **Browse folders…** (batch mode) fills **Prefix** with the folder you are in.
