@@ -466,3 +466,37 @@ def test_value_signal_summary_by_column_bounds_cpu_cost_on_a_huge_failing_popula
     rows: list[Any] = [{"col": f"v{i}@x.com"} for i in range(huge_row_count)]
     summary = _value_signal_summary_by_column(rows)
     assert summary["col"]["n"] == _VALUE_SIGNAL_SUMMARY_ROW_CAP  # bounded, not huge_row_count
+
+
+def test_a_pandas_run_never_hashes_the_whole_frame(monkeypatch: Any) -> None:
+    """GX's batch fingerprint hashes every column of the frame; a text column then costs ~13x its
+    size in the worker (#2149). The run must never compute it."""
+    import great_expectations as gx
+    import pandas as pd
+    from great_expectations.execution_engine import pandas_execution_engine
+
+    from backend.app.datasources.gx_runner import run_expectations
+
+    def _refuse(df: Any) -> str:
+        raise AssertionError("the whole frame was hashed")
+
+    monkeypatch.setattr(pandas_execution_engine, "hash_pandas_dataframe", _refuse)
+    frame = pd.DataFrame({"id": [1, 2, 3], "note": ["a", "b", None]})
+    context = gx.get_context(mode="ephemeral")
+    batch_definition = (
+        context.data_sources.add_pandas(name="p")
+        .add_dataframe_asset(name="t")
+        .add_batch_definition_whole_dataframe(name="w")
+    )
+    outcome = run_expectations(
+        context,
+        batch_definition=batch_definition,
+        checks=[
+            CheckSpec(
+                expectation_type="expect_column_values_to_not_be_null", kwargs={"column": "id"}
+            )
+        ],
+        name="s",
+        batch_parameters={"dataframe": frame},
+    )
+    assert outcome.success is True

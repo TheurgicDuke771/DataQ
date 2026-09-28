@@ -243,16 +243,16 @@ def _sample_percent(rows: int, total: int) -> float:
     return max(min(100.0, percent), _MIN_SAMPLE_PERCENT)
 
 
-#: Peak worker bytes per cell on the frame lane's Arrow read (#2144: 2 GiB rig, 400k-row views of
-#: samples.tpch, the whole GX run included). Every fixed-width type measured 31-38 B/cell and
-#: booleans 13, so one figure each covers them. Strings scale with length but not linearly — a
-#: unique 49-char column peaked at ~720 B/cell — so the text cost is an envelope over every
-#: measured table, never under, up to ~5x over for very long text.
-_BOOL_CELL_BYTES = 15
-_FIXED_CELL_BYTES = 45
+#: Peak worker bytes per cell on the frame lane's Arrow read (#2144, recalibrated in #2149 once GX
+#: stopped hashing the whole frame): 2 GiB rig, 400k-row views of samples.tpch, the whole GX run
+#: included. Fixed-width types measured 29-37 B/cell, DECIMAL 55 (its float cast), booleans 11.
+#: Text is an envelope over every measured shape, 1.1-1.6x the measurement and never under.
+_BOOL_CELL_BYTES = 14
+_FIXED_CELL_BYTES = 44
+_DECIMAL_CELL_BYTES = 62
 #: Strings (and any type not listed above) scale with their length.
-_TEXT_CELL_BYTES = 60
-_TEXT_BYTES_PER_CHAR = 14
+_TEXT_CELL_BYTES = 42
+_TEXT_BYTES_PER_CHAR = 3
 _LENGTH_SAMPLE_ROWS = 1000
 
 
@@ -266,10 +266,11 @@ def _fixed_cell_bytes(arrow_type: Any) -> int | None:
 
     if pa.types.is_boolean(arrow_type):
         return _BOOL_CELL_BYTES
+    if pa.types.is_decimal(arrow_type):
+        return _DECIMAL_CELL_BYTES
     if (
         pa.types.is_integer(arrow_type)
         or pa.types.is_floating(arrow_type)
-        or pa.types.is_decimal(arrow_type)
         or pa.types.is_temporal(arrow_type)
     ):
         return _FIXED_CELL_BYTES
