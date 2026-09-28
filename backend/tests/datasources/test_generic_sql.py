@@ -445,9 +445,10 @@ def test_a_failed_run_also_logs_no_false_pool_errors(
             pass
 
     sources: list[Any] = []
+    real = generic_sql.GxConnectionSource
 
     def _recording(*_: Any, **__: Any) -> Any:
-        source = generic_sql.GxConnectionSource.__new__(generic_sql.GxConnectionSource)
+        source = real.__new__(real)
         source._source = _Source()
         source._opened = []
         sources.append(source)
