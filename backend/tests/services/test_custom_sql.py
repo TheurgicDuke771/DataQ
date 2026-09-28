@@ -467,6 +467,9 @@ def test_tsql_runs_unseparated_statements_so_each_write_keyword_is_refused(state
         ("SELECT a FROM (SELECT a FROM t ORDER BY a OFFSET 0 ROWS) AS x", False),
         ("SELECT 'order by' AS x FROM t", False),  # inside a literal
         ("SELECT [order by] FROM t", False),  # a delimited identifier
+        # Names that merely contain a keyword are not the keyword (review).
+        ("SELECT top10_customer, amount FROM t ORDER BY amount", True),
+        ("SELECT offset2 FROM t ORDER BY offset2", True),
     ],
 )
 def test_a_top_level_order_by_gains_offset_only_where_t_sql_needs_it(

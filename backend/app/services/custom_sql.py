@@ -258,6 +258,10 @@ def validate_custom_sql_check(
     validate_query(config.get(QUERY_KEY), connection_type=connection_type)
 
 
+#: A whole T-SQL name or keyword — `top10_customer` is one word, never the keyword `top`.
+_TSQL_WORD = re.compile(r"[A-Za-z_@#][A-Za-z0-9_@#$]*")
+
+
 def tsql_derived_table_query(query: str) -> str:
     """``query`` made legal as a T-SQL derived table, which refuses a top-level ``ORDER BY``
     unless ``TOP`` or ``OFFSET`` accompanies it (Msg 1033). ``OFFSET 0 ROWS`` keeps every row, so
@@ -272,7 +276,7 @@ def tsql_derived_table_query(query: str) -> str:
         elif char == ")":
             depth -= 1
         top_level.append(char if depth == 0 and char not in "()" else " ")
-    words = _WORD.findall("".join(top_level))
+    words = _TSQL_WORD.findall("".join(top_level))
     orders = [i for i in range(len(words) - 1) if words[i] == "order" and words[i + 1] == "by"]
     if not orders or "top" in words or "offset" in words[orders[-1] :]:
         return query
