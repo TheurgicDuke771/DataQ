@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "5ebdc68876cc",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2087-uc-frame-width-aware",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "backend/app/services/run_admission.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/5e/bdc68876cc/0/metadata.json",
+      "transcript": "/5e/bdc68876cc/0/full.jsonl",
+      "compact_transcript": "/5e/bdc68876cc/0/transcript.jsonl",
+      "content_hash": "/5e/bdc68876cc/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 10,
+    "cache_creation_tokens": 6273,
+    "cache_read_tokens": 1673191,
+    "output_tokens": 4278,
+    "api_call_count": 5
+  }
+}
