@@ -751,3 +751,16 @@ Created in AWS account `251783195294` for the Redshift adapter's live battery. C
   - delete workgroup `dataq-it-rs`, then namespace `dataq-it-rs` (which removes the managed admin secret and every database object);
   - delete the secret `dataq/it/redshift-reader` with force-delete;
   - revoke the port 5439 rule on `sg-0c047e1aaf5c17416`.
+
+## 2026-09-29 — Athena (#2131) and Redshift (#1682) live-test resources torn down (us-east-2)
+
+User-approved. Run as `dataq-deploy` in account `251783195294`.
+
+- **Redshift:** workgroup `dataq-it-rs` deleted, then namespace `dataq-it-rs`. This also removed the managed admin secret, every database object, and the workgroup's VPC endpoint `vpce-0da22446686b12238`, which now reads `deleted`. Secret `dataq/it/redshift-reader` was force-deleted.
+- **Network:** the TCP 5439 rule for `103.171.246.179/32` was revoked on `sg-0c047e1aaf5c17416`.
+- **Athena:**
+  - IAM user `dataq-athena-it-reader` deleted: its access key, then inline policy `athena-read`, then the user. It had no attached policies.
+  - Secret `dataq/it/athena-reader` force-deleted.
+  - Glue database `dataq_athena_it` deleted (it had 0 tables); no `dq_athena_*` databases remain.
+  - `athena-results/` and `athena-data/` emptied in `dataq-landing-251783195294`, 0 objects left.
+- **Verified:** `list-secrets` shows no `dataq/it/*` and no `dataq-it-rs` secret. Both Redshift resources return not-found.
