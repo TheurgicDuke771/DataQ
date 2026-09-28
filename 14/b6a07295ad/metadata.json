@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "14b6a07295ad",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2141-gx-pool-double-close",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/datasources/test_generic_sql.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/14/b6a07295ad/0/metadata.json",
+      "transcript": "/14/b6a07295ad/0/full.jsonl",
+      "compact_transcript": "/14/b6a07295ad/0/transcript.jsonl",
+      "content_hash": "/14/b6a07295ad/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 4,
+    "cache_creation_tokens": 1319,
+    "cache_read_tokens": 1421095,
+    "output_tokens": 1498,
+    "api_call_count": 2
+  }
+}
