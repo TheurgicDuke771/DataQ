@@ -1,0 +1,15 @@
+<task-notification>
+<task-id>bxf7ni99v</task-id>
+<summary>Monitor event: "Wait for all 15 rig views"</summary>
+<event>[Monitor expired after 5m with no events delivered. Re-arm it if you still need the watch — and widen the filter if silence was unexpected.]</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>boy8a2pyk</task-id>
+<tool-use-id>toolu_01YY1bmtRF4ucGYiF4SJRMZ8</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c8e07205-7981-4a86-8a4f-c8093d46e726/tasks/boy8a2pyk.output</output-file>
+<status>completed</status>
+<summary>Background command "Run the live rig across all views" completed (exit code 0)</summary>
+</task-notification>

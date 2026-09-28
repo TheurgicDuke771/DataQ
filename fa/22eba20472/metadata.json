@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "fa22eba20472",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2149-gx-frame-fingerprint",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/datasources/gx_metrics.py",
+    "backend/app/datasources/unity_catalog.py",
+    "backend/tests/datasources/test_gx_runner.py",
+    "backend/tests/datasources/test_unity_catalog.py",
+    "docs/site/architecture/perf-baseline.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/fa/22eba20472/0/metadata.json",
+      "transcript": "/fa/22eba20472/0/full.jsonl",
+      "compact_transcript": "/fa/22eba20472/0/transcript.jsonl",
+      "content_hash": "/fa/22eba20472/0/content_hash.txt",
+      "prompt": "/fa/22eba20472/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 102,
+    "cache_creation_tokens": 69635,
+    "cache_read_tokens": 23861074,
+    "output_tokens": 40019,
+    "api_call_count": 51
+  }
+}
