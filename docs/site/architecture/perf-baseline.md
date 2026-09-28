@@ -1235,10 +1235,11 @@ Secrets are read from the environment at run time only; a skip reason names the
 variable that is missing and never its value, and a test asserts no configured
 secret reaches an emitted row.
 
-The Snowflake, Unity Catalog and warehouse-profiler rows are now in the committed
-`baseline.json`, so `check --tag warehouse` against a configured warehouse gates
-their `statements` and `checks_evaluated` rather than leaving a regression to be
-re-measured by hand. Only the live Iceberg tier still emits `not_measured`.
+The Snowflake, Unity Catalog, Iceberg and warehouse-profiler rows are all in the
+committed `baseline.json`, so `check --tag warehouse` against a configured
+warehouse gates their `statements` and `checks_evaluated` rather than leaving a
+regression to be re-measured by hand. No live warehouse tier emits `not_measured`
+any more.
 
 ### The Iceberg memory curve — local, and run under the real limit
 
