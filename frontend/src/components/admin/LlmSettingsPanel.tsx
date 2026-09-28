@@ -15,6 +15,8 @@ import {
 } from 'antd';
 import { useState } from 'react';
 
+import { connectionOptionLabel, listConnections } from '../../api/connections';
+
 import {
   getLlmConfig,
   testLlmConfig,
@@ -33,7 +35,10 @@ import { formatTimestamp } from '../results/resultsFormat';
 const PROVIDER_OPTIONS: { value: LlmProvider; label: string }[] = [
   { value: 'anthropic', label: 'Anthropic' },
   { value: 'openai_compatible', label: 'OpenAI-compatible endpoint' },
+  { value: 'snowflake_cortex', label: 'Snowflake Cortex (via a connection)' },
 ];
+
+const listSnowflakeConnections = () => listConnections({ type: 'snowflake' });
 
 const STRUCTURED_OUTPUT_OPTIONS: { value: StructuredOutputMode; label: string }[] = [
   { value: 'native', label: 'Native structured output' },
@@ -78,7 +83,7 @@ export function LlmSettingsPanel() {
         <LlmForm
           // Remount on a saved config change so the form re-seeds from the loaded
           // values (render-phase reset, no setState-in-effect).
-          key={`${state.data.provider}:${state.data.model}:${state.data.base_url}:${state.data.structured_output}:${state.data.enabled}:${state.data.has_credential}`}
+          key={`${state.data.provider}:${state.data.model}:${state.data.base_url}:${state.data.structured_output}:${state.data.enabled}:${state.data.has_credential}:${state.data.connection_id}`}
           config={state.data}
           onChanged={reload}
         />
@@ -99,21 +104,37 @@ function LlmForm({ config, onChanged }: { config: LlmConfig; onChanged: () => vo
     config.structured_output ?? 'native',
   );
   const [enabled, setEnabled] = useState(config.enabled);
+  const [connectionId, setConnectionId] = useState<string | undefined>(
+    config.connection_id ?? undefined,
+  );
   const [apiKeyError, setApiKeyError] = useState<string>();
   const [saving, setSaving] = useState(false);
   const [testState, setTestState] = useState<TestState>('idle');
   const [testResult, setTestResult] = useState<LlmTestResult>();
 
   const baseUrlRequired = provider === 'openai_compatible';
+  const cortex = provider === 'snowflake_cortex';
+  // A saved Cortex config's credential is its connection — no API key is stored.
+  const savedCortex = config.provider === 'snowflake_cortex';
+  const keyStored = config.has_credential && !savedCortex;
 
-  const buildPayload = (): LlmConfigUpdate => ({
-    provider,
-    model: model.trim(),
-    base_url: baseUrl.trim() || undefined,
-    api_key: apiKey || undefined,
-    structured_output: structuredOutput,
-    enabled,
-  });
+  const buildPayload = (): LlmConfigUpdate =>
+    cortex
+      ? {
+          provider,
+          model: model.trim(),
+          connection_id: connectionId,
+          structured_output: structuredOutput,
+          enabled,
+        }
+      : {
+          provider,
+          model: model.trim(),
+          base_url: baseUrl.trim() || undefined,
+          api_key: apiKey || undefined,
+          structured_output: structuredOutput,
+          enabled,
+        };
 
   // Both Save and Test can hit the same 422 — a provider/endpoint change needs the
   // key re-supplied — so the field-level handling is shared.
@@ -127,6 +148,11 @@ function LlmForm({ config, onChanged }: { config: LlmConfig; onChanged: () => vo
   };
 
   const onSave = async () => {
+    if (cortex && !connectionId) {
+      setApiKeyError(undefined);
+      message.error('Choose the Snowflake connection Cortex runs under');
+      return;
+    }
     if (baseUrlRequired && !baseUrl.trim()) {
       setApiKeyError(undefined);
       message.error('Base URL is required for an OpenAI-compatible endpoint');
@@ -176,12 +202,18 @@ function LlmForm({ config, onChanged }: { config: LlmConfig; onChanged: () => vo
         <Tooltip
           title={
             config.has_credential
-              ? 'A key is stored, but this does not confirm it still resolves — press Test to check.'
+              ? savedCortex
+                ? "Runs on the connection's own credential — no API key is stored. Press Test to check it."
+                : 'A key is stored, but this does not confirm it still resolves — press Test to check.'
               : undefined
           }
         >
           <Tag color={config.has_credential ? 'success' : 'default'}>
-            {config.has_credential ? 'Credential set' : 'No credential'}
+            {!config.has_credential
+              ? 'No credential'
+              : savedCortex
+                ? 'Connection set'
+                : 'Credential set'}
           </Tag>
         </Tooltip>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -205,52 +237,63 @@ function LlmForm({ config, onChanged }: { config: LlmConfig; onChanged: () => vo
         <Input
           value={model}
           onChange={(e) => setModel(e.target.value)}
-          placeholder="e.g. claude-sonnet-4-5-20250929"
+          placeholder={cortex ? 'e.g. llama3.1-70b' : 'e.g. claude-sonnet-4-5-20250929'}
           aria-label="Model"
           style={{ maxWidth: 480 }}
         />
       </Flex>
 
-      <Flex vertical gap={4}>
-        <Typography.Text type="secondary">
-          {baseUrlRequired ? 'Base URL' : 'Base URL (advanced override)'}
-        </Typography.Text>
-        <Input
-          value={baseUrl}
-          onChange={(e) => setBaseUrl(e.target.value)}
-          placeholder={
-            baseUrlRequired ? 'https://…/v1' : 'Leave blank for the default Anthropic endpoint'
-          }
-          aria-label="Base URL"
-          style={{ maxWidth: 480 }}
-        />
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          Azure OpenAI: use its <code>/openai/v1</code> base path. Ollama: use{' '}
-          <code>http://host:11434/v1</code>.
-        </Typography.Text>
-      </Flex>
+      {cortex ? (
+        <CortexConnectionField value={connectionId} onChange={setConnectionId} />
+      ) : (
+        <>
+          <Flex vertical gap={4}>
+            <Typography.Text type="secondary">
+              {baseUrlRequired ? 'Base URL' : 'Base URL (advanced override)'}
+            </Typography.Text>
+            <Input
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder={
+                baseUrlRequired ? 'https://…/v1' : 'Leave blank for the default Anthropic endpoint'
+              }
+              aria-label="Base URL"
+              style={{ maxWidth: 480 }}
+            />
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              Azure OpenAI: use its <code>/openai/v1</code> base path. Ollama: use{' '}
+              <code>http://host:11434/v1</code>.
+            </Typography.Text>
+          </Flex>
 
-      <Flex vertical gap={4}>
-        <Typography.Text type="secondary">API key</Typography.Text>
-        <Input.Password
-          value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
-          autoComplete="off"
-          placeholder={config.has_credential ? 'Stored — leave blank to keep' : 'API key'}
-          aria-label="API key"
-          status={apiKeyError ? 'error' : undefined}
-          style={{ maxWidth: 480 }}
-        />
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          Changing provider or endpoint requires re-entering the key — the stored one is never
-          forwarded to a new destination.
+          <Flex vertical gap={4}>
+            <Typography.Text type="secondary">API key</Typography.Text>
+            <Input.Password
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              autoComplete="off"
+              placeholder={keyStored ? 'Stored — leave blank to keep' : 'API key'}
+              aria-label="API key"
+              status={apiKeyError ? 'error' : undefined}
+              style={{ maxWidth: 480 }}
+            />
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              Changing provider or endpoint requires re-entering the key — the stored one is never
+              forwarded to a new destination.
+            </Typography.Text>
+            {apiKeyError && (
+              <Typography.Text type="danger" style={{ fontSize: 12 }}>
+                {apiKeyError}
+              </Typography.Text>
+            )}
+          </Flex>
+        </>
+      )}
+      {cortex && apiKeyError && (
+        <Typography.Text type="danger" style={{ fontSize: 12 }}>
+          {apiKeyError}
         </Typography.Text>
-        {apiKeyError && (
-          <Typography.Text type="danger" style={{ fontSize: 12 }}>
-            {apiKeyError}
-          </Typography.Text>
-        )}
-      </Flex>
+      )}
 
       <Flex vertical gap={4}>
         <Typography.Text type="secondary">Structured output</Typography.Text>
@@ -301,6 +344,46 @@ function LlmForm({ config, onChanged }: { config: LlmConfig; onChanged: () => vo
           />
         )}
       </Flex>
+    </Flex>
+  );
+}
+
+/** The Snowflake connection a Cortex provider runs `CORTEX.COMPLETE` under — its credential is
+ *  the provider's credential, so no API key is entered. */
+function CortexConnectionField({
+  value,
+  onChange,
+}: {
+  value: string | undefined;
+  onChange: (id: string) => void;
+}) {
+  const { state } = useAsyncData(listSnowflakeConnections);
+  return (
+    <Flex vertical gap={4}>
+      <Typography.Text type="secondary">Snowflake connection</Typography.Text>
+      <Select<string>
+        value={value}
+        onChange={onChange}
+        loading={state.status === 'loading'}
+        placeholder="Choose a Snowflake connection"
+        options={
+          state.status === 'ok'
+            ? state.data.map((c) => ({ value: c.id, label: connectionOptionLabel(c) }))
+            : []
+        }
+        notFoundContent={state.status === 'ok' ? 'No Snowflake connections' : undefined}
+        style={{ maxWidth: 480 }}
+        aria-label="Snowflake connection"
+      />
+      {state.status === 'error' && (
+        <Typography.Text type="danger" style={{ fontSize: 12 }}>
+          Failed to load connections: {state.error}
+        </Typography.Text>
+      )}
+      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        The model runs inside that Snowflake account under the connection&apos;s role, which needs
+        the <code>SNOWFLAKE.CORTEX_USER</code> database role. No API key is stored.
+      </Typography.Text>
     </Flex>
   );
 }

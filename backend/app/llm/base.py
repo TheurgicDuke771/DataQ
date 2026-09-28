@@ -155,3 +155,55 @@ def repair_prompt(schema: dict[str, Any], error: str) -> str:
         f"Your previous response was not valid against the schema ({error}). "
         "Respond again with ONLY the corrected JSON object.\n" + prompt_json_instructions(schema)
     )
+
+
+def _sum_tokens(first: int | None, second: int | None) -> int | None:
+    if first is None and second is None:
+        return None
+    return (first or 0) + (second or 0)
+
+
+def complete_with_prompt_json(
+    provider: LLMProvider,
+    prompt: str,
+    *,
+    schema: dict[str, Any],
+    system: str | None,
+    max_tokens: int,
+    timeout: float,
+) -> LLMResult:
+    """Structured output by instruction: ask for the JSON, validate, repair once."""
+    first = provider.complete(
+        f"{prompt}\n\n{prompt_json_instructions(schema)}",
+        system=system,
+        max_tokens=max_tokens,
+        timeout=timeout,
+    )
+    try:
+        parsed = extract_json_object(first.text)
+        validate_against_schema(parsed, schema)
+    except LLMOutputInvalidError as exc:
+        second = provider.complete(
+            repair_prompt(schema, str(exc)),
+            system=system,
+            max_tokens=max_tokens,
+            timeout=timeout,
+        )
+        parsed = extract_json_object(second.text)
+        validate_against_schema(parsed, schema)
+        # Token counts SUM both rounds — this feeds the cost record, and the
+        # repair path spent two paid calls, not one.
+        return LLMResult(
+            text=second.text,
+            input_tokens=_sum_tokens(first.input_tokens, second.input_tokens),
+            output_tokens=_sum_tokens(first.output_tokens, second.output_tokens),
+            parsed=parsed,
+            raw=second.raw,
+        )
+    return LLMResult(
+        text=first.text,
+        input_tokens=first.input_tokens,
+        output_tokens=first.output_tokens,
+        parsed=parsed,
+        raw=first.raw,
+    )

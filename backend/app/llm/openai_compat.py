@@ -22,12 +22,6 @@ from backend.app.llm.base import (
 _CONNECT_TIMEOUT_SECONDS = 10.0
 
 
-def _sum_tokens(first: int | None, second: int | None) -> int | None:
-    if first is None and second is None:
-        return None
-    return (first or 0) + (second or 0)
-
-
 def _content_text(content: Any, *, finish_reason: Any = None) -> str:
     """The answer text of ``message.content``: a string, or a list of typed parts.
 
@@ -173,50 +167,6 @@ class OpenAICompatProvider:
                 parsed=parsed,
                 raw=result.raw,
             )
-        return self._prompt_json(
-            prompt, schema=schema, system=system, max_tokens=max_tokens, timeout=timeout
-        )
-
-    def _prompt_json(
-        self,
-        prompt: str,
-        *,
-        schema: dict[str, Any],
-        system: str | None,
-        max_tokens: int,
-        timeout: float,
-    ) -> LLMResult:
-        first = self.complete(
-            f"{prompt}\n\n{base.prompt_json_instructions(schema)}",
-            system=system,
-            max_tokens=max_tokens,
-            timeout=timeout,
-        )
-        try:
-            parsed = base.extract_json_object(first.text)
-            base.validate_against_schema(parsed, schema)
-        except LLMOutputInvalidError as exc:
-            second = self.complete(
-                base.repair_prompt(schema, str(exc)),
-                system=system,
-                max_tokens=max_tokens,
-                timeout=timeout,
-            )
-            parsed = base.extract_json_object(second.text)
-            base.validate_against_schema(parsed, schema)
-            # Token counts SUM both rounds — this feeds the cost record, and the
-            # repair path spent two paid calls, not one.
-            return LLMResult(
-                text=second.text,
-                input_tokens=_sum_tokens(first.input_tokens, second.input_tokens),
-                output_tokens=_sum_tokens(first.output_tokens, second.output_tokens),
-                parsed=parsed,
-                raw=second.raw,
-            )
-        return LLMResult(
-            text=first.text,
-            input_tokens=first.input_tokens,
-            output_tokens=first.output_tokens,
-            parsed=parsed,
-            raw=first.raw,
+        return base.complete_with_prompt_json(
+            self, prompt, schema=schema, system=system, max_tokens=max_tokens, timeout=timeout
         )

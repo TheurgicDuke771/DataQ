@@ -179,6 +179,45 @@ def test_posture_llm_row_flips_with_config(client: TestClient) -> None:
     assert "qwen2.5:3b" in after["detail"]
 
 
+def test_cortex_round_trip_reports_its_connection_and_in_warehouse_posture(
+    client: TestClient, db_session: Any
+) -> None:
+    from backend.app.db.models import Connection
+
+    owner = User(id=uuid.uuid4(), email=f"sf-{uuid.uuid4().hex[:6]}@example.com", role="admin")
+    conn = Connection(
+        id=uuid.uuid4(),
+        name="sf",
+        type="snowflake",
+        env="dev",
+        config={"account": "a", "user": "u", "warehouse": "W", "database": "D"},
+        secret_ref="conn-sf",
+        created_by=owner.id,
+    )
+    db_session.add(owner)
+    db_session.flush()
+    db_session.add(conn)
+    db_session.commit()
+    body = {
+        "provider": "snowflake_cortex",
+        "model": "llama3.1-70b",
+        "connection_id": str(conn.id),
+        "structured_output": "native",
+    }
+
+    resp = client.put("/api/v1/admin/llm", json=body)
+    assert resp.status_code == 200, resp.text
+    read = client.get("/api/v1/admin/llm").json()
+    assert (read["provider"], read["connection_id"], read["has_credential"]) == (
+        "snowflake_cortex",
+        str(conn.id),
+        True,
+    )
+    transfers = client.get("/api/v1/admin/deployment").json()["external_transfers"]
+    detail = next(t for t in transfers if t["name"] == "llm_intelligence")["detail"]
+    assert "Snowflake Cortex" in detail and "cross-region" in detail
+
+
 # ── invocation read surface ──────────────────────────────────────────────────
 
 

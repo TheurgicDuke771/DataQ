@@ -238,6 +238,7 @@ _LLM_SETTING_FIELDS: Final[tuple[str, ...]] = (
     "structured_output",
     "enabled",
     "api_key_secret_ref",
+    "connection_id",
 )
 
 _PRIVACY_SETTING_FIELDS: Final[tuple[str, ...]] = ("id", "zero_sample_mode", "updated_by")

@@ -4,9 +4,15 @@ import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosHeaders } from 'axios';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { connectionOptionLabel, listConnections, type Connection } from '../../src/api/connections';
 import { getLlmConfig, testLlmConfig, updateLlmConfig, type LlmConfig } from '../../src/api/llm';
 import { LlmSettingsPanel } from '../../src/components/admin/LlmSettingsPanel';
 import { selectOption } from '../support/antd';
+
+vi.mock('../../src/api/connections', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/api/connections')>()),
+  listConnections: vi.fn(),
+}));
 
 vi.mock('../../src/api/llm', () => ({
   getLlmConfig: vi.fn(),
@@ -15,6 +21,7 @@ vi.mock('../../src/api/llm', () => ({
 }));
 
 const mockGet = vi.mocked(getLlmConfig);
+const mockListConnections = vi.mocked(listConnections);
 const mockUpdate = vi.mocked(updateLlmConfig);
 const mockTest = vi.mocked(testLlmConfig);
 
@@ -26,6 +33,7 @@ const UNCONFIGURED: LlmConfig = {
   structured_output: null,
   enabled: false,
   has_credential: false,
+  connection_id: null,
   updated_at: null,
 };
 
@@ -37,6 +45,7 @@ const CONFIGURED: LlmConfig = {
   structured_output: 'native',
   enabled: true,
   has_credential: true,
+  connection_id: null,
   updated_at: '2026-08-29T10:00:00Z',
 };
 
@@ -192,5 +201,60 @@ describe('LlmSettingsPanel', () => {
     expect(
       await screen.findByText('Re-enter the API key to change provider or base_url'),
     ).toBeInTheDocument();
+  });
+
+  it('Cortex — picks a Snowflake connection instead of a key and sends only that', async () => {
+    mockGet.mockResolvedValue(CONFIGURED);
+    mockUpdate.mockResolvedValue(CONFIGURED);
+    const retail: Connection = {
+      id: 'sf-1',
+      name: 'retail',
+      type: 'snowflake',
+      env: 'dev',
+      config: {},
+      has_secret: true,
+      created_by: 'u1',
+    };
+    mockListConnections.mockResolvedValue([retail]);
+    renderPanel();
+    await screen.findByText('Configured');
+
+    const user = userEvent.setup();
+    await selectOption(user, 'Snowflake Cortex (via a connection)');
+    expect(screen.queryByLabelText('API key')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Base URL')).not.toBeInTheDocument();
+    expect(mockListConnections).toHaveBeenCalledWith({ type: 'snowflake' });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(mockUpdate).not.toHaveBeenCalled(); // no connection chosen yet
+
+    await selectOption(user, connectionOptionLabel(retail), { index: 1 });
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+    expect(mockUpdate.mock.calls[0][0]).toEqual({
+      provider: 'snowflake_cortex',
+      model: 'claude-sonnet-4-5-20250929',
+      connection_id: 'sf-1',
+      structured_output: 'native',
+      enabled: true,
+    });
+  });
+
+  it('a saved Cortex config never claims a stored API key when switching to a key provider', async () => {
+    mockGet.mockResolvedValue({
+      ...CONFIGURED,
+      provider: 'snowflake_cortex',
+      model: 'llama3.1-70b',
+      connection_id: 'sf-1',
+      has_credential: true,
+    });
+    mockListConnections.mockResolvedValue([]);
+    renderPanel();
+
+    expect(await screen.findByText('Connection set')).toBeInTheDocument();
+    expect(screen.queryByText('Credential set')).not.toBeInTheDocument();
+    const user = userEvent.setup();
+    await selectOption(user, 'OpenAI-compatible endpoint');
+    expect(screen.getByLabelText('API key')).toHaveAttribute('placeholder', 'API key');
   });
 });

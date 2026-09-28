@@ -1298,7 +1298,7 @@ class AuditChainCheckpoint(Base):
 
 
 # ── Outbound-LLM seam (ADR 0042, #1511) ──────────────────────────────────────
-LLM_PROVIDERS = ("anthropic", "openai_compatible")
+LLM_PROVIDERS = ("anthropic", "openai_compatible", "snowflake_cortex")
 LLM_STRUCTURED_OUTPUT_MODES = ("native", "prompt_json")
 LLM_INVOCATION_KINDS = ("ping", "sql_generation", "check_suggestion", "rca_narrative")
 LLM_INVOCATION_STATUSES = ("pending", "running", "succeeded", "failed")
@@ -1326,6 +1326,11 @@ class LlmSetting(Base):
     model: Mapped[str] = mapped_column(String(128), nullable=False)
     #: NULL = credential-less endpoint (a local server) — allowed for `openai_compatible` only.
     api_key_secret_ref: Mapped[str | None] = mapped_column(String(256))
+    #: `snowflake_cortex` only: the Snowflake connection whose credential runs `CORTEX.COMPLETE`.
+    #: SET NULL on delete — the provider then reports its credential missing.
+    connection_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("connections.id", ondelete="SET NULL")
+    )
     structured_output: Mapped[str] = mapped_column(
         String(16), nullable=False, server_default=text("'native'")
     )
