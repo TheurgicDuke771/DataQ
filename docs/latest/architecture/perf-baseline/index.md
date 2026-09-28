@@ -1192,6 +1192,24 @@ session was issuing small queries against the same warehouse during the first
 batch. The Databricks driver reports no `rowcount`, so `result_rows_unknown`
 equals `statements` on both lanes rather than posting a false zero.
 
+### Iceberg tier — measured
+
+Run live on 2026-09-28 against the harness's own catalog: a SQL catalog on the
+harness Postgres with an ADLS Gen2 warehouse, the production shape of the native
+Iceberg connection. A throwaway 1,000,000-row order-lines table (the same 6-column
+shape as the local curve) was written for the run and purged after it. Medians of 3
+on the development rig, reading over the internet from the object store.
+
+| Tier | Rows | Checks | Run wall | Worker peak RSS | Statements | Rows materialised in the worker |
+|---|---|---|---|---|---|---|
+| Iceberg, `pyiceberg` snapshot | 1,000,000 | 5 / 5 pass | 13.5 s (12.6–15.2) | 569 MiB | 3 | 1,000,000 |
+
+Memory matches the local container-rig curve (541 MiB at 1M rows): reading the
+data files from ADLS rather than a local disk adds wall-clock, not memory, so the
+Iceberg scan cap read off that curve holds for a remote warehouse too. The three
+statements are the SQL catalog's metadata lookups; the data itself is read from
+the object store, outside SQLAlchemy.
+
 ### What is explicitly NOT measured here
 
 A tier that simply does not appear in a result set reads as "nothing to report",
@@ -1203,7 +1221,7 @@ what each one waits for is a live warehouse and the environment naming it:
 |---|---|---|
 | Snowflake 1M / 50M, pushdown — **measured above** | `SnowflakeCheckRunner.run_checks`, the same five expectations as every other rung (or `PERF_SF_SUITE_JSON` for a table the harness did not build) | `PERF_SF_ACCOUNT` `PERF_SF_USER` `PERF_SF_ROLE` `PERF_SF_DATABASE` `PERF_SF_SCHEMA` `PERF_SF_WAREHOUSE` `PERF_SF_TABLE_1M` / `PERF_SF_TABLE_50M`, secret in `PERF_SF_SECRET` |
 | Unity Catalog 1M, pushdown **and** frame-load — **measured above** | `UnityCatalogCheckRunner.run_checks` twice over the same table, the two cases differing only in `UC_SQL_PUSHDOWN` — the clean isolated comparison (or `PERF_UC_SUITE_JSON` + `PERF_UC_ROWS_1M` for a table the harness did not build) | `PERF_UC_WORKSPACE_URL` `PERF_UC_WAREHOUSE_ID` `PERF_UC_CATALOG` `PERF_UC_SCHEMA` `PERF_UC_TABLE_1M`, secret in `PERF_UC_SECRET` |
-| Iceberg 1M, native `pyiceberg` snapshot — **still not measured** (the harness catalog was unreachable when the other tiers ran) | `IcebergCheckRunner.run_checks` against a real catalog | `PERF_ICEBERG_CATALOG_JSON` (the connection config) `PERF_ICEBERG_TABLE`, optional secret in `PERF_ICEBERG_SECRET` |
+| Iceberg 1M, native `pyiceberg` snapshot — **measured above** | `IcebergCheckRunner.run_checks` against a real catalog | `PERF_ICEBERG_CATALOG_JSON` (the connection config) `PERF_ICEBERG_TABLE`, optional secrets in `PERF_ICEBERG_SECRET` (storage) and `PERF_ICEBERG_CATALOG_SECRET` (a SQL catalog's password) |
 | Wide-table profiler on a warehouse (the batched rank-join) — **measured above** | `profile_service.profile_table`; the column listing is done first and is outside the clock | the Snowflake set above plus `PERF_SF_WIDE_TABLE` |
 
 Every one of them emits `statements` (gated: growth is a regression), wall clock,
@@ -1217,10 +1235,11 @@ Secrets are read from the environment at run time only; a skip reason names the
 variable that is missing and never its value, and a test asserts no configured
 secret reaches an emitted row.
 
-The Snowflake, Unity Catalog and warehouse-profiler rows are now in the committed
-`baseline.json`, so `check --tag warehouse` against a configured warehouse gates
-their `statements` and `checks_evaluated` rather than leaving a regression to be
-re-measured by hand. Only the live Iceberg tier still emits `not_measured`.
+The Snowflake, Unity Catalog, Iceberg and warehouse-profiler rows are all in the
+committed `baseline.json`, so `check --tag warehouse` against a configured
+warehouse gates their `statements` and `checks_evaluated` rather than leaving a
+regression to be re-measured by hand. No live warehouse tier emits `not_measured`
+any more.
 
 ### The Iceberg memory curve — local, and run under the real limit
 

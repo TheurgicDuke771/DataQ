@@ -2187,6 +2187,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#iceberg-tier-measured" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Iceberg tier — measured
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#what-is-explicitly-not-measured-here" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3421,6 +3432,17 @@
         
       </ul>
     </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#iceberg-tier-measured" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Iceberg tier — measured
+      
+    </span>
+  </a>
   
 </li>
         
@@ -6009,6 +6031,41 @@ runs in two batches (26.1–27.2 s and 32.3–36.4 s) while its peak RSS stayed 
 session was issuing small queries against the same warehouse during the first
 batch. The Databricks driver reports no <code>rowcount</code>, so <code>result_rows_unknown</code>
 equals <code>statements</code> on both lanes rather than posting a false zero.</p>
+<h3 id="iceberg-tier-measured">Iceberg tier — measured<a class="headerlink" href="#iceberg-tier-measured" title="Permanent link">¶</a></h3>
+<p>Run live on 2026-09-28 against the harness's own catalog: a SQL catalog on the
+harness Postgres with an ADLS Gen2 warehouse, the production shape of the native
+Iceberg connection. A throwaway 1,000,000-row order-lines table (the same 6-column
+shape as the local curve) was written for the run and purged after it. Medians of 3
+on the development rig, reading over the internet from the object store.</p>
+<table>
+<thead>
+<tr>
+<th>Tier</th>
+<th>Rows</th>
+<th>Checks</th>
+<th>Run wall</th>
+<th>Worker peak RSS</th>
+<th>Statements</th>
+<th>Rows materialised in the worker</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Iceberg, <code>pyiceberg</code> snapshot</td>
+<td>1,000,000</td>
+<td>5 / 5 pass</td>
+<td>13.5 s (12.6–15.2)</td>
+<td>569 MiB</td>
+<td>3</td>
+<td>1,000,000</td>
+</tr>
+</tbody>
+</table>
+<p>Memory matches the local container-rig curve (541 MiB at 1M rows): reading the
+data files from ADLS rather than a local disk adds wall-clock, not memory, so the
+Iceberg scan cap read off that curve holds for a remote warehouse too. The three
+statements are the SQL catalog's metadata lookups; the data itself is read from
+the object store, outside SQLAlchemy.</p>
 <h3 id="what-is-explicitly-not-measured-here">What is explicitly NOT measured here<a class="headerlink" href="#what-is-explicitly-not-measured-here" title="Permanent link">¶</a></h3>
 <p>A tier that simply does not appear in a result set reads as "nothing to report",
 so the warehouse tiers are registered as real cases and emit an explicit
@@ -6034,9 +6091,9 @@ what each one waits for is a live warehouse and the environment naming it:</p>
 <td><code>PERF_UC_WORKSPACE_URL</code> <code>PERF_UC_WAREHOUSE_ID</code> <code>PERF_UC_CATALOG</code> <code>PERF_UC_SCHEMA</code> <code>PERF_UC_TABLE_1M</code>, secret in <code>PERF_UC_SECRET</code></td>
 </tr>
 <tr>
-<td>Iceberg 1M, native <code>pyiceberg</code> snapshot — <strong>still not measured</strong> (the harness catalog was unreachable when the other tiers ran)</td>
+<td>Iceberg 1M, native <code>pyiceberg</code> snapshot — <strong>measured above</strong></td>
 <td><code>IcebergCheckRunner.run_checks</code> against a real catalog</td>
-<td><code>PERF_ICEBERG_CATALOG_JSON</code> (the connection config) <code>PERF_ICEBERG_TABLE</code>, optional secret in <code>PERF_ICEBERG_SECRET</code></td>
+<td><code>PERF_ICEBERG_CATALOG_JSON</code> (the connection config) <code>PERF_ICEBERG_TABLE</code>, optional secrets in <code>PERF_ICEBERG_SECRET</code> (storage) and <code>PERF_ICEBERG_CATALOG_SECRET</code> (a SQL catalog's password)</td>
 </tr>
 <tr>
 <td>Wide-table profiler on a warehouse (the batched rank-join) — <strong>measured above</strong></td>
@@ -6054,10 +6111,11 @@ would restate the claim under test as its own evidence. Peak RSS is what answers
 <p>Secrets are read from the environment at run time only; a skip reason names the
 variable that is missing and never its value, and a test asserts no configured
 secret reaches an emitted row.</p>
-<p>The Snowflake, Unity Catalog and warehouse-profiler rows are now in the committed
-<code>baseline.json</code>, so <code>check --tag warehouse</code> against a configured warehouse gates
-their <code>statements</code> and <code>checks_evaluated</code> rather than leaving a regression to be
-re-measured by hand. Only the live Iceberg tier still emits <code>not_measured</code>.</p>
+<p>The Snowflake, Unity Catalog, Iceberg and warehouse-profiler rows are all in the
+committed <code>baseline.json</code>, so <code>check --tag warehouse</code> against a configured
+warehouse gates their <code>statements</code> and <code>checks_evaluated</code> rather than leaving a
+regression to be re-measured by hand. No live warehouse tier emits <code>not_measured</code>
+any more.</p>
 <h3 id="the-iceberg-memory-curve-local-and-run-under-the-real-limit">The Iceberg memory curve — local, and run under the real limit<a class="headerlink" href="#the-iceberg-memory-curve-local-and-run-under-the-real-limit" title="Permanent link">¶</a></h3>
 <p>Finding where the Iceberg runner dies needs no warehouse at all, so it does not
 wait on a harness window. <code>perf_baseline gen-iceberg</code> builds a local sqlite
