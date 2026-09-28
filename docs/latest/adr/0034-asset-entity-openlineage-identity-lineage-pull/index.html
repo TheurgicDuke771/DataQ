@@ -2325,6 +2325,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#amendment-2026-09-28-view-and-dynamic-table-column-lineage-on-snowflake" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Amendment (2026-09-28): view and dynamic-table column lineage on Snowflake
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2604,6 +2615,17 @@ to nothing and must be reported as "nothing recorded", never "unrelated".</p>
   classification ladder, never remove it. DQ dimensions (ADR 0038) are not propagated: a dimension classifies a
   <em>check</em>, not a column, so there is nothing upstream to inherit.</li>
 </ul>
+<h2 id="amendment-2026-09-28-view-and-dynamic-table-column-lineage-on-snowflake">Amendment (2026-09-28): view and dynamic-table column lineage on Snowflake<a class="headerlink" href="#amendment-2026-09-28-view-and-dynamic-table-column-lineage-on-snowflake" title="Permanent link">¶</a></h2>
+<p>Column pairs on the <code>GET_LINEAGE</code> tier came only from <code>ACCESS_HISTORY</code>, which records DML writes.
+A view or dynamic table is never a DML write, so the dbt staging and mart layer, where column
+placement matters most, had table edges with no column detail. <code>GET_LINEAGE</code> at <code>COLUMN</code> domain
+does answer for them. After the <code>ACCESS_HISTORY</code> refinement, DataQ seeds one <code>COLUMN</code>-domain
+upstream call per column of each edge still without pairs. The pass is bounded by
+<code>WAREHOUSE_LINEAGE_MAX_COLUMN_SEEDS</code> with loud truncation, and like the <code>ACCESS_HISTORY</code> pass it
+is refinement only: it never adds a table edge and never fails the table edges.</p>
+<p>Live on the reference account (<code>DATAQ_READER</code>), all 8 staging and mart edges went from no column
+pairs to 2–11 each, including derivations (<code>ORDER_TOTAL → LIFETIME_VALUE</code>,
+<code>LINE_TOTAL → RECONCILED_SUBTOTAL</code>). The daily refresh took about 65 s longer.</p>
 
 
 

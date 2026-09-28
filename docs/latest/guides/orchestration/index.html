@@ -2799,7 +2799,7 @@ A pair records derivation, not equality — <code>amount → daily_revenue</code
 <tbody>
 <tr>
 <td><code>GET_LINEAGE</code></td>
-<td>object-level traversal (table grain; column pairs from <code>ACCESS_HISTORY</code>)</td>
+<td>object-level traversal (table grain; column pairs from <code>ACCESS_HISTORY</code>, and for views and dynamic tables from a <code>COLUMN</code>-domain pass)</td>
 <td>Enterprise+</td>
 <td>Tried first: its absence is a clean, catchable <code>0A000</code>, the best preflight signal. It is a real <strong>per-seed traversal</strong> — seeds come from the ADR 0040 enumeration seam (<code>WAREHOUSE_LINEAGE_MAX_SEEDS</code>, default 500, loud truncation), each walked upstream <strong>and</strong> downstream at distance 2. Every returned row is a DIRECT source→target edge (<code>distance</code> is hops-from-seed, not a claim about the seed); MASKED (<code>***</code>) endpoints and non-table domains (STAGE) are dropped. A tier that enumerates no seeds, or observes no rows, <strong>descends</strong> rather than returning a confident empty — this tier prunes.</td>
 </tr>
@@ -2817,6 +2817,14 @@ A pair records derivation, not equality — <code>amount → daily_revenue</code
 </tr>
 </tbody>
 </table>
+<p><strong>Column lineage for views and dynamic tables.</strong> <code>ACCESS_HISTORY</code> records DML writes only, so it
+never has column pairs for a view or a dynamic table, which is the whole dbt staging and mart
+layer. On the <code>GET_LINEAGE</code> tier DataQ therefore also asks <code>GET_LINEAGE</code> at <strong><code>COLUMN</code> domain</strong>,
+once per column of each table edge still without column pairs. That recovers renames and
+derivations too (<code>ORDER_TOTAL</code> feeding <code>LIFETIME_VALUE</code>, for example). It is refinement only: it
+never adds a table edge. Cost is one call per column, about a second each, bounded by
+<code>WAREHOUSE_LINEAGE_MAX_COLUMN_SEEDS</code> (default 300 per refresh; <code>0</code> turns the pass off). Overflow
+is noted on the graph and logged as <code>get_lineage_column_seeds_truncated</code>.</p>
 <p>A degraded descent (e.g. down to view-level because the account isn't Enterprise) is <strong>surfaced on
 the asset's lineage graph</strong>, not hidden — the graph says "view-level only" rather than presenting a
 coarse graph as complete. <code>OBJECT_DEPENDENCIES</code> is a current-state view, so its refresh is a
