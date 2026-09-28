@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "30c88c15838c",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-2099-browse-snowflake-iceberg",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/datasources/iceberg.py",
+    "backend/app/mcp/server.py",
+    "backend/app/services/browse_service.py",
+    "backend/tests/api/test_connection_browse.py",
+    "backend/tests/mcp/test_mcp_tools.py",
+    "backend/tests/services/test_browse_service.py",
+    "docs/site/guides/datasources-checks.md",
+    "frontend/src/components/suites/SuiteForm.tsx",
+    "frontend/src/components/suites/suiteTarget.ts",
+    "frontend/tests/components/SuiteForm.test.tsx",
+    "frontend/tests/components/suiteTarget.test.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/30/c88c15838c/0/metadata.json",
+      "transcript": "/30/c88c15838c/0/full.jsonl",
+      "compact_transcript": "/30/c88c15838c/0/transcript.jsonl",
+      "content_hash": "/30/c88c15838c/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 84,
+    "cache_creation_tokens": 144061,
+    "cache_read_tokens": 17031783,
+    "output_tokens": 23876,
+    "api_call_count": 42
+  }
+}
