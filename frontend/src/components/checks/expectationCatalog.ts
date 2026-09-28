@@ -1063,6 +1063,8 @@ const DQX_CATEGORY: ExpectationCategory = 'Databricks DQX';
 export function expectationsByCategoryFor(
   connectionType: ConnectionType | undefined,
   alwaysIncludeType?: string,
+  /** Types this connection's server refuses because of where it points (`refused_expectation_types`). */
+  refusedTypes: readonly string[] = [],
 ): {
   category: ExpectationCategory;
   specs: ExpectationSpec[];
@@ -1091,6 +1093,7 @@ export function expectationsByCategoryFor(
   const specAllowed = (spec: ExpectationSpec): boolean =>
     spec.type === alwaysIncludeType ||
     ((!spec.dataframeOnly || !sqlBatch) &&
+      !refusedTypes.includes(spec.type) &&
       !(
         spec.unsupportedOn &&
         (connectionType === undefined || spec.unsupportedOn.includes(connectionType))

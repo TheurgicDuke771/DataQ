@@ -484,6 +484,30 @@ describe('expectationsByCategoryFor (dialect gaps — regex on SQL Server, #1679
   });
 });
 
+describe('expectationsByCategoryFor (types a connection refuses by config — Fabric, #2140)', () => {
+  const FABRIC_REFUSED = [
+    'expect_column_values_to_be_unique',
+    'expect_column_pair_values_to_be_equal',
+    'expect_multicolumn_sum_to_equal',
+  ];
+  const offered = (refused: string[], alwaysInclude?: string) =>
+    expectationsByCategoryFor('mssql', alwaysInclude, refused).flatMap((g) =>
+      g.specs.map((s) => s.type),
+    );
+
+  it('hides what the server says this connection refuses, and only that', () => {
+    const types = offered(FABRIC_REFUSED);
+    for (const type of FABRIC_REFUSED) expect(types).not.toContain(type);
+    expect(types).toContain('expect_column_values_to_not_be_null');
+    // An ordinary SQL Server connection refuses nothing extra.
+    expect(offered([])).toContain('expect_column_values_to_be_unique');
+  });
+
+  it('keeps an existing refused check editable rather than retyping it', () => {
+    expect(offered(FABRIC_REFUSED, FABRIC_REFUSED[0])).toContain(FABRIC_REFUSED[0]);
+  });
+});
+
 describe('Databricks DQX category (ADR 0036 §6)', () => {
   const categories = (connectionType: Parameters<typeof expectationsByCategoryFor>[0]) =>
     expectationsByCategoryFor(connectionType).map((g) => g.category);

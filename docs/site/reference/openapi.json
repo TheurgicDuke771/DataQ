@@ -3495,6 +3495,13 @@
             "title": "Name",
             "type": "string"
           },
+          "refused_expectation_types": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Refused Expectation Types",
+            "type": "array"
+          },
           "type": {
             "title": "Type",
             "type": "string"

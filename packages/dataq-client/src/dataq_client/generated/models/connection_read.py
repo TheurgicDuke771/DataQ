@@ -48,6 +48,7 @@ class ConnectionRead:
         last_polled_at (datetime.datetime | None | Unset):
         last_run_at (datetime.datetime | None | Unset):
         last_run_error (None | str | Unset):
+        refused_expectation_types (list[str] | Unset):
     """
 
     config: ConnectionReadConfig
@@ -72,6 +73,7 @@ class ConnectionRead:
     last_polled_at: datetime.datetime | None | Unset = UNSET
     last_run_at: datetime.datetime | None | Unset = UNSET
     last_run_error: None | str | Unset = UNSET
+    refused_expectation_types: list[str] | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -198,6 +200,10 @@ class ConnectionRead:
         else:
             last_run_error = self.last_run_error
 
+        refused_expectation_types: list[str] | Unset = UNSET
+        if not isinstance(self.refused_expectation_types, Unset):
+            refused_expectation_types = self.refused_expectation_types
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -241,6 +247,8 @@ class ConnectionRead:
             field_dict["last_run_at"] = last_run_at
         if last_run_error is not UNSET:
             field_dict["last_run_error"] = last_run_error
+        if refused_expectation_types is not UNSET:
+            field_dict["refused_expectation_types"] = refused_expectation_types
 
         return field_dict
 
@@ -489,6 +497,8 @@ class ConnectionRead:
 
         last_run_error = _parse_last_run_error(d.pop("last_run_error", UNSET))
 
+        refused_expectation_types = cast(list[str], d.pop("refused_expectation_types", UNSET))
+
         connection_read = cls(
             config=config,
             created_by=created_by,
@@ -512,6 +522,7 @@ class ConnectionRead:
             last_polled_at=last_polled_at,
             last_run_at=last_run_at,
             last_run_error=last_run_error,
+            refused_expectation_types=refused_expectation_types,
         )
 
         connection_read.additional_properties = d

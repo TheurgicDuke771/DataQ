@@ -83,6 +83,7 @@ function CheckEditView({ suiteId, checkId }: { suiteId?: string; checkId?: strin
             target={state.data.suite.target}
             connectionType={state.data.connection?.type}
             dmfCapability={state.data.connection?.engine_capabilities?.dmf}
+            refusedTypes={state.data.connection?.refused_expectation_types}
             // History's Restore action is edit-gated the same way the rest of
             // the suite's write actions are (Suites.tsx `canRun`).
             canRestore={canRunSuite(state.data.suite)}
@@ -102,6 +103,7 @@ function CheckEditForm({
   target,
   connectionType,
   dmfCapability,
+  refusedTypes = [],
   canRestore,
   onRestored,
   onCancel,
@@ -113,6 +115,8 @@ function CheckEditForm({
   connectionType?: ConnectionType;
   /** The connection's probed DMF capability (#1867) — `undefined` means never tested. */
   dmfCapability?: DmfCapability;
+  /** Types the connection refuses because of where it points — hidden from the picker. */
+  refusedTypes?: string[];
   /** Whether the caller may restore a version (#283) — passed straight through
    *  to `CheckHistoryDrawer`. */
   canRestore: boolean;
@@ -237,7 +241,11 @@ function CheckEditForm({
             disabled={isMonitor}
             virtual={false}
             // Grouped by category (antd optgroups).
-            options={expectationsByCategoryFor(connectionType, check.expectation_type).map((g) => ({
+            options={expectationsByCategoryFor(
+              connectionType,
+              check.expectation_type,
+              refusedTypes,
+            ).map((g) => ({
               label: g.category,
               options: g.specs.map((e) => ({ value: e.type, label: e.label })),
             }))}

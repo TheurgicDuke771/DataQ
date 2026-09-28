@@ -231,6 +231,21 @@ describe('CheckNew — type_ hint (issue #768)', () => {
     });
   });
 
+  it('hides the types a Fabric SQL connection refuses (#2140)', async () => {
+    const user = userEvent.setup();
+    mockGetSuite.mockResolvedValue(suite);
+    mockGetConnection.mockResolvedValue({
+      ...snowflakeConnection,
+      type: 'mssql',
+      refused_expectation_types: ['expect_column_values_to_be_unique'],
+    });
+    renderPage();
+
+    await user.click(await screen.findByText('Column values'));
+    expect(await screen.findByText('Column values not null')).toBeInTheDocument();
+    expect(screen.queryByText('Column values unique')).not.toBeInTheDocument();
+  });
+
   it('shows the pandas-dtype hint for a flat-file (S3) suite', async () => {
     const user = userEvent.setup();
     mockGetSuite.mockResolvedValue(suite);

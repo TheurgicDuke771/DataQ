@@ -245,6 +245,9 @@ export interface Connection {
    * that is "never probed", not "unavailable".
    */
   engine_capabilities?: { dmf?: DmfCapability } | null;
+  /** Expectation types refused on this connection because of where it points (a Fabric SQL
+   *  endpoint's temp-table types) — the editor hides them, the API refuses them. */
+  refused_expectation_types?: string[];
 }
 
 /** The `engine_capabilities.dmf` shape a Snowflake connection test/reauth writes. */
