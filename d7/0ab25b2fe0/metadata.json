@@ -1,0 +1,34 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "d70ab25b2fe0",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-2100-mcp-browse",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/mcp/server.py",
+    "backend/tests/mcp/test_mcp_tools.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/d7/0ab25b2fe0/0/metadata.json",
+      "transcript": "/d7/0ab25b2fe0/0/full.jsonl",
+      "compact_transcript": "/d7/0ab25b2fe0/0/transcript.jsonl",
+      "content_hash": "/d7/0ab25b2fe0/0/content_hash.txt",
+      "prompt": "/d7/0ab25b2fe0/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 102,
+    "cache_creation_tokens": 65851,
+    "cache_read_tokens": 29285575,
+    "output_tokens": 31995,
+    "api_call_count": 51,
+    "subagent_tokens": {
+      "input_tokens": 22,
+      "cache_creation_tokens": 104747,
+      "cache_read_tokens": 916758,
+      "output_tokens": 89,
+      "api_call_count": 11
+    }
+  }
+}
