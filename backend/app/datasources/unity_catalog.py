@@ -253,6 +253,10 @@ _DECIMAL_CELL_BYTES = 62
 #: Strings (and any type not listed above) scale with their length.
 _TEXT_CELL_BYTES = 42
 _TEXT_BYTES_PER_CHAR = 3
+#: LIST/MAP/STRUCT cells stay native Python objects in the frame, so they cost far more than their
+#: printed length: two nested views measured 142 + 5.3 x that length; this adds headroom (1.2x).
+_NESTED_CELL_BYTES = 170
+_NESTED_BYTES_PER_CHAR = 6.5
 _LENGTH_SAMPLE_ROWS = 1000
 
 
@@ -279,11 +283,18 @@ def _fixed_cell_bytes(arrow_type: Any) -> int | None:
 
 def frame_row_bytes(column_types: dict[str, Any], mean_lengths: dict[str, float]) -> int:
     """Estimated peak worker bytes per row of a frame-lane read (#2087)."""
+    import pyarrow as pa
+
     total = 0
     for name, column_type in column_types.items():
         fixed = _fixed_cell_bytes(column_type)
         if fixed is None:
-            fixed = _TEXT_CELL_BYTES + int(_TEXT_BYTES_PER_CHAR * mean_lengths.get(name, 0.0))
+            base, per_char = (
+                (_NESTED_CELL_BYTES, _NESTED_BYTES_PER_CHAR)
+                if pa.types.is_nested(column_type)
+                else (_TEXT_CELL_BYTES, _TEXT_BYTES_PER_CHAR)
+            )
+            fixed = base + int(per_char * mean_lengths.get(name, 0.0))
         total += fixed
     return total
 
