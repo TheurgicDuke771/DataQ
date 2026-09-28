@@ -142,6 +142,11 @@ class DbtConfig(BaseModel):
             self.adls_config(container="probe")
         return self
 
+    def requires_secret(self) -> bool:
+        """A service principal cannot authenticate without its client secret; every other
+        store may read anonymously (a public container, a local path)."""
+        return self.auth_type == "service_principal"
+
     def adls_config(self, *, container: str) -> AdlsConfig:
         """The `AdlsConfig` that reads this project's artifacts from ``container``."""
         account = urlparse(self.artifacts_uri).netloc
