@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 import decimal
 import json
 import math
@@ -32,6 +33,9 @@ def sanitize_json(value: Any) -> Any:
             # np.datetime64 finer than µs `.item()`s to an int (ns since the epoch, #1803),
             # not a datetime — narrow to µs first. NaT `.item()`s to None at every unit.
             value = raw.astype("datetime64[us]").item()
+        elif getattr(raw.dtype, "kind", None) == "m" and not isinstance(value, datetime.timedelta):
+            # np.timedelta64 finer than µs `.item()`s to a bare int (#1819); NaT to None.
+            value = raw.astype("timedelta64[us]").item()
     # pandas' missing-value sentinels: Arrow-backed frames (the iceberg native read, #716) surface
     # null cells to GX payloads as `pd.NA` / `pd.NaT`, neither of which is JSON-serializable (#751).
     if type(value).__name__ in ("NAType", "NaTType"):
@@ -40,6 +44,10 @@ def sanitize_json(value: Any) -> Any:
     # Arrow-backed frames yield `pd.Timestamp` sample values — JSON has no native form for either.
     if hasattr(value, "isoformat"):
         return value.isoformat()
+    # A duration has no JSON form either: spelled as pandas' own `Timedelta.isoformat` (#1819), so
+    # the same duration reads the same whichever library carried it.
+    if isinstance(value, datetime.timedelta):
+        return iso_duration(value)
     # Warehouse NUMERIC columns (#1273) — `float()` then falls through to the
     # finite check below, so a Decimal NaN/Infinity is nulled the same as a float one.
     if isinstance(value, decimal.Decimal):
@@ -53,6 +61,14 @@ def sanitize_json(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [sanitize_json(item) for item in value]
     return value
+
+
+def iso_duration(value: datetime.timedelta) -> str:
+    """ISO-8601 duration in pandas' spelling: signed days, then non-negative time of day."""
+    hours, rest = divmod(value.seconds, 3600)
+    minutes, seconds = divmod(rest, 60)
+    fraction = f".{value.microseconds:06d}".rstrip("0") if value.microseconds else ""
+    return f"P{value.days}DT{hours}H{minutes}M{seconds}{fraction}S"
 
 
 def _json_key(key: Any) -> str:

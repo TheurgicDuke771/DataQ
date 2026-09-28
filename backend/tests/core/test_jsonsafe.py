@@ -199,6 +199,40 @@ def test_numpy_datetime64_nat_becomes_none() -> None:
     assert sanitize_json(np.datetime64("NaT", "ns")) is None
 
 
+_DURATIONS = [
+    datetime.timedelta(0),
+    datetime.timedelta(days=1),
+    datetime.timedelta(seconds=1.5),
+    datetime.timedelta(microseconds=1),
+    datetime.timedelta(seconds=-1),
+    datetime.timedelta(days=-1, hours=2),
+    datetime.timedelta(days=401, seconds=3784, microseconds=120000),
+]
+
+
+@pytest.mark.parametrize("duration", _DURATIONS, ids=str)
+def test_every_duration_type_renders_as_pandas_iso_duration(duration: datetime.timedelta) -> None:
+    """np.timedelta64 persisted as a bare int, datetime.timedelta crashed json.dumps, and only
+    pd.Timedelta rendered — as an ISO duration (#1819). All three now read the same."""
+    expected = pd.Timedelta(duration).isoformat()
+    micros = int(duration / datetime.timedelta(microseconds=1))
+    for raw in (
+        duration,
+        pd.Timedelta(duration),
+        np.timedelta64(micros, "us"),
+        np.timedelta64(micros * 1000, "ns"),
+    ):
+        cleaned = sanitize_json({"observed_value": raw})
+        assert cleaned == {"observed_value": expected}, (type(raw).__name__, raw)
+        json.dumps(cleaned, allow_nan=False)
+
+
+def test_a_duration_key_and_nat_duration() -> None:
+    assert sanitize_json({datetime.timedelta(days=1): 3}) == {"P1DT0H0M0S": 3}
+    assert sanitize_json(np.timedelta64("NaT")) is None
+    assert sanitize_json(np.timedelta64("NaT", "ns")) is None
+
+
 def test_memoryview_becomes_hex() -> None:
     # psycopg-style BYTEA surfaces as memoryview (#1729) — hex, like bytes/bytearray.
     cleaned = sanitize_json({"min_value": memoryview(b"\x01\x02")})
