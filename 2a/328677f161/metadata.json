@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "2a328677f161",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2138-mssql-comparison-derived-table",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/services/check_service.py",
+    "backend/app/services/custom_sql.py",
+    "backend/app/services/dataset_reader.py",
+    "backend/tests/integration/test_mssql_live.py",
+    "backend/tests/services/test_custom_sql.py",
+    "backend/tests/services/test_dataset_reader.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/2a/328677f161/0/metadata.json",
+      "transcript": "/2a/328677f161/0/full.jsonl",
+      "compact_transcript": "/2a/328677f161/0/transcript.jsonl",
+      "content_hash": "/2a/328677f161/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 56,
+    "cache_creation_tokens": 30777,
+    "cache_read_tokens": 19436037,
+    "output_tokens": 17574,
+    "api_call_count": 28
+  }
+}
