@@ -7755,7 +7755,7 @@ values happen to look harmless and the rows behind them do not.
 
 | Lane | Where the population signal comes from |
 |---|---|
-| Flat files (ADLS, S3), Iceberg, the Unity Catalog DataFrame batch | The failing-row list the check already builds (up to 5,000 rows); no extra query |
+| Flat files (ADLS, S3), Iceberg, the Unity Catalog DataFrame batch | The failing rows of the table already in memory (up to 5,000): from the failing-row list the check builds when an identifier column is set, otherwise read directly off the in-memory table. No extra query either way |
 | Snowflake, PostgreSQL, MySQL, Trino, SQL Server, Unity Catalog SQL pushdown | One **extra, bounded query** per failing check: the check's own failing condition, selecting only the tested column and the identifier column, `LIMIT 5000` |
 
 The extra query on the warehouse lanes is issued only when all of these hold:
@@ -7774,9 +7774,11 @@ stored sample records that the population sample was attempted and failed, and
 the worker logs `gx_value_signal_sample_failed` at WARNING — the fallback is
 never silent.
 
-Without an identifier column, the flat-file lanes do not build a failing-row
-list, so they classify from the 20 stored values; the warehouse lanes still issue
-the bounded query for the tested column.
+With or without an identifier column, every lane classifies the same failing
+population, so the same unclassified column masks the same way whichever lane
+ran the check. On the in-memory lanes the population is always read, because it
+is free: the check has already returned the failing rows, and their values come
+straight off the table in memory.
 
 ## Data residency
 
