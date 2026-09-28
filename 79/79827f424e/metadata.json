@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "7979827f424e",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2137-mssql-mixed-case-schema",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/services/failure_classifier.py",
+    "backend/tests/services/test_failure_classifier.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/79/79827f424e/0/metadata.json",
+      "transcript": "/79/79827f424e/0/full.jsonl",
+      "compact_transcript": "/79/79827f424e/0/transcript.jsonl",
+      "content_hash": "/79/79827f424e/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 76,
+    "cache_creation_tokens": 41848,
+    "cache_read_tokens": 24885709,
+    "output_tokens": 27913,
+    "api_call_count": 38
+  }
+}
