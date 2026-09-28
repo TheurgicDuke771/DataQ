@@ -636,6 +636,25 @@ def reject_thresholds_on_unbanded(
     )
 
 
+def config_refused_expectation_types(
+    connection_type: str, connection_config: dict[str, Any] | None
+) -> list[str]:
+    """The expectation types refused on THIS connection because of where it points (a Fabric
+    SQL endpoint's temp-table types) — what the check editor hides. Type-wide refusals are the
+    frontend catalog's own `unsupportedOn`; an unvalidatable config refuses nothing extra."""
+    from backend.app.datasources.sql_engines import sql_engine
+
+    spec = sql_engine(connection_type)
+    if spec is None or spec.config_unsupported_expectation_types is None:
+        return []
+    try:
+        validated = spec.validate_config(dict(connection_config or {}))
+    except ValueError:
+        return []
+    types, _reason = spec.config_unsupported_expectation_types(validated)
+    return sorted(types)
+
+
 def reject_dataframe_only_expectation(
     expectation_type: str,
     *,

@@ -435,6 +435,26 @@ def test_ordinary_types_stay_allowed_on_fabric() -> None:
     )
 
 
+def test_the_connection_read_model_names_what_the_editor_must_hide() -> None:
+    """The check editor keys its catalog on connection TYPE; a Fabric host's refusals depend on
+    the config, so the server states them per connection (#2140). Same set the API refuses."""
+    import uuid
+
+    from backend.app.api.v1.connections import ConnectionRead
+    from backend.app.db.models import Connection
+
+    def read(config: dict[str, Any], conn_type: str = "mssql") -> list[str]:
+        conn = Connection(
+            id=uuid.uuid4(), name="c", type=conn_type, env="dev", config=config, secret_ref=None
+        )
+        return ConnectionRead.from_model(conn).refused_expectation_types
+
+    assert read({**_SP, "host": _FABRIC_HOST}) == sorted(mssql.FABRIC_TEMP_TABLE_TYPES)
+    assert read(dict(_SP)) == []
+    assert read({"host": "unvalidatable"}) == []
+    assert read({"account_url": "https://a.blob.core.windows.net"}, "adls_gen2") == []
+
+
 # ───────────────────────────── honest failures ─────────────────────────────
 
 
