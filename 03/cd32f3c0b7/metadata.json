@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "03cd32f3c0b7",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2082-bound-unexpected-rows",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/datasources/gx_metrics.py",
+    "backend/app/datasources/gx_runner.py",
+    "backend/tests/datasources/test_gx_sql_locator_bound.py",
+    "docs/site/architecture/perf-baseline.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/03/cd32f3c0b7/0/metadata.json",
+      "transcript": "/03/cd32f3c0b7/0/full.jsonl",
+      "compact_transcript": "/03/cd32f3c0b7/0/transcript.jsonl",
+      "content_hash": "/03/cd32f3c0b7/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 56,
+    "cache_creation_tokens": 32182,
+    "cache_read_tokens": 13796557,
+    "output_tokens": 19426,
+    "api_call_count": 28
+  }
+}
