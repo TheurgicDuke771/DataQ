@@ -2947,7 +2947,9 @@ def browse_connection(
 ) -> dict[str, Any]:
     """List what a connection can see, one level at a time, to pick a suite's run target.
 
-    Use this before ``update_suite`` sets a target or ``import_suite`` needs one:
+    Covers Unity Catalog, the SQL databases and ADLS/S3 — **not Snowflake or
+    Iceberg** (see caveats). Use this before ``update_suite`` sets a target or
+    ``import_suite`` needs one:
     it names the tables or files that exist instead of guessing a
     ``catalog.schema.table`` or a file key, which saves cleanly and then fails
     every run. Once a target is set, ``list_columns`` lists its columns.
@@ -2960,10 +2962,14 @@ def browse_connection(
       A SQL database connection pins one database, so it has **no catalog
       level**: start at ``schema`` (omit it to list schemas) and never pass
       ``catalog``. ``level`` says which of catalog / schema / table the
-      ``entries`` are.
+      ``entries`` are. At the table level, **entries include views and
+      materialized views alongside base tables**, with no field telling them
+      apart.
     - **``kind: "files"``** — ADLS Gen2 and S3. ``prefix`` is a folder inside the
       connection's own container/bucket (``root``); the result is the
-      ``folders`` and ``files`` directly under it, not recursive.
+      ``folders`` and ``files`` directly under it, not recursive. A file's
+      ``size`` or ``last_modified`` is null only when the store did not report
+      it for that object.
 
     Caveats:
 
@@ -2990,54 +2996,73 @@ def browse_connection(
         # browse routes' `MemberUser`.
         _require_role(user, DEFAULT_WORKSPACE_ROLE)
         connection = connection_service.get_connection(session, cid)
-        base = {"connection_id": connection_id, "type": connection.type}
-        if connection.type in browse_service.FILE_BROWSE_TYPES:
-            if catalog is not None or schema is not None:
-                raise ToolError("a file connection is browsed by prefix, not catalog/schema")
-            files = browse_service.browse_files(
-                connection,
-                session=session,
-                prefix=prefix,
-                limit=limit,
-                secret_store=get_secret_store(),
-            )
-            return {
-                **base,
-                "kind": "files",
-                "root": files.root,
-                "prefix": files.prefix,
-                "folders": files.folders,
-                "files": [
-                    {
-                        "path": f.path,
-                        "size": f.size,
-                        "last_modified": f.last_modified.isoformat() if f.last_modified else None,
-                    }
-                    for f in files.files
-                ],
-                "truncated": files.truncated,
-                "limit": files.limit,
-            }
-        if prefix:
-            raise ToolError("a table connection is browsed by catalog/schema, not prefix")
-        tables = browse_service.browse_catalog(
+        try:
+            return _browse_listing(connection, session, catalog, schema, prefix, limit)
+        except browse_service.BrowseFailedError as exc:
+            # `_service_errors` keeps only the message; the classified reason (never driver
+            # text) is what the docstring promises, so it rides in the one channel MCP delivers.
+            reason = (exc.detail or {}).get("reason")
+            raise ToolError(f"{exc.message}: {reason}" if reason else exc.message) from exc
+
+
+def _browse_listing(
+    connection: Connection,
+    session: Session,
+    catalog: str | None,
+    schema: str | None,
+    prefix: str,
+    limit: int,
+) -> dict[str, Any]:
+    base = {"connection_id": str(connection.id), "type": connection.type}
+    if connection.type in browse_service.FILE_BROWSE_TYPES:
+        if catalog is not None or schema is not None:
+            raise ToolError("a file connection is browsed by prefix, not catalog/schema")
+        files = browse_service.browse_files(
             connection,
             session=session,
-            catalog=catalog,
-            schema=schema,
+            prefix=prefix,
             limit=limit,
             secret_store=get_secret_store(),
         )
         return {
             **base,
-            "kind": "tables",
-            "level": tables.level,
-            "catalog": tables.catalog,
-            "schema": tables.schema,
-            "entries": [{"name": e.name, "selectable": e.selectable} for e in tables.entries],
-            "truncated": tables.truncated,
-            "limit": tables.limit,
+            "kind": "files",
+            "root": files.root,
+            "prefix": files.prefix,
+            "folders": files.folders,
+            "files": [
+                {
+                    "path": f.path,
+                    "size": f.size,
+                    "last_modified": f.last_modified.isoformat() if f.last_modified else None,
+                }
+                for f in files.files
+            ],
+            "truncated": files.truncated,
+            "limit": files.limit,
         }
+    # Unsupported types reach `browse_catalog`'s own refusal first, so a stray `prefix` on a
+    # Snowflake connection is told "not supported", not "use catalog/schema" (then refused again).
+    if prefix and connection.type in browse_service.TABLE_BROWSE_TYPES:
+        raise ToolError("a table connection is browsed by catalog/schema, not prefix")
+    tables = browse_service.browse_catalog(
+        connection,
+        session=session,
+        catalog=catalog,
+        schema=schema,
+        limit=limit,
+        secret_store=get_secret_store(),
+    )
+    return {
+        **base,
+        "kind": "tables",
+        "level": tables.level,
+        "catalog": tables.catalog,
+        "schema": tables.schema,
+        "entries": [{"name": e.name, "selectable": e.selectable} for e in tables.entries],
+        "truncated": tables.truncated,
+        "limit": tables.limit,
+    }
 
 
 @mcp.tool

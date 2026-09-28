@@ -5095,3 +5095,38 @@ def test_browse_connection_says_a_snowflake_connection_is_unsupported(
 
     with pytest.raises(ToolError, match="not supported for 'snowflake'"):
         server.browse_connection(str(suite.connection_id))
+
+
+def test_browse_connection_relays_the_classified_failure_reason(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """The docstring promises a classified reason; `_service_errors` alone keeps only the
+    message, so without this the assistant is told a reason exists and never gets one."""
+    from backend.app.services import browse_service
+
+    user = _user(db_session)
+    connection = _connection_of_type(
+        db_session, user, "unity_catalog", {"workspace_url": "https://w", "warehouse_id": "w1"}
+    )
+    _as(monkeypatch, db_session, user)
+
+    def _denied(conn: Any, **kw: Any) -> Any:
+        raise browse_service.BrowseFailedError(
+            "the datasource catalog could not be listed", detail={"reason": "access denied"}
+        )
+
+    monkeypatch.setattr(browse_service, "browse_catalog", _denied)
+    with pytest.raises(ToolError, match="could not be listed: access denied"):
+        server.browse_connection(str(connection.id))
+
+
+def test_browse_connection_says_unsupported_before_complaining_about_prefix(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    with pytest.raises(ToolError, match="not supported for 'snowflake'"):
+        server.browse_connection(str(suite.connection_id), prefix="raw/")
