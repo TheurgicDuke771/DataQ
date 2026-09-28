@@ -134,6 +134,26 @@ class TestUnityCatalogEnumeration:
         assert "table_catalog IS NOT NULL" in conn.sql  # budget-correct NULL exclusion
         assert "'STREAMING_TABLE'" in conn.sql
 
+    def test_pipeline_internals_are_excluded_but_a_users_event_log_is_not(self) -> None:
+        """A materialized view / streaming table leaves `__materialization_mat_*` and
+        `event_log_<pipeline uuid>` beside it as MANAGED tables (#2171, live-verified)."""
+        import re
+
+        from backend.app.lineage.warehouse_unity_catalog import _PIPELINE_EVENT_LOG
+
+        conn = _FakeConn([])
+        UnityCatalogLineageProvider().enumerate_tables(conn, connection_config=_UC_CONFIG)
+        assert "NOT startswith(table_name, '__materialization_mat_')" in conn.sql
+        assert f"table_name NOT RLIKE '{_PIPELINE_EVENT_LOG}'" in conn.sql
+        pattern = re.compile(_PIPELINE_EVENT_LOG)
+        assert pattern.search("event_log_bc5535a6_8d15_464d_a3be_51dc5bfb9318")
+        for kept in (
+            "event_log_mine",
+            "event_log_bc5535a6",
+            "my_event_log_bc5535a6_8d15_464d_a3be_51dc5bfb9318",
+        ):
+            assert not pattern.search(kept)
+
     def test_null_rows_are_skipped(self) -> None:
         conn = _FakeConn([("workspace", None, "t", "MANAGED"), ("workspace", "s", "t", "VIEW")])
         idents = UnityCatalogLineageProvider().enumerate_tables(conn, connection_config=_UC_CONFIG)

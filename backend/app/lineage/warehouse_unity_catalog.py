@@ -40,6 +40,10 @@ _WATERMARK_SAFETY = timedelta(hours=6)
 _MAX_COLUMN_PAIRS_PER_EDGE = MAX_COLUMN_PAIRS_PER_EDGE
 
 
+#: `event_log_<pipeline id>`: the id is a UUID with underscores for hyphens (inlined in the query).
+_PIPELINE_EVENT_LOG = "^event_log_[0-9a-f]{8}(_[0-9a-f]{4}){3}_[0-9a-f]{12}$"
+
+
 class UnityCatalogLineageProvider:
     """`WarehouseLineageProvider` for Unity Catalog via ``system.access.table_lineage``."""
 
@@ -145,6 +149,10 @@ class UnityCatalogLineageProvider:
             " AND table_catalog NOT IN ('system', 'samples', '__databricks_internal')"
             " AND table_type IN ('MANAGED', 'EXTERNAL', 'VIEW', 'MATERIALIZED_VIEW',"
             " 'STREAMING_TABLE')"
+            # A materialized view or streaming table leaves its pipeline's backing table and event
+            # log in the user's schema as MANAGED tables (#2171); a user's own `event_log_x` stays.
+            " AND NOT startswith(table_name, '__materialization_mat_')"
+            " AND table_name NOT RLIKE '^event_log_[0-9a-f]{8}(_[0-9a-f]{4}){3}_[0-9a-f]{12}$'"
         )
         params: dict[str, object] = {}
         if catalog is not None:
