@@ -1143,6 +1143,41 @@ the mean length sampled from the first 1,000 rows. Across 17 views it reads
 1.04–4.69× the measurement and never under. The overestimate is largest for
 very long text.
 
+**Then the text cost turned out to be GX, not the data.** Checks on two integer
+columns of a 400k-row table peaked at 626 B/row when the table also had a unique
+49-character column, and at 74 B/row without it. GX fingerprints every pandas batch
+under 1 GB by hashing the whole frame, every column included, into a batch marker
+DataQ never reads. On a text column that builds one Python string per cell, and an
+unhashable cell makes GX pickle the frame instead. DataQ now switches the
+fingerprint off for every frame lane. Re-measured on the same rig, fetch and GX run
+together:
+
+| View | With the fingerprint, B/row | Without, B/row |
+|---|---|---|
+| `o_comment` + 2 × BIGINT | 804 | 250 |
+| `o_clerk` + 2 × BIGINT | 226 | 131 |
+| 8 × STRING, ~19 chars | 980 | 699 |
+| 4 × STRING, ~160 chars | 1,999 | 1,347 |
+| lineitem (16 cols) | 928 | 752 |
+| orders (9 cols) | 1,039 | 508 |
+| part (9 cols) | 926 | 455 |
+| 8 × BIGINT | 311 | 292 |
+| 8 × DECIMAL(18,2) | 355 | 443 |
+
+DECIMAL is the one shape that rose: its float cast now sets the peak (repeatable, on
+the same code with the fingerprint toggled). The width model was refitted to these
+numbers: 44 B per fixed-width cell, 62 per DECIMAL, 14 per boolean, and 42 + 3 × the
+sampled mean length per text cell. Across all 15 views the estimate reads 1.11–1.58×
+the measurement and never under. The previous envelope read 0.81–6.96× on the same
+views, under for DECIMAL once the fingerprint was gone.
+
+LIST, MAP and STRUCT cells are priced separately, because they stay native Python
+objects in the frame. Two nested views, with 2 × BIGINT alongside, measured 1,055
+B/row (four small nested columns, 13–31 printed chars each) and 1,595 B/row (three
+larger ones, 59–73 chars). That is about 142 + 5.3 × the printed length per cell,
+priced with headroom as 170 + 6.5 × length: 1.19× and 1.20× the measurement. At the
+plain text rate the same views would have read 0.45× and 0.51×.
+
 The estimate gates the read against `RUN_MAX_FRAME_BYTES` (1.25 GiB) and is
 what admission reserves for a UC frame suite. Before the Arrow read, a 1M-row
 lineitem view was refused at an estimated 2.71 GB; with the frame cap disabled,

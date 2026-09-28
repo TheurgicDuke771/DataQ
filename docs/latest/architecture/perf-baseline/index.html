@@ -5861,6 +5861,82 @@ that. So the text cost is an envelope over every measured shape: 60 + 14 ×
 the mean length sampled from the first 1,000 rows. Across 17 views it reads
 1.04–4.69× the measurement and never under. The overestimate is largest for
 very long text.</p>
+<p><strong>Then the text cost turned out to be GX, not the data.</strong> Checks on two integer
+columns of a 400k-row table peaked at 626 B/row when the table also had a unique
+49-character column, and at 74 B/row without it. GX fingerprints every pandas batch
+under 1 GB by hashing the whole frame, every column included, into a batch marker
+DataQ never reads. On a text column that builds one Python string per cell, and an
+unhashable cell makes GX pickle the frame instead. DataQ now switches the
+fingerprint off for every frame lane. Re-measured on the same rig, fetch and GX run
+together:</p>
+<table>
+<thead>
+<tr>
+<th>View</th>
+<th>With the fingerprint, B/row</th>
+<th>Without, B/row</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>o_comment</code> + 2 × BIGINT</td>
+<td>804</td>
+<td>250</td>
+</tr>
+<tr>
+<td><code>o_clerk</code> + 2 × BIGINT</td>
+<td>226</td>
+<td>131</td>
+</tr>
+<tr>
+<td>8 × STRING, ~19 chars</td>
+<td>980</td>
+<td>699</td>
+</tr>
+<tr>
+<td>4 × STRING, ~160 chars</td>
+<td>1,999</td>
+<td>1,347</td>
+</tr>
+<tr>
+<td>lineitem (16 cols)</td>
+<td>928</td>
+<td>752</td>
+</tr>
+<tr>
+<td>orders (9 cols)</td>
+<td>1,039</td>
+<td>508</td>
+</tr>
+<tr>
+<td>part (9 cols)</td>
+<td>926</td>
+<td>455</td>
+</tr>
+<tr>
+<td>8 × BIGINT</td>
+<td>311</td>
+<td>292</td>
+</tr>
+<tr>
+<td>8 × DECIMAL(18,2)</td>
+<td>355</td>
+<td>443</td>
+</tr>
+</tbody>
+</table>
+<p>DECIMAL is the one shape that rose: its float cast now sets the peak (repeatable, on
+the same code with the fingerprint toggled). The width model was refitted to these
+numbers: 44 B per fixed-width cell, 62 per DECIMAL, 14 per boolean, and 42 + 3 × the
+sampled mean length per text cell. Across all 15 views the estimate reads 1.11–1.58×
+the measurement and never under. The previous envelope read 0.81–6.96× on the same
+views, under for DECIMAL once the fingerprint was gone.</p>
+<p>LIST, MAP and STRUCT cells are priced separately, because they stay native Python
+objects in the frame. Two nested views, with 2 × BIGINT alongside, measured 1,055
+B/row (four small nested columns, 13–31 printed chars each) and 1,595 B/row (three
+larger ones, 59–73 chars). That is about 142 + 5.3 × the printed length per cell,
+priced with headroom as 170 + 6.5 × length: 1.19× and 1.20× the measurement. At the
+plain text rate the same views would have read 0.45× and 0.51×.</p>
 <p>The estimate gates the read against <code>RUN_MAX_FRAME_BYTES</code> (1.25 GiB) and is
 what admission reserves for a UC frame suite. Before the Arrow read, a 1M-row
 lineitem view was refused at an estimated 2.71 GB; with the frame cap disabled,
