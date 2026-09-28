@@ -1058,10 +1058,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#the-51-tools" class="md-nav__link">
+  <a href="#the-52-tools" class="md-nav__link">
     <span class="md-ellipsis">
       
-        The 51 tools
+        The 52 tools
       
     </span>
   </a>
@@ -2351,10 +2351,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#the-51-tools" class="md-nav__link">
+  <a href="#the-52-tools" class="md-nav__link">
     <span class="md-ellipsis">
       
-        The 51 tools
+        The 52 tools
       
     </span>
   </a>
@@ -2435,7 +2435,7 @@ confusing 401. Always configure clients with the <code>/mcp/</code> form.</p>
 <a href="../../adr/0032-email-otp-signin/">0032</a>) has no identity provider to issue bearer
 tokens, so an <strong>API key is the only <code>/mcp</code> credential</strong> there — mint one as
 below and use it exactly the same way. Everything else is identical, including
-all 51 tools and per-suite permissions. Two rejections are deliberate in that
+all 52 tools and per-suite permissions. Two rejections are deliberate in that
 mode: a raw JWT is refused (there is nothing to validate it against), and your
 <strong>sign-in session is never accepted</strong> — it is a browser credential and does not
 authenticate <code>/mcp</code>, whether presented as a bearer or carried as a cookie.</p>
@@ -2483,7 +2483,7 @@ itself, <code>.gitignore</code> already covers <code>.vscode/*</code>).</p>
 </code></pre></div>
 <p>Start it via the command palette (<code>Cmd/Ctrl+Shift+P</code>) → <strong>MCP: List Servers</strong> → <em>dataq</em> → Start (or open Copilot Chat in agent mode — configured servers start on demand).</p>
 <p><strong>Cursor</strong> (<code>~/.cursor/mcp.json</code>) uses the same <code>mcpServers</code> shape as Claude Desktop.</p>
-<h2 id="the-51-tools">The 51 tools<a class="headerlink" href="#the-51-tools" title="Permanent link">¶</a></h2>
+<h2 id="the-52-tools">The 52 tools<a class="headerlink" href="#the-52-tools" title="Permanent link">¶</a></h2>
 <p>Each tool is a thin wrapper over the same service layer as the REST API — per-suite
 authorization (<code>view</code> for a read, <code>edit</code> for a mutation) and failing-sample redaction apply
 identically. <strong>The complete list — every tool, who can call it, and what it does — is the
@@ -2496,12 +2496,12 @@ drift-checked in CI, so it cannot go stale the way an earlier hand-typed pass of
 <li><strong>Changes state</strong> (18) — every one gates on <code>edit</code> access to the affected suite (schedule,
   binding and incident tools via the suite they target); <code>import_suite</code> additionally requires
   the <strong>member</strong> workspace role, since it has no existing suite to gate on.</li>
-<li><strong>Live probes</strong> (5) — <code>profile_column</code>, <code>list_columns</code>, <code>dryrun_check</code>,
-  <code>suggest_column_policy</code>, <code>test_connection</code> persist nothing but open a live datasource
-  connection with stored credentials. They are gated like writes, not reads, because they
-  spend a real credential against a remote system: the first four require <code>edit</code> on the suite
-  whose connection they probe, and <code>test_connection</code> (which has no suite) requires the
-  <strong>member</strong> workspace role.</li>
+<li><strong>Live probes</strong> (6) — <code>profile_column</code>, <code>list_columns</code>, <code>dryrun_check</code>,
+  <code>suggest_column_policy</code>, <code>test_connection</code>, <code>browse_connection</code> persist nothing but open a
+  live datasource connection with stored credentials. They are gated like writes, not reads,
+  because they spend a real credential against a remote system: the first four require <code>edit</code>
+  on the suite whose connection they probe, and <code>test_connection</code> and <code>browse_connection</code>
+  (which have no suite) require the <strong>member</strong> workspace role.</li>
 </ul>
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">¶</a></h2>
 <table>

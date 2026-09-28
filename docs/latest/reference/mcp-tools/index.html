@@ -2374,7 +2374,7 @@ run against), and the description is the opening of what an AI assistant is show
 <tbody>
 <tr>
 <td>Tools</td>
-<td>51</td>
+<td>52</td>
 </tr>
 <tr>
 <td>Read-only</td>
@@ -2382,7 +2382,7 @@ run against), and the description is the opening of what an AI assistant is show
 </tr>
 <tr>
 <td>Changes state</td>
-<td>18</td>
+<td>19</td>
 </tr>
 <tr>
 <td>Live probe</td>
@@ -2558,6 +2558,11 @@ connection mutation, and a credential must never transit an LLM.</p>
 <td><code>ack_incident</code></td>
 <td><code>edit</code> on the incident's suite</td>
 <td>Acknowledge an incident — record that someone is looking at it.</td>
+</tr>
+<tr>
+<td><code>browse_connection</code></td>
+<td>workspace Member or Admin</td>
+<td>List what a connection can see, one level at a time, to pick a suite's run target.</td>
 </tr>
 <tr>
 <td><code>cancel_run</code></td>

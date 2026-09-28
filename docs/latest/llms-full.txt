@@ -2927,7 +2927,7 @@ The endpoint accepts the **same credentials as the REST API** (ADR [0008](../adr
     [0032](../adr/0032-email-otp-signin.md)) has no identity provider to issue bearer
     tokens, so an **API key is the only `/mcp` credential** there — mint one as
     below and use it exactly the same way. Everything else is identical, including
-    all 51 tools and per-suite permissions. Two rejections are deliberate in that
+    all 52 tools and per-suite permissions. Two rejections are deliberate in that
     mode: a raw JWT is refused (there is nothing to validate it against), and your
     **sign-in session is never accepted** — it is a browser credential and does not
     authenticate `/mcp`, whether presented as a bearer or carried as a cookie.
@@ -2985,7 +2985,7 @@ Start it via the command palette (`Cmd/Ctrl+Shift+P`) → **MCP: List Servers** 
 
 **Cursor** (`~/.cursor/mcp.json`) uses the same `mcpServers` shape as Claude Desktop.
 
-## The 51 tools
+## The 52 tools
 
 Each tool is a thin wrapper over the same service layer as the REST API — per-suite
 authorization (`view` for a read, `edit` for a mutation) and failing-sample redaction apply
@@ -3000,12 +3000,12 @@ The tools split three ways, not two:
 - **Changes state** (18) — every one gates on `edit` access to the affected suite (schedule,
   binding and incident tools via the suite they target); `import_suite` additionally requires
   the **member** workspace role, since it has no existing suite to gate on.
-- **Live probes** (5) — `profile_column`, `list_columns`, `dryrun_check`,
-  `suggest_column_policy`, `test_connection` persist nothing but open a live datasource
-  connection with stored credentials. They are gated like writes, not reads, because they
-  spend a real credential against a remote system: the first four require `edit` on the suite
-  whose connection they probe, and `test_connection` (which has no suite) requires the
-  **member** workspace role.
+- **Live probes** (6) — `profile_column`, `list_columns`, `dryrun_check`,
+  `suggest_column_policy`, `test_connection`, `browse_connection` persist nothing but open a
+  live datasource connection with stored credentials. They are gated like writes, not reads,
+  because they spend a real credential against a remote system: the first four require `edit`
+  on the suite whose connection they probe, and `test_connection` and `browse_connection`
+  (which have no suite) require the **member** workspace role.
 
 ## Troubleshooting
 
@@ -4392,7 +4392,7 @@ risk that carries.
 | **Incident** | The stateful, deduped object failing results roll up into: `open → acknowledged → resolved`, ≤1 active per (asset, check), evidence card attached (ADR 0034). |
 | **`pipeline_runs` vs `runs`** | Orchestration runs vs DataQ check runs — linked, never conflated. |
 | **Secret store** | Where credentials live — Azure Key Vault / AWS Secrets Manager / OpenBao (prod) or env/OpenBao (dev), behind one seam. |
-| **MCP** | Model Context Protocol — DataQ exposes 48 curated tools at `/mcp` for AI assistants (25 read-only, 18 that change state, 5 live-probe tools gated like writes). |
+| **MCP** | Model Context Protocol — DataQ exposes 52 curated tools at `/mcp` for AI assistants (28 read-only, 18 that change state, 6 live-probe tools gated like writes). |
 | **ADR** | Architecture Decision Record — `docs/site/adr/`, one markdown per significant decision. |
 
 ## Contact / ownership
@@ -4413,9 +4413,9 @@ run against), and the description is the opening of what an AI assistant is show
 
 | | Count |
 |---|---|
-| Tools | 51 |
+| Tools | 52 |
 | Read-only | 28 |
-| Changes state | 18 |
+| Changes state | 19 |
 | Live probe | 5 |
 
 No tool creates, edits or re-credentials a connection: every Admin-only capability is a
@@ -4459,6 +4459,7 @@ connection mutation, and a credential must never transit an LLM.
 | Tool | Who can call it | What it does |
 |---|---|---|
 | `ack_incident` | `edit` on the incident's suite | Acknowledge an incident — record that someone is looking at it. |
+| `browse_connection` | workspace Member or Admin | List what a connection can see, one level at a time, to pick a suite's run target. |
 | `cancel_run` | `edit` on the suite | Cancel a queued or still-running suite run. |
 | `create_check` | `edit` on the suite | Add a new check (a Great Expectations expectation, by default) to a suite. Requires edit access to the suite. Returns the created check's id. |
 | `create_schedule` | `edit` on the suite | Schedule a suite to run automatically on a cron expression. |
@@ -5757,7 +5758,7 @@ Boundary notes:
 - **celery-beat is its own process/service, never embedded in the worker.** Beat only schedules — it enqueues tasks onto the broker, it never executes one — so a worker OOM (overlapping large suites under `worker_concurrency=4` and a 2 GiB hard limit) can never take the scheduler down with it. This is what stops orchestration polling, scheduled-suite dispatch, and every daily sweep from going silently dark because the process that ran them died. Exactly one beat instance may ever run (min=max=1 replica / desired_count=1) — a second would double-fire every periodic task.
 - **The outbound LLM intelligence layer is live, off by default.** An admin must configure a provider (Anthropic or an OpenAI-compatible endpoint) and credential before any call leaves the deployment. SQL generation and check suggestions send masked aggregate profiler statistics only; RCA narratives additionally send the triggering check's own `observed_value`, routed through the same column-policy/warehouse-tag redaction floor every other results surface applies, plus its `expected_value` (a check-authored threshold, never masked). Raw sample rows are never sent on any path. See [Security & data handling](../security/overview.md).
 - **All connection secrets via the deployment's secret store in production / staging** — Key Vault on Azure, Secrets Manager on AWS. Local dev may resolve secrets via `KV_SECRET_*` env vars through the `EnvSecretStore` backend (see `backend/app/core/secrets.py`). No credentials are ever hardcoded.
-- **The `/mcp` endpoint exposes the same service layer to AI clients.** The 48 FastMCP tools (25 read-only, 18 that change state, 5 live-probe tools gated like writes) are thin wrappers reusing the same services + per-suite authz + sample redaction as the REST API — no logic duplication. It mounts under **either** sign-in mode (SSO, email OTP) and stays unmounted, **fail-closed**, only when none is configured. Under SSO it validates the same OIDC bearer (Azure AD or Cognito — a `JWTVerifier` on the same tenant/audience/scope) or a PAT; **under email OTP a PAT is the only accepted credential** — a raw JWT and a session cookie are both rejected there, since there is no IdP-issued bearer to validate and a session is a browser-only credential. See [ADR 0008](../adr/0008-mcp-server.md) / [ADR 0032](../adr/0032-email-otp-signin.md).
+- **The `/mcp` endpoint exposes the same service layer to AI clients.** The 52 FastMCP tools (28 read-only, 18 that change state, 6 live-probe tools gated like writes) are thin wrappers reusing the same services + per-suite authz + sample redaction as the REST API — no logic duplication. It mounts under **either** sign-in mode (SSO, email OTP) and stays unmounted, **fail-closed**, only when none is configured. Under SSO it validates the same OIDC bearer (Azure AD or Cognito — a `JWTVerifier` on the same tenant/audience/scope) or a PAT; **under email OTP a PAT is the only accepted credential** — a raw JWT and a session cookie are both rejected there, since there is no IdP-issued bearer to validate and a session is a browser-only credential. See [ADR 0008](../adr/0008-mcp-server.md) / [ADR 0032](../adr/0032-email-otp-signin.md).
 - **Interactive API docs are off in production.** `/docs`, `/redoc`, and `/openapi.json` are disabled when `ENVIRONMENT=prod` (the prod-docs gate); available in dev/staging.
 
 
@@ -9199,7 +9200,7 @@ Each ADR captures a single significant architecture decision: the context, the d
 | [0005](0005-severity-tier-weights.md) | Severity tier weights (warn / fail / critical → health score) | Accepted |
 | [0006](0006-adf-webhook-authentication.md) | ADF webhook authentication (shared secret in URL + hard-cutover rotation) | Accepted |
 | [0007](0007-airflow-callback-model.md) | Airflow callback model (HMAC-signed webhook + polling fallback) | Accepted |
-| [0008](0008-mcp-server.md) | FastMCP server at `/mcp` — Azure AD token validated (same token as REST); everything exposed as tools rather than resources; thin wrappers reusing the service layer + per-suite authz; fail-closed without auth. **Amended:** 8 → 19 tools (Tier 1 reads), then 19 → 30 tools (Tier 2 edit-gated mutations + live-probe tools), then 30 → 33 → 38 (Tier 3A coherence), then 38 → 42 (Tier 3B batch 1 — assets + incidents reads) → 46 (Tier 3B batch 2 — incident lifecycle, `list_columns`, near-misses; Tier 3B complete) → 47 (`get_pipeline_status`, `get_adf_pipeline_status` kept as a deprecated alias) → **48** (`get_doc`, curated docs pages; 25 read-only / 18 state-changing / 5 live-probe) | Accepted |
+| [0008](0008-mcp-server.md) | FastMCP server at `/mcp` — Azure AD token validated (same token as REST); everything exposed as tools rather than resources; thin wrappers reusing the service layer + per-suite authz; fail-closed without auth. **Amended:** 8 → 19 tools (Tier 1 reads), then 19 → 30 tools (Tier 2 edit-gated mutations + live-probe tools), then 30 → 33 → 38 (Tier 3A coherence), then 38 → 42 (Tier 3B batch 1 — assets + incidents reads) → 46 (Tier 3B batch 2 — incident lifecycle, `list_columns`, near-misses; Tier 3B complete) → 47 (`get_pipeline_status`, `get_adf_pipeline_status` kept as a deprecated alias) → 48 (`get_doc`, curated docs pages) → 51 (the reusable-notification-channel reads, `trace_column_lineage`) → **52** (`browse_connection`, run-target browsing; 28 read-only / 18 state-changing / 6 live-probe) | Accepted |
 | [0009](0009-flat-monorepo-layout.md) | Repo layout — flat monorepo (`backend/` + `frontend/`) | Accepted |
 | [0010](0010-provider-agnostic-infrastructure-seams.md) | Provider-agnostic infrastructure seams (Azure is the default, not the architecture) | Accepted |
 | [0011](0011-extensibility-seams-for-deferred-integrations.md) | Extensibility seams for deferred connectors and integrations | Accepted |
