@@ -1,0 +1,5 @@
+<task-notification>
+<task-id>binicq9qx</task-id>
+<summary>Monitor event: "Wait for CI on #2192 and #2193"</summary>
+<event>[Monitor expired after 5m with no events delivered. Re-arm it if you still need the watch — and widen the filter if silence was unexpected.]</event>
+</task-notification>
