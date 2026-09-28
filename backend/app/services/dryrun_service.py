@@ -14,6 +14,7 @@ from backend.app.core.jsonsafe import sanitize_json
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.base import CheckOutcome, CheckSpec
+from backend.app.datasources.databricks_dqx import DQX_ENGINE
 from backend.app.datasources.flatfile import BatchNotFoundError
 from backend.app.datasources.monitors import ANOMALY, SCHEMA_DRIFT
 from backend.app.datasources.registry import (
@@ -305,6 +306,14 @@ def _dry_run_native(
         ) from exc
 
     with owned_runner(runner):
+        if engine == DQX_ENGINE:
+            # A DQX check runs as a serverless workspace job — a minute or more of start-up, up to
+            # its 30-minute timeout — which no synchronous request should wait on.
+            raise DryRunUnsupportedError(
+                "a Databricks DQX check can't be previewed: it runs as a job in your workspace. "
+                "Run the suite instead; the result lands like any other run's",
+                detail={"engine": engine, "connection_type": connection.type},
+            )
         native_run = getattr(runner, "run_native_check", None)
         advertised = frozenset(getattr(runner, "supported_native_engines", frozenset()))
         if engine not in advertised or not callable(native_run):

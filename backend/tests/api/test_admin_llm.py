@@ -138,6 +138,34 @@ def test_llm_test_endpoint_records_an_invocation_row_through_the_real_route(
     assert invocation.requested_by_user_id == admin.id
 
 
+def test_llm_test_passes_a_reasoning_model_that_answers_only_with_thinking(
+    client: TestClient,
+    db_session: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    as_role: Callable[..., tuple[Any, dict[str, str]]],
+) -> None:
+    """A reasoning model (gpt-oss on Databricks) spends the probe's 16 tokens thinking and returns
+    no answer text; the endpoint authenticated and answered, so Test must not report a broken
+    provider for a correctly configured one."""
+    from backend.app.db.models import LlmInvocation
+    from backend.app.llm.base import LLMOutputInvalidError
+
+    _admin, headers = as_role("admin")
+
+    class _Reasoner:
+        model = "databricks-gpt-oss-20b"
+
+        def complete(self, *_a: Any, **_kw: Any) -> Any:
+            raise LLMOutputInvalidError("LLM response has no answer text")
+
+    monkeypatch.setattr(llm_service, "_provider_from", lambda **_kw: _Reasoner())
+    resp = client.post("/api/v1/admin/llm/test", json=_BODY, headers=headers)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["ok"] is True and resp.json()["reply_chars"] == 0
+    (invocation,) = db_session.query(LlmInvocation).filter_by(kind="ping").all()
+    assert invocation.status == "succeeded"
+
+
 def test_posture_llm_row_flips_with_config(client: TestClient) -> None:
     def _llm_row(payload: dict[str, Any]) -> dict[str, Any]:
         return next(t for t in payload["external_transfers"] if t["name"] == "llm_intelligence")

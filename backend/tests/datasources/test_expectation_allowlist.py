@@ -11,6 +11,7 @@ import great_expectations.expectations as gxe
 import pytest
 from great_expectations.expectations.expectation import Expectation
 
+from backend.app.datasources.databricks_dqx import DQX_EXPECTATION_TYPES
 from backend.app.datasources.expectation_allowlist import (
     ALLOWED_EXPECTATION_TYPES,
     ALLOWED_EXPECTATIONS,
@@ -33,7 +34,7 @@ def _catalog_gx_types() -> set[str]:
         entry["type"]
         for entry in catalog
         if entry["kind"] == "expectation"
-        and entry["type"] not in DMF_EXPECTATION_TYPES
+        and entry["type"] not in (*DMF_EXPECTATION_TYPES, *DQX_EXPECTATION_TYPES)
         and entry["type"] != CUSTOM_SQL_EXPECTATION_TYPE
     }
 

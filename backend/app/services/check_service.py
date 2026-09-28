@@ -14,6 +14,13 @@ from sqlalchemy.orm import Session, selectinload
 
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
+from backend.app.datasources.databricks_dqx import (
+    DQX_ENGINE,
+    DQX_EXPECTATION_TYPES,
+    DQX_KINDS,
+    DqxConfigError,
+    build_dqx_rule,
+)
 from backend.app.datasources.engines import engines_for
 from backend.app.datasources.expectation_allowlist import (
     ALLOWED_EXPECTATION_TYPES,
@@ -170,6 +177,27 @@ def validate_engine(engine: str, *, connection_type: str) -> None:
         )
 
 
+def _validate_dqx(*, kind: str, expectation_type: str, config: dict[str, Any]) -> None:
+    """The dqx matrix: expectation kind, a curated `dqx:*` type, and a config the rule builder
+    accepts — the same builder the run path uses, so authoring and running cannot disagree."""
+    if kind not in DQX_KINDS:
+        raise CheckConfigInvalidError(
+            f"the dqx engine cannot evaluate kind {kind!r} — it evaluates the dqx:* checks",
+            detail={"engine": DQX_ENGINE, "kind": kind, "supported_kinds": sorted(DQX_KINDS)},
+        )
+    if expectation_type not in DQX_EXPECTATION_TYPES:
+        raise CheckConfigInvalidError(
+            f"expectation_type {expectation_type!r} is not a dqx check",
+            detail={"engine": DQX_ENGINE, "supported_types": sorted(DQX_EXPECTATION_TYPES)},
+        )
+    try:
+        build_dqx_rule(expectation_type, config)
+    except DqxConfigError as exc:
+        raise CheckConfigInvalidError(
+            exc.message, detail={"expectation_type": expectation_type}
+        ) from exc
+
+
 def validate_engine_compatibility(
     engine: str,
     *,
@@ -184,6 +212,9 @@ def validate_engine_compatibility(
     the engine cannot evaluate. Shared by create, update, restore and suite
     import (the one-gate-per-rule discipline).
     """
+    if engine == DQX_ENGINE:
+        _validate_dqx(kind=kind, expectation_type=expectation_type, config=config)
+        return
     if engine != DMF_ENGINE:
         return
     if kind not in DMF_KINDS:
@@ -808,7 +839,7 @@ def create_check(
             config=config,
             connection_type=_connection_type(session, suite),
         )
-    elif engine == DMF_ENGINE:
+    elif engine in (DMF_ENGINE, DQX_ENGINE):
         # A dmf:* column metric — its whole config was validated by validate_engine_compatibility
         # above; it is not a GX expectation.
         pass
@@ -929,7 +960,7 @@ def _validate_kind_specific_config(
             config=config,
             connection_type=_connection_type(session, suite),
         )
-    elif engine == DMF_ENGINE:
+    elif engine in (DMF_ENGINE, DQX_ENGINE):
         # dmf:* column metric — validated by validate_engine_compatibility at
         # the caller; never a GX expectation, so the GX gate does not apply.
         pass

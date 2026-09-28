@@ -2412,3 +2412,62 @@ def test_execute_run_forwards_the_gate_when_samples_are_kept() -> None:
     )
     assert runner.called_with is not None
     assert runner.called_with["value_signal_gate"] is gate
+
+
+def test_a_batch_capable_runner_gets_each_engines_checks_in_one_call() -> None:
+    """DQX pays ~a minute per workspace job, so its checks go out together (ADR 0036 §6) —
+    one call per engine per run, outcomes mapped back to their own check positions."""
+    from backend.app.datasources.base import CheckOutcome
+
+    calls: list[tuple[str, list[Any]]] = []
+
+    class _BatchRunner:
+        supported_native_engines = frozenset({"dqx"})
+
+        def run_native_checks(
+            self, engine: str, specs: list[Any], *, table: str, schema: str | None
+        ) -> list[CheckOutcome]:
+            calls.append((engine, specs))
+            return [
+                CheckOutcome(expectation_type=t, success=False, metric_value=float(i))
+                for i, (_kind, t, _config) in enumerate(specs)
+            ]
+
+        def run_native_check(self, **_kw: Any) -> CheckOutcome:
+            raise AssertionError("a batch-capable runner must not be called per check")
+
+    checks = [
+        Check(
+            kind="expectation",
+            expectation_type="dqx:is_not_null",
+            engine="dqx",
+            config={"column": "a"},
+        ),
+        Check(
+            kind="expectation",
+            expectation_type="dqx:is_not_null",
+            engine="dqx",
+            config={"column": "b"},
+        ),
+        Check(
+            kind="expectation",
+            expectation_type="dqx:is_not_empty",
+            engine="dqx",
+            config={"column": "c"},
+        ),
+    ]
+    resolved = dict(
+        pair
+        for phase in run_service._run_outcome_phases(
+            _BatchRunner(), table="orders", schema="gold", checks=checks  # type: ignore[arg-type]
+        )
+        for pair in phase.resolved
+    )
+
+    assert len(calls) == 1 and calls[0][0] == "dqx" and len(calls[0][1]) == 3
+    assert [resolved[i].expectation_type for i in range(3)] == [
+        "dqx:is_not_null",
+        "dqx:is_not_null",
+        "dqx:is_not_empty",
+    ]
+    assert [resolved[i].metric_value for i in range(3)] == [0.0, 1.0, 2.0]

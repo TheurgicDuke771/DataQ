@@ -27,12 +27,18 @@ describe('EngineTag (#1551)', () => {
     expect(container.querySelector('.ant-tag-blue')).not.toBeNull();
   });
 
-  it('falls back to a neutral color + the raw name for an engine outside the known set (dqx/dataplex, ADR 0036 §6) — never silently matches gx or dmf', () => {
-    const { container } = render(<EngineTag engine="dqx" />);
-    expect(screen.getByText('DQX')).toBeInTheDocument();
+  it('falls back to a neutral color + the raw name for an engine outside the known set (dataplex, ADR 0036 §6) — never silently matches a known one', () => {
+    const { container } = render(<EngineTag engine="dataplex" />);
+    expect(screen.getByText('DATAPLEX')).toBeInTheDocument();
     expect(container.querySelector('.ant-tag-blue')).toBeNull();
     expect(container.querySelector('.ant-tag-purple')).toBeNull();
+    expect(container.querySelector('.ant-tag-orange')).toBeNull();
     expect(container.querySelector('.ant-tag-default')).not.toBeNull();
+  });
+
+  it('gives Databricks DQX its own tag, distinct from gx and dmf', () => {
+    const { container } = render(<EngineTag engine="dqx" />);
+    expect(container.querySelector('.ant-tag-orange')).not.toBeNull();
   });
 
   it('engineShortLabel uppercases, defaults to gx, and treats an empty string as falsy', () => {

@@ -3050,3 +3050,28 @@ def test_a_stored_check_outside_the_allowlist_still_runs_and_deletes(
     assert listed.status_code == 200
     deleted = client.delete(f'/api/v1/suites/{sid}/checks/{created["id"]}')
     assert deleted.status_code == 204
+
+
+def test_dryrun_refuses_a_dqx_check_rather_than_waiting_on_a_workspace_job(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A DQX check runs as a serverless job — a minute of start-up, up to its 30-minute timeout.
+    A synchronous preview would hold the request (and a proxy gateway error) that long."""
+    sid = _suite_id(
+        client,
+        db_session,
+        conn_type="unity_catalog",
+        target={"table": "ORDERS", "schema": "SALES", "catalog": "MAIN"},
+    )
+    runner = _FakeRunner(supported_native_engines=frozenset({"dqx"}))
+    _patch_runner(monkeypatch, runner)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks/dryrun",
+        json=_dryrun_body(
+            expectation_type="dqx:is_not_null", config={"column": "order_id"}, engine="dqx"
+        ),
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "dry_run_unsupported"
+    assert "Run the suite" in resp.json()["error"]["message"]
+    assert runner.native_called_with is None

@@ -30,10 +30,11 @@ export type ExpectationCategory =
   | 'Anomaly'
   | 'Custom SQL'
   | 'Comparison'
-  | 'Snowflake DMF';
+  | 'Snowflake DMF'
+  | 'Databricks DQX';
 
 /** Check engine (ADR 0036). */
-export type CheckEngine = 'gx' | 'dmf';
+export type CheckEngine = 'gx' | 'dmf' | 'dqx';
 
 export const EXPECTATION_CATEGORIES: ExpectationCategory[] = [
   'Column values',
@@ -42,6 +43,7 @@ export const EXPECTATION_CATEGORIES: ExpectationCategory[] = [
   'Volume',
   'Schema',
   'Snowflake DMF',
+  'Databricks DQX',
   'Anomaly',
   'Custom SQL',
   'Comparison',
@@ -188,6 +190,11 @@ export const FRESHNESS_EXPECTATION_TYPE = 'monitor:freshness';
 /** Mirrors `engines_for('snowflake')` (`backend/app/datasources/engines.py`). */
 export function offersDmfEngine(connectionType: ConnectionType | undefined): boolean {
   return connectionType === 'snowflake';
+}
+
+/** Mirrors `engines_for('unity_catalog')` (`backend/app/datasources/engines.py`). */
+export function offersDqxEngine(connectionType: ConnectionType | undefined): boolean {
+  return connectionType === 'unity_catalog';
 }
 
 /** True only for Freshness on a Snowflake connection — the one spec with an engine choice. */
@@ -899,6 +906,107 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     category: 'Snowflake DMF',
     fields: [COLUMN],
   },
+  // Databricks DQX (ADR 0036 §6) — runs in the connection's own workspace, never in DataQ.
+  {
+    type: 'dqx:is_not_null',
+    engine: 'dqx',
+    dimension: 'completeness',
+    label: 'Not null (DQX)',
+    description: 'Rows where the column is NULL.',
+    category: 'Databricks DQX',
+    fields: [COLUMN],
+    thresholds: {
+      help: 'Rows failing the rule, counted by Databricks DQX in a serverless job in your own workspace (about a minute to start). Thresholds band the failing-row count; leave them blank to fail on any failing row.',
+    },
+  },
+  {
+    type: 'dqx:is_not_empty',
+    engine: 'dqx',
+    dimension: 'completeness',
+    label: 'Not empty (DQX)',
+    description: 'Rows where the column is an empty string.',
+    category: 'Databricks DQX',
+    fields: [COLUMN],
+    thresholds: {
+      help: 'Rows failing the rule, counted by Databricks DQX in a serverless job in your own workspace (about a minute to start). Thresholds band the failing-row count; leave them blank to fail on any failing row.',
+    },
+  },
+  {
+    type: 'dqx:is_not_null_and_not_empty',
+    engine: 'dqx',
+    dimension: 'completeness',
+    label: 'Not null or empty (DQX)',
+    description: 'Rows where the column is NULL or an empty string.',
+    category: 'Databricks DQX',
+    fields: [COLUMN],
+    thresholds: {
+      help: 'Rows failing the rule, counted by Databricks DQX in a serverless job in your own workspace (about a minute to start). Thresholds band the failing-row count; leave them blank to fail on any failing row.',
+    },
+  },
+  {
+    type: 'dqx:is_in_list',
+    engine: 'dqx',
+    dimension: 'validity',
+    label: 'In list (DQX)',
+    description: 'Rows whose value is not one of the allowed values.',
+    category: 'Databricks DQX',
+    fields: [COLUMN, { name: 'allowed', label: 'Allowed values', type: 'list' }],
+    thresholds: {
+      help: 'Rows failing the rule, counted by Databricks DQX in a serverless job in your own workspace (about a minute to start). Thresholds band the failing-row count; leave them blank to fail on any failing row.',
+    },
+  },
+  {
+    type: 'dqx:is_in_range',
+    engine: 'dqx',
+    dimension: 'validity',
+    label: 'In range (DQX)',
+    description: 'Rows whose value falls outside the inclusive range.',
+    category: 'Databricks DQX',
+    fields: [
+      COLUMN,
+      { name: 'min_limit', label: 'Minimum', type: 'number' },
+      { name: 'max_limit', label: 'Maximum', type: 'number' },
+    ],
+    thresholds: {
+      help: 'Rows failing the rule, counted by Databricks DQX in a serverless job in your own workspace (about a minute to start). Thresholds band the failing-row count; leave them blank to fail on any failing row.',
+    },
+  },
+  {
+    type: 'dqx:regex_match',
+    engine: 'dqx',
+    dimension: 'validity',
+    label: 'Matches regex (DQX)',
+    description: 'Rows whose value does not match the regular expression.',
+    category: 'Databricks DQX',
+    fields: [COLUMN, { name: 'regex', label: 'Regex', type: 'string' }],
+    thresholds: {
+      help: 'Rows failing the rule, counted by Databricks DQX in a serverless job in your own workspace (about a minute to start). Thresholds band the failing-row count; leave them blank to fail on any failing row.',
+    },
+  },
+  {
+    type: 'dqx:is_not_less_than',
+    engine: 'dqx',
+    dimension: 'validity',
+    label: 'Not less than (DQX)',
+    description: 'Rows whose value is below the limit.',
+    category: 'Databricks DQX',
+    fields: [COLUMN, { name: 'limit', label: 'Limit', type: 'number' }],
+    thresholds: {
+      help: 'Rows failing the rule, counted by Databricks DQX in a serverless job in your own workspace (about a minute to start). Thresholds band the failing-row count; leave them blank to fail on any failing row.',
+    },
+  },
+  {
+    type: 'dqx:is_not_greater_than',
+    engine: 'dqx',
+    dimension: 'validity',
+    label: 'Not greater than (DQX)',
+    description: 'Rows whose value is above the limit.',
+    category: 'Databricks DQX',
+    fields: [COLUMN, { name: 'limit', label: 'Limit', type: 'number' }],
+    thresholds: {
+      help: 'Rows failing the rule, counted by Databricks DQX in a serverless job in your own workspace (about a minute to start). Thresholds band the failing-row count; leave them blank to fail on any failing row.',
+    },
+  },
 ];
 
 /** Lookup by expectation_type (for prefilling the editor in edit mode). */
@@ -935,6 +1043,7 @@ const ANOMALY_CATEGORY: ExpectationCategory = 'Anomaly';
 const MONITOR_CATEGORY_SET = new Set<ExpectationCategory>(MONITOR_CATEGORIES);
 
 const DMF_CATEGORY: ExpectationCategory = 'Snowflake DMF';
+const DQX_CATEGORY: ExpectationCategory = 'Databricks DQX';
 
 /** Grouped catalog filtered for a suite's datasource. */
 export function expectationsByCategoryFor(
@@ -947,6 +1056,7 @@ export function expectationsByCategoryFor(
   const sqlAllowed = connectionType !== undefined && isSqlQueryable(connectionType);
   const monitorAllowed = connectionType !== undefined && supportsMonitors(connectionType);
   const dmfAllowed = offersDmfEngine(connectionType);
+  const dqxAllowed = offersDqxEngine(connectionType);
   const selectedCategory = alwaysIncludeType
     ? EXPECTATION_BY_TYPE[alwaysIncludeType]?.category
     : undefined;
@@ -954,6 +1064,7 @@ export function expectationsByCategoryFor(
     if (category === selectedCategory) return true;
     if (category === CUSTOM_SQL_CATEGORY || category === ANOMALY_CATEGORY) return sqlAllowed;
     if (category === DMF_CATEGORY) return dmfAllowed;
+    if (category === DQX_CATEGORY) return dqxAllowed;
     if (MONITOR_CATEGORY_SET.has(category)) return monitorAllowed;
     return true; // datasource-agnostic category
   };
