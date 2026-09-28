@@ -323,16 +323,17 @@ def test_failed_population_query_degrades_honestly(
 def test_one_failing_check_does_not_starve_its_sibling(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    real = gx_runner._population_rows
-    seen: list[str] = []
+    """The checks resolve in one batch (#2107); a failure there retries them singly, so one
+    check's broken metric still leaves its sibling a summary."""
+    real = gx_runner._population_metric
+    broken = _CHECK.kwargs["column"]
 
-    def _first_fails(validator: Any, spec: CheckSpec, index_columns: Any) -> Any:
-        seen.append(spec.kwargs["column"])
-        if len(seen) == 1:
+    def _one_breaks(validator: Any, spec: CheckSpec, index_columns: Any) -> Any:
+        if spec.kwargs["column"] == broken:
             raise RuntimeError("transient")
         return real(validator, spec, index_columns)
 
-    monkeypatch.setattr(gx_runner, "_population_rows", _first_fails)
+    monkeypatch.setattr(gx_runner, "_population_metric", _one_breaks)
     other = CheckSpec(_IN_SET, {"column": "customer_id", "value_set": [0]})
     context, batch_definition = _sql_batch(tmp_path, "two", _frame())
     outcome = run_expectations(
@@ -347,6 +348,42 @@ def test_one_failing_check_does_not_starve_its_sibling(
     assert first is not None and second is not None
     assert first[VALUE_SIGNAL_STATUS_KEY] == VALUE_SIGNAL_SAMPLE_FAILED
     assert VALUE_SIGNAL_SUMMARY_KEY in second
+
+
+def test_pending_checks_share_one_population_resolution(tmp_path: Path) -> None:
+    """Two pending checks pay ONE shared `table.row_count` COUNT in the population phase,
+    not one each (#2107) — GX dedupes a batch's shared dependencies."""
+    from sqlalchemy import event
+    from sqlalchemy.engine import Engine
+
+    other = CheckSpec(_IN_SET, {"column": "customer_id", "value_set": [0]})
+    context, batch_definition = _sql_batch(tmp_path, "shared", _frame())
+    statements: list[str] = []
+
+    def _record(_c: Any, _cur: Any, statement: str, *_rest: Any) -> None:
+        statements.append(statement)
+
+    event.listen(Engine, "before_cursor_execute", _record)
+    try:
+        outcome = run_expectations(
+            context,
+            batch_definition=batch_definition,
+            checks=[_CHECK, other],
+            name="shared",
+            index_columns=None,
+            value_signal_gate=_always,
+        )
+    finally:
+        event.remove(Engine, "before_cursor_execute", _record)
+
+    assert all(
+        VALUE_SIGNAL_SUMMARY_KEY in (check.sample_failures or {}) for check in outcome.checks
+    )
+    population = [s for s in statements if "LIMIT" in s and "unexpected_values" not in s]
+    assert len(population) >= 2, statements
+    first_population = statements.index(population[0])
+    counts_after = [s for s in statements[first_population - 2 :] if "table.row_count" in s]
+    assert len(counts_after) == 1, statements[first_population - 2 :]
 
 
 def test_unity_catalog_pushdown_lane_carries_the_signal(
