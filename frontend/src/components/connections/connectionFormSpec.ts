@@ -35,6 +35,8 @@ export interface AuthOption {
   secretLabel: string;
   /** The mode authenticates with no secret at all (e.g. Trino `none`): no secret field. */
   noSecret?: boolean;
+  /** The mode's secret may be left empty (e.g. a dbt project whose artifacts are on `file://`). */
+  optionalSecret?: boolean;
   /** Secret is a multi-line PEM key rather than a single-line password. */
   multilineSecret?: boolean;
   /**
@@ -590,10 +592,43 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
         extra:
           'auto (default) · path · virtual — auto uses path addressing when an endpoint is set',
       },
+      {
+        name: 'account_url',
+        label: 'Account URL (ADLS only)',
+        optional: true,
+        extra:
+          'An ADLS-compatible endpoint, e.g. https://onelake.blob.fabric.microsoft.com — then ' +
+          'adls://onelake/<workspace>/… names the workspace. Blank for Azure Storage.',
+      },
     ],
-    secretLabel: 'Artifacts read credential (ADLS SAS / S3 secret key)',
-    optionalSecret: true,
-    destinationFields: ['artifacts_uri', 'endpoint_url'],
+    auth: [
+      {
+        value: 'key',
+        label: 'Key or SAS',
+        secretLabel: 'Artifacts read credential (ADLS SAS / S3 secret key)',
+        optionalSecret: true,
+      },
+      {
+        value: 'service_principal',
+        label: 'Service principal (Entra ID, ADLS only)',
+        secretLabel: 'Client secret',
+        extraFields: [
+          { name: 'tenant_id', label: 'Tenant ID' },
+          { name: 'client_id', label: 'Client ID' },
+        ],
+        expiryNotReadable:
+          "DataQ cannot read a client secret's expiry — track it in Entra ID, where it was " +
+          'created, and re-authenticate before it lapses.',
+      },
+    ],
+    destinationFields: [
+      'artifacts_uri',
+      'endpoint_url',
+      'account_url',
+      'auth_type',
+      'tenant_id',
+      'client_id',
+    ],
   },
 };
 
