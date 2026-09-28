@@ -1,11 +1,13 @@
 """ADLS Gen2 connection adapter tests — config validation + the container probe."""
 
+import time
 from typing import Any, ClassVar
 
 import azure.storage.blob as azblob
 import pytest
 from pydantic import ValidationError
 
+from backend.app.datasources import adls
 from backend.app.datasources.adls import AdlsConfig, AdlsConnectionAdapter, blob_service_client
 
 _SAS_CONFIG = {
@@ -166,13 +168,32 @@ def test_validate_config_rejects_service_principal_fields_on_a_sas_connection(fi
 
 class _FakeCredential:
     instances: ClassVar[list["_FakeCredential"]] = []
+    #: Every token request that reached "Entra", as (scopes, options).
+    requests: ClassVar[list[tuple[tuple[str, ...], Any]]] = []
+    lifetime_s: ClassVar[float] = 3600.0
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         self.args, self.kwargs, self.closed = args, kwargs, False
         _FakeCredential.instances.append(self)
 
+    def get_token_info(self, *scopes: str, options: Any = None) -> Any:
+        from azure.core.credentials import AccessTokenInfo
+
+        _FakeCredential.requests.append((scopes, options))
+        n = len(_FakeCredential.requests)
+        return AccessTokenInfo(f"token-{n}", int(time.time() + _FakeCredential.lifetime_s))
+
     def close(self) -> None:
         self.closed = True
+
+
+@pytest.fixture(autouse=True)
+def _empty_token_cache() -> Any:
+    adls._token_cache.clear()
+    _FakeCredential.requests = []
+    _FakeCredential.lifetime_s = 3600.0
+    yield
+    adls._token_cache.clear()
 
 
 class _RecordingClient:
@@ -229,13 +250,15 @@ def test_factory_builds_a_client_secret_credential_for_service_principal(
 ) -> None:
     client = blob_service_client(AdlsConfig.model_validate(_SP_CONFIG), "the-secret", retry_total=0)
 
+    inner = _last(fake_sdk)
+    wrapper = inner.kwargs["credential"]
+    assert isinstance(wrapper, adls._CachedClientSecretCredential)  # never the raw secret string
+    assert inner.kwargs["account_url"] == _SP_CONFIG["account_url"]
+    wrapper.get_token_info("https://storage.azure.com/.default")
     (cred,) = _FakeCredential.instances
     assert cred.args == (_TENANT, _CLIENT, "the-secret")
     # The client's bounds also bound the token request.
     assert cred.kwargs == {"retry_total": 0}
-    inner = _last(fake_sdk)
-    assert inner.kwargs["credential"] is cred  # never the raw secret string
-    assert inner.kwargs["account_url"] == _SP_CONFIG["account_url"]
 
     client.close()
     assert inner.closed and cred.closed
@@ -252,6 +275,7 @@ def test_factory_closes_the_credential_even_if_closing_the_client_fails(
     fake_sdk: type[_RecordingClient], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     client = blob_service_client(AdlsConfig.model_validate(_SP_CONFIG), "s")
+    _last(fake_sdk).kwargs["credential"].get_token_info("scope")
 
     def _boom() -> None:
         raise RuntimeError("transport already gone")
@@ -276,7 +300,8 @@ def test_factory_closes_the_credential_if_the_client_cannot_be_built(
     monkeypatch.setattr(azblob, "BlobServiceClient", _refuse)
     with pytest.raises(ValueError, match="bad account url"):
         blob_service_client(AdlsConfig.model_validate(_SP_CONFIG), "s")
-    assert _FakeCredential.instances[0].closed
+    # The credential is built only for a token, and none was requested.
+    assert _FakeCredential.instances == []
 
 
 def test_factory_refuses_an_unvalidated_auth_mode() -> None:
@@ -296,7 +321,7 @@ def test_test_with_service_principal_also_lists_one_entry(fake_sdk: type[_Record
     assert inner.calls[0] == "props:my-workspace"
     # Delimited — OneLake 400s a flat listing of the workspace root.
     assert inner.calls[1] == "walk:[('delimiter', '/'), ('results_per_page', 1)]"
-    assert inner.closed and _FakeCredential.instances[0].closed
+    assert inner.closed
 
 
 def test_test_with_service_principal_fails_when_the_data_plane_refuses(
@@ -307,7 +332,8 @@ def test_test_with_service_principal_fails_when_the_data_plane_refuses(
     fake_sdk.walk_error = HttpResponseError(message="AuthorizationPermissionMismatch")
     with pytest.raises(HttpResponseError, match="AuthorizationPermissionMismatch"):
         AdlsConnectionAdapter().test(dict(_SP_CONFIG), "s")
-    assert _last(fake_sdk).closed and _FakeCredential.instances[0].closed
+    assert _last(fake_sdk).closed
+    assert all(cred.closed for cred in _FakeCredential.instances)
 
 
 def test_test_with_sas_does_not_list(fake_sdk: type[_RecordingClient]) -> None:
@@ -341,3 +367,120 @@ def test_destination_fields_cover_every_field_that_steers_the_secret() -> None:
         "tenant_id",
         "client_id",
     }
+
+
+# ── #2127: tokens outlive the per-operation client ───────────────────────────
+
+_SCOPE = "https://storage.azure.com/.default"
+
+
+def _token(secret: str = "s", *, options: Any = None, **cfg: Any) -> Any:
+    config = AdlsConfig.model_validate({**_SP_CONFIG, **cfg})
+    client = blob_service_client(config, secret)
+    try:
+        return client.kwargs["credential"].get_token_info(_SCOPE, options=options)
+    finally:
+        client.close()
+
+
+def test_a_second_client_for_the_same_principal_reuses_the_token(
+    fake_sdk: type[_RecordingClient],
+) -> None:
+    first, second = _token(), _token()
+    assert first.token == second.token == "token-1"
+    assert len(_FakeCredential.requests) == 1
+    # The second client never even built a credential of its own.
+    assert len(_FakeCredential.instances) == 1
+
+
+def test_a_rotated_secret_or_another_principal_misses_the_cache(
+    fake_sdk: type[_RecordingClient],
+) -> None:
+    _token("old")
+    _token("new")
+    _token("new", client_id="22222222-2222-2222-2222-222222222222")
+    assert len(_FakeCredential.requests) == 3
+
+
+def test_a_token_near_expiry_is_refetched(fake_sdk: type[_RecordingClient]) -> None:
+    _FakeCredential.lifetime_s = adls._TOKEN_REFRESH_MARGIN_S - 1
+    _token()
+    _token()
+    assert len(_FakeCredential.requests) == 2
+
+
+def test_a_claims_challenge_always_reaches_entra(fake_sdk: type[_RecordingClient]) -> None:
+    _token()
+    _token(options={"claims": '{"access_token":{}}'})
+    assert len(_FakeCredential.requests) == 2
+    assert _FakeCredential.requests[1][1] == {"claims": '{"access_token":{}}'}
+
+
+def test_the_legacy_get_token_path_shares_the_cache(fake_sdk: type[_RecordingClient]) -> None:
+    _token()
+    client = blob_service_client(AdlsConfig.model_validate(_SP_CONFIG), "s")
+    try:
+        legacy = client.kwargs["credential"].get_token(_SCOPE)
+    finally:
+        client.close()
+    assert legacy.token == "token-1"
+    assert len(_FakeCredential.requests) == 1
+
+
+def test_a_forked_child_starts_with_an_empty_cache_and_a_fresh_lock(
+    fake_sdk: type[_RecordingClient],
+) -> None:
+    _token()
+    parent_lock = adls._token_lock
+    adls._reset_token_cache_in_child()
+    assert adls._token_cache == {} and adls._token_lock is not parent_lock
+    _token()
+    assert len(_FakeCredential.requests) == 2
+
+
+def test_the_cache_holds_no_secret(fake_sdk: type[_RecordingClient]) -> None:
+    _token("plain-secret-value")
+    assert "plain-secret-value" not in repr(adls._token_cache)
+
+
+def test_the_real_blob_sdk_authenticates_two_clients_with_one_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Through azure-core's own bearer-token policy, not a stubbed client: two operations, each
+    on its own `BlobServiceClient`, send the same token after a single request to Entra."""
+    import azure.identity as azid
+    from azure.core.pipeline.transport import HttpResponse, HttpTransport
+
+    _FakeCredential.instances = []
+    monkeypatch.setattr(azid, "ClientSecretCredential", _FakeCredential)
+    sent: list[str] = []
+
+    class _Response(HttpResponse):
+        def __init__(self, request: Any) -> None:
+            super().__init__(request, None)
+            self.status_code = 200
+            self.headers = {"x-ms-version": "2021-08-06"}
+            self.reason = "OK"
+            self.content_type = "application/xml"
+
+        def body(self) -> bytes:
+            return b""
+
+    class _Transport(HttpTransport):
+        def send(self, request: Any, **_: Any) -> Any:
+            sent.append(request.headers["Authorization"])
+            return _Response(request)
+
+        def open(self) -> None: ...
+        def close(self) -> None: ...
+        def __exit__(self, *_: Any) -> None: ...
+
+    config = AdlsConfig.model_validate(_SP_CONFIG)
+    for _ in range(2):
+        client = blob_service_client(config, "s", transport=_Transport())
+        try:
+            client.get_container_client("c").get_container_properties()
+        finally:
+            client.close()
+    assert sent == ["Bearer token-1", "Bearer token-1"]
+    assert len(_FakeCredential.requests) == 1
