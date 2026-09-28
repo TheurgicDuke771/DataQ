@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "9d12403aad87",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-2158-browse-object-type",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/datasources/sql.py",
+    "backend/tests/datasources/test_sql.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/9d/12403aad87/0/metadata.json",
+      "transcript": "/9d/12403aad87/0/full.jsonl",
+      "compact_transcript": "/9d/12403aad87/0/transcript.jsonl",
+      "content_hash": "/9d/12403aad87/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 2747,
+    "cache_read_tokens": 1720544,
+    "output_tokens": 2920,
+    "api_call_count": 4
+  }
+}
