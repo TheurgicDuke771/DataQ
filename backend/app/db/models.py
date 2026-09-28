@@ -34,6 +34,7 @@ CONNECTION_TYPES = (
     "mysql",
     "trino",
     "mssql",
+    "athena",
     "adf",
     "airflow",
     "dbt",
