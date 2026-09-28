@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "93ec9e9fb96a",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2137-mssql-mixed-case-schema",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/ops-log.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/93/ec9e9fb96a/0/metadata.json",
+      "transcript": "/93/ec9e9fb96a/0/full.jsonl",
+      "compact_transcript": "/93/ec9e9fb96a/0/transcript.jsonl",
+      "content_hash": "/93/ec9e9fb96a/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2,
+    "cache_creation_tokens": 1539,
+    "cache_read_tokens": 675336,
+    "output_tokens": 1632,
+    "api_call_count": 1
+  }
+}
