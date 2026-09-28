@@ -150,7 +150,10 @@ POSTGRES = SqlEngineSpec(
             " ORDER BY n.nspname LIMIT :lim"
         ),
         tables_sql=(
-            "SELECT n.nspname, c.relname FROM pg_catalog.pg_class c"  # noqa: S608  # nosec B608
+            "SELECT n.nspname, c.relname,"  # noqa: S608  # nosec B608
+            " CASE c.relkind WHEN 'v' THEN 'VIEW' WHEN 'm' THEN 'MATERIALIZED VIEW'"
+            " ELSE 'BASE TABLE' END"
+            " FROM pg_catalog.pg_class c"
             " JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace"
             " WHERE c.relkind IN ('r', 'p', 'v', 'm', 'f') AND NOT c.relispartition"
             f" AND {_SYSTEM_SCHEMA_FILTER}"

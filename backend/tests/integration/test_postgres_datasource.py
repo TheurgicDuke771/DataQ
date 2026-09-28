@@ -83,6 +83,8 @@ def _seed_sql(schema: str, hidden: str) -> list[str]:
         f'CREATE TABLE "{schema}".orders_lc (id integer, loaded_at timestamptz)',
         f'INSERT INTO "{schema}".orders_lc VALUES (1, now()), (2, now()), (2, now())',
         f'CREATE VIEW "{schema}".big_orders AS SELECT * FROM "{schema}"."Orders" WHERE amount > 10',
+        f'CREATE MATERIALIZED VIEW "{schema}".order_totals AS SELECT count(*) AS n'
+        f' FROM "{schema}"."Orders"',
         # Types whose own name hides that they cannot aggregate: a domain over json, and arrays
         # whose ELEMENT has no MIN/MAX or no equality.
         f'CREATE DOMAIN "{schema}".payload_doc AS json',
@@ -637,7 +639,13 @@ def test_browse_walks_schemas_then_tables(db_session: Any, pg: PgTarget) -> None
     tables = browse_service.browse_catalog(connection, catalog=None, schema=pg.schema, **kwargs)
     assert top.level == "schema" and pg.schema in [e.name for e in top.entries]
     assert tables.level == "table"
-    assert [e.name for e in tables.entries] == ["Orders", "TypeEdges", "big_orders", "orders_lc"]
+    assert [(e.name, e.object_type) for e in tables.entries] == [
+        ("Orders", "table"),
+        ("TypeEdges", "table"),
+        ("big_orders", "view"),
+        ("order_totals", "materialized_view"),
+        ("orders_lc", "table"),
+    ]
     with pytest.raises(browse_service.BrowseInputInvalidError):
         browse_service.browse_catalog(connection, catalog="other_db", schema=None, **kwargs)
 

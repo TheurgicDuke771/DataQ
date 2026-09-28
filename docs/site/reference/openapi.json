@@ -1220,6 +1220,25 @@
             "title": "Name",
             "type": "string"
           },
+          "object_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "table",
+                  "view",
+                  "materialized_view",
+                  "dynamic_table",
+                  "streaming_table"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "At the table level, the relation's kind; null at the catalog and schema levels.",
+            "title": "Object Type"
+          },
           "selectable": {
             "description": "False when DataQ cannot target this name (not a plain SQL identifier).",
             "title": "Selectable",

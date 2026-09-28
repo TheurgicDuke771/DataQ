@@ -362,6 +362,8 @@ export async function listConnectionVersions(id: string): Promise<ConnectionVers
 export interface CatalogEntry {
   name: string;
   selectable: boolean;
+  /** At the table level, the relation's kind; null at the catalog and schema levels. */
+  object_type?: 'table' | 'view' | 'materialized_view' | 'dynamic_table' | 'streaming_table' | null;
 }
 
 /** Mirrors `GET /connections/{id}/browse/catalog` — one level of catalog → schema → table. */

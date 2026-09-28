@@ -15,7 +15,12 @@ from backend.app.datasources import monitors as monitors_module
 from backend.app.datasources import sql
 from backend.app.datasources.base import MonitorSpec
 from backend.app.datasources.monitors import run_monitors_over_engine
-from backend.app.datasources.sql import is_sql_identifier, strip_statement_echo
+from backend.app.datasources.sql import (
+    OBJECT_TYPES,
+    is_sql_identifier,
+    object_type,
+    strip_statement_echo,
+)
 from backend.app.services import profile_service
 
 # ───────────────────────── identifier allowlist ─────────────────────────
@@ -425,3 +430,25 @@ def test_every_part_is_allowlist_checked_before_interpolation(
         sql.qualified_sql_name(
             table=table, schema=schema, catalog=catalog, dialect=_databricks_dialect()
         )
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        # information_schema (Postgres CASE, MySQL, Trino, SQL Server, Snowflake)
+        ("BASE TABLE", "table"),
+        ("SYSTEM VERSIONED", "table"),
+        ("VIEW", "view"),
+        ("MATERIALIZED VIEW", "materialized_view"),
+        # Unity Catalog, live-verified
+        ("MANAGED", "table"),
+        ("EXTERNAL", "table"),
+        ("MATERIALIZED_VIEW", "materialized_view"),
+        ("STREAMING_TABLE", "streaming_table"),
+        ("view", "view"),
+        (None, "table"),
+    ],
+)
+def test_object_type_normalizes_every_engines_label(raw: object, expected: str) -> None:
+    assert object_type(raw) == expected
+    assert object_type(raw) in OBJECT_TYPES

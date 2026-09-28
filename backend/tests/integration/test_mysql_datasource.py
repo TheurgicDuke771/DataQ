@@ -510,11 +510,17 @@ def test_enumeration_is_privilege_filtered_and_joins_the_suite_target_identity(
     with profile_service._open_connection(connection, store) as conn:
         schemas = generic_sql.schema_names(_SPEC, conn, limit=None)
         tables = generic_sql.table_rows(_SPEC, conn, schema=my.database, limit=None)
+        typed = generic_sql.typed_table_rows(_SPEC, conn, schema=my.database, limit=None)
         identities = get_table_enumerator("mysql").enumerate_tables(  # type: ignore[union-attr]
             conn, connection_config=my.config
         )
     assert my.database in schemas and my.hidden not in schemas
     assert sorted(t for _, t in tables) == ["Orders", "big_orders", "orders_lc"]
+    assert sorted((t, kind) for _, t, kind in typed) == [
+        ("Orders", "table"),
+        ("big_orders", "view"),
+        ("orders_lc", "table"),
+    ]
     target = resolve_asset_identity("mysql", my.config, {"table": "Orders"})
     assert target.name == f"{my.database}.Orders"
     assert (target.namespace, target.name) in {(i.namespace, i.name) for i in identities}

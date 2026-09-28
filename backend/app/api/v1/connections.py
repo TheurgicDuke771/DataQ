@@ -413,6 +413,13 @@ class CatalogEntryRead(ApiModel):
     selectable: bool = Field(
         description="False when DataQ cannot target this name (not a plain SQL identifier)."
     )
+    object_type: (
+        Literal["table", "view", "materialized_view", "dynamic_table", "streaming_table"] | None
+    ) = Field(
+        default=None,
+        description="At the table level, the relation's kind; null at the catalog and schema "
+        "levels.",
+    )
 
 
 class CatalogBrowseRead(ApiModel):
@@ -484,7 +491,10 @@ def browse_connection_catalog(
         level=listing.level,
         catalog=listing.catalog,
         schema_=listing.schema,
-        entries=[CatalogEntryRead(name=e.name, selectable=e.selectable) for e in listing.entries],
+        entries=[
+            CatalogEntryRead(name=e.name, selectable=e.selectable, object_type=e.object_type)
+            for e in listing.entries
+        ],
         truncated=listing.truncated,
         limit=listing.limit,
     )

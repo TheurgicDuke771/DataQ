@@ -5,7 +5,7 @@ import {
   FolderOutlined,
   TableOutlined,
 } from '@ant-design/icons';
-import { Alert, Breadcrumb, Button, Empty, Flex, Modal, Spin, Typography } from 'antd';
+import { Alert, Breadcrumb, Button, Empty, Flex, Modal, Spin, Tag, Typography } from 'antd';
 import axios from 'axios';
 import { type ReactNode, useEffect, useState } from 'react';
 
@@ -226,14 +226,17 @@ export function CatalogBrowserButton({
                 renderItem={(entry) => (
                   <SimpleList.Item>
                     {entry.selectable ? (
-                      <Button
-                        type="link"
-                        icon={icon}
-                        onClick={() => choose(entry.name)}
-                        style={{ padding: 0 }}
-                      >
-                        {entry.name}
-                      </Button>
+                      <Flex align="center" gap={8}>
+                        <Button
+                          type="link"
+                          icon={icon}
+                          onClick={() => choose(entry.name)}
+                          style={{ padding: 0 }}
+                        >
+                          {entry.name}
+                        </Button>
+                        <ObjectTypeTag type={entry.object_type} />
+                      </Flex>
                     ) : (
                       <Flex vertical>
                         <Typography.Text type="secondary">
@@ -442,4 +445,17 @@ export function FileBrowserButton({
       </Modal>
     </>
   );
+}
+
+const OBJECT_TYPE_LABELS: Record<string, string> = {
+  view: 'View',
+  materialized_view: 'Materialized view',
+  dynamic_table: 'Dynamic table',
+  streaming_table: 'Streaming table',
+};
+
+/** Marks anything that is not a plain table, so a view is never picked by mistake. */
+function ObjectTypeTag({ type }: { type?: string | null }) {
+  const label = type ? OBJECT_TYPE_LABELS[type] : undefined;
+  return label ? <Tag>{label}</Tag> : null;
 }

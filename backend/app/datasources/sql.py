@@ -150,3 +150,15 @@ class LazyEngine:
         if self._engine is not None:
             self._engine.dispose()
             self._engine = None
+
+
+#: The kinds of relation a catalog listing distinguishes (#2158).
+OBJECT_TYPES: Final = ("table", "view", "materialized_view", "dynamic_table", "streaming_table")
+
+
+def object_type(raw: object) -> str:
+    """Normalize an engine's own table-type label (``BASE TABLE``, ``MANAGED``, ``VIEW``, …)."""
+    label = str(raw or "").strip().upper().replace(" ", "_")
+    if label in ("MATERIALIZED_VIEW", "DYNAMIC_TABLE", "STREAMING_TABLE", "VIEW"):
+        return label.lower()
+    return "table"

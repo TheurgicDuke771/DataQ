@@ -5019,8 +5019,10 @@ def test_browse_connection_lists_a_table_level(db_session: Any, monkeypatch: Any
             catalog="main",
             schema="gold",
             entries=[
-                browse_service.CatalogEntry(name="orders", selectable=True),
-                browse_service.CatalogEntry(name="weird name", selectable=False),
+                browse_service.CatalogEntry(name="orders", selectable=True, object_type="table"),
+                browse_service.CatalogEntry(
+                    name="weird name", selectable=False, object_type="view"
+                ),
             ],
             truncated=True,
             limit=2,
@@ -5032,8 +5034,8 @@ def test_browse_connection_lists_a_table_level(db_session: Any, monkeypatch: Any
     assert seen["catalog"] == "main" and seen["schema"] == "gold" and seen["limit"] == 2
     assert out["kind"] == "tables" and out["level"] == "table"
     assert out["entries"] == [
-        {"name": "orders", "selectable": True},
-        {"name": "weird name", "selectable": False},
+        {"name": "orders", "selectable": True, "object_type": "table"},
+        {"name": "weird name", "selectable": False, "object_type": "view"},
     ]
     assert out["truncated"] is True
 

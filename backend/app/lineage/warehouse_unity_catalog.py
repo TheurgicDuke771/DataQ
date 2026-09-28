@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 from sqlalchemy import text
 
 from backend.app.core.logging import get_logger
+from backend.app.datasources.sql import object_type
 from backend.app.lineage.warehouse import (
     MAX_COLUMN_PAIRS_PER_EDGE,
     ColumnGrain,
@@ -119,8 +120,24 @@ class UnityCatalogLineageProvider:
         scoped to one catalog / schema — the same query and exclusions, shared with the
         interactive browser (#466) so a picked table is one the inventory would also see.
         """
+        return [
+            (c, s, t)
+            for c, s, t, _ in self.typed_table_rows(
+                conn, limit=limit, catalog=catalog, schema=schema
+            )
+        ]
+
+    def typed_table_rows(
+        self,
+        conn: object,
+        *,
+        limit: int | None = None,
+        catalog: str | None = None,
+        schema: str | None = None,
+    ) -> list[tuple[str, str, str, str]]:
+        """:meth:`table_rows` plus each relation's normalized :func:`sql.object_type`."""
         sql = (
-            "SELECT table_catalog, table_schema, table_name"
+            "SELECT table_catalog, table_schema, table_name, table_type"
             " FROM system.information_schema.tables"
             " WHERE table_catalog IS NOT NULL AND table_schema IS NOT NULL"
             " AND table_name IS NOT NULL"
@@ -142,8 +159,8 @@ class UnityCatalogLineageProvider:
             params["lim"] = int(limit)
         rows = conn.execute(text(sql), params).all()  # type: ignore[attr-defined]
         return [
-            (catalog_, schema_, table)
-            for catalog_, schema_, table in rows
+            (catalog_, schema_, table, object_type(kind))
+            for catalog_, schema_, table, kind in rows
             if catalog_ and schema_ and table  # same NULL-row guard as the SF seam
         ]
 

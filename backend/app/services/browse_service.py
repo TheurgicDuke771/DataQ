@@ -26,7 +26,7 @@ from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources import flatfile, generic_sql
 from backend.app.datasources.generic_sql import SqlEngineSpec
-from backend.app.datasources.sql import is_sql_identifier
+from backend.app.datasources.sql import is_sql_identifier, object_type
 from backend.app.datasources.sql_engines import (
     GENERIC_SQL_TYPES,
     authenticates_without_secret,
@@ -78,6 +78,16 @@ class CatalogEntry:
     #: Whether DataQ can target this name — runs only accept plain SQL identifiers, so an
     #: exotic name is listed (hiding it would misreport the catalog) but not pickable.
     selectable: bool
+    #: At the table level, the relation's kind (``sql.OBJECT_TYPES``); ``None`` above it.
+    object_type: str | None = None
+
+
+#: One listed name and, at the table level, its object type.
+_Named = tuple[str, str | None]
+
+
+def _untyped(names: list[str]) -> list[_Named]:
+    return [(name, None) for name in names]
 
 
 @dataclass(frozen=True)
@@ -212,7 +222,10 @@ def browse_catalog(
         level=level,
         catalog=catalog,
         schema=schema,
-        entries=[CatalogEntry(name=n, selectable=is_sql_identifier(n)) for n in names[:limit]],
+        entries=[
+            CatalogEntry(name=n, selectable=is_sql_identifier(n), object_type=kind)
+            for n, kind in names[:limit]
+        ],
         truncated=len(names) > limit,
         limit=limit,
     )
@@ -220,19 +233,21 @@ def browse_catalog(
 
 def _unity_catalog_names(
     conn: Any, *, catalog: str | None, schema: str | None, limit: int
-) -> list[str]:
+) -> list[_Named]:
     provider = UnityCatalogLineageProvider()
     if catalog is None:
-        return provider.catalog_names(conn, limit=limit)
+        return _untyped(provider.catalog_names(conn, limit=limit))
     if schema is None:
-        return provider.schema_names(conn, catalog=catalog, limit=limit)
+        return _untyped(provider.schema_names(conn, catalog=catalog, limit=limit))
     return [
-        table
-        for _, _, table in provider.table_rows(conn, limit=limit, catalog=catalog, schema=schema)
+        (table, kind)
+        for _, _, table, kind in provider.typed_table_rows(
+            conn, limit=limit, catalog=catalog, schema=schema
+        )
     ]
 
 
-def _snowflake_names(conn: Any, *, schema: str | None, limit: int) -> list[str]:
+def _snowflake_names(conn: Any, *, schema: str | None, limit: int) -> list[_Named]:
     """Schemas, then tables and views, of the connection's database — `INFORMATION_SCHEMA` is
     already filtered to what the role may see."""
     from sqlalchemy import text
@@ -245,23 +260,28 @@ def _snowflake_names(conn: Any, *, schema: str | None, limit: int) -> list[str]:
             ),
             {"lim": limit},
         ).all()
-    else:
-        # A run emits an all-lower-case name unquoted, so Snowflake folds it — browse the same way.
-        if schema == schema.lower():
-            schema = schema.upper()
-        rows = conn.execute(
-            text(
-                "SELECT table_name FROM INFORMATION_SCHEMA.TABLES "
-                "WHERE table_schema = :schema ORDER BY table_name LIMIT :lim"
-            ),
-            {"schema": schema, "lim": limit},
-        ).all()
-    return [str(name) for (name,) in rows if name]
+        return _untyped([str(name) for (name,) in rows if name])
+    # A run emits an all-lower-case name unquoted, so Snowflake folds it — browse the same way.
+    if schema == schema.lower():
+        schema = schema.upper()
+    rows = conn.execute(
+        text(
+            "SELECT table_name, table_type, is_dynamic FROM INFORMATION_SCHEMA.TABLES "
+            "WHERE table_schema = :schema ORDER BY table_name LIMIT :lim"
+        ),
+        {"schema": schema, "lim": limit},
+    ).all()
+    # A dynamic table reports as a BASE TABLE; only IS_DYNAMIC tells it apart.
+    return [
+        (str(name), "dynamic_table" if is_dynamic == "YES" else object_type(kind))
+        for name, kind, is_dynamic in rows
+        if name
+    ]
 
 
 def _iceberg_names(
     connection: Connection, secret_store: SecretStore, *, schema: str | None, limit: int
-) -> list[str]:
+) -> list[_Named]:
     """Top-level namespaces, then the tables in one — metadata only, no data file is read."""
     from backend.app.datasources.iceberg import (
         IcebergConfig,
@@ -273,20 +293,23 @@ def _iceberg_names(
     secret, catalog_secret = iceberg_credentials(config, connection.secret_ref, secret_store)
     iceberg = load_iceberg_catalog(config, secret, catalog_secret)
     if schema is None:
-        names = sorted({str(ns[0]) for ns in iceberg.list_namespaces() if ns})
-    else:
-        names = sorted(str(ident[-1]) for ident in iceberg.list_tables(schema))
-    return names[:limit]
+        return _untyped(sorted({str(ns[0]) for ns in iceberg.list_namespaces() if ns})[:limit])
+    # Views are not listed, so every entry at this level is a table.
+    tables = sorted(str(ident[-1]) for ident in iceberg.list_tables(schema))
+    return [(name, "table") for name in tables[:limit]]
 
 
 def _generic_sql_names(
     spec: SqlEngineSpec, conn: Any, *, schema: str | None, limit: int
-) -> list[str]:
+) -> list[_Named]:
     # The same catalog queries the inventory sync enumerates with (ADR 0040), so a picked table
     # is one the asset view would also show.
     if schema is None:
-        return generic_sql.schema_names(spec, conn, limit=limit)
-    return [table for _, table in generic_sql.table_rows(spec, conn, schema=schema, limit=limit)]
+        return _untyped(generic_sql.schema_names(spec, conn, limit=limit))
+    return [
+        (table, kind)
+        for _, table, kind in generic_sql.typed_table_rows(spec, conn, schema=schema, limit=limit)
+    ]
 
 
 def browse_files(
