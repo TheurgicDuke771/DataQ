@@ -484,3 +484,17 @@ def test_the_real_blob_sdk_authenticates_two_clients_with_one_token(
             client.close()
     assert sent == ["Bearer token-1", "Bearer token-1"]
     assert len(_FakeCredential.requests) == 1
+
+
+def test_a_connection_test_always_presents_the_secret_to_entra(
+    fake_sdk: type[_RecordingClient],
+) -> None:
+    """A cached token would keep a revoked or expired secret testing green for up to an hour."""
+    _token()
+    AdlsConnectionAdapter().test(dict(_SP_CONFIG), "s")
+    client = fake_sdk.last
+    assert client is not None
+    client.kwargs["credential"].get_token_info(_SCOPE)
+    assert len(_FakeCredential.requests) == 2
+    # And the fresh token does not stand in for a cached one either way.
+    assert _token().token == "token-1"

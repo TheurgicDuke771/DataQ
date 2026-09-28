@@ -122,7 +122,10 @@ class _CachedClientSecretCredential:
     transport, stay per client as before, and a forked child starts with an empty cache.
     """
 
-    def __init__(self, tenant_id: str, client_id: str, secret: str, **kwargs: Any) -> None:
+    def __init__(
+        self, tenant_id: str, client_id: str, secret: str, *, use_cache: bool = True, **kwargs: Any
+    ) -> None:
+        self._use_cache = use_cache
         self._args = (tenant_id, client_id, secret)
         self._kwargs = kwargs
         self._key = (tenant_id, client_id, hashlib.sha256(secret.encode()).hexdigest())
@@ -137,7 +140,8 @@ class _CachedClientSecretCredential:
 
     def get_token_info(self, *scopes: str, options: Any = None) -> Any:
         options = dict(options or {})
-        if options.get("claims"):  # a claims challenge must reach Entra, never the cache
+        # A claims challenge must reach Entra, never the cache.
+        if not self._use_cache or options.get("claims"):
             return self._credential().get_token_info(*scopes, options=options)
         key = (*self._key, str(options.get("tenant_id") or ""), *sorted(scopes))
         with _token_lock:
@@ -171,12 +175,16 @@ class _CachedClientSecretCredential:
             self._inner.close()
 
 
-def blob_service_client(config: AdlsConfig, secret: str, **client_kwargs: Any) -> Any:
+def blob_service_client(
+    config: AdlsConfig, secret: str, *, fresh_token: bool = False, **client_kwargs: Any
+) -> Any:
     """The ONE place an ADLS connection's credential becomes a `BlobServiceClient`.
 
     Every consumer (the connection test, flat-file reads/listing/browse) goes through here, so an
     auth mode is added once rather than at each door. ``client_kwargs`` (timeouts, retries) also
-    bound the Entra token request. The caller must ``close()`` the result.
+    bound the Entra token request. ``fresh_token`` skips the token cache, so the secret itself is
+    presented to Entra — a cached token would keep a revoked secret passing. The caller must
+    ``close()`` the result.
     """
     from azure.storage.blob import BlobServiceClient
 
@@ -187,7 +195,7 @@ def blob_service_client(config: AdlsConfig, secret: str, **client_kwargs: Any) -
         raise ValueError(f"unsupported ADLS auth_type {config.auth_type!r}")
 
     credential = _CachedClientSecretCredential(
-        config.tenant_id, config.client_id, secret, **client_kwargs
+        config.tenant_id, config.client_id, secret, use_cache=not fresh_token, **client_kwargs
     )
     try:
         # The client requests the Azure Storage audience, which OneLake also accepts.
@@ -232,6 +240,7 @@ class AdlsConnectionAdapter:
         client = blob_service_client(
             config,
             secret,
+            fresh_token=True,
             retry_total=0,
             connection_timeout=_TEST_TIMEOUT_SECONDS,
             read_timeout=_TEST_TIMEOUT_SECONDS,
