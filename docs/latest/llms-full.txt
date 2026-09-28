@@ -6869,20 +6869,48 @@ process baseline, three expectations, one process per view, all over
 | orders (9 cols) | 1,372 | 152 | 1,526 |
 | part (9 cols) | 1,619 | 180 | 1,616 |
 
-The final frame is a small part of it: 8 BIGINT columns hold 64 B/row once
-read, yet peak at 1,111. The read's per-cell Python objects dominate. So the
-dtype is the wrong key. A DECIMAL lands as `float64` yet costs twice an
-integer, which is why the model keys on the **reflected SQL type**. Costs were
-linear in rows (8 × BIGINT: 1,092 B/row at 200k, 1,111 at 400k).
+The final frame was a small part of it: 8 BIGINT columns hold 64 B/row once
+read, yet peaked at 1,111. The read's per-cell Python objects dominated.
+Costs were linear in rows (8 × BIGINT: 1,092 B/row at 200k, 1,111 at 400k).
 
-The model: fixed costs per type (bool 90, date 95, integer/float 140, timestamp
-150, decimal 270), and for strings and anything unlisted, 130 + 3 × the mean
-length sampled from the first 1,000 rows. Across the twelve views it reads
-0.96–1.23× the measurement, erring high. It gates the read against
-`RUN_MAX_FRAME_BYTES` (1.25 GiB) and is what admission reserves for a UC frame
-suite. Live on the rig, a 1M-row, 16-column lineitem view is refused with a
-2.71 GB estimate. It is under the 1.5M row cap, and with the frame cap
-disabled the same run is OOM-killed (exit 137).
+That table measured the original `pd.read_sql_table` read. The frame lane now
+fetches through the connector's Arrow interface and converts to the same
+dtypes. Frames were checked equal to `read_sql_table`'s on every view, under
+pandas 2 and 3, except BINARY and nested columns, which now keep their native
+values instead of being cast to `str` by pandas 3. Re-measured on the same rig:
+
+| View | `read_sql_table` B/row | Arrow B/row |
+|---|---|---|
+| 8 × BIGINT | 1,111 | 311 |
+| 8 × DOUBLE | 1,082 | 250 |
+| 8 × DECIMAL(18,2) | 2,119 | 301 |
+| 8 × DATE | 750 | 275 |
+| 8 × TIMESTAMP | 1,158 | 251 |
+| 8 × BOOLEAN | 697 | 108 |
+| 8 × STRING, 1–4 chars | 934 | 290 |
+| 8 × STRING, ~19 chars | 1,583 | 980 |
+| 4 × STRING, ~160 chars | 2,058 | 1,999 |
+| lineitem (16 cols) | 2,196 | 928 |
+| orders (9 cols) | 1,372 | 1,038 |
+| part (9 cols) | 1,619 | 925 |
+
+A 1M-row lineitem view, which was OOM-killed on the old read, now completes
+at a 1,185 MiB peak.
+
+Fixed-width types all land at 31–38 B/cell (booleans 13), so the model uses
+45 for every fixed-width cell and 15 for booleans. Strings are not linear in
+length. One unique 49-character column (`o_comment`) peaks at ~720 B/cell once
+GX runs over the frame, while four unique ~26-character columns cost ~120
+each. The fetch itself, with or without CloudFetch, is only ~200 B/row of
+that. So the text cost is an envelope over every measured shape: 60 + 14 ×
+the mean length sampled from the first 1,000 rows. Across 17 views it reads
+1.04–4.69× the measurement and never under. The overestimate is largest for
+very long text.
+
+The estimate gates the read against `RUN_MAX_FRAME_BYTES` (1.25 GiB) and is
+what admission reserves for a UC frame suite. Before the Arrow read, a 1M-row
+lineitem view was refused at an estimated 2.71 GB; with the frame cap disabled,
+the same run was OOM-killed (exit 137).
 
 The pushdown lane issues more statements (17 vs 9 — GX evaluates each pushed-down
 metric on the warehouse, where the frame lane computes them in pandas) and still finishes in under half
