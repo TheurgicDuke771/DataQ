@@ -82,9 +82,9 @@ def _raw_results(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[dict[str, Any
     captured: list[dict[str, Any]] = []
     original = gx_runner.to_suite_outcome
 
-    def spy(gx_result: Any, checks: Any = None) -> Any:
+    def spy(gx_result: Any, checks: Any = None, **kwargs: Any) -> Any:
         captured.extend(check.result or {} for check in gx_result.results)
-        return original(gx_result, checks)
+        return original(gx_result, checks, **kwargs)
 
     monkeypatch.setattr(gx_runner, "to_suite_outcome", spy)
     yield captured
