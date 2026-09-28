@@ -521,3 +521,83 @@ def test_future_timestamp_type_rejection_is_not_read_as_freshness() -> None:
 def test_an_unrecognised_type_rejection_falls_through_to_the_safe_classifier() -> None:
     message = _type_rejection("SOME_FUTURE_DMF", "dmf:null_count")
     assert "SOME_FUTURE_DMF" not in message
+
+
+# ─────────────── ACCEPTED_VALUES via SYSTEM$DATA_METRIC_SCAN (#2084) ───────────────
+
+
+def test_accepted_values_scan_binds_every_argument_and_escapes_the_values() -> None:
+    from backend.app.datasources.snowflake_dmf import build_accepted_values_scan
+
+    statement, params = build_accepted_values_scan(
+        {"column": "STATUS", "value_set": ["cancelled", "it's", "x') OR TRUE --", 3, 2.5]},
+        table="ORDERS_HEADER",
+        schema="RETAIL",
+    )
+    assert "SYSTEM$DATA_METRIC_SCAN" in statement and "COUNT(*)" in statement
+    # No value reaches the statement text itself: only the bound expression carries them.
+    assert "cancelled" not in statement
+    assert params["ref"] == '"RETAIL"."ORDERS_HEADER"'
+    assert params["arg"] == '"STATUS"'
+    assert params["expr"] == ("\"STATUS\" IN ('cancelled', 'it''s', 'x'') OR TRUE --', 3, 2.5)")
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        {"column": "a; drop", "value_set": ["x"]},
+        {"column": "STATUS", "value_set": []},
+        {"column": "STATUS", "value_set": "a,b"},
+        {"column": "STATUS", "value_set": [True]},
+        {"column": "STATUS", "value_set": [None]},
+        {"column": "STATUS", "value_set": ["x" * 1001]},
+    ],
+)
+def test_a_bad_accepted_values_config_is_refused(config: dict[str, Any]) -> None:
+    from backend.app.datasources.monitors import MonitorConfigError
+    from backend.app.datasources.snowflake_dmf import build_accepted_values_scan
+
+    with pytest.raises(MonitorConfigError):
+        build_accepted_values_scan(config, table="ORDERS_HEADER", schema="RETAIL")
+
+
+def test_accepted_values_evaluates_through_the_bound_scan() -> None:
+    from backend.app.datasources.snowflake_dmf import evaluate_dmf_check
+
+    seen: list[tuple[str, Any]] = []
+
+    def fetch(statement: str, params: Any = None) -> Any:
+        seen.append((statement, params))
+        return 16670
+
+    outcome = evaluate_dmf_check(
+        fetch,
+        kind="expectation",
+        expectation_type="dmf:accepted_values",
+        config={"column": "STATUS", "value_set": ["cancelled"]},
+        table="ORDERS_HEADER",
+        schema="RETAIL",
+    )
+    assert outcome.metric_value == 16670.0 and outcome.errored is False
+    assert outcome.expected_value is not None
+    assert outcome.expected_value["metric"] == "ACCEPTED_VALUES"
+    assert seen[0][1]["expr"] == "\"STATUS\" IN ('cancelled')"
+
+
+@pytest.mark.parametrize(
+    ("value", "literal"),
+    [
+        ("x\\') OR TRUE --", "'x\\\\'') OR TRUE --'"),
+        ("ends-with\\", "'ends-with\\\\'"),
+        ("a\\nb", "'a\\\\nb'"),
+    ],
+)
+def test_backslashes_are_escaped_before_quotes(value: str, literal: str) -> None:
+    """Snowflake processes backslash escapes inside string literals: an undoubled backslash
+    can close the literal early (live 2026-09-28: `x\\') OR TRUE --` broke the expression)."""
+    from backend.app.datasources.snowflake_dmf import build_accepted_values_scan
+
+    _statement, params = build_accepted_values_scan(
+        {"column": "STATUS", "value_set": [value]}, table="T", schema=None
+    )
+    assert params["expr"] == f'"STATUS" IN ({literal})'

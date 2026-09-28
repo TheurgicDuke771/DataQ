@@ -55,9 +55,9 @@ row count is not a bandable metric), so `metric_value` is null by design, not by
 omission.
 
 ᵈ **Snowflake DMF** (ADR [0036](../adr/0036-connection-anchored-check-engines.md)) is the
-first platform-native check engine — an alternative `check.engine` for six expectation
+first platform-native check engine — an alternative `check.engine` for seven expectation
 types (null count, null percent, duplicate count, unique count, blank count, future-timestamp
-percent) plus the freshness monitor, invoking Snowflake's
+percent, accepted values) plus the freshness monitor, invoking Snowflake's
 own `SNOWFLAKE.CORE.*` metric functions instead of a GX expectation. Engine is selected per
 check, on a Snowflake connection only; `kind` stays `expectation` either way. Testing or
 re-authenticating a Snowflake connection also probes DMF availability (Enterprise Edition +

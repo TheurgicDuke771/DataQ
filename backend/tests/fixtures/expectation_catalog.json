@@ -404,6 +404,17 @@
     "dataframeOnly": false
   },
   {
+    "type": "dmf:accepted_values",
+    "kind": "expectation",
+    "dimension": "validity",
+    "fields": [
+      "column",
+      "value_set"
+    ],
+    "noThresholds": false,
+    "dataframeOnly": false
+  },
+  {
     "type": "dmf:unique_count",
     "kind": "expectation",
     "dimension": "uniqueness",

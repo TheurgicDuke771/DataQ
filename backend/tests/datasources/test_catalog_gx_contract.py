@@ -70,11 +70,14 @@ def test_fixture_is_present_and_nonempty() -> None:
 
 
 def test_dmf_entries_match_backend_capability() -> None:
-    """Each dmf:* entry takes exactly `column` — the whole config DMF accepts."""
+    """Each dmf:* entry's fields ARE the config its type accepts (`DMF_CONFIG_KEYS`)."""
+    from backend.app.datasources.snowflake_dmf import DMF_CONFIG_KEYS
+
     entries = _dmf_entries()
     assert {e["type"] for e in entries} == set(DMF_EXPECTATION_TYPES)
     assert all(e["kind"] == "expectation" for e in entries)
-    assert all(e["fields"] == ["column"] for e in entries)
+    for entry in entries:
+        assert set(entry["fields"]) == set(DMF_CONFIG_KEYS[entry["type"]]), entry["type"]
 
 
 def test_catalog_no_thresholds_flag_matches_the_backend_unbandable_sets() -> None:
