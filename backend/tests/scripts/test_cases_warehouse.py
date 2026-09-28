@@ -435,3 +435,25 @@ class TestUnityCatalogOverrides:
         assert self._metric(cases_warehouse._run_unity_catalog(1_000_000), "table_rows") == 1e6
         monkeypatch.setenv("PERF_UC_ROWS_1M", "999983")
         assert self._metric(cases_warehouse._run_unity_catalog(1_000_000), "table_rows") == 999983
+
+
+def test_the_live_iceberg_tier_forwards_both_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A SQL catalog's password cannot ride the URI (the config refuses it), so the live tier
+    must forward it separately from the storage credential."""
+    seen: dict[str, Any] = {}
+
+    def capture(config: Any, secret: Any, identifier: Any, catalog_secret: Any = None) -> list[Any]:
+        seen.update(secret=secret, identifier=identifier, catalog_secret=catalog_secret)
+        return []
+
+    monkeypatch.setattr(cases_warehouse, "_iceberg_metrics", capture)
+    monkeypatch.setenv("PERF_ICEBERG_CATALOG_JSON", '{"catalog_type": "sql"}')
+    monkeypatch.setenv("PERF_ICEBERG_TABLE", "perf.order_lines")
+    monkeypatch.setenv("PERF_ICEBERG_SECRET", "storage")
+    monkeypatch.setenv("PERF_ICEBERG_CATALOG_SECRET", "catalog")
+    cases_warehouse._run_iceberg_live()
+    assert seen == {
+        "secret": "storage",
+        "identifier": "perf.order_lines",
+        "catalog_secret": "catalog",
+    }
