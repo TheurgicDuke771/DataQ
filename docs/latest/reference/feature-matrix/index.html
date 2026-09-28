@@ -2550,6 +2550,18 @@
 <td style="text-align: center;">—</td>
 </tr>
 <tr>
+<td>Databricks DQX (runs in your workspace)ʲ</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+</tr>
+<tr>
 <td>Custom SQL (rows returned = failures)ᶜ</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
@@ -2722,6 +2734,11 @@ grant) and stores the result on the connection — surfaced on the connection li
 rather than a hard gate, in the check editor's engine picker. The probe reads zero rows of one
 table the connection's role can already see; if the role can see none, or the probe fails for a
 reason unrelated to DMFs, the connection shows "couldn't determine" rather than "unavailable".</p>
+<p>ʲ <strong>Databricks DQX</strong> (ADR <a href="../../adr/0036-connection-anchored-check-engines/">0036</a>) is the
+second platform-native engine: eight row rules evaluated by Databricks Labs DQX in a
+serverless job in the connection's own workspace, one job per run. DataQ never ships DQX,
+whose licence permits use only with Databricks services. The job returns failing-row counts
+only. See <a href="../../guides/datasources-checks/#databricks-dqx-adr-0036">Databricks DQX</a>.</p>
 <p>ᵖ <strong>PostgreSQL</strong> — any server, self-hosted or managed; everything runs by pushdown
 on read-only sessions. Every row was verified by an <strong>executed</strong> run against a real
 PostgreSQL 16 through the connection's own least-privileged role, and the suite's CI

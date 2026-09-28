@@ -2466,6 +2466,31 @@ datasources. Snowflake's `ACCEPTED_VALUES` and `SCHEMA_CHANGE_COUNT` are not off
 can only run as a DMF attached to the table on a schedule, not as the on-demand call DataQ
 makes (use the GX in-set check and the schema-drift monitor instead).
 
+### Databricks DQX (ADR 0036)
+
+On a Unity Catalog connection, the check editor offers a **Databricks DQX** category: row
+rules evaluated by [Databricks Labs DQX](https://github.com/databrickslabs/dqx) inside your
+own workspace. The rules are not null, not empty, not null or empty, in list, in range,
+matches regex, not less than and not greater than. Each check reports the number of failing
+rows, so it fails on any failing row. Optional thresholds band that count instead.
+
+**Where it runs.** DataQ does not contain or install DQX: it is published under the
+Databricks License, which permits use only with Databricks services. When a run includes
+DQX checks, DataQ uploads a small notebook to the connection user's workspace folder
+(`/Users/<you>/.dataq/`) and submits **one serverless job for all of the run's DQX checks**.
+The notebook installs a pinned DQX version and returns only failing-row counts, never row
+values. Expect about a minute of job start-up per run. For the same reason a DQX check has
+**no dry-run preview**: run the suite to see its result.
+
+**What the connection's token needs:** permission to create workspace files in its own home
+folder and to submit serverless jobs, plus `SELECT` on the target table. A rule the
+workspace rejects errors only that check. A job that fails errors every DQX check in the run
+with a classified reason. Your GX checks are unaffected.
+
+**Values are always literals.** DQX evaluates a bare string argument as a Spark SQL
+expression, so DataQ builds every rule itself: columns must be plain identifiers, list values
+are sent as quoted literals, and limits must be numbers or ISO dates.
+
 ### Freshness monitor (all datasources — ADR 0012/0030)
 
 *How stale is the target?* Point it at the load/updated **timestamp column**; the check
@@ -3938,7 +3963,7 @@ offers. Every GX type on this page is executed in CI on a dataframe batch, and o
 
 | | Count |
 |---|---|
-| Check types in the editor | 37 |
+| Check types in the editor | 45 |
 | GX expectation types vetted by the backend | 25 |
 
 How to read a row: **Parameters** are the editor's fields (`mostly` is GX's optional row
@@ -4046,6 +4071,21 @@ Snowflake's native Data Metric Functions, evaluated inside Snowflake.
 | **Future timestamp percent (DMF)** | `dmf:future_timestamp_percent` | Snowflake’s system FUTURE_TIMESTAMP_PERCENT metric function (0–100): the share of rows dated after the evaluation time. DATE, TIMESTAMP_LTZ and TIMESTAMP_TZ columns only. | Validity | `column` | warn / fail / critical (fail or critical required) | Snowflake |
 | **Unique count (DMF)** | `dmf:unique_count` | Snowflake’s system UNIQUE_COUNT metric function, computed natively in the warehouse. Degrades downward, so this type carries no thresholds — read the observed value directly. | Uniqueness | `column` | None — pass/fail only | Snowflake |
 
+## Databricks DQX
+
+Databricks Labs DQX row rules, evaluated by a serverless job in your own workspace.
+
+| Check | Type | What it checks | Dimension | Parameters | Thresholds | Runs on |
+|---|---|---|---|---|---|---|
+| **Not null (DQX)** | `dqx:is_not_null` | Rows where the column is NULL. | Completeness | `column` | warn / fail / critical | All datasources |
+| **Not empty (DQX)** | `dqx:is_not_empty` | Rows where the column is an empty string. | Completeness | `column` | warn / fail / critical | All datasources |
+| **Not null or empty (DQX)** | `dqx:is_not_null_and_not_empty` | Rows where the column is NULL or an empty string. | Completeness | `column` | warn / fail / critical | All datasources |
+| **In list (DQX)** | `dqx:is_in_list` | Rows whose value is not one of the allowed values. | Validity | `column`, `allowed` | warn / fail / critical | All datasources |
+| **In range (DQX)** | `dqx:is_in_range` | Rows whose value falls outside the inclusive range. | Validity | `column`, `min_limit`, `max_limit` | warn / fail / critical | All datasources |
+| **Matches regex (DQX)** | `dqx:regex_match` | Rows whose value does not match the regular expression. | Validity | `column`, `regex` | warn / fail / critical | All datasources |
+| **Not less than (DQX)** | `dqx:is_not_less_than` | Rows whose value is below the limit. | Validity | `column`, `limit` | warn / fail / critical | All datasources |
+| **Not greater than (DQX)** | `dqx:is_not_greater_than` | Rows whose value is above the limit. | Validity | `column`, `limit` | warn / fail / critical | All datasources |
+
 ## Authorable outside the editor
 
 Vetted by the backend but with no editor widget: usable over the REST API, MCP and
@@ -4082,6 +4122,7 @@ One-page reference: what runs where. For the readable tour of everything DataQ o
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 | GX expectations (column / table shape) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (no regex) | ✅ | ✅ | ✅ |
 | Snowflake DMF (native metric functions)ᵈ | ✅ | — | — | — | — | — | — | — | — |
+| Databricks DQX (runs in your workspace)ʲ | — | ✅ | — | — | — | — | — | — | — |
 | Custom SQL (rows returned = failures)ᶜ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — |
 | Freshness monitor (hours since latest timestamp) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Freshness from **file arrival time** (no column — catches "no new file") | — | — | — | — | — | — | ✅ | ✅ | — |
@@ -4136,6 +4177,12 @@ grant) and stores the result on the connection — surfaced on the connection li
 rather than a hard gate, in the check editor's engine picker. The probe reads zero rows of one
 table the connection's role can already see; if the role can see none, or the probe fails for a
 reason unrelated to DMFs, the connection shows "couldn't determine" rather than "unavailable".
+
+ʲ **Databricks DQX** (ADR [0036](../adr/0036-connection-anchored-check-engines.md)) is the
+second platform-native engine: eight row rules evaluated by Databricks Labs DQX in a
+serverless job in the connection's own workspace, one job per run. DataQ never ships DQX,
+whose licence permits use only with Databricks services. The job returns failing-row counts
+only. See [Databricks DQX](../guides/datasources-checks.md#databricks-dqx-adr-0036).
 
 ᵖ **PostgreSQL** — any server, self-hosted or managed; everything runs by pushdown
 on read-only sessions. Every row was verified by an **executed** run against a real
@@ -13019,6 +13066,38 @@ DMF outcomes are metric-shaped and ride the existing result semantics unchanged:
 - **Native metrics as a monitor kind (`kind='native_metric'`) instead of an engine.** Seriously considered (2026-07-17 discussion): it would ship ad-hoc DMF calls on the existing ADR 0012 seam with no engine machinery at all. Rejected because it dead-ends — it cannot represent DQX/Dataplex (full evaluators, not metrics), blocks future warehouse-side attachment management, and violates §4 by encoding the evaluator into the kind axis.
 - **Engine-specific kinds (`dmf_freshness`, `dqx_null_check`, …).** Rejected outright: forks the kind axis, so every consumer — scorecard, dimension mapping, trend SQL — would branch per engine forever.
 - **A global/workspace engine setting.** Rejected: engine availability is a property of a *connection instance* (edition, grants, workspace rights), not of the workspace. A global toggle cannot answer "is DMF available on *this* connection" and would reintroduce the config-page indirection §1 deliberately avoids.
+
+## Amendment (2026-09-28): DQX shipped, executed remotely
+
+DQX is now the second native engine, offered on `unity_catalog` connections. The user chose to
+build it ahead of retiring the Databricks environment. Both §6 prerequisites are settled:
+
+- **(b) The licence check failed for bundling.** `databricks-labs-dqx` is published under the
+  proprietary Databricks License, which permits use only with Databricks services. It is
+  therefore never a DataQ dependency (ADR 0031, CONTRIBUTING rule 40). DataQ neither imports,
+  installs nor redistributes it.
+- **(a) Remote execution is the design.** For each run, DataQ uploads a fixed notebook to the
+  connection user's workspace folder and submits **one** serverless job (Jobs API
+  `runs/submit`) carrying every DQX check of the run. The notebook installs a pinned DQX
+  version, validates each rule (an invalid rule errors only itself), applies all valid rules
+  in one Spark pass, and returns **failing-row counts per rule**, never row values. The run
+  path gained an optional runner hook, `run_native_checks`, so an engine with per-job start-up
+  cost is batched. DMF stays per check.
+
+**A security property this engine forced:** DQX evaluates bare string arguments as Spark SQL
+(`check_funcs.get_limit_expr` → `F.expr`), live-confirmed when the list value `'SM CASE'`
+resolved as a column named `SM`. DataQ therefore builds every rule from a closed vocabulary
+of eight types, with typed arguments:
+- columns are allowlisted identifiers, backtick-quoted
+- list values are emitted as escaped SQL literals
+- limits are numbers or ISO dates validated by DataQ
+
+A user string never reaches DQX unquoted. The authoring gate and the run path share one rule
+builder, so they cannot disagree.
+
+**Capability probe:** phase 1, gated by connection type only. A missing jobs or workspace
+permission lands as a classified per-check error at run time, as §2 permits. A probe would
+itself cost a job start-up.
 
 
 ---

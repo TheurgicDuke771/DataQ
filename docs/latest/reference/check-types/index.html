@@ -1372,6 +1372,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#databricks-dqx" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Databricks DQX
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#authorable-outside-the-editor" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2471,6 +2482,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#databricks-dqx" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Databricks DQX
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#authorable-outside-the-editor" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2550,7 +2572,7 @@ offers. Every GX type on this page is executed in CI on a dataframe batch, and o
 <tbody>
 <tr>
 <td>Check types in the editor</td>
-<td>37</td>
+<td>45</td>
 </tr>
 <tr>
 <td>GX expectation types vetted by the backend</td>
@@ -3045,6 +3067,95 @@ change it on any check.</p>
 <td><code>column</code></td>
 <td>None — pass/fail only</td>
 <td>Snowflake</td>
+</tr>
+</tbody>
+</table>
+<h2 id="databricks-dqx">Databricks DQX<a class="headerlink" href="#databricks-dqx" title="Permanent link">¶</a></h2>
+<p>Databricks Labs DQX row rules, evaluated by a serverless job in your own workspace.</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Type</th>
+<th>What it checks</th>
+<th>Dimension</th>
+<th>Parameters</th>
+<th>Thresholds</th>
+<th>Runs on</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Not null (DQX)</strong></td>
+<td><code>dqx:is_not_null</code></td>
+<td>Rows where the column is NULL.</td>
+<td>Completeness</td>
+<td><code>column</code></td>
+<td>warn / fail / critical</td>
+<td>All datasources</td>
+</tr>
+<tr>
+<td><strong>Not empty (DQX)</strong></td>
+<td><code>dqx:is_not_empty</code></td>
+<td>Rows where the column is an empty string.</td>
+<td>Completeness</td>
+<td><code>column</code></td>
+<td>warn / fail / critical</td>
+<td>All datasources</td>
+</tr>
+<tr>
+<td><strong>Not null or empty (DQX)</strong></td>
+<td><code>dqx:is_not_null_and_not_empty</code></td>
+<td>Rows where the column is NULL or an empty string.</td>
+<td>Completeness</td>
+<td><code>column</code></td>
+<td>warn / fail / critical</td>
+<td>All datasources</td>
+</tr>
+<tr>
+<td><strong>In list (DQX)</strong></td>
+<td><code>dqx:is_in_list</code></td>
+<td>Rows whose value is not one of the allowed values.</td>
+<td>Validity</td>
+<td><code>column</code>, <code>allowed</code></td>
+<td>warn / fail / critical</td>
+<td>All datasources</td>
+</tr>
+<tr>
+<td><strong>In range (DQX)</strong></td>
+<td><code>dqx:is_in_range</code></td>
+<td>Rows whose value falls outside the inclusive range.</td>
+<td>Validity</td>
+<td><code>column</code>, <code>min_limit</code>, <code>max_limit</code></td>
+<td>warn / fail / critical</td>
+<td>All datasources</td>
+</tr>
+<tr>
+<td><strong>Matches regex (DQX)</strong></td>
+<td><code>dqx:regex_match</code></td>
+<td>Rows whose value does not match the regular expression.</td>
+<td>Validity</td>
+<td><code>column</code>, <code>regex</code></td>
+<td>warn / fail / critical</td>
+<td>All datasources</td>
+</tr>
+<tr>
+<td><strong>Not less than (DQX)</strong></td>
+<td><code>dqx:is_not_less_than</code></td>
+<td>Rows whose value is below the limit.</td>
+<td>Validity</td>
+<td><code>column</code>, <code>limit</code></td>
+<td>warn / fail / critical</td>
+<td>All datasources</td>
+</tr>
+<tr>
+<td><strong>Not greater than (DQX)</strong></td>
+<td><code>dqx:is_not_greater_than</code></td>
+<td>Rows whose value is above the limit.</td>
+<td>Validity</td>
+<td><code>column</code>, <code>limit</code></td>
+<td>warn / fail / critical</td>
+<td>All datasources</td>
 </tr>
 </tbody>
 </table>

@@ -1134,6 +1134,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#databricks-dqx-adr-0036" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Databricks DQX (ADR 0036)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#freshness-monitor-all-datasources-adr-00120030" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2798,6 +2809,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#databricks-dqx-adr-0036" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Databricks DQX (ADR 0036)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#freshness-monitor-all-datasources-adr-00120030" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3665,6 +3687,26 @@ count needs a fail or critical threshold, banded like any other metric. Not offe
 datasources. Snowflake's <code>ACCEPTED_VALUES</code> and <code>SCHEMA_CHANGE_COUNT</code> are not offered: both
 can only run as a DMF attached to the table on a schedule, not as the on-demand call DataQ
 makes (use the GX in-set check and the schema-drift monitor instead).</p>
+<h3 id="databricks-dqx-adr-0036">Databricks DQX (ADR 0036)<a class="headerlink" href="#databricks-dqx-adr-0036" title="Permanent link">¶</a></h3>
+<p>On a Unity Catalog connection, the check editor offers a <strong>Databricks DQX</strong> category: row
+rules evaluated by <a href="https://github.com/databrickslabs/dqx">Databricks Labs DQX</a> inside your
+own workspace. The rules are not null, not empty, not null or empty, in list, in range,
+matches regex, not less than and not greater than. Each check reports the number of failing
+rows, so it fails on any failing row. Optional thresholds band that count instead.</p>
+<p><strong>Where it runs.</strong> DataQ does not contain or install DQX: it is published under the
+Databricks License, which permits use only with Databricks services. When a run includes
+DQX checks, DataQ uploads a small notebook to the connection user's workspace folder
+(<code>/Users/&lt;you&gt;/.dataq/</code>) and submits <strong>one serverless job for all of the run's DQX checks</strong>.
+The notebook installs a pinned DQX version and returns only failing-row counts, never row
+values. Expect about a minute of job start-up per run. For the same reason a DQX check has
+<strong>no dry-run preview</strong>: run the suite to see its result.</p>
+<p><strong>What the connection's token needs:</strong> permission to create workspace files in its own home
+folder and to submit serverless jobs, plus <code>SELECT</code> on the target table. A rule the
+workspace rejects errors only that check. A job that fails errors every DQX check in the run
+with a classified reason. Your GX checks are unaffected.</p>
+<p><strong>Values are always literals.</strong> DQX evaluates a bare string argument as a Spark SQL
+expression, so DataQ builds every rule itself: columns must be plain identifiers, list values
+are sent as quoted literals, and limits must be numbers or ISO dates.</p>
 <h3 id="freshness-monitor-all-datasources-adr-00120030">Freshness monitor (all datasources — ADR 0012/0030)<a class="headerlink" href="#freshness-monitor-all-datasources-adr-00120030" title="Permanent link">¶</a></h3>
 <p><em>How stale is the target?</em> Point it at the load/updated <strong>timestamp column</strong>; the check
 measures hours since <code>MAX(column)</code> and bands that age with the thresholds. A <strong>fail or

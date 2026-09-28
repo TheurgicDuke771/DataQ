@@ -6,7 +6,7 @@ offers. Every GX type on this page is executed in CI on a dataframe batch, and o
 
 | | Count |
 |---|---|
-| Check types in the editor | 37 |
+| Check types in the editor | 45 |
 | GX expectation types vetted by the backend | 25 |
 
 How to read a row: **Parameters** are the editor's fields (`mostly` is GX's optional row
@@ -113,6 +113,21 @@ Snowflake's native Data Metric Functions, evaluated inside Snowflake.
 | **Blank count (DMF)** | `dmf:blank_count` | Snowflake’s system BLANK_COUNT metric function, computed natively in the warehouse — counts empty or space-only strings (not NULLs; tabs/newlines aren’t treated as blank). VARCHAR columns only. | Completeness | `column` | warn / fail / critical (fail or critical required) | Snowflake |
 | **Future timestamp percent (DMF)** | `dmf:future_timestamp_percent` | Snowflake’s system FUTURE_TIMESTAMP_PERCENT metric function (0–100): the share of rows dated after the evaluation time. DATE, TIMESTAMP_LTZ and TIMESTAMP_TZ columns only. | Validity | `column` | warn / fail / critical (fail or critical required) | Snowflake |
 | **Unique count (DMF)** | `dmf:unique_count` | Snowflake’s system UNIQUE_COUNT metric function, computed natively in the warehouse. Degrades downward, so this type carries no thresholds — read the observed value directly. | Uniqueness | `column` | None — pass/fail only | Snowflake |
+
+## Databricks DQX
+
+Databricks Labs DQX row rules, evaluated by a serverless job in your own workspace.
+
+| Check | Type | What it checks | Dimension | Parameters | Thresholds | Runs on |
+|---|---|---|---|---|---|---|
+| **Not null (DQX)** | `dqx:is_not_null` | Rows where the column is NULL. | Completeness | `column` | warn / fail / critical | All datasources |
+| **Not empty (DQX)** | `dqx:is_not_empty` | Rows where the column is an empty string. | Completeness | `column` | warn / fail / critical | All datasources |
+| **Not null or empty (DQX)** | `dqx:is_not_null_and_not_empty` | Rows where the column is NULL or an empty string. | Completeness | `column` | warn / fail / critical | All datasources |
+| **In list (DQX)** | `dqx:is_in_list` | Rows whose value is not one of the allowed values. | Validity | `column`, `allowed` | warn / fail / critical | All datasources |
+| **In range (DQX)** | `dqx:is_in_range` | Rows whose value falls outside the inclusive range. | Validity | `column`, `min_limit`, `max_limit` | warn / fail / critical | All datasources |
+| **Matches regex (DQX)** | `dqx:regex_match` | Rows whose value does not match the regular expression. | Validity | `column`, `regex` | warn / fail / critical | All datasources |
+| **Not less than (DQX)** | `dqx:is_not_less_than` | Rows whose value is below the limit. | Validity | `column`, `limit` | warn / fail / critical | All datasources |
+| **Not greater than (DQX)** | `dqx:is_not_greater_than` | Rows whose value is above the limit. | Validity | `column`, `limit` | warn / fail / critical | All datasources |
 
 ## Authorable outside the editor
 
