@@ -49,6 +49,8 @@ _MAX_STRING_CHARS = 1_000
 _JOB_TIMEOUT_SECONDS = 1_800
 _POLL_SECONDS = 10
 _TERMINAL = frozenset({"TERMINATED", "SKIPPED", "INTERNAL_ERROR"})
+#: Consecutive transient poll failures (429, 5xx, connection) tolerated before giving up.
+_POLL_RETRIES = 5
 
 #: The notebook submitted to the workspace. Pinned DQX; one Spark pass for every valid rule; an
 #: invalid rule errors only itself; returns counts, never row values.
@@ -62,7 +64,8 @@ from pyspark.sql import functions as F
 from databricks.labs.dqx.engine import DQEngine
 from databricks.sdk import WorkspaceClient
 
-spec = json.loads(dbutils.widgets.get("spec"))
+with open("/Workspace" + dbutils.widgets.get("spec_path")) as spec_file:
+    spec = json.load(spec_file)
 engine = DQEngine(WorkspaceClient())
 results, valid = {{}}, []
 for name, check in spec["checks"].items():
@@ -220,6 +223,16 @@ def _rule_name(index: int) -> str:
     return f"dataq_{index}"
 
 
+def _transient(exc: Exception) -> bool:
+    import httpx
+
+    if isinstance(exc, httpx.TransportError):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code == 429 or exc.response.status_code >= 500
+    return False
+
+
 class DqxJobs:
     """The Jobs and Workspace REST calls one DQX batch needs (live seam)."""
 
@@ -265,7 +278,33 @@ class DqxJobs:
             },
         )
 
-    def submit(self, path: str, spec: dict[str, Any]) -> int:
+    def upload_spec(self, notebook_path: str, spec: dict[str, Any]) -> str:
+        """The run's rules as a workspace file: a notebook parameter has a size limit a long
+        allowed-values list can exceed, a workspace file does not."""
+        import base64
+        import uuid
+
+        path = f"{notebook_path.rsplit('/', 1)[0]}/specs/{uuid.uuid4().hex}.json"
+        self._call("POST", "/api/2.0/workspace/mkdirs", {"path": path.rsplit("/", 1)[0]})
+        self._call(
+            "POST",
+            "/api/2.0/workspace/import",
+            {
+                "path": path,
+                "format": "AUTO",
+                "content": base64.b64encode(json.dumps(spec).encode()).decode(),
+                "overwrite": True,
+            },
+        )
+        return path
+
+    def delete(self, path: str) -> None:
+        self._call("POST", "/api/2.0/workspace/delete", {"path": path})
+
+    def cancel(self, run_id: int) -> None:
+        self._call("POST", "/api/2.2/jobs/runs/cancel", {"run_id": run_id})
+
+    def submit(self, path: str, spec_path: str) -> int:
         run = self._call(
             "POST",
             "/api/2.2/jobs/runs/submit",
@@ -277,7 +316,7 @@ class DqxJobs:
                         "task_key": "dqx",
                         "notebook_task": {
                             "notebook_path": path,
-                            "base_parameters": {"spec": json.dumps(spec)},
+                            "base_parameters": {"spec_path": spec_path},
                         },
                     }
                 ],
@@ -290,8 +329,19 @@ class DqxJobs:
 
     def wait(self, run_id: int, *, sleep: Callable[[float], None] = time.sleep) -> dict[str, Any]:
         deadline = time.monotonic() + _JOB_TIMEOUT_SECONDS + 120
+        failures = 0
         while True:
-            run = self._call("GET", f"/api/2.2/jobs/runs/get?run_id={run_id}")
+            try:
+                run = self._call("GET", f"/api/2.2/jobs/runs/get?run_id={run_id}")
+            except Exception as exc:
+                # One throttled or failed poll must not fail a run the workspace is still
+                # executing — only a sustained outage does.
+                failures += 1
+                if failures > _POLL_RETRIES or not _transient(exc):
+                    raise
+                sleep(_POLL_SECONDS)
+                continue
+            failures = 0
             state = run.get("state") or {}
             if state.get("life_cycle_state") in _TERMINAL:
                 if state.get("result_state") != "SUCCESS":
@@ -332,6 +382,8 @@ def run_dqx_batch(
             refused[index] = _error_outcome(expectation_type, exc.message)
     if not rules:
         return [refused[i] for i in range(len(specs))]
+    run_id: int | None = None
+    spec_path: str | None = None
     try:
         spec = {
             "table": qualified_table(catalog=catalog, schema=schema, table=table),
@@ -339,13 +391,28 @@ def run_dqx_batch(
         }
         path = jobs.notebook_path()
         jobs.upload(path)
-        payload = jobs.wait(jobs.submit(path, spec))
+        spec_path = jobs.upload_spec(path, spec)
+        run_id = jobs.submit(path, spec_path)
+        payload = jobs.wait(run_id)
     except Exception as exc:
+        if run_id is not None:
+            # Abandoned (timeout, sustained poll failure): stop the job so it stops billing.
+            _best_effort(jobs.cancel, run_id)
         reason = safe_failure_reason(exc)
         log.warning("dqx_batch_failed", error_type=type(exc).__name__, checks=len(specs))
         return [
             refused.get(i) or _error_outcome(t, f"the dqx job failed: {reason}")
             for i, (t, _config) in enumerate(specs)
         ]
+    finally:
+        if spec_path is not None:
+            _best_effort(jobs.delete, spec_path)
     mapped = outcomes_from_payload(specs, payload)
     return [refused.get(i) or mapped[i] for i in range(len(specs))]
+
+
+def _best_effort(call: Callable[..., Any], *args: Any) -> None:
+    try:
+        call(*args)
+    except Exception as exc:
+        log.warning("dqx_cleanup_failed", step=call.__name__, error_type=type(exc).__name__)

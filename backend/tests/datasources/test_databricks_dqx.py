@@ -94,6 +94,8 @@ class _FakeJobs:
         self.payload = payload
         self.fail = fail
         self.submitted: list[dict[str, Any]] = []
+        self.deleted: list[str] = []
+        self.cancelled: list[int] = []
 
     def notebook_path(self) -> str:
         return "/Users/me/.dataq/dqx_runner"
@@ -101,8 +103,17 @@ class _FakeJobs:
     def upload(self, path: str) -> None:
         pass
 
-    def submit(self, path: str, spec: dict[str, Any]) -> int:
+    def upload_spec(self, notebook_path: str, spec: dict[str, Any]) -> str:
         self.submitted.append(spec)
+        return "/Users/me/.dataq/specs/x.json"
+
+    def delete(self, path: str) -> None:
+        self.deleted.append(path)
+
+    def cancel(self, run_id: int) -> None:
+        self.cancelled.append(run_id)
+
+    def submit(self, path: str, spec_path: str) -> int:
         return 1
 
     def wait(self, run_id: int, **_kw: Any) -> dict[str, Any]:
@@ -219,7 +230,7 @@ def test_the_notebook_lands_in_the_token_users_home_under_a_versioned_name() -> 
     assert base64.b64decode(imported["content"]).decode() == dqx.RUNNER_NOTEBOOK
 
 
-def test_submit_sends_one_notebook_task_with_the_spec_and_a_timeout() -> None:
+def test_submit_sends_one_notebook_task_with_the_spec_path_and_a_timeout() -> None:
     import httpx
 
     bodies: list[Any] = []
@@ -228,10 +239,11 @@ def test_submit_sends_one_notebook_task_with_the_spec_and_a_timeout() -> None:
         bodies.append(json.loads(request.content))
         return httpx.Response(200, json={"run_id": 42})
 
-    spec = {"table": "`a`.`b`.`c`", "checks": {}}
-    assert _jobs(handler).submit("/p", spec) == 42
+    assert _jobs(handler).submit("/p", "/p/specs/s.json") == 42
     (task,) = bodies[0]["tasks"]
-    assert json.loads(task["notebook_task"]["base_parameters"]["spec"]) == spec
+    # The rules travel as a workspace file: a notebook parameter has a size limit a long
+    # allowed-values list can exceed.
+    assert task["notebook_task"]["base_parameters"] == {"spec_path": "/p/specs/s.json"}
     assert bodies[0]["timeout_seconds"] > 0
 
 
@@ -292,3 +304,54 @@ def test_wait_polls_until_the_run_finishes() -> None:
 
     assert _jobs(handler).wait(1, sleep=sleeps.append) == {"rows": 1}
     assert len(sleeps) == 2
+
+
+def test_the_spec_file_is_deleted_whether_or_not_the_job_succeeds() -> None:
+    ok = _FakeJobs({"rows": 1, "results": {"dataq_0": {"failing": 0}}})
+    _batch(ok, [("dqx:is_not_null", {"column": "a"})])
+    failed = _FakeJobs(fail=TimeoutError("did not finish"))
+    _batch(failed, [("dqx:is_not_null", {"column": "a"})])
+    assert ok.deleted == failed.deleted == ["/Users/me/.dataq/specs/x.json"]
+
+
+def test_an_abandoned_job_is_cancelled_so_it_stops_billing() -> None:
+    jobs = _FakeJobs(fail=TimeoutError("did not finish"))
+    _batch(jobs, [("dqx:is_not_null", {"column": "a"})])
+    assert jobs.cancelled == [1]
+
+
+def test_a_transient_poll_failure_is_retried_not_fatal() -> None:
+    import httpx
+
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/runs/get"):
+            calls["n"] += 1
+            if calls["n"] <= 2:
+                return httpx.Response(503 if calls["n"] == 1 else 429)
+            return httpx.Response(
+                200,
+                json={
+                    "state": {"life_cycle_state": "TERMINATED", "result_state": "SUCCESS"},
+                    "tasks": [{"run_id": 7}],
+                },
+            )
+        return httpx.Response(200, json={"notebook_output": {"result": '{"rows": 1}'}})
+
+    assert _jobs(handler).wait(1, sleep=lambda _s: None) == {"rows": 1}
+    assert calls["n"] == 3
+
+
+def test_a_permanent_poll_failure_is_not_retried() -> None:
+    import httpx
+
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(403)
+
+    with pytest.raises(httpx.HTTPStatusError):
+        _jobs(handler).wait(1, sleep=lambda _s: None)
+    assert calls["n"] == 1

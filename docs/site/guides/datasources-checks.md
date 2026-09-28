@@ -712,7 +712,8 @@ Databricks License, which permits use only with Databricks services. When a run 
 DQX checks, DataQ uploads a small notebook to the connection user's workspace folder
 (`/Users/<you>/.dataq/`) and submits **one serverless job for all of the run's DQX checks**.
 The notebook installs a pinned DQX version and returns only failing-row counts, never row
-values. Expect about a minute of job start-up per run.
+values. Expect about a minute of job start-up per run. For the same reason a DQX check has
+**no dry-run preview**: run the suite to see its result.
 
 **What the connection's token needs:** permission to create workspace files in its own home
 folder and to submit serverless jobs, plus `SELECT` on the target table. A rule the
