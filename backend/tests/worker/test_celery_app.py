@@ -49,8 +49,6 @@ def test_create_celery_app_uses_redis_url_and_json() -> None:
     assert app.conf.result_backend.startswith("redis://")
     assert app.conf.task_serializer == "json"
     assert app.conf.accept_content == ["json"]
-    # task_track_started lets the run read-back distinguish queued from running.
-    assert app.conf.task_track_started is True
 
 
 def test_llm_invoke_routes_to_its_own_queue() -> None:
@@ -434,3 +432,26 @@ class TestRedissSafeUrl:
         assert app.backend.connparams["ssl_cert_reqs"] is not None
         with pytest.raises(ValueError, match="ssl_cert_reqs"):
             Celery(broker=bare, backend=bare).backend  # noqa: B018
+
+
+def test_no_task_result_is_stored() -> None:
+    """Nothing reads a Celery result — run state lives in Postgres — so a result or STARTED write
+    is only one more Redis round-trip that can fail mid-roll (#2119)."""
+    from backend.app.worker.celery_app import create_celery_app
+
+    conf = create_celery_app().conf
+    assert conf.task_ignore_result is True
+    assert conf.task_track_started is False
+
+
+def test_a_publish_rides_out_a_thirty_second_broker_gap() -> None:
+    """Azure rolls refused Redis connections for ~30 s; kombu's default retry gives up in
+    ~0.6 s, losing a beat dispatch or a run trigger (#2119)."""
+    from backend.app.worker.celery_app import create_celery_app
+
+    policy = create_celery_app().conf.task_publish_retry_policy
+    waited, sleep = 0.0, float(policy["interval_start"])
+    for _ in range(policy["max_retries"]):
+        waited += sleep
+        sleep = min(sleep + policy["interval_step"], policy["interval_max"])
+    assert 30 <= waited <= 60  # long enough for the gap, short of hanging a request forever

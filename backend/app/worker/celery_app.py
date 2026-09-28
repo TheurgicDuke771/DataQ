@@ -77,8 +77,19 @@ def create_celery_app() -> Celery:
         accept_content=["json"],
         timezone="UTC",
         enable_utc=True,
-        # Surface 'started' so read-back can distinguish queued from running.
-        task_track_started=True,
+        # No task result is ever read — run, check and poll state live in Postgres — so none is
+        # stored: a result or STARTED write was one more Redis round-trip per task that could fail
+        # on its own, as it did mid-roll on Azure (#2119, "Exception raised outside body").
+        task_ignore_result=True,
+        # A publish (beat's schedule, the API's run trigger) rides out a broker gap of ~35 s
+        # instead of kombu's default ~0.6 s — the Redis refusals seen during an Azure roll
+        # lasted ~30 s (#2119). Each sleep grows by 1 s, capped at 5 s.
+        task_publish_retry_policy={
+            "max_retries": 10,
+            "interval_start": 0,
+            "interval_step": 1,
+            "interval_max": 5,
+        },
         # Fair dispatch-time interleaving, not a concurrency fix: a worker
         # consuming both queues fetches from "llm" and "celery" in round-robin
         # rather than draining "celery" strictly FIFO, so a QUEUED run_suite
