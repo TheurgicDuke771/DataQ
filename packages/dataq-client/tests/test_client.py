@@ -1,0 +1,241 @@
+"""The dataq-client convenience layer and CLI, against a mock transport."""
+
+from __future__ import annotations
+
+import json
+import uuid
+from collections.abc import Callable
+from typing import Any
+
+import httpx
+import pytest
+from dataq_client import AuthError, DataQClient, RateLimitedError, RunOutcome, RunTimeoutError, cli
+
+SUITE = uuid.UUID("11111111-1111-1111-1111-111111111111")
+RUN = uuid.UUID("22222222-2222-2222-2222-222222222222")
+
+
+def _run(status: str, **fields: Any) -> dict[str, Any]:
+    return {
+        "id": str(RUN),
+        "suite_id": str(SUITE),
+        "status": status,
+        "triggered_by": "api",
+        "started_at": None,
+        "finished_at": None,
+        "created_at": "2026-09-28T00:00:00Z",
+        "checks_total": fields.pop("checks_total", 3),
+        "checks_passed": fields.pop("checks_passed", 3),
+        "worst_severity": fields.pop("worst_severity", None),
+        "failure_reason": fields.pop("failure_reason", None),
+        "results": fields.pop("results", []),
+        **fields,
+    }
+
+
+def _result(status: str) -> dict[str, Any]:
+    return {
+        "id": str(uuid.uuid4()),
+        "check_id": str(uuid.uuid4()),
+        "status": status,
+        "metric_value": None,
+        "duration_ms": None,
+        "observed_value": None,
+        "expected_value": None,
+        "sample_failures": None,
+    }
+
+
+class _Server:
+    """Answers each request with the next queued response and records what was asked."""
+
+    def __init__(self, *responses: httpx.Response) -> None:
+        self.responses = list(responses)
+        self.requests: list[httpx.Request] = []
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        return self.responses.pop(0)
+
+
+def _client(server: Callable[[httpx.Request], httpx.Response]) -> DataQClient:
+    return DataQClient(
+        "https://dq.example.com", "dq_live_x", httpx_args={"transport": httpx.MockTransport(server)}
+    )
+
+
+def _json(status: int, body: Any) -> httpx.Response:
+    return httpx.Response(status, json=body)
+
+
+def test_the_token_travels_as_a_bearer_and_the_path_is_the_api_path() -> None:
+    server = _Server(_json(202, _run("queued")))
+    outcome = _client(server).trigger_run(SUITE)
+    request = server.requests[0]
+    assert request.headers["authorization"] == "Bearer dq_live_x"
+    assert (request.method, request.url.path) == ("POST", f"/api/v1/suites/{SUITE}/run")
+    assert (outcome.status, outcome.finished) == ("queued", False)
+
+
+def test_url_and_token_fall_back_to_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("DATAQ_URL", raising=False)
+    monkeypatch.delenv("DATAQ_PAT", raising=False)
+    with pytest.raises(ValueError, match="DATAQ_URL"):
+        DataQClient()
+    monkeypatch.setenv("DATAQ_URL", "https://dq.example.com")
+    with pytest.raises(ValueError, match="DATAQ_PAT"):
+        DataQClient()
+
+
+def test_wait_reads_the_lifecycle_never_the_counts() -> None:
+    """A running run already shows 3/3 passed and no severity — the "nothing failed" shape. It
+    is not finished until its status says so."""
+    server = _Server(
+        _json(200, _run("running", checks_passed=3, worst_severity=None)),
+        _json(200, _run("running")),
+        _json(200, _run("succeeded", worst_severity="critical", checks_passed=2)),
+    )
+    sleeps: list[float] = []
+    outcome = _client(server).wait_for_run(RUN, sleep=sleeps.append, clock=lambda: 0.0)
+    assert (outcome.status, outcome.worst_severity) == ("succeeded", "critical")
+    assert len(server.requests) == 3
+
+
+def test_polling_never_goes_below_five_seconds_and_backs_off() -> None:
+    server = _Server(*[_json(200, _run("running"))] * 6, _json(200, _run("succeeded")))
+    sleeps: list[float] = []
+    _client(server).wait_for_run(RUN, interval=0.1, sleep=sleeps.append, clock=lambda: 0.0)
+    assert sleeps[0] == 5.0
+    assert sleeps == sorted(sleeps) and max(sleeps) <= 30.0 and sleeps[-1] > 5.0
+
+
+def test_a_run_still_going_at_the_deadline_times_out() -> None:
+    server = _Server(*[_json(200, _run("running"))] * 3)
+    now = [0.0]
+
+    def sleep(seconds: float) -> None:
+        now[0] += seconds
+
+    with pytest.raises(RunTimeoutError, match="still running"):
+        _client(server).wait_for_run(RUN, timeout=8, sleep=sleep, clock=lambda: now[0])
+
+
+def test_a_rate_limit_is_raised_not_retried() -> None:
+    server = _Server(_json(429, {"error": {"code": "rate_limited", "message": "slow down"}}))
+    with pytest.raises(RateLimitedError) as exc:
+        _client(server).wait_for_run(RUN, sleep=lambda _s: None)
+    assert exc.value.code == "rate_limited"
+    assert len(server.requests) == 1
+
+
+def test_an_auth_refusal_carries_the_servers_code() -> None:
+    server = _Server(_json(403, {"error": {"code": "forbidden", "message": "needs edit"}}))
+    with pytest.raises(AuthError) as exc:
+        _client(server).trigger_run(SUITE)
+    assert (exc.value.status_code, exc.value.code, exc.value.message) == (
+        403,
+        "forbidden",
+        "needs edit",
+    )
+
+
+def test_an_unparseable_success_is_an_error_not_a_crash() -> None:
+    from dataq_client import DataQError
+
+    server = _Server(_json(200, _run("queued")))  # the trigger answers 202, not 200
+    with pytest.raises(DataQError, match="unexpected_response"):
+        _client(server).trigger_run(SUITE)
+
+
+def test_errored_checks_are_counted() -> None:
+    server = _Server(
+        _json(200, _run("succeeded", results=[_result("pass"), _result("error"), _result("skip")]))
+    )
+    assert _client(server).get_run(RUN).checks_errored == 1
+
+
+def test_export_then_import_round_trips_the_document() -> None:
+    document = {
+        "version": 1,
+        "name": "orders",
+        "description": None,
+        "checks": [
+            {
+                "name": "amount_range",
+                "kind": "expectation",
+                "expectation_type": "expect_column_values_to_be_between",
+                "config": {"column": "amount", "min_value": 0.01, "max_value": 99999.99},
+                "severity_warn_threshold": 0.05,
+            }
+        ],
+    }
+    imported = {
+        "id": str(uuid.uuid4()),
+        "name": "orders",
+        "description": None,
+        "connection_id": str(uuid.uuid4()),
+        "target": None,
+        "created_by": str(uuid.uuid4()),
+        "created_at": "2026-09-28T00:00:00Z",
+        "updated_at": "2026-09-28T00:00:00Z",
+    }
+    server = _Server(_json(200, document), _json(201, imported))
+    client = _client(server)
+    exported = client.export_suite(SUITE)
+    client.import_suite(exported, imported["connection_id"])
+    sent = json.loads(server.requests[1].content)
+    assert sent["connection_id"] == imported["connection_id"]
+    assert sent["document"]["checks"][0]["config"] == document["checks"][0]["config"]
+
+
+# ───────────────────────────── CLI ─────────────────────────────
+
+
+def _outcome(**fields: Any) -> RunOutcome:
+    base: dict[str, Any] = {
+        "run_id": RUN,
+        "suite_id": SUITE,
+        "status": "succeeded",
+        "worst_severity": None,
+        "checks_total": 3,
+        "checks_passed": 3,
+        "checks_errored": 0,
+        "failure_reason": None,
+    }
+    return RunOutcome(**{**base, **fields})
+
+
+@pytest.mark.parametrize(
+    ("fields", "code"),
+    [
+        ({}, 0),
+        ({"worst_severity": "warn"}, 1),
+        ({"worst_severity": "fail"}, 2),
+        ({"worst_severity": "critical"}, 2),
+        ({"status": "failed"}, 3),
+        ({"status": "cancelled", "worst_severity": "warn"}, 3),
+        ({"checks_errored": 1, "worst_severity": "critical"}, 3),
+    ],
+)
+def test_the_exit_code_ladder(fields: dict[str, Any], code: int) -> None:
+    assert cli.exit_code(_outcome(**fields)) == code
+
+
+def test_cli_run_wait_exits_by_the_result(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    server = _Server(
+        _json(202, _run("queued")), _json(200, _run("succeeded", worst_severity="fail"))
+    )
+    monkeypatch.setattr(cli, "DataQClient", lambda url: _client(server))
+    assert cli.main(["run", str(SUITE), "--wait"]) == 2
+    assert "worst severity fail" in capsys.readouterr().out
+
+
+def test_cli_client_problems_exit_four(monkeypatch: pytest.MonkeyPatch) -> None:
+    server = _Server(_json(401, {"error": {"code": "unauthenticated", "message": "no"}}))
+    monkeypatch.setattr(cli, "DataQClient", lambda url: _client(server))
+    assert cli.main(["run", str(SUITE), "--wait"]) == 4
+    monkeypatch.delenv("DATAQ_PAT", raising=False)
+    monkeypatch.setattr(cli, "DataQClient", DataQClient)
+    assert cli.main(["--url", "https://dq.example.com", "run", str(SUITE)]) == 4

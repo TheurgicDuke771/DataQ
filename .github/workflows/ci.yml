@@ -72,6 +72,40 @@ jobs:
       - name: Bandit
         run: bandit -c pyproject.toml -r backend/app/
 
+  python-client:
+    name: Python client (dataq-client) — drift, types, tests, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install the package and its tooling
+        run: |
+          pip install -r packages/dataq-client/requirements-dev.txt
+          pip install -e packages/dataq-client
+
+      - name: Generated client matches the committed OpenAPI spec
+        # The spec itself is checked against the app in backend-test; a route change must
+        # regenerate both (scripts/generate-dataq-client.py).
+        run: python scripts/generate-dataq-client.py --check
+
+      - name: Types (hand-written layer)
+        run: mypy --strict packages/dataq-client/src/dataq_client/client.py packages/dataq-client/src/dataq_client/cli.py
+
+      - name: Tests
+        run: pytest -q -p no:cacheprovider packages/dataq-client/tests
+
+      - name: Runtime licences (no strong copyleft or source-available)
+        run: python packages/dataq-client/scripts/check_licences.py
+
+      - name: Build the wheel
+        run: python -m build --wheel packages/dataq-client --outdir /tmp/dist
+
   backend-audit:
     name: Backend — dependency audit (pip-audit)
     runs-on: ubuntu-latest
@@ -92,7 +126,8 @@ jobs:
         # requirements-dev.txt) + transitive deps, against the PyPI/OSV advisory DB.
         run: |
           audit() {
-            pip-audit -r backend/requirements-dev.txt
+            pip-audit -r backend/requirements-dev.txt \
+              && pip-audit -r packages/dataq-client/requirements-dev.txt
           }
           for attempt in 1 2 3 4; do
             if audit; then

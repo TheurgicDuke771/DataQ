@@ -1,0 +1,7 @@
+# openapi-python-client generation config for the dataq-client package (#1829).
+# `--isolated` + explicit settings: the output must not depend on which ruff config sits above the
+# directory it is generated in, or the CI drift check would compare two different formattings.
+package_name_override: generated
+post_hooks:
+  - "ruff check . --isolated --no-cache --fix-only --quiet --line-length 100 --target-version py310"
+  - "ruff format . --isolated --no-cache --quiet --line-length 100 --target-version py310"
