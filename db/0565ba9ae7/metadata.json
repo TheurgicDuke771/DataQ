@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "db0565ba9ae7",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1655-databricks-serving",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/llm/openai_compat.py",
+    "backend/app/services/llm_service.py",
+    "backend/tests/api/test_admin_llm.py",
+    "backend/tests/llm/test_openai_compat.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/db/0565ba9ae7/0/metadata.json",
+      "transcript": "/db/0565ba9ae7/0/full.jsonl",
+      "compact_transcript": "/db/0565ba9ae7/0/transcript.jsonl",
+      "content_hash": "/db/0565ba9ae7/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 20,
+    "cache_creation_tokens": 10902,
+    "cache_read_tokens": 6885573,
+    "output_tokens": 5936,
+    "api_call_count": 10
+  }
+}
