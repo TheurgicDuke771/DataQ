@@ -2107,6 +2107,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Unity Catalog tiers — measured">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#width-priced-by-sql-type" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Width, priced by SQL type
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
           <li class="md-nav__item">
@@ -3327,6 +3344,23 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Unity Catalog tiers — measured">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#width-priced-by-sql-type" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Width, priced by SQL type
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
         
@@ -5153,7 +5187,7 @@ CSV and a ~930 MiB idle worker:</p>
 <p>The budget default is <code>RUN_MAX_SCAN_BYTES × 8</code>, which admits one at-the-cap CSV
 read and leaves the second slot for the pushdown and sampled work that costs
 nothing. The other cap-bounded estimates — an at-the-cap Parquet read, a batch
-target, the Unity Catalog frame lane at its row cap — come out <em>above</em> the whole
+target, the Unity Catalog frame lane at its frame cap — come out <em>above</em> the whole
 budget, so they are admitted only when nothing else holds any. That is the
 intended answer rather than a mis-tuned default: the measured peaks for exactly
 those cases (1,278 MiB Parquet at 5M rows, 1,681 MiB for a 1M-row UC frame) do
@@ -5645,8 +5679,108 @@ otherwise idle process</strong>.</p>
 cost ~860 bytes/row on this lane; this 9-column table costs ~1,390. Both the
 1.5M-row <code>RUN_MAX_SCAN_ROWS</code> cap and <code>run_admission</code>'s 1,024-byte/row UC frame
 estimate count rows, not width, so a table of this shape under the cap can still
-OOM the worker. Until the estimate accounts for width, treat the 1.5M cap as
-calibrated for narrow tables only.</p>
+OOM the worker. <code>RUN_MAX_FRAME_BYTES</code> (below) now prices the width.</p>
+<h4 id="width-priced-by-sql-type">Width, priced by SQL type<a class="headerlink" href="#width-priced-by-sql-type" title="Permanent link">¶</a></h4>
+<p>Measured 2026-09-28 on the same 2 GiB / 1 CPU rig: peak RSS over the
+process baseline, three expectations, one process per view, all over
+<code>samples.tpch</code>. The pure-type views are 8 columns × 400k rows.</p>
+<table>
+<thead>
+<tr>
+<th>View</th>
+<th>B/row</th>
+<th>B/cell</th>
+<th>Model estimate</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>8 × BIGINT</td>
+<td>1,111</td>
+<td>139</td>
+<td>1,120</td>
+</tr>
+<tr>
+<td>8 × DOUBLE</td>
+<td>1,082</td>
+<td>135</td>
+<td>1,120</td>
+</tr>
+<tr>
+<td>8 × DECIMAL(18,2)</td>
+<td>2,119</td>
+<td>265</td>
+<td>2,160</td>
+</tr>
+<tr>
+<td>8 × DATE</td>
+<td>750</td>
+<td>94</td>
+<td>760</td>
+</tr>
+<tr>
+<td>8 × TIMESTAMP</td>
+<td>1,158</td>
+<td>145</td>
+<td>1,200</td>
+</tr>
+<tr>
+<td>8 × BOOLEAN</td>
+<td>697</td>
+<td>87</td>
+<td>720</td>
+</tr>
+<tr>
+<td>8 × STRING, 1–4 chars</td>
+<td>934</td>
+<td>117</td>
+<td>1,082</td>
+</tr>
+<tr>
+<td>8 × STRING, ~19 chars</td>
+<td>1,583</td>
+<td>198</td>
+<td>1,526</td>
+</tr>
+<tr>
+<td>4 × STRING, ~160 chars</td>
+<td>2,058</td>
+<td>514</td>
+<td>2,476</td>
+</tr>
+<tr>
+<td>lineitem (16 cols)</td>
+<td>2,196–2,339</td>
+<td>~140</td>
+<td>2,710</td>
+</tr>
+<tr>
+<td>orders (9 cols)</td>
+<td>1,372</td>
+<td>152</td>
+<td>1,526</td>
+</tr>
+<tr>
+<td>part (9 cols)</td>
+<td>1,619</td>
+<td>180</td>
+<td>1,616</td>
+</tr>
+</tbody>
+</table>
+<p>The final frame is a small part of it: 8 BIGINT columns hold 64 B/row once
+read, yet peak at 1,111. The read's per-cell Python objects dominate. So the
+dtype is the wrong key. A DECIMAL lands as <code>float64</code> yet costs twice an
+integer, which is why the model keys on the <strong>reflected SQL type</strong>. Costs were
+linear in rows (8 × BIGINT: 1,092 B/row at 200k, 1,111 at 400k).</p>
+<p>The model: fixed costs per type (bool 90, date 95, integer/float 140, timestamp
+150, decimal 270), and for strings and anything unlisted, 130 + 3 × the mean
+length sampled from the first 1,000 rows. Across the twelve views it reads
+0.96–1.23× the measurement, erring high. It gates the read against
+<code>RUN_MAX_FRAME_BYTES</code> (1.25 GiB) and is what admission reserves for a UC frame
+suite. Live on the rig, a 1M-row, 16-column lineitem view is refused with a
+2.71 GB estimate. It is under the 1.5M row cap, and with the frame cap
+disabled the same run is OOM-killed (exit 137).</p>
 <p>The pushdown lane issues more statements (17 vs 9 — GX evaluates each pushed-down
 metric on the warehouse, where the frame lane computes them in pandas) and still finishes in under half
 the frame lane's wall time. The frame lane's wall clock was bimodal across six

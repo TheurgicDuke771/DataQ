@@ -836,7 +836,7 @@ CSV and a ~930 MiB idle worker:
 The budget default is `RUN_MAX_SCAN_BYTES × 8`, which admits one at-the-cap CSV
 read and leaves the second slot for the pushdown and sampled work that costs
 nothing. The other cap-bounded estimates — an at-the-cap Parquet read, a batch
-target, the Unity Catalog frame lane at its row cap — come out *above* the whole
+target, the Unity Catalog frame lane at its frame cap — come out *above* the whole
 budget, so they are admitted only when nothing else holds any. That is the
 intended answer rather than a mis-tuned default: the measured peaks for exactly
 those cases (1,278 MiB Parquet at 5M rows, 1,681 MiB for a 1M-row UC frame) do
@@ -1079,8 +1079,43 @@ That margin is the knee. The 2026-08-22 campaign's 6-column order-lines table
 cost ~860 bytes/row on this lane; this 9-column table costs ~1,390. Both the
 1.5M-row `RUN_MAX_SCAN_ROWS` cap and `run_admission`'s 1,024-byte/row UC frame
 estimate count rows, not width, so a table of this shape under the cap can still
-OOM the worker. Until the estimate accounts for width, treat the 1.5M cap as
-calibrated for narrow tables only.
+OOM the worker. `RUN_MAX_FRAME_BYTES` (below) now prices the width.
+
+#### Width, priced by SQL type
+
+Measured 2026-09-28 on the same 2 GiB / 1 CPU rig: peak RSS over the
+process baseline, three expectations, one process per view, all over
+`samples.tpch`. The pure-type views are 8 columns × 400k rows.
+
+| View | B/row | B/cell | Model estimate |
+|---|---|---|---|
+| 8 × BIGINT | 1,111 | 139 | 1,120 |
+| 8 × DOUBLE | 1,082 | 135 | 1,120 |
+| 8 × DECIMAL(18,2) | 2,119 | 265 | 2,160 |
+| 8 × DATE | 750 | 94 | 760 |
+| 8 × TIMESTAMP | 1,158 | 145 | 1,200 |
+| 8 × BOOLEAN | 697 | 87 | 720 |
+| 8 × STRING, 1–4 chars | 934 | 117 | 1,082 |
+| 8 × STRING, ~19 chars | 1,583 | 198 | 1,526 |
+| 4 × STRING, ~160 chars | 2,058 | 514 | 2,476 |
+| lineitem (16 cols) | 2,196–2,339 | ~140 | 2,710 |
+| orders (9 cols) | 1,372 | 152 | 1,526 |
+| part (9 cols) | 1,619 | 180 | 1,616 |
+
+The final frame is a small part of it: 8 BIGINT columns hold 64 B/row once
+read, yet peak at 1,111. The read's per-cell Python objects dominate. So the
+dtype is the wrong key. A DECIMAL lands as `float64` yet costs twice an
+integer, which is why the model keys on the **reflected SQL type**. Costs were
+linear in rows (8 × BIGINT: 1,092 B/row at 200k, 1,111 at 400k).
+
+The model: fixed costs per type (bool 90, date 95, integer/float 140, timestamp
+150, decimal 270), and for strings and anything unlisted, 130 + 3 × the mean
+length sampled from the first 1,000 rows. Across the twelve views it reads
+0.96–1.23× the measurement, erring high. It gates the read against
+`RUN_MAX_FRAME_BYTES` (1.25 GiB) and is what admission reserves for a UC frame
+suite. Live on the rig, a 1M-row, 16-column lineitem view is refused with a
+2.71 GB estimate. It is under the 1.5M row cap, and with the frame cap
+disabled the same run is OOM-killed (exit 137).
 
 The pushdown lane issues more statements (17 vs 9 — GX evaluates each pushed-down
 metric on the warehouse, where the frame lane computes them in pandas) and still finishes in under half
