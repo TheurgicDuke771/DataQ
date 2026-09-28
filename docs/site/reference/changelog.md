@@ -50,6 +50,12 @@ the per-PR history lives in the repo's commit log and pull requests.
   TLS is `require` by default. *Column values unique* needs the `CREATE TEMPORARY TABLES`
   grant — see [Datasources & checks](../guides/datasources-checks.md#mysql-mariadb).
 
+- **Amazon Redshift datasource.** Connect a provisioned Redshift cluster or a Serverless
+  workgroup with a database user and run every SQL-capable check, custom SQL, all monitors,
+  the profiler, schema → table browsing and inventory sync. Sessions are read-only at the
+  server, and every TLS mode checks the certificate chain against Amazon's certificate
+  authorities — see [Datasources & checks](../guides/datasources-checks.md#amazon-redshift).
+
 - **Amazon Athena datasource.** Connect Athena by region and IAM access key — one data catalog
   per connection, a Glue database as the schema — and run every SQL-capable check, custom SQL,
   all monitors, the profiler, database → table browsing and inventory sync. Every check is a

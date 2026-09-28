@@ -228,6 +228,45 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
     secretLabel: 'Password',
     destinationFields: ['host', 'port'],
   },
+  redshift: {
+    // Amazon Redshift (#1682) — provisioned clusters and Serverless workgroups — on the generic
+    // SQL base. Every TLS mode verifies against Amazon's CAs.
+    textFields: [
+      {
+        name: 'host',
+        label: 'Endpoint',
+        extra: 'The cluster or workgroup endpoint host — no scheme, port or database',
+      },
+      { name: 'port', label: 'Port', optional: true, extra: 'Defaults to 5439' },
+      { name: 'database', label: 'Database' },
+      { name: 'user', label: 'User', extra: 'A database user granted SELECT on what DataQ checks' },
+      {
+        name: 'schema',
+        label: 'Default schema',
+        optional: true,
+        extra: 'Where an unqualified run target resolves (lower case) — defaults to public',
+      },
+      {
+        name: 'sslmode',
+        label: 'TLS mode',
+        optional: true,
+        options: ['require', 'verify-full', 'verify-ca', 'disable'],
+        extra:
+          "require when left empty (already checks the chain against Amazon's CAs) · " +
+          'verify-full also checks the hostname · disable sends everything in plaintext',
+      },
+      {
+        name: 'inventory_sync',
+        label: 'Inventory sync',
+        type: 'toggle',
+        optional: true,
+        default: true,
+        extra: 'Daily sync of every table this user can read into the asset view.',
+      },
+    ],
+    secretLabel: 'Password',
+    destinationFields: ['host', 'port'],
+  },
   mysql: {
     // One engine-generic adapter for any MySQL or MariaDB server (#1684), via the MIT PyMySQL driver.
     textFields: [

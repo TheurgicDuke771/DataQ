@@ -739,3 +739,15 @@ Created in AWS account `251783195294` for the Athena adapter's live battery. Cre
   - A worker-executed suite run completed (`AWS S3 — Orders Header CSV`: succeeded, 2/3), so the worker and database path work end to end.
   - An export → import → export round trip was identical; its test copy was deleted.
   - These runs were also the `dataq-client` AWS acceptance check.
+
+## 2026-09-28 — Amazon Redshift (#1682) live-test resources created in AWS (us-east-2)
+
+Created in AWS account `251783195294` for the Redshift adapter's live battery. Creation was run as `dataq-deploy`.
+
+- **Redshift Serverless:** namespace `dataq-it-rs` (database `dev`, admin user `dqadmin`) and workgroup `dataq-it-rs` (base capacity 8 RPUs, publicly accessible), both tagged `purpose=dataq-1682-it`. The admin password is managed by Redshift in Secrets Manager (`redshift!dataq-it-rs-dqadmin`); it was only ever read inline.
+- **Network:** an inbound rule on the default VPC security group `sg-0c047e1aaf5c17416` for TCP 5439 from the maintainer's IP (/32). That group is used only by the workgroup's VPC endpoint; the app's own group is untouched.
+- **Database objects:** schemas `dq_it` and `dq_hidden` (probe tables) and user `dq_reader`, whose password was generated and written straight into Secrets Manager as `dataq/it/redshift-reader` in the same process. Each battery run creates and drops its own `dq_rs_<hex>` schema.
+- **Teardown (pending, with the AWS wave's):**
+  - delete workgroup `dataq-it-rs`, then namespace `dataq-it-rs` (which removes the managed admin secret and every database object);
+  - delete the secret `dataq/it/redshift-reader` with force-delete;
+  - revoke the port 5439 rule on `sg-0c047e1aaf5c17416`.

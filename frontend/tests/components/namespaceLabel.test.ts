@@ -148,6 +148,7 @@ describe('datasourceKind', () => {
     ['postgresql://u@h/db', 'other'],
     ['mssql://srv:1433', 'mssql'],
     ['awsathena://athena.us-east-2.amazonaws.com', 'athena'],
+    ['redshift://analytics.us-east-2:5439', 'redshift'],
     // Nor is a pyodbc/pytds driver DSN the SQL Server datasource namespace.
     ['mssql+pyodbc://u@h/db', 'other'],
     ['file', 'other'],
@@ -169,6 +170,7 @@ describe('datasourceKind', () => {
       'trino://trino.internal:443',
       'mssql://srv:1433',
       'awsathena://athena.us-east-2.amazonaws.com',
+      'redshift://analytics.us-east-2:5439',
     ]) {
       expect(datasourceKind(ns)).not.toBe('other');
       expect(namespaceLabel(ns)).toContain(' · ');
@@ -181,6 +183,14 @@ describe('datasourceKind', () => {
 describe('Athena namespace', () => {
   it('labels the region, not the endpoint', () => {
     expect(namespaceLabel('awsathena://athena.us-east-2.amazonaws.com')).toBe('Athena · us-east-2');
+  });
+});
+
+describe('Redshift namespace', () => {
+  it('labels the cluster or workgroup and its region', () => {
+    expect(namespaceLabel('redshift://analytics.us-east-2:5439')).toBe(
+      'Redshift · analytics.us-east-2:5439',
+    );
   });
 });
 

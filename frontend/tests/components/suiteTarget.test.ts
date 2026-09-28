@@ -59,6 +59,7 @@ describe('SCHEMA_BROWSE_TYPES', () => {
       'trino',
       'mssql',
       'athena',
+      'redshift',
     ]);
   });
 });
