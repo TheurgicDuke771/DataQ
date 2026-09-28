@@ -98,7 +98,7 @@ jobs:
         run: mypy --config-file packages/dataq-client/pyproject.toml packages/dataq-client/src/dataq_client/client.py packages/dataq-client/src/dataq_client/cli.py
 
       - name: Tests
-        run: pytest -q -p no:cacheprovider packages/dataq-client/tests
+        run: pytest -c packages/dataq-client/pyproject.toml -q -p no:cacheprovider packages/dataq-client/tests
 
       - name: Runtime licences (no strong copyleft or source-available)
         run: python packages/dataq-client/scripts/check_licences.py

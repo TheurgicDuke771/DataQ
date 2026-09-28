@@ -33,3 +33,7 @@ packages = ["src/dataq_client"]
 # Self-contained: the repo-root config loads backend plugins (SQLAlchemy) this package never has.
 strict = true
 python_version = "3.10"
+
+[tool.pytest.ini_options]
+# Self-contained: the repo-root config adds backend coverage flags.
+testpaths = ["tests"]
