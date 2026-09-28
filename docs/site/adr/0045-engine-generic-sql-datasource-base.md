@@ -149,3 +149,29 @@ Two more hooks came with it: `explain_failure`, which turns a failure the engine
 documented driver limitation, a missing optional driver) into a DataQ-authored message shown
 verbatim; and `unsupported_expectation_types`, for an allowlisted type the dialect has no GX
 translation for (regex on T-SQL), refused at author time rather than erroring on every run.
+
+## Amendment — Amazon Athena (2026-09-28)
+
+Athena is the fifth engine and
+the first with no server to open a session on. It needed two small hooks and one GX fix:
+
+- **The endpoint is the region.** `AthenaConfig` derives `host` (`athena.<region>.amazonaws.com`)
+  from `region` and refuses a configured host that disagrees, so a config can never point the
+  credential somewhere its region field does not say. The IAM access key ID is the base's
+  `user`; the secret access key travels as connect args, never in the URL.
+- **`url_query`** (a config hook): the workgroup, data catalog and query-results location are
+  non-secret driver options the URL's query carries.
+- **`namespace_includes_port`** (a spec flag): OpenLineage's Athena namespace is
+  `awsathena://athena.<region>.amazonaws.com`, with no port.
+- **§4 does not hold**, as on Trino and SQL Server: Athena has no read-only session, so the
+  guarantee is an IAM policy that can only read (live-verified: the reader's `CREATE TABLE`
+  was refused). Query results are written to the results location, so region, workgroup and
+  results location are destination fields.
+- **GX had no Athena regex branch.** Every regex expectation errored on the pyathena dialect;
+  `gx_metrics` adds one (`regexp_like`, Athena's engine being Trino's) to each GX module that
+  imported the helper.
+
+Every SQL-batch expectation type, custom SQL, the monitors, profiler, schema drift, comparison
+reads, inventory, browsing and an end-to-end persisted run were **executed** against a live
+Athena workgroup as a least-privileged IAM user. Every check is a billed query, which the guide
+states.

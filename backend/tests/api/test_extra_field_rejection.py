@@ -208,3 +208,33 @@ def test_export_response_is_unaffected_by_forbid(client: TestClient, db_session:
     resp = client.get(f"/api/v1/suites/{sid}/export")
     assert resp.status_code == 200
     assert resp.json()["checks"][0]["name"] == "exported-check"
+
+
+def test_every_request_body_rejects_unknown_fields() -> None:
+    """Structural, so a new endpoint cannot slip past the per-endpoint probes above: every JSON
+    request body is an `ApiRequestModel`. The API compatibility policy promises it; the admin
+    privacy and scoring bodies had quietly stayed on `ApiModel`."""
+    from fastapi.routing import APIRoute
+    from pydantic import BaseModel
+
+    from backend.app.api.v1._base import ApiRequestModel
+
+    def routes(items: Any) -> Iterator[APIRoute]:
+        for item in items:
+            if isinstance(item, APIRoute):
+                yield item
+            inner = getattr(item, "original_router", None) or getattr(item, "router", None)
+            if inner is not None and hasattr(inner, "routes"):
+                yield from routes(inner.routes)
+
+    bodies = [
+        (route.path, param.field_info.annotation)
+        for route in routes(app.routes)
+        for param in route.dependant.body_params
+        if isinstance(param.field_info.annotation, type)
+        and issubclass(param.field_info.annotation, BaseModel)
+    ]
+    assert len(bodies) > 40  # the walk reached the included routers
+    assert [
+        (path, model.__name__) for path, model in bodies if not issubclass(model, ApiRequestModel)
+    ] == []

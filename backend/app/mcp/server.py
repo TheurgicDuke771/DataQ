@@ -2962,7 +2962,7 @@ def browse_connection(
     Returns one level per call, keyed by ``kind``:
 
     - **``kind: "tables"``** — Unity Catalog, Snowflake, Iceberg and the SQL
-      databases (PostgreSQL, MySQL/MariaDB, Trino, SQL Server/Azure SQL). On
+      databases (PostgreSQL, MySQL/MariaDB, Trino, SQL Server/Azure SQL, Athena). On
       Unity Catalog, no ``catalog`` lists catalogs; a ``catalog`` lists its
       schemas; ``catalog`` + ``schema`` lists tables. Every other type pins one
       database, so it has **no catalog level**: start at ``schema`` (omit it to
@@ -4280,9 +4280,10 @@ def profile_column(
     for an Iceberg table when passing an explicit ``table`` (Iceberg addresses
     ``namespace.table``); it defaults to the suite target's namespace when no
     explicit ``table``/``path`` is given, so it only needs passing alongside
-    your own ``table``. **Snowflake, Unity Catalog, PostgreSQL, MySQL and Trino are
-    profiled in full; ADLS, S3 and Iceberg targets are profiled over a sample of at most
-    100,000 rows.** When
+    your own ``table``. **Snowflake, Unity Catalog, PostgreSQL, MySQL, Trino, SQL
+    Server and Athena are profiled in full; ADLS, S3 and Iceberg targets are profiled
+    over a sample of at most 100,000 rows.** On Athena every statistic is a billed
+    query. When
     ``sampled`` is true, ``row_count`` is the number of rows **sampled** — not
     the size of the file or table — and every statistic describes only that
     sample. Say so rather than reporting a sample fraction as a fact about the

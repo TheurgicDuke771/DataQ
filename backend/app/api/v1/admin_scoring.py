@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends
 from pydantic import Field
 from sqlalchemy.orm import Session
 
-from backend.app.api.v1._base import ApiModel, updated_by_email
+from backend.app.api.v1._base import ApiModel, ApiRequestModel, updated_by_email
 from backend.app.core.auth import require_workspace_admin
 from backend.app.db.models import User
 from backend.app.db.session import get_db
@@ -37,7 +37,7 @@ class ScoringWeightsRead(ApiModel):
     updated_at: datetime | None
 
 
-class ScoringWeightsWrite(ApiModel):
+class ScoringWeightsWrite(ApiRequestModel):
     warn: float = Field(ge=0, le=svc.MAX_WEIGHT)
     fail: float = Field(ge=0, le=svc.MAX_WEIGHT)
     critical: float = Field(gt=0, le=svc.MAX_WEIGHT)

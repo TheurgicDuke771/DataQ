@@ -147,6 +147,7 @@ describe('datasourceKind', () => {
     // An Iceberg SQL-catalog DSN is NOT the PostgreSQL datasource namespace.
     ['postgresql://u@h/db', 'other'],
     ['mssql://srv:1433', 'mssql'],
+    ['awsathena://athena.us-east-2.amazonaws.com', 'athena'],
     // Nor is a pyodbc/pytds driver DSN the SQL Server datasource namespace.
     ['mssql+pyodbc://u@h/db', 'other'],
     ['file', 'other'],
@@ -167,6 +168,7 @@ describe('datasourceKind', () => {
       'mysql://db.internal:3306',
       'trino://trino.internal:443',
       'mssql://srv:1433',
+      'awsathena://athena.us-east-2.amazonaws.com',
     ]) {
       expect(datasourceKind(ns)).not.toBe('other');
       expect(namespaceLabel(ns)).toContain(' · ');
@@ -175,6 +177,12 @@ describe('datasourceKind', () => {
 });
 
 // ── mutation-spike gaps (#898) ────────────────────────────────────────────────
+
+describe('Athena namespace', () => {
+  it('labels the region, not the endpoint', () => {
+    expect(namespaceLabel('awsathena://athena.us-east-2.amazonaws.com')).toBe('Athena · us-east-2');
+  });
+});
 
 describe('namespaceLabel edges the spike found unasserted (#898)', () => {
   it('trims surrounding whitespace before parsing', () => {

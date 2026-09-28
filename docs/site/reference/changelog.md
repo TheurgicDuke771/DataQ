@@ -49,6 +49,12 @@ the per-PR history lives in the repo's commit log and pull requests.
   TLS is `require` by default. *Column values unique* needs the `CREATE TEMPORARY TABLES`
   grant — see [Datasources & checks](../guides/datasources-checks.md#mysql-mariadb).
 
+- **Amazon Athena datasource.** Connect Athena by region and IAM access key — one data catalog
+  per connection, a Glue database as the schema — and run every SQL-capable check, custom SQL,
+  all monitors, the profiler, database → table browsing and inventory sync. Every check is a
+  billed Athena query. Athena has no read-only session, so give DataQ an IAM principal that can
+  only read — see [Datasources & checks](../guides/datasources-checks.md#amazon-athena).
+
 - **Trino datasource.** Connect any Trino (or Starburst) cluster — one catalog per connection
   — and check whatever that catalog federates (Hive, Iceberg, PostgreSQL, Cassandra, Kafka…)
   with every SQL-capable check, all monitors, the profiler, schema → table browsing and

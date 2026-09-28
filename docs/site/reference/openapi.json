@@ -6478,6 +6478,7 @@
         "type": "object"
       },
       "PrivacySettingsWrite": {
+        "additionalProperties": false,
         "properties": {
           "zero_sample_mode": {
             "title": "Zero Sample Mode",
@@ -7414,6 +7415,7 @@
         "type": "object"
       },
       "ScoringWeightsWrite": {
+        "additionalProperties": false,
         "properties": {
           "critical": {
             "exclusiveMinimum": 0.0,
