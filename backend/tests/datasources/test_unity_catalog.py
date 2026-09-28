@@ -137,6 +137,7 @@ from backend.app.datasources.sampling import (  # noqa: E402
     SamplingDrawError,
     ScanTooLargeError,
 )
+from backend.app.datasources.sql import LazyEngine  # noqa: E402
 from backend.app.datasources.unity_catalog import (  # noqa: E402
     SQL_BATCH_EXPECTATION_TYPES,
     SQL_PUSHDOWN_EXPECTATION_TYPES,
@@ -152,6 +153,13 @@ from backend.app.services.severity import extract_metric  # noqa: E402
 from backend.tests.support.fake_secret_store import FakeSecretStore  # noqa: E402
 
 _REAL_SQL_BATCH_DEF = UnityCatalogCheckRunner._sql_batch_definition
+_REAL_PROBE_ROW_BYTES = UnityCatalogCheckRunner._probe_row_bytes
+
+
+@pytest.fixture(autouse=True)
+def _narrow_width_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+    # #2087: the width probe is live; the frame-lane tests stub it narrow like `_count_rows`.
+    monkeypatch.setattr(UnityCatalogCheckRunner, "_probe_row_bytes", lambda self, **_kw: 100)
 
 
 @pytest.fixture(autouse=True)
@@ -1081,13 +1089,15 @@ def test_an_oversized_table_is_refused_before_the_read(
         )
 
 
-def test_a_disabled_row_cap_skips_the_count_probe_entirely(
+def test_disabled_caps_skip_the_count_probe_entirely(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _pushdown_off(monkeypatch)
-    """The off-switch has to be genuinely off: an operator who disables the cap
-    should not keep paying a warehouse round trip for a number nobody reads."""
+    """The off-switch has to be genuinely off: an operator who disables both caps
+    should not keep paying a warehouse round trip for a number nobody reads. The frame
+    cap (#2087) needs the count too, so the row cap alone is not the switch."""
     monkeypatch.setenv("RUN_MAX_SCAN_ROWS", "0")
+    monkeypatch.setenv("RUN_MAX_FRAME_BYTES", "0")
     get_settings.cache_clear()
     runner = UnityCatalogCheckRunner(
         config=UnityCatalogConfig.model_validate(_UC_CONFIG), token="t", catalog="main"
@@ -1953,3 +1963,101 @@ def test_an_unreachable_sql_batch_reports_the_authored_column_list(
     (check,) = outcome.checks
     assert check.errored is True
     assert check.expected_value == {"column_list": ["ID", "AMT"]}
+
+
+# ─────────────── width-aware frame cap (#2087) ───────────────
+
+
+def test_frame_row_bytes_prices_each_sql_type() -> None:
+    from sqlalchemy import types
+
+    columns = {
+        "id": types.BigInteger(),
+        "price": types.Numeric(18, 2),
+        "ratio": types.Float(),
+        "shipped": types.Date(),
+        "at": types.DateTime(),
+        "flag": types.Boolean(),
+        "note": types.String(),
+    }
+    # A DECIMAL lands as float64 but costs about twice an integer, so it must not price as one.
+    assert unity_catalog.frame_row_bytes(columns, {"note": 10.0}) == (
+        140 + 270 + 140 + 95 + 150 + 90 + (130 + 30)
+    )
+
+
+def test_frame_row_bytes_unwraps_a_type_decorator() -> None:
+    from sqlalchemy import types
+
+    class _Wrapped(types.TypeDecorator[Any]):
+        impl = types.DateTime
+        cache_ok = True
+
+    assert unity_catalog.frame_row_bytes({"at": _Wrapped()}, {}) == 150
+
+
+def test_an_unknown_type_is_priced_like_text_by_its_sampled_length() -> None:
+    from sqlalchemy import types
+
+    assert unity_catalog.frame_row_bytes({"tags": types.JSON()}, {"tags": 40.0}) == 130 + 120
+
+
+def test_the_probe_reflects_types_and_samples_text_lengths() -> None:
+    from sqlalchemy import create_engine
+
+    engine = create_engine("sqlite://")
+    with engine.begin() as conn:
+        conn.exec_driver_sql("CREATE TABLE t (id INTEGER, note VARCHAR, empty VARCHAR)")
+        conn.exec_driver_sql("INSERT INTO t VALUES (1, 'abcd', NULL), (2, 'abcdefgh', NULL)")
+    runner = _uc_runner()
+    runner._engine = LazyEngine(lambda: engine)
+
+    # id 140 + note (130 + 3 x mean length 6) + an all-NULL column priced at its base.
+    assert _REAL_PROBE_ROW_BYTES(runner, table="t", schema=None) == 140 + 148 + 130
+
+
+def test_a_wide_table_under_the_row_cap_is_refused_by_the_frame_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The #2087 knee: 1M rows is under the 1.5M row cap, but at ~2.2 KB/row it wants
+    ~2.1 GB — past the 2 GiB worker. The row cap alone admitted it.
+    """
+    runner = _runner_over(pd.DataFrame({"id": [1]}), monkeypatch)
+    monkeypatch.setattr(runner, "_count_rows", lambda **_kw: 1_000_000)
+    monkeypatch.setattr(runner, "_probe_row_bytes", lambda **_kw: 2_200)
+    monkeypatch.setattr(runner, "_read_table", lambda **_kw: pytest.fail("must refuse first"))
+
+    with pytest.raises(ScanTooLargeError, match="RUN_MAX_FRAME_BYTES"):
+        runner._load_frame(table="lineitem", schema="tpch")
+
+
+def test_the_same_rows_at_a_narrow_width_are_read(monkeypatch: pytest.MonkeyPatch) -> None:
+    runner = _runner_over(pd.DataFrame({"id": [1]}), monkeypatch)
+    monkeypatch.setattr(runner, "_count_rows", lambda **_kw: 1_000_000)
+    monkeypatch.setattr(runner, "_probe_row_bytes", lambda **_kw: 600)
+
+    frame, sampling = runner._load_frame(table="narrow", schema="tpch")
+
+    assert len(frame) == 1 and sampling is None
+
+
+def test_a_wide_sample_is_refused_by_the_frame_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    runner = _sampling_runner(SampleSpec(strategy="head", rows=1_000_000))
+    monkeypatch.setattr(runner, "_probe_row_bytes", lambda **_kw: 2_200)
+    monkeypatch.setattr(
+        runner, "_read_sampled_table", lambda **_kw: pytest.fail("must refuse first")
+    )
+
+    with pytest.raises(ScanTooLargeError, match="RUN_MAX_FRAME_BYTES"):
+        runner._load_frame(table="lineitem", schema="tpch")
+
+
+def test_a_zero_frame_cap_skips_the_width_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RUN_MAX_FRAME_BYTES", "0")
+    get_settings.cache_clear()
+    runner = _runner_over(pd.DataFrame({"id": [1]}), monkeypatch)
+    monkeypatch.setattr(runner, "_probe_row_bytes", lambda **_kw: pytest.fail("no probe"))
+
+    frame, _ = runner._load_frame(table="t", schema="s")
+
+    assert len(frame) == 1

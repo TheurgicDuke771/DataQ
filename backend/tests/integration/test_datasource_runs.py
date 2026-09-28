@@ -161,6 +161,7 @@ def test_unity_catalog_suite_run_persists_results(
     monkeypatch.setattr(runner, "_read_table", lambda **k: _SAMPLE)
     # The #595 scan guardrail counts the table before reading it.
     monkeypatch.setattr(runner, "_count_rows", lambda **k: len(_SAMPLE))
+    monkeypatch.setattr(runner, "_probe_row_bytes", lambda **k: 100)
 
     run_service.execute_run(
         db_session, run=run, checks=checks, runner=runner, table="orders", schema="sales"

@@ -252,6 +252,9 @@ class Settings(BaseSettings):
     # Iceberg's own row cap (#1328). Unset = `run_max_scan_rows` x the measured ratio below, so an
     # operator who lowers or disables the shared cap moves Iceberg with it.
     run_max_scan_rows_iceberg: int | None = Field(default=None, ge=0)
+    # The UC frame lane's width-aware bound (#2087): estimated resident bytes of the frame,
+    # rows x per-column cost. 1.25 GiB leaves a 2 GiB worker ~400 MiB over its ~360 MiB baseline.
+    run_max_frame_bytes: int = Field(default=1_342_177_280, ge=0)
 
     # ── Worker memory admission control (#1998) ─────────────────────────────── The caps above
     # bound ONE run's read; this bounds the SUM across the prefork children of one worker

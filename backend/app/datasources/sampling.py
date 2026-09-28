@@ -175,6 +175,25 @@ def enforce_byte_cap(size: int, *, cap: int, target: str) -> None:
     )
 
 
+def enforce_frame_cap(rows: int, *, row_bytes: int, cap: int, target: str) -> None:
+    """Refuse a frame whose estimated worker memory exceeds ``cap`` (``cap <= 0`` disables).
+
+    Rows alone are width-blind (#2087): a 9-column table costs ~1.4 KB/row and a 16-column
+    one over 2 KB, so a row count under the row cap can still OOM the worker.
+    """
+    _enforce_cap(
+        rows * row_bytes,
+        cap=cap,
+        message=(
+            f"{target} would need about {rows * row_bytes:,} bytes of worker memory as a "
+            f"DataFrame ({rows:,} rows x ~{row_bytes:,} bytes/row at its column widths), over "
+            f"the frame cap of {cap:,}. DataQ refuses to load it rather than risk an "
+            "out-of-memory worker: set a sampling strategy on the suite's run target, narrow "
+            "the target, or raise RUN_MAX_FRAME_BYTES deliberately."
+        ),
+    )
+
+
 def enforce_sample_cap(spec: SampleSpec, *, cap: int) -> None:
     """Refuse a *sample* that is itself over the row cap (``cap <= 0`` disables)."""
     _enforce_cap(
