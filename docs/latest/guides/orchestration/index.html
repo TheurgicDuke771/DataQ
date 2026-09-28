@@ -2623,6 +2623,13 @@ publisher's own output variable verbatim usually double-counts the job segment (
 then looks in <code>&lt;prefix&gt;/dbt/dbt/latest/</code> and finds nothing).</p>
 </blockquote>
 </li>
+<li><strong>ADLS artifacts</strong> are read with a SAS by default. Choose <strong>Service principal</strong> to read them
+  as an Entra app instead (tenant ID, client ID, client secret). The app needs a data-plane
+  role on the container, such as <em>Storage Blob Data Reader</em>. For an ADLS-compatible endpoint
+  such as Fabric <strong>OneLake</strong>, whose SAS lasts at most an hour, set <strong>Account URL</strong> to
+  <code>https://onelake.blob.fabric.microsoft.com</code>; the workspace is then the container:
+  <code>adls://onelake/&lt;workspace&gt;/&lt;lakehouse&gt;.Lakehouse/Files/&lt;prefix&gt;</code>. DataQ cannot read a client
+  secret's expiry, so track it in Entra ID.</li>
 <li>Copy the callback snippet
   (<a href="https://github.com/TheurgicDuke771/DataQ/tree/main/integrations/dbt"><code>integrations/dbt/</code></a>)
   and run it right after <code>dbt build</code>, pointed at that run's <code>run_results.json</code>. It HMAC-signs

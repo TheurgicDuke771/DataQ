@@ -3335,6 +3335,13 @@ Registering any connection — orchestration providers included — is **Admin-o
   > `artifacts_uri: adls://<account>/<container>/<prefix>` with `jobs: ["dbt"]`. Pasting the
   > publisher's own output variable verbatim usually double-counts the job segment (the poll
   > then looks in `<prefix>/dbt/dbt/latest/` and finds nothing).
+- **ADLS artifacts** are read with a SAS by default. Choose **Service principal** to read them
+  as an Entra app instead (tenant ID, client ID, client secret). The app needs a data-plane
+  role on the container, such as *Storage Blob Data Reader*. For an ADLS-compatible endpoint
+  such as Fabric **OneLake**, whose SAS lasts at most an hour, set **Account URL** to
+  `https://onelake.blob.fabric.microsoft.com`; the workspace is then the container:
+  `adls://onelake/<workspace>/<lakehouse>.Lakehouse/Files/<prefix>`. DataQ cannot read a client
+  secret's expiry, so track it in Entra ID.
 - Copy the callback snippet
   ([`integrations/dbt/`](https://github.com/TheurgicDuke771/DataQ/tree/main/integrations/dbt))
   and run it right after `dbt build`, pointed at that run's `run_results.json`. It HMAC-signs
@@ -4126,6 +4133,10 @@ the per-PR history lives in the repo's commit log and pull requests.
   all monitors, the profiler, browsing and inventory sync. Sessions are read-only and UTC;
   TLS is `require` by default. *Column values unique* needs the `CREATE TEMPORARY TABLES`
   grant — see [Datasources & checks](../guides/datasources-checks.md#mysql-mariadb).
+
+- **dbt artifacts on OneLake, or as a service principal.** A dbt connection can read its
+  ADLS artifacts as an Entra service principal, and from an ADLS-compatible endpoint such as
+  Fabric OneLake — see [Orchestration](../guides/orchestration.md).
 
 - **Amazon Redshift datasource.** Connect a provisioned Redshift cluster or a Serverless
   workgroup with a database user and run every SQL-capable check, custom SQL, all monitors,

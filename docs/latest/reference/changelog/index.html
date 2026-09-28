@@ -2575,6 +2575,11 @@ the per-PR history lives in the repo's commit log and pull requests.</p>
   grant — see <a href="../../guides/datasources-checks/#mysql-mariadb">Datasources &amp; checks</a>.</p>
 </li>
 <li>
+<p><strong>dbt artifacts on OneLake, or as a service principal.</strong> A dbt connection can read its
+  ADLS artifacts as an Entra service principal, and from an ADLS-compatible endpoint such as
+  Fabric OneLake — see <a href="../../guides/orchestration/">Orchestration</a>.</p>
+</li>
+<li>
 <p><strong>Amazon Redshift datasource.</strong> Connect a provisioned Redshift cluster or a Serverless
   workgroup with a database user and run every SQL-capable check, custom SQL, all monitors,
   the profiler, schema → table browsing and inventory sync. Sessions are read-only at the
