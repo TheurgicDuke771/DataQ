@@ -178,7 +178,10 @@ _MIDNIGHT = "2026-01-01T00:00:00"
     ("raw", "expected"),
     [
         pytest.param(np.datetime64(f"{_MIDNIGHT}.000000000"), _MIDNIGHT, id="ns"),
-        pytest.param(np.datetime64(f"{_MIDNIGHT}.123456789"), f"{_MIDNIGHT}.123456", id="ns-sub"),
+        # All nine digits, as `pd.Timestamp` keeps them (#2177; narrowed to µs before).
+        pytest.param(
+            np.datetime64(f"{_MIDNIGHT}.123456789"), f"{_MIDNIGHT}.123456789", id="ns-sub"
+        ),
         pytest.param(np.datetime64(f"{_MIDNIGHT}.000000"), _MIDNIGHT, id="us"),
         pytest.param(np.datetime64(_MIDNIGHT), _MIDNIGHT, id="s"),
         pytest.param(np.datetime64("2026-01-01"), "2026-01-01", id="D"),  # a date, as before
@@ -360,3 +363,38 @@ def test_nested_dict_keys_are_sanitized() -> None:
     cleaned = sanitize_json(payload)
     assert cleaned == {"value_counts": {"00": 3, "9.5": 1, "plain": 2}}
     json.dumps(cleaned, allow_nan=False)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "2026-09-20T10:00:00.123456789",
+        "2026-09-20T10:00:00.123456",
+        "2026-09-20T10:00:00.123",
+        "2026-09-20T10:00:00",
+        "1969-12-31T23:59:59.999999999",  # before the epoch: floor division, not truncation
+    ],
+)
+@pytest.mark.parametrize("unit", ["ns", "us", "ms", "s", "m", "h"])
+def test_a_datetime64_reads_exactly_as_the_same_timestamp(value: str, unit: str) -> None:
+    """The same instant reads the same whichever object carried it: sub-µs digits were narrowed
+    away on datetime64 and kept on pd.Timestamp (#2177). A day or coarser unit stays a date."""
+    import numpy as np
+    import pandas as pd
+
+    raw = np.datetime64(value, unit)  # type: ignore[call-overload]  # a runtime unit string
+    assert sanitize_json(raw) == sanitize_json(pd.Timestamp(raw)) == pd.Timestamp(raw).isoformat()
+
+
+def test_datetime64_edges() -> None:
+    import numpy as np
+
+    assert sanitize_json(np.datetime64("NaT", "ns")) is None
+    # A unit with a multiplier (10 ms), which pd.Timestamp itself refuses.
+    ten_ms = np.datetime64(123, "10ms")  # type: ignore[call-overload]
+    assert sanitize_json(ten_ms) == "1970-01-01T00:00:01.230000"
+    # Day and coarser units stay dates, as they have always been persisted.
+    assert sanitize_json(np.datetime64("2026-09-20", "D")) == "2026-09-20"
+    assert sanitize_json(np.datetime64("2026-09", "M")) == "2026-09-01"
+    # Beyond datetime's range: numpy's own spelling rather than a crash.
+    assert sanitize_json(np.datetime64("12000-01-01T00:00:00", "s")) == "12000-01-01T00:00:00"

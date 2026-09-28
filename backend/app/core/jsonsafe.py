@@ -30,11 +30,17 @@ def sanitize_json(value: Any) -> Any:
     if hasattr(value, "item") and hasattr(value, "dtype"):
         raw = value
         value = value.item()
-        if getattr(raw.dtype, "kind", None) == "M" and not hasattr(value, "isoformat"):
-            # np.datetime64 finer than µs `.item()`s to an int (ns since the epoch, #1803),
-            # not a datetime — narrow to µs first. NaT `.item()`s to None at every unit.
-            value = raw.astype("datetime64[us]").item()
-        elif getattr(raw.dtype, "kind", None) == "m":
+        if getattr(raw.dtype, "kind", None) == "M":
+            # np.datetime64 `.item()`s to an int below µs (#1803): a sub-day value is rendered
+            # exactly from its integer count and unit, in `pd.Timestamp`'s spelling, so an
+            # instant reads the same whichever object carried it (#2177). A day or coarser unit
+            # stays the date it has always been persisted as. NaT is None.
+            if value is None:
+                return None
+            if not hasattr(value, "hour") and hasattr(value, "isoformat"):
+                return value.isoformat()
+            return _datetime64_iso(raw)
+        if getattr(raw.dtype, "kind", None) == "m":
             # np.timedelta64 `.item()`s to a bare int below µs and loses precision/overflows via
             # timedelta: rendered exactly from its integer count and unit instead (#1819).
             return None if value is None else _timedelta64_iso(raw)
@@ -76,6 +82,32 @@ _NS_PER: dict[str, int] = {
     "W": 7 * 86400 * 10**9,
 }
 _TIMEDELTA64_UNIT = re.compile(r"timedelta64\[(\d*)(\w+)\]")
+_DATETIME64_UNIT = re.compile(r"datetime64\[(\d*)(\w+)\]")
+_EPOCH = datetime.datetime(1970, 1, 1)
+
+
+def _datetime64_iso(raw: Any) -> str:
+    """``pd.Timestamp(raw).isoformat()``, computed from Python ints so no precision is lost: nine
+    fraction digits when there are nanoseconds, six when there are only microseconds."""
+    match = _DATETIME64_UNIT.fullmatch(raw.dtype.name)
+    if match is None or match.group(2) not in _NS_PER:
+        # Calendar units (months, years) start on an exact second.
+        raw = raw.astype("datetime64[s]")
+        match = _DATETIME64_UNIT.fullmatch(raw.dtype.name)
+        assert match is not None  # nosec B101
+    total = int(raw.view("i8")) * int(match.group(1) or 1) * _NS_PER[match.group(2)]
+    seconds, nanos = divmod(total, 10**9)
+    try:
+        moment = _EPOCH + datetime.timedelta(seconds=seconds)
+    except OverflowError:  # beyond datetime's years 1-9999: numpy's own spelling
+        return str(raw)
+    if nanos % 1000:
+        fraction = f".{nanos:09d}"
+    elif nanos:
+        fraction = f".{nanos // 1000:06d}"
+    else:
+        fraction = ""
+    return moment.isoformat() + fraction
 
 
 def iso_duration(value: datetime.timedelta) -> str:
