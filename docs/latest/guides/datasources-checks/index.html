@@ -3883,6 +3883,10 @@ the type your warehouse/catalog shows you:</p>
     <code>type_: str</code> (row-wise value-type match) pass — pick either.</li>
 <li><strong>Parquet and Iceberg</strong> reads <em>are</em> Arrow-backed and can report Arrow-flavored
     dtype names — calibrate from a dry-run rather than assuming the CSV/UC names.</li>
+<li><strong><code>DATE</code> columns</strong> on Unity Catalog, Parquet and Iceberg stay dates: use
+    <code>type_: date</code>, and write date bounds and value sets as dates (<code>2026-01-02</code>).
+    A bound at midnight (<code>2026-01-02T00:00:00</code>) is read as that date; one with a
+    time of day has no date equivalent and errors.</li>
 </ul>
 <table>
 <thead>
@@ -3921,7 +3925,7 @@ the type your warehouse/catalog shows you:</p>
 <tr>
 <td>Unity Catalog</td>
 <td>pandas DataFrame (not Arrow-backed)</td>
-<td><code>int64</code> for non-nullable <code>BIGINT</code> (<strong><code>float64</code> if the column contains NULLs</strong>); <code>object</code> or <code>str</code> for <code>STRING</code></td>
+<td><code>int64</code> for non-nullable <code>BIGINT</code> (<strong><code>float64</code> if the column contains NULLs</strong>); <code>object</code> or <code>str</code> for <code>STRING</code>; <code>date</code> for <code>DATE</code></td>
 </tr>
 <tr>
 <td>ADLS Gen2 / S3 (CSV)</td>

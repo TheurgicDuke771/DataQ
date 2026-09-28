@@ -883,6 +883,10 @@ the type your warehouse/catalog shows you:
     `type_: str` (row-wise value-type match) pass — pick either.
   - **Parquet and Iceberg** reads *are* Arrow-backed and can report Arrow-flavored
     dtype names — calibrate from a dry-run rather than assuming the CSV/UC names.
+  - **`DATE` columns** on Unity Catalog, Parquet and Iceberg stay dates: use
+    `type_: date`, and write date bounds and value sets as dates (`2026-01-02`).
+    A bound at midnight (`2026-01-02T00:00:00`) is read as that date; one with a
+    time of day has no date equivalent and errors.
 
 | Datasource | Engine | `type_` guidance |
 |---|---|---|
@@ -891,7 +895,7 @@ the type your warehouse/catalog shows you:
 | MySQL / MariaDB | SQL (SQLAlchemy type class) | `DECIMAL` for `DECIMAL(12,2)`, `VARCHAR`, `INTEGER`, `TIMESTAMP`, `DATETIME`, `TINYINT` for `BOOLEAN` |
 | Trino | SQL (dialect-native) | `DECIMAL(12, 2)`, `VARCHAR` / `VARCHAR(20)`, `TIMESTAMP(6)`, `TIMESTAMP(6) WITH TIME ZONE`, `BIGINT` |
 | SQL Server | SQL (SQLAlchemy type name) | `DECIMAL` for `decimal(12,2)`, `INTEGER` for `int`, `NVARCHAR`, `DATETIME2`, `DATETIMEOFFSET`, `BIT` |
-| Unity Catalog | pandas DataFrame (not Arrow-backed) | `int64` for non-nullable `BIGINT` (**`float64` if the column contains NULLs**); `object` or `str` for `STRING` |
+| Unity Catalog | pandas DataFrame (not Arrow-backed) | `int64` for non-nullable `BIGINT` (**`float64` if the column contains NULLs**); `object` or `str` for `STRING`; `date` for `DATE` |
 | ADLS Gen2 / S3 (CSV) | pandas DataFrame (not Arrow-backed) | `int64`/`float64`/`bool` for numerics (**NULLs upcast integers to `float64`**); `object` or `str` for strings |
 | ADLS Gen2 / S3 (Parquet) / Iceberg | pandas DataFrame (Arrow-backed) | Arrow-flavored dtype names — confirm via a dry-run's `observed_value` |
 
