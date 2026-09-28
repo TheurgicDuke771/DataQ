@@ -255,15 +255,22 @@ _TEXT_BYTES_PER_CHAR = 14
 _LENGTH_SAMPLE_ROWS = 1000
 
 
-def _fixed_cell_bytes(column_type: Any) -> int | None:
-    """The per-cell cost of a fixed-width SQL type, or ``None`` for a length-dependent one."""
-    from sqlalchemy import types
+def _fixed_cell_bytes(arrow_type: Any) -> int | None:
+    """The per-cell cost of a fixed-width Arrow type, or ``None`` for a length-dependent one.
 
-    if isinstance(column_type, types.TypeDecorator):
-        column_type = column_type.impl_instance
-    if isinstance(column_type, types.Boolean):
+    Keyed on the Arrow schema, not SQLAlchemy reflection: the Databricks dialect cannot
+    reflect an INTERVAL column at all (#2152).
+    """
+    import pyarrow as pa
+
+    if pa.types.is_boolean(arrow_type):
         return _BOOL_CELL_BYTES
-    if isinstance(column_type, types.Date | types.DateTime | types.Numeric | types.Integer):
+    if (
+        pa.types.is_integer(arrow_type)
+        or pa.types.is_floating(arrow_type)
+        or pa.types.is_decimal(arrow_type)
+        or pa.types.is_temporal(arrow_type)
+    ):
         return _FIXED_CELL_BYTES
     return None
 
@@ -277,6 +284,11 @@ def frame_row_bytes(column_types: dict[str, Any], mean_lengths: dict[str, float]
             fixed = _TEXT_CELL_BYTES + int(_TEXT_BYTES_PER_CHAR * mean_lengths.get(name, 0.0))
         total += fixed
     return total
+
+
+def _mean_text_length(column: Any) -> float:
+    values = [v for v in column.to_pylist() if v is not None]
+    return sum(len(str(v)) for v in values) / len(values) if values else 0.0
 
 
 def _fetchall_arrow(cursor: Any) -> Any:
@@ -362,33 +374,39 @@ class UnityCatalogCheckRunner:
         frame, and on pandas 3 it casts every column the dialect reflects as String — BINARY,
         ARRAY, MAP, STRUCT included — to `str`.
         """
-        engine = self._engine.get()
-        qualified = qualified_sql_name(
+        return self._fetch_frame(
+            f"SELECT * FROM {self._qualified(table, schema)}"  # noqa: S608  # nosec B608
+        )
+
+    def _qualified(self, table: str, schema: str | None) -> str:
+        """The allowlist-checked, dialect-quoted target name for a `SELECT` statement."""
+        return qualified_sql_name(
             table=table,
             schema=schema,
             catalog=self._catalog if schema else None,
-            dialect=engine.dialect,
+            dialect=self._engine.get().dialect,
         )
-        # `qualified` is allowlist-checked and dialect-quoted by `qualified_sql_name`.
-        return self._fetch_frame(f"SELECT * FROM {qualified}")  # noqa: S608  # nosec B608
 
     def _fetch_frame(self, statement: str) -> Any:
-        """Run ``statement`` on a raw connection and build the frame from its Arrow result.
+        """Run ``statement`` and build the frame from its Arrow result.
 
         Both frame-lane reads — whole table and sample — go through here, so the width
         estimate's per-cell costs (measured on this path) price every read the cap admits.
         """
+        return arrow_to_frame(self._fetch_arrow(statement))
+
+    def _fetch_arrow(self, statement: str) -> Any:
+        """Run ``statement`` on a raw connection and return its whole result as Arrow."""
         raw = self._engine.get().raw_connection()
         try:
             cursor = raw.cursor()
             try:
                 cursor.execute(statement)
-                arrow = _fetchall_arrow(cursor)
+                return _fetchall_arrow(cursor)
             finally:
                 cursor.close()
         finally:
             raw.close()
-        return arrow_to_frame(arrow)
 
     def _count_rows(self, *, table: str, schema: str | None) -> int:
         """``COUNT(*)`` over the target — the size probe (live seam, #595).
@@ -412,31 +430,17 @@ class UnityCatalogCheckRunner:
             )
 
     def _probe_row_bytes(self, *, table: str, schema: str | None) -> int:
-        """Reflect the column types and sample text lengths — the width probe (live seam, #2087)."""
-        import pandas as pd
-        from sqlalchemy import inspect, text
-
-        engine = self._engine.get()
-        columns = {c["name"]: c["type"] for c in inspect(engine).get_columns(table, schema=schema)}
-        variable = [name for name, kind in columns.items() if _fixed_cell_bytes(kind) is None]
-        lengths: dict[str, float] = {}
-        if variable:
-            quote = engine.dialect.identifier_preparer.quote
-            qualified = qualified_sql_name(
-                table=table,
-                schema=schema,
-                catalog=self._catalog if schema else None,
-                dialect=engine.dialect,
-            )
-            # Column names come from reflection and are dialect-quoted; the limit is an `int`.
-            statement = (
-                f"SELECT {', '.join(quote(n) for n in variable)} "  # noqa: S608  # nosec B608
-                f"FROM {qualified} LIMIT {_LENGTH_SAMPLE_ROWS}"
-            )
-            head = pd.read_sql_query(text(statement), engine)
-            for name in variable:
-                values = head[name].dropna() if name in head else head.iloc[:0, 0]
-                lengths[name] = float(values.astype(str).str.len().mean()) if len(values) else 0.0
+        """Column types and text lengths from a head sample's Arrow result — the width probe."""
+        head = self._fetch_arrow(
+            f"SELECT * FROM {self._qualified(table, schema)} "  # noqa: S608  # nosec B608
+            f"LIMIT {_LENGTH_SAMPLE_ROWS}"
+        )
+        columns = {field.name: field.type for field in head.schema}
+        lengths = {
+            name: _mean_text_length(head.column(name))
+            for name, kind in columns.items()
+            if _fixed_cell_bytes(kind) is None
+        }
         return frame_row_bytes(columns, lengths)
 
     def _enforce_frame_cap(self, rows: int, *, table: str, schema: str | None) -> None:

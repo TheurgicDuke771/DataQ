@@ -1980,51 +1980,52 @@ def test_an_unreachable_sql_batch_reports_the_authored_column_list(
 # ─────────────── width-aware frame cap (#2087) ───────────────
 
 
-def test_frame_row_bytes_prices_each_sql_type() -> None:
-    from sqlalchemy import types
-
+def test_frame_row_bytes_prices_each_arrow_type() -> None:
     columns = {
-        "id": types.BigInteger(),
-        "price": types.Numeric(18, 2),
-        "ratio": types.Float(),
-        "shipped": types.Date(),
-        "at": types.DateTime(),
-        "flag": types.Boolean(),
-        "note": types.String(),
+        "id": pa.int64(),
+        "price": pa.decimal128(18, 2),
+        "ratio": pa.float32(),
+        "shipped": pa.date32(),
+        "at": pa.timestamp("us", tz="UTC"),
+        "flag": pa.bool_(),
+        "note": pa.string(),
     }
     assert unity_catalog.frame_row_bytes(columns, {"note": 10.0}) == (
         45 + 45 + 45 + 45 + 45 + 15 + (60 + 140)
     )
 
 
-def test_frame_row_bytes_unwraps_a_type_decorator() -> None:
-    from sqlalchemy import types
-
-    class _Wrapped(types.TypeDecorator[Any]):
-        impl = types.DateTime
-        cache_ok = True
-
-    assert unity_catalog.frame_row_bytes({"at": _Wrapped()}, {}) == 45
-
-
 def test_an_unknown_type_is_priced_like_text_by_its_sampled_length() -> None:
-    from sqlalchemy import types
+    assert unity_catalog.frame_row_bytes({"tags": pa.list_(pa.string())}, {"tags": 40.0}) == (
+        60 + 560
+    )
 
-    assert unity_catalog.frame_row_bytes({"tags": types.JSON()}, {"tags": 40.0}) == 60 + 560
 
+def test_the_probe_prices_a_head_sample_by_its_arrow_schema(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One head query, no SQLAlchemy reflection: the Databricks dialect cannot reflect an
+    INTERVAL column (#2152), which the connector hands back as a string anyway."""
+    statements: list[str] = []
 
-def test_the_probe_reflects_types_and_samples_text_lengths() -> None:
-    from sqlalchemy import create_engine
+    def _fetch_arrow(_self: Any, statement: str) -> Any:
+        statements.append(statement)
+        return pa.table(
+            {
+                "id": pa.array([1, 2], pa.int64()),
+                "note": pa.array(["abcd", "abcdefgh"]),
+                "span": pa.array(["1 02:03:04.5", None]),
+                "empty": pa.array([None, None], pa.string()),
+            }
+        )
 
-    engine = create_engine("sqlite://")
-    with engine.begin() as conn:
-        conn.exec_driver_sql("CREATE TABLE t (id INTEGER, note VARCHAR, empty VARCHAR)")
-        conn.exec_driver_sql("INSERT INTO t VALUES (1, 'abcd', NULL), (2, 'abcdefgh', NULL)")
+    monkeypatch.setattr(UnityCatalogCheckRunner, "_fetch_arrow", _fetch_arrow)
     runner = _uc_runner()
-    runner._engine = LazyEngine(lambda: engine)
+    monkeypatch.setattr(runner, "_qualified", lambda table, schema: f"main.{schema}.{table}")
 
-    # id 45 + note (60 + 14 x mean length 6) + an all-NULL column priced at its base.
-    assert _REAL_PROBE_ROW_BYTES(runner, table="t", schema=None) == 45 + 144 + 60
+    # id 45 + note (60 + 14 x 6) + span (60 + 14 x 12) + an all-NULL column at its base.
+    assert _REAL_PROBE_ROW_BYTES(runner, table="t", schema="s") == 45 + 144 + 228 + 60
+    assert statements == ["SELECT * FROM main.s.t LIMIT 1000"]
 
 
 def test_a_wide_table_under_the_row_cap_is_refused_by_the_frame_cap(
