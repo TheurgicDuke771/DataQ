@@ -2128,7 +2128,7 @@ def test_arrow_to_frame_nulls_in_an_integer_column_become_float_nan() -> None:
     assert frame["i"].isna().tolist() == [False, True]
 
 
-def test_arrow_to_frame_parses_dates_and_timestamps_with_pandas_own_conversion() -> None:
+def test_arrow_to_frame_keeps_dates_as_arrow_dates_and_parses_timestamps() -> None:
     import datetime as dt
 
     table = pa.table(
@@ -2144,10 +2144,10 @@ def test_arrow_to_frame_parses_dates_and_timestamps_with_pandas_own_conversion()
 
     frame = unity_catalog.arrow_to_frame(table)
 
-    # `read_sql_table` harmonises with exactly these calls, so unit and zone match any pandas.
-    pd.testing.assert_series_equal(
-        frame["d"], pd.to_datetime(pd.Series([dt.date(2026, 1, 2), None], name="d"))
-    )
+    # DATE matches the Parquet and Iceberg frame lanes, not `read_sql_table`'s datetime64 (#2151).
+    assert frame["d"].dtype == pd.ArrowDtype(pa.date32())
+    assert frame["d"].iloc[0] == dt.date(2026, 1, 2) and frame["d"].isna().tolist() == [False, True]
+    # `read_sql_table` harmonises timestamps with exactly these calls: unit and zone match.
     pd.testing.assert_series_equal(
         frame["ts"],
         pd.to_datetime(
@@ -2156,6 +2156,116 @@ def test_arrow_to_frame_parses_dates_and_timestamps_with_pandas_own_conversion()
         ),
     )
     assert frame["ntz"].dt.tz is None
+
+
+def _date_frame_outcomes(checks: list[CheckSpec]) -> list[Any]:
+    import datetime as dt
+
+    import great_expectations as gx
+
+    from backend.app.core.jsonsafe import sanitize_json
+    from backend.app.datasources.gx_runner import run_expectations
+
+    table = pa.table(
+        {
+            "d": pa.array([dt.date(2026, 1, day) for day in range(1, 5)], pa.date32()),
+            "v": pa.array([1, 50, 60, 2]),
+        }
+    )
+    context = gx.get_context(mode="ephemeral")
+    batch_definition = (
+        context.data_sources.add_pandas(name="uc")
+        .add_dataframe_asset(name="t")
+        .add_batch_definition_whole_dataframe(name="w")
+    )
+    outcome = run_expectations(
+        context,
+        batch_definition=batch_definition,
+        checks=checks,
+        name="s",
+        batch_parameters={"dataframe": unity_catalog.arrow_to_frame(table)},
+        index_columns=["d"],
+    )
+    return [sanitize_json(c.__dict__) for c in outcome.checks]
+
+
+def test_a_date_column_is_evaluated_against_date_bounds_and_sets() -> None:
+    """As datetime64, a date bound errored ("Cannot compare Timestamp with datetime.date") and
+    a set of ISO dates failed every row (#2151)."""
+    between, in_set, column_max = _date_frame_outcomes(
+        [
+            CheckSpec(
+                expectation_type="expect_column_values_to_be_between",
+                kwargs={"column": "d", "min_value": "2026-01-03"},
+            ),
+            CheckSpec(
+                expectation_type="expect_column_values_to_be_in_set",
+                kwargs={
+                    "column": "d",
+                    "value_set": ["2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04"],
+                },
+            ),
+            CheckSpec(
+                expectation_type="expect_column_max_to_be_between",
+                kwargs={"column": "d", "max_value": "2026-01-10"},
+            ),
+        ]
+    )
+    assert (between["errored"], between["success"]) == (False, False)
+    assert between["sample_failures"]["unexpected_count"] == 2
+    assert (in_set["errored"], in_set["success"]) == (False, True)
+    assert (column_max["errored"], column_max["success"]) == (False, True)
+
+
+def test_a_midnight_datetime_bound_on_a_date_column_still_evaluates() -> None:
+    """Checks authored with datetime-shaped bounds ran on the datetime64 frame; on an Arrow date
+    they would error (#2175). The bound is read as the date it names; the outcome still reports
+    what was authored."""
+    between, column_min, in_set, off_midnight = _date_frame_outcomes(
+        [
+            CheckSpec(
+                expectation_type="expect_column_values_to_be_between",
+                kwargs={"column": "d", "min_value": "2026-01-03T00:00:00"},
+            ),
+            CheckSpec(
+                expectation_type="expect_column_min_to_be_between",
+                kwargs={"column": "d", "min_value": "2026-01-01T00:00:00"},
+            ),
+            CheckSpec(
+                expectation_type="expect_column_values_to_be_in_set",
+                kwargs={
+                    "column": "d",
+                    "value_set": [f"2026-01-0{day}T00:00:00" for day in range(1, 5)],
+                },
+            ),
+            CheckSpec(
+                expectation_type="expect_column_values_to_be_between",
+                kwargs={"column": "d", "min_value": "2026-01-03T12:00:00"},
+            ),
+        ]
+    )
+    assert between["errored"] is False
+    assert between["sample_failures"]["unexpected_count"] == 2
+    assert between["expected_value"]["min_value"] == "2026-01-03T00:00:00"
+    assert (column_min["errored"], column_min["success"]) == (False, True)
+    assert (in_set["errored"], in_set["success"]) == (False, True)
+    # A time inside the day has no date equivalent: left for GX to refuse, never truncated.
+    assert off_midnight["errored"] is True
+
+
+def test_a_date_locator_stores_as_a_date_like_the_sql_lanes() -> None:
+    (outcome,) = _date_frame_outcomes(
+        [
+            CheckSpec(
+                expectation_type="expect_column_values_to_be_between",
+                kwargs={"column": "v", "max_value": 10},
+            )
+        ]
+    )
+    assert outcome["sample_failures"]["unexpected_index_list"] == [
+        {"v": 50, "d": "2026-01-02"},
+        {"v": 60, "d": "2026-01-03"},
+    ]
 
 
 def test_arrow_to_frame_keeps_binary_and_nested_values_native() -> None:
