@@ -2449,6 +2449,11 @@
   <a href="https://github.com/TheurgicDuke771/DataQ/blob/main/CHANGELOG.md">CHANGELOG.md</a>):
   curate <code>git log v&lt;prev&gt;..HEAD --oneline</code> down to what a deployer/user acts on, and
   mirror the entry into the GitHub Release body.</li>
+<li><strong>The Python client ships with the release.</strong> <code>packages/dataq-client/pyproject.toml</code>'s
+  version equals the tag before you push it (the workflow refuses a mismatch). The tag's
+  workflow attaches the client wheel and sdist to the release; if you had not created the
+  release yet it makes a <strong>draft</strong> — add the curated notes there and publish it rather than
+  creating a second one.</li>
 <li>Backend image built + pushed to GHCR with an <strong>immutable</strong> tag (not <code>latest</code>).</li>
 <li>DB migrations are backward-compatible; the migrate job runs <code>alembic upgrade head</code>
   <strong>before</strong> the app rolls.</li>

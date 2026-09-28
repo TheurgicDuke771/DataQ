@@ -3606,8 +3606,20 @@ pipelines, notebooks and schedulers. Its most common use is gating a deploy on a
 result: trigger a suite, wait for it, and fail the pipeline step if a check failed.
 
 ```bash
-pip install dataq-client
+# A released version: the wheel attached to the DataQ release matching your server's version
+VERSION=1.2.0   # your DataQ server's version
+pip install "https://github.com/TheurgicDuke771/DataQ/releases/download/v$VERSION/dataq_client-$VERSION-py3-none-any.whl"
+
+# The latest from main
+pip install "git+https://github.com/TheurgicDuke771/DataQ.git@main#subdirectory=packages/dataq-client"
+
+# The latest from main, editable (to track or change the client locally)
+git clone https://github.com/TheurgicDuke771/DataQ.git && pip install -e DataQ/packages/dataq-client
 ```
+
+The client is not published to PyPI. Each [DataQ release](https://github.com/TheurgicDuke771/DataQ/releases) from 1.2.0 on carries its wheel
+and sdist as release assets; install the one matching your server's version. Until your server's
+release carries one, install from `main`.
 
 It authenticates with a [personal access token](api-keys.md), which acts as the user who minted
 it, with the same workspace role and per-suite grants.
@@ -3635,10 +3647,13 @@ A GitHub Actions step:
 
 ```yaml
 - name: Data-quality gate
-  run: pip install dataq-client && dataq run "$SUITE_ID" --wait
+  run: |
+    pip install "https://github.com/TheurgicDuke771/DataQ/releases/download/v$DATAQ_VERSION/dataq_client-$DATAQ_VERSION-py3-none-any.whl"
+    dataq run "$SUITE_ID" --wait
   env:
     DATAQ_URL: ${{ vars.DATAQ_URL }}
     DATAQ_PAT: ${{ secrets.DATAQ_PAT }}
+    DATAQ_VERSION: 1.2.0   # your server's version
     SUITE_ID: 7c1e…
 ```
 
@@ -4030,7 +4045,8 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Added
 
-- **Python client and CLI (`dataq-client`).** `pip install dataq-client`, then
+- **Python client and CLI (`dataq-client`).** Install the wheel attached to the release (or the
+  latest from `main`), then
   `dataq run <suite> --wait` gates a CI step on a suite's result with a documented exit code
   (0 ok · 1 warn · 2 fail · 3 run error · 4 client error). The Python API keeps a run's
   lifecycle and its worst severity as separate fields, and exposes every REST endpoint through
@@ -9337,6 +9353,11 @@ is a start-time secret snapshot). Full deploy + ops runbook: the repository's
   [CHANGELOG.md](https://github.com/TheurgicDuke771/DataQ/blob/main/CHANGELOG.md)):
   curate `git log v<prev>..HEAD --oneline` down to what a deployer/user acts on, and
   mirror the entry into the GitHub Release body.
+- **The Python client ships with the release.** `packages/dataq-client/pyproject.toml`'s
+  version equals the tag before you push it (the workflow refuses a mismatch). The tag's
+  workflow attaches the client wheel and sdist to the release; if you had not created the
+  release yet it makes a **draft** — add the curated notes there and publish it rather than
+  creating a second one.
 - Backend image built + pushed to GHCR with an **immutable** tag (not `latest`).
 - DB migrations are backward-compatible; the migrate job runs `alembic upgrade head`
   **before** the app rolls.

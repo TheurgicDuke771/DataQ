@@ -2446,8 +2446,19 @@
 <p><code>dataq-client</code> is a Python package and a <code>dataq</code> command for driving DataQ from scripts, CI
 pipelines, notebooks and schedulers. Its most common use is gating a deploy on a data-quality
 result: trigger a suite, wait for it, and fail the pipeline step if a check failed.</p>
-<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>dataq-client
+<div class="highlight"><pre><span></span><code><span class="c1"># A released version: the wheel attached to the DataQ release matching your server's version</span>
+<span class="nv">VERSION</span><span class="o">=</span><span class="m">1</span>.2.0<span class="w">   </span><span class="c1"># your DataQ server's version</span>
+pip<span class="w"> </span>install<span class="w"> </span><span class="s2">"https://github.com/TheurgicDuke771/DataQ/releases/download/v</span><span class="nv">$VERSION</span><span class="s2">/dataq_client-</span><span class="nv">$VERSION</span><span class="s2">-py3-none-any.whl"</span>
+
+<span class="c1"># The latest from main</span>
+pip<span class="w"> </span>install<span class="w"> </span><span class="s2">"git+https://github.com/TheurgicDuke771/DataQ.git@main#subdirectory=packages/dataq-client"</span>
+
+<span class="c1"># The latest from main, editable (to track or change the client locally)</span>
+git<span class="w"> </span>clone<span class="w"> </span>https://github.com/TheurgicDuke771/DataQ.git<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>DataQ/packages/dataq-client
 </code></pre></div>
+<p>The client is not published to PyPI. Each <a href="https://github.com/TheurgicDuke771/DataQ/releases">DataQ release</a> from 1.2.0 on carries its wheel
+and sdist as release assets; install the one matching your server's version. Until your server's
+release carries one, install from <code>main</code>.</p>
 <p>It authenticates with a <a href="../api-keys/">personal access token</a>, which acts as the user who minted
 it, with the same workspace role and per-suite grants.</p>
 <h2 id="gate-a-pipeline-step-on-a-suite">Gate a pipeline step on a suite<a class="headerlink" href="#gate-a-pipeline-step-on-a-suite" title="Permanent link">¶</a></h2>
@@ -2489,10 +2500,13 @@ dataq<span class="w"> </span>run<span class="w"> </span>7c1e…-suite-id<span cl
 </table>
 <p>A GitHub Actions step:</p>
 <div class="highlight"><pre><span></span><code><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Data-quality gate</span>
-<span class="w">  </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pip install dataq-client &amp;&amp; dataq run "$SUITE_ID" --wait</span>
+<span class="w">  </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">    </span><span class="no">pip install "https://github.com/TheurgicDuke771/DataQ/releases/download/v$DATAQ_VERSION/dataq_client-$DATAQ_VERSION-py3-none-any.whl"</span>
+<span class="w">    </span><span class="no">dataq run "$SUITE_ID" --wait</span>
 <span class="w">  </span><span class="nt">env</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">DATAQ_URL</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ vars.DATAQ_URL }}</span>
 <span class="w">    </span><span class="nt">DATAQ_PAT</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ secrets.DATAQ_PAT }}</span>
+<span class="w">    </span><span class="nt">DATAQ_VERSION</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.2.0</span><span class="w">   </span><span class="c1"># your server's version</span>
 <span class="w">    </span><span class="nt">SUITE_ID</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">7c1e…</span>
 </code></pre></div>
 <p>The token is read from <code>DATAQ_PAT</code> only, never from a command-line flag, where it would land in
