@@ -964,3 +964,39 @@ describe('ConnectionForm — Amazon Athena', () => {
     expect(payload.secret).toBe('sk');
   });
 });
+
+describe('ConnectionForm — Amazon Redshift', () => {
+  it('takes an endpoint, database and user; the password is the secret', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue({ ...icebergConnection, type: 'redshift' });
+
+    render(
+      <AntApp>
+        <ConnectionForm type="redshift" onSaved={vi.fn()} onCancel={vi.fn()} />
+      </AntApp>,
+    );
+
+    await user.type(await screen.findByLabelText('Name'), 'warehouse');
+    await selectOption(user, 'DEV');
+    await user.type(
+      screen.getByLabelText('Endpoint'),
+      'analytics.123456789012.us-east-2.redshift-serverless.amazonaws.com',
+    );
+    await user.type(screen.getByLabelText('Database'), 'dev');
+    await user.type(screen.getByLabelText('User'), 'dq_reader');
+    await user.type(screen.getByLabelText(/Default schema/), 'sales');
+    await user.type(screen.getByLabelText('Password'), 'pw');
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalled());
+    const payload = mockCreate.mock.calls[0][0];
+    expect(payload.type).toBe('redshift');
+    expect(payload.config).toMatchObject({
+      host: 'analytics.123456789012.us-east-2.redshift-serverless.amazonaws.com',
+      database: 'dev',
+      user: 'dq_reader',
+      schema: 'sales',
+    });
+    expect(payload.secret).toBe('pw');
+  });
+});

@@ -175,3 +175,32 @@ Every SQL-batch expectation type, custom SQL, the monitors, profiler, schema dri
 reads, inventory, browsing and an end-to-end persisted run were **executed** against a live
 Athena workgroup as a least-privileged IAM user. Every check is a billed query, which the guide
 states.
+
+## Amendment — Amazon Redshift (2026-09-28)
+
+Redshift is the sixth engine. It speaks the PostgreSQL protocol, so §4 holds as on PostgreSQL:
+the libpq startup options carry `default_transaction_read_only` and the `search_path`, and
+Redshift honours both (a write by the reader was refused live). The dialect is
+`redshift+psycopg2` from `sqlalchemy-redshift` (MIT), which GX's Redshift datasource requires;
+every TLS mode verifies against the Amazon CA bundle it ships. Three hooks were added:
+
+- **`gx_schema_with_session`** (a spec flag). GX's Redshift column-type lookup reads
+  `information_schema.columns` by table name alone when it is given no schema, so a table with
+  the same name in another schema merged its columns into the target's and every
+  multi-column check failed on a column that did not exist. The session stays scoped to the
+  schema and GX is handed it as well. That breaks this ADR's "never a lower-cased GX schema"
+  rule only in form: Redshift names are lower case, and a test refuses the flag on an engine
+  whose names are not.
+- **`columns_view`** (a spec field). Schema drift reads `svv_columns` rather than
+  `information_schema.columns`, which omits late-binding views. The profiler's type
+  capabilities read it too.
+- **`namespace_authority`** (a spec hook). OpenLineage names a Redshift dataset
+  `redshift://<cluster>.<region>:<port>`; the cluster or workgroup and the region are read from
+  an AWS endpoint, and any other host is kept as configured.
+
+The catalog differs from PostgreSQL's: `pg_class` has no `relispartition`, `pg_type` no
+`typcategory`, and a leader-node catalog cannot be joined to `svv_mv_info`, so a materialized
+view is listed as a view. Every SQL-batch expectation type, custom SQL, the monitors, the
+profiler over a table and a late-binding view, schema drift, comparison reads, inventory,
+browsing and an end-to-end persisted run were **executed** against a Redshift Serverless
+workgroup as a user granted only `USAGE` and `SELECT` on one schema.

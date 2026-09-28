@@ -288,10 +288,12 @@ DataQ runs checks *against* your data; it is **not** a copy of your data. What i
   driver's own hostname check is broken on current pyOpenSSL, so DataQ replaces it with its own
   (DNS subject-alternative names, a wildcard only as one whole left-most label, an IP only
   against an IP entry, never the certificate's CN) — live-verified to refuse a connection made
-  by IP address and one whose certificate chains to an untrusted CA. PostgreSQL and MySQL connections
-  default to `require`; see [Datasources & checks](../guides/datasources-checks.md).
-- **Datasource writes:** PostgreSQL and MySQL sessions are read-only at the server. **Trino,
-  SQL Server and Athena have no equivalent session setting**, so there the protection is the
+  by IP address and one whose certificate chains to an untrusted CA. PostgreSQL, MySQL and
+  Redshift connections default to `require`; on Redshift every TLS mode, `require` included,
+  checks the certificate chain against Amazon's certificate authorities. See
+  [Datasources & checks](../guides/datasources-checks.md).
+- **Datasource writes:** PostgreSQL, MySQL and Redshift sessions are read-only at the server.
+  **Trino, SQL Server and Athena have no equivalent session setting**, so there the protection is the
   custom-SQL validator plus the account's own access control — on SQL Server a
   `db_datareader`-only login, on Athena an IAM policy that can only read, as the datasource
   guide shows.
@@ -461,7 +463,7 @@ confirm your DataQ connection role can still read both tags.
 
 ### Where it applies
 
-Only **Snowflake** and **Unity Catalog** have a column-tag source DataQ reads. PostgreSQL, MySQL, Trino, SQL Server, Athena, ADLS,
+Only **Snowflake** and **Unity Catalog** have a column-tag source DataQ reads. PostgreSQL, MySQL, Trino, SQL Server, Athena, Redshift, ADLS,
 S3, Iceberg and flat files have no authoritative source to read, so for those the
 classification remains the suite's own policy, the name/value classifier, and
 fail-closed mode. This is a limit of the platforms, not a gap in the
@@ -513,7 +515,7 @@ values happen to look harmless and the rows behind them do not.
 | Lane | Where the population signal comes from |
 |---|---|
 | Flat files (ADLS, S3), Iceberg, the Unity Catalog DataFrame batch | The failing rows of the table already in memory (up to 5,000): from the failing-row list the check builds when an identifier column is set, otherwise read directly off the in-memory table. No extra query either way |
-| Snowflake, PostgreSQL, MySQL, Trino, SQL Server, Athena, Unity Catalog SQL pushdown | One **extra, bounded query** per failing check: the check's own failing condition, selecting only the tested column and the identifier column, `LIMIT 5000` |
+| Snowflake, PostgreSQL, MySQL, Trino, SQL Server, Athena, Redshift, Unity Catalog SQL pushdown | One **extra, bounded query** per failing check: the check's own failing condition, selecting only the tested column and the identifier column, `LIMIT 5000` |
 
 The extra query on the warehouse lanes is issued only when all of these hold:
 the check found more than 20 unexpected rows (including a check that still

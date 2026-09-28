@@ -210,6 +210,7 @@ const KIND_ICON: Record<DatasourceKind, ReactNode> = {
   mysql: <DatabaseOutlined />,
   trino: <DatabaseOutlined />,
   athena: <DatabaseOutlined />,
+  redshift: <DatabaseOutlined />,
   mssql: <DatabaseOutlined />,
   other: <FileOutlined />,
 };

@@ -6,22 +6,22 @@ One-page reference: what runs where. For the readable tour of everything DataQ o
 
 ## Check kinds × datasources
 
-| Check kind | Snowflake | Unity Catalog | PostgreSQLᵖ | MySQL / MariaDBᵐ | Trinoᵗ | SQL Serverᵉ | Athenaᵒ | ADLS Gen2 (files) | S3 (files)ˢ | Iceberg |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
-| GX expectations (column / table shape) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (no regex) | ✅ | ✅ | ✅ | ✅ |
-| Snowflake DMF (native metric functions)ᵈ | ✅ | — | — | — | — | — | — | — | — | — |
-| Databricks DQX (runs in your workspace)ʲ | — | ✅ | — | — | — | — | — | — | — | — |
-| Custom SQL (rows returned = failures)ᶜ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — |
-| Freshness monitor (hours since latest timestamp) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Freshness from **file arrival time** (no column — catches "no new file") | — | — | — | — | — | — | — | ✅ | ✅ | — |
-| Volume monitor (row count in range) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Anomaly monitor (z-score vs a learned baseline)ᵃ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — |
-| Schema-drift monitor (column add/drop/type-change vs a stored baseline)ᵇ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Comparison / reconciliation (diff vs a baseline connection) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Column profiler (nulls, distinct, min/max, top values) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Browse for the run target (catalog → schema → table / folders → file) | ✅ (schema → table) | ✅ | ✅ (schema → table) | ✅ (schema → table) | ✅ (schema → table) | ✅ (schema → table) | ✅ (database → table) | ✅ | ✅ | ✅ (namespace → table) |
-| DQ dimension on checks + asset scorecard (coverage + score) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Dry-run preview | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Check kind | Snowflake | Unity Catalog | PostgreSQLᵖ | MySQL / MariaDBᵐ | Trinoᵗ | SQL Serverᵉ | Athenaᵒ | Redshiftʳ | ADLS Gen2 (files) | S3 (files)ˢ | Iceberg |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| GX expectations (column / table shape) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (no regex) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Snowflake DMF (native metric functions)ᵈ | ✅ | — | — | — | — | — | — | — | — | — | — |
+| Databricks DQX (runs in your workspace)ʲ | — | ✅ | — | — | — | — | — | — | — | — | — |
+| Custom SQL (rows returned = failures)ᶜ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — |
+| Freshness monitor (hours since latest timestamp) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Freshness from **file arrival time** (no column — catches "no new file") | — | — | — | — | — | — | — | — | ✅ | ✅ | — |
+| Volume monitor (row count in range) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Anomaly monitor (z-score vs a learned baseline)ᵃ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — |
+| Schema-drift monitor (column add/drop/type-change vs a stored baseline)ᵇ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Comparison / reconciliation (diff vs a baseline connection) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Column profiler (nulls, distinct, min/max, top values) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Browse for the run target (catalog → schema → table / folders → file) | ✅ (schema → table) | ✅ | ✅ (schema → table) | ✅ (schema → table) | ✅ (schema → table) | ✅ (schema → table) | ✅ (database → table) | ✅ (schema → table) | ✅ | ✅ | ✅ (namespace → table) |
+| DQ dimension on checks + asset scorecard (coverage + score) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Dry-run preview | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 ᵃ **Live-verified.** The anomaly monitor learns a rolling mean/stddev of the
 target's own row count or freshness age (optionally per weekday) and bands each
@@ -98,6 +98,14 @@ volume and anomaly monitors, the profiler, schema drift, comparison reads, inven
 browsing and an end-to-end persisted run. Two engine facts: **every check is a billed
 query** (Athena charges per byte scanned, with a per-query minimum), and there is **no
 read-only session** — the IAM policy is the guarantee (a write by the reader was refused).
+
+ʳ **Amazon Redshift** — provisioned clusters and Serverless workgroups. **Live-verified**
+against a Redshift Serverless workgroup as a user granted only `USAGE` and `SELECT` on one
+schema: every SQL-batch expectation type, custom SQL (including over `SUPER` paths), the
+freshness (`TIMESTAMP`, `TIMESTAMPTZ`, `DATE`), volume and anomaly monitors, the profiler over a
+table and a late-binding view, schema drift, comparison reads, inventory, browsing and an
+end-to-end persisted run. Sessions are read-only at the server (a write by the reader was
+refused); a materialized view is listed as a view.
 
 ᵗ **Trino** — any cluster (incl. Starburst), one catalog per connection, and every store that
 catalog federates; everything runs by pushdown on the cluster. The same battery was

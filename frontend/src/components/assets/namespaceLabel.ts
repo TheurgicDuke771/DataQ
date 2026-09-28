@@ -14,6 +14,7 @@ export type DatasourceKind =
   | 'trino'
   | 'mssql'
   | 'athena'
+  | 'redshift'
   | 'other';
 
 interface SchemeSpec {
@@ -69,6 +70,8 @@ const SCHEMES: SchemeSpec[] = [
     source: 'Athena',
     instance: (rest) => rest.replace(/^athena\./, '').replace(/\.amazonaws\.com$/, ''),
   },
+  // `redshift://<cluster or workgroup>.<region>:5439` — the OpenLineage Redshift namespace (#1682).
+  { prefix: 'redshift://', kind: 'redshift', source: 'Redshift', instance: (rest) => rest },
 ];
 
 /** Catalog schemes whose URI has no *database* in it — the host itself is the catalog. */

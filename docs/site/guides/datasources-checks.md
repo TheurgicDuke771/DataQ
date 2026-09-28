@@ -14,6 +14,7 @@
 | Trino (any cluster, incl. Starburst — and every catalog it federates) | host + port + catalog + user; password, JWT or none; TLS + optional private CA | ✅ | ✅ |
 | SQL Server / T-SQL (SQL Server, Azure SQL, Synapse; Fabric SQL via the ODBC lane) | host + port + database; SQL login (user, password) or Entra service principal (tenant + client ID, client secret) | ✅ | ✅ |
 | Amazon Athena (serverless SQL over S3 through the Glue catalog) | region + IAM access key (key ID, secret access key); optional workgroup, query-results location, data catalog | ✅ | ✅ |
+| Amazon Redshift (provisioned clusters and Serverless workgroups) | endpoint + port + database + user, password; TLS mode | ✅ | ✅ |
 
 ## Add a connection
 
@@ -157,7 +158,8 @@ The same two fields exist on a **dbt** orchestration connection whose `artifacts
 One connection type for **any PostgreSQL server** — self-hosted, or a managed service on any
 cloud. It is named for the engine, never for a vendor that hosts it (ADR
 [0010](../adr/0010-provider-agnostic-infrastructure-seams.md)), and is the first engine on
-DataQ's generic SQL datasource base, which the MySQL/MariaDB, Trino and SQL Server adapters reuse.
+DataQ's generic SQL datasource base, which the MySQL/MariaDB, Trino, SQL Server, Athena and
+Redshift adapters reuse.
 
 - **Fields:** host (a bare hostname or IP — no scheme, port or path), port (default 5432),
   database, user, an optional default schema (default `public`: where a target with no
@@ -343,6 +345,42 @@ SQL base, like Trino (Athena's own engine is Trino-based).
   must be typed that way (a mixed-case name is refused when you save).
 - **Type names** for `to_be_of_type` are the bare Athena names: `DECIMAL`, `TIMESTAMP`,
   `VARCHAR`, `BIGINT`.
+- **No column tags, no warehouse-native lineage.** Lineage comes from dbt, OpenLineage or a
+  catalog, and an empty graph means "not observed".
+
+### Amazon Redshift
+
+Provisioned clusters and Redshift Serverless workgroups, on the generic SQL base. Redshift
+speaks the PostgreSQL protocol, so it behaves like the PostgreSQL connection in most respects.
+
+- **Fields:** the **endpoint** host (the cluster's or workgroup's, without `:5439/dev`), port
+  (default 5439), database, a database user, an optional default schema (default `public`),
+  and the user's password as the connection's secret. IAM authentication is not supported:
+  create a database user for DataQ.
+- **TLS:** `require` by default, and every TLS mode checks the server's certificate chain
+  against Amazon's certificate authorities. `verify-full` also checks the hostname.
+- **Read only, always.** As on PostgreSQL, every session sets `default_transaction_read_only`,
+  so Redshift itself refuses a write. Give DataQ a user that can only read what it checks:
+
+  ```sql
+  CREATE USER dataq_reader PASSWORD '…';
+  GRANT USAGE ON SCHEMA sales TO dataq_reader;
+  GRANT SELECT ON ALL TABLES IN SCHEMA sales TO dataq_reader;
+  ```
+
+  `GRANT … ON ALL TABLES` covers only the tables that exist when you run it; add
+  `ALTER DEFAULT PRIVILEGES IN SCHEMA sales GRANT SELECT ON TABLES TO dataq_reader` for tables
+  created later.
+- **Names are lower case.** Redshift folds every name to lower case, so schemas and tables must
+  be typed that way (a mixed-case name is refused when you save). A cluster that enables
+  `enable_case_sensitive_identifier` is not supported.
+- **Views.** Late-binding views (`WITH NO SCHEMA BINDING`) work everywhere, including the
+  profiler and schema drift. A **materialized view is listed as a view** when you browse or in
+  the inventory: Redshift's system catalog cannot tell the two apart in a single query.
+- **The profiler** reports min/max as unavailable for `BOOLEAN`, `SUPER`, `GEOMETRY`,
+  `GEOGRAPHY` and `HLLSKETCH` (Redshift has no MIN/MAX for them, and MIN over `SUPER` returns
+  nothing useful), and distinct count / top values as unavailable for the spatial and sketch
+  types, which have no equality.
 - **No column tags, no warehouse-native lineage.** Lineage comes from dbt, OpenLineage or a
   catalog, and an empty graph means "not observed".
 
@@ -725,7 +763,7 @@ and a learned baseline. **Whole-table set comparisons** (columns match an expect
 ordered list) are what the *Schema-drift* monitor does, against a captured baseline. For
 anything with no vetted type, write a custom-SQL check.
 
-### Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server / Athena — ADR 0019)
+### Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server / Athena / Redshift — ADR 0019)
 
 A read-only SQL rule in the Monaco editor: **any rows returned are failures**. Use
 `{batch}` as a placeholder for the suite's target table
@@ -942,6 +980,7 @@ the type your warehouse/catalog shows you:
 | MySQL / MariaDB | SQL (SQLAlchemy type class) | `DECIMAL` for `DECIMAL(12,2)`, `VARCHAR`, `INTEGER`, `TIMESTAMP`, `DATETIME`, `TINYINT` for `BOOLEAN` |
 | Trino | SQL (dialect-native) | `DECIMAL(12, 2)`, `VARCHAR` / `VARCHAR(20)`, `TIMESTAMP(6)`, `TIMESTAMP(6) WITH TIME ZONE`, `BIGINT` |
 | Amazon Athena | SQL (bare type name) | `DECIMAL`, `TIMESTAMP`, `VARCHAR`, `BIGINT`, `BOOLEAN` |
+| Amazon Redshift | SQL (bare type name) | `DECIMAL` (not `NUMERIC`), `VARCHAR`, `BIGINT`, `TIMESTAMP`, `TIMESTAMPTZ`, `DATE`, `BOOLEAN`, `SUPER`, `GEOMETRY`; a `VARBYTE` column reads as `VARCHAR` |
 | SQL Server | SQL (SQLAlchemy type name) | `DECIMAL` for `decimal(12,2)`, `INTEGER` for `int`, `NVARCHAR`, `DATETIME2`, `DATETIMEOFFSET`, `BIT` |
 | Unity Catalog | pandas DataFrame (not Arrow-backed) | `int64` for non-nullable `BIGINT` (**`float64` if the column contains NULLs**); `object` or `str` for `STRING`; `date` for `DATE` |
 | ADLS Gen2 / S3 (CSV) | pandas DataFrame (not Arrow-backed) | `int64`/`float64`/`bool` for numerics (**NULLs upcast integers to `float64`**); `object` or `str` for strings |
