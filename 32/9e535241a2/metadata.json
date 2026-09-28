@@ -1,0 +1,37 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "329e535241a2",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2140-fabric-types-in-editor",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/connections.py",
+    "backend/app/services/check_service.py",
+    "backend/tests/datasources/test_mssql.py",
+    "docs/site/guides/datasources-checks.md",
+    "docs/site/reference/openapi.json",
+    "frontend/src/api/connections.ts",
+    "frontend/src/components/checks/expectationCatalog.ts",
+    "frontend/src/pages/CheckEdit.tsx",
+    "frontend/src/pages/CheckNew.tsx",
+    "frontend/tests/components/expectationCatalog.test.ts",
+    "frontend/tests/pages/CheckNew.test.tsx",
+    "packages/dataq-client/src/dataq_client/generated/models/connection_read.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/32/9e535241a2/0/metadata.json",
+      "transcript": "/32/9e535241a2/0/full.jsonl",
+      "compact_transcript": "/32/9e535241a2/0/transcript.jsonl",
+      "content_hash": "/32/9e535241a2/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 50,
+    "cache_creation_tokens": 27276,
+    "cache_read_tokens": 13770954,
+    "output_tokens": 11146,
+    "api_call_count": 25
+  }
+}
