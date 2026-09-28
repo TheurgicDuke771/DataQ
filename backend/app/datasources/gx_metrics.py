@@ -16,7 +16,7 @@ from typing import Any
 import sqlalchemy as sa
 from great_expectations.constants import MAX_RESULT_RECORDS
 from great_expectations.core.metric_domain_types import MetricDomainTypes
-from great_expectations.execution_engine import SqlAlchemyExecutionEngine
+from great_expectations.execution_engine import SqlAlchemyExecutionEngine, pandas_execution_engine
 from great_expectations.expectations.metrics.metric_provider import metric_value
 from great_expectations.expectations.metrics.query_metrics.query_table.unexpected_rows_query_table import (  # noqa: E501
     UnexpectedRowsQueryTable,
@@ -75,3 +75,10 @@ class BoundedUnexpectedRowsQueryTable(UnexpectedRowsQueryTable):  # type: ignore
         )
         rows = execution_engine.execute_query(statement).fetchmany(MAX_RESULT_RECORDS)
         return [row._asdict() for row in rows]
+
+
+# GX fingerprints every pandas batch under this size by hashing the WHOLE frame — every column,
+# not just the checked ones — into a batch marker DataQ never reads. On a text column that
+# materialises one Python string per cell, and an unhashable cell falls back to pickling the frame:
+# a unique 49-char column peaked at 626 B/row with the hash, 48 without (#2149).
+pandas_execution_engine.HASH_THRESHOLD = 0

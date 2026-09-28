@@ -1993,14 +1993,23 @@ def test_frame_row_bytes_prices_each_arrow_type() -> None:
         "note": pa.string(),
     }
     assert unity_catalog.frame_row_bytes(columns, {"note": 10.0}) == (
-        45 + 45 + 45 + 45 + 45 + 15 + (60 + 140)
+        44 + 62 + 44 + 44 + 44 + 14 + (42 + 30)
     )
 
 
-def test_an_unknown_type_is_priced_like_text_by_its_sampled_length() -> None:
-    assert unity_catalog.frame_row_bytes({"tags": pa.list_(pa.string())}, {"tags": 40.0}) == (
-        60 + 560
-    )
+def test_a_nested_type_is_priced_above_text_by_its_printed_length() -> None:
+    """LIST/MAP/STRUCT cells stay Python objects in the frame (#2149 review): two live views
+    measured ~142 + 5.3 x the printed length, far above the text rate."""
+    for nested in (
+        pa.list_(pa.string()),
+        pa.map_(pa.string(), pa.int64()),
+        pa.struct([("a", pa.int32())]),
+    ):
+        assert unity_catalog.frame_row_bytes({"c": nested}, {"c": 40.0}) == 170 + 260
+
+
+def test_binary_is_priced_like_text_by_its_sampled_length() -> None:
+    assert unity_catalog.frame_row_bytes({"blob": pa.binary()}, {"blob": 40.0}) == 42 + 120
 
 
 def test_the_probe_prices_a_head_sample_by_its_arrow_schema(
@@ -2025,8 +2034,8 @@ def test_the_probe_prices_a_head_sample_by_its_arrow_schema(
     runner = _uc_runner()
     monkeypatch.setattr(runner, "_qualified", lambda table, schema: f"main.{schema}.{table}")
 
-    # id 45 + note (60 + 14 x 6) + span (60 + 14 x 12) + an all-NULL column at its base.
-    assert _REAL_PROBE_ROW_BYTES(runner, table="t", schema="s") == 45 + 144 + 228 + 60
+    # id 44 + note (42 + 3 x 6) + span (42 + 3 x 12) + an all-NULL column at its base.
+    assert _REAL_PROBE_ROW_BYTES(runner, table="t", schema="s") == 44 + 60 + 78 + 42
     assert statements == ["SELECT * FROM main.s.t LIMIT 1000"]
 
 
