@@ -486,3 +486,27 @@ def test_a_failed_run_also_logs_no_false_pool_errors(
     assert raised
     assert sources[0]._opened == []
     assert [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR] == []
+
+
+def test_a_run_releases_gx_s_global_project_only_while_it_is_still_its_own() -> None:
+    """GX keeps the last context as its process-global project until the next run replaces it —
+    so the run's engines, and their connections, outlived the run (#2141). A context a later
+    run has since installed must be left alone."""
+    import great_expectations as gx
+    from great_expectations.data_context.data_context.context_factory import project_manager
+
+    from backend.app.datasources.generic_sql import _release_gx_project
+
+    def current() -> Any:
+        return getattr(project_manager, "_ProjectManager__project", None)
+
+    ours = gx.get_context(mode="ephemeral")
+    assert current() is ours  # the private name this relies on still exists
+    _release_gx_project(ours)
+    assert current() is None
+
+    older = gx.get_context(mode="ephemeral")
+    newer = gx.get_context(mode="ephemeral")
+    _release_gx_project(older)
+    assert current() is newer
+    _release_gx_project(newer)

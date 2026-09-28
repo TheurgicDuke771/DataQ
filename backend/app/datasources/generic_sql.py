@@ -679,6 +679,7 @@ class GenericSqlCheckRunner:
         finally:
             if datasource is not None:
                 _dispose_gx_engine(datasource)
+            _release_gx_project(context)
 
     def run_monitors(
         self, *, table: str, schema: str | None, monitors: list[MonitorSpec]
@@ -760,6 +761,20 @@ def gx_table_name(table: str) -> str:
     if not is_sql_identifier(table):
         raise ValueError(f"invalid table identifier: {table[:128]!r}")
     return table if table == table.lower() else f'"{table}"'
+
+
+def _release_gx_project(context: Any) -> None:
+    """Drop GX's process-global reference to this run's context, if it is still the current one.
+
+    `gx.get_context` stores the context as GX's "project" until the NEXT run replaces it, so a
+    run's context — and the engines holding its connections — outlived the run and was collected
+    during a later run, after this run had closed those connections: the strict-driver ERROR noise
+    of #2141, one run late. A context another run has since installed is left alone.
+    """
+    from great_expectations.data_context.data_context.context_factory import project_manager
+
+    if getattr(project_manager, "_ProjectManager__project", None) is context:
+        project_manager.set_project(None)
 
 
 def _dispose_gx_engine(datasource: Any) -> None:
