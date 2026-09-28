@@ -1,0 +1,44 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "61752ab54f97",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1682-redshift",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CLAUDE.md",
+    "docs/site/adr/0045-engine-generic-sql-datasource-base.md",
+    "docs/site/adr/README.md",
+    "docs/site/architecture/overview.md",
+    "docs/site/guides/datasources-checks.md",
+    "docs/site/reference/changelog.md",
+    "docs/site/reference/check-types.md",
+    "docs/site/reference/feature-matrix.md",
+    "docs/site/security/overview.md",
+    "frontend/src/api/connections.ts",
+    "frontend/src/components/assets/namespaceLabel.ts",
+    "frontend/src/components/connections/connectionFormSpec.ts",
+    "frontend/src/components/connections/connectionSources.ts",
+    "frontend/src/components/connections/connectionVisuals.tsx",
+    "frontend/src/components/suites/suiteTarget.ts",
+    "frontend/src/pages/Assets.tsx",
+    "frontend/tests/components/ConnectionForm.test.tsx",
+    "frontend/tests/components/namespaceLabel.test.ts",
+    "frontend/tests/components/suiteTarget.test.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/61/752ab54f97/0/metadata.json",
+      "transcript": "/61/752ab54f97/0/full.jsonl",
+      "compact_transcript": "/61/752ab54f97/0/transcript.jsonl",
+      "content_hash": "/61/752ab54f97/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2,
+    "cache_creation_tokens": 876,
+    "cache_read_tokens": 293556,
+    "output_tokens": 573,
+    "api_call_count": 1
+  }
+}
