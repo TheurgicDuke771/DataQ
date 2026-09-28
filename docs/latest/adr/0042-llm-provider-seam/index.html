@@ -2297,6 +2297,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#amendment-2026-09-28-databricks-model-serving-is-a-recipe-not-an-implementation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Amendment (2026-09-28): Databricks model serving is a recipe, not an implementation
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2418,6 +2429,18 @@
 <li>The posture surface flips <code>llm_intelligence.enabled</code> by reading <code>llm_settings</code> — the disclosure stays honest in both states.</li>
 <li>New dependency: <code>anthropic</code> (MIT) in <code>backend/requirements.txt</code>. The OpenAI-compat impl deliberately uses <code>httpx</code> directly — no <code>openai</code> SDK dependency for a wire format three lines of httpx cover.</li>
 </ul>
+<h2 id="amendment-2026-09-28-databricks-model-serving-is-a-recipe-not-an-implementation">Amendment (2026-09-28): Databricks model serving is a recipe, not an implementation<a class="headerlink" href="#amendment-2026-09-28-databricks-model-serving-is-a-recipe-not-an-implementation" title="Permanent link">¶</a></h2>
+<p>Verified live against a Databricks workspace's foundation-model endpoints. Databricks model
+serving speaks the OpenAI chat-completions shape at <code>https://&lt;host&gt;/serving-endpoints</code>, so the
+existing <code>openai_compatible</code> provider covers it. Point the base URL there, use the endpoint name
+as the model and a Databricks token as the key. Llama 3.3 70B and Qwen3 80B passed plain
+completion plus both structured-output modes.</p>
+<p>One wire difference surfaced and is handled in the provider rather than per vendor. Reasoning
+models (gpt-oss) return <code>message.content</code> as a <strong>list of typed parts</strong> (<code>reasoning</code> and <code>text</code>)
+instead of a string. Only the <code>text</code> parts are the answer; a response with none is a provider
+error, never an empty or reasoning-as-answer result.</p>
+<p>Snowflake Cortex remains the open half of this item: a new wire shape, and the first provider
+whose credential could be a connection's own.</p>
 
 
 

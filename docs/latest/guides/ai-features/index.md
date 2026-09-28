@@ -31,6 +31,7 @@ forwarded if you later change the provider or endpoint — you re-enter it on pu
 |---|---|---|
 | **Anthropic** | leave blank | Native structured output. |
 | **OpenAI-compatible** | required | Azure OpenAI (`…/openai/v1`), AWS Bedrock, vLLM, TGI, **Ollama** (`http://host:11434/v1`). |
+| **Databricks model serving** (as OpenAI-compatible) | `https://<workspace-host>/serving-endpoints` | The model name is the **serving endpoint name** (for example `databricks-meta-llama-3-3-70b-instruct`), and the API key is a Databricks token. The model then runs inside your Databricks workspace. Llama 3.3 70B and Qwen3 80B work with either structured-output mode. Reasoning models (gpt-oss) spend part of the token budget thinking, so use *Prompt-JSON fallback* with them. |
 
 **Structured output** decides how DataQ gets JSON back. *Native* uses the provider's own
 schema or tool-calling support; *Prompt-JSON fallback* embeds the schema in the prompt and
