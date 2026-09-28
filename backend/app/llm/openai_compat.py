@@ -28,6 +28,29 @@ def _sum_tokens(first: int | None, second: int | None) -> int | None:
     return (first or 0) + (second or 0)
 
 
+def _content_text(content: Any) -> str:
+    """The answer text of ``message.content``: a string, or a list of typed parts.
+
+    Reasoning models (gpt-oss on Databricks model serving, and OpenAI's own newer formats)
+    return ``[{"type": "reasoning", ...}, {"type": "text", "text": "..."}]``; only the ``text``
+    parts are the answer — the reasoning is never returned as if it were.
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = [
+            part["text"]
+            for part in content
+            if isinstance(part, dict)
+            and part.get("type") == "text"
+            and isinstance(part.get("text"), str)
+        ]
+        if parts:
+            return "".join(parts)
+        raise LLMProviderError("LLM response content has no text part")
+    raise LLMProviderError("LLM response content is neither text nor a list of parts")
+
+
 class OpenAICompatProvider:
     def __init__(
         self,
@@ -82,9 +105,10 @@ class OpenAICompatProvider:
 
     def _result(self, data: dict[str, Any]) -> LLMResult:
         try:
-            text = data["choices"][0]["message"]["content"] or ""
+            content = data["choices"][0]["message"]["content"] or ""
         except (KeyError, IndexError, TypeError) as exc:
             raise LLMProviderError("LLM response missing choices[0].message.content") from exc
+        text = _content_text(content)
         usage = data.get("usage") or {}
         return LLMResult(
             text=text,

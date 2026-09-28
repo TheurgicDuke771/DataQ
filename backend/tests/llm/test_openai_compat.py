@@ -171,3 +171,45 @@ def test_extract_json_object_shapes(text: str, expected: dict[str, Any]) -> None
 def test_extract_json_object_rejects_non_object() -> None:
     with pytest.raises(LLMOutputInvalidError):
         extract_json_object("[1, 2]")
+
+
+# The exact shape gpt-oss returns on Databricks model serving (captured live, 2026-09-28).
+_REASONING_PARTS = [
+    {
+        "type": "reasoning",
+        "summary": [{"type": "summary_text", "text": 'The user wants reply exactly "OK".'}],
+    },
+    {"type": "text", "text": "OK"},
+]
+
+
+def _parts_response(content: Any) -> dict[str, Any]:
+    return {"choices": [{"message": {"role": "assistant", "content": content}}], "usage": {}}
+
+
+def test_a_content_part_list_returns_only_the_text_parts() -> None:
+    """Reasoning models return typed parts; the reasoning must never read as the answer."""
+    result = _provider(
+        lambda _r: httpx.Response(200, json=_parts_response(_REASONING_PARTS))
+    ).complete("hi")
+    assert result.text == "OK"
+
+
+def test_structured_output_parses_from_the_text_part() -> None:
+    parts = [
+        {"type": "reasoning", "summary": []},
+        {"type": "text", "text": '{"sql": "SELECT 1"}'},
+    ]
+    result = _provider(
+        lambda _r: httpx.Response(200, json=_parts_response(parts))
+    ).complete_structured("q", schema=SCHEMA)
+    assert result.parsed == {"sql": "SELECT 1"}
+
+
+@pytest.mark.parametrize(
+    "content", [[{"type": "reasoning", "summary": []}], {"text": "not a list"}, 42]
+)
+def test_content_without_a_text_part_is_a_provider_error(content: Any) -> None:
+    provider = _provider(lambda _r: httpx.Response(200, json=_parts_response(content)))
+    with pytest.raises(LLMProviderError):
+        provider.complete("hi")
