@@ -355,3 +355,27 @@ def test_a_permanent_poll_failure_is_not_retried() -> None:
     with pytest.raises(httpx.HTTPStatusError):
         _jobs(handler).wait(1, sleep=lambda _s: None)
     assert calls["n"] == 1
+
+
+@pytest.mark.parametrize(
+    ("value", "literal"),
+    [
+        ("x\\' || p_container || \\'", "'x\\\\'' || p_container || \\\\'''"),
+        ("ends\\", "'ends\\\\'"),
+    ],
+)
+def test_backslashes_are_escaped_before_quotes(value: str, literal: str) -> None:
+    """Spark processes backslash escapes in string literals: live (2026-09-28) the first value
+    escaped its literal into an expression referencing a column, and one such value failed the
+    whole job. Both must stay plain literals."""
+    rule = build_dqx_rule("dqx:is_in_list", {"column": "p_container", "allowed": [value]})
+    assert rule["arguments"]["allowed"] == [literal]
+
+
+def test_the_notebook_isolates_a_rule_that_fails_at_run_time() -> None:
+    """A combined pass that raises (live: an invalid regex) falls back to one rule at a time, so
+    only that rule errors — never every DQX check in the run."""
+    notebook = dqx.RUNNER_NOTEBOOK
+    assert "counts = failing_counts(valid)" in notebook
+    assert "counts.update(failing_counts([rule]))" in notebook
+    assert 'results[rule["name"]] = {"error": type(exc).__name__' in notebook
