@@ -170,9 +170,9 @@ def save_settings(
     row.structured_output = draft.structured_output
     row.enabled = draft.enabled
     row.connection_id = draft.connection_id
-    if draft.provider == CORTEX_PROVIDER and row.api_key_secret_ref is not None:
-        # Cortex holds no key: drop the previous provider's rather than keep an unused credential.
-        _delete_secret_best_effort(secret_store, row.api_key_secret_ref)
+    if draft.provider == CORTEX_PROVIDER:
+        # Cortex holds no key. Only the reference is dropped here, so a rollback keeps the old
+        # provider working; the orphan-secret sweep reclaims the unreferenced value.
         row.api_key_secret_ref = None
     if draft.api_key is not None:
         ref = row.api_key_secret_ref or f"{_SECRET_REF_PREFIX}-{uuid.uuid4().hex[:12]}"
@@ -192,13 +192,6 @@ def save_settings(
     )
     log.info("llm_settings_saved", provider=row.provider, enabled=row.enabled)
     return row
-
-
-def _delete_secret_best_effort(secret_store: SecretStore, ref: str) -> None:
-    try:
-        secret_store.delete(ref)
-    except Exception as exc:  # the orphan sweep reclaims it; the save must not fail on it
-        log.warning("llm_secret_delete_failed", error_type=type(exc).__name__)
 
 
 def _require_row(row: LlmSetting | None, *, require_enabled: bool) -> None:

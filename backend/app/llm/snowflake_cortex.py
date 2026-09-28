@@ -148,7 +148,7 @@ def _classify(exc: sa_exc.DBAPIError) -> Exception:
     remote = _REMOTE_ERROR_RE.search(str(orig))
     if remote:
         status, reason = int(remote.group(1)), remote.group(2)[:_REMOTE_MESSAGE_MAX]
-        if status >= 500:
+        if status >= 500 or status == 429:
             return LLMUnavailableError(f"Cortex returned {status}")
         return LLMProviderError(f"Cortex refused the request ({status}): {reason}")
     if getattr(orig, "errno", None) == _STATEMENT_TIMEOUT_ERRNO:

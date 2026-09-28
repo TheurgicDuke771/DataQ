@@ -114,6 +114,9 @@ function LlmForm({ config, onChanged }: { config: LlmConfig; onChanged: () => vo
 
   const baseUrlRequired = provider === 'openai_compatible';
   const cortex = provider === 'snowflake_cortex';
+  // A saved Cortex config's credential is its connection — no API key is stored.
+  const savedCortex = config.provider === 'snowflake_cortex';
+  const keyStored = config.has_credential && !savedCortex;
 
   const buildPayload = (): LlmConfigUpdate =>
     cortex
@@ -199,14 +202,18 @@ function LlmForm({ config, onChanged }: { config: LlmConfig; onChanged: () => vo
         <Tooltip
           title={
             config.has_credential
-              ? cortex
-                ? "Runs on the connection's own credential — press Test to check it still works."
+              ? savedCortex
+                ? "Runs on the connection's own credential — no API key is stored. Press Test to check it."
                 : 'A key is stored, but this does not confirm it still resolves — press Test to check.'
               : undefined
           }
         >
           <Tag color={config.has_credential ? 'success' : 'default'}>
-            {config.has_credential ? 'Credential set' : 'No credential'}
+            {!config.has_credential
+              ? 'No credential'
+              : savedCortex
+                ? 'Connection set'
+                : 'Credential set'}
           </Tag>
         </Tooltip>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -265,7 +272,7 @@ function LlmForm({ config, onChanged }: { config: LlmConfig; onChanged: () => vo
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               autoComplete="off"
-              placeholder={config.has_credential ? 'Stored — leave blank to keep' : 'API key'}
+              placeholder={keyStored ? 'Stored — leave blank to keep' : 'API key'}
               aria-label="API key"
               status={apiKeyError ? 'error' : undefined}
               style={{ maxWidth: 480 }}

@@ -145,6 +145,14 @@ def _db_error(kind: type[sa_exc.DBAPIError], message: str, errno: int | None = N
             "Cortex returned 503",
         ),
         (
+            _db_error(
+                sa_exc.ProgrammingError,
+                "remote service error: '429 'too many requests''; requests batch-id: 1",
+            ),
+            LLMUnavailableError,
+            "Cortex returned 429",
+        ),
+        (
             _db_error(sa_exc.ProgrammingError, "000630: Statement reached its timeout", 630),
             LLMUnavailableError,
             "timed out",

@@ -239,4 +239,22 @@ describe('LlmSettingsPanel', () => {
       enabled: true,
     });
   });
+
+  it('a saved Cortex config never claims a stored API key when switching to a key provider', async () => {
+    mockGet.mockResolvedValue({
+      ...CONFIGURED,
+      provider: 'snowflake_cortex',
+      model: 'llama3.1-70b',
+      connection_id: 'sf-1',
+      has_credential: true,
+    });
+    mockListConnections.mockResolvedValue([]);
+    renderPanel();
+
+    expect(await screen.findByText('Connection set')).toBeInTheDocument();
+    expect(screen.queryByText('Credential set')).not.toBeInTheDocument();
+    const user = userEvent.setup();
+    await selectOption(user, 'OpenAI-compatible endpoint');
+    expect(screen.getByLabelText('API key')).toHaveAttribute('placeholder', 'API key');
+  });
 });

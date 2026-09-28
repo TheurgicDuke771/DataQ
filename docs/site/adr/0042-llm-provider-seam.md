@@ -101,7 +101,8 @@ model runs inside that Snowflake account, under that connection's role and crede
   endpoint`, while `COMPLETE()` worked. The SQL function is available wherever Cortex is.
 - **The destination-field rule is unaffected.** The credential goes only to the account its
   connection already reaches, and Cortex holds no key that could be redirected. Switching to
-  Cortex deletes the previous provider's stored key rather than keeping an unused credential.
+  Cortex drops the previous provider's key reference; the orphan-secret sweep reclaims the
+  value, so a failed save never strands the old provider without its key.
 - **Deleting the connection** sets `connection_id` to NULL (`ON DELETE SET NULL`). The provider
   then reports `llm_credential_missing`, the same state as a purged key.
 - **Structured output.** *Native* passes the schema as `response_format` and reads

@@ -887,7 +887,9 @@ def test_a_connection_is_refused_on_a_key_based_provider(db_session: Any, admin:
         )
 
 
-def test_switching_to_cortex_drops_the_previous_providers_key(db_session: Any, admin: User) -> None:
+def test_switching_to_cortex_drops_the_key_reference_but_leaves_the_value_to_the_sweep(
+    db_session: Any, admin: User
+) -> None:
     store = FakeSecretStore()
     row = llm_service.save_settings(
         db_session, draft=_draft(api_key="sk-1"), actor=admin, secret_store=store
@@ -905,7 +907,8 @@ def test_switching_to_cortex_drops_the_previous_providers_key(db_session: Any, a
         conn.id,
         None,
     )
-    assert old_ref not in store.data
+    # Deleting before commit would strand the old provider on a rollback; the sweep reclaims it.
+    assert old_ref in store.data
     events = db_session.query(AuditEvent).filter(AuditEvent.action == "llm_setting.update").all()
     (cortex_event,) = [e for e in events if e.after["provider"] == "snowflake_cortex"]
     assert cortex_event.after["connection_id"] == str(conn.id)
