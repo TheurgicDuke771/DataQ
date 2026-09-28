@@ -341,3 +341,174 @@ def test_postgres_failures_are_classified(
     exc = _DriverError(message)
     assert classify_failure_category(exc) is category
     assert is_auth_failure(exc) is auth
+
+
+class _StrictConnection:
+    """A DBAPI connection that, like pyodbc and PyMySQL, refuses to be used once closed."""
+
+    def __init__(self) -> None:
+        import sqlite3
+
+        self._conn = sqlite3.connect(":memory:")
+        self.closed = False
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._conn, name)
+
+    def _check(self) -> None:
+        if self.closed:
+            raise RuntimeError("Attempt to use a closed connection.")
+
+    def rollback(self) -> None:
+        self._check()
+        self._conn.rollback()
+
+    def close(self) -> None:
+        self._check()
+        self.closed = True
+        self._conn.close()
+
+
+def test_closing_a_run_logs_no_false_pool_errors(caplog: pytest.LogCaptureFixture) -> None:
+    """GX keeps each engine's connection checked out and leaves its engines in reference cycles.
+    Once the run's connections were closed, collecting those engines reset and closed them
+    again, and SQLAlchemy logged each strict-driver refusal at ERROR although nothing had
+    failed (#2141)."""
+    import gc
+    import logging
+
+    import sqlalchemy as sa
+    from sqlalchemy.pool import StaticPool
+
+    from backend.app.datasources.generic_sql import GxConnectionSource
+
+    class _Proxied:
+        def __init__(self) -> None:
+            self.dbapi_connection = _StrictConnection()
+
+        def detach(self) -> None:
+            pass
+
+    class _Source:
+        def raw_connection(self) -> _Proxied:
+            return _Proxied()
+
+        def dispose(self) -> None:
+            pass
+
+    source = GxConnectionSource.__new__(GxConnectionSource)
+    source._source = _Source()
+    source._opened = []
+
+    def gx_like_run() -> None:
+        engine = sa.create_engine("sqlite://", creator=source.connect, poolclass=StaticPool)
+        held = engine.connect()  # GX holds one for the engine's lifetime
+        held.exec_driver_sql("select 1")
+        # A reference cycle, as GX's engines are in: freed only by the collector.
+        engine.cycle = engine  # type: ignore[attr-defined]
+
+    opened = source._opened
+    gx_like_run()
+    connection = opened[0]
+    with caplog.at_level(logging.DEBUG, logger="sqlalchemy.pool"):
+        source.close()
+        gc.collect()
+    assert connection.closed
+    assert [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR] == []
+
+
+def test_a_failed_run_also_logs_no_false_pool_errors(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A propagating traceback keeps the failed evaluation's locals — GX's engines — alive past
+    the close unless its frames are cleared (#2141)."""
+    import gc
+    import logging
+
+    import sqlalchemy as sa
+    from sqlalchemy.pool import StaticPool
+
+    from backend.app.datasources import generic_sql
+
+    class _Proxied:
+        def __init__(self) -> None:
+            self.dbapi_connection = _StrictConnection()
+
+        def detach(self) -> None:
+            pass
+
+    class _Source:
+        def raw_connection(self) -> _Proxied:
+            return _Proxied()
+
+        def dispose(self) -> None:
+            pass
+
+    sources: list[Any] = []
+    real = generic_sql.GxConnectionSource
+
+    def _recording(*_: Any, **__: Any) -> Any:
+        source = real.__new__(real)
+        source._source = _Source()
+        source._opened = []
+        sources.append(source)
+        return source
+
+    def failing_evaluate(self: Any, connections: Any, **_: Any) -> Any:
+        engine = sa.create_engine("sqlite://", creator=connections.connect, poolclass=StaticPool)
+        held = engine.connect()
+        held.exec_driver_sql("select 1")
+        engine.cycle = engine  # type: ignore[attr-defined]
+        raise RuntimeError("the warehouse went away mid-run")
+
+    monkeypatch.setattr(generic_sql, "GxConnectionSource", _recording)
+    monkeypatch.setattr(generic_sql.GenericSqlCheckRunner, "_evaluate", failing_evaluate)
+    runner = generic_sql.GenericSqlCheckRunner.__new__(generic_sql.GenericSqlCheckRunner)
+    runner._spec = POSTGRES
+    runner._config = POSTGRES.validate_config(
+        {"host": "db.example.com", "database": "d", "user": "u"}
+    )
+    runner._secret = "pw"  # nosec B105
+    with caplog.at_level(logging.DEBUG, logger="sqlalchemy.pool"):
+        raised = False
+        try:
+            runner._run_batch(
+                table="t",
+                schema=None,
+                checks=[],
+                index_columns=None,
+                value_signal_gate=None,
+                read_only=True,
+            )
+        except RuntimeError as exc:
+            raised = "went away" in str(exc)
+        # The exception is released (as the worker does once it has recorded the failure); only
+        # now may anything still holding GX's engines let them go.
+        gc.collect()
+    assert raised
+    assert sources[0]._opened == []
+    assert [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR] == []
+
+
+def test_a_run_releases_gx_s_global_project_only_while_it_is_still_its_own() -> None:
+    """GX keeps the last context as its process-global project until the next run replaces it —
+    so the run's engines, and their connections, outlived the run (#2141). A context a later
+    run has since installed must be left alone."""
+    import great_expectations as gx
+    from great_expectations.data_context.data_context.context_factory import project_manager
+
+    from backend.app.datasources.generic_sql import _release_gx_project
+
+    def current() -> Any:
+        return getattr(project_manager, "_ProjectManager__project", None)
+
+    ours = gx.get_context(mode="ephemeral")
+    assert current() is ours  # the private name this relies on still exists
+    _release_gx_project(ours)
+    assert current() is None
+
+    older = gx.get_context(mode="ephemeral")
+    newer = gx.get_context(mode="ephemeral")
+    _release_gx_project(older)
+    assert current() is newer
+    _release_gx_project(newer)

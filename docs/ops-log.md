@@ -774,3 +774,20 @@ User-approved. Needed to reach the harness Iceberg SQL catalog (`iceberg_catalog
 - The table was then purged and namespace `dataq_perf` dropped. The leftover (empty) `warehouse/dataq_perf` directory was deleted, and a re-check shows it gone. `retail` is the only namespace left.
 - **19:21:12Z** — rule `claude-perf-2088` deleted. The server's only remaining rule is `allow-azure-services`.
 - Credentials (`conn-iceberg-harness-dev-97324ba4` and `iceberg-catalog-password`) were read inline from Key Vault. They were never printed or written.
+
+## 2026-09-28 — temporary service-principal secret for the #2127 / #2128 live checks
+
+User-approved (option a). All steps were run with the owner's `az` login.
+
+- **19:54:13Z** — a secret `claude-it-2127` was added to app `dataq-terraform-sp`, set to expire 2026-09-29T19:54Z. Its value went straight into Key Vault secret `it-sp-2127` (same expiry) and was never printed.
+- **19:54:39Z** — *Storage Blob Data Reader* was granted to that SP on the harness storage account.
+- **Used for:**
+  - the token-cache before/after measurement (#2127);
+  - reading the harness dbt artifact as the SP (#2128).
+  - Both were read-only.
+- **19:59:34Z** — cleanup:
+  - role assignment removed;
+  - app secret `claude-it-2127` deleted;
+  - KV `it-sp-2127` deleted and purged.
+  - Verified: the app holds only its original secret, no *Storage Blob Data Reader* assignment is left on the account, and nothing is soft-deleted.
+||||||| 886e64b7

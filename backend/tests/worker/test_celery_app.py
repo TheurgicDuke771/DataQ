@@ -46,11 +46,10 @@ def test_create_celery_app_uses_redis_url_and_json() -> None:
     app = create_celery_app()
     assert app.main == "dataq"
     assert app.conf.broker_url.startswith("redis://")
-    assert app.conf.result_backend.startswith("redis://")
+    # No result backend: nothing reads a task result (#2119).
+    assert app.conf.result_backend is None
     assert app.conf.task_serializer == "json"
     assert app.conf.accept_content == ["json"]
-    # task_track_started lets the run read-back distinguish queued from running.
-    assert app.conf.task_track_started is True
 
 
 def test_llm_invoke_routes_to_its_own_queue() -> None:
@@ -434,3 +433,36 @@ class TestRedissSafeUrl:
         assert app.backend.connparams["ssl_cert_reqs"] is not None
         with pytest.raises(ValueError, match="ssl_cert_reqs"):
             Celery(broker=bare, backend=bare).backend  # noqa: B018
+
+
+def test_no_task_result_is_stored_and_a_publish_subscribes_to_nothing() -> None:
+    """Nothing reads a Celery result — run state lives in Postgres. With a result backend every
+    task wrote STARTED + its result, and every `send_task` subscribed to that result BEFORE
+    publishing, each failing on its own during a Redis gap (#2119)."""
+    from celery.backends.base import DisabledBackend
+
+    from backend.app.worker.celery_app import create_celery_app
+
+    app = create_celery_app()
+    assert isinstance(app.backend, DisabledBackend)
+    assert app.conf.task_ignore_result is True
+
+
+def test_beat_publishes_ride_out_a_thirty_second_broker_gap() -> None:
+    """Azure rolls refused Redis for ~30 s; kombu's default retry gives up in ~0.6 s. Only beat
+    waits — a request-path publish must still fail fast (#2119)."""
+    from backend.app.worker.celery_app import BEAT_PUBLISH_RETRY_POLICY, create_celery_app
+
+    app = create_celery_app()
+    policy = BEAT_PUBLISH_RETRY_POLICY
+    waited, sleep = 0.0, float(policy["interval_start"])
+    for _ in range(int(policy["max_retries"])):
+        waited += sleep
+        sleep = min(sleep + policy["interval_step"], policy["interval_max"])
+    assert 30 <= waited <= 60
+    assert all(
+        entry["options"]["retry_policy"] is policy for entry in app.conf.beat_schedule.values()
+    )
+    assert app.conf.task_publish_retry_policy is None or (
+        app.conf.task_publish_retry_policy.get("max_retries", 3) <= 3
+    )
