@@ -22,7 +22,11 @@ read by a ``db_datareader``-only SQL login — note the three different datetime
 Environment: ``DATAQ_MSSQL_LIVE_HOST`` / ``_DATABASE`` / ``_USER`` / ``_PASSWORD`` (SQL login);
 optionally ``_TENANT_ID`` / ``_CLIENT_ID`` / ``_CLIENT_SECRET`` (a service principal that is a
 ``db_datareader`` contained user) and ``_FABRIC_HOST`` / ``_FABRIC_DATABASE`` (a Fabric
-warehouse the same principal can reach). ``DATAQ_MSSQL_LIVE_DRIVER=odbc`` runs the whole lane on
+warehouse the same principal can reach). ``_CS_DATABASE`` names a database on the same server
+created with a case-sensitive CATALOG collation (``--catalog-collation DATABASE_DEFAULT``, the
+Fabric Warehouse behaviour) holding ``Sales.Orders (OrderId int, Amount decimal(12,2), Channel
+varchar(20))`` with rows ``(1, 10.50, 'web'), (2, -3.00, 'store'), (2, 7.00, 'web')``, which the
+same SQL login can read. ``DATAQ_MSSQL_LIVE_DRIVER=odbc`` runs the whole lane on
 the user-installed ODBC lane instead (Microsoft ODBC Driver 18 + ``pyodbc`` on the path) and adds
 the Fabric Warehouse / Lakehouse SQL endpoint batteries (``_FABRIC_HOST`` with
 ``_FABRIC_DATABASE`` for a warehouse holding the seed above minus ``OrderTsTz`` / ``Notes``, and
@@ -390,6 +394,47 @@ def test_failing_rows_carry_the_identifier_column_and_driver_types_survive() -> 
     assert not lengths.errored, lengths.error_message
     unexpected = (lengths.sample_failures or {})["partial_unexpected_list"]
     assert sorted(unexpected) == [Decimal("-3.00"), Decimal("99999.99")]
+
+
+@pytest.mark.skipif(not _env("CS_DATABASE"), reason="no case-sensitive-catalog database")
+def test_a_mixed_case_schema_resolves_exactly_on_a_case_sensitive_catalog() -> None:
+    """GX lower-cased the schema, so `Sales` read as `sales` — an invalid object on a
+    case-sensitive catalog, the Fabric Warehouse default (#2137)."""
+    runner = _runner({**_sql_config(), "database": _env("CS_DATABASE")})
+    checks = [
+        CheckSpec("expect_column_values_to_not_be_null", {"column": "Amount"}),
+        CheckSpec("expect_column_values_to_be_unique", {"column": "OrderId"}),
+        CheckSpec("expect_table_row_count_to_be_between", {"min_value": 3, "max_value": 3}),
+        CheckSpec(
+            CUSTOM_SQL_EXPECTATION_TYPE,
+            {"unexpected_rows_query": "SELECT * FROM {batch} WHERE Amount < 0"},
+        ),
+    ]
+    try:
+        outcome = runner.run_checks(
+            table="Orders", schema="Sales", checks=checks, index_columns=["OrderId"]
+        )
+        [volume] = runner.run_monitors(
+            table="Orders",
+            schema="Sales",
+            monitors=[MonitorSpec("volume", {"min_rows": 1, "max_rows": 10})],
+        )
+        with pytest.raises(Exception) as missing:
+            runner.run_checks(
+                table="Nope",
+                schema="Sales",
+                checks=[CheckSpec("expect_table_row_count_to_be_between", {"min_value": 0})],
+            )
+    finally:
+        runner.close()
+    assert [(c.errored, c.error_message, c.success) for c in outcome.checks] == [
+        (False, None, True),
+        (False, None, False),
+        (False, None, True),
+        (False, None, False),
+    ]
+    assert volume.observed_value == {"row_count": 3, "deviation_pct": 0.0}
+    assert classify_failure_category(missing.value) is FailureCategory.CONFIG
 
 
 # ───────────────────────────── monitors ─────────────────────────────

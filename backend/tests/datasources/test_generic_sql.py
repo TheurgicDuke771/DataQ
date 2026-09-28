@@ -343,6 +343,39 @@ def test_postgres_failures_are_classified(
     assert is_auth_failure(exc) is auth
 
 
+def test_an_exact_schema_asset_skips_gx_s_lower_cased_schema_check(tmp_path: Any) -> None:
+    """GX's table asset compares its schema against the server's schema names LOWER-CASED, so an
+    exactly cased schema (`Sales` on a case-sensitive catalog) is refused on every server; the
+    DataQ asset skips that comparison but keeps the query half (#2137). SQLite resolves a quoted
+    `"Main"` case-insensitively, which is what lets GX run here end to end."""
+    import sqlite3
+
+    import great_expectations as gx
+    from great_expectations.datasource.fluent.interfaces import TestConnectionError
+
+    from backend.app.datasources.generic_sql import _add_exact_schema_table_asset
+
+    path = tmp_path / "db.sqlite"
+    with sqlite3.connect(path) as conn:
+        conn.execute("CREATE TABLE Orders (OrderId INTEGER)")
+        conn.executemany("INSERT INTO Orders VALUES (?)", [(1,), (2,), (3,)])
+    context = gx.get_context(mode="ephemeral")
+    datasource = context.data_sources.add_sqlite(name="s", connection_string=f"sqlite:///{path}")
+
+    with pytest.raises(TestConnectionError, match="does not exist"):
+        datasource.add_table_asset(name="gx", table_name="Orders", schema_name='"Main"')
+
+    asset = _add_exact_schema_table_asset(datasource, table="Orders", schema="Main")
+    batch = asset.add_batch_definition_whole_table(name="whole").get_batch()
+    result = batch.validate(gx.expectations.ExpectTableRowCountToEqual(value=3))
+    assert result.success is True
+
+    with pytest.raises(TestConnectionError, match="test query failed"):
+        _add_exact_schema_table_asset(datasource, table="Missing", schema="Main")
+    with pytest.raises(ValueError, match="invalid schema"):
+        _add_exact_schema_table_asset(datasource, table="Orders", schema="Main; DROP")
+
+
 class _StrictConnection:
     """A DBAPI connection that, like pyodbc and PyMySQL, refuses to be used once closed."""
 

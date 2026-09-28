@@ -539,6 +539,11 @@ def _record_asset(recorded: dict[str, Any]) -> Any:
             recorded.update(kwargs)
             raise _StopAtAssetError
 
+        def _add_asset(self, asset: Any) -> Any:
+            # The exact-schema path (#2137) builds its own TableAsset.
+            recorded.update(schema_name=asset.schema_name, table_name=asset.table_name, exact=True)
+            raise _StopAtAssetError
+
         def get_engine(self) -> Any:
             return types.SimpleNamespace(dispose=lambda: None)
 
@@ -560,7 +565,15 @@ def test_sql_server_hands_gx_the_schema(schema: str | None, expected: str) -> No
     with pytest.raises(_StopAtAssetError):
         runner.run_checks(table="Orders", schema=schema, checks=[])
     assert recorded["schema_name"] == expected
-    assert recorded["table_name"] == '"Orders"'
+    # A mixed-case schema goes in quoted, past GX's lower-casing, on its own asset (#2137) —
+    # whose TableAsset holds the quoted table as a quoted name rather than a '"..."' string.
+    mixed = expected != expected.lower()
+    assert recorded.get("exact", False) is mixed
+    if mixed:
+        assert recorded["schema_name"].quote is True
+        assert recorded["table_name"] == "Orders" and recorded["table_name"].quote is True
+    else:
+        assert recorded["table_name"] == '"Orders"'
 
 
 def test_postgres_still_scopes_the_session_instead() -> None:

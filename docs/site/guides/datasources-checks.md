@@ -479,11 +479,11 @@ SQL analytics endpoints work on the ODBC lane.
 - **The profiler** reports min/max as unavailable (null) for types SQL Server has no MIN/MAX for
   — `bit`, `xml`, `geography`/`geometry`, `text`/`ntext`/`image`, `json`, `vector` — and distinct
   count / top values as unavailable for all of those except `bit`.
-- **Names** resolve under the database's collation. On the usual case-insensitive collations
-  any casing reaches the object; on a **case-sensitive** collation, a mixed-case *schema* in a
-  run target is not supported (the check engine lower-cases it), though mixed-case tables and
-  columns are. A **Fabric Warehouse** is case-sensitive by default, so keep its schema names
-  lower-case (or use `dbo`) until this is lifted. A comparison check's SQL side must also name
+- **Names** resolve under the database's catalog collation. On the usual case-insensitive
+  catalogs any casing reaches the object. On a **case-sensitive** one — a Fabric Warehouse by
+  default, or an Azure SQL database created with a case-sensitive catalog collation — type
+  schema, table and column names exactly as they are stored; mixed-case names are resolved as
+  spelled. A comparison check's SQL side must also name
   every computed column and leave out `ORDER BY` — SQL Server refuses both inside the derived
   table DataQ reads it through.
 - **No column tags.** DataQ does not read SQL Server's sensitivity classifications
