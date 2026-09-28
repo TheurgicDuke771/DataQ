@@ -54,6 +54,13 @@ from backend.app.services.failure_classifier import (
             RuntimeError("Either WorkspaceId or ArtifactId are missing in the request"),
             FailureCategory.CONFIG,
         ),
+        (
+            # SQL Server / Azure SQL / Fabric (Msg 208), as python-tds raised it live.
+            RuntimeError(
+                "(pytds.tds_base.ProgrammingError) (\"Invalid object name 'Sales.Nope'.\", None)"
+            ),
+            FailureCategory.CONFIG,
+        ),
     ],
 )
 def test_classifies_into_the_expected_category(exc: Exception, expected: FailureCategory) -> None:

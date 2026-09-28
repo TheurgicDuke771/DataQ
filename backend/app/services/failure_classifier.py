@@ -102,6 +102,8 @@ _MARKERS: tuple[tuple[FailureCategory, tuple[str, ...]], ...] = (
             "unknown schema",
             "unknown table",
             "invalid identifier",
+            # SQL Server's Msg 208 — a table, view or schema that does not exist.
+            "invalid object name",
             "missing",
             "keyerror",
         ),
