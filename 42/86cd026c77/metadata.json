@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "4286cd026c77",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2137-mssql-mixed-case-schema",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/datasources/generic_sql.py",
+    "backend/tests/datasources/test_generic_sql.py",
+    "backend/tests/integration/test_mssql_live.py",
+    "docs/site/guides/datasources-checks.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/42/86cd026c77/0/metadata.json",
+      "transcript": "/42/86cd026c77/0/full.jsonl",
+      "compact_transcript": "/42/86cd026c77/0/transcript.jsonl",
+      "content_hash": "/42/86cd026c77/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 0,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "output_tokens": 0,
+    "api_call_count": 0
+  }
+}
