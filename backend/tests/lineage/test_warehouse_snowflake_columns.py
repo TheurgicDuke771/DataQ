@@ -251,3 +251,200 @@ def test_a_confirmed_denial_clears_pairs_rather_than_freezing_them(
     )
     key = (_sf("RETAIL", "ORDERS_HEADER"), _sf("ANALYTICS_STG", "STG_ORDERS"))
     assert _stored(db_session, sf_connection)[key] == (None, "unavailable")
+
+
+# ─────────────── COLUMN-domain GET_LINEAGE for views / dynamic tables (#2106) ───────────────
+
+_NS = "snowflake://pvqsoeq-zgb34383"
+
+
+def _id(name: str) -> Any:
+    from backend.app.services.asset_identity import AssetIdentity
+
+    return AssetIdentity(namespace=_NS, name=name)
+
+
+def _column_row(src: str, src_col: str, dst: str, dst_col: str) -> tuple[Any, ...]:
+    sdb, ssch, stab = src.split(".")
+    ddb, dsch, dtab = dst.split(".")
+    return (sdb, ssch, stab, "VIEW", "ACTIVE", src_col, ddb, dsch, dtab, "VIEW", "ACTIVE", dst_col)
+
+
+class _ColumnConn:
+    """Answers the INFORMATION_SCHEMA column listing and per-column GET_LINEAGE calls."""
+
+    def __init__(
+        self,
+        columns: list[tuple[str, str, str]],
+        lineage: dict[str, list[tuple[Any, ...]]],
+        fail: set[str] | None = None,
+    ) -> None:
+        self.columns = columns
+        self.lineage = lineage
+        self.fail = fail or set()
+        self.seeds: list[str] = []
+
+    def execute(self, statement: Any, params: dict[str, Any] | None = None) -> Any:
+        sql = str(statement)
+        conn = self
+
+        class _Result:
+            def all(self) -> list[Any]:
+                if "INFORMATION_SCHEMA.COLUMNS" in sql:
+                    return list(conn.columns)
+                assert "'COLUMN', :dir, 1" in sql and (params or {})["dir"] == "UPSTREAM"
+                seed = (params or {})["obj"]
+                conn.seeds.append(seed)
+                if seed in conn.fail:
+                    raise RuntimeError("boom")
+                return conn.lineage.get(seed, [])
+
+        return _Result()
+
+
+_V_STG = "DATAQ_DB.ANALYTICS_STG.STG_ORDERS"
+_V_MART = "DATAQ_DB.ANALYTICS.MART_ORDER_REVENUE"
+_V_RAW = "DATAQ_DB.RETAIL.ORDERS_HEADER"
+
+
+def _refine(conn: Any, edges: Any, *, cap: int = 300) -> Any:
+    from unittest import mock
+
+    from backend.app.lineage.warehouse import LineageEdgePair  # noqa: F401
+
+    with mock.patch(
+        "backend.app.lineage.warehouse_snowflake.get_settings",
+        return_value=mock.Mock(warehouse_lineage_max_column_seeds=cap),
+    ):
+        return SnowflakeLineageProvider()._refine_with_column_lineage(
+            conn, _NS, "DATAQ_DB", edges, ColumnGrain.CAPTURED, None
+        )
+
+
+def test_view_edges_gain_column_pairs_from_column_domain_lineage() -> None:
+    """The live shape (2026-09-28): a view renames as it derives — ORDER_TOTAL feeds
+    LIFETIME_VALUE — which only COLUMN-domain GET_LINEAGE can see."""
+    from backend.app.lineage.warehouse import LineageEdgePair
+
+    edges = (LineageEdgePair(upstream=_id(_V_STG), downstream=_id(_V_MART)),)
+    conn = _ColumnConn(
+        columns=[("ANALYTICS", "MART_ORDER_REVENUE", "REVENUE"), ("RETAIL", "OTHER", "X")],
+        lineage={
+            "DATAQ_DB.ANALYTICS.MART_ORDER_REVENUE.REVENUE": [
+                _column_row(_V_STG, "ORDER_TOTAL", _V_MART, "REVENUE")
+            ]
+        },
+    )
+
+    (edge,), grain, note = _refine(conn, edges)
+
+    assert edge.column_pairs == (("ORDER_TOTAL", "REVENUE"),)
+    assert grain == ColumnGrain.CAPTURED and note is None
+    # Only the bare edge's downstream is seeded — never every column in the database.
+    assert conn.seeds == ["DATAQ_DB.ANALYTICS.MART_ORDER_REVENUE.REVENUE"]
+
+
+def test_column_lineage_never_adds_a_table_edge() -> None:
+    """A pair whose TABLE edge the traversal did not return stays out, exactly like the
+    ACCESS_HISTORY pass: this refinement cannot change what the table-level prune sees."""
+    from backend.app.lineage.warehouse import LineageEdgePair
+
+    edges = (LineageEdgePair(upstream=_id(_V_STG), downstream=_id(_V_MART)),)
+    conn = _ColumnConn(
+        columns=[("ANALYTICS", "MART_ORDER_REVENUE", "REVENUE")],
+        lineage={
+            "DATAQ_DB.ANALYTICS.MART_ORDER_REVENUE.REVENUE": [
+                _column_row(_V_RAW, "ORDER_TOTAL", _V_MART, "REVENUE")
+            ]
+        },
+    )
+    (edge,), _grain, _note = _refine(conn, edges)
+    assert edge.upstream.name == _V_STG and edge.column_pairs == ()
+
+
+def test_an_edge_that_already_has_pairs_is_not_reseeded() -> None:
+    from backend.app.lineage.warehouse import LineageEdgePair
+
+    edges = (
+        LineageEdgePair(upstream=_id(_V_STG), downstream=_id(_V_MART), column_pairs=(("A", "B"),)),
+    )
+    conn = _ColumnConn(columns=[("ANALYTICS", "MART_ORDER_REVENUE", "REVENUE")], lineage={})
+    result, _grain, _note = _refine(conn, edges)
+    assert result == edges and conn.seeds == []
+
+
+def test_the_column_seed_cap_truncates_loudly() -> None:
+    from backend.app.lineage.warehouse import LineageEdgePair
+
+    edges = (LineageEdgePair(upstream=_id(_V_STG), downstream=_id(_V_MART)),)
+    conn = _ColumnConn(
+        columns=[("ANALYTICS", "MART_ORDER_REVENUE", f"C{i}") for i in range(5)], lineage={}
+    )
+    _edges, _grain, note = _refine(conn, edges, cap=2)
+    assert len(conn.seeds) == 2
+    assert note is not None and "truncated at 2 column seeds" in note
+
+
+def test_failed_column_calls_are_counted_not_fatal() -> None:
+    from backend.app.lineage.warehouse import LineageEdgePair
+
+    edges = (LineageEdgePair(upstream=_id(_V_STG), downstream=_id(_V_MART)),)
+    conn = _ColumnConn(
+        columns=[
+            ("ANALYTICS", "MART_ORDER_REVENUE", "A"),
+            ("ANALYTICS", "MART_ORDER_REVENUE", "B"),
+        ],
+        lineage={
+            "DATAQ_DB.ANALYTICS.MART_ORDER_REVENUE.B": [_column_row(_V_STG, "B", _V_MART, "B")]
+        },
+        fail={"DATAQ_DB.ANALYTICS.MART_ORDER_REVENUE.A"},
+    )
+    (edge,), _grain, note = _refine(conn, edges)
+    assert edge.column_pairs == (("B", "B"),)
+    assert note is not None and "1 of 2 column call(s) failed" in note
+
+
+def test_a_zero_cap_disables_the_pass() -> None:
+    from backend.app.lineage.warehouse import LineageEdgePair
+
+    edges = (LineageEdgePair(upstream=_id(_V_STG), downstream=_id(_V_MART)),)
+    conn = _ColumnConn(columns=[("ANALYTICS", "MART_ORDER_REVENUE", "A")], lineage={})
+    result, _grain, _note = _refine(conn, edges, cap=0)
+    assert result == edges and conn.seeds == []
+
+
+@pytest.mark.parametrize(
+    ("part", "quoted"),
+    [("ORDERS", "ORDERS"), ("orders", '"orders"'), ("My Col", '"My Col"'), ('a"b', '"a""b"')],
+)
+def test_seed_identifiers_quote_anything_not_unquoted_upper(part: str, quoted: str) -> None:
+    from backend.app.lineage.warehouse_snowflake import _quote_ident
+
+    assert _quote_ident(part) == quoted
+
+
+def test_fetch_edges_runs_the_column_pass_on_the_get_lineage_tier() -> None:
+    """Wired, not just callable: the table edge from the real TABLE-domain capture gains its
+    column pairs through `fetch_edges` itself."""
+    conn = _GetLineageConn(
+        {
+            ("DATAQ_DB.RETAIL.ORDERS_HEADER", "DOWNSTREAM"): _get_lineage_rows(
+                "gl_down_orders_header"
+            ),
+            ("DATAQ_DB.ANALYTICS_STG.STG_ORDERS.CUSTOMER_ID", "UPSTREAM"): [
+                _column_row(
+                    "DATAQ_DB.RETAIL.ORDERS_HEADER",
+                    "CUSTOMER_ID",
+                    "DATAQ_DB.ANALYTICS_STG.STG_ORDERS",
+                    "CUSTOMER_ID",
+                )
+            ],
+        },
+        results={"INFORMATION_SCHEMA.COLUMNS": [("ANALYTICS_STG", "STG_ORDERS", "CUSTOMER_ID")]},
+    )
+
+    result = SnowflakeLineageProvider().fetch_edges(conn, connection_config=_CONFIG)
+
+    by_pair = {(e.upstream.name, e.downstream.name): e for e in result.edges}
+    edge = by_pair[(_sf("RETAIL", "ORDERS_HEADER"), _sf("ANALYTICS_STG", "STG_ORDERS"))]
+    assert ("CUSTOMER_ID", "CUSTOMER_ID") in edge.column_pairs
