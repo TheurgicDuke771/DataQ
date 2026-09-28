@@ -57,6 +57,7 @@ _BY_EXPECTATION_TYPE: dict[str, str] = {
     "dmf:blank_count": COMPLETENESS,
     # A timestamp after "now" is an impossible value, not late data.
     "dmf:future_timestamp_percent": VALIDITY,
+    "dmf:accepted_values": VALIDITY,
     # Databricks DQX row rules (ADR 0036 §6).
     "dqx:is_not_null": COMPLETENESS,
     "dqx:is_not_empty": COMPLETENESS,

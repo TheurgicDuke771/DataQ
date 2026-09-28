@@ -255,7 +255,7 @@ class SnowflakeCheckRunner:
 
         with self._engine.get().connect() as conn:
             return evaluate_dmf_check(
-                lambda statement: conn.execute(text(statement)).scalar(),
+                lambda statement, params=None: conn.execute(text(statement), params or {}).scalar(),
                 kind=kind,
                 expectation_type=expectation_type,
                 config=config,

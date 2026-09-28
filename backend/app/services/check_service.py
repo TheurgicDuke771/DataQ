@@ -42,10 +42,13 @@ from backend.app.datasources.sampling import (
     is_row_count_expectation,
 )
 from backend.app.datasources.snowflake_dmf import (
+    DMF_ACCEPTED_VALUES,
+    DMF_CONFIG_KEYS,
     DMF_ENGINE,
     DMF_EXPECTATION_TYPES,
     DMF_KINDS,
     DMF_UNBANDABLE_TYPES,
+    build_accepted_values_scan,
 )
 from backend.app.datasources.sql import is_sql_identifier
 from backend.app.db.models import (
@@ -230,13 +233,21 @@ def validate_engine_compatibility(
             f"expectation_type {expectation_type!r} is not a dmf metric",
             detail={"engine": engine, "supported_types": sorted(DMF_EXPECTATION_TYPES)},
         )
-    unknown_keys = sorted(set(config) - {"column"})
+    keys = DMF_CONFIG_KEYS[expectation_type]
+    unknown_keys = sorted(set(config) - keys)
     if unknown_keys:
         raise CheckConfigInvalidError(
-            f"a dmf column metric's config is exactly {{'column': …}}; unknown keys: "
+            f"a {expectation_type} config takes exactly {sorted(keys)}; unknown keys: "
             f"{', '.join(unknown_keys)}",
             detail={"expectation_type": expectation_type, "unknown_keys": unknown_keys},
         )
+    if expectation_type == DMF_ACCEPTED_VALUES:
+        try:
+            build_accepted_values_scan(config, table="t", schema=None)
+        except MonitorConfigError as exc:
+            raise CheckConfigInvalidError(
+                str(exc), detail={"expectation_type": expectation_type}
+            ) from exc
     if not is_sql_identifier(config.get("column")):
         raise CheckConfigInvalidError(
             "a dmf column metric needs a valid 'column' identifier in config",

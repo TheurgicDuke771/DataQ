@@ -896,6 +896,20 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     },
   },
   {
+    type: 'dmf:accepted_values',
+    engine: 'dmf',
+    dimension: 'validity',
+    label: 'Accepted values (DMF)',
+    description:
+      'Snowflake’s system ACCEPTED_VALUES metric function, evaluated in the warehouse: counts rows whose value is not in the list. NULLs are not counted as violations.',
+    category: 'Snowflake DMF',
+    fields: [COLUMN, { name: 'value_set', label: 'Accepted values', type: 'list' }],
+    thresholds: {
+      help: 'Band the count of rows outside the list (higher = worse). A fail or critical threshold is required.',
+      requireFailOrCritical: true,
+    },
+  },
+  {
     type: 'dmf:unique_count',
     engine: 'dmf',
     noThresholds: true,

@@ -29,7 +29,18 @@ DMF_COLUMN_METRICS: dict[str, str] = {
     "dmf:blank_count": "BLANK_COUNT",
     "dmf:future_timestamp_percent": "FUTURE_TIMESTAMP_PERCENT",
 }
-DMF_EXPECTATION_TYPES = tuple(DMF_COLUMN_METRICS)
+# ACCEPTED_VALUES cannot be called ad hoc (it needs an attached, scheduled DMF), but
+# SYSTEM$DATA_METRIC_SCAN evaluates it with no attachment and only SELECT rights (#2084).
+DMF_ACCEPTED_VALUES = "dmf:accepted_values"
+DMF_EXPECTATION_TYPES = (*DMF_COLUMN_METRICS, DMF_ACCEPTED_VALUES)
+#: The config keys each dmf:* expectation type takes.
+DMF_CONFIG_KEYS: dict[str, frozenset[str]] = {
+    **{t: frozenset({"column"}) for t in DMF_COLUMN_METRICS},
+    DMF_ACCEPTED_VALUES: frozenset({"column", "value_set"}),
+}
+_METRIC_NAMES = {**DMF_COLUMN_METRICS, DMF_ACCEPTED_VALUES: "ACCEPTED_VALUES"}
+_MAX_ACCEPTED_VALUES = 500
+_MAX_VALUE_CHARS = 1_000
 # Higher-is-worse metrics band with thresholds; unique_count degrades DOWNWARD
 # so thresholds are refused at author time (see module docstring).
 DMF_UNBANDABLE_TYPES = frozenset({"dmf:unique_count"})
@@ -68,6 +79,45 @@ def build_dmf_statement(
     return f"SELECT SNOWFLAKE.CORE.{function}(SELECT {column} FROM {target})"  # noqa: S608  # nosec B608
 
 
+def _sql_literal(value: Any) -> str:
+    """A value as a SQL literal inside the scan's expression: numbers bare, strings quoted."""
+    if isinstance(value, bool) or value is None:
+        raise MonitorConfigError("each accepted value must be a number or a string")
+    if isinstance(value, int | float):
+        return repr(value)
+    if isinstance(value, str) and len(value) <= _MAX_VALUE_CHARS:
+        return "'" + value.replace("'", "''") + "'"
+    raise MonitorConfigError(
+        f"each accepted value must be a number or a string of at most {_MAX_VALUE_CHARS}"
+    )
+
+
+def build_accepted_values_scan(
+    config: dict[str, Any], *, table: str, schema: str | None
+) -> tuple[str, dict[str, str]]:
+    """``COUNT(*)`` over ``SYSTEM$DATA_METRIC_SCAN`` — the violating rows, NULLs excluded.
+
+    Every argument is a bind parameter, so the only SQL DataQ assembles is the accepted-values
+    expression, from an allowlisted column and escaped literals.
+    """
+    column = _quoted(config.get("column"), what="column")
+    values = config.get("value_set")
+    if not isinstance(values, list) or not 1 <= len(values) <= _MAX_ACCEPTED_VALUES:
+        raise MonitorConfigError(
+            f"'value_set' must be a list of 1 to {_MAX_ACCEPTED_VALUES} values"
+        )
+    target = _quoted(table, what="table")
+    if schema is not None:
+        target = f"{_quoted(schema, what='schema')}.{target}"
+    statement = (
+        "SELECT COUNT(*) FROM TABLE(SYSTEM$DATA_METRIC_SCAN("
+        "REF_ENTITY_NAME => :ref, METRIC_NAME => 'SNOWFLAKE.CORE.ACCEPTED_VALUES', "
+        "ARGUMENT_NAME => :arg, ARGUMENT_EXPRESSION => :expr))"
+    )
+    expression = f"{column} IN ({', '.join(_sql_literal(v) for v in values)})"
+    return statement, {"ref": target, "arg": column, "expr": expression}
+
+
 def _freshness_outcome(scalar: Any, config: dict[str, Any]) -> CheckOutcome:
     """Seconds-since-max → the monitor freshness outcome shape (age-hours metric)."""
     expectation_type = monitor_expectation_type(FRESHNESS)
@@ -99,7 +149,7 @@ def _column_metric_outcome(
 ) -> CheckOutcome:
     expected = {
         "engine": DMF_ENGINE,
-        "metric": DMF_COLUMN_METRICS[expectation_type],
+        "metric": _METRIC_NAMES[expectation_type],
         "column": config.get("column"),
     }
     if scalar is None:
@@ -107,7 +157,7 @@ def _column_metric_outcome(
             expectation_type=expectation_type,
             success=False,
             errored=True,
-            error_message=f"{DMF_COLUMN_METRICS[expectation_type]} returned no value",
+            error_message=f"{_METRIC_NAMES[expectation_type]} returned no value",
             expected_value=expected,
         )
     value = float(scalar)
@@ -134,6 +184,10 @@ def evaluate_dmf_check(
     privilege problem on one metric never silences its siblings.
     """
     try:
+        if kind == "expectation" and expectation_type == DMF_ACCEPTED_VALUES:
+            statement, params = build_accepted_values_scan(config, table=table, schema=schema)
+            scalar = fetch_scalar(statement, params)
+            return _column_metric_outcome(scalar, expectation_type=expectation_type, config=config)
         statement = build_dmf_statement(
             kind=kind,
             expectation_type=expectation_type,
