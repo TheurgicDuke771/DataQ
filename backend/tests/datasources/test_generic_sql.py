@@ -415,3 +415,74 @@ def test_closing_a_run_logs_no_false_pool_errors(caplog: pytest.LogCaptureFixtur
         gc.collect()
     assert connection.closed
     assert [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR] == []
+
+
+def test_a_failed_run_also_logs_no_false_pool_errors(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A propagating traceback keeps the failed evaluation's locals — GX's engines — alive past
+    the close unless its frames are cleared (#2141)."""
+    import gc
+    import logging
+
+    import sqlalchemy as sa
+    from sqlalchemy.pool import StaticPool
+
+    from backend.app.datasources import generic_sql
+
+    class _Proxied:
+        def __init__(self) -> None:
+            self.dbapi_connection = _StrictConnection()
+
+        def detach(self) -> None:
+            pass
+
+    class _Source:
+        def raw_connection(self) -> _Proxied:
+            return _Proxied()
+
+        def dispose(self) -> None:
+            pass
+
+    sources: list[Any] = []
+
+    class _Recording(generic_sql.GxConnectionSource):
+        def __init__(self, *_: Any, **__: Any) -> None:
+            self._source = _Source()
+            self._opened = []
+            sources.append(self)
+
+    def failing_evaluate(self: Any, connections: Any, **_: Any) -> Any:
+        engine = sa.create_engine("sqlite://", creator=connections.connect, poolclass=StaticPool)
+        held = engine.connect()
+        held.exec_driver_sql("select 1")
+        engine.cycle = engine
+        raise RuntimeError("the warehouse went away mid-run")
+
+    monkeypatch.setattr(generic_sql, "GxConnectionSource", _Recording)
+    monkeypatch.setattr(generic_sql.GenericSqlCheckRunner, "_evaluate", failing_evaluate)
+    runner = generic_sql.GenericSqlCheckRunner.__new__(generic_sql.GenericSqlCheckRunner)
+    runner._spec = POSTGRES
+    runner._config = POSTGRES.validate_config(
+        {"host": "db.example.com", "database": "d", "user": "u"}
+    )
+    runner._secret = "pw"  # nosec B105
+    with caplog.at_level(logging.DEBUG, logger="sqlalchemy.pool"):
+        raised = False
+        try:
+            runner._run_batch(
+                table="t",
+                schema=None,
+                checks=[],
+                index_columns=None,
+                value_signal_gate=None,
+                read_only=True,
+            )
+        except RuntimeError as exc:
+            raised = "went away" in str(exc)
+        # The exception is released (as the worker does once it has recorded the failure); only
+        # now may anything still holding GX's engines let them go.
+        gc.collect()
+    assert raised
+    assert sources[0]._opened == []
+    assert [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR] == []

@@ -18,6 +18,7 @@ from __future__ import annotations
 import gc
 import ipaddress
 import re
+import traceback
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol
@@ -620,6 +621,12 @@ class GenericSqlCheckRunner:
                 value_signal_gate=value_signal_gate,
                 read_only=read_only,
             )
+        except BaseException as exc:
+            # A propagating traceback keeps `_evaluate`'s locals — GX's engines — alive past
+            # `close`; its finished frames are cleared so a failed run is collected like a
+            # passing one.
+            traceback.clear_frames(exc.__traceback__)
+            raise
         finally:
             # After `_evaluate` has returned, so the GX objects holding these connections are
             # already garbage when `close` collects them (see there).
@@ -729,9 +736,9 @@ class GxConnectionSource:
     def close(self) -> None:
         # GX keeps each engine's connection checked out for the engine's lifetime, and its
         # engines sit in reference cycles. Collected AFTER these connections were closed, their
-        # pools reset and close them again, and a strict driver (pyodbc, PyMySQL) raises — which
-        # SQLAlchemy logs at ERROR although nothing failed (#2141). Collected first, the pools
-        # close still-open connections themselves, and the loop below skips what is closed.
+        # pools roll the dead connections back, a strict driver (pyodbc) raises, and SQLAlchemy
+        # logs it at ERROR although nothing failed (#2141). Collected first, the rollback runs
+        # on an open connection and succeeds; the loop below still closes every connection.
         gc.collect()
         while self._opened:
             connection = self._opened.pop()
