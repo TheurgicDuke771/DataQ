@@ -1,0 +1,4 @@
+§1 - Go ahead with the plan, re-create the required components. 
+§2 - go with won't do provided we have fully tested and confident with the ODBC lane.
+§3 - yeah, drop pureview from scope. 
+§4 - do the RCA and fix it if it is not expensive, otherwise go with won't-fix as planned.
