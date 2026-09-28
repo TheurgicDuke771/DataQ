@@ -753,6 +753,8 @@
       
         
       
+        
+      
     
     
     
@@ -1018,6 +1020,34 @@
     
   
     API keys (PATs)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/python-client/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python client &amp; CLI
   
 
     
@@ -1407,6 +1437,17 @@
     <span class="md-ellipsis">
       
         The export document's version
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-python-clients-version" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Python client's version
       
     </span>
   </a>
@@ -2390,6 +2431,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#the-python-clients-version" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Python client's version
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2436,8 +2488,8 @@
 
 <h1 id="api-compatibility">API compatibility<a class="headerlink" href="#api-compatibility" title="Permanent link">¶</a></h1>
 <p>What DataQ promises to keep working when you upgrade, and how it tells you when something has
-to change. It covers every surface other software builds against: the REST API, the MCP tools
-and the suite export document.</p>
+to change. It covers every surface other software builds against: the REST API, the MCP tools,
+the suite export document and the Python client.</p>
 <h2 id="stable-surfaces">Stable surfaces<a class="headerlink" href="#stable-surfaces" title="Permanent link">¶</a></h2>
 <p>These are covered by this policy. A change to them follows the rules below.</p>
 <table>
@@ -2461,6 +2513,10 @@ and the suite export document.</p>
 <td>The JSON shape <code>export</code> produces and <code>import</code> accepts, versioned by its top-level <code>version</code> field.</td>
 </tr>
 <tr>
+<td><strong>Python client</strong> (<code>dataq-client</code>)</td>
+<td>The convenience layer (<code>DataQClient</code> and its methods, the typed run outcome) and the <code>dataq</code> command line: commands, flags and exit codes.</td>
+</tr>
+<tr>
 <td><strong>Personal access tokens</strong></td>
 <td>The <code>Authorization: Bearer dq_live_...</code> scheme.</td>
 </tr>
@@ -2476,11 +2532,13 @@ and the suite export document.</p>
 <li>The database schema, task queues, log lines and metric names.</li>
 <li>The Python modules inside the server image.</li>
 <li>Error <strong>messages</strong>. Branch on <code>error.code</code> (REST) or the error type, never on the wording.</li>
+<li>The Python client's generated layer beyond what the REST contract already promises: it is
+  regenerated from the spec, so it changes exactly when the spec does.</li>
 </ul>
 <h2 id="what-counts-as-breaking">What counts as breaking<a class="headerlink" href="#what-counts-as-breaking" title="Permanent link">¶</a></h2>
 <p>A change is <strong>additive</strong> (no notice needed) when an existing client keeps working unchanged:</p>
 <ul>
-<li>a new endpoint or MCP tool;</li>
+<li>a new endpoint, MCP tool, CLI command or flag;</li>
 <li>a new <strong>optional</strong> request field or tool parameter;</li>
 <li>a new response field, or a new value in an enum.</li>
 </ul>
@@ -2488,7 +2546,7 @@ and the suite export document.</p>
 enum value as "other" rather than failing.</p>
 <p>A change is <strong>breaking</strong> when an existing, correct client could stop working:</p>
 <ul>
-<li>removing or renaming a path, field, tool or parameter;</li>
+<li>removing or renaming a path, field, tool, parameter, command, flag or exit code;</li>
 <li>making an optional request field required, or narrowing what a field accepts;</li>
 <li>changing a field's type or meaning, or the meaning of a status code;</li>
 <li>changing the export document's shape without changing its <code>version</code>.</li>
@@ -2517,6 +2575,12 @@ vulnerability open, the change can take effect immediately. It is still announce
 <li>After a bump, the server keeps importing the <strong>previous</strong> version for at least one minor
   release, so documents exported before an upgrade can still be imported after it.</li>
 </ul>
+<h2 id="the-python-clients-version">The Python client's version<a class="headerlink" href="#the-python-clients-version" title="Permanent link">¶</a></h2>
+<p><code>dataq-client</code> is versioned with DataQ itself: client <code>1.x.y</code> is built from server <code>1.x.y</code>'s
+spec. <strong>Use the client version that matches your server.</strong> The generated layer validates
+responses strictly, so an older client can refuse a value a newer server added (a new enum
+value, for instance). The convenience layer and the <code>dataq</code> command line read a run's status as
+plain text and are not affected. Upgrade the client when you upgrade the server.</p>
 
 
 
