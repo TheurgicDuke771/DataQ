@@ -1,0 +1,45 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "32658358fcdb",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-2131-athena",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CLAUDE.md",
+    "docs/ops-log.md",
+    "docs/site/adr/0045-engine-generic-sql-datasource-base.md",
+    "docs/site/adr/README.md",
+    "docs/site/architecture/overview.md",
+    "docs/site/guides/datasources-checks.md",
+    "docs/site/reference/changelog.md",
+    "docs/site/reference/check-types.md",
+    "docs/site/reference/feature-matrix.md",
+    "docs/site/security/overview.md",
+    "frontend/src/api/connections.ts",
+    "frontend/src/components/assets/namespaceLabel.ts",
+    "frontend/src/components/connections/connectionFormSpec.ts",
+    "frontend/src/components/connections/connectionSources.ts",
+    "frontend/src/components/connections/connectionVisuals.tsx",
+    "frontend/src/components/suites/suiteTarget.ts",
+    "frontend/src/pages/Assets.tsx",
+    "frontend/tests/components/ConnectionForm.test.tsx",
+    "frontend/tests/components/namespaceLabel.test.ts",
+    "frontend/tests/components/suiteTarget.test.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/32/658358fcdb/0/metadata.json",
+      "transcript": "/32/658358fcdb/0/full.jsonl",
+      "compact_transcript": "/32/658358fcdb/0/transcript.jsonl",
+      "content_hash": "/32/658358fcdb/0/content_hash.txt",
+      "prompt": "/32/658358fcdb/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2042,
+    "cache_creation_tokens": 1699205,
+    "cache_read_tokens": 535811781,
+    "output_tokens": 772835,
+    "api_call_count": 1021
+  }
+}
