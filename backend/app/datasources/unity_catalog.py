@@ -570,7 +570,6 @@ class UnityCatalogCheckRunner:
                 schema=schema,
                 checks=[checks[i] for i in frame_positions],
                 index_columns=index_columns,
-                value_signal_gate=value_signal_gate,
             )
             success = success and frame_outcome.success
             by_position.update(zip(frame_positions, frame_outcome.checks, strict=True))
@@ -593,7 +592,6 @@ class UnityCatalogCheckRunner:
         schema: str | None,
         checks: list[CheckSpec],
         index_columns: list[str] | None,
-        value_signal_gate: ValueSignalGate | None = None,
     ) -> SuiteOutcome:
         """The historical UC path: read the table into pandas, validate that frame."""
         df, sampling = self._load_frame(table=table, schema=schema)
@@ -607,7 +605,6 @@ class UnityCatalogCheckRunner:
             name="suite-uc",
             batch_parameters={"dataframe": df},
             index_columns=index_columns,
-            value_signal_gate=value_signal_gate,
         )
         return stamp_sampling(outcome, sampling)
 

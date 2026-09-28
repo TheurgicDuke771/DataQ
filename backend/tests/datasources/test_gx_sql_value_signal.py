@@ -505,27 +505,34 @@ def test_a_frame_lane_without_an_identifier_column_classifies_from_the_populatio
     assert "walk-in" not in str(redacted)
 
 
-def test_a_frame_lane_skips_the_population_when_the_gate_does_not_decide() -> None:
-    check = _run_frame(_frame(), index_columns=None, gate=_never)
+def test_a_frame_lane_reuses_the_labels_it_already_has(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The main run already returned up to 5,000 failing row labels; a second validator pass to
+    get them again would double the pandas work on a large in-memory table."""
+
+    def _no_second_pass(*_a: Any, **_k: Any) -> Any:
+        raise AssertionError("a frame lane must not build a population validator")
+
+    monkeypatch.setattr(gx_runner, "_batch_validator", _no_second_pass)
+    check = _run_frame(_frame(), index_columns=None, gate=_always)
     assert check.sample_failures is not None
-    assert VALUE_SIGNAL_SUMMARY_KEY not in check.sample_failures
+    assert VALUE_SIGNAL_SUMMARY_KEY in check.sample_failures
 
 
-@pytest.mark.parametrize(
-    "runner_path",
-    [
-        "backend.app.datasources.flatfile.FlatFileCheckRunner",
-        "backend.app.datasources.iceberg.IcebergCheckRunner",
-        "backend.app.datasources.unity_catalog.UnityCatalogCheckRunner",
-    ],
-)
-def test_every_frame_runner_takes_the_gate(runner_path: str) -> None:
-    """`run_service` hands the gate only to a runner that advertises it, and a frame runner that
-    dropped it would silently keep classifying from 20 values (#2095)."""
-    import importlib
-    import inspect
+def test_a_failed_frame_lookup_keeps_the_sample_and_says_so(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reading the population must cost only the summary, never the run: the capped sample
+    stays and the marker records the fallback. (Duplicate column names never reach here — GX
+    errors the check itself on them.)"""
 
-    module_name, cls_name = runner_path.rsplit(".", 1)
-    runner = getattr(importlib.import_module(module_name), cls_name)
-    assert runner.accepts_value_signal_gate is True
-    assert "value_signal_gate" in inspect.signature(runner.run_checks).parameters
+    def _boom(_rows: Any) -> Any:
+        raise ValueError("cannot read the population")
+
+    monkeypatch.setattr(gx_runner, "_value_signal_summary_by_column", _boom)
+    with capture_logs() as logs:
+        check = _run_frame(_frame(), index_columns=None)
+    assert check.errored is False
+    sample = check.sample_failures
+    assert sample is not None and sample[VALUE_SIGNAL_STATUS_KEY] == VALUE_SIGNAL_SAMPLE_FAILED
+    assert "partial_unexpected_list" in sample
+    assert any(e["event"] == "gx_value_signal_sample_failed" for e in logs)

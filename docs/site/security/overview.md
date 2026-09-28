@@ -532,8 +532,9 @@ never silent.
 
 With or without an identifier column, every lane classifies the same failing
 population, so the same unclassified column masks the same way whichever lane
-ran the check. On the in-memory lanes the same conditions decide whether the
-population is read; it costs no I/O, since the table is already in memory.
+ran the check. On the in-memory lanes the population is always read, because it
+is free: the check has already returned the failing rows, and their values come
+straight off the table in memory.
 
 ## Data residency
 

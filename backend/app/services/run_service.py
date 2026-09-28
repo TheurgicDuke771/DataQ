@@ -214,8 +214,8 @@ def _run_outcome_phases(
             CheckSpec(expectation_type=checks[i].expectation_type, kwargs=dict(checks[i].config))
             for i in expectation_idx
         ]
-        # Only runners that advertise it take the gate (#2014): the SQL lanes, and the frame lanes
-        # for a suite with no identifier column, which gives them no locator rows (#2095).
+        # Only runners that advertise it take the gate (#2014) — the SQL lanes; a frame lane
+        # already carries the population signal in its own locator list.
         extra: dict[str, Any] = {}
         if value_signal_gate is not None and getattr(runner, "accepts_value_signal_gate", False):
             extra["value_signal_gate"] = value_signal_gate
