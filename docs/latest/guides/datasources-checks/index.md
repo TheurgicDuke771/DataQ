@@ -483,9 +483,12 @@ SQL analytics endpoints work on the ODBC lane.
   catalogs any casing reaches the object. On a **case-sensitive** one — a Fabric Warehouse by
   default, or an Azure SQL database created with a case-sensitive catalog collation — type
   schema, table and column names exactly as they are stored; mixed-case names are resolved as
-  spelled. A comparison check's SQL side must also name
-  every computed column and leave out `ORDER BY` — SQL Server refuses both inside the derived
-  table DataQ reads it through.
+  spelled.
+- **Comparison queries** are read as a derived table, which SQL Server constrains: name every
+  computed column (`amount * 2 AS doubled_amount` — an unnamed one is refused with that fix),
+  and write a common table expression as a subquery (a query starting with `WITH` is refused
+  when you save). A trailing `ORDER BY` is fine; DataQ reads it with `OFFSET 0 ROWS`, and the
+  comparison orders rows itself.
 - **No column tags.** DataQ does not read SQL Server's sensitivity classifications
   (`sys.sensitivity_classifications`) yet — reading them needs a permission a reader login
   usually lacks, and without it the catalog view silently returns nothing, which DataQ would
