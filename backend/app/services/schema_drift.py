@@ -23,7 +23,7 @@ from backend.app.datasources.monitors import (
     monitor_expectation_type,
     monitor_outcome,
 )
-from backend.app.datasources.sql_engines import GENERIC_SQL_TYPES
+from backend.app.datasources.sql_engines import GENERIC_SQL_TYPES, SQL_ENGINES
 from backend.app.db.models import Check, Connection
 from backend.app.services.failure_classifier import classify_failure_reason
 from backend.app.services.monitor_baseline import get_baseline, insert_baseline_if_absent
@@ -91,13 +91,19 @@ def _sql_columns(
     catalog: str | None,
     secret_store: SecretStore,
 ) -> list[ColumnSpec]:
-    """Column names+types from ``information_schema.columns`` (Snowflake / UC)."""
+    """Column names+types from ``information_schema.columns`` (Snowflake / UC), or the generic
+    engine's `columns_view`."""
     effective_schema = resolve_effective_schema(connection, schema)
     validate_identifier(table)
     validate_identifier(effective_schema)
     if catalog is not None:
         validate_identifier(catalog)
     prefix = f"{catalog}." if catalog else ""
+    columns_view = (
+        SQL_ENGINES[connection.type].columns_view
+        if connection.type in GENERIC_SQL_TYPES
+        else "information_schema.columns"
+    )
     # The generic SQL engines resolve a name exactly as spelled everywhere else (checks, monitors,
     # profiler), so drift must too — a case-insensitive match would baseline a DIFFERENT table
     # (`orders` for a target `Orders`) and report it clean while every other check errors.
@@ -110,7 +116,7 @@ def _sql_columns(
     # markers on the line below are both intentional and both live.
     query = text(
         f"SELECT table_schema, table_name, column_name, data_type "  # noqa: S608  # nosec B608
-        f"FROM {prefix}information_schema.columns "
+        f"FROM {prefix}{columns_view} "
         f"WHERE {match} "
         "ORDER BY ordinal_position"
     )

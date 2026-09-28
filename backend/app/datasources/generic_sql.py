@@ -279,6 +279,15 @@ class SqlEngineSpec:
     #: a MySQL default database). SQL Server cannot — a login's default schema is fixed on the
     #: server — so there GX is handed the schema instead.
     session_schema: bool = True
+    #: Hand GX the schema even though the session is scoped to it — for a dialect whose GX column
+    #: lookup otherwise matches the table NAME in every schema (Redshift's reads
+    #: ``information_schema.columns`` by table name alone, merging same-named tables). Safe only
+    #: where names are lower case, since GX lower-cases the schema it is given.
+    gx_schema_with_session: bool = False
+    #: The view schema drift reads column names and types from (``table_schema``,
+    #: ``table_name``, ``column_name``, ``data_type``, ``ordinal_position``) — Redshift's
+    #: ``information_schema.columns`` omits late-binding views.
+    columns_view: str = "information_schema.columns"
     #: What the connection's one secret is called in messages.
     credential_noun: str = "password"
     #: Turns a failure whose cause the ENGINE knows (a documented driver limitation, a missing
@@ -296,11 +305,14 @@ class SqlEngineSpec:
     #: ``config`` → ``(types, reason)`` for a gap that depends on WHERE the connection points
     #: rather than on the engine (a Fabric SQL endpoint refuses the temp tables GX's multi-column
     #: SQL Server metrics build). ``None`` = no config-dependent gaps.
-    #: OpenLineage's convention for a regional service endpoint (Athena) names no port.
-    namespace_includes_port: bool = True
     config_unsupported_expectation_types: (
         Callable[[GenericSqlConfig], tuple[frozenset[str], str]] | None
     ) = None
+    #: OpenLineage's convention for a regional service endpoint (Athena) names no port.
+    namespace_includes_port: bool = True
+    #: ``config`` → the namespace's host part, for an engine whose OpenLineage convention is not
+    #: the configured host (Redshift names ``<cluster>.<region>``). ``None`` = the host.
+    namespace_authority: Callable[[Any], str] | None = None
 
     def validate_config(self, raw: dict[str, Any]) -> GenericSqlConfig:
         return self.config_model.model_validate(raw)
@@ -400,7 +412,10 @@ class SqlEngineSpec:
 
     def namespace(self, config: GenericSqlConfig) -> str:
         """The OpenLineage namespace: ``<scheme>://<host>:<port>`` (host case-folded)."""
-        host = config.host.lower()
+        if self.namespace_authority is not None:
+            host = self.namespace_authority(config)
+        else:
+            host = config.host.lower()
         if ":" in host:  # an IPv6 literal needs its brackets back in an authority
             host = f"[{host}]"
         if not self.namespace_includes_port:
@@ -592,7 +607,7 @@ class GenericSqlCheckRunner:
         # case-insensitive collations resolve whatever GX's casing.
         if self._spec.session_schema:
             scoped = self._spec.scoped_config(self._config, schema)
-            gx_schema = None
+            gx_schema = scoped.default_schema if self._spec.gx_schema_with_session else None
         else:
             scoped = self._config
             gx_schema = schema or self._config.default_schema
