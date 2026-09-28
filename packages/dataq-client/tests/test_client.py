@@ -33,6 +33,20 @@ def _run(status: str, **fields: Any) -> dict[str, Any]:
     }
 
 
+def _progress(status: str, completed: int = 3) -> dict[str, Any]:
+    return {
+        "run_id": str(RUN),
+        "suite_id": str(SUITE),
+        "status": status,
+        "total_checks": 3,
+        "completed_checks": completed,
+        "counts": {"pass": completed},
+        "checks": [],
+        "started_at": None,
+        "finished_at": None,
+    }
+
+
 def _result(status: str) -> dict[str, Any]:
     return {
         "id": str(uuid.uuid4()),
@@ -91,18 +105,25 @@ def test_wait_reads_the_lifecycle_never_the_counts() -> None:
     """A running run already shows 3/3 passed and no severity — the "nothing failed" shape. It
     is not finished until its status says so."""
     server = _Server(
-        _json(200, _run("running", checks_passed=3, worst_severity=None)),
-        _json(200, _run("running")),
+        _json(200, _progress("running", completed=3)),
+        _json(200, _progress("running", completed=3)),
+        _json(200, _progress("succeeded")),
         _json(200, _run("succeeded", worst_severity="critical", checks_passed=2)),
     )
     sleeps: list[float] = []
     outcome = _client(server).wait_for_run(RUN, sleep=sleeps.append, clock=lambda: 0.0)
     assert (outcome.status, outcome.worst_severity) == ("succeeded", "critical")
-    assert len(server.requests) == 3
+    # Polls hit the progress endpoint; the full run (sample rows, an audit event) is read once.
+    paths = [request.url.path for request in server.requests]
+    assert paths == [f"/api/v1/runs/{RUN}/progress"] * 3 + [f"/api/v1/runs/{RUN}"]
 
 
 def test_polling_never_goes_below_five_seconds_and_backs_off() -> None:
-    server = _Server(*[_json(200, _run("running"))] * 6, _json(200, _run("succeeded")))
+    server = _Server(
+        *[_json(200, _progress("running"))] * 6,
+        _json(200, _progress("succeeded")),
+        _json(200, _run("succeeded")),
+    )
     sleeps: list[float] = []
     _client(server).wait_for_run(RUN, interval=0.1, sleep=sleeps.append, clock=lambda: 0.0)
     assert sleeps[0] == 5.0
@@ -110,7 +131,7 @@ def test_polling_never_goes_below_five_seconds_and_backs_off() -> None:
 
 
 def test_a_run_still_going_at_the_deadline_times_out() -> None:
-    server = _Server(*[_json(200, _run("running"))] * 3)
+    server = _Server(*[_json(200, _progress("running"))] * 3)
     now = [0.0]
 
     def sleep(seconds: float) -> None:
@@ -225,7 +246,9 @@ def test_cli_run_wait_exits_by_the_result(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     server = _Server(
-        _json(202, _run("queued")), _json(200, _run("succeeded", worst_severity="fail"))
+        _json(202, _run("queued")),
+        _json(200, _progress("succeeded")),
+        _json(200, _run("succeeded", worst_severity="fail")),
     )
     monkeypatch.setattr(cli, "DataQClient", lambda url: _client(server))
     assert cli.main(["run", str(SUITE), "--wait"]) == 2

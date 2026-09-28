@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from dataq_client.generated.api.incidents import acknowledge_incident, resolve_incident
-from dataq_client.generated.api.runs import get_run
+from dataq_client.generated.api.runs import get_run, get_run_progress
 from dataq_client.generated.api.suites import export_suite, import_suite, trigger_suite_run
 from dataq_client.generated.client import AuthenticatedClient
 from dataq_client.generated.models.incident_action_request import IncidentActionRequest
@@ -191,18 +191,21 @@ class DataQClient:
         """Poll the run until it finishes, reading its lifecycle ``status`` — never the check
         counts, which describe a partial run while it is still going.
 
+        Polls the lightweight progress endpoint and reads the full run once, at the end: every
+        read of the full run returns its sample rows and is recorded in the audit log.
         Polls at ``interval`` seconds (at least 5), backing off to 30 s. A 429 is raised, not
         retried. Raises `RunTimeoutError` if the run is still going after ``timeout`` seconds.
         """
+        run_uuid = uuid.UUID(str(run_id))
         wait = max(float(interval), MIN_POLL_INTERVAL)
         deadline = clock() + timeout
         while True:
-            outcome = self.get_run(run_id)
-            if outcome.finished:
-                return outcome
+            progress = _ok(get_run_progress.sync_detailed(run_uuid, client=self.api))
+            if progress.status in TERMINAL_RUN_STATUSES:
+                return self.get_run(run_uuid)
             remaining = deadline - clock()
             if remaining <= 0:
-                raise RunTimeoutError(outcome.run_id, outcome.status, timeout)
+                raise RunTimeoutError(run_uuid, progress.status, timeout)
             sleep(min(wait, remaining))
             wait = min(wait * 1.5, MAX_POLL_INTERVAL)
 

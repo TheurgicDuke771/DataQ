@@ -10,9 +10,15 @@ import importlib.metadata as metadata
 import re
 import sys
 
-FORBIDDEN = re.compile(r"\b(A?GPL|SSPL|BUSL|Business Source|Elastic|Commons Clause)\b", re.I)
-# LGPL is weak copyleft and allowed with notices; it must not match the GPL rule.
-WEAK = re.compile(r"\bLGPL\b|Lesser General Public", re.I)
+# Both licence spellings: SPDX (`GPL-3.0-only`, `AGPL-3.0`) and the classifiers (`GNU General
+# Public License v3 (GPLv3)`, `GNU Affero General Public License v3`). LGPL (the Lesser/Library
+# licence) is weak copyleft and allowed with notices, so it is excluded by look-behind.
+FORBIDDEN = re.compile(
+    r"(?<![A-Za-z])A?GPL|Affero"
+    r"|(?<!Lesser )(?<!Library )General Public License"
+    r"|SSPL|Server Side Public|BUSL|Business Source|Elastic License|Commons Clause",
+    re.I,
+)
 
 
 def _licence(dist: metadata.PackageMetadata) -> str:
@@ -43,7 +49,7 @@ def _closure(root: str) -> dict[str, str]:
 
 def main() -> int:
     tree = _closure("dataq-client")
-    bad = {n: lic for n, lic in tree.items() if FORBIDDEN.search(lic) and not WEAK.search(lic)}
+    bad = {n: lic for n, lic in tree.items() if FORBIDDEN.search(lic)}
     unknown = [n for n, lic in tree.items() if not lic.strip()]
     for name, lic in sorted(tree.items()):
         print(f"{name}: {lic or '(none declared)'}")
