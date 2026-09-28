@@ -483,3 +483,23 @@ describe('expectationsByCategoryFor (dialect gaps — regex on SQL Server, #1679
     expect(offeredTypes('mssql', REGEX_TYPES[0])).toContain(REGEX_TYPES[0]);
   });
 });
+
+describe('Databricks DQX category (ADR 0036 §6)', () => {
+  const categories = (connectionType: Parameters<typeof expectationsByCategoryFor>[0]) =>
+    expectationsByCategoryFor(connectionType).map((g) => g.category);
+
+  it('is offered on a Unity Catalog connection only', () => {
+    expect(categories('unity_catalog')).toContain('Databricks DQX');
+    for (const other of ['snowflake', 'postgres', 's3', 'iceberg'] as const) {
+      expect(categories(other)).not.toContain('Databricks DQX');
+    }
+  });
+
+  it('every DQX spec runs on the dqx engine', () => {
+    const group = expectationsByCategoryFor('unity_catalog').find(
+      (g) => g.category === 'Databricks DQX',
+    );
+    expect(group?.specs.length).toBe(8);
+    expect(group?.specs.every((spec) => spec.engine === 'dqx')).toBe(true);
+  });
+});

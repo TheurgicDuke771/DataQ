@@ -10,6 +10,7 @@ One-page reference: what runs where. For the readable tour of everything DataQ o
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 | GX expectations (column / table shape) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (no regex) | ✅ | ✅ | ✅ |
 | Snowflake DMF (native metric functions)ᵈ | ✅ | — | — | — | — | — | — | — | — |
+| Databricks DQX (runs in your workspace)ʲ | — | ✅ | — | — | — | — | — | — | — |
 | Custom SQL (rows returned = failures)ᶜ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — |
 | Freshness monitor (hours since latest timestamp) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Freshness from **file arrival time** (no column — catches "no new file") | — | — | — | — | — | — | ✅ | ✅ | — |
@@ -64,6 +65,12 @@ grant) and stores the result on the connection — surfaced on the connection li
 rather than a hard gate, in the check editor's engine picker. The probe reads zero rows of one
 table the connection's role can already see; if the role can see none, or the probe fails for a
 reason unrelated to DMFs, the connection shows "couldn't determine" rather than "unavailable".
+
+ʲ **Databricks DQX** (ADR [0036](../adr/0036-connection-anchored-check-engines.md)) is the
+second platform-native engine: eight row rules evaluated by Databricks Labs DQX in a
+serverless job in the connection's own workspace, one job per run. DataQ never ships DQX,
+whose licence permits use only with Databricks services. The job returns failing-row counts
+only. See [Databricks DQX](../guides/datasources-checks.md#databricks-dqx-adr-0036).
 
 ᵖ **PostgreSQL** — any server, self-hosted or managed; everything runs by pushdown
 on read-only sessions. Every row was verified by an **executed** run against a real

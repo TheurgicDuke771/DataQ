@@ -153,9 +153,33 @@ def _run_outcome_phases(
 
     advertised = frozenset(getattr(runner, "supported_native_engines", frozenset()))
     native_run = getattr(runner, "run_native_check", None)
+    batch_run = getattr(runner, "run_native_checks", None)
+    batched: set[int] = set()
+    if callable(batch_run):
+        # A runner with a batch hook evaluates each engine's checks together — DQX pays one
+        # workspace job per run, not one per check.
+        by_engine: dict[str, list[int]] = {}
+        for i, c in enumerate(checks):
+            if _engine(c) != GX_ENGINE and _engine(c) in advertised:
+                by_engine.setdefault(_engine(c), []).append(i)
+        for engine, indices in by_engine.items():
+            outcomes = cast(
+                list[CheckOutcome],
+                batch_run(
+                    engine,
+                    [
+                        (checks[i].kind, checks[i].expectation_type, dict(checks[i].config))
+                        for i in indices
+                    ],
+                    table=table,
+                    schema=schema,
+                ),
+            )
+            batched.update(indices)
+            yield OutcomePhase(resolved=list(zip(indices, outcomes, strict=True)), publishable=True)
     for i, c in enumerate(checks):
         engine = _engine(c)
-        if engine == GX_ENGINE:
+        if engine == GX_ENGINE or i in batched:
             continue
         if engine in advertised and callable(native_run):
             outcome = cast(

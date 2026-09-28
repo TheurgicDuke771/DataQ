@@ -57,6 +57,15 @@ _BY_EXPECTATION_TYPE: dict[str, str] = {
     "dmf:blank_count": COMPLETENESS,
     # A timestamp after "now" is an impossible value, not late data.
     "dmf:future_timestamp_percent": VALIDITY,
+    # Databricks DQX row rules (ADR 0036 §6).
+    "dqx:is_not_null": COMPLETENESS,
+    "dqx:is_not_empty": COMPLETENESS,
+    "dqx:is_not_null_and_not_empty": COMPLETENESS,
+    "dqx:is_in_list": VALIDITY,
+    "dqx:is_in_range": VALIDITY,
+    "dqx:regex_match": VALIDITY,
+    "dqx:is_not_less_than": VALIDITY,
+    "dqx:is_not_greater_than": VALIDITY,
 }
 
 # Fallback for the non-GX kinds, whose `expectation_type` is the generated `monitor:<kind>` /

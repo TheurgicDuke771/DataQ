@@ -167,6 +167,7 @@ _RUN_SAMPLES: dict[str, dict[str, Any]] = {
 
 def _gx_catalog_types() -> list[str]:
     """The catalog's GX expectation types, read off the same fixture the contract test uses."""
+    from backend.app.datasources.databricks_dqx import DQX_EXPECTATION_TYPES
     from backend.app.datasources.snowflake_dmf import DMF_EXPECTATION_TYPES
     from backend.app.services.custom_sql import CUSTOM_SQL_EXPECTATION_TYPE
 
@@ -175,7 +176,8 @@ def _gx_catalog_types() -> list[str]:
     return [
         entry["type"]
         for entry in catalog
-        if entry["kind"] == "expectation" and entry["type"] not in DMF_EXPECTATION_TYPES
+        if entry["kind"] == "expectation"
+        and entry["type"] not in (*DMF_EXPECTATION_TYPES, *DQX_EXPECTATION_TYPES)
         # Custom SQL needs a `{batch}` query rendered by its own runner path, covered elsewhere.
         and entry["type"] != CUSTOM_SQL_EXPECTATION_TYPE
     ]

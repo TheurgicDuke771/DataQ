@@ -665,9 +665,11 @@ def get_suite_results(suite_id: str) -> dict[str, Any]:
 
     Returns the most recent run's lifecycle status plus, per check: the check
     name and id, ``engine`` (ADR 0036 — ``gx`` unless the check runs against a
-    platform-native engine like ``dmf``; a ``dmf`` result's ``observed_value`` /
-    ``metric_value`` is a Snowflake DMF metric, not a GX expectation output, and
-    the two have different semantics), its pass/warn/fail/critical (or
+    platform-native engine like ``dmf`` or ``dqx``; a ``dmf`` result's
+    ``observed_value`` / ``metric_value`` is a Snowflake DMF metric, not a GX
+    expectation output, and the two have different semantics; a ``dqx`` result's
+    ``metric_value`` is its failing-row count, and it never carries sample rows,
+    so a null sample there is not "no failing rows"), its pass/warn/fail/critical (or
     skip/error) status, the observed vs expected value (**redacted on the same
     column-aware policy as the samples** — a masked observed value is not the
     measured one), how much of the dataset the check actually saw (``sampling``
@@ -888,7 +890,7 @@ def _check_summary(check: Check) -> dict[str, Any]:
         "kind": check.kind,
         "expectation_type": check.expectation_type,
         # WHO evaluates this check (ADR 0036) — 'gx' unless the check was authored against a
-        # platform-native engine (currently 'dmf'). Without this a dmf check reads identically to
+        # platform-native engine ('dmf', 'dqx'). Without this a dmf check reads identically to
         # a gx one: same kind/type/config, no way to know which evaluator produced its results, or
         # that recreating it without `engine` would silently convert it to gx (#1531).
         "engine": check.engine or "gx",
@@ -1268,9 +1270,10 @@ def get_run_results(run_id: str) -> dict[str, Any]:
     orders run fail?' — or to read a historical run rather than the latest one
     (which is what ``get_suite_results`` returns). Returns the run's lifecycle
     status plus, per check: the check name, ``engine`` (ADR 0036 — ``gx`` unless
-    the check runs against a platform-native engine like ``dmf``; a ``dmf``
-    result's observed/metric value is a Snowflake DMF metric, not a GX
-    expectation output, and the two have different semantics), its
+    the check runs against a platform-native engine like ``dmf`` or ``dqx``; a
+    ``dmf`` result's observed/metric value is a Snowflake DMF metric, not a GX
+    expectation output, and the two have different semantics; a ``dqx`` result's
+    metric value is its failing-row count, with no sample rows), its
     pass/warn/fail/critical (or skip/error) status, the observed vs expected
     value, how much of the dataset the check saw, and any sample failing rows
     (PII-redacted; see ``get_suite_results`` for what a null sample's
@@ -2121,8 +2124,10 @@ def create_check(
 
     ``engine`` (ADR 0036) selects WHO evaluates the check: ``gx`` (default,
     every connection) or a platform-native engine only some connections
-    offer — currently ``dmf`` on Snowflake, evaluating one of its own metric
-    types (e.g. ``dmf:null_count``) rather than a GX expectation. Passing a
+    offer — ``dmf`` on Snowflake (its own metric types, e.g. ``dmf:null_count``)
+    and ``dqx`` on Unity Catalog (Databricks DQX row rules, e.g.
+    ``dqx:is_not_null``, run as a serverless job in the user's own workspace,
+    about a minute per run) — rather than a GX expectation. Passing a
     ``gx``-shaped ``expectation_type``/``config`` with ``engine="dmf"``, or
     vice versa, is refused with a 422 naming the mismatch — it is not
     auto-detected from the type string. A connection that doesn't offer the

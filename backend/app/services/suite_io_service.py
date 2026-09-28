@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
+from backend.app.datasources.databricks_dqx import DQX_ENGINE
 from backend.app.datasources.monitors import MONITOR_KINDS
 from backend.app.datasources.snowflake_dmf import DMF_ENGINE
 from backend.app.db.models import (
@@ -191,9 +192,9 @@ def import_suite(
                 config=c["config"],
                 connection_type=connection.type,
             )
-        elif c.get("engine", GX_ENGINE) == DMF_ENGINE:
-            # A dmf:* column metric — fully validated by
-            # validate_engine_compatibility above; not a GX expectation.
+        elif c.get("engine", GX_ENGINE) in (DMF_ENGINE, DQX_ENGINE):
+            # A dmf:* / dqx:* check — fully validated by validate_engine_compatibility above;
+            # not a GX expectation.
             pass
         else:
             # Same author-time GX validation as check CRUD (#651) — an imported

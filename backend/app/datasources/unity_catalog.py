@@ -21,6 +21,7 @@ from backend.app.datasources.base import (
     SuiteOutcome,
     ValueSignalGate,
 )
+from backend.app.datasources.databricks_dqx import DQX_ENGINE, DqxJobs, run_dqx_batch
 from backend.app.datasources.gx_runner import run_expectations
 from backend.app.datasources.monitors import (
     FRESHNESS,
@@ -348,6 +349,8 @@ class UnityCatalogCheckRunner:
     supported_monitor_kinds: ClassVar[frozenset[str]] = frozenset({FRESHNESS, VOLUME})
     # The run path hands a `value_signal_gate` only to runners advertising it (#2014).
     accepts_value_signal_gate: ClassVar[bool] = True
+    # DQX (ADR 0036 §6) runs as a serverless job in the connection's own workspace.
+    supported_native_engines: ClassVar[frozenset[str]] = frozenset({DQX_ENGINE})
 
     def __init__(
         self,
@@ -751,6 +754,44 @@ class UnityCatalogCheckRunner:
             datasource.get_engine().dispose()
         except Exception as exc:
             log.warning("uc_sql_engine_dispose_failed", error_type=type(exc).__name__)
+
+    def run_native_checks(
+        self,
+        engine: str,
+        checks: list[tuple[str, str, dict[str, Any]]],
+        *,
+        table: str,
+        schema: str | None,
+    ) -> list[CheckOutcome]:
+        """Every ``engine`` check of a run in one batch — one DQX job, not one per check."""
+        specs = [(expectation_type, config) for _kind, expectation_type, config in checks]
+        if engine != DQX_ENGINE or schema is None:
+            reason = (
+                f"engine {engine!r} is not evaluated by this runner"
+                if engine != DQX_ENGINE
+                else "a dqx check needs the suite target's schema (catalog.schema.table)"
+            )
+            return [
+                CheckOutcome(expectation_type=t, success=False, errored=True, error_message=reason)
+                for t, _config in specs
+            ]
+        jobs = DqxJobs(workspace_url=self._config.workspace_url, token=self._token)
+        return run_dqx_batch(jobs, specs, catalog=self._catalog, schema=schema, table=table)
+
+    def run_native_check(
+        self,
+        *,
+        kind: str,
+        expectation_type: str,
+        config: dict[str, Any],
+        table: str,
+        schema: str | None,
+    ) -> CheckOutcome:
+        """One native check (the dry-run path); a batch of one."""
+        (outcome,) = self.run_native_checks(
+            DQX_ENGINE, [(kind, expectation_type, config)], table=table, schema=schema
+        )
+        return outcome
 
     def run_monitors(
         self, *, table: str, schema: str | None, monitors: list[MonitorSpec]

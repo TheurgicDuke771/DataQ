@@ -23,6 +23,7 @@ interface EngineVisual {
 const ENGINE_VISUAL: Record<string, EngineVisual> = {
   gx: { label: 'Great Expectations (gx)', color: 'blue' },
   dmf: { label: 'Snowflake DMF (native)', color: 'purple' },
+  dqx: { label: 'Databricks DQX (native)', color: 'orange' },
 };
 
 /** Full engine label (ADR 0036) — `CheckHistoryDrawer`'s Descriptions panel and the check editor's

@@ -58,12 +58,16 @@ def test_unknown_engine_rejected_with_vocabulary() -> None:
 
 
 def test_real_engine_not_offered_by_type_rejected_naming_the_offer() -> None:
-    # 'dqx' is vocabulary-valid but trigger-gated (ADR 0036 §6) — the 422 must
-    # say what IS offered, not just refuse.
+    # 'dqx' is vocabulary-valid but Unity-Catalog-only (ADR 0036 §6) — the 422 must say what IS
+    # offered, not just refuse.
     with pytest.raises(CheckConfigInvalidError) as exc:
-        validate_engine("dqx", connection_type="unity_catalog")
-    assert exc.value.detail["offered"] == [GX_ENGINE]
-    assert exc.value.detail["connection_type"] == "unity_catalog"
+        validate_engine("dqx", connection_type="snowflake")
+    assert exc.value.detail["offered"] == sorted([GX_ENGINE, "dmf"])
+    assert exc.value.detail["connection_type"] == "snowflake"
+
+
+def test_unity_catalog_offers_dqx() -> None:
+    assert engines_for("unity_catalog") == frozenset({GX_ENGINE, "dqx"})
 
 
 def test_snowflake_offers_dmf() -> None:
@@ -74,8 +78,12 @@ def test_offered_native_engines_are_runnable() -> None:
     # Offer ⇔ runner support (ADR 0036's offered ⇒ runnable, at the engine grain): every native
     # engine a type offers must be advertised by that type's runner class.
     from backend.app.datasources.snowflake import SnowflakeCheckRunner
+    from backend.app.datasources.unity_catalog import UnityCatalogCheckRunner
 
-    native_by_type = {"snowflake": SnowflakeCheckRunner.supported_native_engines}
+    native_by_type = {
+        "snowflake": SnowflakeCheckRunner.supported_native_engines,
+        "unity_catalog": UnityCatalogCheckRunner.supported_native_engines,
+    }
     for conn_type in DATASOURCE_TYPES:
         offered_native = engines_for(conn_type) - {GX_ENGINE}
         assert offered_native == native_by_type.get(conn_type, frozenset())

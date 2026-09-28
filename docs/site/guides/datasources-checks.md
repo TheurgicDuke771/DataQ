@@ -699,6 +699,30 @@ datasources. Snowflake's `ACCEPTED_VALUES` and `SCHEMA_CHANGE_COUNT` are not off
 can only run as a DMF attached to the table on a schedule, not as the on-demand call DataQ
 makes (use the GX in-set check and the schema-drift monitor instead).
 
+### Databricks DQX (ADR 0036)
+
+On a Unity Catalog connection, the check editor offers a **Databricks DQX** category: row
+rules evaluated by [Databricks Labs DQX](https://github.com/databrickslabs/dqx) inside your
+own workspace. The rules are not null, not empty, not null or empty, in list, in range,
+matches regex, not less than and not greater than. Each check reports the number of failing
+rows, so it fails on any failing row. Optional thresholds band that count instead.
+
+**Where it runs.** DataQ does not contain or install DQX: it is published under the
+Databricks License, which permits use only with Databricks services. When a run includes
+DQX checks, DataQ uploads a small notebook to the connection user's workspace folder
+(`/Users/<you>/.dataq/`) and submits **one serverless job for all of the run's DQX checks**.
+The notebook installs a pinned DQX version and returns only failing-row counts, never row
+values. Expect about a minute of job start-up per run.
+
+**What the connection's token needs:** permission to create workspace files in its own home
+folder and to submit serverless jobs, plus `SELECT` on the target table. A rule the
+workspace rejects errors only that check. A job that fails errors every DQX check in the run
+with a classified reason. Your GX checks are unaffected.
+
+**Values are always literals.** DQX evaluates a bare string argument as a Spark SQL
+expression, so DataQ builds every rule itself: columns must be plain identifiers, list values
+are sent as quoted literals, and limits must be numbers or ISO dates.
+
 ### Freshness monitor (all datasources — ADR 0012/0030)
 
 *How stale is the target?* Point it at the load/updated **timestamp column**; the check
