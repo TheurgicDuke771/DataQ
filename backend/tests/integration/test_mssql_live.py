@@ -486,6 +486,24 @@ def test_the_profile_survives_a_bit_column_and_reads_decimals() -> None:
     assert by_column["Notes"].distinct_count == 3
 
 
+def test_comparison_queries_read_through_t_sql_derived_table_rules() -> None:
+    """A comparison reads its SQL side as a derived table, which T-SQL constrains (#2138)."""
+    from backend.app.services.dataset_reader import DatasetReadUnsupportedError
+
+    connection, store = _connection(), _store()
+
+    def read(query: str) -> Any:
+        return read_dataset(connection, DatasetSpec(query=query), max_rows=100, secret_store=store)
+
+    # A trailing ORDER BY (Msg 1033 without TOP/OFFSET) is read, every row intact.
+    assert len(read("SELECT OrderId, Amount FROM dbo.Orders ORDER BY Amount DESC")) == 4
+    # An unnamed column (Msg 8155) and a leading CTE are explained, not a driver error.
+    with pytest.raises(DatasetReadUnsupportedError, match="alias each computed column"):
+        read("SELECT OrderId, Amount * 2 FROM dbo.Orders")
+    with pytest.raises(DatasetReadUnsupportedError, match="as a subquery"):
+        read("WITH c AS (SELECT OrderId FROM dbo.Orders) SELECT OrderId FROM c")
+
+
 def test_columns_schema_drift_and_comparison_reads() -> None:
     connection, store = _connection(), _store()
     columns = profile_service.list_table_columns(
