@@ -3,11 +3,14 @@
 GX's `unexpected_rows_query.table` metric (the custom-SQL row sample) sends the user's
 statement unbounded and `fetchmany`s at most `MAX_RESULT_RECORDS` rows client-side, so the
 warehouse materialises every failing row first (#2082). The override bounds the statement at
-the same cap, so every result format sees exactly the rows it saw before.
+the same cap, so every result format sees the same number of rows as before. A statement that
+orders its rows is left unbounded: an ORDER BY inside a derived table is not guaranteed to
+survive the outer LIMIT, so wrapping it could return an arbitrary 200 rather than the first.
 """
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import sqlalchemy as sa
@@ -22,11 +25,13 @@ from great_expectations.expectations.metrics.query_metrics.query_table.unexpecte
 #: T-SQL rejects an ORDER BY inside a derived table without TOP, which a user's statement
 #: may carry; it keeps GX's client-side bound only.
 _UNWRAPPED_DIALECTS = frozenset({"mssql"})
+#: Anywhere in the statement, deliberately: a nested ORDER BY only costs the old behaviour.
+_ORDER_BY = re.compile(r"\border\s+by\b", re.IGNORECASE)
 
 
 def bounded_statement(statement: str, *, dialect: Any, limit: int) -> Any:
     """``statement`` as a derived table with a dialect-compiled row limit."""
-    if dialect.name in _UNWRAPPED_DIALECTS:
+    if dialect.name in _UNWRAPPED_DIALECTS or _ORDER_BY.search(statement):
         return sa.text(statement)
     derived = sa.text(f"({statement}) AS dataq_unexpected_rows")
     return sa.select(sa.literal_column("*")).select_from(derived).limit(limit)

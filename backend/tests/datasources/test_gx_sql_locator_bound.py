@@ -226,22 +226,26 @@ def test_custom_sql_row_fetch_is_bounded_in_sql(tmp_path: Path) -> None:
     assert outcome.checks[0].observed_value == {"observed_value": _FAILING_ROWS}
 
 
-def test_bounded_statement_keeps_t_sql_unwrapped() -> None:
-    """T-SQL rejects an ORDER BY inside a derived table without TOP (#2138)."""
+def test_bounded_statement_wraps_only_where_the_limit_cannot_reorder() -> None:
+    """T-SQL rejects an ORDER BY inside a derived table (#2138), and elsewhere a derived
+    table's ORDER BY need not survive the outer LIMIT — both keep GX's client-side cut."""
     from sqlalchemy.dialects import mssql, postgresql
 
     from backend.app.datasources.gx_metrics import bounded_statement
 
-    sql = "SELECT * FROM t ORDER BY a"
     t_sql: Any = mssql.dialect()  # type: ignore[no-untyped-call]
     postgres: Any = postgresql.dialect()  # type: ignore[no-untyped-call]
-    assert str(bounded_statement(sql, dialect=t_sql, limit=200)) == sql
+    plain = "SELECT * FROM t WHERE a < 0"
+    ordered = "SELECT * FROM t WHERE a < 0 Order  By a"
+
+    assert str(bounded_statement(plain, dialect=t_sql, limit=200)) == plain
+    assert str(bounded_statement(ordered, dialect=postgres, limit=200)) == ordered
     compiled = str(
-        bounded_statement(sql, dialect=postgres, limit=200).compile(
+        bounded_statement(plain, dialect=postgres, limit=200).compile(
             dialect=postgres, compile_kwargs={"literal_binds": True}
         )
     )
-    assert compiled.endswith("LIMIT 200") and "(SELECT * FROM t ORDER BY a)" in compiled
+    assert compiled.endswith("LIMIT 200") and f"({plain})" in compiled
 
 
 def test_undetermined_lane_falls_back_loudly() -> None:
