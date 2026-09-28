@@ -258,7 +258,7 @@ The full decision index — one line per ADR with status — lives at **[docs/si
 - ❌ Don't fix bugs silently. Raise a GitHub issue, then PR with `Fixes #N`.
 - ❌ **Don't dismiss a finding because it's pre-existing.** DataQ is in production — a defect that predates your change is live for users right now, so its age is irrelevant to whether it matters. Every finding ends **fixed or filed**, never "noted in a review reply" or "documented in a docstring" (CONTRIBUTING rule 3a). Concluding it is genuinely not a defect is fine, but record the determination and evidence — verified-benign is a valid outcome, unexamined is not.
 - ❌ Don't batch unrelated changes into one commit. One functionality per commit.
-- ❌ Don't track GX Core at "latest." Pin the version in `environment.yml` — GX v1 API has drifted across point releases.
+- ❌ Don't track GX Core at "latest." Pin the version in `environment.yml` — GX v1 API has drifted across point releases. The same goes for **pandas and numpy**, which sit under GX and every frame lane: both are pinned in `backend/requirements.txt` (#2148 — unpinned, the image ran pandas 3 while a dev env ran 2).
 - ❌ Don't add a dependency under a strong-copyleft or source-available license (GPL, AGPL, SSPL, BUSL/Elastic, Commons-Clause) — DataQ ships MIT (ADR [0031](docs/site/adr/0031-oss-byol-distribution-licensing.md), CONTRIBUTING rule 40); weak copyleft (LGPL/MPL) is OK with notices. Exceptions need an ADR.
 - ❌ Don't use venv or poetry for backend dev. Conda only.
 - ❌ Don't write the MCP layer before Week 7. The service layer must stabilise first.
