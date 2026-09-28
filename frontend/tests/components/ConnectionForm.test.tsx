@@ -928,3 +928,39 @@ describe('ConnectionForm — SQL Server', () => {
     expect(payload.secret).toBe('s3cret');
   });
 });
+
+describe('ConnectionForm — Amazon Athena', () => {
+  it('takes a region and an IAM key pair — no host, user or port', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue({ ...icebergConnection, type: 'athena' });
+
+    render(
+      <AntApp>
+        <ConnectionForm type="athena" onSaved={vi.fn()} onCancel={vi.fn()} />
+      </AntApp>,
+    );
+
+    await user.type(await screen.findByLabelText('Name'), 'lake');
+    await selectOption(user, 'DEV');
+    expect(screen.queryByLabelText('Host')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Port')).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText('Region'), 'us-east-2');
+    await user.type(screen.getByLabelText('Access key ID'), 'AKIAEXAMPLEEXAMPLE12');
+    await user.type(screen.getByLabelText(/Query results location/), 's3://bucket/results/');
+    await user.type(screen.getByLabelText(/Default database/), 'sales');
+    await user.type(screen.getByLabelText('Secret access key'), 'sk');
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalled());
+    const payload = mockCreate.mock.calls[0][0];
+    expect(payload.type).toBe('athena');
+    expect(payload.config).toMatchObject({
+      region: 'us-east-2',
+      access_key_id: 'AKIAEXAMPLEEXAMPLE12',
+      s3_staging_dir: 's3://bucket/results/',
+      schema: 'sales',
+    });
+    expect(payload.config).not.toHaveProperty('host');
+    expect(payload.secret).toBe('sk');
+  });
+});

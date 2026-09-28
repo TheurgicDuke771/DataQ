@@ -13,6 +13,7 @@ export type DatasourceKind =
   | 'mysql'
   | 'trino'
   | 'mssql'
+  | 'athena'
   | 'other';
 
 interface SchemeSpec {
@@ -61,6 +62,13 @@ const SCHEMES: SchemeSpec[] = [
   { prefix: 'trino://', kind: 'trino', source: 'Trino', instance: (rest) => rest },
   // `mssql://host:port` — the OpenLineage SQL Server namespace (#1679).
   { prefix: 'mssql://', kind: 'mssql', source: 'SQL Server', instance: (rest) => rest },
+  // `awsathena://athena.<region>.amazonaws.com` — the OpenLineage Athena namespace (#2131).
+  {
+    prefix: 'awsathena://',
+    kind: 'athena',
+    source: 'Athena',
+    instance: (rest) => rest.replace(/^athena\./, '').replace(/\.amazonaws\.com$/, ''),
+  },
 ];
 
 /** Catalog schemes whose URI has no *database* in it — the host itself is the catalog. */

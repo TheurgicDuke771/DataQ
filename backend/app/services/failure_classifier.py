@@ -56,6 +56,8 @@ _MARKERS: tuple[tuple[FailureCategory, tuple[str, ...]], ...] = (
             "http 403",
             # Trino's client wording for a 401 (#1685).
             "error 401:",
+            # AWS SigV4 service APIs (Athena, Glue): a wrong secret access key (#2131).
+            "invalidsignatureexception",
         ),
     ),
     (
@@ -297,6 +299,8 @@ _AUTH_MARKERS: tuple[str, ...] = (
     "expiredtoken",
     "tokenrefreshrequired",
     "unrecognizedclientexception",
+    # AWS SigV4 service APIs (Athena, Glue) — S3 says "SignatureDoesNotMatch" instead (#2131).
+    "invalidsignatureexception",
     # Trino: the client raises `HttpError("error 401: …")` for any rejected credential —
     # a wrong password, an expired or badly-signed JWT (#1685).
     "error 401:",

@@ -19,6 +19,7 @@ export function targetKind(type: ConnectionType): TargetKind | null {
     case 'mysql':
     case 'trino':
     case 'mssql':
+    case 'athena':
       return 'sql';
     case 'unity_catalog':
       return 'uc';
@@ -91,6 +92,7 @@ export const SCHEMA_BROWSE_TYPES: ReadonlySet<ConnectionType> = new Set([
   'mysql',
   'trino',
   'mssql',
+  'athena',
 ]);
 
 /** Placeholder hints for the SQL target fields, in each engine's own name case. */
@@ -104,6 +106,8 @@ export function sqlTargetPlaceholders(type: ConnectionType | undefined): {
   if (type === 'mysql') return { schema: 'shop', table: 'orders' };
   // Trino reports every name lower case, and only accepts it that way.
   if (type === 'trino') return { schema: 'sales', table: 'orders' };
+  // A Glue database, lower case like every Glue name.
+  if (type === 'athena') return { schema: 'sales', table: 'orders' };
   if (type === 'mssql') return { schema: 'dbo', table: 'Orders' };
   return { schema: 'PUBLIC', table: 'ANALYTICS.ORDERS' };
 }

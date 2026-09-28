@@ -101,6 +101,15 @@ AUTH_ERRORS = [
             "provided token has expired."
         ),
     ),
+    # AWS SigV4 service APIs — Athena, as pyathena raised it live for a wrong secret key (#2131).
+    (
+        "athena_invalid_signature",
+        RuntimeError(
+            "(pyathena.error.DatabaseError) An error occurred (InvalidSignatureException) when "
+            "calling the StartQueryExecution operation: The request signature we calculated does "
+            "not match the signature you provided."
+        ),
+    ),
     # Iceberg REST catalog.
     ("iceberg_rest_401", RuntimeError("Server error: 401 Unauthorized: invalid_client")),
     # Entra service principal (ADLS `service_principal`, #1680) — text as azure-identity raised
