@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "945a71daf676",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2171-uc-mv-internals",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/lineage/warehouse_unity_catalog.py",
+    "backend/tests/lineage/test_warehouse_inventory.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/94/5a71daf676/0/metadata.json",
+      "transcript": "/94/5a71daf676/0/full.jsonl",
+      "compact_transcript": "/94/5a71daf676/0/transcript.jsonl",
+      "content_hash": "/94/5a71daf676/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 26,
+    "cache_creation_tokens": 13336,
+    "cache_read_tokens": 7952954,
+    "output_tokens": 10091,
+    "api_call_count": 13
+  }
+}
