@@ -253,6 +253,21 @@ def test_a_confirmed_denial_clears_pairs_rather_than_freezing_them(
     assert _stored(db_session, sf_connection)[key] == (None, "unavailable")
 
 
+def test_a_failed_view_column_pass_keeps_previously_stored_pairs(
+    db_session: Session, sf_connection: Connection
+) -> None:
+    """#2106 review: the COLUMN-domain pass is refinement like ACCESS_HISTORY, so its own
+    failure (here the column listing) must merge, not clear, pairs a previous refresh stored."""
+    _captured_pull(db_session, sf_connection)
+    _pull(
+        db_session,
+        sf_connection,
+        _gl_orders_conn(raises={"INFORMATION_SCHEMA.COLUMNS": RuntimeError("blip")}),
+    )
+    key = (_sf("RETAIL", "ORDERS_HEADER"), _sf("ANALYTICS_STG", "STG_ORDERS"))
+    assert _stored(db_session, sf_connection)[key][0] == [["CUSTOMER_ID", "CUSTOMER_ID"]]
+
+
 # ─────────────── COLUMN-domain GET_LINEAGE for views / dynamic tables (#2106) ───────────────
 
 _NS = "snowflake://pvqsoeq-zgb34383"
@@ -336,10 +351,10 @@ def test_view_edges_gain_column_pairs_from_column_domain_lineage() -> None:
         },
     )
 
-    (edge,), grain, note = _refine(conn, edges)
+    (edge,), grain, note, complete = _refine(conn, edges)
 
     assert edge.column_pairs == (("ORDER_TOTAL", "REVENUE"),)
-    assert grain == ColumnGrain.CAPTURED and note is None
+    assert grain == ColumnGrain.CAPTURED and note is None and complete is True
     # Only the bare edge's downstream is seeded — never every column in the database.
     assert conn.seeds == ["DATAQ_DB.ANALYTICS.MART_ORDER_REVENUE.REVENUE"]
 
@@ -358,7 +373,7 @@ def test_column_lineage_never_adds_a_table_edge() -> None:
             ]
         },
     )
-    (edge,), _grain, _note = _refine(conn, edges)
+    (edge,), _grain, _note, _complete = _refine(conn, edges)
     assert edge.upstream.name == _V_STG and edge.column_pairs == ()
 
 
@@ -369,7 +384,7 @@ def test_an_edge_that_already_has_pairs_is_not_reseeded() -> None:
         LineageEdgePair(upstream=_id(_V_STG), downstream=_id(_V_MART), column_pairs=(("A", "B"),)),
     )
     conn = _ColumnConn(columns=[("ANALYTICS", "MART_ORDER_REVENUE", "REVENUE")], lineage={})
-    result, _grain, _note = _refine(conn, edges)
+    result, _grain, _note, _complete = _refine(conn, edges)
     assert result == edges and conn.seeds == []
 
 
@@ -380,9 +395,10 @@ def test_the_column_seed_cap_truncates_loudly() -> None:
     conn = _ColumnConn(
         columns=[("ANALYTICS", "MART_ORDER_REVENUE", f"C{i}") for i in range(5)], lineage={}
     )
-    _edges, _grain, note = _refine(conn, edges, cap=2)
+    _edges, _grain, note, complete = _refine(conn, edges, cap=2)
     assert len(conn.seeds) == 2
     assert note is not None and "truncated at 2 column seeds" in note
+    assert complete is False  # a truncated pass must not clear pairs it never re-read
 
 
 def test_failed_column_calls_are_counted_not_fatal() -> None:
@@ -399,9 +415,10 @@ def test_failed_column_calls_are_counted_not_fatal() -> None:
         },
         fail={"DATAQ_DB.ANALYTICS.MART_ORDER_REVENUE.A"},
     )
-    (edge,), _grain, note = _refine(conn, edges)
+    (edge,), _grain, note, complete = _refine(conn, edges)
     assert edge.column_pairs == (("B", "B"),)
     assert note is not None and "1 of 2 column call(s) failed" in note
+    assert complete is False
 
 
 def test_a_zero_cap_disables_the_pass() -> None:
@@ -409,7 +426,7 @@ def test_a_zero_cap_disables_the_pass() -> None:
 
     edges = (LineageEdgePair(upstream=_id(_V_STG), downstream=_id(_V_MART)),)
     conn = _ColumnConn(columns=[("ANALYTICS", "MART_ORDER_REVENUE", "A")], lineage={})
-    result, _grain, _note = _refine(conn, edges, cap=0)
+    result, _grain, _note, _complete = _refine(conn, edges, cap=0)
     assert result == edges and conn.seeds == []
 
 

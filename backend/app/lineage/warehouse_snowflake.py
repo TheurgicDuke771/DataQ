@@ -301,9 +301,10 @@ class SnowflakeLineageProvider:
                 edges, column_grain, column_note, columns_authoritative = (
                     self._refine_with_column_pairs(conn, namespace, database, top.edges)
                 )
-                edges, column_grain, column_note = self._refine_with_column_lineage(
+                edges, column_grain, column_note, complete = self._refine_with_column_lineage(
                     conn, namespace, database, edges, column_grain, column_note
                 )
+                columns_authoritative = columns_authoritative and complete
                 return WarehouseLineageResult(
                     edges=edges,
                     tier=LineageTier.SNOWFLAKE_GET_LINEAGE,
@@ -328,9 +329,10 @@ class SnowflakeLineageProvider:
                     conn, namespace, database, tuple(merged_top.values())
                 )
             )
-            edges, column_grain, column_note = self._refine_with_column_lineage(
+            edges, column_grain, column_note, complete = self._refine_with_column_lineage(
                 conn, namespace, database, edges, column_grain, column_note
             )
+            columns_authoritative = columns_authoritative and complete
             notes = []
             if skipped:
                 notes.append("partial traversal — " + "; ".join(skipped))
@@ -483,7 +485,7 @@ class SnowflakeLineageProvider:
         edges: tuple[LineageEdgePair, ...],
         column_grain: ColumnGrain | None,
         column_note: str | None,
-    ) -> tuple[tuple[LineageEdgePair, ...], ColumnGrain | None, str | None]:
+    ) -> tuple[tuple[LineageEdgePair, ...], ColumnGrain | None, str | None, bool]:
         """COLUMN-domain GET_LINEAGE for the edges ACCESS_HISTORY left without column pairs (#2106).
 
         ACCESS_HISTORY records DML writes only, so a view or dynamic table — the dbt staging and
@@ -491,11 +493,15 @@ class SnowflakeLineageProvider:
         per seed column, bounded by `warehouse_lineage_max_column_seeds` with loud truncation.
         Like the ACCESS_HISTORY pass: refinement only, never a new table edge, never a reason to
         fail the table edges.
+
+        The last element says whether the pass saw every edge it owed an answer. A failed listing,
+        a failed call or a truncation is NOT complete, so the refresh merges rather than clearing
+        pairs an earlier refresh captured (the #1710 rule).
         """
         cap = get_settings().warehouse_lineage_max_column_seeds
         bare = {e.downstream.name for e in edges if not e.column_pairs}
         if cap <= 0 or not bare:
-            return edges, column_grain, column_note
+            return edges, column_grain, column_note, cap > 0
         try:
             columns = conn.execute(
                 text(
@@ -515,6 +521,7 @@ class SnowflakeLineageProvider:
                 edges,
                 column_grain,
                 _join_notes(column_note, "view column lineage unavailable: could not list columns"),
+                False,
             )
         seeds = [
             ".".join(_quote_ident(p) for p in (database, schema, table, column))
@@ -589,7 +596,7 @@ class SnowflakeLineageProvider:
                 notes, f"view column lineage: {failures} of {len(seeds)} column call(s) failed"
             )
         grain = ColumnGrain.CAPTURED if matched else column_grain
-        return tuple(refined), grain, notes
+        return tuple(refined), grain, notes, not (truncated or failures)
 
     @staticmethod
     def _unavailable_reason(exc: Exception, skipped: list[str]) -> str:
