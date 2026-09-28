@@ -1,8 +1,8 @@
 # API compatibility
 
 What DataQ promises to keep working when you upgrade, and how it tells you when something has
-to change. It covers every surface other software builds against: the REST API, the MCP tools,
-the suite export document and the Python client.
+to change. It covers every surface other software builds against: the REST API, the MCP tools
+and the suite export document.
 
 ## Stable surfaces
 
@@ -13,27 +13,25 @@ These are covered by this policy. A change to them follows the rules below.
 | **REST API** (`/api/v1/...`) | Paths, HTTP methods, request fields and their meaning, response fields and their meaning, status codes, and the error envelope (`error.code`, `error.message`). The published [OpenAPI spec](rest-api.md) is the contract. |
 | **MCP tools** (`/mcp`) | Tool names, parameter names and meaning, and the documented fields of each tool's result. |
 | **Suite export document** | The JSON shape `export` produces and `import` accepts, versioned by its top-level `version` field. |
-| **Python client** (`dataq-client`) | The convenience layer (`DataQClient` and its methods, the typed run result) and the `dataq` command line: commands, flags and exit codes. |
 | **Personal access tokens** | The `Authorization: Bearer dq_live_...` scheme. |
 
 ## Not covered
 
 These can change in any release without notice:
 
-- Anything the API marks internal: paths under `/api/v1/_probe/`, and fields or endpoints the
-  OpenAPI spec does not document.
+- The smoke-test probe under `/api/v1/_probe/`. It appears in the OpenAPI spec but is a
+  development hook, not part of the contract.
+- Fields or endpoints the OpenAPI spec does not document.
 - The web UI, its routes and its internal calls.
 - The database schema, task queues, log lines and metric names.
 - The Python modules inside the server image.
 - Error **messages**. Branch on `error.code` (REST) or the error type, never on the wording.
-- The Python client's generated layer beyond what the REST contract already promises: it is
-  regenerated from the spec, so it changes exactly when the spec does.
 
 ## What counts as breaking
 
 A change is **additive** (no notice needed) when an existing client keeps working unchanged:
 
-- a new endpoint, MCP tool, CLI command or flag;
+- a new endpoint or MCP tool;
 - a new **optional** request field or tool parameter;
 - a new response field, or a new value in an enum.
 
@@ -42,7 +40,7 @@ enum value as "other" rather than failing.
 
 A change is **breaking** when an existing, correct client could stop working:
 
-- removing or renaming a path, field, tool, parameter, command, flag or exit code;
+- removing or renaming a path, field, tool or parameter;
 - making an optional request field required, or narrowing what a field accepts;
 - changing a field's type or meaning, or the meaning of a status code;
 - changing the export document's shape without changing its `version`.
@@ -68,15 +66,8 @@ vulnerability open, the change can take effect immediately. It is still announce
 
 The `version` field is the compatibility lever for the suite document:
 
-- A change to the document's shape that an older importer would misread **bumps** `version`.
-  Additive fields do not.
+- **Any** change to the document's shape bumps `version`, an added field included: `import`
+  rejects fields it does not know, so an older server would refuse a document carrying one.
 - `import` refuses a version it does not know, rather than guessing at an older or newer layout.
 - After a bump, the server keeps importing the **previous** version for at least one minor
   release, so documents exported before an upgrade can still be imported after it.
-
-## The Python client's version
-
-`dataq-client` is versioned with DataQ itself: client `1.x.y` is built from server `1.x.y`'s
-spec. A client works against a server of the **same minor version**, and against the next
-minor version for everything that version did not deprecate. Upgrade the client when you
-upgrade the server.
