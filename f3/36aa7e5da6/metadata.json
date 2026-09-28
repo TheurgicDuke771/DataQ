@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "f336aa7e5da6",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1655-snowflake-cortex",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/alembic/versions/ad7ba65e63b2_llm_settings_snowflake_cortex.py",
+    "backend/app/llm/snowflake_cortex.py",
+    "backend/tests/llm/test_snowflake_cortex.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f3/36aa7e5da6/0/metadata.json",
+      "transcript": "/f3/36aa7e5da6/0/full.jsonl",
+      "compact_transcript": "/f3/36aa7e5da6/0/transcript.jsonl",
+      "content_hash": "/f3/36aa7e5da6/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 158,
+    "cache_creation_tokens": 109534,
+    "cache_read_tokens": 17153989,
+    "output_tokens": 54359,
+    "api_call_count": 79
+  }
+}
