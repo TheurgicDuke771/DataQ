@@ -161,4 +161,5 @@ def object_type(raw: object) -> str:
     label = str(raw or "").strip().upper().replace(" ", "_")
     if label in ("MATERIALIZED_VIEW", "DYNAMIC_TABLE", "STREAMING_TABLE", "VIEW"):
         return label.lower()
-    return "table"
+    # Any other view kind (Snowflake SEMANTIC VIEW, UC METRIC_VIEW) is still not a stored table.
+    return "view" if label.endswith("VIEW") else "table"

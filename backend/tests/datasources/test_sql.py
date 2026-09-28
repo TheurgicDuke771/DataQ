@@ -446,6 +446,10 @@ def test_every_part_is_allowlist_checked_before_interpolation(
         ("MATERIALIZED_VIEW", "materialized_view"),
         ("STREAMING_TABLE", "streaming_table"),
         ("view", "view"),
+        # Unlisted view kinds are never passed off as tables.
+        ("SEMANTIC VIEW", "view"),
+        ("METRIC_VIEW", "view"),
+        ("EVENT TABLE", "table"),
         (None, "table"),
     ],
 )
