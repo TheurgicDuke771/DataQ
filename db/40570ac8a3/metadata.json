@@ -1,0 +1,48 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "db40570ac8a3",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-2158-browse-object-type",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/connections.py",
+    "backend/app/datasources/generic_sql.py",
+    "backend/app/datasources/mssql.py",
+    "backend/app/datasources/mysql.py",
+    "backend/app/datasources/postgres.py",
+    "backend/app/datasources/sql.py",
+    "backend/app/datasources/trino.py",
+    "backend/app/lineage/warehouse_unity_catalog.py",
+    "backend/app/mcp/server.py",
+    "backend/app/services/browse_service.py",
+    "backend/tests/api/test_connection_browse.py",
+    "backend/tests/datasources/test_sql.py",
+    "backend/tests/integration/test_mysql_datasource.py",
+    "backend/tests/integration/test_postgres_datasource.py",
+    "backend/tests/integration/test_trino_datasource.py",
+    "backend/tests/lineage/test_warehouse_inventory.py",
+    "backend/tests/mcp/test_mcp_tools.py",
+    "backend/tests/services/test_browse_service.py",
+    "docs/site/guides/datasources-checks.md",
+    "docs/site/reference/openapi.json",
+    "frontend/src/api/connections.ts",
+    "frontend/src/components/suites/DatasourceBrowser.tsx",
+    "frontend/tests/components/DatasourceBrowser.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/db/40570ac8a3/0/metadata.json",
+      "transcript": "/db/40570ac8a3/0/full.jsonl",
+      "compact_transcript": "/db/40570ac8a3/0/transcript.jsonl",
+      "content_hash": "/db/40570ac8a3/0/content_hash.txt",
+      "prompt": "/db/40570ac8a3/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 98,
+    "cache_creation_tokens": 63752,
+    "cache_read_tokens": 19611460,
+    "output_tokens": 32107,
+    "api_call_count": 49
+  }
+}
