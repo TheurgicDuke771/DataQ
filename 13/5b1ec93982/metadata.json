@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "135b1ec93982",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1682-redshift",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/13/5b1ec93982/0/metadata.json",
+      "transcript": "/13/5b1ec93982/0/full.jsonl",
+      "compact_transcript": "/13/5b1ec93982/0/transcript.jsonl",
+      "content_hash": "/13/5b1ec93982/0/content_hash.txt",
+      "prompt": "/13/5b1ec93982/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 168,
+    "cache_creation_tokens": 278219,
+    "cache_read_tokens": 25958026,
+    "output_tokens": 76952,
+    "api_call_count": 84
+  }
+}
