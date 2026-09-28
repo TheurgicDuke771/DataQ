@@ -118,3 +118,16 @@ def test_migration_frozen_resolver_matches_app(
     conn_type: str, config: dict[str, Any], target: dict[str, Any]
 ) -> None:
     assert _app_outcome(conn_type, config, target) == _frozen_outcome(conn_type, config, target)
+
+
+def test_a_sovereign_cloud_account_diverges_from_the_frozen_resolver_on_purpose() -> None:
+    """The assets migration named every ADLS account under the public cloud's host. The app now
+    names a sovereign-cloud account after its own DFS host; no such connection existed when the
+    names moved, so nothing was re-keyed. Parity holds for every other shape above."""
+    config = {"account_url": "https://acct.blob.core.chinacloudapi.cn", "container": "raw"}
+    target = {"path": "a.csv"}
+    frozen_namespace, _ = _FROZEN_RESOLVE("adls_gen2", config, target)
+    assert frozen_namespace == "abfss://raw@acct.dfs.core.windows.net"
+    assert resolve_asset_identity("adls_gen2", config, target).namespace == (
+        "abfss://raw@acct.dfs.core.chinacloudapi.cn"
+    )

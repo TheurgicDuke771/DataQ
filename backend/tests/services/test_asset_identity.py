@@ -197,8 +197,14 @@ def test_adls_account_from_url(account_url: str) -> None:
         ("https://onelake.blob.fabric.microsoft.com", "onelake.dfs.fabric.microsoft.com"),
         ("https://onelake.dfs.fabric.microsoft.com", "onelake.dfs.fabric.microsoft.com"),
         ("https://OneLake.Blob.Fabric.Microsoft.com", "onelake.dfs.fabric.microsoft.com"),
-        # A sovereign cloud keeps the persisted legacy shape — no fork of existing assets.
-        ("https://acct.blob.core.chinacloudapi.cn", "acct.dfs.core.windows.net"),
+        # A sovereign cloud is named after its own DFS host, not the public cloud's (#2129).
+        ("https://acct.blob.core.chinacloudapi.cn", "acct.dfs.core.chinacloudapi.cn"),
+        ("https://acct.dfs.core.usgovcloudapi.net", "acct.dfs.core.usgovcloudapi.net"),
+        ("https://Acct.Blob.Core.ChinaCloudApi.cn", "acct.dfs.core.chinacloudapi.cn"),
+        # A port or a trailing dot never moves an account to a new name.
+        ("https://MyLake.blob.core.windows.net:443", "MyLake.dfs.core.windows.net"),
+        ("https://mylake.blob.core.windows.net.", "mylake.dfs.core.windows.net"),
+        ("https://acct.blob.core.chinacloudapi.cn:443", "acct.dfs.core.chinacloudapi.cn"),
         # Public cloud stays byte-stable with every namespace persisted before #1680.
         ("https://MyLake.blob.core.windows.net", "MyLake.dfs.core.windows.net"),
         # Not `<account>.blob|dfs.<suffix>` at all (an emulator): the legacy shape.
@@ -542,3 +548,19 @@ def test_iceberg_identity_is_stable_across_a_password_rotation() -> None:
         "iceberg", {"catalog_uri": "postgresql://u:NEW_PW@h:5432/cat"}, target
     )
     assert before == after
+
+
+def test_the_same_account_name_in_two_clouds_is_two_assets() -> None:
+    """Public and sovereign accounts share a name space of their own; one name must not merge
+    their assets (#2129)."""
+    namespaces = {
+        resolve_asset_identity(
+            "adls_gen2", {"account_url": url, "container": "raw"}, {"path": "a.csv"}
+        ).namespace
+        for url in (
+            "https://acct.blob.core.windows.net",
+            "https://acct.blob.core.chinacloudapi.cn",
+            "https://acct.blob.core.usgovcloudapi.net",
+        )
+    }
+    assert len(namespaces) == 3
