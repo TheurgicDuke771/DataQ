@@ -19,6 +19,7 @@ from backend.app.db.models import Connection, User
 from backend.app.db.session import get_db
 from backend.app.services import browse_service, credential_health
 from backend.app.services import connection_service as svc
+from backend.app.services.check_service import config_refused_expectation_types
 
 router = APIRouter(tags=["connections"])
 
@@ -138,6 +139,10 @@ class ConnectionRead(ApiModel):
     # connection has been tested at least once (never probed), not "unavailable".
     engine_capabilities: dict[str, Any] | None = None
 
+    # Expectation types refused on this connection because of where it points (#2140) — a
+    # Fabric SQL endpoint's temp-table types. The check editor hides them; the API refuses them.
+    refused_expectation_types: list[str] = Field(default_factory=list)
+
     @classmethod
     def from_model(
         cls, conn: Connection, health: svc.DatasourceHealth | None = None
@@ -168,6 +173,7 @@ class ConnectionRead(ApiModel):
             inventory_sync_zero_since=conn.inventory_sync_zero_since,
             engine_capabilities=conn.engine_capabilities,
             credential_health=CredentialHealthRead.of(conn),
+            refused_expectation_types=config_refused_expectation_types(conn.type, conn.config),
         )
 
 

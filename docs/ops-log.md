@@ -757,13 +757,23 @@ Created in AWS account `251783195294` for the Redshift adapter's live battery. C
 User-approved. Run as `dataq-deploy` in account `251783195294`.
 
 - **Redshift:** workgroup `dataq-it-rs` deleted, then namespace `dataq-it-rs`. This also removed the managed admin secret, every database object, and the workgroup's VPC endpoint `vpce-0da22446686b12238`, which now reads `deleted`. Secret `dataq/it/redshift-reader` was force-deleted.
-- **Network:** the TCP 5439 rule for `103.171.246.179/32` was revoked on `sg-0c047e1aaf5c17416`.
+- **Network:** the TCP 5439 rule for the maintainer's IP (/32) was revoked on `sg-0c047e1aaf5c17416`.
 - **Athena:**
   - IAM user `dataq-athena-it-reader` deleted: its access key, then inline policy `athena-read`, then the user. It had no attached policies.
   - Secret `dataq/it/athena-reader` force-deleted.
   - Glue database `dataq_athena_it` deleted (it had 0 tables); no `dq_athena_*` databases remain.
   - `athena-results/` and `athena-data/` emptied in `dataq-landing-251783195294`, 0 objects left.
 - **Verified:** `list-secrets` shows no `dataq/it/*` and no `dataq-it-rs` secret. Both Redshift resources return not-found.
+
+## 2026-09-28 — temporary Postgres firewall rule for the live Iceberg perf tier (#2088)
+
+User-approved. Needed to reach the harness Iceberg SQL catalog (`iceberg_catalog` on the shared Postgres server) from the maintainer machine. Harness compute stayed stopped.
+
+- **19:15:38Z** — firewall rule `claude-perf-2088` added for the maintainer's IP (/32) only.
+- A throwaway table `dataq_perf.order_lines_1000000` was written to the ADLS warehouse (`iceberg@dataqharness3erlgd`, `warehouse/dataq_perf/`) and measured with 3 repeats.
+- The table was then purged and namespace `dataq_perf` dropped. The leftover (empty) `warehouse/dataq_perf` directory was deleted, and a re-check shows it gone. `retail` is the only namespace left.
+- **19:21:12Z** — rule `claude-perf-2088` deleted. The server's only remaining rule is `allow-azure-services`.
+- Credentials (`conn-iceberg-harness-dev-97324ba4` and `iceberg-catalog-password`) were read inline from Key Vault. They were never printed or written.
 
 ## 2026-09-28 — temporary service-principal secret for the #2127 / #2128 live checks
 
@@ -780,3 +790,4 @@ User-approved (option a). All steps were run with the owner's `az` login.
   - app secret `claude-it-2127` deleted;
   - KV `it-sp-2127` deleted and purged.
   - Verified: the app holds only its original secret, no *Storage Blob Data Reader* assignment is left on the account, and nothing is soft-deleted.
+||||||| 886e64b7

@@ -23,7 +23,8 @@ Environment, per tier:
               optional, for a table the harness did not build (e.g. `samples.tpch`):
               PERF_UC_SUITE_JSON  PERF_UC_ROWS_1M
   Iceberg     PERF_ICEBERG_CATALOG_JSON PERF_ICEBERG_TABLE
-              (optional secret: PERF_ICEBERG_SECRET)
+              (optional secrets: PERF_ICEBERG_SECRET — the storage credential —
+              and PERF_ICEBERG_CATALOG_SECRET, a SQL catalog's password)
 
 The Iceberg *curve* (`--tag iceberg_curve`) needs none of these: it builds a local
 sqlite-catalog warehouse under PERF_DATA_DIR. Generate its fixtures first with
@@ -388,11 +389,18 @@ def _run_unity_catalog(rows: int) -> list[Metric]:
 _ICEBERG_ENV = ("PERF_ICEBERG_CATALOG_JSON", "PERF_ICEBERG_TABLE")
 
 
-def _iceberg_metrics(config: dict[str, Any], secret: str | None, identifier: str) -> list[Metric]:
+def _iceberg_metrics(
+    config: dict[str, Any],
+    secret: str | None,
+    identifier: str,
+    catalog_secret: str | None = None,
+) -> list[Metric]:
     from backend.app.datasources import iceberg as iceberg_mod
 
     runner = iceberg_mod.IcebergCheckRunner(
-        config=iceberg_mod.IcebergConfig.model_validate(config), secret=secret
+        config=iceberg_mod.IcebergConfig.model_validate(config),
+        secret=secret,
+        catalog_secret=catalog_secret,
     )
     specs = _check_specs()
     planned = iceberg_mod.planned_row_count(runner._load_table(identifier))
@@ -418,7 +426,12 @@ def _iceberg_metrics(config: dict[str, Any], secret: str | None, identifier: str
 
 def _run_iceberg_live() -> list[Metric]:
     config = json.loads(os.environ["PERF_ICEBERG_CATALOG_JSON"])
-    return _iceberg_metrics(config, _env("PERF_ICEBERG_SECRET"), os.environ["PERF_ICEBERG_TABLE"])
+    return _iceberg_metrics(
+        config,
+        _env("PERF_ICEBERG_SECRET"),
+        os.environ["PERF_ICEBERG_TABLE"],
+        _env("PERF_ICEBERG_CATALOG_SECRET"),
+    )
 
 
 def _run_iceberg_curve(rows: int) -> list[Metric]:

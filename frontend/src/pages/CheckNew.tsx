@@ -61,7 +61,11 @@ export function CheckNew() {
   });
   const target = state.status === 'ok' ? state.data.suite.target : null;
   const connectionType = state.status === 'ok' ? state.data.connection?.type : undefined;
-  const categories = expectationsByCategoryFor(connectionType);
+  const categories = expectationsByCategoryFor(
+    connectionType,
+    undefined,
+    state.status === 'ok' ? state.data.connection?.refused_expectation_types : undefined,
+  );
 
   const backToSuite = () => navigate(suiteId ? `/suites/${suiteId}` : '/suites');
   const spec = expectationType ? EXPECTATION_BY_TYPE[expectationType] : undefined;
