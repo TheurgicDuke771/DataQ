@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "e6dcb9db9aee",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2129-sovereign-adls-namespace",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/services/asset_identity.py",
+    "backend/tests/services/test_asset_identity.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/e6/dcb9db9aee/0/metadata.json",
+      "transcript": "/e6/dcb9db9aee/0/full.jsonl",
+      "compact_transcript": "/e6/dcb9db9aee/0/transcript.jsonl",
+      "content_hash": "/e6/dcb9db9aee/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12,
+    "cache_creation_tokens": 5193,
+    "cache_read_tokens": 2808818,
+    "output_tokens": 3921,
+    "api_call_count": 6
+  }
+}
