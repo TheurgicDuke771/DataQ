@@ -199,6 +199,71 @@ def test_numpy_datetime64_nat_becomes_none() -> None:
     assert sanitize_json(np.datetime64("NaT", "ns")) is None
 
 
+_DURATIONS = [
+    datetime.timedelta(0),
+    datetime.timedelta(days=1),
+    datetime.timedelta(seconds=1.5),
+    datetime.timedelta(microseconds=1),
+    datetime.timedelta(seconds=-1),
+    datetime.timedelta(days=-1, hours=2),
+    datetime.timedelta(days=401, seconds=3784, microseconds=120000),
+]
+
+
+@pytest.mark.parametrize("duration", _DURATIONS, ids=str)
+def test_every_duration_type_renders_as_pandas_iso_duration(duration: datetime.timedelta) -> None:
+    """np.timedelta64 persisted as a bare int, datetime.timedelta crashed json.dumps, and only
+    pd.Timedelta rendered — as an ISO duration (#1819). All three now read the same."""
+    expected = pd.Timedelta(duration).isoformat()
+    micros = int(duration / datetime.timedelta(microseconds=1))
+    for raw in (
+        duration,
+        pd.Timedelta(duration),
+        np.timedelta64(micros, "us"),
+        np.timedelta64(micros * 1000, "ns"),
+    ):
+        cleaned = sanitize_json({"observed_value": raw})
+        assert cleaned == {"observed_value": expected}, (type(raw).__name__, raw)
+        json.dumps(cleaned, allow_nan=False)
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        np.timedelta64(1500, "ns"),
+        np.timedelta64(1, "ns"),
+        np.timedelta64(-1, "ns"),
+        np.timedelta64(123456789, "ns"),
+        np.timedelta64(90, "m"),
+        np.timedelta64(2, "W"),
+        np.timedelta64(-3, "h"),
+    ],
+    ids=str,
+)
+def test_a_numpy_duration_keeps_its_exact_value(raw: np.timedelta64) -> None:
+    """Narrowing to µs rendered 1 ns as zero and 1500 ns as 1 µs (#1819 review)."""
+    assert sanitize_json(raw) == pd.Timedelta(raw).isoformat()
+
+
+def test_a_duration_beyond_timedelta_range_is_exact_not_wrapped() -> None:
+    # 10**15 s is past datetime.timedelta and pandas' ns range; the old µs cast wrapped it.
+    assert sanitize_json(np.timedelta64(10**15, "s")) == "P11574074074DT1H46M40S"
+
+
+def test_multiple_and_calendar_units_render() -> None:
+    # numpy accepts a multiple-unit string; its stubs do not.
+    assert sanitize_json(np.timedelta64(5, "25ns")) == "P0DT0H0M0.000000125S"  # type: ignore[call-overload]
+    # A year has no fixed length: numpy's average (365.2425 days), never a crash.
+    assert sanitize_json(np.timedelta64(1, "Y")) == "P365DT5H49M12S"
+    assert sanitize_json(np.timedelta64("NaT", "Y")) is None
+
+
+def test_a_duration_key_and_nat_duration() -> None:
+    assert sanitize_json({datetime.timedelta(days=1): 3}) == {"P1DT0H0M0S": 3}
+    assert sanitize_json(np.timedelta64("NaT")) is None
+    assert sanitize_json(np.timedelta64("NaT", "ns")) is None
+
+
 def test_memoryview_becomes_hex() -> None:
     # psycopg-style BYTEA surfaces as memoryview (#1729) — hex, like bytes/bytearray.
     cleaned = sanitize_json({"min_value": memoryview(b"\x01\x02")})
