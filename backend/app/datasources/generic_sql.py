@@ -628,9 +628,12 @@ class GenericSqlCheckRunner:
                     **self._spec.run_engine_options,
                 },
             )
-            asset = datasource.add_table_asset(
-                name=table, table_name=gx_table_name(table), schema_name=gx_schema
-            )
+            if gx_schema is not None and gx_schema != gx_schema.lower():
+                asset = _add_exact_schema_table_asset(datasource, table=table, schema=gx_schema)
+            else:
+                asset = datasource.add_table_asset(
+                    name=table, table_name=gx_table_name(table), schema_name=gx_schema
+                )
             batch_definition = asset.add_batch_definition_whole_table(name="whole_table")
             return run_expectations(
                 context,
@@ -719,6 +722,44 @@ def gx_table_name(table: str) -> str:
     if not is_sql_identifier(table):
         raise ValueError(f"invalid table identifier: {table[:128]!r}")
     return table if table == table.lower() else f'"{table}"'
+
+
+def _add_exact_schema_table_asset(datasource: Any, *, table: str, schema: str) -> Any:
+    """A GX table asset on a mixed-case ``schema``, resolved exactly as spelled (#2137).
+
+    Only engines that cannot scope a session to a schema (SQL Server) hand GX the schema at all.
+    GX lower-cases an unquoted schema — on a case-sensitive catalog (a Fabric Warehouse's) `Sales`
+    then resolves as `sales` — so the schema goes in as a quoted name. GX's own asset check
+    compares the schema against the server's schema names LOWER-CASED, which refuses an exactly
+    cased one on every catalog, so that comparison is skipped; its query half is kept, so a
+    missing table fails here with GX's own message, as it does for any other target.
+    """
+    import sqlalchemy as sa
+    from great_expectations.datasource.fluent.interfaces import TestConnectionError
+    from great_expectations.datasource.fluent.sql_datasource import TableAsset
+    from sqlalchemy.sql.elements import quoted_name
+
+    class _ExactSchemaTableAsset(TableAsset):  # type: ignore[misc]
+        def test_connection(self) -> None:
+            try:
+                with self.datasource.get_engine().connect() as connection:
+                    target = sa.table(self.table_name, schema=self.schema_name)
+                    connection.execute(sa.select(1, target).limit(1))
+            except Exception as query_error:
+                # An error message, not a query.
+                raise TestConnectionError(
+                    f"Attempt to connect to table: {self.qualified_name} failed because the test "  # noqa: S608
+                    "query failed. Ensure the table exists and the user has access to select "
+                    f"data from the table: {query_error}"
+                ) from query_error
+
+    if not is_sql_identifier(schema):
+        raise ValueError(f"invalid schema identifier: {schema[:128]!r}")
+    asset = _ExactSchemaTableAsset(
+        name=table, table_name=gx_table_name(table), schema_name=quoted_name(schema, quote=True)
+    )
+    datasource._add_asset(asset)
+    return asset
 
 
 def _dispose_gx_engine(datasource: Any) -> None:
