@@ -811,3 +811,13 @@ User-approved (§1). Same shape as the #1679 server, which was torn down earlier
   - It is seeded like `dataq_test` (`dbo.Orders`, `Sales.Orders`, `dataq_reader`); the same KV passwords apply.
   - `Sales` was then dropped from `dataq_test`, whose battery assumes `dbo` only.
   - Teardown adds this database.
+
+## 2026-09-28 — Azure SQL test server torn down (#2137 / #2138 / #2141 verified)
+
+This teardown was part of the approved re-provisioning plan. It ran after all three fixes were live-verified on `python-tds` and the ODBC lane.
+
+- **22:50:08Z** — server `dataq-mssql-8ea065` deleted, which also removed databases `dataq_test` and `dataq_cs` and firewall rule `claude-maint-20260928b`.
+- **22:50:36Z** — KV `mssql-test-sqladmin` and `mssql-test-reader` deleted **and purged**.
+- **Verified:**
+  - `az sql server list -g dataq-rg` is empty;
+  - no `mssql-test*` secret remains, active or soft-deleted.
