@@ -713,3 +713,18 @@ All user-approved. Done by Claude, with the owner's `az` login.
 - **Azure SQL:** server `dataq-mssql-645a5b` deleted, which also removed database `dataq_test` and firewall rule `claude-maint-20260928`. `az sql server list -g dataq-rg` is empty. The `Microsoft.Sql` provider stays registered (it has no cost).
 - **Key Vault:** `mssql-test-sqladmin` and `mssql-test-reader` deleted **and purged**; no active or soft-deleted copies remain.
 - **Left in place:** the maintainer-machine ODBC Driver 18 (Homebrew) and its trusted formula. Remove with `brew uninstall msodbcsql18 && odbcinst -u -d -n "ODBC Driver 18 for SQL Server" && brew untrust --formula microsoft/mssql-release/msodbcsql18`.
+
+## 2026-09-28 — Amazon Athena (#2131) live-test resources created in AWS (us-east-2)
+
+Created in AWS account `251783195294` for the Athena adapter's live battery. Creation was run as `dataq-deploy`.
+
+- **IAM:** user `dataq-athena-it-reader`, tagged `purpose=dataq-2131-it`.
+  - Its inline policy `athena-read` allows Athena query and Glue read, S3 read on `dataq-landing-251783195294/athena-data/*`, and S3 write on `…/athena-results/reader/*` only.
+  - **One access key was minted and written straight into Secrets Manager** as `dataq/it/athena-reader` in the same process, so its value was never printed or written to disk.
+- **Glue:** database `dataq_athena_it`, empty. Each battery run creates and drops its own `dq_athena_<hex>` database and deletes its `athena-data/<db>/` prefix.
+- **S3:** prefixes `athena-results/{admin,reader}/` in the existing landing bucket hold Athena's result files.
+- **Teardown (pending, with the AWS wave's):**
+  - delete the IAM user's access key, its inline policy, then the user;
+  - delete the secret `dataq/it/athena-reader` with force-delete;
+  - drop database `dataq_athena_it`;
+  - delete the `athena-results/` and `athena-data/` prefixes.

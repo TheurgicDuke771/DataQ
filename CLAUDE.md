@@ -6,11 +6,11 @@
 
 ## 1. Project summary
 
-**DataQ** is a single-tenant data quality monitoring platform built around Great Expectations (GX Core). It runs DQ checks across **9 datasources** and integrates with **3 orchestration providers**.
+**DataQ** is a single-tenant data quality monitoring platform built around Great Expectations (GX Core). It runs DQ checks across **10 datasources** and integrates with **3 orchestration providers**.
 
 | Layer | Components |
 |---|---|
-| **Datasources (you can write checks against)** | Snowflake (DEV/QA/UAT), ADLS Gen2, AWS S3 **and any S3-compatible store** (MinIO/Ceph/R2/Wasabi/Backblaze, via the optional `endpoint_url` — #1063), Unity Catalog (Databricks), Apache Iceberg (native `pyiceberg` read — ADR 0030), PostgreSQL, MySQL/MariaDB and Trino (any server/cluster, on the engine-generic SQL base — ADR 0045), SQL Server / Azure SQL / Synapse / Fabric SQL (`mssql`, same base — ADR 0044) |
+| **Datasources (you can write checks against)** | Snowflake (DEV/QA/UAT), ADLS Gen2, AWS S3 **and any S3-compatible store** (MinIO/Ceph/R2/Wasabi/Backblaze, via the optional `endpoint_url` — #1063), Unity Catalog (Databricks), Apache Iceberg (native `pyiceberg` read — ADR 0030), PostgreSQL, MySQL/MariaDB and Trino (any server/cluster, on the engine-generic SQL base — ADR 0045), SQL Server / Azure SQL / Synapse / Fabric SQL (`mssql`, same base — ADR 0044), Amazon Athena (`athena`, same base — region + IAM key, every check a billed query, IAM policy as the read-only guarantee) |
 | **Orchestration providers (monitor + trigger only — NOT datasources)** | Azure Data Factory (ADF), Apache Airflow, dbt (ADR 0029) |
 | **Backend** | FastAPI + Celery + Redis + PostgreSQL + Alembic |
 | **Frontend** | React + Vite + Ant Design + Monaco editor (generic OIDC — `oidc-client-ts`) |
@@ -103,7 +103,8 @@ DataQ/
 - Unity Catalog / Databricks
 - Apache Iceberg (native `pyiceberg` read — ADR 0030; engine-registered Iceberg tables also work zero-code under the `snowflake`/`unity_catalog` connections)
 - PostgreSQL — any server, self-hosted or managed (#1678). The first engine on the **engine-generic SQL base** (ADR 0045, `datasources/generic_sql.py` + one `SqlEngineSpec` per engine, registry in `sql_engines.py`): pushdown only, read-only sessions, every SQL capability set derives from `GENERIC_SQL_TYPES`. MySQL/MariaDB (#1684, PyMySQL — never a GPL driver) is the second engine — **never copy the Snowflake adapter**.
-- Trino (#1685, `trino` client; one catalog per connection, TLS `verify-full` or explicit `disable`, no session read-only — access control is the guarantee). Athena is split out (#2131, AWS-gated).
+- Trino (#1685, `trino` client; one catalog per connection, TLS `verify-full` or explicit `disable`, no session read-only — access control is the guarantee).
+- Amazon Athena (#2131, `pyathena`, MIT): the endpoint is derived from the region, the credential an IAM access key (secret key as connect args, never in the URL); a Glue database is the schema. No read-only session — the IAM policy is the guarantee. Every check is a billed Athena query.
 - SQL Server / Azure SQL / Synapse / Fabric SQL (`mssql`, #1679, ADR 0044): `python-tds` by default with DataQ's own SAN validator + named-instance routing fix; Fabric SQL endpoints go through the **optional user-installed ODBC lane** (`driver: odbc`, msodbcsql18 is never shipped in the image).
 - OneLake (Fabric lakehouse files) is not a separate type — an ADLS Gen2 connection with `auth_type: service_principal` pointed at `onelake.blob.fabric.microsoft.com` (#1680).
 - Trino — any cluster (incl. Starburst), one catalog per connection (#1685), the federation multiplier on the same base. **No read-only session exists on Trino** — the Trino user's access control is the guarantee; names must be lower case; password/JWT only over verified TLS. Amazon Athena was split out to #2131.

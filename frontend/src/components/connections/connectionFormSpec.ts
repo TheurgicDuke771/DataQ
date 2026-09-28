@@ -321,6 +321,52 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
     ],
     destinationFields: ['host', 'port', 'sslmode', 'ca_bundle', 'auth_type'],
   },
+  athena: {
+    // Amazon Athena (#2131) on the generic SQL base: the endpoint is the region, the credential an
+    // IAM access key. Every check is a billed query; the IAM policy is the read-only guarantee.
+    textFields: [
+      { name: 'region', label: 'Region', extra: 'e.g. us-east-2 — the endpoint follows from it' },
+      { name: 'access_key_id', label: 'Access key ID' },
+      {
+        name: 'work_group',
+        label: 'Workgroup',
+        optional: true,
+        extra: 'Defaults to primary',
+      },
+      {
+        name: 's3_staging_dir',
+        label: 'Query results location',
+        optional: true,
+        extra:
+          's3://bucket/prefix/ where Athena writes results — optional when the workgroup ' +
+          'enforces its own',
+      },
+      {
+        name: 'catalog',
+        label: 'Data catalog',
+        optional: true,
+        extra: 'Defaults to awsdatacatalog (the Glue catalog)',
+      },
+      {
+        name: 'schema',
+        label: 'Default database',
+        optional: true,
+        extra: 'The Glue database an unqualified run target resolves in (lower case)',
+      },
+      {
+        name: 'inventory_sync',
+        label: 'Inventory sync',
+        type: 'toggle',
+        optional: true,
+        default: true,
+        extra:
+          'Daily sync of every table this key can read into the asset view — each sync is ' +
+          'itself a billed Athena query.',
+      },
+    ],
+    secretLabel: 'Secret access key',
+    destinationFields: ['region', 'work_group', 's3_staging_dir'],
+  },
   mssql: {
     // One engine-generic adapter for anything that speaks SQL Server's TDS protocol (#1679,
     // ADR 0044) — SQL Server, Azure SQL, Synapse, Fabric SQL. TLS is always verified.
