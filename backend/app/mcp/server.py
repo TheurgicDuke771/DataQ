@@ -2952,8 +2952,8 @@ def browse_connection(
 ) -> dict[str, Any]:
     """List what a connection can see, one level at a time, to pick a suite's run target.
 
-    Covers Unity Catalog, the SQL databases and ADLS/S3 — **not Snowflake or
-    Iceberg** (see caveats). Use this before ``update_suite`` sets a target or
+    Covers Unity Catalog, Snowflake, Iceberg, the SQL databases and ADLS/S3. Use
+    this before ``update_suite`` sets a target or
     ``import_suite`` needs one:
     it names the tables or files that exist instead of guessing a
     ``catalog.schema.table`` or a file key, which saves cleanly and then fails
@@ -2961,15 +2961,16 @@ def browse_connection(
 
     Returns one level per call, keyed by ``kind``:
 
-    - **``kind: "tables"``** — Unity Catalog and the SQL databases (PostgreSQL,
-      MySQL/MariaDB, Trino, SQL Server/Azure SQL). No ``catalog`` lists catalogs;
-      a ``catalog`` lists its schemas; ``catalog`` + ``schema`` lists tables.
-      A SQL database connection pins one database, so it has **no catalog
-      level**: start at ``schema`` (omit it to list schemas) and never pass
-      ``catalog``. ``level`` says which of catalog / schema / table the
-      ``entries`` are. At the table level, **entries include views and
-      materialized views alongside base tables**, with no field telling them
-      apart.
+    - **``kind: "tables"``** — Unity Catalog, Snowflake, Iceberg and the SQL
+      databases (PostgreSQL, MySQL/MariaDB, Trino, SQL Server/Azure SQL). On
+      Unity Catalog, no ``catalog`` lists catalogs; a ``catalog`` lists its
+      schemas; ``catalog`` + ``schema`` lists tables. Every other type pins one
+      database, so it has **no catalog level**: start at ``schema`` (omit it to
+      list schemas) and never pass ``catalog``. On Iceberg a "schema" is a
+      top-level **namespace** (nested namespaces are not listed). ``level`` says
+      which of catalog / schema / table the ``entries`` are. At the table level,
+      **entries include views and materialized views alongside base tables**,
+      with no field telling them apart.
     - **``kind: "files"``** — ADLS Gen2 and S3. ``prefix`` is a folder inside the
       connection's own container/bucket (``root``); the result is the
       ``folders`` and ``files`` directly under it, not recursive. A file's
@@ -2985,9 +2986,8 @@ def browse_connection(
       the level, not all of them. The target can still be named explicitly.
     - An entry with **``selectable: false``** is not a plain SQL identifier,
       and DataQ cannot target it; do not pick it.
-    - **Not supported for Snowflake or Iceberg connections** (nor ADF/Airflow/dbt,
-      which are orchestration, not datasources): the call fails and says so. For
-      those, ask the user for the target.
+    - **Not supported for ADF, Airflow or dbt connections**, which are
+      orchestration, not datasources: the call fails and says so.
     - A failure is classified (for example "access denied" or "not found") but
       the driver's own message is withheld.
 

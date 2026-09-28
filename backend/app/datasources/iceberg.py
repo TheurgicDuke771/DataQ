@@ -130,6 +130,15 @@ class IcebergConfig(BaseModel):
         return props
 
 
+def load_iceberg_catalog(
+    config: IcebergConfig, secret: str | None, catalog_secret: str | None = None
+) -> Any:
+    """The connection's pyiceberg catalog (the live seam)."""
+    from pyiceberg.catalog import load_catalog
+
+    return load_catalog(config.catalog_name, **config.catalog_properties(secret, catalog_secret))
+
+
 def load_iceberg_table(
     config: IcebergConfig,
     secret: str | None,
@@ -137,12 +146,7 @@ def load_iceberg_table(
     catalog_secret: str | None = None,
 ) -> Any:
     """Load an Iceberg table by its ``namespace.table`` identifier (the live seam)."""
-    from pyiceberg.catalog import load_catalog
-
-    catalog: Any = load_catalog(
-        config.catalog_name, **config.catalog_properties(secret, catalog_secret)
-    )
-    return catalog.load_table(identifier)
+    return load_iceberg_catalog(config, secret, catalog_secret).load_table(identifier)
 
 
 #: Iceberg is outside `SAMPLING_CAPABLE_TYPES`, so the shared remedy's "set a sampling strategy"

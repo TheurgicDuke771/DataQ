@@ -213,12 +213,95 @@ def test_a_schema_without_a_catalog_is_refused(fake_sql: _FakeConn) -> None:
     assert fake_sql.calls == []
 
 
-@pytest.mark.parametrize("conn_type", ["snowflake", "iceberg", "s3", "adf", "airflow", "dbt"])
-def test_catalog_browse_is_unity_catalog_only(fake_sql: _FakeConn, conn_type: str) -> None:
+@pytest.mark.parametrize("conn_type", ["s3", "adls_gen2", "adf", "airflow", "dbt"])
+def test_catalog_browse_refuses_non_table_types(fake_sql: _FakeConn, conn_type: str) -> None:
     with pytest.raises(BrowseUnsupportedError) as exc:
         _catalog(_conn(conn_type, {}))
     assert exc.value.status_code == 422
     assert fake_sql.calls == []
+
+
+_SF_CONFIG = {"account": "acct", "user": "u", "database": "DB", "warehouse": "WH"}
+_ICE_CONFIG = {"catalog_name": "harness", "catalog_type": "sql", "catalog_uri": "sqlite://"}
+
+
+def test_snowflake_lists_schemas_then_binds_the_schema_for_tables(fake_sql: _FakeConn) -> None:
+    fake_sql.rows = [("RETAIL",), ("ANALYTICS",)]
+    listing = _catalog(_conn("snowflake", _SF_CONFIG), limit=5)
+    assert listing.level == "schema"
+    sql, params = fake_sql.calls[0]
+    assert "INFORMATION_SCHEMA.SCHEMATA" in sql and params == {"lim": 6}
+
+    fake_sql.rows = [("ORDERS",)]
+    listing = _catalog(_conn("snowflake", _SF_CONFIG), schema="RETAIL", limit=5)
+    assert listing.level == "table"
+    assert [e.name for e in listing.entries] == ["ORDERS"]
+    sql, params = fake_sql.calls[1]
+    assert "table_schema = :schema" in sql and "RETAIL" not in sql
+    assert params == {"schema": "RETAIL", "lim": 6}
+
+
+@pytest.mark.parametrize("conn_type", ["snowflake", "iceberg"])
+def test_schema_rooted_types_refuse_a_catalog(fake_sql: _FakeConn, conn_type: str) -> None:
+    with pytest.raises(BrowseInputInvalidError) as exc:
+        _catalog(
+            _conn(conn_type, _SF_CONFIG if conn_type == "snowflake" else _ICE_CONFIG), catalog="X"
+        )
+    assert exc.value.detail == {"field": "catalog"}
+    assert fake_sql.calls == []
+
+
+class _FakeIcebergCatalog:
+    def __init__(self) -> None:
+        self.listed: list[str] = []
+
+    def list_namespaces(self) -> list[tuple[str, ...]]:
+        return [("retail",), ("finance",), ("retail",)]
+
+    def list_tables(self, namespace: str) -> list[tuple[str, ...]]:
+        self.listed.append(namespace)
+        return [(namespace, "purchase_orders"), (namespace, "invoices")]
+
+
+@pytest.fixture
+def fake_iceberg(monkeypatch: pytest.MonkeyPatch) -> _FakeIcebergCatalog:
+    from backend.app.datasources import iceberg
+
+    fake = _FakeIcebergCatalog()
+    monkeypatch.setattr(iceberg, "iceberg_credentials", lambda *_a: (None, None))
+    monkeypatch.setattr(iceberg, "load_iceberg_catalog", lambda *_a: fake)
+    return fake
+
+
+def test_iceberg_lists_top_level_namespaces_then_their_tables(
+    fake_iceberg: _FakeIcebergCatalog,
+) -> None:
+    # No secret_ref: an Iceberg catalog may need none, so browsing must not demand one.
+    conn = _conn("iceberg", _ICE_CONFIG, secret_ref=None)
+    listing = _catalog(conn)
+    assert listing.level == "schema"
+    assert [e.name for e in listing.entries] == ["finance", "retail"]
+
+    listing = _catalog(conn, schema="retail", limit=1)
+    assert listing.level == "table"
+    assert [e.name for e in listing.entries] == ["invoices"]
+    assert listing.truncated is True
+    assert fake_iceberg.listed == ["retail"]
+
+
+def test_an_iceberg_catalog_failure_is_502_without_the_driver_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.app.datasources import iceberg
+
+    def _boom(*_a: Any) -> Any:
+        raise RuntimeError(f"catalog down password={_SECRET}")
+
+    monkeypatch.setattr(iceberg, "iceberg_credentials", lambda *_a: (None, None))
+    monkeypatch.setattr(iceberg, "load_iceberg_catalog", _boom)
+    with pytest.raises(BrowseFailedError) as exc:
+        _catalog(_conn("iceberg", _ICE_CONFIG))
+    assert _SECRET not in f"{exc.value.message} {exc.value.detail}"
 
 
 def test_a_connection_without_a_credential_is_refused(fake_sql: _FakeConn) -> None:

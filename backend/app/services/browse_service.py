@@ -40,7 +40,14 @@ from backend.app.services.profile_service import _open_connection
 
 log = get_logger(__name__)
 
-TABLE_BROWSE_TYPES: Final[frozenset[str]] = frozenset({"unity_catalog", *GENERIC_SQL_TYPES})
+TABLE_BROWSE_TYPES: Final[frozenset[str]] = frozenset(
+    {"unity_catalog", "snowflake", "iceberg", *GENERIC_SQL_TYPES}
+)
+#: Types whose connection pins one database (or catalog): the tree starts at schemas — an Iceberg
+#: namespace plays the schema's part.
+_SCHEMA_ROOTED_TYPES: Final[frozenset[str]] = frozenset(
+    {"snowflake", "iceberg", *GENERIC_SQL_TYPES}
+)
 FILE_BROWSE_TYPES: Final[frozenset[str]] = frozenset({"adls_gen2", "s3"})
 
 DEFAULT_LIMIT: Final = 200
@@ -153,33 +160,42 @@ def browse_catalog(
             detail={"type": connection.type, "supported": sorted(TABLE_BROWSE_TYPES)},
         )
     spec = sql_engine(connection.type)
-    if spec is not None and catalog is not None:
+    schema_rooted = connection.type in _SCHEMA_ROOTED_TYPES
+    if schema_rooted and catalog is not None:
         raise BrowseInputInvalidError(
-            f"a {spec.display_name} connection has no catalog level — browse its schemas",
+            f"a {connection.type} connection has no catalog level — browse its schemas",
             detail={"field": "catalog"},
         )
-    if spec is None and schema is not None and catalog is None:
+    if not schema_rooted and schema is not None and catalog is None:
         raise BrowseInputInvalidError("schema requires a catalog", detail={"field": "schema"})
     catalog = _identifier(catalog, "catalog")
     schema = _identifier(schema, "schema")
-    if not authenticates_without_secret(connection.type, connection.config):
+    # An Iceberg catalog may authenticate by its own catalog secret or not at all.
+    if connection.type != "iceberg" and not authenticates_without_secret(
+        connection.type, connection.config
+    ):
         _require_credential(connection)
     level: Literal["catalog", "schema", "table"]
-    if spec is not None:
+    if schema_rooted:
         level = "schema" if schema is None else "table"
     else:
         level = "catalog" if catalog is None else "schema" if schema is None else "table"
 
     with credential_health.credential_use(session, connection):
         try:
-            with _open_connection(connection, secret_store) as conn:
-                # limit + 1: the extra row is how a full page is told from a complete one.
-                if spec is not None:
-                    names = _generic_sql_names(spec, conn, schema=schema, limit=limit + 1)
-                else:
-                    names = _unity_catalog_names(
-                        conn, catalog=catalog, schema=schema, limit=limit + 1
-                    )
+            # limit + 1: the extra row is how a full page is told from a complete one.
+            if connection.type == "iceberg":
+                names = _iceberg_names(connection, secret_store, schema=schema, limit=limit + 1)
+            else:
+                with _open_connection(connection, secret_store) as conn:
+                    if spec is not None:
+                        names = _generic_sql_names(spec, conn, schema=schema, limit=limit + 1)
+                    elif connection.type == "snowflake":
+                        names = _snowflake_names(conn, schema=schema, limit=limit + 1)
+                    else:
+                        names = _unity_catalog_names(
+                            conn, catalog=catalog, schema=schema, limit=limit + 1
+                        )
         except Exception as exc:
             log.warning(
                 "browse_catalog_failed",
@@ -214,6 +230,50 @@ def _unity_catalog_names(
         table
         for _, _, table in provider.table_rows(conn, limit=limit, catalog=catalog, schema=schema)
     ]
+
+
+def _snowflake_names(conn: Any, *, schema: str | None, limit: int) -> list[str]:
+    """Schemas, then tables and views, of the connection's database — `INFORMATION_SCHEMA` is
+    already filtered to what the role may see."""
+    from sqlalchemy import text
+
+    if schema is None:
+        rows = conn.execute(
+            text(
+                "SELECT schema_name FROM INFORMATION_SCHEMA.SCHEMATA "
+                "WHERE schema_name <> 'INFORMATION_SCHEMA' ORDER BY schema_name LIMIT :lim"
+            ),
+            {"lim": limit},
+        ).all()
+    else:
+        rows = conn.execute(
+            text(
+                "SELECT table_name FROM INFORMATION_SCHEMA.TABLES "
+                "WHERE table_schema = :schema ORDER BY table_name LIMIT :lim"
+            ),
+            {"schema": schema, "lim": limit},
+        ).all()
+    return [str(name) for (name,) in rows if name]
+
+
+def _iceberg_names(
+    connection: Connection, secret_store: SecretStore, *, schema: str | None, limit: int
+) -> list[str]:
+    """Top-level namespaces, then the tables in one — metadata only, no data file is read."""
+    from backend.app.datasources.iceberg import (
+        IcebergConfig,
+        iceberg_credentials,
+        load_iceberg_catalog,
+    )
+
+    config = IcebergConfig.model_validate(connection.config)
+    secret, catalog_secret = iceberg_credentials(config, connection.secret_ref, secret_store)
+    iceberg = load_iceberg_catalog(config, secret, catalog_secret)
+    if schema is None:
+        names = sorted({str(ns[0]) for ns in iceberg.list_namespaces() if ns})
+    else:
+        names = sorted(str(ident[-1]) for ident in iceberg.list_tables(schema))
+    return names[:limit]
 
 
 def _generic_sql_names(
