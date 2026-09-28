@@ -3849,12 +3849,20 @@ def test_every_adls_read_path_authenticates_with_the_service_principal(
     import azure.identity as azid
     import azure.storage.blob as azblob
 
+    from backend.app.datasources import adls
+
+    monkeypatch.setattr(adls, "_token_cache", {})
     credentials: list[tuple[Any, ...]] = []
     clients: list[Any] = []
 
     class _Cred:
         def __init__(self, *args: Any, **_: Any) -> None:
             credentials.append(args)
+
+        def get_token_info(self, *_scopes: str, options: Any = None) -> Any:
+            from azure.core.credentials import AccessTokenInfo
+
+            return AccessTokenInfo("t", 2**31 - 1)
 
         def close(self) -> None:
             pass
@@ -3889,8 +3897,11 @@ def test_every_adls_read_path_authenticates_with_the_service_principal(
         session.blob_service  # noqa: B018 — materialises the session's client
 
     assert [f.path for f in files] == ["p/a.csv"]
-    assert credentials == [("t-1", "c-1", "cs"), ("t-1", "c-1", "cs")]
-    assert all(isinstance(c.credential, _Cred) for c in clients)
+    assert all(isinstance(c.credential, adls._CachedClientSecretCredential) for c in clients)
+    for client in clients:
+        client.credential.get_token_info("https://storage.azure.com/.default")
+    # Both doors authenticate as the same principal, so one token served both (#2127).
+    assert credentials == [("t-1", "c-1", "cs")]
 
 
 def test_preview_budget_clock_starts_at_the_first_object_not_at_client_setup(

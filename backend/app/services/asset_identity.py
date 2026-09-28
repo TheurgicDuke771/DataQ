@@ -126,13 +126,21 @@ def _resolve_adls_gen2(config: dict[str, Any], target: dict[str, Any]) -> AssetI
 def _adls_dfs_authority(host: str, account: str) -> str:
     """The ABFS authority for an ADLS-compatible Blob/DFS ``host``.
 
-    Every Azure Storage host (`<account>.blob|dfs.core.<cloud suffix>`) and anything not in that
-    shape keeps the pre-#1680 `<account>.dfs.core.windows.net` form byte-for-byte — namespaces
-    persisted under it must not fork. Any other ADLS-compatible endpoint (Fabric OneLake's
-    ``onelake.blob.fabric.microsoft.com``) is named after its own DFS host.
+    An endpoint is named after its own DFS host: a sovereign cloud's
+    `<account>.dfs.core.chinacloudapi.cn`, Fabric OneLake's `onelake.dfs.fabric.microsoft.com`.
+    The public cloud (`<account>.blob|dfs.core.windows.net`) and anything not in that shape keep
+    the original `<account>.dfs.core.windows.net` form byte-for-byte, account case included —
+    namespaces persisted under it must not fork. No deployment had a sovereign-cloud connection
+    when its hosts moved off that form (#2129), so none was re-keyed.
     """
-    labels = host.lower().split(".")
-    if len(labels) >= 3 and labels[1] in ("blob", "dfs") and labels[2] != "core":
+    # Labels of the host NAME: a port (`:443`) or a trailing dot must not move a persisted
+    # public-cloud account to a new namespace.
+    labels = re.sub(r":\d+$", "", host).rstrip(".").lower().split(".")
+    if (
+        len(labels) >= 3
+        and labels[1] in ("blob", "dfs")
+        and labels[2:] != ["core", "windows", "net"]
+    ):
         return ".".join([labels[0], "dfs", *labels[2:]])
     return f"{account}.dfs.core.windows.net"
 
