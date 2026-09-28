@@ -201,6 +201,10 @@ def test_adls_account_from_url(account_url: str) -> None:
         ("https://acct.blob.core.chinacloudapi.cn", "acct.dfs.core.chinacloudapi.cn"),
         ("https://acct.dfs.core.usgovcloudapi.net", "acct.dfs.core.usgovcloudapi.net"),
         ("https://Acct.Blob.Core.ChinaCloudApi.cn", "acct.dfs.core.chinacloudapi.cn"),
+        # A port or a trailing dot never moves an account to a new name.
+        ("https://MyLake.blob.core.windows.net:443", "MyLake.dfs.core.windows.net"),
+        ("https://mylake.blob.core.windows.net.", "mylake.dfs.core.windows.net"),
+        ("https://acct.blob.core.chinacloudapi.cn:443", "acct.dfs.core.chinacloudapi.cn"),
         # Public cloud stays byte-stable with every namespace persisted before #1680.
         ("https://MyLake.blob.core.windows.net", "MyLake.dfs.core.windows.net"),
         # Not `<account>.blob|dfs.<suffix>` at all (an emulator): the legacy shape.

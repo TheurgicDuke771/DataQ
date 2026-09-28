@@ -133,7 +133,9 @@ def _adls_dfs_authority(host: str, account: str) -> str:
     namespaces persisted under it must not fork. No deployment had a sovereign-cloud connection
     when its hosts moved off that form (#2129), so none was re-keyed.
     """
-    labels = host.lower().split(".")
+    # Labels of the host NAME: a port (`:443`) or a trailing dot must not move a persisted
+    # public-cloud account to a new namespace.
+    labels = re.sub(r":\d+$", "", host).rstrip(".").lower().split(".")
     if (
         len(labels) >= 3
         and labels[1] in ("blob", "dfs")
