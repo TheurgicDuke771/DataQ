@@ -1,0 +1,3 @@
+<task-notification>
+<summary>Commit security review found: SQL Injection in backend/app/datasources/snowflake_dmf.py</summary>
+</task-notification>

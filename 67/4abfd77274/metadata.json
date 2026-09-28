@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "674abfd77274",
+  "strategy": "manual-commit",
+  "branch": "fix/dqx-backslash-literals",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/datasources/databricks_dqx.py",
+    "backend/tests/datasources/test_databricks_dqx.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/67/4abfd77274/0/metadata.json",
+      "transcript": "/67/4abfd77274/0/full.jsonl",
+      "compact_transcript": "/67/4abfd77274/0/transcript.jsonl",
+      "content_hash": "/67/4abfd77274/0/content_hash.txt",
+      "prompt": "/67/4abfd77274/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 14,
+    "cache_creation_tokens": 9967,
+    "cache_read_tokens": 6425484,
+    "output_tokens": 8254,
+    "api_call_count": 7
+  }
+}
