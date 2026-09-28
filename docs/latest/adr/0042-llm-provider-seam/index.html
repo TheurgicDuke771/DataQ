@@ -2308,6 +2308,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#amendment-2026-09-28-snowflake-cortex-runs-over-a-connection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Amendment (2026-09-28): Snowflake Cortex runs over a connection
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2439,8 +2450,30 @@ completion plus both structured-output modes.</p>
 models (gpt-oss) return <code>message.content</code> as a <strong>list of typed parts</strong> (<code>reasoning</code> and <code>text</code>)
 instead of a string. Only the <code>text</code> parts are the answer; a response with none is a provider
 error, never an empty or reasoning-as-answer result.</p>
-<p>Snowflake Cortex remains the open half of this item: a new wire shape, and the first provider
-whose credential could be a connection's own.</p>
+<h2 id="amendment-2026-09-28-snowflake-cortex-runs-over-a-connection">Amendment (2026-09-28): Snowflake Cortex runs over a connection<a class="headerlink" href="#amendment-2026-09-28-snowflake-cortex-runs-over-a-connection" title="Permanent link">¶</a></h2>
+<p>A third provider, <code>snowflake_cortex</code>, runs <code>SNOWFLAKE.CORTEX.COMPLETE</code> as SQL over an existing
+Snowflake <strong>connection</strong> (<code>llm_settings.connection_id</code>). It has no credential of its own: the
+model runs inside that Snowflake account, under that connection's role and credential.</p>
+<ul>
+<li><strong>SQL, not the Cortex REST API.</strong> Snowflake gates the REST endpoint per account. On the
+  verification account it answered <code>003001 This account is not allowed to access this
+  endpoint</code>, while <code>COMPLETE()</code> worked. The SQL function is available wherever Cortex is.</li>
+<li><strong>The destination-field rule is unaffected.</strong> The credential goes only to the account its
+  connection already reaches, and Cortex holds no key that could be redirected. Switching to
+  Cortex drops the previous provider's key reference; the orphan-secret sweep reclaims the
+  value, so a failed save never strands the old provider without its key.</li>
+<li><strong>Deleting the connection</strong> sets <code>connection_id</code> to NULL (<code>ON DELETE SET NULL</code>). The provider
+  then reports <code>llm_credential_missing</code>, the same state as a purged key.</li>
+<li><strong>Structured output.</strong> <em>Native</em> passes the schema as <code>response_format</code> and reads
+  <code>structured_output[0].raw_message</code>. <em>Prompt-JSON</em> uses the shared repair round. Both
+  re-validate. Cortex's own short refusal reason (unknown or legacy model) is relayed; the
+  driver's message is not.</li>
+<li><strong>Posture.</strong> The outbound-LLM disclosure names Cortex as in-warehouse, with one caveat. An
+  account that enables Cortex cross-region inference may process a prompt in another region.</li>
+</ul>
+<p>Verified live: <code>llama3.1-70b</code> and <code>openai-gpt-4.1</code> passed plain completion plus both
+structured-output modes. A legacy model returned a clean <code>llm_provider_error</code> with Cortex's
+reason.</p>
 
 
 

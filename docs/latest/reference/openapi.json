@@ -5050,6 +5050,18 @@
             "title": "Configured",
             "type": "boolean"
           },
+          "connection_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection Id"
+          },
           "enabled": {
             "default": false,
             "title": "Enabled",
@@ -5137,6 +5149,18 @@
             ],
             "title": "Base Url"
           },
+          "connection_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection Id"
+          },
           "enabled": {
             "default": true,
             "title": "Enabled",
@@ -5149,7 +5173,8 @@
           "provider": {
             "enum": [
               "anthropic",
-              "openai_compatible"
+              "openai_compatible",
+              "snowflake_cortex"
             ],
             "title": "Provider",
             "type": "string"

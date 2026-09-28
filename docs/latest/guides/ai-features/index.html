@@ -2450,6 +2450,11 @@ forwarded if you later change the provider or endpoint — you re-enter it on pu
 <td><code>https://&lt;workspace-host&gt;/serving-endpoints</code></td>
 <td>The model name is the <strong>serving endpoint name</strong> (for example <code>databricks-meta-llama-3-3-70b-instruct</code>), and the API key is a Databricks token. The model then runs inside your Databricks workspace. Llama 3.3 70B and Qwen3 80B work with either structured-output mode. Reasoning models (gpt-oss) spend part of the token budget thinking, so use <em>Prompt-JSON fallback</em> with them.</td>
 </tr>
+<tr>
+<td><strong>Snowflake Cortex</strong></td>
+<td>none — pick a Snowflake connection</td>
+<td>Runs <code>SNOWFLAKE.CORTEX.COMPLETE</code> inside that Snowflake account, under the connection's own role and credential, so there is no API key to enter. The model is a Cortex model name (for example <code>llama3.1-70b</code>). The role needs the <code>SNOWFLAKE.CORTEX_USER</code> database role, and the model must be available in the account's region unless cross-region inference is enabled (which may process the prompt in another region). Deleting the connection leaves the provider reporting a missing credential until you pick another.</td>
+</tr>
 </tbody>
 </table>
 <p><strong>Structured output</strong> decides how DataQ gets JSON back. <em>Native</em> uses the provider's own
