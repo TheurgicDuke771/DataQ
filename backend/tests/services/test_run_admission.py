@@ -203,6 +203,26 @@ def test_a_unity_catalog_frame_suite_reserves_the_frame_byte_cap() -> None:
     assert estimate.bytes == get_settings().run_max_frame_bytes
 
 
+def test_a_lowered_row_cap_keeps_a_small_unity_catalog_reservation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # An operator who lowered the row cap had small reservations that fit beside each other;
+    # reserving the whole frame cap would serialise every one of those runs.
+    monkeypatch.setenv("RUN_MAX_SCAN_ROWS", "100000")
+    get_settings.cache_clear()
+    run, session = _graph(
+        "unity_catalog",
+        target={"catalog": "main", "schema": "gold", "table": "orders"},
+        expectation_types=("expect_column_values_to_be_of_type",),
+    )
+
+    estimate = run_admission.estimate_run_memory(_sess(session), run)
+
+    assert estimate is not None
+    assert estimate.basis == "uc_frame_row_cap"
+    assert estimate.bytes == 100_000 * get_settings().run_admission_row_bytes
+
+
 def test_a_unity_catalog_frame_suite_falls_back_to_the_row_cap_without_a_frame_cap(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

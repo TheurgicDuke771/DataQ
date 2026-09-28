@@ -130,16 +130,16 @@ def _unity_catalog_estimate(
     if not frame_lane_required(types):
         return None
     settings = get_settings()
+    by_rows = settings.run_max_scan_rows * settings.run_admission_row_bytes
     if settings.run_max_frame_bytes > 0:
-        # The runner refuses any frame estimated over this, width included (#2087) — a row
-        # count times a flat per-row cost undercounts a wide table by 2x or more.
+        # The runner refuses any frame estimated over this, width included (#2087). A lowered
+        # row cap still bounds a smaller reservation, though rows alone are width-blind (#2145).
+        if 0 < by_rows < settings.run_max_frame_bytes:
+            return MemoryEstimate(bytes=by_rows, basis="uc_frame_row_cap")
         return MemoryEstimate(bytes=settings.run_max_frame_bytes, basis="uc_frame_byte_cap")
     if settings.run_max_scan_rows <= 0:
         return MemoryEstimate(bytes=0, basis="uc_frame_unbounded", exclusive=True)
-    return MemoryEstimate(
-        bytes=settings.run_max_scan_rows * settings.run_admission_row_bytes,
-        basis="uc_frame_row_cap",
-    )
+    return MemoryEstimate(bytes=by_rows, basis="uc_frame_row_cap")
 
 
 def _iceberg_estimate(
