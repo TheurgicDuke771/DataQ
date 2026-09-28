@@ -790,4 +790,24 @@ User-approved (option a). All steps were run with the owner's `az` login.
   - app secret `claude-it-2127` deleted;
   - KV `it-sp-2127` deleted and purged.
   - Verified: the app holds only its original secret, no *Storage Blob Data Reader* assignment is left on the account, and nothing is soft-deleted.
-||||||| 886e64b7
+
+## 2026-09-28 — Azure SQL free-offer test DB re-created for #2137 / #2138 / #2141
+
+User-approved (§1). Same shape as the #1679 server, which was torn down earlier today.
+
+- **20:28:43Z — logical server `dataq-mssql-8ea065`** (`dataq-rg`, westus2), TLS 1.2 minimum, tag `purpose=dataq-2137-it`.
+  - Entra admin: the owner account.
+  - SQL admin `dataqadmin`; its password was generated straight into KV `mssql-test-sqladmin` and never printed.
+- **Database `dataq_test`**: free offer (`useFreeLimit=true`, `AutoPause` on exhaustion), serverless GP_S_Gen5, local backup redundancy.
+  - **Collation `Latin1_General_100_CS_AS_SC_UTF8`** (case-sensitive), which #2137 needs.
+  - It cannot bill: it pauses when the monthly free allowance runs out.
+- **20:30:00Z — firewall rule `claude-maint-20260928b`**: the maintainer's IP only.
+- **Inside `dataq_test`:**
+  - contained SQL user `dataq_reader`, a `db_datareader` member; its password was generated straight into KV `mssql-test-reader`;
+  - seed tables `dbo.Orders` (the live battery's 4 rows) and `Sales.Orders` (3 rows, the mixed-case schema).
+- **Expected state:** the server and database exist and auto-pause at $0; both KV secrets exist; nothing in prod changed.
+- **Teardown when #2137/#2138 are done:** delete the database, the server and the firewall rule; purge both KV secrets.
+- **21:08:13Z — second free-offer database `dataq_cs`** on the same server. It uses the same data collation plus **`catalogCollation=DATABASE_DEFAULT`**, so object names are case-sensitive, as on a Fabric Warehouse. (`dataq_test`'s catalog kept Azure SQL's default case-insensitive collation, so it resolved `sales.Orders` and could not reproduce #2137.)
+  - It is seeded like `dataq_test` (`dbo.Orders`, `Sales.Orders`, `dataq_reader`); the same KV passwords apply.
+  - `Sales` was then dropped from `dataq_test`, whose battery assumes `dbo` only.
+  - Teardown adds this database.
