@@ -129,6 +129,7 @@ from decimal import Decimal  # noqa: E402
 
 import great_expectations as gx_module  # noqa: E402
 import pandas as pd  # noqa: E402
+import pyarrow as pa  # noqa: E402
 
 from backend.app.core.config import get_settings  # noqa: E402
 from backend.app.datasources import unity_catalog  # noqa: E402
@@ -317,6 +318,19 @@ def test_gx_read_and_monitors_share_one_engine(
         return real_create_engine(db_url)
 
     monkeypatch.setattr(sqlalchemy, "create_engine", _fake_create_engine)
+    # sqlite's cursor has no Arrow fetch; build it from the rows the same cursor returns.
+    monkeypatch.setattr(
+        unity_catalog,
+        "_fetchall_arrow",
+        lambda cursor: pa.table(
+            {
+                d[0]: list(col)
+                for d, col in zip(
+                    cursor.description, zip(*cursor.fetchall(), strict=True), strict=True
+                )
+            }
+        ),
+    )
     runner = UnityCatalogCheckRunner(
         config=UnityCatalogConfig.model_validate(_UC_CONFIG),
         token="tok",
@@ -1980,9 +1994,8 @@ def test_frame_row_bytes_prices_each_sql_type() -> None:
         "flag": types.Boolean(),
         "note": types.String(),
     }
-    # A DECIMAL lands as float64 but costs about twice an integer, so it must not price as one.
     assert unity_catalog.frame_row_bytes(columns, {"note": 10.0}) == (
-        140 + 270 + 140 + 95 + 150 + 90 + (130 + 30)
+        45 + 45 + 45 + 45 + 45 + 15 + (60 + 140)
     )
 
 
@@ -1993,13 +2006,13 @@ def test_frame_row_bytes_unwraps_a_type_decorator() -> None:
         impl = types.DateTime
         cache_ok = True
 
-    assert unity_catalog.frame_row_bytes({"at": _Wrapped()}, {}) == 150
+    assert unity_catalog.frame_row_bytes({"at": _Wrapped()}, {}) == 45
 
 
 def test_an_unknown_type_is_priced_like_text_by_its_sampled_length() -> None:
     from sqlalchemy import types
 
-    assert unity_catalog.frame_row_bytes({"tags": types.JSON()}, {"tags": 40.0}) == 130 + 120
+    assert unity_catalog.frame_row_bytes({"tags": types.JSON()}, {"tags": 40.0}) == 60 + 560
 
 
 def test_the_probe_reflects_types_and_samples_text_lengths() -> None:
@@ -2012,8 +2025,8 @@ def test_the_probe_reflects_types_and_samples_text_lengths() -> None:
     runner = _uc_runner()
     runner._engine = LazyEngine(lambda: engine)
 
-    # id 140 + note (130 + 3 x mean length 6) + an all-NULL column priced at its base.
-    assert _REAL_PROBE_ROW_BYTES(runner, table="t", schema=None) == 140 + 148 + 130
+    # id 45 + note (60 + 14 x mean length 6) + an all-NULL column priced at its base.
+    assert _REAL_PROBE_ROW_BYTES(runner, table="t", schema=None) == 45 + 144 + 60
 
 
 def test_a_wide_table_under_the_row_cap_is_refused_by_the_frame_cap(
@@ -2061,3 +2074,133 @@ def test_a_zero_frame_cap_skips_the_width_probe(monkeypatch: pytest.MonkeyPatch)
     frame, _ = runner._load_frame(table="t", schema="s")
 
     assert len(frame) == 1
+
+
+# ─────────────── Arrow read (#2144) ───────────────
+
+
+def test_arrow_to_frame_widens_numbers_like_the_dbapi_path() -> None:
+    from decimal import Decimal
+
+    table = pa.table(
+        {
+            "ti": pa.array([1, -1], pa.int8()),
+            "i": pa.array([3, -3], pa.int32()),
+            "f": pa.array([1.5, 2.5], pa.float32()),
+            "dec": pa.array([Decimal("12.34"), Decimal("-0.01")], pa.decimal128(18, 2)),
+        }
+    )
+
+    frame = unity_catalog.arrow_to_frame(table)
+
+    assert {c: str(t) for c, t in frame.dtypes.items()} == {
+        "ti": "int64",
+        "i": "int64",
+        "f": "float64",
+        "dec": "float64",
+    }
+    assert frame["dec"].tolist() == [12.34, -0.01]
+
+
+def test_arrow_to_frame_nulls_in_an_integer_column_become_float_nan() -> None:
+    frame = unity_catalog.arrow_to_frame(pa.table({"i": pa.array([3, None], pa.int32())}))
+
+    assert str(frame["i"].dtype) == "float64"
+    assert frame["i"].isna().tolist() == [False, True]
+
+
+def test_arrow_to_frame_parses_dates_and_timestamps_with_pandas_own_conversion() -> None:
+    import datetime as dt
+
+    table = pa.table(
+        {
+            "d": pa.array([dt.date(2026, 1, 2), None], pa.date32()),
+            "ts": pa.array(
+                [dt.datetime(2026, 1, 2, 3, 4, 5, tzinfo=dt.UTC), None],
+                pa.timestamp("us", tz="Etc/UTC"),
+            ),
+            "ntz": pa.array([dt.datetime(2026, 1, 2, 3, 4, 5), None], pa.timestamp("us")),
+        }
+    )
+
+    frame = unity_catalog.arrow_to_frame(table)
+
+    # `read_sql_table` harmonises with exactly these calls, so unit and zone match any pandas.
+    pd.testing.assert_series_equal(
+        frame["d"], pd.to_datetime(pd.Series([dt.date(2026, 1, 2), None], name="d"))
+    )
+    pd.testing.assert_series_equal(
+        frame["ts"],
+        pd.to_datetime(
+            pd.Series([dt.datetime(2026, 1, 2, 3, 4, 5, tzinfo=dt.UTC), None], name="ts"),
+            utc=True,
+        ),
+    )
+    assert frame["ntz"].dt.tz is None
+
+
+def test_arrow_to_frame_keeps_binary_and_nested_values_native() -> None:
+    """pandas 3's `read_sql_table` cast these to `str` — `'[1 2]'` for an array — because the
+    dialect reflects them as String. A check must see the value, not its repr."""
+    table = pa.table(
+        {
+            "bin": pa.array([b"xyz", None], pa.binary()),
+            "arr": pa.array([[1, 2], None], pa.list_(pa.int32())),
+            "st": pa.array([{"a": 1, "b": "x"}, None]),
+        }
+    )
+
+    frame = unity_catalog.arrow_to_frame(table)
+
+    assert frame["bin"].tolist() == [b"xyz", None]
+    assert list(frame["arr"][0]) == [1, 2]
+    assert frame["st"][0] == {"a": 1, "b": "x"}
+
+
+def test_arrow_to_frame_keeps_booleans_and_an_empty_result() -> None:
+    frame = unity_catalog.arrow_to_frame(pa.table({"b": pa.array([True, False])}))
+    assert str(frame["b"].dtype) == "bool"
+
+    empty = unity_catalog.arrow_to_frame(pa.table({"i": pa.array([], pa.int32())}))
+    assert len(empty) == 0 and list(empty.columns) == ["i"]
+
+
+def test_read_table_selects_the_qualified_target_and_releases_the_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    statements: list[str] = []
+    closed: list[str] = []
+
+    class _Cursor:
+        def execute(self, statement: str) -> None:
+            statements.append(statement)
+
+        def close(self) -> None:
+            closed.append("cursor")
+
+    class _Raw:
+        def cursor(self) -> _Cursor:
+            return _Cursor()
+
+        def close(self) -> None:
+            closed.append("connection")
+
+    class _Engine:
+        from sqlalchemy.dialects import sqlite
+
+        dialect = sqlite.dialect()
+
+        def raw_connection(self) -> _Raw:
+            return _Raw()
+
+    runner = _uc_runner()
+    runner._engine = LazyEngine(_Engine)
+    monkeypatch.setattr(
+        unity_catalog, "_fetchall_arrow", lambda _c: pa.table({"id": pa.array([1], pa.int32())})
+    )
+
+    frame = runner._read_table(table="orders", schema="sales")
+
+    assert statements == ["SELECT * FROM main.sales.orders"]
+    assert closed == ["cursor", "connection"]
+    assert frame["id"].tolist() == [1]
