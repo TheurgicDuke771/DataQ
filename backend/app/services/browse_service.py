@@ -246,6 +246,9 @@ def _snowflake_names(conn: Any, *, schema: str | None, limit: int) -> list[str]:
             {"lim": limit},
         ).all()
     else:
+        # A run emits an all-lower-case name unquoted, so Snowflake folds it — browse the same way.
+        if schema == schema.lower():
+            schema = schema.upper()
         rows = conn.execute(
             text(
                 "SELECT table_name FROM INFORMATION_SCHEMA.TABLES "

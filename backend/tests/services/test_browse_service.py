@@ -241,6 +241,14 @@ def test_snowflake_lists_schemas_then_binds_the_schema_for_tables(fake_sql: _Fak
     assert params == {"schema": "RETAIL", "lim": 6}
 
 
+@pytest.mark.parametrize(("given", "bound"), [("retail", "RETAIL"), ("Retail", "Retail")])
+def test_snowflake_folds_a_lower_case_schema_like_a_run_does(
+    fake_sql: _FakeConn, given: str, bound: str
+) -> None:
+    _catalog(_conn("snowflake", _SF_CONFIG), schema=given)
+    assert fake_sql.calls[0][1]["schema"] == bound
+
+
 @pytest.mark.parametrize("conn_type", ["snowflake", "iceberg"])
 def test_schema_rooted_types_refuse_a_catalog(fake_sql: _FakeConn, conn_type: str) -> None:
     with pytest.raises(BrowseInputInvalidError) as exc:
