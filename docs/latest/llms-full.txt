@@ -2232,8 +2232,8 @@ SQL analytics endpoints work on the ODBC lane.
   available**: *Column values unique*, *Compound columns unique*, *Values unique within
   record*, *Column A greater than B*, *Column pair equal*, *Column pair in set* and
   *Multicolumn sum*. Great Expectations evaluates them on SQL Server through a temporary table,
-  which Fabric refuses, so DataQ refuses them when you save the check on a Fabric connection
-  (the editor still lists them — the save explains why). Use custom SQL instead, e.g.
+  which Fabric refuses, so the check editor does not offer them on a Fabric connection, and
+  saving one through the API or MCP is refused with the reason. Use custom SQL instead, e.g.
   `SELECT id FROM {batch} GROUP BY id HAVING COUNT(*) > 1` for uniqueness. A Fabric endpoint's
   first login after it has been idle can take longer than Test Connection's 10 seconds — test
   again; runs wait up to a minute.
