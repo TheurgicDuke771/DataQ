@@ -575,17 +575,21 @@ class LlmSettingsRead(ApiModel):
     #: `POST /admin/llm/test` for a live resolvability check — it reports
     #: `llm_credential_missing` distinctly when the reference is dangling.
     has_credential: bool = False
+    #: `snowflake_cortex`: the Snowflake connection the model runs under (null once deleted).
+    connection_id: UUID | None = None
     updated_at: datetime | None = None
 
 
 class LlmSettingsUpdate(ApiRequestModel):
-    provider: Literal["anthropic", "openai_compatible"]
+    provider: Literal["anthropic", "openai_compatible", "snowflake_cortex"]
     model: str
     base_url: str | None = None
     #: Write-only; omit to keep the stored credential (refused if the destination moved).
     api_key: str | None = None
     structured_output: Literal["native", "prompt_json"] = "native"
     enabled: bool = True
+    #: Required for `snowflake_cortex` (a Snowflake connection), refused otherwise.
+    connection_id: UUID | None = None
 
 
 class LlmTestResponse(ApiModel):
@@ -607,7 +611,12 @@ def _llm_settings_read(row: Any) -> LlmSettingsRead:
         model=row.model,
         structured_output=row.structured_output,
         enabled=row.enabled,
-        has_credential=row.api_key_secret_ref is not None,
+        has_credential=(
+            row.connection_id is not None
+            if row.provider == llm_service.CORTEX_PROVIDER
+            else row.api_key_secret_ref is not None
+        ),
+        connection_id=row.connection_id,
         updated_at=row.updated_at,
     )
 
@@ -635,6 +644,7 @@ def put_llm_settings(
             api_key=payload.api_key,
             structured_output=payload.structured_output,
             enabled=payload.enabled,
+            connection_id=payload.connection_id,
         ),
         actor=current_user,
         secret_store=secret_store,
@@ -664,6 +674,7 @@ def test_llm_settings(
                 api_key=payload.api_key,
                 structured_output=payload.structured_output,
                 enabled=payload.enabled,
+                connection_id=payload.connection_id,
             ),
             secret_store=secret_store,
             actor=current_user,
@@ -858,13 +869,22 @@ def _llm_intelligence_transfer(db: Session) -> ExternalTransfer:
     """The outbound-LLM posture row (ADR 0042): honest in BOTH states."""
     row = llm_service.get_settings_row(db)
     if row is not None and row.enabled:
+        destination = (
+            f"Configured to Snowflake Cortex (model {row.model}), by an admin: the model "
+            "runs inside the Snowflake account of a configured connection, under that "
+            "connection's own credential — no third party, though an account that enables "
+            "Cortex cross-region inference may process the prompt in another region. "
+            if row.provider == llm_service.CORTEX_PROVIDER
+            else f"Configured to a {row.provider} endpoint (model {row.model}), by an "
+            "admin, with the customer's own credential (ADR 0042). "
+        )
         return ExternalTransfer(
             name="llm_intelligence",
             enabled=True,
             detail=(
-                f"The OUTBOUND direction — DataQ calling a model on its own behalf. "
-                f"Configured to a {row.provider} endpoint (model {row.model}), by an "
-                "admin, with the customer's own credential (ADR 0042). SQL-generation "
+                "The OUTBOUND direction — DataQ calling a model on its own behalf. "
+                + destination
+                + "SQL-generation "
                 "and check-suggestion prompts are schema plus masked aggregate "
                 "profiler statistics; root-cause-analysis narratives additionally "
                 "send the triggering check's own observed_value — routed through "
@@ -882,8 +902,13 @@ def _llm_intelligence_transfer(db: Session) -> ExternalTransfer:
             enabled=False,
             detail=(
                 f"The OUTBOUND direction — DataQ calling a model on its own behalf — "
-                f"is CONFIGURED (a {row.provider} endpoint and stored credential "
-                "exist) but disabled, so the feature endpoints refuse. The admin "
+                f"is CONFIGURED (a {row.provider} endpoint"
+                + (
+                    ""
+                    if row.provider == llm_service.CORTEX_PROVIDER
+                    else " with a stored credential"
+                )
+                + ") but disabled, so the feature endpoints refuse. The admin "
                 "test probe can still transmit a fixed test prompt to that "
                 "endpoint — recorded in llm_invocations like any other call. "
                 "Re-enabling is one admin toggle; delete the config to "

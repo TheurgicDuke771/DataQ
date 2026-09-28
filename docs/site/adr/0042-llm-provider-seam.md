@@ -90,5 +90,27 @@ models (gpt-oss) return `message.content` as a **list of typed parts** (`reasoni
 instead of a string. Only the `text` parts are the answer; a response with none is a provider
 error, never an empty or reasoning-as-answer result.
 
-Snowflake Cortex remains the open half of this item: a new wire shape, and the first provider
-whose credential could be a connection's own.
+## Amendment (2026-09-28): Snowflake Cortex runs over a connection
+
+A third provider, `snowflake_cortex`, runs `SNOWFLAKE.CORTEX.COMPLETE` as SQL over an existing
+Snowflake **connection** (`llm_settings.connection_id`). It has no credential of its own: the
+model runs inside that Snowflake account, under that connection's role and credential.
+
+- **SQL, not the Cortex REST API.** Snowflake gates the REST endpoint per account. On the
+  verification account it answered `003001 This account is not allowed to access this
+  endpoint`, while `COMPLETE()` worked. The SQL function is available wherever Cortex is.
+- **The destination-field rule is unaffected.** The credential goes only to the account its
+  connection already reaches, and Cortex holds no key that could be redirected. Switching to
+  Cortex deletes the previous provider's stored key rather than keeping an unused credential.
+- **Deleting the connection** sets `connection_id` to NULL (`ON DELETE SET NULL`). The provider
+  then reports `llm_credential_missing`, the same state as a purged key.
+- **Structured output.** *Native* passes the schema as `response_format` and reads
+  `structured_output[0].raw_message`. *Prompt-JSON* uses the shared repair round. Both
+  re-validate. Cortex's own short refusal reason (unknown or legacy model) is relayed; the
+  driver's message is not.
+- **Posture.** The outbound-LLM disclosure names Cortex as in-warehouse, with one caveat. An
+  account that enables Cortex cross-region inference may process a prompt in another region.
+
+Verified live: `llama3.1-70b` and `openai-gpt-4.1` passed plain completion plus both
+structured-output modes. A legacy model returned a clean `llm_provider_error` with Cortex's
+reason.

@@ -32,6 +32,7 @@ forwarded if you later change the provider or endpoint — you re-enter it on pu
 | **Anthropic** | leave blank | Native structured output. |
 | **OpenAI-compatible** | required | Azure OpenAI (`…/openai/v1`), AWS Bedrock, vLLM, TGI, **Ollama** (`http://host:11434/v1`). |
 | **Databricks model serving** (as OpenAI-compatible) | `https://<workspace-host>/serving-endpoints` | The model name is the **serving endpoint name** (for example `databricks-meta-llama-3-3-70b-instruct`), and the API key is a Databricks token. The model then runs inside your Databricks workspace. Llama 3.3 70B and Qwen3 80B work with either structured-output mode. Reasoning models (gpt-oss) spend part of the token budget thinking, so use *Prompt-JSON fallback* with them. |
+| **Snowflake Cortex** | none — pick a Snowflake connection | Runs `SNOWFLAKE.CORTEX.COMPLETE` inside that Snowflake account, under the connection's own role and credential, so there is no API key to enter. The model is a Cortex model name (for example `llama3.1-70b`). The role needs the `SNOWFLAKE.CORTEX_USER` database role, and the model must be available in the account's region unless cross-region inference is enabled (which may process the prompt in another region). Deleting the connection leaves the provider reporting a missing credential until you pick another. |
 
 **Structured output** decides how DataQ gets JSON back. *Native* uses the provider's own
 schema or tool-calling support; *Prompt-JSON fallback* embeds the schema in the prompt and

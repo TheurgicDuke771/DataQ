@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import contextlib
 import uuid
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
 from sqlalchemy import update
 
 from backend.app.core.secrets import SecretStoreUnavailableError
-from backend.app.db.models import LlmInvocation, User
+from backend.app.db.models import AuditEvent, Connection, LlmInvocation, User
 from backend.app.llm.base import (
     LLMCredentialMissingError,
     LLMNotConfiguredError,
@@ -17,6 +19,7 @@ from backend.app.llm.base import (
     LLMSecretStoreUnavailableError,
     LLMUnavailableError,
 )
+from backend.app.llm.snowflake_cortex import CortexProvider
 from backend.app.services import llm_service
 from backend.tests.support.fake_secret_store import FakeSecretStore
 
@@ -816,3 +819,178 @@ def test_suite_delete_keeps_the_invocation_record(db_session: Any, admin: User) 
     row = db_session.get(LlmInvocation, invocation.id)
     assert row is not None  # the cost/audit record outlives the suite
     assert row.suite_id is None
+
+
+# ── snowflake_cortex (#1655) ─────────────────────────────────────────────────
+
+
+def _connection(db_session: Any, admin: User, conn_type: str = "snowflake") -> Connection:
+    conn = Connection(
+        id=uuid.uuid4(),
+        name=f"sf-{uuid.uuid4().hex[:6]}",
+        type=conn_type,
+        env="dev",
+        config={"account": "acct", "user": "u", "warehouse": "WH", "database": "DB"},
+        secret_ref=f"conn-{uuid.uuid4().hex[:8]}",
+        created_by=admin.id,
+    )
+    db_session.add(conn)
+    db_session.commit()
+    return conn
+
+
+def _cortex(connection_id: uuid.UUID | None, **overrides: Any) -> llm_service.LlmSettingsDraft:
+    fields: dict[str, Any] = {
+        "provider": "snowflake_cortex",
+        "model": "llama3.1-70b",
+        "base_url": None,
+        "connection_id": connection_id,
+    }
+    return _draft(**{**fields, **overrides})
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"connection_id": None},
+        {"base_url": "https://elsewhere.example"},
+        {"api_key": "sk-1"},
+    ],
+)
+def test_cortex_needs_a_connection_and_no_key_or_url(
+    db_session: Any, admin: User, overrides: dict[str, Any]
+) -> None:
+    conn = _connection(db_session, admin)
+    draft = _cortex(overrides.pop("connection_id", conn.id), **overrides)
+    with pytest.raises(llm_service.LLMConfigInvalidError):
+        llm_service.save_settings(
+            db_session, draft=draft, actor=admin, secret_store=FakeSecretStore()
+        )
+
+
+def test_cortex_refuses_a_non_snowflake_connection(db_session: Any, admin: User) -> None:
+    conn = _connection(db_session, admin, conn_type="postgres")
+    with pytest.raises(llm_service.LLMConfigInvalidError, match="Snowflake connection"):
+        llm_service.save_settings(
+            db_session, draft=_cortex(conn.id), actor=admin, secret_store=FakeSecretStore()
+        )
+
+
+def test_a_connection_is_refused_on_a_key_based_provider(db_session: Any, admin: User) -> None:
+    conn = _connection(db_session, admin)
+    with pytest.raises(llm_service.LLMConfigInvalidError, match="snowflake_cortex only"):
+        llm_service.save_settings(
+            db_session,
+            draft=_draft(connection_id=conn.id),
+            actor=admin,
+            secret_store=FakeSecretStore(),
+        )
+
+
+def test_switching_to_cortex_drops_the_previous_providers_key(db_session: Any, admin: User) -> None:
+    store = FakeSecretStore()
+    row = llm_service.save_settings(
+        db_session, draft=_draft(api_key="sk-1"), actor=admin, secret_store=store
+    )
+    old_ref = row.api_key_secret_ref
+    conn = _connection(db_session, admin)
+
+    # No re-supplied key: Cortex sends none, so the destination rule has nothing to guard.
+    row = llm_service.save_settings(
+        db_session, draft=_cortex(conn.id), actor=admin, secret_store=store
+    )
+
+    assert (row.provider, row.connection_id, row.api_key_secret_ref) == (
+        "snowflake_cortex",
+        conn.id,
+        None,
+    )
+    assert old_ref not in store.data
+    events = db_session.query(AuditEvent).filter(AuditEvent.action == "llm_setting.update").all()
+    (cortex_event,) = [e for e in events if e.after["provider"] == "snowflake_cortex"]
+    assert cortex_event.after["connection_id"] == str(conn.id)
+
+
+def test_cortex_runs_on_the_connections_own_credential(
+    db_session: Any, admin: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.app.services import profile_service
+
+    conn = _connection(db_session, admin)
+    store = FakeSecretStore()
+    assert conn.secret_ref is not None
+    store.set(conn.secret_ref, "pat-value")
+    llm_service.save_settings(db_session, draft=_cortex(conn.id), actor=admin, secret_store=store)
+    opened: list[tuple[Any, str]] = []
+
+    @contextlib.contextmanager
+    def _open(connection: Any, secret_store: Any) -> Iterator[Any]:
+        opened.append((connection.id, secret_store.get(connection.secret_ref)))
+        raise RuntimeError("stop before any SQL")
+        yield
+
+    monkeypatch.setattr(profile_service, "_open_connection", _open)
+    provider = llm_service.build_provider(db_session, store)
+    assert isinstance(provider, CortexProvider)
+    with pytest.raises(RuntimeError, match="stop before any SQL"):
+        provider.complete("hi")
+    assert opened == [(conn.id, "pat-value")]
+
+
+def test_deleting_the_cortex_connection_reads_as_a_missing_credential(
+    db_session: Any, admin: User
+) -> None:
+    conn = _connection(db_session, admin)
+    llm_service.save_settings(
+        db_session, draft=_cortex(conn.id), actor=admin, secret_store=FakeSecretStore()
+    )
+    db_session.commit()
+    db_session.delete(conn)
+    db_session.commit()
+    db_session.expire_all()
+
+    row = llm_service.get_settings_row(db_session)
+    assert row is not None and row.connection_id is None  # ON DELETE SET NULL
+    with pytest.raises(LLMCredentialMissingError, match="was deleted"):
+        llm_service.build_provider(db_session, FakeSecretStore())
+
+
+def test_a_cortex_connection_whose_secret_is_gone_is_a_missing_credential(
+    db_session: Any, admin: User
+) -> None:
+    conn = _connection(db_session, admin)
+    llm_service.save_settings(
+        db_session, draft=_cortex(conn.id), actor=admin, secret_store=FakeSecretStore()
+    )
+    with pytest.raises(LLMCredentialMissingError, match="Snowflake connection's credential"):
+        llm_service.build_provider(db_session, FakeSecretStore())
+
+
+def test_test_settings_probes_cortex_and_records_the_call(
+    db_session: Any, admin: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    conn = _connection(db_session, admin)
+    seen: list[Any] = []
+
+    def _fake(connection: Any, secret_store: Any, **_kw: Any) -> _FakeProvider:
+        seen.append(connection.id)
+        return _FakeProvider()
+
+    monkeypatch.setattr(llm_service, "_cortex_provider", _fake)
+    out = llm_service.test_settings(
+        db_session, draft=_cortex(conn.id), secret_store=FakeSecretStore(), actor=admin
+    )
+    assert out["ok"] is True and seen == [conn.id]
+    (invocation,) = db_session.query(LlmInvocation).filter_by(kind="ping").all()
+    assert invocation.status == "succeeded"
+
+
+def test_test_settings_reports_a_cortex_connection_without_its_secret(
+    db_session: Any, admin: User
+) -> None:
+    conn = _connection(db_session, admin)
+    out = llm_service.test_settings(
+        db_session, draft=_cortex(conn.id), secret_store=FakeSecretStore(), actor=admin
+    )
+    assert (out["ok"], out["error_code"]) == (False, "llm_credential_missing")
+    assert db_session.query(LlmInvocation).filter_by(kind="ping").count() == 0

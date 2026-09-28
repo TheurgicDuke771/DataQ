@@ -2,7 +2,7 @@ import { api } from './client';
 
 /** Admin-only outbound-LLM provider config (issue #1511, ADR 0042). */
 
-export type LlmProvider = 'anthropic' | 'openai_compatible';
+export type LlmProvider = 'anthropic' | 'openai_compatible' | 'snowflake_cortex';
 export type StructuredOutputMode = 'native' | 'prompt_json';
 
 export interface LlmConfig {
@@ -17,6 +17,8 @@ export interface LlmConfig {
    *  or recreated out from under a saved config. `testLlmConfig` is the live resolvability
    *  check — it reports `llm_credential_missing` distinctly when the reference is dangling. */
   has_credential: boolean;
+  /** `snowflake_cortex`: the Snowflake connection the model runs under (null once deleted). */
+  connection_id: string | null;
   updated_at: string | null;
 }
 
@@ -29,6 +31,8 @@ export interface LlmConfigUpdate {
   api_key?: string;
   structured_output: StructuredOutputMode;
   enabled: boolean;
+  /** Required for `snowflake_cortex`; refused for every other provider. */
+  connection_id?: string;
 }
 
 export type LlmTestErrorCode =

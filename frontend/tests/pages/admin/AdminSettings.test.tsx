@@ -41,6 +41,7 @@ const LLM_CONFIG: LlmConfig = {
   structured_output: null,
   enabled: false,
   has_credential: false,
+  connection_id: null,
   updated_at: null,
 };
 

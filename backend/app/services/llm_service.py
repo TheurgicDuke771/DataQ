@@ -17,7 +17,8 @@ import hashlib
 import json
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -35,6 +36,7 @@ from backend.app.core.secrets import (
 from backend.app.db.models import (
     LLM_PROVIDERS,
     LLM_STRUCTURED_OUTPUT_MODES,
+    Connection,
     LlmInvocation,
     LlmSetting,
     User,
@@ -51,6 +53,7 @@ from backend.app.llm.base import (
     LLMUnavailableError,
 )
 from backend.app.llm.openai_compat import OpenAICompatProvider
+from backend.app.llm.snowflake_cortex import CortexProvider
 from backend.app.services import audit_service
 
 log = get_logger(__name__)
@@ -66,6 +69,9 @@ _SETTINGS_ROW_ID = 1
 _DETAIL_MAX_CHARS = 4096
 
 
+CORTEX_PROVIDER = "snowflake_cortex"
+
+
 class LLMConfigInvalidError(DataQError):
     status_code = 422
     code = "llm_config_invalid"
@@ -79,6 +85,8 @@ class LlmSettingsDraft:
     api_key: str | None = None
     structured_output: str = "native"
     enabled: bool = True
+    #: `snowflake_cortex` only — the Snowflake connection the model runs under.
+    connection_id: uuid.UUID | None = None
 
 
 def get_settings_row(session: Session) -> LlmSetting | None:
@@ -101,10 +109,26 @@ def _validate_draft(draft: LlmSettingsDraft) -> None:
     if draft.provider == "anthropic":
         if draft.base_url and not draft.base_url.startswith("https://"):
             problems.append("anthropic base_url must be https")
+    if draft.provider == CORTEX_PROVIDER:
+        if draft.connection_id is None:
+            problems.append("connection_id is required for snowflake_cortex")
+        if draft.base_url or draft.api_key is not None:
+            problems.append(
+                "snowflake_cortex uses its connection's credential — no base_url or api_key"
+            )
+    elif draft.connection_id is not None:
+        problems.append("connection_id applies to snowflake_cortex only")
     if draft.api_key == "":
         problems.append("api_key must be non-empty when supplied")
     if problems:
         raise LLMConfigInvalidError("; ".join(problems))
+
+
+def _cortex_connection(session: Session, connection_id: uuid.UUID) -> Connection:
+    connection = session.get(Connection, connection_id)
+    if connection is None or connection.type != "snowflake":
+        raise LLMConfigInvalidError("connection_id must name a Snowflake connection")
+    return connection
 
 
 def save_settings(
@@ -120,9 +144,11 @@ def save_settings(
     already holding it.
     """
     _validate_draft(draft)
+    if draft.connection_id is not None:
+        _cortex_connection(session, draft.connection_id)
     row = get_settings_row(session)
     before = audit_service.snapshot("llm_setting", row) if row is not None else None
-    if row is not None and draft.api_key is None:
+    if row is not None and draft.api_key is None and draft.provider != CORTEX_PROVIDER:
         destination_moved = (draft.provider, draft.base_url) != (row.provider, row.base_url)
         if destination_moved and row.api_key_secret_ref is not None:
             raise LLMConfigInvalidError(
@@ -143,6 +169,11 @@ def save_settings(
     row.model = draft.model
     row.structured_output = draft.structured_output
     row.enabled = draft.enabled
+    row.connection_id = draft.connection_id
+    if draft.provider == CORTEX_PROVIDER and row.api_key_secret_ref is not None:
+        # Cortex holds no key: drop the previous provider's rather than keep an unused credential.
+        _delete_secret_best_effort(secret_store, row.api_key_secret_ref)
+        row.api_key_secret_ref = None
     if draft.api_key is not None:
         ref = row.api_key_secret_ref or f"{_SECRET_REF_PREFIX}-{uuid.uuid4().hex[:12]}"
         secret_store.set(ref, draft.api_key)
@@ -163,6 +194,13 @@ def save_settings(
     return row
 
 
+def _delete_secret_best_effort(secret_store: SecretStore, ref: str) -> None:
+    try:
+        secret_store.delete(ref)
+    except Exception as exc:  # the orphan sweep reclaims it; the save must not fail on it
+        log.warning("llm_secret_delete_failed", error_type=type(exc).__name__)
+
+
 def _require_row(row: LlmSetting | None, *, require_enabled: bool) -> None:
     """Shared `llm_not_configured` gate for `build_provider` and `create_invocation`
     (#1848) — same error code either way (callers branch on the code, not the
@@ -179,7 +217,9 @@ def _require_row(row: LlmSetting | None, *, require_enabled: bool) -> None:
         )
 
 
-def _resolve_provider_api_key(secret_store: SecretStore, secret_ref: str) -> str:
+def _resolve_provider_api_key(
+    secret_store: SecretStore, secret_ref: str, *, what: str = "the API key"
+) -> str:
     """Read the provider's stored credential, mapping a store failure to a typed,
     actionable DataQError (#1849) — never the raw store exception (which surfaced
     to a poller as `internal: SecretNotFoundError`, and never the secret ref/name
@@ -190,7 +230,7 @@ def _resolve_provider_api_key(secret_store: SecretStore, secret_ref: str) -> str
     except SecretNotFoundError as exc:
         raise LLMCredentialMissingError(
             "the LLM provider credential could not be read — a workspace admin must "
-            "re-enter the API key"
+            f"re-enter {what}"
         ) from exc
     except SecretStoreUnavailableError as exc:
         raise LLMSecretStoreUnavailableError(
@@ -204,6 +244,18 @@ def build_provider(
     row = get_settings_row(session)
     _require_row(row, require_enabled=require_enabled)
     assert row is not None  # _require_row raised otherwise  # nosec B101
+    if row.provider == CORTEX_PROVIDER:
+        if row.connection_id is None:
+            raise LLMCredentialMissingError(
+                "the Snowflake connection the Cortex provider ran on was deleted — a workspace "
+                "admin must choose another"
+            )
+        return _cortex_provider(
+            session.get(Connection, row.connection_id),
+            secret_store,
+            model=row.model,
+            structured_output=row.structured_output,
+        )
     api_key = (
         _resolve_provider_api_key(secret_store, row.api_key_secret_ref)
         if row.api_key_secret_ref is not None
@@ -216,6 +268,55 @@ def build_provider(
         structured_output=row.structured_output,
         api_key=api_key,
     )
+
+
+def _cortex_provider(
+    connection: Connection | None,
+    secret_store: SecretStore,
+    *,
+    model: str,
+    structured_output: str,
+) -> CortexProvider:
+    if connection is None or connection.secret_ref is None:
+        raise LLMCredentialMissingError(
+            "the Cortex provider's Snowflake connection has no credential — a workspace admin "
+            "must choose another connection"
+        )
+    secret = _resolve_provider_api_key(
+        secret_store, connection.secret_ref, what="the Snowflake connection's credential"
+    )
+    # A detached copy: the provider may outlive the session that loaded the row.
+    target = Connection(
+        id=connection.id,
+        type=connection.type,
+        config=dict(connection.config),
+        secret_ref=connection.secret_ref,
+    )
+
+    @contextmanager
+    def _open() -> Iterator[Any]:
+        from backend.app.services.profile_service import _open_connection
+
+        with _open_connection(target, _ResolvedSecret(secret)) as conn:
+            yield conn
+
+    return CortexProvider(model=model, open_connection=_open, structured_output=structured_output)
+
+
+class _ResolvedSecret:
+    """A one-secret store: the credential was already read (and its failure mapped) above."""
+
+    def __init__(self, secret: str) -> None:
+        self._secret = secret
+
+    def get(self, name: str) -> str:
+        return self._secret
+
+    def set(self, name: str, value: str) -> None:
+        raise NotImplementedError
+
+    def delete(self, name: str) -> None:
+        raise NotImplementedError
 
 
 def _provider_from(
@@ -246,6 +347,19 @@ def test_settings(
     same rule `save_settings` enforces.
     """
     _validate_draft(draft)
+    if draft.provider == CORTEX_PROVIDER:
+        assert draft.connection_id is not None  # _validate_draft  # nosec B101
+        connection = _cortex_connection(session, draft.connection_id)
+        try:
+            provider: LLMProvider = _cortex_provider(
+                connection,
+                secret_store,
+                model=draft.model,
+                structured_output=draft.structured_output,
+            )
+        except (LLMCredentialMissingError, LLMSecretStoreUnavailableError) as exc:
+            return {"ok": False, "error_code": exc.code, "error": exc.message}
+        return _probe(session, provider, draft=draft, actor=actor)
     api_key = draft.api_key
     if api_key is None:
         row = get_settings_row(session)
@@ -287,6 +401,12 @@ def test_settings(
         # branches above: an invocation row here would misrepresent a call
         # that never happened (#1784 review).
         return {"ok": False, "error_code": exc.code, "error": exc.message}
+    return _probe(session, provider, draft=draft, actor=actor)
+
+
+def _probe(
+    session: Session, provider: LLMProvider, *, draft: LlmSettingsDraft, actor: User
+) -> dict[str, Any]:
     # #1773: this IS a genuine outbound round-trip (a fixed, non-data test
     # prompt, but a real call against the admin's chosen — possibly draft,
     # possibly not-yet-`enabled` — endpoint), so it gets the same audit row
