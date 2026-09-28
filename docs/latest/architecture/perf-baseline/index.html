@@ -4434,9 +4434,12 @@ Snowflake ramp above.</p>
   the first 5,000 rows, so the cap is 5,000 and the summary reads exactly the
   rows it read before.
   <strong>Residual:</strong> an <code>observed_value</code> that is itself a list (the distinct-values
-  expectations) is still bounded only at capture, and a custom-SQL check is the
-  user's own statement — GX reads at most 200 rows of it, but the warehouse-side
-  cost of the query is theirs. On the frame lanes, two costs survive the result
+  expectations) is still bounded only at capture. A custom-SQL check's COUNT is
+  the user's own statement and its warehouse cost is theirs. The row sample GX
+  also sends is DataQ's, so it now carries <code>LIMIT 200</code> in SQL. Measured on both
+  warehouses: 400,000 rows produced → 200 on Unity Catalog, and 34,680 → 200 on
+  Snowflake, with the COUNT unchanged. T-SQL keeps GX's client-side bound only,
+  since it rejects an <code>ORDER BY</code> inside a derived table. On the frame lanes, two costs survive the result
   format because they are inside GX: the boolean-mask filter copies the failing
   subset of the frame per failing check, and with an identifier column configured
   the full locator list is still assembled before it is sliced. A widely-failing
