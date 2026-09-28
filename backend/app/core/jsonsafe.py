@@ -83,6 +83,8 @@ _NS_PER: dict[str, int] = {
 }
 _TIMEDELTA64_UNIT = re.compile(r"timedelta64\[(\d*)(\w+)\]")
 _DATETIME64_UNIT = re.compile(r"datetime64\[(\d*)(\w+)\]")
+#: Units finer than a nanosecond, as divisors down to one.
+_SUB_NS: dict[str, int] = {"ps": 10**3, "fs": 10**6, "as": 10**9}
 _EPOCH = datetime.datetime(1970, 1, 1)
 
 
@@ -90,12 +92,17 @@ def _datetime64_iso(raw: Any) -> str:
     """``pd.Timestamp(raw).isoformat()``, computed from Python ints so no precision is lost: nine
     fraction digits when there are nanoseconds, six when there are only microseconds."""
     match = _DATETIME64_UNIT.fullmatch(raw.dtype.name)
-    if match is None or match.group(2) not in _NS_PER:
-        # Calendar units (months, years) start on an exact second.
-        raw = raw.astype("datetime64[s]")
-        match = _DATETIME64_UNIT.fullmatch(raw.dtype.name)
-        assert match is not None  # nosec B101
-    total = int(raw.view("i8")) * int(match.group(1) or 1) * _NS_PER[match.group(2)]
+    if match is not None and match.group(2) in _SUB_NS:
+        # Finer than a nanosecond (ps/fs/as): floored to whole nanoseconds, pd.Timestamp's finest.
+        count = int(raw.view("i8")) * int(match.group(1) or 1)
+        total = count // _SUB_NS[match.group(2)]
+    else:
+        if match is None or match.group(2) not in _NS_PER:
+            # Calendar units (months, years) start on an exact second.
+            raw = raw.astype("datetime64[s]")
+            match = _DATETIME64_UNIT.fullmatch(raw.dtype.name)
+            assert match is not None  # nosec B101
+        total = int(raw.view("i8")) * int(match.group(1) or 1) * _NS_PER[match.group(2)]
     seconds, nanos = divmod(total, 10**9)
     try:
         moment = _EPOCH + datetime.timedelta(seconds=seconds)

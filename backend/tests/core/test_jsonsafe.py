@@ -393,6 +393,11 @@ def test_datetime64_edges() -> None:
     # A unit with a multiplier (10 ms), which pd.Timestamp itself refuses.
     ten_ms = np.datetime64(123, "10ms")  # type: ignore[call-overload]
     assert sanitize_json(ten_ms) == "1970-01-01T00:00:01.230000"
+    # Finer than a nanosecond: floored to whole nanoseconds, never cast to seconds (review).
+    femto = np.datetime64(1234567890123, "fs")
+    assert sanitize_json(femto) == "1970-01-01T00:00:00.001234567"
+    atto = np.datetime64(1234567, "as")
+    assert sanitize_json(atto) == "1970-01-01T00:00:00"
     # Day and coarser units stay dates, as they have always been persisted.
     assert sanitize_json(np.datetime64("2026-09-20", "D")) == "2026-09-20"
     assert sanitize_json(np.datetime64("2026-09", "M")) == "2026-09-01"
