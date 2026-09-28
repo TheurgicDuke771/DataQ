@@ -1079,10 +1079,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#browsing-for-a-run-target-unity-catalog-postgresql-mysql-trino-adls-gen2-s3" class="md-nav__link">
+  <a href="#browsing-for-a-run-target" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Browsing for a run target (Unity Catalog, PostgreSQL, MySQL, Trino, ADLS Gen2, S3)
+        Browsing for a run target
       
     </span>
   </a>
@@ -2754,10 +2754,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#browsing-for-a-run-target-unity-catalog-postgresql-mysql-trino-adls-gen2-s3" class="md-nav__link">
+  <a href="#browsing-for-a-run-target" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Browsing for a run target (Unity Catalog, PostgreSQL, MySQL, Trino, ADLS Gen2, S3)
+        Browsing for a run target
       
     </span>
   </a>
@@ -3578,14 +3578,14 @@ expectation can sit side by side, so the label is per check, not per run.</p>
 <h2 id="author-a-check">Author a check<a class="headerlink" href="#author-a-check" title="Permanent link">¶</a></h2>
 <ol>
 <li>Create (or open) a <strong>suite</strong> and point it at a <strong>target</strong> — a table (Snowflake/UC/PostgreSQL), a
-   file/path or batch pattern (ADLS/S3), or an Iceberg <code>namespace.table</code>. On Unity Catalog,
-   PostgreSQL, ADLS Gen2 and S3 you can <strong>browse</strong> for it instead of typing it — see below.</li>
+   file/path or batch pattern (ADLS/S3), or an Iceberg <code>namespace.table</code>. On every datasource
+   you can <strong>browse</strong> for it instead of typing it — see below.</li>
 <li><strong>Add check</strong> opens a dedicated page (<code>/suites/&lt;id&gt;/checks/new</code>): pick a <strong>category</strong>,
    then the check type, then fill its config. The authoring paths:</li>
 </ol>
-<h3 id="browsing-for-a-run-target-unity-catalog-postgresql-mysql-trino-adls-gen2-s3">Browsing for a run target (Unity Catalog, PostgreSQL, MySQL, Trino, ADLS Gen2, S3)<a class="headerlink" href="#browsing-for-a-run-target-unity-catalog-postgresql-mysql-trino-adls-gen2-s3" title="Permanent link">¶</a></h3>
-<p>The suite form offers a picker beside the target fields; typing the target still works
-everywhere, and is the only way on Snowflake and Iceberg.</p>
+<h3 id="browsing-for-a-run-target">Browsing for a run target<a class="headerlink" href="#browsing-for-a-run-target" title="Permanent link">¶</a></h3>
+<p>The suite form offers a picker beside the target fields on every datasource; typing the
+target still works everywhere.</p>
 <ul>
 <li><strong>Unity Catalog — Browse catalog…</strong> lists catalogs, then the chosen catalog's schemas,
   then that schema's tables; picking a table fills <strong>Catalog</strong>, <strong>Schema</strong> and <strong>Table</strong>.
@@ -3598,7 +3598,13 @@ everywhere, and is the only way on Snowflake and Iceberg.</p>
   with. There is no catalog level: the connection pins one database. <strong>MySQL / MariaDB</strong>
   works the same way, its schemas being the databases the user has privileges on, and
   <strong>Trino</strong> inside the connection's catalog, listing what the cluster's access control
-  lets the user see.</li>
+  lets the user see. <strong>SQL Server / Azure SQL</strong> likewise, inside the connection's database.</li>
+<li><strong>Snowflake — Browse schemas…</strong> lists the schemas of the connection's database, then a
+  schema's tables and views, from that database's <code>INFORMATION_SCHEMA</code> — already filtered
+  to what the connection's role can see.</li>
+<li><strong>Iceberg — Browse schemas…</strong> lists the catalog's top-level namespaces, then a namespace's
+  tables, and fills <strong>Namespace</strong> and <strong>Table</strong>. It reads catalog metadata only, never a data
+  file. Nested namespaces are not listed — type a nested one in.</li>
 <li><strong>ADLS Gen2 / S3 — Browse files…</strong> (single-file mode) walks the folders of the
   connection's one container or bucket and fills <strong>File path</strong> with the file you pick.
   <strong>Browse folders…</strong> (batch mode) fills <strong>Prefix</strong> with the folder you are in.</li>
