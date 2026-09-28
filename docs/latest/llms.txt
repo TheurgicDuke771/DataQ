@@ -38,6 +38,7 @@ lists which).
 ## Reference
 
 - [Reference](https://theurgicduke771.github.io/DataQ/docs/latest/reference/index.md): Look-up pages. Complete rather than narrative.
+- [API compatibility](https://theurgicduke771.github.io/DataQ/docs/latest/reference/api-compatibility/index.md): What DataQ promises to keep working when you upgrade, and how it tells you when something has
 - [Changelog](https://theurgicduke771.github.io/DataQ/docs/latest/reference/changelog/index.md): Notable, user-facing changes. Dates are the release/merge date. This is a curated summary —
 - [Check types](https://theurgicduke771.github.io/DataQ/docs/latest/reference/check-types/index.md): Every kind of check DataQ can author, generated from the check editor's catalog and the
 - [Feature matrix](https://theurgicduke771.github.io/DataQ/docs/latest/reference/feature-matrix/index.md): One-page reference: what runs where. For the readable tour of everything DataQ offers see
