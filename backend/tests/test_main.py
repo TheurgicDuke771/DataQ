@@ -161,6 +161,29 @@ def test_every_api_endpoint_has_summary_and_tags() -> None:
     assert not missing, "endpoints missing Swagger metadata:\n" + "\n".join(missing)
 
 
+def test_every_schema_has_a_unique_plain_name() -> None:
+    """Two response models with one class name make FastAPI fall back to module-path schema names
+    (`backend__app__api__v1__…`): an internal path in the public spec, and one the generated
+    Python client cannot turn into a class, so it silently drops every model using it (#1829)."""
+    names = app.openapi()["components"]["schemas"]
+    assert not [name for name in names if "__" in name]
+
+
+def test_every_operation_id_is_unique() -> None:
+    """The operationId is the handler name and the generated client's function name (#1829); two
+    handlers with one name would collide in both."""
+    from collections import Counter
+
+    ids = [
+        operation["operationId"]
+        for operations in app.openapi()["paths"].values()
+        for operation in operations.values()
+        if isinstance(operation, dict) and "operationId" in operation
+    ]
+    assert [name for name, count in Counter(ids).items() if count > 1] == []
+    assert "trigger_suite_run" in ids
+
+
 # ───────────────── readiness vs liveness (#748) ─────────────────
 #
 # The 2026-07-10 incident: a queued ACCESS EXCLUSIVE lock blocked every reader for

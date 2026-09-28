@@ -319,7 +319,7 @@ class QueueDepthRead(ApiModel):
     depth: int
 
 
-class CredentialHealthRead(ApiModel):
+class AdminCredentialHealthRead(ApiModel):
     """One datasource connection's stored-credential health (#1697).
 
     `status="unknown"` — never `healthy` — means the credential has not been used
@@ -359,7 +359,7 @@ class AdminHealthRead(ApiModel):
     beat: BeatHealthRead
     queues: list[QueueDepthRead] | None
     queues_error: str | None
-    credentials: list[CredentialHealthRead]
+    credentials: list[AdminCredentialHealthRead]
     generated_at: datetime
 
 
@@ -410,7 +410,7 @@ def get_workspace_health(db: Annotated[Session, Depends(get_db)]) -> AdminHealth
     )
 
     credentials = [
-        CredentialHealthRead(
+        AdminCredentialHealthRead(
             connection_id=row.connection_id,
             name=row.name,
             type=row.type,

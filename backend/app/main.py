@@ -135,6 +135,9 @@ _docs = docs_kwargs(get_settings())
 app = FastAPI(
     title="DataQ API",
     lifespan=_lifespan,
+    # The OpenAPI operationId is the handler's name, which is the generated Python client's function
+    # name (#1829): `trigger_suite_run`, not `…_api_v1_suites__suite_id__run_post`.
+    generate_unique_id_function=lambda route: route.name,
     docs_url=_docs["docs_url"],
     redoc_url=_docs["redoc_url"],
     openapi_url=_docs["openapi_url"],
