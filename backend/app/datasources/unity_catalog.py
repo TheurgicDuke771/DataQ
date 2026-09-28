@@ -313,8 +313,10 @@ def arrow_to_frame(table: Any) -> Any:
     """The frame `pd.read_sql_table` builds from the same rows, without its per-cell objects.
 
     Integers widen to int64 and floats/decimals to float64, as the DBAPI path's coercion does;
-    dates and timestamps go through the same `pd.to_datetime` its harmonisation calls, so the
-    unit and timezone match whichever pandas is installed. BINARY and nested types stay native.
+    timestamps go through the same `pd.to_datetime` its harmonisation calls, so the unit and
+    timezone match whichever pandas is installed. DATE stays an Arrow date, as on the Parquet
+    and Iceberg frame lanes (#2151): as datetime64, a date bound errored and a date value set
+    failed every row. BINARY and nested types stay native.
     """
     import pandas as pd
     import pyarrow as pa
@@ -323,10 +325,12 @@ def arrow_to_frame(table: Any) -> Any:
     columns: dict[str, Any] = {}
     for field, column in zip(table.schema, table.columns, strict=True):
         kind = field.type
-        if pa.types.is_date(kind) or pa.types.is_timestamp(kind):
-            objects = column.to_pandas(date_as_object=True, timestamp_as_object=True)
-            utc = pa.types.is_timestamp(kind) and kind.tz is not None
-            columns[field.name] = pd.to_datetime(objects, errors="coerce", utc=utc)
+        if pa.types.is_date(kind):
+            columns[field.name] = column.to_pandas(types_mapper=pd.ArrowDtype)
+            continue
+        if pa.types.is_timestamp(kind):
+            objects = column.to_pandas(timestamp_as_object=True)
+            columns[field.name] = pd.to_datetime(objects, errors="coerce", utc=kind.tz is not None)
             continue
         if pa.types.is_integer(kind) and kind != pa.int64():
             column = pc.cast(column, pa.int64())
