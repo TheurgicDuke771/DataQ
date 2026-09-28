@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "611a7a2bdd02",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-2095-frame-value-signal",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/tests/datasources/test_gx_frame_locator_bound.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/61/1a7a2bdd02/0/metadata.json",
+      "transcript": "/61/1a7a2bdd02/0/full.jsonl",
+      "compact_transcript": "/61/1a7a2bdd02/0/transcript.jsonl",
+      "content_hash": "/61/1a7a2bdd02/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 3106,
+    "cache_read_tokens": 2621485,
+    "output_tokens": 2409,
+    "api_call_count": 4
+  }
+}
