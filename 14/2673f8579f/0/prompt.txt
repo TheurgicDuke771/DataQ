@@ -1,0 +1,9 @@
+Continue #2144: read scratchpad/results_arrow.jsonl, recalibrate the UC per-type cell costs, then commit, PR, /code-review.
+
+---
+
+Hey, how is it going? how many pending dependencies? how many we closed so far? Is there any new issues opened that is also dependend on aws/az/sf/databricks?
+
+---
+
+CI completed for #2169
