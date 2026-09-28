@@ -106,7 +106,12 @@ def _run_sql(
     return outcome.checks[0]
 
 
-def _run_frame(frame: pd.DataFrame, *, index_columns: list[str] | None = _INDEX_COLUMNS) -> Any:
+def _run_frame(
+    frame: pd.DataFrame,
+    *,
+    index_columns: list[str] | None = _INDEX_COLUMNS,
+    gate: Any = None,
+) -> Any:
     context = gx.get_context(mode="ephemeral")
     asset = context.data_sources.add_pandas(name="p").add_dataframe_asset(name="t")
     batch_definition = asset.add_batch_definition_whole_dataframe(name="wd")
@@ -117,6 +122,7 @@ def _run_frame(frame: pd.DataFrame, *, index_columns: list[str] | None = _INDEX_
         name="frame",
         batch_parameters={"dataframe": frame},
         index_columns=index_columns,
+        value_signal_gate=gate,
     )
     return outcome.checks[0]
 
@@ -169,9 +175,12 @@ def test_sql_lane_masks_the_same_column_the_frame_lane_masks(
     assert summary[_TESTED]["n"] == _HARMLESS_LEAD + _EMAILS
     assert summary[_TESTED]["email_count"] == _EMAILS
 
+    # Both directions now (#2095): with no identifier column the frame lane classifies from the
+    # population too, so it no longer disagrees with the SQL lane.
+    frame_check = _run_frame(_frame(), index_columns=index_columns, gate=_always)
+    frame_redacted, frame_state, frame_columns = _redacted(frame_check)
+    assert (state, columns) == (frame_state, frame_columns)
     if index_columns:
-        frame_redacted, frame_state, frame_columns = _redacted(_run_frame(_frame()))
-        assert (state, columns) == (frame_state, frame_columns)
         assert redacted["unexpected_index_list"] == frame_redacted["unexpected_index_list"]
 
 
@@ -476,3 +485,54 @@ def test_any_numeric_unexpected_count_opens_the_gate(count: Any) -> None:
 def test_non_numeric_or_capped_count_keeps_the_gate_shut(count: Any) -> None:
     outcome = CheckOutcome(_IN_SET, success=False, sample_failures={"unexpected_count": count})
     assert gx_runner._needs_population_signal(_CHECK, outcome, None, _always) is False
+
+
+# ─────────────── frame lanes with no identifier column (#2095) ───────────────
+
+
+def test_a_frame_lane_without_an_identifier_column_classifies_from_the_population() -> None:
+    """With no identifier column GX hands a frame lane bare row labels, so it had no summary and
+    classified from the 20 capped values — all harmless here, the 480 emails after them unseen
+    — while Snowflake masked the same data. The population now comes off the in-memory frame."""
+    check = _run_frame(_frame(), index_columns=None, gate=_always)
+
+    sample = check.sample_failures
+    assert sample is not None
+    summary = sample[VALUE_SIGNAL_SUMMARY_KEY][_TESTED]
+    assert summary["n"] == _HARMLESS_LEAD + _EMAILS
+    assert summary["email_count"] == _EMAILS
+    redacted, _state, _ = _redacted(check)
+    assert "walk-in" not in str(redacted)
+
+
+def test_a_frame_lane_reuses_the_labels_it_already_has(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The main run already returned up to 5,000 failing row labels; a second validator pass to
+    get them again would double the pandas work on a large in-memory table."""
+
+    def _no_second_pass(*_a: Any, **_k: Any) -> Any:
+        raise AssertionError("a frame lane must not build a population validator")
+
+    monkeypatch.setattr(gx_runner, "_batch_validator", _no_second_pass)
+    check = _run_frame(_frame(), index_columns=None, gate=_always)
+    assert check.sample_failures is not None
+    assert VALUE_SIGNAL_SUMMARY_KEY in check.sample_failures
+
+
+def test_a_failed_frame_lookup_keeps_the_sample_and_says_so(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reading the population must cost only the summary, never the run: the capped sample
+    stays and the marker records the fallback. (Duplicate column names never reach here — GX
+    errors the check itself on them.)"""
+
+    def _boom(_rows: Any) -> Any:
+        raise ValueError("cannot read the population")
+
+    monkeypatch.setattr(gx_runner, "_value_signal_summary_by_column", _boom)
+    with capture_logs() as logs:
+        check = _run_frame(_frame(), index_columns=None)
+    assert check.errored is False
+    sample = check.sample_failures
+    assert sample is not None and sample[VALUE_SIGNAL_STATUS_KEY] == VALUE_SIGNAL_SAMPLE_FAILED
+    assert "partial_unexpected_list" in sample
+    assert any(e["event"] == "gx_value_signal_sample_failed" for e in logs)

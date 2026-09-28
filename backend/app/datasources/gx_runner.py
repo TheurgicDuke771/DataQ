@@ -158,8 +158,38 @@ def _locator_rows(result: dict[str, Any]) -> tuple[bool, Any]:
     return False, None
 
 
-def _extract_sample_failures(result: dict[str, Any]) -> dict[str, Any] | None:
-    """Copy the failing-row keys out of a GX result, bounded to `SAMPLE_ROW_CAP` (#1196)."""
+def _label_value_signal(labels: Any, *, frame: Any, column: Any) -> dict[str, Any]:
+    """The population summary for a frame lane with no identifier column (#2095).
+
+    GX has already returned up to `_FRAME_PARTIAL_UNEXPECTED_COUNT` failing row LABELS; the
+    tested column's values for them are read off the frame already in memory, so the frame lane
+    classifies the same population the SQL lanes query for. A failed lookup keeps the capped
+    sample and says so, never silently and never failing the run.
+    """
+    if not isinstance(labels, list) or len(labels) <= SAMPLE_ROW_CAP:
+        return {}
+    if not isinstance(column, str) or column not in frame.columns:
+        return {}
+    try:
+        values = frame.loc[labels[:_VALUE_SIGNAL_SUMMARY_ROW_CAP], column].tolist()
+        summary = _value_signal_summary_by_column([{column: value} for value in values])
+    except Exception as exc:
+        log.warning(
+            "gx_value_signal_sample_failed", column_lookup=True, error_type=type(exc).__name__
+        )
+        return {VALUE_SIGNAL_STATUS_KEY: VALUE_SIGNAL_SAMPLE_FAILED}
+    return {VALUE_SIGNAL_SUMMARY_KEY: summary} if summary else {}
+
+
+def _extract_sample_failures(
+    result: dict[str, Any], *, frame: Any = None, column: Any = None
+) -> dict[str, Any] | None:
+    """Copy the failing-row keys out of a GX result, bounded to `SAMPLE_ROW_CAP` (#1196).
+
+    ``frame`` is the in-memory table on a frame lane (``None`` on the SQL lanes), used to read
+    the tested ``column`` for the failing row labels GX returns when there is no identifier
+    column (#2095).
+    """
     sample: dict[str, Any] = {}
     for key in _SAMPLE_KEYS:
         if key == _INDEX_LIST_KEY:
@@ -171,6 +201,8 @@ def _extract_sample_failures(result: dict[str, Any]) -> dict[str, Any] | None:
         else:
             continue
         if key == "unexpected_index_list" and not _is_identifier_index_list(value):
+            if frame is not None:
+                sample.update(_label_value_signal(value, frame=frame, column=column))
             continue
         # Fires on the FRAME lanes only: the SQL lanes' locator list is capped at
         # `_SQL_PARTIAL_UNEXPECTED_COUNT` (== SAMPLE_ROW_CAP, and GX's SQL locator query LIMITs
@@ -441,7 +473,9 @@ def _in_submission_order(results: list[Any]) -> list[Any]:
     return [result for _, result in indexed]
 
 
-def to_suite_outcome(gx_result: Any, checks: Sequence[CheckSpec] | None = None) -> SuiteOutcome:
+def to_suite_outcome(
+    gx_result: Any, checks: Sequence[CheckSpec] | None = None, *, frame: Any = None
+) -> SuiteOutcome:
     """Map a GX ExpectationSuiteValidationResult onto our GX-agnostic DTO.
 
     ``checks`` are the submitted specs, matched to results by their ``dataq_index`` marker.
@@ -464,7 +498,9 @@ def to_suite_outcome(gx_result: Any, checks: Sequence[CheckSpec] | None = None) 
                 success=bool(check_result.success),
                 observed_value=observed,
                 expected_value=_expected_value(config.kwargs, spec) if config.kwargs else None,
-                sample_failures=_extract_sample_failures(detail),
+                sample_failures=_extract_sample_failures(
+                    detail, frame=frame, column=(config.kwargs or {}).get("column")
+                ),
                 errored=errored,
                 error_message=error_message,
             )
@@ -496,7 +532,7 @@ def _execute(
     result = validation_definition.run(
         batch_parameters=batch_parameters, result_format=result_format
     )
-    return to_suite_outcome(result, checks)
+    return to_suite_outcome(result, checks, frame=(batch_parameters or {}).get("dataframe"))
 
 
 def _is_sql_batch(batch_definition: Any) -> bool:
