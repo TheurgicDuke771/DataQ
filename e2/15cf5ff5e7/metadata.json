@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "e215cf5ff5e7",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-2128-dbt-adls-service-principal",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/ops-log.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/e2/15cf5ff5e7/0/metadata.json",
+      "transcript": "/e2/15cf5ff5e7/0/full.jsonl",
+      "compact_transcript": "/e2/15cf5ff5e7/0/transcript.jsonl",
+      "content_hash": "/e2/15cf5ff5e7/0/content_hash.txt",
+      "prompt": "/e2/15cf5ff5e7/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 22,
+    "cache_creation_tokens": 11484,
+    "cache_read_tokens": 5717120,
+    "output_tokens": 7668,
+    "api_call_count": 11
+  }
+}
