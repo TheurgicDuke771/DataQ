@@ -442,7 +442,7 @@ def test_the_live_iceberg_tier_forwards_both_secrets(monkeypatch: pytest.MonkeyP
     must forward it separately from the storage credential."""
     seen: dict[str, Any] = {}
 
-    def capture(config: Any, secret: Any, identifier: Any, catalog_secret: Any = None) -> list:
+    def capture(config: Any, secret: Any, identifier: Any, catalog_secret: Any = None) -> list[Any]:
         seen.update(secret=secret, identifier=identifier, catalog_secret=catalog_secret)
         return []
 
