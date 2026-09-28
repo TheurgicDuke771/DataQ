@@ -9,6 +9,7 @@ import great_expectations.expectations as gxe
 import pytest
 
 from backend.app.datasources import monitors
+from backend.app.datasources.databricks_dqx import DQX_EXPECTATION_TYPES
 from backend.app.datasources.gx_runner import _expectation_class_name
 from backend.app.datasources.snowflake_dmf import DMF_EXPECTATION_TYPES
 from backend.app.services.custom_sql import CUSTOM_SQL_EXPECTATION_TYPE, QUERY_KEY
@@ -31,7 +32,8 @@ def _expectations() -> list[dict[str, Any]]:
     return [
         e
         for e in _catalog()
-        if e["kind"] == "expectation" and e["type"] not in DMF_EXPECTATION_TYPES
+        if e["kind"] == "expectation"
+        and e["type"] not in (*DMF_EXPECTATION_TYPES, *DQX_EXPECTATION_TYPES)
     ]
 
 
@@ -276,3 +278,14 @@ def test_no_backend_mapping_is_missing_from_the_catalog() -> None:
     orphan_kinds = set(check_dimension._BY_KIND) - catalog_kinds
     assert not orphan_types, f"backend maps types absent from the catalog: {sorted(orphan_types)}"
     assert not orphan_kinds, f"backend maps kinds absent from the catalog: {sorted(orphan_kinds)}"
+
+
+def test_every_dqx_type_has_exactly_the_config_its_rule_builder_takes() -> None:
+    """ADR 0036 §6: the editor's fields for each dqx:* type ARE the rule builder's keys, so the
+    form can never submit a config the backend's closed vocabulary refuses."""
+    from backend.app.datasources.databricks_dqx import DQX_TYPES
+
+    entries = {e["type"]: e for e in _catalog() if e["type"] in DQX_EXPECTATION_TYPES}
+    assert set(entries) == set(DQX_EXPECTATION_TYPES)
+    for expectation_type, (_function, keys) in DQX_TYPES.items():
+        assert set(entries[expectation_type]["fields"]) == set(keys), expectation_type

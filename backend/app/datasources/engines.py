@@ -12,7 +12,8 @@ _OFFERED: dict[str, frozenset[str]] = {
     "snowflake": frozenset({GX_ENGINE, "dmf"}),
     "adls_gen2": frozenset({GX_ENGINE}),
     "s3": frozenset({GX_ENGINE}),
-    "unity_catalog": frozenset({GX_ENGINE}),  # "dqx" trigger-gated (ADR 0036 §6)
+    # 'dqx' rides UnityCatalogCheckRunner.run_native_checks: a serverless job in the workspace.
+    "unity_catalog": frozenset({GX_ENGINE, "dqx"}),
     "iceberg": frozenset({GX_ENGINE}),
     # The generic SQL engines (#1678) have no native DQ engine to offer.
     **{conn_type: frozenset({GX_ENGINE}) for conn_type in GENERIC_SQL_TYPES},

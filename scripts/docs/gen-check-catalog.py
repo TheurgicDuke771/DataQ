@@ -48,6 +48,7 @@ CATEGORY_ORDER = [
     "Comparison",
     "Custom SQL",
     "Snowflake DMF",
+    "Databricks DQX",
 ]
 CATEGORY_INTRO = {
     "Column values": "Great Expectations built-ins that look at the values in one or more columns. "
@@ -65,6 +66,9 @@ CATEGORY_INTRO = {
     + "possibly on another connection.",
     "Custom SQL": "Any predicate you can write in SQL, validated before it runs.",
     "Snowflake DMF": "Snowflake's native Data Metric Functions, evaluated inside Snowflake.",
+    "Databricks DQX": (
+        "Databricks Labs DQX row rules, evaluated by a serverless job in your own workspace."
+    ),
 }
 
 

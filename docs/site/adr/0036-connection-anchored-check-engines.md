@@ -76,3 +76,35 @@ DMF outcomes are metric-shaped and ride the existing result semantics unchanged:
 - **Native metrics as a monitor kind (`kind='native_metric'`) instead of an engine.** Seriously considered (2026-07-17 discussion): it would ship ad-hoc DMF calls on the existing ADR 0012 seam with no engine machinery at all. Rejected because it dead-ends — it cannot represent DQX/Dataplex (full evaluators, not metrics), blocks future warehouse-side attachment management, and violates §4 by encoding the evaluator into the kind axis.
 - **Engine-specific kinds (`dmf_freshness`, `dqx_null_check`, …).** Rejected outright: forks the kind axis, so every consumer — scorecard, dimension mapping, trend SQL — would branch per engine forever.
 - **A global/workspace engine setting.** Rejected: engine availability is a property of a *connection instance* (edition, grants, workspace rights), not of the workspace. A global toggle cannot answer "is DMF available on *this* connection" and would reintroduce the config-page indirection §1 deliberately avoids.
+
+## Amendment (2026-09-28): DQX shipped, executed remotely
+
+DQX is now the second native engine, offered on `unity_catalog` connections. The user chose to
+build it ahead of retiring the Databricks environment. Both §6 prerequisites are settled:
+
+- **(b) The licence check failed for bundling.** `databricks-labs-dqx` is published under the
+  proprietary Databricks License, which permits use only with Databricks services. It is
+  therefore never a DataQ dependency (ADR 0031, CONTRIBUTING rule 40). DataQ neither imports,
+  installs nor redistributes it.
+- **(a) Remote execution is the design.** For each run, DataQ uploads a fixed notebook to the
+  connection user's workspace folder and submits **one** serverless job (Jobs API
+  `runs/submit`) carrying every DQX check of the run. The notebook installs a pinned DQX
+  version, validates each rule (an invalid rule errors only itself), applies all valid rules
+  in one Spark pass, and returns **failing-row counts per rule**, never row values. The run
+  path gained an optional runner hook, `run_native_checks`, so an engine with per-job start-up
+  cost is batched. DMF stays per check.
+
+**A security property this engine forced:** DQX evaluates bare string arguments as Spark SQL
+(`check_funcs.get_limit_expr` → `F.expr`), live-confirmed when the list value `'SM CASE'`
+resolved as a column named `SM`. DataQ therefore builds every rule from a closed vocabulary
+of eight types, with typed arguments:
+- columns are allowlisted identifiers, backtick-quoted
+- list values are emitted as escaped SQL literals
+- limits are numbers or ISO dates validated by DataQ
+
+A user string never reaches DQX unquoted. The authoring gate and the run path share one rule
+builder, so they cannot disagree.
+
+**Capability probe:** phase 1, gated by connection type only. A missing jobs or workspace
+permission lands as a classified per-check error at run time, as §2 permits. A probe would
+itself cost a job start-up.

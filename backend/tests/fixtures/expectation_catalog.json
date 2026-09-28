@@ -412,5 +412,91 @@
     ],
     "noThresholds": true,
     "dataframeOnly": false
+  },
+  {
+    "type": "dqx:is_not_null",
+    "kind": "expectation",
+    "dimension": "completeness",
+    "fields": [
+      "column"
+    ],
+    "noThresholds": false,
+    "dataframeOnly": false
+  },
+  {
+    "type": "dqx:is_not_empty",
+    "kind": "expectation",
+    "dimension": "completeness",
+    "fields": [
+      "column"
+    ],
+    "noThresholds": false,
+    "dataframeOnly": false
+  },
+  {
+    "type": "dqx:is_not_null_and_not_empty",
+    "kind": "expectation",
+    "dimension": "completeness",
+    "fields": [
+      "column"
+    ],
+    "noThresholds": false,
+    "dataframeOnly": false
+  },
+  {
+    "type": "dqx:is_in_list",
+    "kind": "expectation",
+    "dimension": "validity",
+    "fields": [
+      "column",
+      "allowed"
+    ],
+    "noThresholds": false,
+    "dataframeOnly": false
+  },
+  {
+    "type": "dqx:is_in_range",
+    "kind": "expectation",
+    "dimension": "validity",
+    "fields": [
+      "column",
+      "min_limit",
+      "max_limit"
+    ],
+    "noThresholds": false,
+    "dataframeOnly": false
+  },
+  {
+    "type": "dqx:regex_match",
+    "kind": "expectation",
+    "dimension": "validity",
+    "fields": [
+      "column",
+      "regex"
+    ],
+    "noThresholds": false,
+    "dataframeOnly": false
+  },
+  {
+    "type": "dqx:is_not_less_than",
+    "kind": "expectation",
+    "dimension": "validity",
+    "fields": [
+      "column",
+      "limit"
+    ],
+    "noThresholds": false,
+    "dataframeOnly": false
+  },
+  {
+    "type": "dqx:is_not_greater_than",
+    "kind": "expectation",
+    "dimension": "validity",
+    "fields": [
+      "column",
+      "limit"
+    ],
+    "noThresholds": false,
+    "dataframeOnly": false
   }
 ]
