@@ -200,11 +200,19 @@ def test_beat_start_signal_dispatches_startup_tasks(monkeypatch: Any) -> None:
     from backend.app.worker import celery_app as celery_mod
 
     sent: list[str] = []
-    monkeypatch.setattr(celery_mod.celery_app, "send_task", sent.append)
+    policies: list[Any] = []
+
+    def _send(name: str, **options: Any) -> None:
+        sent.append(name)
+        policies.append(options.get("retry_policy"))
+
+    monkeypatch.setattr(celery_mod.celery_app, "send_task", _send)
 
     celery_mod._dispatch_startup_tasks()
 
     assert sent == ["recover_orchestration_gaps", "refresh_credential_expiry"]
+    # Beat's publishes ride out a broker gap (#2119).
+    assert policies == [celery_mod.BEAT_PUBLISH_RETRY_POLICY] * 2
 
 
 def test_one_failing_startup_dispatch_does_not_skip_the_others(monkeypatch: Any) -> None:
@@ -213,7 +221,7 @@ def test_one_failing_startup_dispatch_does_not_skip_the_others(monkeypatch: Any)
 
     sent: list[str] = []
 
-    def _first_one_fails(name: str) -> None:
+    def _first_one_fails(name: str, **_: Any) -> None:
         if name == "recover_orchestration_gaps":
             raise RuntimeError("broker hiccup")
         sent.append(name)
@@ -229,7 +237,7 @@ def test_beat_start_signal_swallows_broker_failure(monkeypatch: Any) -> None:
     """A broker outage at beat startup must not crash the scheduler."""
     from backend.app.worker import celery_app as celery_mod
 
-    def _boom(_name: str) -> None:
+    def _boom(_name: str, **_: Any) -> None:
         raise RuntimeError("broker unreachable at boot")
 
     monkeypatch.setattr(celery_mod.celery_app, "send_task", _boom)

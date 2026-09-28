@@ -2326,6 +2326,47 @@ def test_dropping_authentication_sends_the_stored_secret_nowhere(db_session: Any
     assert updated.config["auth_type"] == "none"
 
 
+_DBT_ADLS = {"project_name": "p", "artifacts_uri": "adls://acct/raw", "jobs": ["dbt"]}
+_DBT_SP = {
+    **_DBT_ADLS,
+    "auth_type": "service_principal",
+    "tenant_id": "11111111-1111-1111-1111-111111111111",
+    "client_id": "22222222-2222-2222-2222-222222222222",
+}
+
+
+def _dbt(db_session: Any, store: FakeSecretStore, *, config: dict[str, Any], secret: Any) -> Any:
+    return svc.create_connection(
+        db_session,
+        name=f"dbt-{uuid.uuid4().hex[:6]}",
+        conn_type="dbt",
+        env="dev",
+        config=dict(config),
+        secret=secret,
+        created_by=_user(db_session).id,
+        secret_store=store,
+    )
+
+
+def test_a_dbt_service_principal_needs_its_secret_at_create(db_session: Any) -> None:
+    """Every poll would otherwise fail: a service principal cannot authenticate without it."""
+    store = FakeSecretStore()
+    with pytest.raises(svc.ConnectionConfigInvalidError) as exc:
+        _dbt(db_session, store, config=_DBT_SP, secret=None)
+    assert exc.value.detail["required"] == ["secret"]
+    # A key-mode ADLS project may still read a public container anonymously.
+    assert _dbt(db_session, store, config=_DBT_ADLS, secret=None).secret_ref is None
+
+
+def test_switching_dbt_to_a_service_principal_without_its_secret_is_refused(
+    db_session: Any,
+) -> None:
+    store = FakeSecretStore()
+    conn = _dbt(db_session, store, config=_DBT_ADLS, secret=None)
+    with pytest.raises(svc.ConnectionConfigInvalidError):
+        svc.update_connection(db_session, conn.id, config=dict(_DBT_SP), secret_store=store)
+
+
 class _KnownLimitationAdapter(_PassAdapter):
     """An adapter that recognised the failure and said why in DataQ's own words (#1679)."""
 

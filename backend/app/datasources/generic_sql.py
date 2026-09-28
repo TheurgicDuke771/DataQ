@@ -15,8 +15,10 @@ cannot change data.
 
 from __future__ import annotations
 
+import gc
 import ipaddress
 import re
+import traceback
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol
@@ -596,10 +598,6 @@ class GenericSqlCheckRunner:
         value_signal_gate: ValueSignalGate | None,
         read_only: bool,
     ) -> SuiteOutcome:
-        import great_expectations as gx
-
-        from backend.app.datasources.gx_runner import run_expectations
-
         # GX lower-cases an unquoted schema name, which on an engine that resolves names exactly
         # as spelled retargets a mixed-case schema. So where the engine can, the SESSION is
         # scoped to the target's schema instead (the engine's default schema) and GX gets no
@@ -612,6 +610,44 @@ class GenericSqlCheckRunner:
             scoped = self._config
             gx_schema = schema or self._config.default_schema
         connections = GxConnectionSource(self._spec, scoped, self._secret, read_only=read_only)
+        try:
+            return self._evaluate(
+                connections,
+                scoped=scoped,
+                gx_schema=gx_schema,
+                table=table,
+                checks=checks,
+                index_columns=index_columns,
+                value_signal_gate=value_signal_gate,
+                read_only=read_only,
+            )
+        except BaseException as exc:
+            # A propagating traceback keeps `_evaluate`'s locals — GX's engines — alive past
+            # `close`; its finished frames are cleared so a failed run is collected like a
+            # passing one.
+            traceback.clear_frames(exc.__traceback__)
+            raise
+        finally:
+            # After `_evaluate` has returned, so the GX objects holding these connections are
+            # already garbage when `close` collects them (see there).
+            connections.close()
+
+    def _evaluate(
+        self,
+        connections: GxConnectionSource,
+        *,
+        scoped: GenericSqlConfig,
+        gx_schema: str | None,
+        table: str,
+        checks: list[CheckSpec],
+        index_columns: list[str] | None,
+        value_signal_gate: ValueSignalGate | None,
+        read_only: bool,
+    ) -> SuiteOutcome:
+        import great_expectations as gx
+
+        from backend.app.datasources.gx_runner import run_expectations
+
         context = gx.get_context(mode="ephemeral")
         datasource: Any = None
         try:
@@ -646,7 +682,7 @@ class GenericSqlCheckRunner:
         finally:
             if datasource is not None:
                 _dispose_gx_engine(datasource)
-            connections.close()
+            _release_gx_project(context)
 
     def run_monitors(
         self, *, table: str, schema: str | None, monitors: list[MonitorSpec]
@@ -702,6 +738,12 @@ class GxConnectionSource:
         return connection
 
     def close(self) -> None:
+        # GX keeps each engine's connection checked out for the engine's lifetime, and its
+        # engines sit in reference cycles. Collected AFTER these connections were closed, their
+        # pools roll the dead connections back, a strict driver (pyodbc) raises, and SQLAlchemy
+        # logs it at ERROR although nothing failed (#2141). Collected first, the rollback runs
+        # on an open connection and succeeds; the loop below still closes every connection.
+        gc.collect()
         while self._opened:
             connection = self._opened.pop()
             try:
@@ -760,6 +802,20 @@ def _add_exact_schema_table_asset(datasource: Any, *, table: str, schema: str) -
     )
     datasource._add_asset(asset)
     return asset
+
+
+def _release_gx_project(context: Any) -> None:
+    """Drop GX's process-global reference to this run's context, if it is still the current one.
+
+    `gx.get_context` stores the context as GX's "project" until the NEXT run replaces it, so a
+    run's context — and the engines holding its connections — outlived the run and was collected
+    during a later run, after this run had closed those connections: the strict-driver ERROR noise
+    of #2141, one run late. A context another run has since installed is left alone.
+    """
+    from great_expectations.data_context.data_context.context_factory import project_manager
+
+    if getattr(project_manager, "_ProjectManager__project", None) is context:
+        project_manager.set_project(None)
 
 
 def _dispose_gx_engine(datasource: Any) -> None:

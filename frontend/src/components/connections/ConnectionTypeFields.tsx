@@ -253,6 +253,7 @@ export function ConnectionTypeFields({
                 <SecretField
                   label={activeAuth.secretLabel}
                   multiline={activeAuth.multilineSecret}
+                  optional={activeAuth.optionalSecret}
                 />
                 {activeAuth.passphraseLabel && (
                   <PassphraseField label={activeAuth.passphraseLabel} />

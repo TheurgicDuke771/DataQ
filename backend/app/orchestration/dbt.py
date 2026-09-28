@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from datetime import datetime
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
@@ -19,6 +19,7 @@ from backend.app.core.s3_endpoint import (
     normalize_addressing_style,
     normalize_endpoint_url,
 )
+from backend.app.datasources.adls import AdlsConfig, blob_service_client
 from backend.app.orchestration.base import MalformedEventError, RunUpdate, WebhookAuthDescriptor
 
 log = get_logger(__name__)
@@ -62,6 +63,15 @@ class DbtConfig(BaseModel):
     access_key_id: str | None = None
     endpoint_url: str | None = None
     addressing_style: S3AddressingStyle = "auto"
+    # ADLS-only: how the artifacts store is read, as on the ADLS datasource connection. `key` is
+    # the stored secret used as-is (a SAS for ADLS, the secret key for S3, nothing for file://).
+    auth_type: Literal["key", "service_principal"] = "key"
+    tenant_id: str | None = None
+    client_id: str | None = None
+    # ADLS-only: an ADLS-compatible Blob endpoint in place of `https://<account>.blob.core.
+    # windows.net`. For Fabric OneLake the workspace is the container:
+    # `adls://onelake/<workspace>/<lakehouse>.Lakehouse/Files/...`.
+    account_url: str | None = None
     # Optional operator override for the lineage anchor namespace (ADR 0034, #759): dbt's manifest
     # has no namespace, so DataQ normally infers it from existing assets.
     lineage_namespace: str | None = None
@@ -98,15 +108,66 @@ class DbtConfig(BaseModel):
             raise ValueError("jobs must be a non-empty list of non-empty job names")
         return value
 
+    @field_validator("auth_type", mode="before")
+    @classmethod
+    def _blank_auth_is_key(cls, value: Any) -> Any:
+        return "key" if value is None or (isinstance(value, str) and not value.strip()) else value
+
+    @field_validator("tenant_id", "client_id", "account_url", mode="before")
+    @classmethod
+    def _blank_is_unset(cls, value: Any) -> Any:
+        return None if isinstance(value, str) and not value.strip() else value
+
     @model_validator(mode="after")
     def _s3_needs_access_key(self) -> DbtConfig:
         if urlparse(self.artifacts_uri).scheme == "s3" and not (self.access_key_id and self.region):
             raise ValueError("s3:// artifacts_uri requires access_key_id and region")
         return self
 
+    @model_validator(mode="after")
+    def _adls_auth(self) -> DbtConfig:
+        adls = urlparse(self.artifacts_uri).scheme == "adls"
+        if not adls and (
+            self.auth_type != "key"
+            or self.tenant_id is not None
+            or self.client_id is not None
+            or self.account_url is not None
+        ):
+            raise ValueError(
+                "auth_type, tenant_id, client_id and account_url apply only to an adls:// "
+                "artifacts_uri"
+            )
+        if adls:
+            # The ADLS datasource's own rules, so the two can never disagree on what is valid.
+            self.adls_config(container="probe")
+        return self
+
+    def requires_secret(self) -> bool:
+        """A service principal cannot authenticate without its client secret; every other
+        store may read anonymously (a public container, a local path)."""
+        return self.auth_type == "service_principal"
+
+    def adls_config(self, *, container: str) -> AdlsConfig:
+        """The `AdlsConfig` that reads this project's artifacts from ``container``."""
+        account = urlparse(self.artifacts_uri).netloc
+        return AdlsConfig.model_validate(
+            {
+                "account_url": self.account_url or f"https://{account}.blob.core.windows.net",
+                "container": container,
+                "auth_type": "sas" if self.auth_type == "key" else "service_principal",
+                "tenant_id": self.tenant_id,
+                "client_id": self.client_id,
+            }
+        )
+
 
 def _read_artifact(
-    config: DbtConfig, job: str, secret: str | None, relpath: str = _RUN_RESULTS_RELPATH
+    config: DbtConfig,
+    job: str,
+    secret: str | None,
+    relpath: str = _RUN_RESULTS_RELPATH,
+    *,
+    fresh_token: bool = False,
 ) -> bytes | None:
     """Read ``<artifacts_uri>/<job>/<relpath>``; None if absent."""
     parsed = urlparse(config.artifacts_uri)
@@ -120,16 +181,19 @@ def _read_artifact(
 
     if scheme == "adls":
         from azure.core.exceptions import ResourceNotFoundError
-        from azure.storage.blob import BlobServiceClient
 
-        account = parsed.netloc
+        if config.auth_type == "service_principal" and not secret:
+            raise ValueError("a service principal needs its client secret to read the artifacts")
         container, _, prefix = parsed.path.lstrip("/").partition("/")
         blob = f"{prefix}/{job}/{relpath}" if prefix else f"{job}/{relpath}"
-        # Bound socket connect/read like the ADLS datasource adapter — `test()` runs this
-        # synchronously in the request thread, so an unreachable account must fail fast, not hang.
-        client = BlobServiceClient(
-            account_url=f"https://{account}.blob.core.windows.net",
-            credential=secret,
+        # The ADLS datasource's one credential factory — a service principal's token outlives the
+        # client. Bound socket connect/read like its adapter: `test()` runs this synchronously in
+        # the request thread, so an unreachable account must fail fast, not hang.
+        # No secret under `key` is an anonymous read of a public container, as before.
+        client = blob_service_client(
+            config.adls_config(container=container),
+            secret,  # type: ignore[arg-type]
+            fresh_token=fresh_token,
             connection_timeout=int(_READ_TIMEOUT_SECONDS),
             read_timeout=int(_READ_TIMEOUT_SECONDS),
         )
@@ -142,6 +206,8 @@ def _read_artifact(
             return blob_bytes
         except ResourceNotFoundError:
             return None
+        finally:
+            client.close()
 
     # s3
     import boto3
@@ -199,7 +265,14 @@ class DbtConnectionAdapter:
     # #1401: `artifacts_uri` is the store the credential reads from, and
     # `endpoint_url` (#1063) overrides the S3 host it is signed against.
     destination_fields: ClassVar[dict[str, tuple[str, ...]]] = {
-        "secret": ("artifacts_uri", "endpoint_url")
+        "secret": (
+            "artifacts_uri",
+            "endpoint_url",
+            "account_url",
+            "auth_type",
+            "tenant_id",
+            "client_id",
+        )
     }
 
     # A local `file://` artifacts path needs no credential (the class docstring above) — mirrored by
@@ -211,14 +284,17 @@ class DbtConnectionAdapter:
 
     def credential_expiry(self, raw: dict[str, Any], secret: str, **_: Any) -> datetime | None:
         """When the artifacts-store credential stops working (#838), or ``None``."""
-        if urlparse(self.validate_config(raw).artifacts_uri).scheme != "adls":
+        config = self.validate_config(raw)
+        # A client secret carries no readable lifetime (its expiry lives in Entra).
+        if urlparse(config.artifacts_uri).scheme != "adls" or config.auth_type != "key":
             return None
         return azure_sas_expiry(secret)
 
     def test(self, raw: dict[str, Any], secret: str | None, **_: Any) -> None:
         """Read the first job's `latest/run_results.json`; raise on any failure."""
         config = self.validate_config(raw)
-        _read_artifact(config, config.jobs[0], secret)
+        # A cached token would keep a revoked client secret testing green.
+        _read_artifact(config, config.jobs[0], secret, fresh_token=True)
 
 
 class DbtProvider:

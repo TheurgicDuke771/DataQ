@@ -227,13 +227,16 @@ def test_poll_iterates_all_jobs(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_adapter_test_reads_first_job(monkeypatch: pytest.MonkeyPatch) -> None:
     called: dict[str, Any] = {}
 
-    def fake_read(cfg: DbtConfig, job: str, secret: str) -> bytes | None:
+    def fake_read(cfg: DbtConfig, job: str, secret: str, **kwargs: Any) -> bytes | None:
         called["job"] = job
+        called.update(kwargs)
         return None  # not-yet-published is still a green test
 
     monkeypatch.setattr(dbt_mod, "_read_artifact", fake_read)
     DbtConnectionAdapter().test(_cfg(jobs=["first", "second"]), "secret")
     assert called["job"] == "first"
+    # A cached token would keep a revoked client secret testing green.
+    assert called["fresh_token"] is True
 
 
 # ── _read_artifact (the reader seam itself, per scheme) ───────────────────────
@@ -276,6 +279,9 @@ def test_read_artifact_adls_builds_path_and_reads(monkeypatch: pytest.MonkeyPatc
             seen["blob"] = blob
             return _BlobClient()
 
+        def close(self) -> None:
+            seen["closed"] = True
+
     monkeypatch.setattr("azure.storage.blob.BlobServiceClient", _Service)
     cfg = DbtConfig.model_validate(_cfg(artifacts_uri="adls://acct/raw/dbt"))
     data = dbt_mod._read_artifact(cfg, "lineage_build", "sas-token")
@@ -284,6 +290,7 @@ def test_read_artifact_adls_builds_path_and_reads(monkeypatch: pytest.MonkeyPatc
     assert seen["credential"] == "sas-token"
     assert seen["container"] == "raw"
     assert seen["blob"] == "dbt/lineage_build/latest/run_results.json"
+    assert seen["closed"] is True
 
 
 def test_read_artifact_adls_missing_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -293,6 +300,8 @@ def test_read_artifact_adls_missing_returns_none(monkeypatch: pytest.MonkeyPatch
         def download_blob(self, **_: Any) -> Any:
             raise ResourceNotFoundError("nope")
 
+    closed: list[bool] = []
+
     class _Service:
         def __init__(self, account_url: str, credential: str, **_: Any) -> None:
             pass
@@ -300,9 +309,13 @@ def test_read_artifact_adls_missing_returns_none(monkeypatch: pytest.MonkeyPatch
         def get_blob_client(self, container: str, blob: str) -> _BlobClient:
             return _BlobClient()
 
+        def close(self) -> None:
+            closed.append(True)
+
     monkeypatch.setattr("azure.storage.blob.BlobServiceClient", _Service)
     cfg = DbtConfig.model_validate(_cfg(artifacts_uri="adls://acct/raw/dbt"))
     assert dbt_mod._read_artifact(cfg, "job", "sas") is None
+    assert closed == [True]
 
 
 def test_read_artifact_s3_builds_key_and_reads(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -477,6 +490,9 @@ def test_read_artifact_relpath_selects_the_artifact(monkeypatch: pytest.MonkeyPa
             seen["blob"] = blob
             return _BlobClient()
 
+        def close(self) -> None:
+            pass
+
     monkeypatch.setattr("azure.storage.blob.BlobServiceClient", _Service)
     cfg = DbtConfig.model_validate(_cfg(artifacts_uri="adls://acct/raw/dbt"))
     dbt_mod._read_artifact(cfg, "lineage_build", "sas", dbt_mod._MANIFEST_RELPATH)
@@ -504,3 +520,110 @@ def test_other_providers_have_no_read_manifest() -> None:
 
     assert getattr(AirflowProvider(), "read_manifest", None) is None
     assert getattr(DbtProvider(), "read_manifest", None) is not None
+
+
+# ── ADLS service principal + endpoint override (#2128) ──────────────────────
+
+_TENANT = "11111111-1111-1111-1111-111111111111"
+_CLIENT = "22222222-2222-2222-2222-222222222222"
+
+
+def _sp_cfg(**overrides: Any) -> dict[str, Any]:
+    return _cfg(
+        artifacts_uri="adls://onelake/my-workspace/lh.Lakehouse/Files/dbt",
+        auth_type="service_principal",
+        tenant_id=_TENANT,
+        client_id=_CLIENT,
+        account_url="https://onelake.blob.fabric.microsoft.com",
+        **overrides,
+    )
+
+
+def test_a_onelake_service_principal_config_reads_the_workspace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: dict[str, Any] = {}
+
+    class _Downloaded:
+        def readall(self) -> bytes:
+            return _run_results("success")
+
+    class _Service:
+        def __init__(self, account_url: str, credential: Any, **_: Any) -> None:
+            seen.update(account_url=account_url, credential=credential)
+
+        def get_blob_client(self, container: str, blob: str) -> Any:
+            seen.update(container=container, blob=blob)
+            return type("_B", (), {"download_blob": lambda self, **_: _Downloaded()})()
+
+        def close(self) -> None:
+            seen["closed"] = True
+
+    monkeypatch.setattr("azure.storage.blob.BlobServiceClient", _Service)
+    cfg = DbtConfig.model_validate(_sp_cfg())
+    assert dbt_mod._read_artifact(cfg, "build", "client-secret") is not None
+    assert seen["account_url"] == "https://onelake.blob.fabric.microsoft.com"
+    assert seen["container"] == "my-workspace"
+    assert seen["blob"] == "lh.Lakehouse/Files/dbt/build/latest/run_results.json"
+    # Built by the ADLS datasource's own factory: a token credential, never the secret as a SAS.
+    assert seen["credential"] != "client-secret"
+    assert callable(getattr(seen["credential"], "get_token", None))
+    assert seen["closed"] is True
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"tenant_id": None},
+        {"client_id": "not a guid/with/segments"},
+        {"account_url": "onelake.blob.fabric.microsoft.com"},  # no scheme
+    ],
+)
+def test_an_unusable_service_principal_config_is_refused(overrides: dict[str, Any]) -> None:
+    with pytest.raises(ValidationError):
+        DbtConfig.model_validate({**_sp_cfg(), **overrides})
+
+
+@pytest.mark.parametrize(
+    "artifacts_uri,extra",
+    [
+        ("file:///tmp/dbt", {}),
+        ("s3://bucket/dbt", {"access_key_id": "AK", "region": "us-east-1"}),
+    ],
+)
+def test_adls_auth_fields_are_refused_on_other_stores(
+    artifacts_uri: str, extra: dict[str, Any]
+) -> None:
+    """An S3 or file:// connection would silently ignore them."""
+    for field in (
+        {"auth_type": "service_principal", "tenant_id": _TENANT, "client_id": _CLIENT},
+        {"account_url": "https://onelake.blob.fabric.microsoft.com"},
+    ):
+        with pytest.raises(ValidationError, match="only to an adls://"):
+            DbtConfig.model_validate(_cfg(artifacts_uri=artifacts_uri, **extra, **field))
+
+
+def test_a_blank_auth_type_is_the_key_default() -> None:
+    cfg = DbtConfig.model_validate(_cfg(artifacts_uri="adls://acct/raw", auth_type=""))
+    assert cfg.auth_type == "key"
+    assert cfg.adls_config(container="raw").auth_type == "sas"
+
+
+def test_a_service_principal_without_its_secret_is_refused() -> None:
+    cfg = DbtConfig.model_validate(_sp_cfg())
+    with pytest.raises(ValueError, match="client secret"):
+        dbt_mod._read_artifact(cfg, "build", None)
+
+
+def test_a_client_secret_has_no_readable_expiry() -> None:
+    sas_looking = "sv=2024-01-01&se=2030-01-01T00:00:00Z&sig=x"
+    assert DbtConnectionAdapter().credential_expiry(_sp_cfg(), sas_looking) is None
+    assert (
+        DbtConnectionAdapter().credential_expiry(_cfg(artifacts_uri="adls://a/c"), sas_looking)
+        is not None
+    )
+
+
+def test_moving_where_the_secret_is_presented_needs_it_again() -> None:
+    fields = set(DbtConnectionAdapter.destination_fields["secret"])
+    assert {"account_url", "auth_type", "tenant_id", "client_id"} <= fields

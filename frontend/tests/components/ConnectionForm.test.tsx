@@ -1000,3 +1000,50 @@ describe('ConnectionForm — Amazon Redshift', () => {
     expect(payload.secret).toBe('pw');
   });
 });
+
+describe('ConnectionForm — dbt ADLS service principal', () => {
+  it('reads OneLake artifacts as a service principal: tenant, client and a required secret', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue({ ...icebergConnection, type: 'dbt' });
+    render(
+      <AntApp>
+        <ConnectionForm type="dbt" onSaved={vi.fn()} onCancel={vi.fn()} />
+      </AntApp>,
+    );
+
+    await user.type(await screen.findByLabelText('Name'), 'dbt-onelake');
+    await selectOption(user, 'DEV');
+    await user.type(screen.getByLabelText('Project name'), 'analytics');
+    await user.type(
+      screen.getByLabelText('Artifacts URI'),
+      'adls://onelake/my-workspace/lh.Lakehouse/Files/dbt',
+    );
+    await user.type(screen.getByLabelText('Jobs'), 'nightly,');
+    await user.type(
+      screen.getByLabelText(/Account URL/),
+      'https://onelake.blob.fabric.microsoft.com',
+    );
+    expect(screen.queryByLabelText('Tenant ID')).not.toBeInTheDocument();
+    await selectOption(user, 'Service principal (Entra ID, ADLS only)', { index: 2 });
+    await user.type(await screen.findByLabelText('Tenant ID'), 'tenant-guid');
+    await user.type(screen.getByLabelText('Client ID'), 'client-guid');
+
+    // Unlike the key mode, a service principal cannot authenticate without its secret.
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+    expect(await screen.findByText(/Client secret.*required|required/i)).toBeInTheDocument();
+    expect(mockCreate).not.toHaveBeenCalled();
+
+    await user.type(screen.getByLabelText('Client secret'), 'the-client-secret');
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+    await waitFor(() => expect(mockCreate).toHaveBeenCalled());
+    const payload = mockCreate.mock.calls[0][0];
+    expect(payload.config).toMatchObject({
+      artifacts_uri: 'adls://onelake/my-workspace/lh.Lakehouse/Files/dbt',
+      account_url: 'https://onelake.blob.fabric.microsoft.com',
+      auth_type: 'service_principal',
+      tenant_id: 'tenant-guid',
+      client_id: 'client-guid',
+    });
+    expect(payload.secret).toBe('the-client-secret');
+  }, 20_000);
+});
