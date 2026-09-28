@@ -251,7 +251,8 @@ def test_a_duration_beyond_timedelta_range_is_exact_not_wrapped() -> None:
 
 
 def test_multiple_and_calendar_units_render() -> None:
-    assert sanitize_json(np.timedelta64(5, "25ns")) == "P0DT0H0M0.000000125S"
+    # numpy accepts a multiple-unit string; its stubs do not.
+    assert sanitize_json(np.timedelta64(5, "25ns")) == "P0DT0H0M0.000000125S"  # type: ignore[call-overload]
     # A year has no fixed length: numpy's average (365.2425 days), never a crash.
     assert sanitize_json(np.timedelta64(1, "Y")) == "P365DT5H49M12S"
     assert sanitize_json(np.timedelta64("NaT", "Y")) is None
