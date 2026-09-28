@@ -7,7 +7,11 @@ Entra service-principal auth but not a long-lived SAS (#1680).
 
 from __future__ import annotations
 
+import hashlib
+import os
 import re
+import threading
+import time
 from datetime import datetime
 from typing import Any, ClassVar, Literal
 
@@ -90,12 +94,97 @@ class _CredentialOwningClient:
             self._credential.close()
 
 
-def blob_service_client(config: AdlsConfig, secret: str, **client_kwargs: Any) -> Any:
+#: A cached token is reused only while it has this much life left, so a request never goes out
+#: with a token that expires in flight.
+_TOKEN_REFRESH_MARGIN_S = 300
+
+_token_cache: dict[tuple[str, ...], Any] = {}
+_token_lock = threading.Lock()
+
+
+def _reset_token_cache_in_child() -> None:
+    # A lock held by another thread at fork time stays held forever in the child.
+    global _token_lock
+    _token_lock = threading.Lock()
+    _token_cache.clear()
+
+
+os.register_at_fork(after_in_child=_reset_token_cache_in_child)
+
+
+class _CachedClientSecretCredential:
+    """A service principal's Entra credential whose access tokens outlive the client (#2127).
+
+    Every ADLS operation builds its own client, and a `ClientSecretCredential`'s token cache
+    belongs to its instance, so each operation paid a fresh token request (~4-5 s). Tokens are
+    kept process-wide, keyed by tenant, client, a hash of the secret (a rotated secret misses)
+    and the request; only token DATA is shared — the credential that fetches one, and its
+    transport, stay per client as before, and a forked child starts with an empty cache.
+    """
+
+    def __init__(
+        self, tenant_id: str, client_id: str, secret: str, *, use_cache: bool = True, **kwargs: Any
+    ) -> None:
+        self._use_cache = use_cache
+        self._args = (tenant_id, client_id, secret)
+        self._kwargs = kwargs
+        self._key = (tenant_id, client_id, hashlib.sha256(secret.encode()).hexdigest())
+        self._inner: Any = None
+
+    def _credential(self) -> Any:
+        if self._inner is None:
+            from azure.identity import ClientSecretCredential
+
+            self._inner = ClientSecretCredential(*self._args, **self._kwargs)
+        return self._inner
+
+    def get_token_info(self, *scopes: str, options: Any = None) -> Any:
+        options = dict(options or {})
+        # A claims challenge must reach Entra, never the cache.
+        if not self._use_cache or options.get("claims"):
+            return self._credential().get_token_info(*scopes, options=options)
+        key = (*self._key, str(options.get("tenant_id") or ""), *sorted(scopes))
+        with _token_lock:
+            cached = _token_cache.get(key)
+        if cached is not None and cached.expires_on - time.time() > _TOKEN_REFRESH_MARGIN_S:
+            return cached
+        token = self._credential().get_token_info(*scopes, options=options or None)
+        with _token_lock:
+            _token_cache[key] = token
+        return token
+
+    def get_token(
+        self,
+        *scopes: str,
+        claims: str | None = None,
+        tenant_id: str | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        from azure.core.credentials import AccessToken
+
+        options: dict[str, Any] = {}
+        if claims:
+            options["claims"] = claims
+        if tenant_id:
+            options["tenant_id"] = tenant_id
+        info = self.get_token_info(*scopes, options=options)
+        return AccessToken(info.token, info.expires_on)
+
+    def close(self) -> None:
+        if self._inner is not None:
+            self._inner.close()
+
+
+def blob_service_client(
+    config: AdlsConfig, secret: str, *, fresh_token: bool = False, **client_kwargs: Any
+) -> Any:
     """The ONE place an ADLS connection's credential becomes a `BlobServiceClient`.
 
     Every consumer (the connection test, flat-file reads/listing/browse) goes through here, so an
     auth mode is added once rather than at each door. ``client_kwargs`` (timeouts, retries) also
-    bound the Entra token request. The caller must ``close()`` the result.
+    bound the Entra token request. ``fresh_token`` skips the token cache, so the secret itself is
+    presented to Entra — a cached token would keep a revoked secret passing. The caller must
+    ``close()`` the result.
     """
     from azure.storage.blob import BlobServiceClient
 
@@ -105,9 +194,9 @@ def blob_service_client(config: AdlsConfig, secret: str, **client_kwargs: Any) -
         # Unreachable through a validated config; refuse rather than fall through to anonymous.
         raise ValueError(f"unsupported ADLS auth_type {config.auth_type!r}")
 
-    from azure.identity import ClientSecretCredential
-
-    credential = ClientSecretCredential(config.tenant_id, config.client_id, secret, **client_kwargs)
+    credential = _CachedClientSecretCredential(
+        config.tenant_id, config.client_id, secret, use_cache=not fresh_token, **client_kwargs
+    )
     try:
         # The client requests the Azure Storage audience, which OneLake also accepts.
         client = BlobServiceClient(
@@ -151,6 +240,7 @@ class AdlsConnectionAdapter:
         client = blob_service_client(
             config,
             secret,
+            fresh_token=True,
             retry_total=0,
             connection_timeout=_TEST_TIMEOUT_SECONDS,
             read_timeout=_TEST_TIMEOUT_SECONDS,
