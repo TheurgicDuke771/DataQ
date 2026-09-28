@@ -6,6 +6,7 @@ import datetime
 import decimal
 import json
 import math
+import re
 from typing import Any
 
 #: What a BINARY/VARBINARY/BYTEA column surfaces as, by DBAPI driver: bytes (databricks-sql),
@@ -33,9 +34,10 @@ def sanitize_json(value: Any) -> Any:
             # np.datetime64 finer than µs `.item()`s to an int (ns since the epoch, #1803),
             # not a datetime — narrow to µs first. NaT `.item()`s to None at every unit.
             value = raw.astype("datetime64[us]").item()
-        elif getattr(raw.dtype, "kind", None) == "m" and not isinstance(value, datetime.timedelta):
-            # np.timedelta64 finer than µs `.item()`s to a bare int (#1819); NaT to None.
-            value = raw.astype("timedelta64[us]").item()
+        elif getattr(raw.dtype, "kind", None) == "m":
+            # np.timedelta64 `.item()`s to a bare int below µs and loses precision/overflows via
+            # timedelta: rendered exactly from its integer count and unit instead (#1819).
+            return None if value is None else _timedelta64_iso(raw)
     # pandas' missing-value sentinels: Arrow-backed frames (the iceberg native read, #716) surface
     # null cells to GX payloads as `pd.NA` / `pd.NaT`, neither of which is JSON-serializable (#751).
     if type(value).__name__ in ("NAType", "NaTType"):
@@ -63,12 +65,43 @@ def sanitize_json(value: Any) -> Any:
     return value
 
 
+_NS_PER: dict[str, int] = {
+    "ns": 1,
+    "us": 10**3,
+    "ms": 10**6,
+    "s": 10**9,
+    "m": 60 * 10**9,
+    "h": 3600 * 10**9,
+    "D": 86400 * 10**9,
+    "W": 7 * 86400 * 10**9,
+}
+_TIMEDELTA64_UNIT = re.compile(r"timedelta64\[(\d*)(\w+)\]")
+
+
 def iso_duration(value: datetime.timedelta) -> str:
     """ISO-8601 duration in pandas' spelling: signed days, then non-negative time of day."""
-    hours, rest = divmod(value.seconds, 3600)
-    minutes, seconds = divmod(rest, 60)
-    fraction = f".{value.microseconds:06d}".rstrip("0") if value.microseconds else ""
-    return f"P{value.days}DT{hours}H{minutes}M{seconds}{fraction}S"
+    micros = (value.days * 86400 + value.seconds) * 10**6 + value.microseconds
+    return _iso_from_ns(micros * 1000)
+
+
+def _timedelta64_iso(raw: Any) -> str:
+    match = _TIMEDELTA64_UNIT.fullmatch(raw.dtype.name)
+    if match is None or match.group(2) not in _NS_PER:
+        # Calendar units (months, years) have no fixed length: numpy's own average-length cast.
+        raw = raw.astype("timedelta64[ns]")
+        match = _TIMEDELTA64_UNIT.fullmatch(raw.dtype.name)
+        assert match is not None  # nosec B101
+    step = int(match.group(1) or 1) * _NS_PER[match.group(2)]
+    return _iso_from_ns(int(raw.view("i8")) * step)
+
+
+def _iso_from_ns(total: int) -> str:
+    days, rest = divmod(total, 86400 * 10**9)
+    hours, rest = divmod(rest, 3600 * 10**9)
+    minutes, rest = divmod(rest, 60 * 10**9)
+    seconds, nanos = divmod(rest, 10**9)
+    fraction = f".{nanos:09d}".rstrip("0") if nanos else ""
+    return f"P{days}DT{hours}H{minutes}M{seconds}{fraction}S"
 
 
 def _json_key(key: Any) -> str:

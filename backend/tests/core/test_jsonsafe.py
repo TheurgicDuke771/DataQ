@@ -227,6 +227,36 @@ def test_every_duration_type_renders_as_pandas_iso_duration(duration: datetime.t
         json.dumps(cleaned, allow_nan=False)
 
 
+@pytest.mark.parametrize(
+    "raw",
+    [
+        np.timedelta64(1500, "ns"),
+        np.timedelta64(1, "ns"),
+        np.timedelta64(-1, "ns"),
+        np.timedelta64(123456789, "ns"),
+        np.timedelta64(90, "m"),
+        np.timedelta64(2, "W"),
+        np.timedelta64(-3, "h"),
+    ],
+    ids=str,
+)
+def test_a_numpy_duration_keeps_its_exact_value(raw: np.timedelta64) -> None:
+    """Narrowing to µs rendered 1 ns as zero and 1500 ns as 1 µs (#1819 review)."""
+    assert sanitize_json(raw) == pd.Timedelta(raw).isoformat()
+
+
+def test_a_duration_beyond_timedelta_range_is_exact_not_wrapped() -> None:
+    # 10**15 s is past datetime.timedelta and pandas' ns range; the old µs cast wrapped it.
+    assert sanitize_json(np.timedelta64(10**15, "s")) == "P11574074074DT1H46M40S"
+
+
+def test_multiple_and_calendar_units_render() -> None:
+    assert sanitize_json(np.timedelta64(5, "25ns")) == "P0DT0H0M0.000000125S"
+    # A year has no fixed length: numpy's average (365.2425 days), never a crash.
+    assert sanitize_json(np.timedelta64(1, "Y")) == "P365DT5H49M12S"
+    assert sanitize_json(np.timedelta64("NaT", "Y")) is None
+
+
 def test_a_duration_key_and_nat_duration() -> None:
     assert sanitize_json({datetime.timedelta(days=1): 3}) == {"P1DT0H0M0S": 3}
     assert sanitize_json(np.timedelta64("NaT")) is None
