@@ -688,16 +688,25 @@ Snowflake, PostgreSQL, MySQL and Trino are unaffected — their schema comes fro
 ### Snowflake DMF (ADR 0036)
 
 On a Snowflake connection, the check editor offers a separate **Snowflake DMF**
-category for six types — null count, null percent, duplicate count, unique count,
+category for seven types — null count, null percent, duplicate count, unique count,
 blank count (VARCHAR columns; empty or space-only strings — not NULLs, and tabs/newlines
-aren't treated as blank) and future-timestamp percent (DATE / TIMESTAMP_LTZ /
-TIMESTAMP_TZ columns) — that run on Snowflake's own `SNOWFLAKE.CORE.*` **Data Metric Functions** instead of a
+aren't treated as blank), future-timestamp percent (DATE / TIMESTAMP_LTZ /
+TIMESTAMP_TZ columns) and accepted values (below) — that run on Snowflake's own `SNOWFLAKE.CORE.*` **Data Metric Functions** instead of a
 GX expectation. Same authoring flow (pick the type, set the column); the difference
 is the `engine` the check runs on (`dmf` vs the default `gx`). Every type except unique
 count needs a fail or critical threshold, banded like any other metric. Not offered on other
-datasources. Snowflake's `ACCEPTED_VALUES` and `SCHEMA_CHANGE_COUNT` are not offered: both
-can only run as a DMF attached to the table on a schedule, not as the on-demand call DataQ
-makes (use the GX in-set check and the schema-drift monitor instead).
+datasources.
+
+**Accepted values (DMF)** counts rows whose value is not in your list, using Snowflake's
+`ACCEPTED_VALUES` function. `ACCEPTED_VALUES` can't be called on demand, so DataQ evaluates it
+through `SYSTEM$DATA_METRIC_SCAN`. That needs no DMF attached to the table and only the SELECT
+rights DataQ already has. **NULLs are not counted as violations.** The scan reads the column
+in full.
+
+`SCHEMA_CHANGE_COUNT` is not offered. It only exists as a DMF attached to the table on a
+schedule, because it counts changes since its previous scheduled run. Attaching one needs table
+ownership, which DataQ's read-only role deliberately lacks. Use the schema-drift monitor
+instead.
 
 ### Databricks DQX (ADR 0036)
 

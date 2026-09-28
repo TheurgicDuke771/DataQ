@@ -3677,16 +3677,23 @@ the suite runs normally. Set the schema on the suite's run target to fix it.
 Snowflake, PostgreSQL, MySQL and Trino are unaffected — their schema comes from the connection.</p>
 <h3 id="snowflake-dmf-adr-0036">Snowflake DMF (ADR 0036)<a class="headerlink" href="#snowflake-dmf-adr-0036" title="Permanent link">¶</a></h3>
 <p>On a Snowflake connection, the check editor offers a separate <strong>Snowflake DMF</strong>
-category for six types — null count, null percent, duplicate count, unique count,
+category for seven types — null count, null percent, duplicate count, unique count,
 blank count (VARCHAR columns; empty or space-only strings — not NULLs, and tabs/newlines
-aren't treated as blank) and future-timestamp percent (DATE / TIMESTAMP_LTZ /
-TIMESTAMP_TZ columns) — that run on Snowflake's own <code>SNOWFLAKE.CORE.*</code> <strong>Data Metric Functions</strong> instead of a
+aren't treated as blank), future-timestamp percent (DATE / TIMESTAMP_LTZ /
+TIMESTAMP_TZ columns) and accepted values (below) — that run on Snowflake's own <code>SNOWFLAKE.CORE.*</code> <strong>Data Metric Functions</strong> instead of a
 GX expectation. Same authoring flow (pick the type, set the column); the difference
 is the <code>engine</code> the check runs on (<code>dmf</code> vs the default <code>gx</code>). Every type except unique
 count needs a fail or critical threshold, banded like any other metric. Not offered on other
-datasources. Snowflake's <code>ACCEPTED_VALUES</code> and <code>SCHEMA_CHANGE_COUNT</code> are not offered: both
-can only run as a DMF attached to the table on a schedule, not as the on-demand call DataQ
-makes (use the GX in-set check and the schema-drift monitor instead).</p>
+datasources.</p>
+<p><strong>Accepted values (DMF)</strong> counts rows whose value is not in your list, using Snowflake's
+<code>ACCEPTED_VALUES</code> function. <code>ACCEPTED_VALUES</code> can't be called on demand, so DataQ evaluates it
+through <code>SYSTEM$DATA_METRIC_SCAN</code>. That needs no DMF attached to the table and only the SELECT
+rights DataQ already has. <strong>NULLs are not counted as violations.</strong> The scan reads the column
+in full.</p>
+<p><code>SCHEMA_CHANGE_COUNT</code> is not offered. It only exists as a DMF attached to the table on a
+schedule, because it counts changes since its previous scheduled run. Attaching one needs table
+ownership, which DataQ's read-only role deliberately lacks. Use the schema-drift monitor
+instead.</p>
 <h3 id="databricks-dqx-adr-0036">Databricks DQX (ADR 0036)<a class="headerlink" href="#databricks-dqx-adr-0036" title="Permanent link">¶</a></h3>
 <p>On a Unity Catalog connection, the check editor offers a <strong>Databricks DQX</strong> category: row
 rules evaluated by <a href="https://github.com/databrickslabs/dqx">Databricks Labs DQX</a> inside your

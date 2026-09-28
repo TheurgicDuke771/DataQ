@@ -2724,9 +2724,9 @@ resolve. Custom SQL stays binary pass/fail on both SQL datasources (ADR 0019 §4
 row count is not a bandable metric), so <code>metric_value</code> is null by design, not by
 omission.</p>
 <p>ᵈ <strong>Snowflake DMF</strong> (ADR <a href="../../adr/0036-connection-anchored-check-engines/">0036</a>) is the
-first platform-native check engine — an alternative <code>check.engine</code> for six expectation
+first platform-native check engine — an alternative <code>check.engine</code> for seven expectation
 types (null count, null percent, duplicate count, unique count, blank count, future-timestamp
-percent) plus the freshness monitor, invoking Snowflake's
+percent, accepted values) plus the freshness monitor, invoking Snowflake's
 own <code>SNOWFLAKE.CORE.*</code> metric functions instead of a GX expectation. Engine is selected per
 check, on a Snowflake connection only; <code>kind</code> stays <code>expectation</code> either way. Testing or
 re-authenticating a Snowflake connection also probes DMF availability (Enterprise Edition +

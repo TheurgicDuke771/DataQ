@@ -2455,16 +2455,25 @@ Snowflake, PostgreSQL, MySQL and Trino are unaffected — their schema comes fro
 ### Snowflake DMF (ADR 0036)
 
 On a Snowflake connection, the check editor offers a separate **Snowflake DMF**
-category for six types — null count, null percent, duplicate count, unique count,
+category for seven types — null count, null percent, duplicate count, unique count,
 blank count (VARCHAR columns; empty or space-only strings — not NULLs, and tabs/newlines
-aren't treated as blank) and future-timestamp percent (DATE / TIMESTAMP_LTZ /
-TIMESTAMP_TZ columns) — that run on Snowflake's own `SNOWFLAKE.CORE.*` **Data Metric Functions** instead of a
+aren't treated as blank), future-timestamp percent (DATE / TIMESTAMP_LTZ /
+TIMESTAMP_TZ columns) and accepted values (below) — that run on Snowflake's own `SNOWFLAKE.CORE.*` **Data Metric Functions** instead of a
 GX expectation. Same authoring flow (pick the type, set the column); the difference
 is the `engine` the check runs on (`dmf` vs the default `gx`). Every type except unique
 count needs a fail or critical threshold, banded like any other metric. Not offered on other
-datasources. Snowflake's `ACCEPTED_VALUES` and `SCHEMA_CHANGE_COUNT` are not offered: both
-can only run as a DMF attached to the table on a schedule, not as the on-demand call DataQ
-makes (use the GX in-set check and the schema-drift monitor instead).
+datasources.
+
+**Accepted values (DMF)** counts rows whose value is not in your list, using Snowflake's
+`ACCEPTED_VALUES` function. `ACCEPTED_VALUES` can't be called on demand, so DataQ evaluates it
+through `SYSTEM$DATA_METRIC_SCAN`. That needs no DMF attached to the table and only the SELECT
+rights DataQ already has. **NULLs are not counted as violations.** The scan reads the column
+in full.
+
+`SCHEMA_CHANGE_COUNT` is not offered. It only exists as a DMF attached to the table on a
+schedule, because it counts changes since its previous scheduled run. Attaching one needs table
+ownership, which DataQ's read-only role deliberately lacks. Use the schema-drift monitor
+instead.
 
 ### Databricks DQX (ADR 0036)
 
@@ -3963,7 +3972,7 @@ offers. Every GX type on this page is executed in CI on a dataframe batch, and o
 
 | | Count |
 |---|---|
-| Check types in the editor | 45 |
+| Check types in the editor | 46 |
 | GX expectation types vetted by the backend | 25 |
 
 How to read a row: **Parameters** are the editor's fields (`mostly` is GX's optional row
@@ -4069,6 +4078,7 @@ Snowflake's native Data Metric Functions, evaluated inside Snowflake.
 | **Duplicate count (DMF)** | `dmf:duplicate_count` | Snowflake’s system DUPLICATE_COUNT metric function, computed natively in the warehouse. | Uniqueness | `column` | warn / fail / critical (fail or critical required) | Snowflake |
 | **Blank count (DMF)** | `dmf:blank_count` | Snowflake’s system BLANK_COUNT metric function, computed natively in the warehouse — counts empty or space-only strings (not NULLs; tabs/newlines aren’t treated as blank). VARCHAR columns only. | Completeness | `column` | warn / fail / critical (fail or critical required) | Snowflake |
 | **Future timestamp percent (DMF)** | `dmf:future_timestamp_percent` | Snowflake’s system FUTURE_TIMESTAMP_PERCENT metric function (0–100): the share of rows dated after the evaluation time. DATE, TIMESTAMP_LTZ and TIMESTAMP_TZ columns only. | Validity | `column` | warn / fail / critical (fail or critical required) | Snowflake |
+| **Accepted values (DMF)** | `dmf:accepted_values` | Snowflake’s system ACCEPTED_VALUES metric function, evaluated in the warehouse: counts rows whose value is not in the list. NULLs are not counted as violations. | Validity | `column`, `value_set` | warn / fail / critical (fail or critical required) | Snowflake |
 | **Unique count (DMF)** | `dmf:unique_count` | Snowflake’s system UNIQUE_COUNT metric function, computed natively in the warehouse. Degrades downward, so this type carries no thresholds — read the observed value directly. | Uniqueness | `column` | None — pass/fail only | Snowflake |
 
 ## Databricks DQX
@@ -4167,9 +4177,9 @@ row count is not a bandable metric), so `metric_value` is null by design, not by
 omission.
 
 ᵈ **Snowflake DMF** (ADR [0036](../adr/0036-connection-anchored-check-engines.md)) is the
-first platform-native check engine — an alternative `check.engine` for six expectation
+first platform-native check engine — an alternative `check.engine` for seven expectation
 types (null count, null percent, duplicate count, unique count, blank count, future-timestamp
-percent) plus the freshness monitor, invoking Snowflake's
+percent, accepted values) plus the freshness monitor, invoking Snowflake's
 own `SNOWFLAKE.CORE.*` metric functions instead of a GX expectation. Engine is selected per
 check, on a Snowflake connection only; `kind` stays `expectation` either way. Testing or
 re-authenticating a Snowflake connection also probes DMF availability (Enterprise Edition +
