@@ -242,17 +242,16 @@ def _sample_percent(rows: int, total: int) -> float:
     return max(min(100.0, percent), _MIN_SAMPLE_PERCENT)
 
 
-#: Peak worker bytes per cell on the frame lane, by SQL type (#2087: 2 GiB rig, 400k-row views
-#: of samples.tpch). The read's per-cell Python objects dominate, not the final dtype — a
-#: DECIMAL lands as float64 yet costs twice an integer, so this keys on the SQL type.
-_BOOL_CELL_BYTES = 90
-_DATE_CELL_BYTES = 95
-_NUMBER_CELL_BYTES = 140
-_TIMESTAMP_CELL_BYTES = 150
-_DECIMAL_CELL_BYTES = 270
+#: Peak worker bytes per cell on the frame lane's Arrow read (#2144: 2 GiB rig, 400k-row views of
+#: samples.tpch, the whole GX run included). Every fixed-width type measured 31-38 B/cell and
+#: booleans 13, so one figure each covers them. Strings scale with length but not linearly — a
+#: unique 49-char column peaked at ~720 B/cell — so the text cost is an envelope over every
+#: measured table, never under, up to ~5x over for very long text.
+_BOOL_CELL_BYTES = 15
+_FIXED_CELL_BYTES = 45
 #: Strings (and any type not listed above) scale with their length.
-_TEXT_CELL_BYTES = 130
-_TEXT_BYTES_PER_CHAR = 3
+_TEXT_CELL_BYTES = 60
+_TEXT_BYTES_PER_CHAR = 14
 _LENGTH_SAMPLE_ROWS = 1000
 
 
@@ -264,14 +263,8 @@ def _fixed_cell_bytes(column_type: Any) -> int | None:
         column_type = column_type.impl_instance
     if isinstance(column_type, types.Boolean):
         return _BOOL_CELL_BYTES
-    if isinstance(column_type, types.DateTime):
-        return _TIMESTAMP_CELL_BYTES
-    if isinstance(column_type, types.Date):
-        return _DATE_CELL_BYTES
-    if isinstance(column_type, types.Float | types.Integer):
-        return _NUMBER_CELL_BYTES
-    if isinstance(column_type, types.Numeric):
-        return _DECIMAL_CELL_BYTES
+    if isinstance(column_type, types.Date | types.DateTime | types.Numeric | types.Integer):
+        return _FIXED_CELL_BYTES
     return None
 
 
@@ -284,6 +277,38 @@ def frame_row_bytes(column_types: dict[str, Any], mean_lengths: dict[str, float]
             fixed = _TEXT_CELL_BYTES + int(_TEXT_BYTES_PER_CHAR * mean_lengths.get(name, 0.0))
         total += fixed
     return total
+
+
+def _fetchall_arrow(cursor: Any) -> Any:
+    """The Databricks cursor's whole result as one Arrow table (live seam)."""
+    return cursor.fetchall_arrow()
+
+
+def arrow_to_frame(table: Any) -> Any:
+    """The frame `pd.read_sql_table` builds from the same rows, without its per-cell objects.
+
+    Integers widen to int64 and floats/decimals to float64, as the DBAPI path's coercion does;
+    dates and timestamps go through the same `pd.to_datetime` its harmonisation calls, so the
+    unit and timezone match whichever pandas is installed. BINARY and nested types stay native.
+    """
+    import pandas as pd
+    import pyarrow as pa
+    import pyarrow.compute as pc
+
+    columns: dict[str, Any] = {}
+    for field, column in zip(table.schema, table.columns, strict=True):
+        kind = field.type
+        if pa.types.is_date(kind) or pa.types.is_timestamp(kind):
+            objects = column.to_pandas(date_as_object=True, timestamp_as_object=True)
+            utc = pa.types.is_timestamp(kind) and kind.tz is not None
+            columns[field.name] = pd.to_datetime(objects, errors="coerce", utc=utc)
+            continue
+        if pa.types.is_integer(kind) and kind != pa.int64():
+            column = pc.cast(column, pa.int64())
+        elif pa.types.is_decimal(kind) or (pa.types.is_floating(kind) and kind != pa.float64()):
+            column = pc.cast(column, pa.float64(), safe=False)
+        columns[field.name] = column.to_pandas()
+    return pd.DataFrame(columns, index=pd.RangeIndex(table.num_rows))
 
 
 def format_sample_percent(percent: float) -> str:
@@ -331,10 +356,39 @@ class UnityCatalogCheckRunner:
         self._engine.close()
 
     def _read_table(self, *, table: str, schema: str | None) -> Any:
-        """Reflect + read the whole table into a DataFrame (live seam)."""
-        import pandas as pd
+        """Read the whole table into a DataFrame via the connector's Arrow fetch (live seam).
 
-        return pd.read_sql_table(table, self._engine.get(), schema=schema)
+        Not `pd.read_sql_table` (#2144): its per-cell Python objects peaked at ~17x the finished
+        frame, and on pandas 3 it casts every column the dialect reflects as String — BINARY,
+        ARRAY, MAP, STRUCT included — to `str`.
+        """
+        engine = self._engine.get()
+        qualified = qualified_sql_name(
+            table=table,
+            schema=schema,
+            catalog=self._catalog if schema else None,
+            dialect=engine.dialect,
+        )
+        # `qualified` is allowlist-checked and dialect-quoted by `qualified_sql_name`.
+        return self._fetch_frame(f"SELECT * FROM {qualified}")  # noqa: S608  # nosec B608
+
+    def _fetch_frame(self, statement: str) -> Any:
+        """Run ``statement`` on a raw connection and build the frame from its Arrow result.
+
+        Both frame-lane reads — whole table and sample — go through here, so the width
+        estimate's per-cell costs (measured on this path) price every read the cap admits.
+        """
+        raw = self._engine.get().raw_connection()
+        try:
+            cursor = raw.cursor()
+            try:
+                cursor.execute(statement)
+                arrow = _fetchall_arrow(cursor)
+            finally:
+                cursor.close()
+        finally:
+            raw.close()
+        return arrow_to_frame(arrow)
 
     def _count_rows(self, *, table: str, schema: str | None) -> int:
         """``COUNT(*)`` over the target — the size probe (live seam, #595).
@@ -396,9 +450,6 @@ class UnityCatalogCheckRunner:
         self, *, table: str, schema: str | None, sample: SampleSpec
     ) -> tuple[Any, dict[str, Any]]:
         """A bounded sample of the target, pushed down to the warehouse (#595)."""
-        import pandas as pd
-        from sqlalchemy import text
-
         engine = self._engine.get()
         qualified = qualified_sql_name(
             table=table,
@@ -422,7 +473,7 @@ class UnityCatalogCheckRunner:
                 f"SELECT * FROM {qualified} "  # noqa: S608  # nosec B608
                 f"TABLESAMPLE ({percent} PERCENT){repeatable} LIMIT {sample.rows}"
             )
-        frame = pd.read_sql_query(text(statement), engine)
+        frame = self._fetch_frame(statement)
 
         if sample.strategy == SAMPLE_HEAD:
             truncated = len(frame) > sample.rows
