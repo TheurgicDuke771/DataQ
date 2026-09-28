@@ -1,0 +1,8 @@
+<task-notification>
+<task-id>b6a0ryqxh</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c8e07205-7981-4a86-8a4f-c8093d46e726/tasks/b6a0ryqxh.output</output-file>
+<status>completed</status>
+<summary>Monitor "Wait for #2192's last check" stream ended</summary>
+<event>1 fail   14 pass    1 skipping</event>
+</task-notification>
