@@ -76,3 +76,19 @@ Prompt context is assembled by one shared builder with a closed vocabulary: **ta
 - Live verification (the driver-boundary rule): mocked transports encode our model of a provider — an opt-in lane against a real local inference server (Ollama) is the evidence for the OpenAI-compat impl.
 - The posture surface flips `llm_intelligence.enabled` by reading `llm_settings` — the disclosure stays honest in both states.
 - New dependency: `anthropic` (MIT) in `backend/requirements.txt`. The OpenAI-compat impl deliberately uses `httpx` directly — no `openai` SDK dependency for a wire format three lines of httpx cover.
+
+## Amendment (2026-09-28): Databricks model serving is a recipe, not an implementation
+
+Verified live against a Databricks workspace's foundation-model endpoints. Databricks model
+serving speaks the OpenAI chat-completions shape at `https://<host>/serving-endpoints`, so the
+existing `openai_compatible` provider covers it. Point the base URL there, use the endpoint name
+as the model and a Databricks token as the key. Llama 3.3 70B and Qwen3 80B passed plain
+completion plus both structured-output modes.
+
+One wire difference surfaced and is handled in the provider rather than per vendor. Reasoning
+models (gpt-oss) return `message.content` as a **list of typed parts** (`reasoning` and `text`)
+instead of a string. Only the `text` parts are the answer; a response with none is a provider
+error, never an empty or reasoning-as-answer result.
+
+Snowflake Cortex remains the open half of this item: a new wire shape, and the first provider
+whose credential could be a connection's own.
