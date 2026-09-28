@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "05875d59c598",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2152-uc-probe-arrow-schema",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/datasources/unity_catalog.py",
+    "backend/tests/datasources/test_unity_catalog.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/05/875d59c598/0/metadata.json",
+      "transcript": "/05/875d59c598/0/full.jsonl",
+      "compact_transcript": "/05/875d59c598/0/transcript.jsonl",
+      "content_hash": "/05/875d59c598/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 88,
+    "cache_creation_tokens": 53195,
+    "cache_read_tokens": 19489166,
+    "output_tokens": 31927,
+    "api_call_count": 44
+  }
+}
