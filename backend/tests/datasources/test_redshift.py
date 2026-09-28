@@ -78,6 +78,7 @@ def test_disabled_tls_carries_no_root_file() -> None:
         (_SERVERLESS, "analytics.us-east-2"),
         (_CLUSTER, "examplecluster.us-west-2"),
         (_CLUSTER.upper(), "examplecluster.us-west-2"),
+        ("c1.abc123.cn-north-1.redshift.amazonaws.com.cn", "c1.cn-north-1"),
         ("warehouse.example.com", "warehouse.example.com"),
         ("10.0.0.5", "10.0.0.5"),
     ],

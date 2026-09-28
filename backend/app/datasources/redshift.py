@@ -32,7 +32,7 @@ from backend.app.datasources.postgres import PostgresConfig
 # `<workgroup>.<account>.<region>.redshift-serverless.amazonaws.com`.
 _AWS_ENDPOINT = re.compile(
     r"(?P<name>[a-z0-9-]+)\.[a-z0-9]+\.(?P<region>[a-z]{2}(-[a-z]+)+-\d)"
-    r"\.redshift(-serverless)?\.amazonaws\.com"
+    r"\.redshift(-serverless)?\.amazonaws\.com(\.cn)?"
 )
 
 
