@@ -28,7 +28,7 @@ def _sum_tokens(first: int | None, second: int | None) -> int | None:
     return (first or 0) + (second or 0)
 
 
-def _content_text(content: Any) -> str:
+def _content_text(content: Any, *, finish_reason: Any = None) -> str:
     """The answer text of ``message.content``: a string, or a list of typed parts.
 
     Reasoning models (gpt-oss on Databricks model serving, and OpenAI's own newer formats)
@@ -47,7 +47,10 @@ def _content_text(content: Any) -> str:
         ]
         if parts:
             return "".join(parts)
-        raise LLMProviderError("LLM response content has no text part")
+        # Reasoning with no answer is a bad OUTPUT, not a broken provider: retryable, and usually
+        # a token budget spent thinking.
+        cut = " — the token budget ran out while reasoning" if finish_reason == "length" else ""
+        raise LLMOutputInvalidError(f"LLM response has no answer text{cut}")
     raise LLMProviderError("LLM response content is neither text nor a list of parts")
 
 
@@ -105,10 +108,11 @@ class OpenAICompatProvider:
 
     def _result(self, data: dict[str, Any]) -> LLMResult:
         try:
-            content = data["choices"][0]["message"]["content"] or ""
+            choice = data["choices"][0]
+            content = choice["message"]["content"] or ""
         except (KeyError, IndexError, TypeError) as exc:
             raise LLMProviderError("LLM response missing choices[0].message.content") from exc
-        text = _content_text(content)
+        text = _content_text(content, finish_reason=choice.get("finish_reason"))
         usage = data.get("usage") or {}
         return LLMResult(
             text=text,

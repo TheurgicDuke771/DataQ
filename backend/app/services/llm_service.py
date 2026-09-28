@@ -308,6 +308,11 @@ def test_settings(
         result = provider.complete(
             "Reply with the single word: ok", max_tokens=16, timeout=_TEST_TIMEOUT_SECONDS
         )
+    except LLMOutputInvalidError:
+        # A reasoning model spends the probe's 16 tokens thinking and returns no answer text: the
+        # endpoint authenticated and the model answered, which is all the probe checks.
+        terminal = {"status": "succeeded"}
+        response = {"ok": True, "model": draft.model, "reply_chars": 0}
     except (LLMUnavailableError, LLMProviderError) as exc:
         terminal = {
             "status": "failed",

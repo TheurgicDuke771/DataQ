@@ -206,10 +206,18 @@ def test_structured_output_parses_from_the_text_part() -> None:
     assert result.parsed == {"sql": "SELECT 1"}
 
 
-@pytest.mark.parametrize(
-    "content", [[{"type": "reasoning", "summary": []}], {"text": "not a list"}, 42]
-)
-def test_content_without_a_text_part_is_a_provider_error(content: Any) -> None:
+def test_reasoning_with_no_answer_is_a_retryable_output_error() -> None:
+    """A budget spent thinking is a bad OUTPUT, not a broken provider — `_prompt_json` repairs
+    on `LLMOutputInvalidError`, and the admin must not be told the endpoint is misconfigured."""
+    body = _parts_response([{"type": "reasoning", "summary": []}])
+    body["choices"][0]["finish_reason"] = "length"
+    provider = _provider(lambda _r: httpx.Response(200, json=body))
+    with pytest.raises(LLMOutputInvalidError, match="ran out while reasoning"):
+        provider.complete("hi")
+
+
+@pytest.mark.parametrize("content", [{"text": "not a list"}, 42])
+def test_content_of_an_unknown_shape_is_a_provider_error(content: Any) -> None:
     provider = _provider(lambda _r: httpx.Response(200, json=_parts_response(content)))
     with pytest.raises(LLMProviderError):
         provider.complete("hi")
