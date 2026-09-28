@@ -365,3 +365,62 @@ def test_iceberg_requires_identifier() -> None:
             max_rows=10,
             secret_store=FakeSecretStore(default="s3cret"),
         )
+
+
+# ───────────────────────── SQL Server derived tables (#2138) ─────────────
+
+
+def test_a_sql_server_query_with_a_trailing_order_by_is_read_with_offset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """T-SQL refuses a top-level ORDER BY in a derived table without TOP/OFFSET (Msg 1033)."""
+    fake = _patch_sql(monkeypatch, count=2, frame=_frame(2))
+    read_dataset(
+        _conn("mssql"),
+        DatasetSpec(query="SELECT id FROM dbo.t ORDER BY id -- newest first"),
+        max_rows=10,
+        secret_store=FakeSecretStore(default="s3cret"),
+    )
+    assert "ORDER BY id -- newest first\nOFFSET 0 ROWS\n) __dataq_src" in fake.statements[0]
+
+
+def test_a_sql_server_query_starting_with_a_cte_is_refused_with_the_fix() -> None:
+    with pytest.raises(DatasetReadUnsupportedError, match="as a subquery"):
+        read_dataset(
+            _conn("mssql"),
+            DatasetSpec(query="WITH c AS (SELECT id FROM dbo.t) SELECT id FROM c"),
+            max_rows=10,
+            secret_store=FakeSecretStore(default="s3cret"),
+        )
+
+
+def test_an_unnamed_sql_server_column_explains_the_alias_it_needs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _patch_sql(monkeypatch, count=1, frame=_frame(1))
+
+    def refuse(stmt: Any) -> Any:
+        raise RuntimeError(
+            "(pytds.tds_base.ProgrammingError) No column name was specified for column 2 of "
+            "'__dataq_src'."
+        )
+
+    monkeypatch.setattr(fake, "execute", refuse)
+    with pytest.raises(DatasetReadUnsupportedError, match="alias each computed column"):
+        read_dataset(
+            _conn("mssql"),
+            DatasetSpec(query="SELECT id, id * 2 FROM dbo.t"),
+            max_rows=10,
+            secret_store=FakeSecretStore(default="s3cret"),
+        )
+
+
+def test_other_engines_read_the_query_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _patch_sql(monkeypatch, count=2, frame=_frame(2))
+    read_dataset(
+        _conn("postgres"),
+        DatasetSpec(query="WITH c AS (SELECT 1 AS id) SELECT id FROM c ORDER BY id"),
+        max_rows=10,
+        secret_store=FakeSecretStore(default="s3cret"),
+    )
+    assert "OFFSET" not in fake.statements[0]

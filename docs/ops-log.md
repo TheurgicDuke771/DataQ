@@ -752,7 +752,9 @@ Created in AWS account `251783195294` for the Redshift adapter's live battery. C
   - delete the secret `dataq/it/redshift-reader` with force-delete;
   - revoke the port 5439 rule on `sg-0c047e1aaf5c17416`.
 
-## 2026-09-29 — Athena (#2131) and Redshift (#1682) live-test resources torn down (us-east-2)
+## 2026-09-28 — Athena (#2131) and Redshift (#1682) live-test resources torn down (us-east-2)
+
+(Dated 2026-09-29 when first written; the teardown ran on 2026-09-28 UTC.)
 
 User-approved. Run as `dataq-deploy` in account `251783195294`.
 

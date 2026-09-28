@@ -256,3 +256,43 @@ def validate_custom_sql_check(
             },
         )
     validate_query(config.get(QUERY_KEY), connection_type=connection_type)
+
+
+#: A whole T-SQL name or keyword — `top10_customer` is one word, never the keyword `top`.
+_TSQL_WORD = re.compile(r"[A-Za-z_@#][A-Za-z0-9_@#$]*")
+
+
+def tsql_derived_table_query(query: str) -> str:
+    """``query`` made legal as a T-SQL derived table, which refuses a top-level ``ORDER BY``
+    unless ``TOP`` or ``OFFSET`` accompanies it (Msg 1033). ``OFFSET 0 ROWS`` keeps every row, so
+    appending it changes nothing a comparison reads — the engine orders rows itself (#2138).
+    On its own line, so a trailing ``--`` comment cannot swallow it.
+    """
+    code, _ = _strip_noncode(query, _IDENTIFIER_QUOTES.get("mssql", ()))
+    depth, top_level = 0, []
+    for char in code.lower():
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        top_level.append(char if depth == 0 and char not in "()" else " ")
+    words = _TSQL_WORD.findall("".join(top_level))
+    orders = [i for i in range(len(words) - 1) if words[i] == "order" and words[i + 1] == "by"]
+    if not orders or "top" in words or "offset" in words[orders[-1] :]:
+        return query
+    return f"{query}\nOFFSET 0 ROWS"
+
+
+#: Why a SQL Server comparison query cannot start with a CTE (#2138).
+TSQL_CTE_IN_DERIVED_TABLE = (
+    "SQL Server cannot read a query that starts with WITH as a derived table, which is how a "
+    "comparison reads its SQL side — write the common table expression as a subquery instead "
+    "(SELECT ... FROM (SELECT ...) AS c)"
+)
+
+
+def starts_with_cte(query: str, connection_type: str) -> bool:
+    """Whether ``query``'s first keyword (outside comments and literals) is ``WITH``."""
+    code, _ = _strip_noncode(query, _IDENTIFIER_QUOTES.get(connection_type, ()))
+    leading = _LEADING_KEYWORD.match(code.strip())
+    return leading is not None and leading.group(1).lower() == "with"

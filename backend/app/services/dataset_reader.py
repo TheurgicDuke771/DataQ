@@ -25,7 +25,12 @@ from backend.app.datasources.iceberg import (
 from backend.app.datasources.sampling import enforce_byte_cap
 from backend.app.datasources.sql_engines import GENERIC_SQL_TYPES, authenticates_without_secret
 from backend.app.db.models import Connection
-from backend.app.services.custom_sql import validate_query
+from backend.app.services.custom_sql import (
+    TSQL_CTE_IN_DERIVED_TABLE,
+    starts_with_cte,
+    tsql_derived_table_query,
+    validate_query,
+)
 from backend.app.services.profile_service import (
     _open_connection,
     _table,
@@ -88,7 +93,12 @@ def _wrapped_query(spec: DatasetSpec, connection_type: str) -> str:
     """The validated read-only projection as a parenthesized FROM source."""
     assert spec.query is not None
     validate_query(spec.query, connection_type=connection_type)
-    return spec.query.strip().rstrip(string.whitespace + ";")
+    query = spec.query.strip().rstrip(string.whitespace + ";")
+    if connection_type != "mssql":
+        return query
+    if starts_with_cte(query, connection_type):
+        raise DatasetReadUnsupportedError(TSQL_CTE_IN_DERIVED_TABLE, detail={"spec": "query"})
+    return tsql_derived_table_query(query)
 
 
 def _sql_read(
@@ -152,7 +162,17 @@ def _sql_read(
         # Deliberately NOT the runners' scan guardrail (#1330): `max_rows` is the
         # comparison engine's own per-side budget (ADR 0015) and its refusal names
         # which SIDE was too big, so the two count-and-refuse pairs stay separate.
-        count = int(conn.execute(count_stmt).scalar_one())
+        try:
+            count = int(conn.execute(count_stmt).scalar_one())
+        except Exception as exc:
+            if connection.type == "mssql" and "no column name was specified" in str(exc).lower():
+                # Msg 8155: T-SQL refuses a derived-table column with no name (#2138).
+                raise DatasetReadUnsupportedError(
+                    "every column a SQL Server comparison query returns needs a name — alias "
+                    "each computed column (for example: amount * 2 AS doubled_amount)",
+                    detail={"spec": "query"},
+                ) from exc
+            raise
         if count > max_rows:
             raise _too_large(count, max_rows, side_hint="dataset")
         # Arrow-backed dtypes for parity with the flat-file/Iceberg readers — cross-side dtype/null-

@@ -450,3 +450,58 @@ def test_tsql_runs_unseparated_statements_so_each_write_keyword_is_refused(state
     """T-SQL needs no `;` between statements: the second one below would run in the same batch."""
     with pytest.raises(CustomSqlInvalidError):
         validate_query(f"SELECT TOP 1 c FROM {{batch}} {statement}", connection_type="mssql")
+
+
+# ───────────────────────── T-SQL derived tables (#2138) ─────────────────
+
+
+@pytest.mark.parametrize(
+    ("query", "offset_added"),
+    [
+        ("SELECT a FROM t ORDER BY a", True),
+        ("SELECT a FROM t UNION SELECT a FROM u ORDER BY a", True),
+        ("SELECT a FROM t WHERE b IN (SELECT TOP 1 b FROM u ORDER BY b) ORDER BY a", True),
+        ("SELECT TOP 5 a FROM t ORDER BY a", False),  # TOP already makes it legal
+        ("SELECT a FROM t ORDER BY a OFFSET 2 ROWS", False),
+        ("SELECT a FROM (SELECT a FROM t) AS x", False),
+        ("SELECT a FROM (SELECT a FROM t ORDER BY a OFFSET 0 ROWS) AS x", False),
+        ("SELECT 'order by' AS x FROM t", False),  # inside a literal
+        ("SELECT [order by] FROM t", False),  # a delimited identifier
+        # Names that merely contain a keyword are not the keyword (review).
+        ("SELECT top10_customer, amount FROM t ORDER BY amount", True),
+        ("SELECT offset2 FROM t ORDER BY offset2", True),
+    ],
+)
+def test_a_top_level_order_by_gains_offset_only_where_t_sql_needs_it(
+    query: str, offset_added: bool
+) -> None:
+    from backend.app.services.custom_sql import tsql_derived_table_query
+
+    rewritten = tsql_derived_table_query(query)
+    assert rewritten == (f"{query}\nOFFSET 0 ROWS" if offset_added else query)
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("WITH c AS (SELECT 1) SELECT * FROM c", True),
+        ("  -- a note\n with c AS (SELECT 1) SELECT * FROM c", True),
+        ("SELECT 'with' FROM t", False),
+        ("SELECT a FROM t", False),
+    ],
+)
+def test_starts_with_cte(query: str, expected: bool) -> None:
+    from backend.app.services.custom_sql import starts_with_cte
+
+    assert starts_with_cte(query, "mssql") is expected
+
+
+def test_a_sql_server_comparison_side_starting_with_a_cte_is_refused_at_author_time() -> None:
+    """Saved, it would fail on every run: T-SQL cannot read a WITH query as a derived table."""
+    from backend.app.services.check_service import CheckConfigInvalidError, _validate_side_query
+
+    query = "WITH c AS (SELECT OrderId FROM dbo.Orders) SELECT OrderId FROM c"
+    with pytest.raises(CheckConfigInvalidError, match="as a subquery") as exc:
+        _validate_side_query(query, connection_type="mssql", field="config.target_query")
+    assert exc.value.detail == {"field": "config.target_query"}
+    _validate_side_query(query, connection_type="postgres", field="config.target_query")

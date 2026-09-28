@@ -69,8 +69,10 @@ from backend.app.services import audit_service
 from backend.app.services.check_dimension import is_valid_dimension, resolve_dimension
 from backend.app.services.custom_sql import (
     SQL_QUERYABLE_TYPES,
+    TSQL_CTE_IN_DERIVED_TABLE,
     CustomSqlInvalidError,
     is_custom_sql,
+    starts_with_cte,
     validate_custom_sql_check,
     validate_query,
 )
@@ -446,6 +448,11 @@ def _validate_side_query(query: Any, *, connection_type: str, field: str) -> Non
             f"invalid comparison query in {field}: {exc.message}",
             detail={"field": field, **(exc.detail or {})},
         ) from exc
+    if connection_type == "mssql" and starts_with_cte(query, connection_type):
+        raise CheckConfigInvalidError(
+            f"invalid comparison query in {field}: {TSQL_CTE_IN_DERIVED_TABLE}",
+            detail={"field": field},
+        )
 
 
 def _reject_oversized_config(config: dict[str, Any]) -> None:
