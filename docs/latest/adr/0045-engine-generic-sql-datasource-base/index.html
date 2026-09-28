@@ -2258,6 +2258,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#amendment-amazon-athena-2026-09-28" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Amendment — Amazon Athena (2026-09-28)
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2445,6 +2456,30 @@ rather than a special case:</p>
 documented driver limitation, a missing optional driver) into a DataQ-authored message shown
 verbatim; and <code>unsupported_expectation_types</code>, for an allowlisted type the dialect has no GX
 translation for (regex on T-SQL), refused at author time rather than erroring on every run.</p>
+<h2 id="amendment-amazon-athena-2026-09-28">Amendment — Amazon Athena (2026-09-28)<a class="headerlink" href="#amendment-amazon-athena-2026-09-28" title="Permanent link">¶</a></h2>
+<p>Athena is the fifth engine and
+the first with no server to open a session on. It needed two small hooks and one GX fix:</p>
+<ul>
+<li><strong>The endpoint is the region.</strong> <code>AthenaConfig</code> derives <code>host</code> (<code>athena.&lt;region&gt;.amazonaws.com</code>)
+  from <code>region</code> and refuses a configured host that disagrees, so a config can never point the
+  credential somewhere its region field does not say. The IAM access key ID is the base's
+  <code>user</code>; the secret access key travels as connect args, never in the URL.</li>
+<li><strong><code>url_query</code></strong> (a config hook): the workgroup, data catalog and query-results location are
+  non-secret driver options the URL's query carries.</li>
+<li><strong><code>namespace_includes_port</code></strong> (a spec flag): OpenLineage's Athena namespace is
+  <code>awsathena://athena.&lt;region&gt;.amazonaws.com</code>, with no port.</li>
+<li><strong>§4 does not hold</strong>, as on Trino and SQL Server: Athena has no read-only session, so the
+  guarantee is an IAM policy that can only read (live-verified: the reader's <code>CREATE TABLE</code>
+  was refused). Query results are written to the results location, so region, workgroup and
+  results location are destination fields.</li>
+<li><strong>GX had no Athena regex branch.</strong> Every regex expectation errored on the pyathena dialect;
+  <code>gx_metrics</code> adds one (<code>regexp_like</code>, Athena's engine being Trino's) to each GX module that
+  imported the helper.</li>
+</ul>
+<p>Every SQL-batch expectation type, custom SQL, the monitors, profiler, schema drift, comparison
+reads, inventory, browsing and an end-to-end persisted run were <strong>executed</strong> against a live
+Athena workgroup as a least-privileged IAM user. Every check is a billed query, which the guide
+states.</p>
 
 
 

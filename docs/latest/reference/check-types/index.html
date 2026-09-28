@@ -2678,7 +2678,7 @@ change it on any check.</p>
 <td>Validity</td>
 <td><code>column</code>, <code>regex</code>, <code>mostly</code> <em>(optional)</em></td>
 <td>warn / fail / critical</td>
-<td>Snowflake, ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL / MariaDB, Trino — not SQL Server (no translation for that SQL dialect; refused at author time) · SQL pushdown on Unity Catalog</td>
+<td>Snowflake, ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL / MariaDB, Trino, Amazon Athena — not SQL Server (no translation for that SQL dialect; refused at author time) · SQL pushdown on Unity Catalog</td>
 </tr>
 <tr>
 <td><strong>Column values do not match regex</strong></td>
@@ -2687,7 +2687,7 @@ change it on any check.</p>
 <td>Validity</td>
 <td><code>column</code>, <code>regex</code>, <code>mostly</code> <em>(optional)</em></td>
 <td>warn / fail / critical</td>
-<td>Snowflake, ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL / MariaDB, Trino — not SQL Server (no translation for that SQL dialect; refused at author time) · SQL pushdown on Unity Catalog</td>
+<td>Snowflake, ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL / MariaDB, Trino, Amazon Athena — not SQL Server (no translation for that SQL dialect; refused at author time) · SQL pushdown on Unity Catalog</td>
 </tr>
 <tr>
 <td><strong>Column values match a list of regexes</strong></td>
@@ -2696,7 +2696,7 @@ change it on any check.</p>
 <td>Validity</td>
 <td><code>column</code>, <code>regex_list</code>, <code>match_on</code> <em>(optional)</em>, <code>mostly</code> <em>(optional)</em></td>
 <td>warn / fail / critical</td>
-<td>Snowflake, ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL / MariaDB, Trino — not SQL Server (no translation for that SQL dialect; refused at author time) · SQL pushdown on Unity Catalog</td>
+<td>Snowflake, ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL / MariaDB, Trino, Amazon Athena — not SQL Server (no translation for that SQL dialect; refused at author time) · SQL pushdown on Unity Catalog</td>
 </tr>
 <tr>
 <td><strong>Column values match none of a list of regexes</strong></td>
@@ -2705,7 +2705,7 @@ change it on any check.</p>
 <td>Validity</td>
 <td><code>column</code>, <code>regex_list</code>, <code>mostly</code> <em>(optional)</em></td>
 <td>warn / fail / critical</td>
-<td>Snowflake, ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL / MariaDB, Trino — not SQL Server (no translation for that SQL dialect; refused at author time) · SQL pushdown on Unity Catalog</td>
+<td>Snowflake, ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL / MariaDB, Trino, Amazon Athena — not SQL Server (no translation for that SQL dialect; refused at author time) · SQL pushdown on Unity Catalog</td>
 </tr>
 <tr>
 <td><strong>Column values are valid JSON</strong></td>
@@ -2714,7 +2714,7 @@ change it on any check.</p>
 <td>Validity</td>
 <td><code>column</code>, <code>mostly</code> <em>(optional)</em></td>
 <td>warn / fail / critical</td>
-<td>ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg — not Snowflake, PostgreSQL, MySQL / MariaDB, Trino, SQL Server (no SQL implementation; refused at author time)</td>
+<td>ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg — not Snowflake, PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena (no SQL implementation; refused at author time)</td>
 </tr>
 <tr>
 <td><strong>Column values are of type</strong></td>
@@ -2804,7 +2804,7 @@ change it on any check.</p>
 <td>Validity</td>
 <td><code>column</code>, <code>strftime_format</code>, <code>mostly</code> <em>(optional)</em></td>
 <td>warn / fail / critical</td>
-<td>ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg — not Snowflake, PostgreSQL, MySQL / MariaDB, Trino, SQL Server (no SQL implementation; refused at author time)</td>
+<td>ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg — not Snowflake, PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena (no SQL implementation; refused at author time)</td>
 </tr>
 </tbody>
 </table>
@@ -2934,7 +2934,7 @@ change it on any check.</p>
 <td>— (set it yourself)</td>
 <td><code>target_metric</code>, <code>column</code>, <code>window</code> <em>(optional)</em>, <code>min_points</code> <em>(optional)</em>, <code>seasonality</code> <em>(optional)</em></td>
 <td>warn / fail / critical (fail or critical required)</td>
-<td>Snowflake, Unity Catalog, PostgreSQL, MySQL / MariaDB, Trino, SQL Server</td>
+<td>Snowflake, Unity Catalog, PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena</td>
 </tr>
 </tbody>
 </table>
@@ -2995,7 +2995,7 @@ change it on any check.</p>
 <td>— (set it yourself)</td>
 <td><code>unexpected_rows_query</code></td>
 <td>warn / fail / critical</td>
-<td>Snowflake, Unity Catalog, PostgreSQL, MySQL / MariaDB, Trino, SQL Server</td>
+<td>Snowflake, Unity Catalog, PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena</td>
 </tr>
 </tbody>
 </table>

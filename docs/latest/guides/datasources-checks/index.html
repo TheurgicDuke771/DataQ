@@ -1007,6 +1007,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#amazon-athena" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Amazon Athena
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#sql-server-azure-sql-fabric-t-sql" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1112,10 +1123,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#custom-sql-snowflake-unity-catalog-postgresql-mysql-trino-adr-0019" class="md-nav__link">
+  <a href="#custom-sql-snowflake-unity-catalog-postgresql-mysql-trino-sql-server-athena-adr-0019" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino — ADR 0019)
+        Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server / Athena — ADR 0019)
       
     </span>
   </a>
@@ -1178,10 +1189,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#anomaly-monitor-snowflake-unity-catalog-postgresql-mysql-trino-adr-0012" class="md-nav__link">
+  <a href="#anomaly-monitor-snowflake-unity-catalog-the-generic-sql-engines-adr-0012" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Anomaly monitor (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino — ADR 0012)
+        Anomaly monitor (Snowflake / Unity Catalog / the generic SQL engines — ADR 0012)
       
     </span>
   </a>
@@ -2682,6 +2693,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#amazon-athena" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Amazon Athena
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#sql-server-azure-sql-fabric-t-sql" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2787,10 +2809,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#custom-sql-snowflake-unity-catalog-postgresql-mysql-trino-adr-0019" class="md-nav__link">
+  <a href="#custom-sql-snowflake-unity-catalog-postgresql-mysql-trino-sql-server-athena-adr-0019" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino — ADR 0019)
+        Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server / Athena — ADR 0019)
       
     </span>
   </a>
@@ -2853,10 +2875,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#anomaly-monitor-snowflake-unity-catalog-postgresql-mysql-trino-adr-0012" class="md-nav__link">
+  <a href="#anomaly-monitor-snowflake-unity-catalog-the-generic-sql-engines-adr-0012" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Anomaly monitor (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino — ADR 0012)
+        Anomaly monitor (Snowflake / Unity Catalog / the generic SQL engines — ADR 0012)
       
     </span>
   </a>
@@ -3019,6 +3041,12 @@
 <tr>
 <td>SQL Server / T-SQL (SQL Server, Azure SQL, Synapse; Fabric SQL via the ODBC lane)</td>
 <td>host + port + database; SQL login (user, password) or Entra service principal (tenant + client ID, client secret)</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Amazon Athena (serverless SQL over S3 through the Glue catalog)</td>
+<td>region + IAM access key (key ID, secret access key); optional workgroup, query-results location, data catalog</td>
 <td>✅</td>
 <td>✅</td>
 </tr>
@@ -3316,6 +3344,48 @@ and whatever access control the cluster enforces.</p>
 - <strong>No column tags, no warehouse-native lineage.</strong> DataQ reads no column-classification
   source from Trino, and Trino keeps no lineage log DataQ reads — lineage comes from dbt,
   OpenLineage or a catalog, and an empty graph means "not observed".</p>
+<h3 id="amazon-athena">Amazon Athena<a class="headerlink" href="#amazon-athena" title="Permanent link">¶</a></h3>
+<p>Serverless SQL over data in S3, through the AWS Glue catalog. It is an engine on the generic
+SQL base, like Trino (Athena's own engine is Trino-based).</p>
+<ul>
+<li><strong>Fields:</strong> the <strong>region</strong> (the endpoint follows from it — there is no host or port), the
+  IAM <strong>access key ID</strong> with the <strong>secret access key</strong> as the stored secret, and optionally a
+  <strong>workgroup</strong> (default <code>primary</code>), a <strong>query-results location</strong> (<code>s3://bucket/prefix/</code>;
+  needed unless the workgroup enforces its own), a <strong>data catalog</strong> (default
+  <code>awsdatacatalog</code>, the Glue catalog) and a <strong>default database</strong>. A connection reads one data
+  catalog; a Glue database is the schema, so a target is <code>database.table</code> and its asset is
+  <code>catalog.database.table</code>.</li>
+<li><strong>Every check is a billed query.</strong> Athena charges per byte scanned, with a per-query
+  minimum, and every check, monitor, profile, browse listing and inventory sync is a query.
+  Each also takes seconds: a 24-check suite runs for a few minutes. Prefer Parquet or ORC
+  tables and partitions, which Athena scans far less of.</li>
+<li><strong>Not read-only at the session — the IAM policy is the guarantee.</strong> Athena has no
+  read-only session. Custom SQL still passes DataQ's validator, which rejects writes and DDL,
+  but give DataQ an IAM principal that can only read:</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"Statement"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span><span class="nt">"Effect"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Allow"</span><span class="p">,</span><span class="w"> </span><span class="nt">"Resource"</span><span class="p">:</span><span class="w"> </span><span class="s2">"*"</span><span class="p">,</span><span class="w"> </span><span class="nt">"Action"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"athena:StartQueryExecution"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"athena:GetQueryExecution"</span><span class="p">,</span><span class="w"> </span><span class="s2">"athena:GetQueryResults"</span><span class="p">,</span><span class="w"> </span><span class="s2">"athena:StopQueryExecution"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"athena:GetWorkGroup"</span><span class="p">,</span><span class="w"> </span><span class="s2">"glue:GetDatabase"</span><span class="p">,</span><span class="w"> </span><span class="s2">"glue:GetDatabases"</span><span class="p">,</span><span class="w"> </span><span class="s2">"glue:GetTable"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"glue:GetTables"</span><span class="p">,</span><span class="w"> </span><span class="s2">"glue:GetPartitions"</span><span class="p">]},</span>
+<span class="w">    </span><span class="p">{</span><span class="nt">"Effect"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Allow"</span><span class="p">,</span><span class="w"> </span><span class="nt">"Action"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"s3:GetBucketLocation"</span><span class="p">,</span><span class="w"> </span><span class="s2">"s3:ListBucket"</span><span class="p">],</span>
+<span class="w">     </span><span class="nt">"Resource"</span><span class="p">:</span><span class="w"> </span><span class="s2">"arn:aws:s3:::your-bucket"</span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="nt">"Effect"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Allow"</span><span class="p">,</span><span class="w"> </span><span class="nt">"Action"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"s3:GetObject"</span><span class="p">],</span>
+<span class="w">     </span><span class="nt">"Resource"</span><span class="p">:</span><span class="w"> </span><span class="s2">"arn:aws:s3:::your-bucket/your-data/*"</span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="nt">"Effect"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Allow"</span><span class="p">,</span><span class="w"> </span><span class="nt">"Action"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"s3:GetObject"</span><span class="p">,</span><span class="w"> </span><span class="s2">"s3:PutObject"</span><span class="p">],</span>
+<span class="w">     </span><span class="nt">"Resource"</span><span class="p">:</span><span class="w"> </span><span class="s2">"arn:aws:s3:::your-bucket/athena-results/*"</span><span class="p">}</span>
+<span class="w">  </span><span class="p">]</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Query results land in the results location, so changing the region, workgroup or results
+  location counts as moving the credential, and the edit asks for it again.
+- <strong>Names are lower case.</strong> Glue folds every name to lower case, so the database and table
+  must be typed that way (a mixed-case name is refused when you save).
+- <strong>Type names</strong> for <code>to_be_of_type</code> are the bare Athena names: <code>DECIMAL</code>, <code>TIMESTAMP</code>,
+  <code>VARCHAR</code>, <code>BIGINT</code>.
+- <strong>No column tags, no warehouse-native lineage.</strong> Lineage comes from dbt, OpenLineage or a
+  catalog, and an empty graph means "not observed".</p>
 <h3 id="sql-server-azure-sql-fabric-t-sql">SQL Server / Azure SQL / Fabric (T-SQL)<a class="headerlink" href="#sql-server-azure-sql-fabric-t-sql" title="Permanent link">¶</a></h3>
 <p>One connection type (<code>mssql</code>) for <strong>anything that speaks SQL Server's TDS protocol</strong> — SQL
 Server itself, Azure SQL Database, Synapse dedicated pools, and the Microsoft Fabric SQL
@@ -3671,7 +3741,7 @@ nothing to band — a <em>Volume</em> or <em>Anomaly</em> monitor measures that 
 and a learned baseline. <strong>Whole-table set comparisons</strong> (columns match an expected set or
 ordered list) are what the <em>Schema-drift</em> monitor does, against a captured baseline. For
 anything with no vetted type, write a custom-SQL check.</p>
-<h3 id="custom-sql-snowflake-unity-catalog-postgresql-mysql-trino-adr-0019">Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino — ADR 0019)<a class="headerlink" href="#custom-sql-snowflake-unity-catalog-postgresql-mysql-trino-adr-0019" title="Permanent link">¶</a></h3>
+<h3 id="custom-sql-snowflake-unity-catalog-postgresql-mysql-trino-sql-server-athena-adr-0019">Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server / Athena — ADR 0019)<a class="headerlink" href="#custom-sql-snowflake-unity-catalog-postgresql-mysql-trino-sql-server-athena-adr-0019" title="Permanent link">¶</a></h3>
 <p>A read-only SQL rule in the Monaco editor: <strong>any rows returned are failures</strong>. Use
 <code>{batch}</code> as a placeholder for the suite's target table
 (<code>SELECT * FROM {batch} WHERE amount &lt; 0</code>). Single read-only statement enforced
@@ -3768,7 +3838,7 @@ data scan: <code>information_schema</code> for Snowflake/Unity Catalog/PostgreSQ
 a bounded CSV header sample) for ADLS Gen2/S3 flat files, and the loaded table's own
 metadata for Iceberg. Re-baseline explicitly once you've reviewed a drift and want
 it as the new normal — it is never re-baselined for you.</p>
-<h3 id="anomaly-monitor-snowflake-unity-catalog-postgresql-mysql-trino-adr-0012">Anomaly monitor (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino — ADR 0012)<a class="headerlink" href="#anomaly-monitor-snowflake-unity-catalog-postgresql-mysql-trino-adr-0012" title="Permanent link">¶</a></h3>
+<h3 id="anomaly-monitor-snowflake-unity-catalog-the-generic-sql-engines-adr-0012">Anomaly monitor (Snowflake / Unity Catalog / the generic SQL engines — ADR 0012)<a class="headerlink" href="#anomaly-monitor-snowflake-unity-catalog-the-generic-sql-engines-adr-0012" title="Permanent link">¶</a></h3>
 <p><em>Is this value abnormal for this dataset?</em> Where a volume monitor asks "is the row
 count inside a range I chose?", the anomaly monitor learns the range: it keeps a
 rolling mean/stddev of the target's own <strong>row count</strong> or <strong>freshness age</strong> and bands
@@ -3916,6 +3986,11 @@ the type your warehouse/catalog shows you:</p>
 <td>Trino</td>
 <td>SQL (dialect-native)</td>
 <td><code>DECIMAL(12, 2)</code>, <code>VARCHAR</code> / <code>VARCHAR(20)</code>, <code>TIMESTAMP(6)</code>, <code>TIMESTAMP(6) WITH TIME ZONE</code>, <code>BIGINT</code></td>
+</tr>
+<tr>
+<td>Amazon Athena</td>
+<td>SQL (bare type name)</td>
+<td><code>DECIMAL</code>, <code>TIMESTAMP</code>, <code>VARCHAR</code>, <code>BIGINT</code>, <code>BOOLEAN</code></td>
 </tr>
 <tr>
 <td>SQL Server</td>
