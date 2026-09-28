@@ -764,3 +764,19 @@ User-approved. Run as `dataq-deploy` in account `251783195294`.
   - Glue database `dataq_athena_it` deleted (it had 0 tables); no `dq_athena_*` databases remain.
   - `athena-results/` and `athena-data/` emptied in `dataq-landing-251783195294`, 0 objects left.
 - **Verified:** `list-secrets` shows no `dataq/it/*` and no `dataq-it-rs` secret. Both Redshift resources return not-found.
+
+## 2026-09-28 — temporary service-principal secret for the #2127 / #2128 live checks
+
+User-approved (option a). All steps were run with the owner's `az` login.
+
+- **19:54:13Z** — a secret `claude-it-2127` was added to app `dataq-terraform-sp`, set to expire 2026-09-29T19:54Z. Its value went straight into Key Vault secret `it-sp-2127` (same expiry) and was never printed.
+- **19:54:39Z** — *Storage Blob Data Reader* was granted to that SP on the harness storage account.
+- **Used for:**
+  - the token-cache before/after measurement (#2127);
+  - reading the harness dbt artifact as the SP (#2128).
+  - Both were read-only.
+- **19:59:34Z** — cleanup:
+  - role assignment removed;
+  - app secret `claude-it-2127` deleted;
+  - KV `it-sp-2127` deleted and purged.
+  - Verified: the app holds only its original secret, no *Storage Blob Data Reader* assignment is left on the account, and nothing is soft-deleted.
