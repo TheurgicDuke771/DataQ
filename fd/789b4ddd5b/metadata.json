@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "fd789b4ddd5b",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-2131-athena-adapter",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/alembic/versions/bccc186b5141_widen_connection_type_for_athena.py",
+    "backend/app/db/models.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/fd/789b4ddd5b/0/metadata.json",
+      "transcript": "/fd/789b4ddd5b/0/full.jsonl",
+      "compact_transcript": "/fd/789b4ddd5b/0/transcript.jsonl",
+      "content_hash": "/fd/789b4ddd5b/0/content_hash.txt",
+      "prompt": "/fd/789b4ddd5b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 6,
+    "cache_creation_tokens": 769855,
+    "cache_read_tokens": 1604945,
+    "output_tokens": 1721,
+    "api_call_count": 3
+  }
+}
