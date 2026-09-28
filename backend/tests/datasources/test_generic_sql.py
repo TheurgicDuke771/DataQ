@@ -446,11 +446,12 @@ def test_a_failed_run_also_logs_no_false_pool_errors(
 
     sources: list[Any] = []
 
-    class _Recording(generic_sql.GxConnectionSource):
-        def __init__(self, *_: Any, **__: Any) -> None:
-            self._source = _Source()
-            self._opened = []
-            sources.append(self)
+    def _recording(*_: Any, **__: Any) -> Any:
+        source = generic_sql.GxConnectionSource.__new__(generic_sql.GxConnectionSource)
+        source._source = _Source()
+        source._opened = []
+        sources.append(source)
+        return source
 
     def failing_evaluate(self: Any, connections: Any, **_: Any) -> Any:
         engine = sa.create_engine("sqlite://", creator=connections.connect, poolclass=StaticPool)
@@ -459,7 +460,7 @@ def test_a_failed_run_also_logs_no_false_pool_errors(
         engine.cycle = engine  # type: ignore[attr-defined]
         raise RuntimeError("the warehouse went away mid-run")
 
-    monkeypatch.setattr(generic_sql, "GxConnectionSource", _Recording)
+    monkeypatch.setattr(generic_sql, "GxConnectionSource", _recording)
     monkeypatch.setattr(generic_sql.GenericSqlCheckRunner, "_evaluate", failing_evaluate)
     runner = generic_sql.GenericSqlCheckRunner.__new__(generic_sql.GenericSqlCheckRunner)
     runner._spec = POSTGRES
