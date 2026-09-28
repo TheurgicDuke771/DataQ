@@ -86,7 +86,9 @@ def _sql_literal(value: Any) -> str:
     if isinstance(value, int | float):
         return repr(value)
     if isinstance(value, str) and len(value) <= _MAX_VALUE_CHARS:
-        return "'" + value.replace("'", "''") + "'"
+        # Snowflake string literals process backslash escapes, so a backslash is doubled before
+        # the quote: `x\') OR TRUE --` must not close the literal early.
+        return "'" + value.replace("\\", "\\\\").replace("'", "''") + "'"
     raise MonitorConfigError(
         f"each accepted value must be a number or a string of at most {_MAX_VALUE_CHARS}"
     )

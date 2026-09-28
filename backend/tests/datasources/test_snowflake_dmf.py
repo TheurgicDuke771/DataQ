@@ -582,3 +582,22 @@ def test_accepted_values_evaluates_through_the_bound_scan() -> None:
     assert outcome.expected_value is not None
     assert outcome.expected_value["metric"] == "ACCEPTED_VALUES"
     assert seen[0][1]["expr"] == "\"STATUS\" IN ('cancelled')"
+
+
+@pytest.mark.parametrize(
+    ("value", "literal"),
+    [
+        ("x\\') OR TRUE --", "'x\\\\'') OR TRUE --'"),
+        ("ends-with\\", "'ends-with\\\\'"),
+        ("a\\nb", "'a\\\\nb'"),
+    ],
+)
+def test_backslashes_are_escaped_before_quotes(value: str, literal: str) -> None:
+    """Snowflake processes backslash escapes inside string literals: an undoubled backslash
+    can close the literal early (live 2026-09-28: `x\\') OR TRUE --` broke the expression)."""
+    from backend.app.datasources.snowflake_dmf import build_accepted_values_scan
+
+    _statement, params = build_accepted_values_scan(
+        {"column": "STATUS", "value_set": [value]}, table="T", schema=None
+    )
+    assert params["expr"] == f'"STATUS" IN ({literal})'
