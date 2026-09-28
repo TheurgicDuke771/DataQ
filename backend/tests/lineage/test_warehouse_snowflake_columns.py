@@ -373,7 +373,7 @@ def test_column_lineage_never_adds_a_table_edge() -> None:
             ]
         },
     )
-    (edge,), _grain, _note, _complete = _refine(conn, edges)
+    (edge,) = _refine(conn, edges)[0]
     assert edge.upstream.name == _V_STG and edge.column_pairs == ()
 
 
@@ -384,7 +384,7 @@ def test_an_edge_that_already_has_pairs_is_not_reseeded() -> None:
         LineageEdgePair(upstream=_id(_V_STG), downstream=_id(_V_MART), column_pairs=(("A", "B"),)),
     )
     conn = _ColumnConn(columns=[("ANALYTICS", "MART_ORDER_REVENUE", "REVENUE")], lineage={})
-    result, _grain, _note, _complete = _refine(conn, edges)
+    result = _refine(conn, edges)[0]
     assert result == edges and conn.seeds == []
 
 
@@ -395,7 +395,7 @@ def test_the_column_seed_cap_truncates_loudly() -> None:
     conn = _ColumnConn(
         columns=[("ANALYTICS", "MART_ORDER_REVENUE", f"C{i}") for i in range(5)], lineage={}
     )
-    _edges, _grain, note, complete = _refine(conn, edges, cap=2)
+    note, complete = _refine(conn, edges, cap=2)[2:]
     assert len(conn.seeds) == 2
     assert note is not None and "truncated at 2 column seeds" in note
     assert complete is False  # a truncated pass must not clear pairs it never re-read
@@ -415,7 +415,8 @@ def test_failed_column_calls_are_counted_not_fatal() -> None:
         },
         fail={"DATAQ_DB.ANALYTICS.MART_ORDER_REVENUE.A"},
     )
-    (edge,), _grain, note, complete = _refine(conn, edges)
+    refined, _, note, complete = _refine(conn, edges)
+    (edge,) = refined
     assert edge.column_pairs == (("B", "B"),)
     assert note is not None and "1 of 2 column call(s) failed" in note
     assert complete is False
@@ -426,7 +427,7 @@ def test_a_zero_cap_disables_the_pass() -> None:
 
     edges = (LineageEdgePair(upstream=_id(_V_STG), downstream=_id(_V_MART)),)
     conn = _ColumnConn(columns=[("ANALYTICS", "MART_ORDER_REVENUE", "A")], lineage={})
-    result, _grain, _note, _complete = _refine(conn, edges, cap=0)
+    result = _refine(conn, edges, cap=0)[0]
     assert result == edges and conn.seeds == []
 
 
