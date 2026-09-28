@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "d16cbcdf18e7",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-2095-frame-value-signal",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/datasources/flatfile.py",
+    "backend/app/datasources/gx_runner.py",
+    "backend/app/datasources/iceberg.py",
+    "backend/app/datasources/unity_catalog.py",
+    "backend/app/services/run_service.py",
+    "backend/tests/datasources/test_gx_sql_value_signal.py",
+    "docs/site/security/overview.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/d1/6cbcdf18e7/0/metadata.json",
+      "transcript": "/d1/6cbcdf18e7/0/full.jsonl",
+      "compact_transcript": "/d1/6cbcdf18e7/0/transcript.jsonl",
+      "content_hash": "/d1/6cbcdf18e7/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 18,
+    "cache_creation_tokens": 15009,
+    "cache_read_tokens": 5805126,
+    "output_tokens": 9010,
+    "api_call_count": 9
+  }
+}
