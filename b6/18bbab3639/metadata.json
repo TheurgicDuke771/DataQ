@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "b618bbab3639",
+  "strategy": "manual-commit",
+  "branch": "perf/issue-2127-sp-token-cache",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/datasources/test_adls.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b6/18bbab3639/0/metadata.json",
+      "transcript": "/b6/18bbab3639/0/full.jsonl",
+      "compact_transcript": "/b6/18bbab3639/0/transcript.jsonl",
+      "content_hash": "/b6/18bbab3639/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 6,
+    "cache_creation_tokens": 1895,
+    "cache_read_tokens": 1329498,
+    "output_tokens": 877,
+    "api_call_count": 3
+  }
+}
