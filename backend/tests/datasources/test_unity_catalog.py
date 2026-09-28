@@ -2028,6 +2028,15 @@ def test_the_probe_prices_a_head_sample_by_its_arrow_schema(
     assert statements == ["SELECT * FROM main.s.t LIMIT 1000"]
 
 
+def test_binary_is_priced_by_its_bytes_not_its_escaped_repr() -> None:
+    blob = bytes(range(0x80, 0x100)) * 16  # 2 KiB of non-printable bytes
+    column = pa.chunked_array([pa.array([blob, None], pa.binary())])
+
+    assert unity_catalog._mean_text_length(column) == 2048.0
+    # `str(bytes)` escapes each non-printable byte to 4 characters, pricing it ~4x high.
+    assert len(str(blob)) > 3 * 2048
+
+
 def test_a_wide_table_under_the_row_cap_is_refused_by_the_frame_cap(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

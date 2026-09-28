@@ -287,8 +287,20 @@ def frame_row_bytes(column_types: dict[str, Any], mean_lengths: dict[str, float]
 
 
 def _mean_text_length(column: Any) -> float:
-    values = [v for v in column.to_pylist() if v is not None]
-    return sum(len(str(v)) for v in values) / len(values) if values else 0.0
+    """Characters for text, bytes for BINARY (not its escaped repr), printed length otherwise."""
+    import pyarrow as pa
+    import pyarrow.compute as pc
+
+    kind = column.type
+    if pa.types.is_string(kind) or pa.types.is_large_string(kind):
+        lengths = pc.utf8_length(column)
+    elif pa.types.is_binary(kind) or pa.types.is_large_binary(kind):
+        lengths = pc.binary_length(column)
+    else:
+        values = [v for v in column.to_pylist() if v is not None]
+        return sum(len(str(v)) for v in values) / len(values) if values else 0.0
+    mean = pc.mean(lengths).as_py()
+    return float(mean) if mean is not None else 0.0
 
 
 def _fetchall_arrow(cursor: Any) -> Any:
