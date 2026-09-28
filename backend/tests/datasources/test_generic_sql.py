@@ -341,3 +341,77 @@ def test_postgres_failures_are_classified(
     exc = _DriverError(message)
     assert classify_failure_category(exc) is category
     assert is_auth_failure(exc) is auth
+
+
+class _StrictConnection:
+    """A DBAPI connection that, like pyodbc and PyMySQL, refuses to be used once closed."""
+
+    def __init__(self) -> None:
+        import sqlite3
+
+        self._conn = sqlite3.connect(":memory:")
+        self.closed = False
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._conn, name)
+
+    def _check(self) -> None:
+        if self.closed:
+            raise RuntimeError("Attempt to use a closed connection.")
+
+    def rollback(self) -> None:
+        self._check()
+        self._conn.rollback()
+
+    def close(self) -> None:
+        self._check()
+        self.closed = True
+        self._conn.close()
+
+
+def test_closing_a_run_logs_no_false_pool_errors(caplog: pytest.LogCaptureFixture) -> None:
+    """GX keeps each engine's connection checked out and leaves its engines in reference cycles.
+    Once the run's connections were closed, collecting those engines reset and closed them
+    again, and SQLAlchemy logged each strict-driver refusal at ERROR although nothing had
+    failed (#2141)."""
+    import gc
+    import logging
+
+    import sqlalchemy as sa
+    from sqlalchemy.pool import StaticPool
+
+    from backend.app.datasources.generic_sql import GxConnectionSource
+
+    class _Proxied:
+        def __init__(self) -> None:
+            self.dbapi_connection = _StrictConnection()
+
+        def detach(self) -> None:
+            pass
+
+    class _Source:
+        def raw_connection(self) -> _Proxied:
+            return _Proxied()
+
+        def dispose(self) -> None:
+            pass
+
+    source = GxConnectionSource.__new__(GxConnectionSource)
+    source._source = _Source()
+    source._opened = []
+
+    def gx_like_run() -> None:
+        engine = sa.create_engine("sqlite://", creator=source.connect, poolclass=StaticPool)
+        held = engine.connect()  # GX holds one for the engine's lifetime
+        held.exec_driver_sql("select 1")
+        # A reference cycle, as GX's engines are in: freed only by the collector.
+        engine.cycle = engine  # type: ignore[attr-defined]
+
+    opened = source._opened
+    gx_like_run()
+    connection = opened[0]
+    with caplog.at_level(logging.DEBUG, logger="sqlalchemy.pool"):
+        source.close()
+        gc.collect()
+    assert connection.closed
+    assert [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR] == []
