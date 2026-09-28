@@ -28,3 +28,8 @@ dataq = "dataq_client.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/dataq_client"]
+
+[tool.mypy]
+# Self-contained: the repo-root config loads backend plugins (SQLAlchemy) this package never has.
+strict = true
+python_version = "3.10"

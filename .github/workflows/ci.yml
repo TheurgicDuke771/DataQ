@@ -95,7 +95,7 @@ jobs:
         run: python scripts/generate-dataq-client.py --check
 
       - name: Types (hand-written layer)
-        run: mypy --strict packages/dataq-client/src/dataq_client/client.py packages/dataq-client/src/dataq_client/cli.py
+        run: mypy --config-file packages/dataq-client/pyproject.toml packages/dataq-client/src/dataq_client/client.py packages/dataq-client/src/dataq_client/cli.py
 
       - name: Tests
         run: pytest -q -p no:cacheprovider packages/dataq-client/tests
