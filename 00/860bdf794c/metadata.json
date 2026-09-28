@@ -1,0 +1,34 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "00860bdf794c",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2087-uc-frame-width-aware",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "backend/app/core/config.py",
+    "backend/app/datasources/sampling.py",
+    "backend/app/datasources/unity_catalog.py",
+    "backend/app/services/run_admission.py",
+    "backend/tests/datasources/test_unity_catalog.py",
+    "backend/tests/integration/test_datasource_runs.py",
+    "backend/tests/services/test_run_admission.py",
+    "deploy/README.md",
+    "docs/site/architecture/perf-baseline.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/00/860bdf794c/0/metadata.json",
+      "transcript": "/00/860bdf794c/0/full.jsonl",
+      "compact_transcript": "/00/860bdf794c/0/transcript.jsonl",
+      "content_hash": "/00/860bdf794c/0/content_hash.txt",
+      "prompt": "/00/860bdf794c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 182,
+    "cache_creation_tokens": 309187,
+    "cache_read_tokens": 21822444,
+    "output_tokens": 62659,
+    "api_call_count": 91
+  }
+}

@@ -1,0 +1,106 @@
+From the last session - 
+```
+
+<pasted_content id="587d">
+37 of the 112 open issues depend on one of the four platforms. The other 75 have no such dependency. Six items are time-sensitive, starting with a Databricks token that expires in two days.
+
+AWS: account suspended, so these are blocked or moot
+Blocked:
+#1682 Redshift adapter
+#2131 Athena adapter
+Won't-fix if AWS stays retired:
+#1384 CloudFront→ALB plaintext hop
+#1385 ElastiCache encryption and subnets
+Loses a requirement: #1829's "verified on Azure and AWS" can't be met.
+Azure
+Decision gate: #590 keep or tear down (P0).
+Fabric and Azure SQL behaviour. Their test resources were deleted, so these have no target until something is re-provisioned:
+#2126 python-tds can't log in to Fabric
+#2137 mixed-case schema on a case-sensitive collation
+#2138 T-SQL derived-table rules break comparisons
+#2140 hide the Fabric-refused check types in the editor
+#2141 pyodbc cleanup noise
+OneLake and service-principal auth:
+#2127 new Entra token per client
+#2128 dbt artifacts on OneLake
+#2129 sovereign-cloud asset names
+Azure-specific, won't-fix if Azure goes:
+#2119 Redis blip on every deploy
+#1690 the Purview half of the governance-catalog integration
+Needs the Azure harness: #2088 live Iceberg performance tier (W6).
+Snowflake
+Decision gate: #588 retire the Snowflake leg (P0).
+Enterprise-only features:
+#2084 ACCEPTED_VALUES and SCHEMA_CHANGE_COUNT DMFs
+#2106 column lineage for views and dynamic tables
+Need a live Snowflake run:
+#2099 run-target browsing (Snowflake half)
+#2082 unexpected-rows fetch has no LIMIT
+#2107 population-signal query cost
+#1327 values() rank driver
+#1655 Cortex as an LLM provider
+Roadmap: the warehouse-scheduled DMF ingest ADR.
+Databricks
+#2087 UC frame-lane cap ignores table width (W6, P2)
+#2083 UC frame lane stringifies locator values
+#2100 MCP tool for run-target browsing
+#1819 duration serialisation (live INTERVAL check only)
+#2095 UC half of the missing value-signal summary on frame lanes
+The UC halves of #2082, #2107 and #1327
+Roadmap: DQX, and Databricks model serving (#1655)
+Any deployed environment, not a specific cloud
+#1999 scheduler dispatch measured at scale
+#1708 external pen test
+#1706 hosted sandbox
+#732 marketplace readiness, which also needs a paid Databricks workspace
+Other clouds
+GCP only: #505 deploy IaC, #1681 BigQuery, #1683 GCS, and Dataplex on the roadmap.
+
+Can already be done locally
+The local stand-ins below cover these; the cloud is only needed for final live checks:
+
+#2124: MySQL CI on service containers
+#2033: already reproduced against a local OTLP sink
+#2111 and #1999's logic: local Postgres
+#1651 / #1653: local Airflow
+#970: only a package pin, no subscription needed
+MinIO covers #2095 and #2105, but the Iceberg-on-MinIO route is currently broken by #1274.
+Time-sensitive
+The Databricks QA token expires 2026-09-30, in 2 days. The retail token expires 10-09. Together they gate the UC halves of #2087, #2083, #1327, #2082 and #2107.
+The Snowflake PATs expire 2026-10-11.
+#590 and #588 are over a month past their 08-25 revisit.
+The W6 milestone is due 10-02. #2087 needs Databricks and #2088 needs an Azure harness window.
+The Fabric and Azure SQL targets are gone. #2126, #2137, #2138 and #2140 are stalled until they're re-provisioned.
+What each teardown would cost
+AWS: already effectively gone. About four issues close as won't-fix, and the second-cloud proof for #505, #732 and #1829 is lost. The code stays provider-neutral.
+Azure: loses prod, the harness, and every Fabric, OneLake and Azure SQL item above. Prod needs a new home first.
+Snowflake: hurts the most in features. The DMF, GET_LINEAGE and Enterprise-tier items become unverifiable. fakesnow can check query shape only, not performance or Enterprise features.
+Databricks: all the UC pushdown and frame-lane work loses its target. Free Edition is non-commercial anyway, so #732 needs a paid workspace regardless.
+</pasted_content id="587d">
+
+```
+
+AWS is re-newed. 
+Let's sort these items and try to close them as I intend to close out all these 4 [aws, az, sf and databricks]
+
+---
+
+go ahead with option 2
+
+---
+
+Where should I add?  Also getting - `Property expected`
+
+---
+
+Done
+
+---
+
+<task-notification>
+<task-id>bvawdf6sr</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/c8e07205-7981-4a86-8a4f-c8093d46e726/tasks/bvawdf6sr.output</output-file>
+<status>completed</status>
+<summary>Background command "Rerun the measurement matrix with proper arg splitting" completed (exit code 0)</summary>
+</task-notification>
