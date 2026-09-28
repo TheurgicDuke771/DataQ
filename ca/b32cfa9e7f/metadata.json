@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "cab32cfa9e7f",
+  "strategy": "manual-commit",
+  "branch": "docs/issue-1705-api-compat-policy",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/site/reference/api-compatibility.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ca/b32cfa9e7f/0/metadata.json",
+      "transcript": "/ca/b32cfa9e7f/0/full.jsonl",
+      "compact_transcript": "/ca/b32cfa9e7f/0/transcript.jsonl",
+      "content_hash": "/ca/b32cfa9e7f/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 14,
+    "cache_creation_tokens": 11592,
+    "cache_read_tokens": 5613198,
+    "output_tokens": 7339,
+    "api_call_count": 7
+  }
+}
