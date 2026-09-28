@@ -369,12 +369,20 @@ class UnityCatalogCheckRunner:
             catalog=self._catalog if schema else None,
             dialect=engine.dialect,
         )
-        raw = engine.raw_connection()
+        # `qualified` is allowlist-checked and dialect-quoted by `qualified_sql_name`.
+        return self._fetch_frame(f"SELECT * FROM {qualified}")  # noqa: S608  # nosec B608
+
+    def _fetch_frame(self, statement: str) -> Any:
+        """Run ``statement`` on a raw connection and build the frame from its Arrow result.
+
+        Both frame-lane reads — whole table and sample — go through here, so the width
+        estimate's per-cell costs (measured on this path) price every read the cap admits.
+        """
+        raw = self._engine.get().raw_connection()
         try:
             cursor = raw.cursor()
             try:
-                # `qualified` is allowlist-checked and dialect-quoted by `qualified_sql_name`.
-                cursor.execute(f"SELECT * FROM {qualified}")  # noqa: S608  # nosec B608
+                cursor.execute(statement)
                 arrow = _fetchall_arrow(cursor)
             finally:
                 cursor.close()
@@ -442,9 +450,6 @@ class UnityCatalogCheckRunner:
         self, *, table: str, schema: str | None, sample: SampleSpec
     ) -> tuple[Any, dict[str, Any]]:
         """A bounded sample of the target, pushed down to the warehouse (#595)."""
-        import pandas as pd
-        from sqlalchemy import text
-
         engine = self._engine.get()
         qualified = qualified_sql_name(
             table=table,
@@ -468,7 +473,7 @@ class UnityCatalogCheckRunner:
                 f"SELECT * FROM {qualified} "  # noqa: S608  # nosec B608
                 f"TABLESAMPLE ({percent} PERCENT){repeatable} LIMIT {sample.rows}"
             )
-        frame = pd.read_sql_query(text(statement), engine)
+        frame = self._fetch_frame(statement)
 
         if sample.strategy == SAMPLE_HEAD:
             truncated = len(frame) > sample.rows

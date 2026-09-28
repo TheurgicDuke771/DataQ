@@ -908,7 +908,7 @@ def test_supported_monitor_kinds_is_explicit() -> None:
 # The UC read is the hungriest full-load path measured (~925 MiB for 1M rows; 2M
 # OOM-killed the child — docs/site/architecture/perf-baseline.md), so both halves matter here. The
 # SQL these tests pin is DataQ's own construction, captured at the
-# `pandas.read_sql_query` seam: what a live warehouse does with `TABLESAMPLE` is
+# `_fetch_frame` seam: what a live warehouse does with `TABLESAMPLE` is
 # a driver-boundary fact and is verified by a live run, not by a mock (#953).
 
 
@@ -922,16 +922,14 @@ def _sampling_runner(sample: Any) -> UnityCatalogCheckRunner:
 
 
 def _capture_query(monkeypatch: pytest.MonkeyPatch, frame: pd.DataFrame) -> list[str]:
-    """Capture the SQL handed to pandas, returning the canned ``frame`` instead."""
-    import pandas
-
+    """Capture the SQL handed to the Arrow fetch, returning the canned ``frame`` instead."""
     seen: list[str] = []
 
-    def _read_sql_query(statement: Any, _con: Any, **_kw: Any) -> pd.DataFrame:
-        seen.append(str(statement))
+    def _fetch_frame(_self: Any, statement: str) -> pd.DataFrame:
+        seen.append(statement)
         return frame
 
-    monkeypatch.setattr(pandas, "read_sql_query", _read_sql_query)
+    monkeypatch.setattr(UnityCatalogCheckRunner, "_fetch_frame", _fetch_frame)
     return seen
 
 
