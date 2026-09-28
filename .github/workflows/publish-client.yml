@@ -1,0 +1,51 @@
+name: Publish dataq-client
+
+# Publishes the Python client to PyPI from a release tag only — never a branch or a fork build.
+# Authenticates with PyPI trusted publishing (OIDC): no PyPI token is stored anywhere. Configure it
+# once on PyPI (project dataq-client → Publishing → add this repository, this workflow file and the
+# `pypi` environment) before the first tag.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Build and publish dataq-client
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write  # trusted publishing
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: The tag is the package version
+        # The client is versioned with the server it was generated from.
+        run: |
+          version=$(python -c "import tomllib; print(tomllib.load(open('packages/dataq-client/pyproject.toml','rb'))['project']['version'])")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match dataq-client $version"
+            exit 1
+          fi
+
+      - name: Install tooling
+        run: pip install -r packages/dataq-client/requirements-dev.txt
+
+      - name: The committed client matches the spec
+        run: python scripts/generate-dataq-client.py --check
+
+      - name: Build
+        run: python -m build packages/dataq-client --outdir dist
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@v1.14.2
+        with:
+          packages-dir: dist

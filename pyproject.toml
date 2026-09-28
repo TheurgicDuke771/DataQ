@@ -7,6 +7,8 @@ build-backend = "setuptools.backends.legacy:build"
 [tool.black]
 line-length = 100
 target-version = ["py313"]
+# Generated from the OpenAPI spec and formatted by its own pinned hooks (#1829).
+extend-exclude = "packages/dataq-client/src/dataq_client/generated"
 include = '\.pyi?$'
 
 # ── Ruff ─────────────────────────────────────────────────────────────────────
@@ -14,6 +16,7 @@ include = '\.pyi?$'
 [tool.ruff]
 line-length = 100
 target-version = "py313"
+extend-exclude = ["packages/dataq-client/src/dataq_client/generated"]
 src = ["backend"]
 
 [tool.ruff.lint]

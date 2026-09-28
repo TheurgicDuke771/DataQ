@@ -90,7 +90,7 @@ def transfer_suite(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete any suite (admin)",
 )
-def delete_suite(
+def admin_delete_suite(
     suite_id: UUID,
     current_user: Annotated[User, Depends(require_workspace_admin)],
     db: Annotated[Session, Depends(get_db)],

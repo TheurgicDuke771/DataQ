@@ -1,0 +1,90 @@
+from __future__ import annotations
+
+from collections.abc import Mapping
+from typing import Any, TypeVar
+from uuid import UUID
+
+from attrs import define as _attrs_define
+from attrs import field as _attrs_field
+from typing_extensions import Self
+
+T = TypeVar("T", bound="ColumnOriginRead")
+
+
+@_attrs_define
+class ColumnOriginRead:
+    """An upstream-most column the walk reached (the traced column itself is never listed).
+    `confirmed: false` ⇒ a gap or the depth cap means something further upstream may still
+    feed it.
+
+        Attributes:
+            asset_id (UUID):
+            column (str):
+            confirmed (bool):
+            depth (int):
+    """
+
+    asset_id: UUID
+    column: str
+    confirmed: bool
+    depth: int
+    additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        asset_id = str(self.asset_id)
+
+        column = self.column
+
+        confirmed = self.confirmed
+
+        depth = self.depth
+
+        field_dict: dict[str, Any] = {}
+        field_dict.update(self.additional_properties)
+        field_dict.update(
+            {
+                "asset_id": asset_id,
+                "column": column,
+                "confirmed": confirmed,
+                "depth": depth,
+            }
+        )
+
+        return field_dict
+
+    @classmethod
+    def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
+        d = dict(src_dict)
+        asset_id = UUID(d.pop("asset_id"))
+
+        column = d.pop("column")
+
+        confirmed = d.pop("confirmed")
+
+        depth = d.pop("depth")
+
+        column_origin_read = cls(
+            asset_id=asset_id,
+            column=column,
+            confirmed=confirmed,
+            depth=depth,
+        )
+
+        column_origin_read.additional_properties = d
+        return column_origin_read
+
+    @property
+    def additional_keys(self) -> list[str]:
+        return list(self.additional_properties.keys())
+
+    def __getitem__(self, key: str) -> Any:
+        return self.additional_properties[key]
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        self.additional_properties[key] = value
+
+    def __delitem__(self, key: str) -> None:
+        del self.additional_properties[key]
+
+    def __contains__(self, key: str) -> bool:
+        return key in self.additional_properties

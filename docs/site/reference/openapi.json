@@ -102,6 +102,89 @@
         "title": "AdminAccessRead",
         "type": "object"
       },
+      "AdminCredentialHealthRead": {
+        "description": "One datasource connection's stored-credential health (#1697).\n\n`status=\"unknown\"` \u2014 never `healthy` \u2014 means the credential has not been used\nsince the signal shipped, so nothing has been observed about it. `failing` means\nthe datasource rejected it on its last use, and `last_error` is then the\nclassified, secret-free reason. Only credential REJECTIONS move this: a missing\ngrant, an unreachable host and a bad table name leave it untouched.\n\nDerived from real work (runs, dry-runs, profiles, connection tests), not from a\nperiodic probe \u2014 so a connection nothing uses stays `unknown` indefinitely, which\nis the honest answer rather than a reassuring one.",
+        "properties": {
+          "connection_id": {
+            "format": "uuid",
+            "title": "Connection Id",
+            "type": "string"
+          },
+          "consecutive_auth_failures": {
+            "title": "Consecutive Auth Failures",
+            "type": "integer"
+          },
+          "env": {
+            "title": "Env",
+            "type": "string"
+          },
+          "last_auth_failure_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Auth Failure At"
+          },
+          "last_auth_success_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Auth Success At"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "healthy",
+              "failing",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection_id",
+          "name",
+          "type",
+          "env",
+          "status",
+          "consecutive_auth_failures",
+          "last_auth_failure_at",
+          "last_auth_success_at",
+          "last_error"
+        ],
+        "title": "AdminCredentialHealthRead",
+        "type": "object"
+      },
       "AdminHealthRead": {
         "description": "Poll staleness + beat heartbeat + broker queue depth + datasource credential\nhealth, in one page (#1885/#1697).\n\n`queues` is `null` \u2014 never a fake `0` \u2014 when the broker could not be reached;\n`queues_error` then carries the classified, secret-free reason.\n\n`credentials` lists every DATASOURCE connection (orchestration providers are in\n`polling` instead), worst status first.",
         "properties": {
@@ -110,7 +193,7 @@
           },
           "credentials": {
             "items": {
-              "$ref": "#/components/schemas/backend__app__api__v1__admin__CredentialHealthRead"
+              "$ref": "#/components/schemas/AdminCredentialHealthRead"
             },
             "title": "Credentials",
             "type": "array"
@@ -3272,7 +3355,7 @@
           "credential_health": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/backend__app__api__v1__connections__CredentialHealthRead"
+                "$ref": "#/components/schemas/CredentialHealthRead"
               },
               {
                 "type": "null"
@@ -3606,6 +3689,68 @@
           "coverage"
         ],
         "title": "CoverageGapRead",
+        "type": "object"
+      },
+      "CredentialHealthRead": {
+        "description": "A datasource connection's stored-credential health, derived from real use (#1697).\n\n`status=\"unknown\"` \u2014 never `healthy` \u2014 means the credential has not been used since\nthe signal shipped: nothing has run, dry-run, profiled or tested against it, so DataQ\nhas observed nothing. `failing` means the datasource rejected the credential on its\nlast use; `last_error` is then the classified, secret-free reason.\n\nOnly credential REJECTIONS move this. A missing grant, an unreachable host and a bad\ntable name leave it untouched, because none of them says the credential is dead.\n\nOrchestration connections carry `null` here \u2014 their health is the poll signal above.",
+        "properties": {
+          "consecutive_auth_failures": {
+            "title": "Consecutive Auth Failures",
+            "type": "integer"
+          },
+          "last_auth_failure_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Auth Failure At"
+          },
+          "last_auth_success_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Auth Success At"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "status": {
+            "enum": [
+              "healthy",
+              "failing",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "consecutive_auth_failures",
+          "last_auth_failure_at",
+          "last_auth_success_at",
+          "last_error"
+        ],
+        "title": "CredentialHealthRead",
         "type": "object"
       },
       "DashboardSummaryRead": {
@@ -8837,151 +8982,6 @@
         ],
         "title": "WebhookRegenerateResponse",
         "type": "object"
-      },
-      "backend__app__api__v1__admin__CredentialHealthRead": {
-        "description": "One datasource connection's stored-credential health (#1697).\n\n`status=\"unknown\"` \u2014 never `healthy` \u2014 means the credential has not been used\nsince the signal shipped, so nothing has been observed about it. `failing` means\nthe datasource rejected it on its last use, and `last_error` is then the\nclassified, secret-free reason. Only credential REJECTIONS move this: a missing\ngrant, an unreachable host and a bad table name leave it untouched.\n\nDerived from real work (runs, dry-runs, profiles, connection tests), not from a\nperiodic probe \u2014 so a connection nothing uses stays `unknown` indefinitely, which\nis the honest answer rather than a reassuring one.",
-        "properties": {
-          "connection_id": {
-            "format": "uuid",
-            "title": "Connection Id",
-            "type": "string"
-          },
-          "consecutive_auth_failures": {
-            "title": "Consecutive Auth Failures",
-            "type": "integer"
-          },
-          "env": {
-            "title": "Env",
-            "type": "string"
-          },
-          "last_auth_failure_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Auth Failure At"
-          },
-          "last_auth_success_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Auth Success At"
-          },
-          "last_error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Error"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "status": {
-            "enum": [
-              "healthy",
-              "failing",
-              "unknown"
-            ],
-            "title": "Status",
-            "type": "string"
-          },
-          "type": {
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "connection_id",
-          "name",
-          "type",
-          "env",
-          "status",
-          "consecutive_auth_failures",
-          "last_auth_failure_at",
-          "last_auth_success_at",
-          "last_error"
-        ],
-        "title": "CredentialHealthRead",
-        "type": "object"
-      },
-      "backend__app__api__v1__connections__CredentialHealthRead": {
-        "description": "A datasource connection's stored-credential health, derived from real use (#1697).\n\n`status=\"unknown\"` \u2014 never `healthy` \u2014 means the credential has not been used since\nthe signal shipped: nothing has run, dry-run, profiled or tested against it, so DataQ\nhas observed nothing. `failing` means the datasource rejected the credential on its\nlast use; `last_error` is then the classified, secret-free reason.\n\nOnly credential REJECTIONS move this. A missing grant, an unreachable host and a bad\ntable name leave it untouched, because none of them says the credential is dead.\n\nOrchestration connections carry `null` here \u2014 their health is the poll signal above.",
-        "properties": {
-          "consecutive_auth_failures": {
-            "title": "Consecutive Auth Failures",
-            "type": "integer"
-          },
-          "last_auth_failure_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Auth Failure At"
-          },
-          "last_auth_success_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Auth Success At"
-          },
-          "last_error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Error"
-          },
-          "status": {
-            "enum": [
-              "healthy",
-              "failing",
-              "unknown"
-            ],
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "status",
-          "consecutive_auth_failures",
-          "last_auth_failure_at",
-          "last_auth_success_at",
-          "last_error"
-        ],
-        "title": "CredentialHealthRead",
-        "type": "object"
       }
     }
   },
@@ -8994,7 +8994,7 @@
     "/api/v1/_probe/snowflake-suite": {
       "post": {
         "description": "Seeds the dev Snowflake connection + canned suite, queues a run, and dispatches it to the Celery worker. Returns the run id to poll.",
-        "operationId": "trigger_snowflake_probe_api_v1__probe_snowflake_suite_post",
+        "operationId": "trigger_snowflake_probe",
         "responses": {
           "202": {
             "content": {
@@ -9015,7 +9015,7 @@
     },
     "/api/v1/admin/access": {
       "get": {
-        "operationId": "all_access_api_v1_admin_access_get",
+        "operationId": "all_access",
         "responses": {
           "200": {
             "content": {
@@ -9024,7 +9024,7 @@
                   "items": {
                     "$ref": "#/components/schemas/AdminAccessRead"
                   },
-                  "title": "Response All Access Api V1 Admin Access Get",
+                  "title": "Response All Access",
                   "type": "array"
                 }
               }
@@ -9041,7 +9041,7 @@
     "/api/v1/admin/audit-events": {
       "get": {
         "description": "The durable record of deliberate acts by a principal, newest first.",
-        "operationId": "list_audit_events_api_v1_admin_audit_events_get",
+        "operationId": "list_audit_events",
         "parameters": [
           {
             "in": "query",
@@ -9215,7 +9215,7 @@
     "/api/v1/admin/audit-events/verify": {
       "get": {
         "description": "The verification tooling for the tamper-evidence hash chain (#1460).",
-        "operationId": "verify_audit_chain_api_v1_admin_audit_events_verify_get",
+        "operationId": "verify_audit_chain",
         "responses": {
           "200": {
             "content": {
@@ -9237,7 +9237,7 @@
     "/api/v1/admin/auth-email/test": {
       "post": {
         "description": "Send a real test message to the CALLER's own address over the configured\n`AUTH_EMAIL_*` transport, so a misconfigured mailer is caught at install time\nrather than at a teammate's first sign-in attempt (issue #737).\n\nNo recipient input, so it cannot relay mail. Failures: 503 (mailer not\nconfigured / secret store unreachable) or 502 with machine-readable\n`detail.stage` in connect/tls/auth/send. Throttled per admin (#1147,\n`ADMIN_EMAIL_PREFLIGHT_PER_10MIN`): over the cap is a real 429, and the\ncharge lands BEFORE the send \u2014 a failed attempt still spends a slot.",
-        "operationId": "test_auth_email_api_v1_admin_auth_email_test_post",
+        "operationId": "test_auth_email",
         "responses": {
           "200": {
             "content": {
@@ -9259,7 +9259,7 @@
     "/api/v1/admin/data-subject-requests/erase": {
       "post": {
         "description": "Workspace-wide, on-demand erasure of every captured sample cell naming\n`column` = `value` \u2014 surgical (only the matching row/cell), not a blanket purge;\nsee `data_subject_requests.erase_matching_results`. Runs synchronously and\nrecords one `audit_events` row inside the same transaction as the scrub, so a\nfailed write leaves nothing behind and an applied one cannot go unrecorded\n(mirrors the ADR 0041 phase-1 mutation pattern).",
-        "operationId": "erase_data_subject_api_v1_admin_data_subject_requests_erase_post",
+        "operationId": "erase_data_subject",
         "requestBody": {
           "content": {
             "application/json": {
@@ -9301,7 +9301,7 @@
     "/api/v1/admin/data-subject-requests/export": {
       "post": {
         "description": "Workspace-wide export of every captured sample cell naming\n`column` = `value` \u2014 the access/portability half of the subject-rights\nmachinery. Returns unredacted data by design (see `DataSubjectMatch`), so this\nis deliberately Admin-only, same tier as a connection credential.",
-        "operationId": "export_data_subject_api_v1_admin_data_subject_requests_export_post",
+        "operationId": "export_data_subject",
         "requestBody": {
           "content": {
             "application/json": {
@@ -9343,7 +9343,7 @@
     "/api/v1/admin/deployment": {
       "get": {
         "description": "The declared residency posture (GDPR Ch. V, G4/#434).",
-        "operationId": "get_deployment_posture_api_v1_admin_deployment_get",
+        "operationId": "get_deployment_posture",
         "responses": {
           "200": {
             "content": {
@@ -9365,7 +9365,7 @@
     "/api/v1/admin/health": {
       "get": {
         "description": "The signal behind the Overview 'Needs attention' feed and the Integrations\n'Polling health' table (#1696/#1701, epic #1702) \u2014 nothing here is derived from a\nper-connection setting DataQ doesn't have: cadence is the fixed workspace-wide\npoll schedule, and every status honestly distinguishes \"never observed\" from\n\"healthy\".",
-        "operationId": "get_workspace_health_api_v1_admin_health_get",
+        "operationId": "get_workspace_health",
         "responses": {
           "200": {
             "content": {
@@ -9387,7 +9387,7 @@
     "/api/v1/admin/inventory-sync": {
       "get": {
         "description": "Every connection the inventory sync can enumerate (ADR 0040 \u2014 the warehouse\ntypes; flat-file and Iceberg connections are a recorded non-goal and are absent\nfrom this list rather than shown as disabled).",
-        "operationId": "list_inventory_sync_api_v1_admin_inventory_sync_get",
+        "operationId": "list_inventory_sync",
         "responses": {
           "200": {
             "content": {
@@ -9396,7 +9396,7 @@
                   "items": {
                     "$ref": "#/components/schemas/InventorySyncRead"
                   },
-                  "title": "Response List Inventory Sync Api V1 Admin Inventory Sync Get",
+                  "title": "Response List Inventory Sync",
                   "type": "array"
                 }
               }
@@ -9413,7 +9413,7 @@
     "/api/v1/admin/inventory-sync/{connection_id}": {
       "patch": {
         "description": "Flip the ADR 0040 `inventory_sync` toggle (on by default) on the connection's\nconfig, through the ordinary connection-update path \u2014 so the change is audited\nand snapshotted into `connection_versions` exactly like an edit made in the\nconnection editor.\n\nTurning it ON schedules nothing: the sweep is a daily beat task, so use \"Run now\"\nto see tables before then. Turning it OFF clears the sync bookkeeping and leaves\nalready-discovered assets in place.",
-        "operationId": "set_inventory_sync_api_v1_admin_inventory_sync__connection_id__patch",
+        "operationId": "set_inventory_sync",
         "parameters": [
           {
             "in": "path",
@@ -9467,7 +9467,7 @@
     "/api/v1/admin/inventory-sync/{connection_id}/run": {
       "post": {
         "description": "Enqueue the existing sync for this connection. It runs whether or not the\nconnection is opted in \u2014 the opt-in gates the unattended nightly sweep, and an\nadmin asking for this connection has asked for it explicitly. 503 with a classified\nbroker reason if nothing could be enqueued; no audit row in that case.",
-        "operationId": "run_inventory_sync_api_v1_admin_inventory_sync__connection_id__run_post",
+        "operationId": "run_inventory_sync",
         "parameters": [
           {
             "in": "path",
@@ -9510,7 +9510,7 @@
     },
     "/api/v1/admin/llm": {
       "get": {
-        "operationId": "get_llm_settings_api_v1_admin_llm_get",
+        "operationId": "get_llm_settings",
         "responses": {
           "200": {
             "content": {
@@ -9529,7 +9529,7 @@
         ]
       },
       "put": {
-        "operationId": "put_llm_settings_api_v1_admin_llm_put",
+        "operationId": "put_llm_settings",
         "requestBody": {
           "content": {
             "application/json": {
@@ -9570,7 +9570,7 @@
     },
     "/api/v1/admin/llm/test": {
       "post": {
-        "operationId": "test_llm_settings_api_v1_admin_llm_test_post",
+        "operationId": "test_llm_settings",
         "requestBody": {
           "content": {
             "application/json": {
@@ -9612,7 +9612,7 @@
     "/api/v1/admin/members": {
       "get": {
         "description": "Who is admitted to this workspace, and whether membership is being enforced.\n\nAn empty list means enforcement is OFF, not that nobody has access: who may\nsign in is then decided entirely by the deployment's env allowlists.\nAddresses those allowlists name appear as read-only `env` rows, so a removal\nthat an env var would undo never looks complete.",
-        "operationId": "list_members_api_v1_admin_members_get",
+        "operationId": "list_members",
         "responses": {
           "200": {
             "content": {
@@ -9632,7 +9632,7 @@
       },
       "post": {
         "description": "Admit `email`. Their identity provider still has to let them authenticate \u2014\nthis grants admission, it does not create an account anywhere.\n\nThe FIRST add turns enforcement on and imports every existing user as a\nprovisional member in the same transaction, so nobody is evicted by the switch.",
-        "operationId": "add_member_api_v1_admin_members_post",
+        "operationId": "add_member",
         "requestBody": {
           "content": {
             "application/json": {
@@ -9674,7 +9674,7 @@
     "/api/v1/admin/members/{member_id}": {
       "delete": {
         "description": "Withdraw a membership. It bites on that person's next request, whatever\ncredential they hold \u2014 their browser session and every PAT they own stop\nresolving. Refused for the last stored-role admin.",
-        "operationId": "remove_member_api_v1_admin_members__member_id__delete",
+        "operationId": "remove_member",
         "parameters": [
           {
             "in": "path",
@@ -9723,7 +9723,7 @@
     "/api/v1/admin/members/{member_id}/confirm": {
       "post": {
         "description": "Clear the provisional flag on a row the switch-on import admitted.\n\nConfirming changes nothing about their access \u2014 they already have it. It\nrecords that an admin looked at the row and meant to keep it.",
-        "operationId": "confirm_member_api_v1_admin_members__member_id__confirm_post",
+        "operationId": "confirm_member",
         "parameters": [
           {
             "in": "path",
@@ -9767,7 +9767,7 @@
     "/api/v1/admin/offboarding/{user_id}": {
       "post": {
         "description": "Transfer every suite this user owns, revoke every PAT and browser session\nthey hold, then withdraw their workspace membership \u2014 in one transaction.\n\nTheir authored history stays: runs, results and checks keep pointing at them,\nand the user row itself is not deleted (erasure is the data-subject-rights\nendpoint, which is a different act). A step that cannot run is reported in\n`skipped` with its reason rather than silently passing.",
-        "operationId": "offboard_user_api_v1_admin_offboarding__user_id__post",
+        "operationId": "offboard_user",
         "parameters": [
           {
             "in": "path",
@@ -9821,7 +9821,7 @@
     "/api/v1/admin/offboarding/{user_id}/preview": {
       "get": {
         "description": "Read-only. Nothing here is reserved or locked \u2014 a suite can change owner\nbetween this call and the pass, so treat the counts as of now.",
-        "operationId": "preview_offboarding_api_v1_admin_offboarding__user_id__preview_get",
+        "operationId": "preview_offboarding",
         "parameters": [
           {
             "in": "path",
@@ -9865,7 +9865,7 @@
     "/api/v1/admin/orchestration/poll-now": {
       "post": {
         "description": "Enqueue the same 10-minute fallback poll the beat schedule runs (#492's\nimmediate-poll path), for every orchestration connection or just one.\n\nA poll only ingests runs the provider reports; it does not re-run anything, and a\ndispatch failure at the broker is a 503 with nothing enqueued and no audit row.",
-        "operationId": "poll_now_api_v1_admin_orchestration_poll_now_post",
+        "operationId": "poll_now",
         "parameters": [
           {
             "description": "Narrow to one orchestration connection",
@@ -9917,7 +9917,7 @@
     },
     "/api/v1/admin/orchestration/webhooks": {
       "get": {
-        "operationId": "orchestration_webhooks_api_v1_admin_orchestration_webhooks_get",
+        "operationId": "orchestration_webhooks",
         "responses": {
           "200": {
             "content": {
@@ -9926,7 +9926,7 @@
                   "items": {
                     "$ref": "#/components/schemas/AdminWebhookRead"
                   },
-                  "title": "Response Orchestration Webhooks Api V1 Admin Orchestration Webhooks Get",
+                  "title": "Response Orchestration Webhooks",
                   "type": "array"
                 }
               }
@@ -9943,7 +9943,7 @@
     "/api/v1/admin/orchestration/webhooks/{provider}/regenerate": {
       "post": {
         "description": "Mint a new secret for one orchestration provider's inbound webhook.\n\nThe previous value keeps working until `grace_until` (`WEBHOOK_SECRET_GRACE_MINUTES`,\n15 by default), so updating the provider side is not a race \u2014 but DataQ cannot tell\nwhether that update happened, so nothing here confirms the provider is still able to\ndeliver. Once the window closes, callbacks signed with the old value are rejected.\n\nThe audit row records the provider and the grace window, never the value.",
-        "operationId": "regenerate_webhook_secret_api_v1_admin_orchestration_webhooks__provider__regenerate_post",
+        "operationId": "regenerate_webhook_secret",
         "parameters": [
           {
             "in": "path",
@@ -9986,7 +9986,7 @@
     "/api/v1/admin/overview": {
       "get": {
         "description": "Counts only. The health signals beside these cards come from\n`GET /admin/health` and `GET /admin/secret-sweep`, which classify their own\nblind spots; nothing here is inferred from them.",
-        "operationId": "get_admin_overview_api_v1_admin_overview_get",
+        "operationId": "get_admin_overview",
         "responses": {
           "200": {
             "content": {
@@ -10007,7 +10007,7 @@
     },
     "/api/v1/admin/privacy": {
       "get": {
-        "operationId": "get_privacy_settings_api_v1_admin_privacy_get",
+        "operationId": "get_privacy_settings",
         "responses": {
           "200": {
             "content": {
@@ -10026,7 +10026,7 @@
         ]
       },
       "put": {
-        "operationId": "put_privacy_settings_api_v1_admin_privacy_put",
+        "operationId": "put_privacy_settings",
         "requestBody": {
           "content": {
             "application/json": {
@@ -10067,7 +10067,7 @@
     },
     "/api/v1/admin/scoring": {
       "delete": {
-        "operationId": "reset_scoring_weights_api_v1_admin_scoring_delete",
+        "operationId": "reset_scoring_weights",
         "responses": {
           "200": {
             "content": {
@@ -10086,7 +10086,7 @@
         ]
       },
       "get": {
-        "operationId": "get_scoring_weights_api_v1_admin_scoring_get",
+        "operationId": "get_scoring_weights",
         "responses": {
           "200": {
             "content": {
@@ -10105,7 +10105,7 @@
         ]
       },
       "put": {
-        "operationId": "put_scoring_weights_api_v1_admin_scoring_put",
+        "operationId": "put_scoring_weights",
         "requestBody": {
           "content": {
             "application/json": {
@@ -10146,7 +10146,7 @@
     },
     "/api/v1/admin/secret-sweep": {
       "get": {
-        "operationId": "get_secret_sweep_report_api_v1_admin_secret_sweep_get",
+        "operationId": "get_secret_sweep_report",
         "responses": {
           "200": {
             "content": {
@@ -10168,7 +10168,7 @@
     "/api/v1/admin/secret-sweep/run": {
       "post": {
         "description": "Enqueues the existing beat task in report-only mode, REGARDLESS of\n`SECRET_ORPHAN_PURGE` \u2014 a UI-triggered run must never purge a live warehouse\ncredential. Returns immediately with the Celery task id; the result lands in\n`GET /admin/secret-sweep` once the worker picks it up.\n503 with a classified broker reason when the broker is down; nothing enqueued, no audit row.",
-        "operationId": "run_secret_sweep_api_v1_admin_secret_sweep_run_post",
+        "operationId": "run_secret_sweep",
         "responses": {
           "202": {
             "content": {
@@ -10189,7 +10189,7 @@
     },
     "/api/v1/admin/suites": {
       "get": {
-        "operationId": "all_suites_api_v1_admin_suites_get",
+        "operationId": "all_suites",
         "responses": {
           "200": {
             "content": {
@@ -10198,7 +10198,7 @@
                   "items": {
                     "$ref": "#/components/schemas/AdminSuiteRead"
                   },
-                  "title": "Response All Suites Api V1 Admin Suites Get",
+                  "title": "Response All Suites",
                   "type": "array"
                 }
               }
@@ -10215,7 +10215,7 @@
     "/api/v1/admin/suites/{suite_id}": {
       "delete": {
         "description": "Delete any suite in the workspace. The cascade is the same one the owner's\nown delete runs; the audit event records what it destroyed.",
-        "operationId": "delete_suite_api_v1_admin_suites__suite_id__delete",
+        "operationId": "admin_delete_suite",
         "parameters": [
           {
             "in": "path",
@@ -10252,7 +10252,7 @@
     "/api/v1/admin/suites/{suite_id}/access/{grant_id}": {
       "delete": {
         "description": "Revoke a share on any suite \u2014 the suite's own panel is owner/admin-gated,\nthis one is workspace-admin-gated and needs no grant on the suite itself.",
-        "operationId": "revoke_grant_api_v1_admin_suites__suite_id__access__grant_id__delete",
+        "operationId": "revoke_grant",
         "parameters": [
           {
             "in": "path",
@@ -10299,7 +10299,7 @@
     "/api/v1/admin/suites/{suite_id}/transfer": {
       "post": {
         "description": "Hand a suite to another user \u2014 the offboarding primitive.",
-        "operationId": "transfer_suite_api_v1_admin_suites__suite_id__transfer_post",
+        "operationId": "transfer_suite",
         "parameters": [
           {
             "in": "path",
@@ -10352,7 +10352,7 @@
     },
     "/api/v1/admin/users": {
       "get": {
-        "operationId": "all_users_api_v1_admin_users_get",
+        "operationId": "all_users",
         "responses": {
           "200": {
             "content": {
@@ -10361,7 +10361,7 @@
                   "items": {
                     "$ref": "#/components/schemas/AdminUserRead"
                   },
-                  "title": "Response All Users Api V1 Admin Users Get",
+                  "title": "Response All Users",
                   "type": "array"
                 }
               }
@@ -10378,7 +10378,7 @@
     "/api/v1/admin/users/{user_id}/role": {
       "patch": {
         "description": "Set `user_id`'s stored workspace role \u2014 the one sanctioned way to demote.",
-        "operationId": "set_user_role_api_v1_admin_users__user_id__role_patch",
+        "operationId": "set_user_role",
         "parameters": [
           {
             "in": "path",
@@ -10431,7 +10431,7 @@
     },
     "/api/v1/assets": {
       "get": {
-        "operationId": "list_assets_api_v1_assets_get",
+        "operationId": "list_assets",
         "parameters": [
           {
             "in": "query",
@@ -10465,7 +10465,7 @@
                   "items": {
                     "$ref": "#/components/schemas/AssetSummaryRead"
                   },
-                  "title": "Response List Assets Api V1 Assets Get",
+                  "title": "Response List Assets",
                   "type": "array"
                 }
               }
@@ -10499,7 +10499,7 @@
     },
     "/api/v1/assets/{asset_id}": {
       "get": {
-        "operationId": "get_asset_api_v1_assets__asset_id__get",
+        "operationId": "get_asset",
         "parameters": [
           {
             "in": "path",
@@ -10540,7 +10540,7 @@
         ]
       },
       "patch": {
-        "operationId": "update_asset_api_v1_assets__asset_id__patch",
+        "operationId": "update_asset",
         "parameters": [
           {
             "in": "path",
@@ -10593,7 +10593,7 @@
     },
     "/api/v1/assets/{asset_id}/column-lineage": {
       "get": {
-        "operationId": "trace_asset_column_api_v1_assets__asset_id__column_lineage_get",
+        "operationId": "trace_asset_column",
         "parameters": [
           {
             "in": "path",
@@ -10669,7 +10669,7 @@
     "/api/v1/auth/logout": {
       "post": {
         "description": "Revoke the presented session and clear the cookie. Idempotent.",
-        "operationId": "logout_api_v1_auth_logout_post",
+        "operationId": "logout",
         "responses": {
           "204": {
             "description": "Successful Response"
@@ -10684,7 +10684,7 @@
     "/api/v1/auth/otp/request": {
       "post": {
         "description": "Email a one-time sign-in code, if the address is eligible.\n\nThe response is IDENTICAL whether or not it is \u2014 ineligible, not allow-listed,\nor over quota all answer `{\"status\": \"ok\"}` after the same minimum elapsed time\n(anti-enumeration, ADR 0032 decision 4). The mail itself is sent by the worker\n(#1731): nothing on this path waits on SMTP or the secret store, so a slow relay\ncannot push an eligible address past the floor \u2014 and a delivery failure is an\noperator log line, never a different response.",
-        "operationId": "request_otp_api_v1_auth_otp_request_post",
+        "operationId": "request_otp",
         "requestBody": {
           "content": {
             "application/json": {
@@ -10726,7 +10726,7 @@
     "/api/v1/auth/otp/verify": {
       "post": {
         "description": "Verify the code, mint a session, and set the `dataq_session` cookie.",
-        "operationId": "verify_otp_api_v1_auth_otp_verify_post",
+        "operationId": "verify_otp",
         "requestBody": {
           "content": {
             "application/json": {
@@ -10767,7 +10767,7 @@
     },
     "/api/v1/connections": {
       "get": {
-        "operationId": "list_connections_api_v1_connections_get",
+        "operationId": "list_connections",
         "parameters": [
           {
             "in": "query",
@@ -10810,7 +10810,7 @@
                   "items": {
                     "$ref": "#/components/schemas/ConnectionRead"
                   },
-                  "title": "Response List Connections Api V1 Connections Get",
+                  "title": "Response List Connections",
                   "type": "array"
                 }
               }
@@ -10834,7 +10834,7 @@
         ]
       },
       "post": {
-        "operationId": "create_connection_api_v1_connections_post",
+        "operationId": "create_connection",
         "requestBody": {
           "content": {
             "application/json": {
@@ -10876,7 +10876,7 @@
     "/api/v1/connections/test": {
       "post": {
         "description": "Probe the config/secret the user just typed \u2014 before Create is pressed.",
-        "operationId": "test_draft_connection_api_v1_connections_test_post",
+        "operationId": "test_draft_connection",
         "requestBody": {
           "content": {
             "application/json": {
@@ -10917,7 +10917,7 @@
     },
     "/api/v1/connections/{connection_id}": {
       "delete": {
-        "operationId": "delete_connection_api_v1_connections__connection_id__delete",
+        "operationId": "delete_connection",
         "parameters": [
           {
             "in": "path",
@@ -10951,7 +10951,7 @@
         ]
       },
       "get": {
-        "operationId": "get_connection_api_v1_connections__connection_id__get",
+        "operationId": "get_connection",
         "parameters": [
           {
             "in": "path",
@@ -10992,7 +10992,7 @@
         ]
       },
       "patch": {
-        "operationId": "update_connection_api_v1_connections__connection_id__patch",
+        "operationId": "update_connection",
         "parameters": [
           {
             "in": "path",
@@ -11045,7 +11045,7 @@
     },
     "/api/v1/connections/{connection_id}/browse/catalog": {
       "get": {
-        "operationId": "browse_connection_catalog_api_v1_connections__connection_id__browse_catalog_get",
+        "operationId": "browse_connection_catalog",
         "parameters": [
           {
             "in": "path",
@@ -11134,7 +11134,7 @@
     },
     "/api/v1/connections/{connection_id}/browse/files": {
       "get": {
-        "operationId": "browse_connection_files_api_v1_connections__connection_id__browse_files_get",
+        "operationId": "browse_connection_files",
         "parameters": [
           {
             "in": "path",
@@ -11200,7 +11200,7 @@
     },
     "/api/v1/connections/{connection_id}/reauth": {
       "post": {
-        "operationId": "reauth_connection_api_v1_connections__connection_id__reauth_post",
+        "operationId": "reauth_connection",
         "parameters": [
           {
             "in": "path",
@@ -11253,7 +11253,7 @@
     },
     "/api/v1/connections/{connection_id}/test": {
       "post": {
-        "operationId": "test_connection_api_v1_connections__connection_id__test_post",
+        "operationId": "test_connection",
         "parameters": [
           {
             "in": "path",
@@ -11296,7 +11296,7 @@
     },
     "/api/v1/connections/{connection_id}/versions": {
       "get": {
-        "operationId": "list_connection_versions_api_v1_connections__connection_id__versions_get",
+        "operationId": "list_connection_versions",
         "parameters": [
           {
             "in": "path",
@@ -11317,7 +11317,7 @@
                   "items": {
                     "$ref": "#/components/schemas/ConnectionVersionRead"
                   },
-                  "title": "Response List Connection Versions Api V1 Connections  Connection Id  Versions Get",
+                  "title": "Response List Connection Versions",
                   "type": "array"
                 }
               }
@@ -11343,7 +11343,7 @@
     },
     "/api/v1/dashboard/summary": {
       "get": {
-        "operationId": "get_dashboard_summary_api_v1_dashboard_summary_get",
+        "operationId": "get_dashboard_summary",
         "parameters": [
           {
             "in": "query",
@@ -11388,7 +11388,7 @@
     },
     "/api/v1/incidents": {
       "get": {
-        "operationId": "list_incidents_api_v1_incidents_get",
+        "operationId": "list_incidents",
         "parameters": [
           {
             "in": "query",
@@ -11474,7 +11474,7 @@
                   "items": {
                     "$ref": "#/components/schemas/IncidentRead"
                   },
-                  "title": "Response List Incidents Api V1 Incidents Get",
+                  "title": "Response List Incidents",
                   "type": "array"
                 }
               }
@@ -11508,7 +11508,7 @@
     },
     "/api/v1/incidents/{incident_id}": {
       "get": {
-        "operationId": "get_incident_api_v1_incidents__incident_id__get",
+        "operationId": "get_incident",
         "parameters": [
           {
             "in": "path",
@@ -11551,7 +11551,7 @@
     },
     "/api/v1/incidents/{incident_id}/ack": {
       "post": {
-        "operationId": "acknowledge_incident_api_v1_incidents__incident_id__ack_post",
+        "operationId": "acknowledge_incident",
         "parameters": [
           {
             "in": "path",
@@ -11604,7 +11604,7 @@
     },
     "/api/v1/incidents/{incident_id}/narrative": {
       "get": {
-        "operationId": "get_incident_narrative_api_v1_incidents__incident_id__narrative_get",
+        "operationId": "get_incident_narrative",
         "parameters": [
           {
             "in": "path",
@@ -11647,7 +11647,7 @@
     },
     "/api/v1/incidents/{incident_id}/resolve": {
       "post": {
-        "operationId": "resolve_incident_api_v1_incidents__incident_id__resolve_post",
+        "operationId": "resolve_incident",
         "parameters": [
           {
             "in": "path",
@@ -11701,7 +11701,7 @@
     "/api/v1/llm/check_suggestions": {
       "post": {
         "description": "Queues a worker-side generation; poll `GET /llm/invocations/{id}`. Every\nsuggested check passes the same validator a human's `create_check` call\nwould before it is ever stored \u2014 one that fails is dropped, not surfaced;\nsee the invocation's `rejected` field for what didn't make it and why.\n\nIf EVERY suggestion is rejected, the invocation fails instead \u2014 there is no\nempty-but-successful outcome for \"nothing runnable came back\" \u2014 and the\ntop-level `rejected` shape above never gets written. The reasons are still\nreadable, in two forms: folded into `error` as one summary sentence, and\nas a structured `{rejected, rejected_count, truncated}` object under\n`response` (unlike a successful run, where `response` is `{suggestions,\nrejected, coverage_warnings}`) \u2014 a failed invocation's `response` field\ncarries only that narrower rejection detail, not the full success shape.\n`rejected` itself may be shorter than `rejected_count`; `truncated` is\n`true` when it is, so a caller reading only `response` (not `error`'s own\n\"(+N more)\" text) still has a signal the list isn't exhaustive.",
-        "operationId": "suggest_checks_api_v1_llm_check_suggestions_post",
+        "operationId": "suggest_checks",
         "requestBody": {
           "content": {
             "application/json": {
@@ -11742,7 +11742,7 @@
     },
     "/api/v1/llm/invocations/{invocation_id}": {
       "get": {
-        "operationId": "get_invocation_api_v1_llm_invocations__invocation_id__get",
+        "operationId": "get_invocation",
         "parameters": [
           {
             "in": "path",
@@ -11786,7 +11786,7 @@
     "/api/v1/llm/rca_narrative": {
       "post": {
         "description": "Queues a worker-side narrative over an incident's already-captured\nevidence card + a longer per-check history; poll `GET /llm/invocations/{id}`.\nRead-only \u2014 nothing is saved to the suite \u2014 so it's gated the same as\nreading the incident itself (`view`), not `edit`.\n\nIf the model's every ranked hypothesis fails validation (cites no evidence\nlayer from the closed vocabulary, or an invalid confidence level), the\ninvocation fails instead of returning an empty narrative \u2014 same shape as\n`/check_suggestions`' all-rejected case: the reasons are folded into\n`error` and, structured, into `response` as `{rejected, rejected_count,\ntruncated}`.",
-        "operationId": "generate_rca_narrative_api_v1_llm_rca_narrative_post",
+        "operationId": "generate_rca_narrative",
         "requestBody": {
           "content": {
             "application/json": {
@@ -11828,7 +11828,7 @@
     "/api/v1/llm/sql_generation": {
       "post": {
         "description": "Queues a worker-side generation; poll `GET /llm/invocations/{id}`. The\nmodel's SQL passes the same ADR 0019 validator a human's would before it is\never stored; add the result to a check like any custom SQL (dry-run in the\neditor before save applies there unchanged). `additional_tables` (#1649)\njoins in up to `llm_sqlgen.MAX_ADDITIONAL_TABLES` more tables on this SAME\nconnection for a cross-table rule \u2014 cross-connection is refused\nstructurally (there is no connection reference to give one).",
-        "operationId": "generate_sql_api_v1_llm_sql_generation_post",
+        "operationId": "generate_sql",
         "requestBody": {
           "content": {
             "application/json": {
@@ -11870,7 +11870,7 @@
     "/api/v1/me": {
       "get": {
         "description": "Return the authenticated user's profile plus their workspace-admin flag.",
-        "operationId": "me_api_v1_me_get",
+        "operationId": "me",
         "responses": {
           "200": {
             "content": {
@@ -11890,7 +11890,7 @@
       },
       "patch": {
         "description": "Self-service profile update \u2014 currently just `display_name` (#1139).",
-        "operationId": "update_me_api_v1_me_patch",
+        "operationId": "update_me",
         "requestBody": {
           "content": {
             "application/json": {
@@ -11931,7 +11931,7 @@
     },
     "/api/v1/me/api-keys": {
       "get": {
-        "operationId": "list_api_keys_api_v1_me_api_keys_get",
+        "operationId": "list_api_keys",
         "responses": {
           "200": {
             "content": {
@@ -11940,7 +11940,7 @@
                   "items": {
                     "$ref": "#/components/schemas/ApiKeyRead"
                   },
-                  "title": "Response List Api Keys Api V1 Me Api Keys Get",
+                  "title": "Response List Api Keys",
                   "type": "array"
                 }
               }
@@ -11955,7 +11955,7 @@
       },
       "post": {
         "description": "Mint a PAT that authenticates as you (`Authorization: Bearer dq_live_\u2026`)\non the REST API and `/mcp` alike, inheriting your per-suite access.",
-        "operationId": "create_api_key_api_v1_me_api_keys_post",
+        "operationId": "create_api_key",
         "requestBody": {
           "content": {
             "application/json": {
@@ -11997,7 +11997,7 @@
     "/api/v1/me/api-keys/{key_id}": {
       "delete": {
         "description": "Revocation is immediate (the key stops authenticating) and idempotent.\nAnother user's key 404s \u2014 indistinguishable from a nonexistent one.",
-        "operationId": "revoke_api_key_api_v1_me_api_keys__key_id__delete",
+        "operationId": "revoke_api_key",
         "parameters": [
           {
             "in": "path",
@@ -12033,7 +12033,7 @@
     },
     "/api/v1/notification-channels": {
       "get": {
-        "operationId": "list_channels_api_v1_notification_channels_get",
+        "operationId": "list_channels",
         "responses": {
           "200": {
             "content": {
@@ -12042,7 +12042,7 @@
                   "items": {
                     "$ref": "#/components/schemas/ChannelRead"
                   },
-                  "title": "Response List Channels Api V1 Notification Channels Get",
+                  "title": "Response List Channels",
                   "type": "array"
                 }
               }
@@ -12056,7 +12056,7 @@
         ]
       },
       "post": {
-        "operationId": "create_channel_api_v1_notification_channels_post",
+        "operationId": "create_channel",
         "requestBody": {
           "content": {
             "application/json": {
@@ -12097,7 +12097,7 @@
     },
     "/api/v1/notification-channels/{channel_id}": {
       "delete": {
-        "operationId": "delete_channel_api_v1_notification_channels__channel_id__delete",
+        "operationId": "delete_channel",
         "parameters": [
           {
             "in": "path",
@@ -12131,7 +12131,7 @@
         ]
       },
       "get": {
-        "operationId": "get_channel_api_v1_notification_channels__channel_id__get",
+        "operationId": "get_channel",
         "parameters": [
           {
             "in": "path",
@@ -12172,7 +12172,7 @@
         ]
       },
       "patch": {
-        "operationId": "update_channel_api_v1_notification_channels__channel_id__patch",
+        "operationId": "update_channel",
         "parameters": [
           {
             "in": "path",
@@ -12225,7 +12225,7 @@
     },
     "/api/v1/orchestration/events/adf": {
       "post": {
-        "operationId": "receive_adf_event_api_v1_orchestration_events_adf_post",
+        "operationId": "receive_adf_event",
         "parameters": [
           {
             "description": "Shared secret (ADR 0006)",
@@ -12276,7 +12276,7 @@
     },
     "/api/v1/orchestration/events/airflow": {
       "post": {
-        "operationId": "receive_airflow_event_api_v1_orchestration_events_airflow_post",
+        "operationId": "receive_airflow_event",
         "responses": {
           "200": {
             "content": {
@@ -12297,7 +12297,7 @@
     },
     "/api/v1/orchestration/events/dbt": {
       "post": {
-        "operationId": "receive_dbt_event_api_v1_orchestration_events_dbt_post",
+        "operationId": "receive_dbt_event",
         "responses": {
           "200": {
             "content": {
@@ -12319,7 +12319,7 @@
     "/api/v1/orchestration/near-misses": {
       "get": {
         "description": "Surfaces the `workspace_health` `trigger_env_near_miss:*` rows #1194 already\nwrites on every ingest-time env mismatch, decoded back to their\n`(provider, pipeline_or_dag_id, run_env, binding_env)` tuple. Before this route\nthe only way to see one was `psql` (#1199).",
-        "operationId": "list_near_misses_api_v1_orchestration_near_misses_get",
+        "operationId": "list_near_misses",
         "parameters": [
           {
             "description": "Narrow to near-misses on one suite's trigger bindings.",
@@ -12349,7 +12349,7 @@
                   "items": {
                     "$ref": "#/components/schemas/NearMissRead"
                   },
-                  "title": "Response List Near Misses Api V1 Orchestration Near Misses Get",
+                  "title": "Response List Near Misses",
                   "type": "array"
                 }
               }
@@ -12376,7 +12376,7 @@
     "/api/v1/orchestration/pipelines": {
       "get": {
         "description": "The pipeline status view: one row per monitored pipeline (provider /\npipeline-or-dag / env), carrying its most-recent run, most-recently-active\nfirst. Auth-only gated (orchestration monitoring, not suite-scoped); the\nper-run feed is `/pipeline_runs`.",
-        "operationId": "list_pipelines_api_v1_orchestration_pipelines_get",
+        "operationId": "list_pipelines",
         "parameters": [
           {
             "in": "query",
@@ -12431,7 +12431,7 @@
                   "items": {
                     "$ref": "#/components/schemas/PipelineRunRead"
                   },
-                  "title": "Response List Pipelines Api V1 Orchestration Pipelines Get",
+                  "title": "Response List Pipelines",
                   "type": "array"
                 }
               }
@@ -12458,7 +12458,7 @@
     "/api/v1/pipeline_runs": {
       "get": {
         "description": "Paged (#928): before this, `limit` capped at 200 with no `offset`, so the 200 most recent\nruns were the only ones any client could ever see \u2014 and a caller passing `?offset=` got it\nsilently discarded by FastAPI and re-read page 1 forever. A paging loop therefore \"counted\"\n20,200 rows against a 211-row table.",
-        "operationId": "list_pipeline_runs_api_v1_pipeline_runs_get",
+        "operationId": "list_pipeline_runs",
         "parameters": [
           {
             "in": "query",
@@ -12526,7 +12526,7 @@
                   "items": {
                     "$ref": "#/components/schemas/PipelineRunRead"
                   },
-                  "title": "Response List Pipeline Runs Api V1 Pipeline Runs Get",
+                  "title": "Response List Pipeline Runs",
                   "type": "array"
                 }
               }
@@ -12560,7 +12560,7 @@
     },
     "/api/v1/runs": {
       "get": {
-        "operationId": "list_runs_api_v1_runs_get",
+        "operationId": "list_runs",
         "parameters": [
           {
             "in": "query",
@@ -12629,7 +12629,7 @@
                   "items": {
                     "$ref": "#/components/schemas/RunRead"
                   },
-                  "title": "Response List Runs Api V1 Runs Get",
+                  "title": "Response List Runs",
                   "type": "array"
                 }
               }
@@ -12663,7 +12663,7 @@
     },
     "/api/v1/runs/{run_id}": {
       "get": {
-        "operationId": "get_run_api_v1_runs__run_id__get",
+        "operationId": "get_run",
         "parameters": [
           {
             "in": "path",
@@ -12707,7 +12707,7 @@
     "/api/v1/runs/{run_id}/cancel": {
       "post": {
         "description": "Cancel a non-terminal run. `edit`-gated (same capability as triggering).\n\nMarks the run `cancelled` and best-effort revokes its Celery task; an\nalready-finished run (succeeded/failed/cancelled) -> 409. Cancel may RACE a\nfast run to completion \u2014 a 200 is not a guarantee the run stopped.",
-        "operationId": "cancel_run_api_v1_runs__run_id__cancel_post",
+        "operationId": "cancel_run",
         "parameters": [
           {
             "in": "path",
@@ -12750,7 +12750,7 @@
     },
     "/api/v1/runs/{run_id}/progress": {
       "get": {
-        "operationId": "get_run_progress_api_v1_runs__run_id__progress_get",
+        "operationId": "get_run_progress",
         "parameters": [
           {
             "in": "path",
@@ -12794,7 +12794,7 @@
     "/api/v1/runs/{run_id}/results/{result_id}/comparison_report": {
       "get": {
         "description": "CSV/XLSX derived at request time from the persisted **redacted** buckets\n(ADR 0015 \u00a74 \u2014 a stored file would bypass redaction and the retention\nsweep). Same authz + redaction as the run-detail read; format is chosen at\ndownload time, nothing persists server-side.",
-        "operationId": "download_comparison_report_api_v1_runs__run_id__results__result_id__comparison_report_get",
+        "operationId": "download_comparison_report",
         "parameters": [
           {
             "in": "path",
@@ -12856,7 +12856,7 @@
     },
     "/api/v1/schedules": {
       "get": {
-        "operationId": "list_schedules_api_v1_schedules_get",
+        "operationId": "list_schedules",
         "parameters": [
           {
             "in": "query",
@@ -12900,7 +12900,7 @@
                   "items": {
                     "$ref": "#/components/schemas/ScheduleRead"
                   },
-                  "title": "Response List Schedules Api V1 Schedules Get",
+                  "title": "Response List Schedules",
                   "type": "array"
                 }
               }
@@ -12924,7 +12924,7 @@
         ]
       },
       "post": {
-        "operationId": "create_schedule_api_v1_schedules_post",
+        "operationId": "create_schedule",
         "requestBody": {
           "content": {
             "application/json": {
@@ -12965,7 +12965,7 @@
     },
     "/api/v1/schedules/{schedule_id}": {
       "delete": {
-        "operationId": "delete_schedule_api_v1_schedules__schedule_id__delete",
+        "operationId": "delete_schedule",
         "parameters": [
           {
             "in": "path",
@@ -12999,7 +12999,7 @@
         ]
       },
       "get": {
-        "operationId": "get_schedule_api_v1_schedules__schedule_id__get",
+        "operationId": "get_schedule",
         "parameters": [
           {
             "in": "path",
@@ -13040,7 +13040,7 @@
         ]
       },
       "patch": {
-        "operationId": "update_schedule_api_v1_schedules__schedule_id__patch",
+        "operationId": "update_schedule",
         "parameters": [
           {
             "in": "path",
@@ -13093,7 +13093,7 @@
     },
     "/api/v1/suites": {
       "get": {
-        "operationId": "list_suites_api_v1_suites_get",
+        "operationId": "list_suites",
         "parameters": [
           {
             "in": "query",
@@ -13121,7 +13121,7 @@
                   "items": {
                     "$ref": "#/components/schemas/SuiteRead"
                   },
-                  "title": "Response List Suites Api V1 Suites Get",
+                  "title": "Response List Suites",
                   "type": "array"
                 }
               }
@@ -13145,7 +13145,7 @@
         ]
       },
       "post": {
-        "operationId": "create_suite_api_v1_suites_post",
+        "operationId": "create_suite",
         "requestBody": {
           "content": {
             "application/json": {
@@ -13186,7 +13186,7 @@
     },
     "/api/v1/suites/import": {
       "post": {
-        "operationId": "import_suite_api_v1_suites_import_post",
+        "operationId": "import_suite",
         "requestBody": {
           "content": {
             "application/json": {
@@ -13227,7 +13227,7 @@
     },
     "/api/v1/suites/{suite_id}": {
       "delete": {
-        "operationId": "delete_suite_api_v1_suites__suite_id__delete",
+        "operationId": "delete_suite",
         "parameters": [
           {
             "in": "path",
@@ -13261,7 +13261,7 @@
         ]
       },
       "get": {
-        "operationId": "get_suite_api_v1_suites__suite_id__get",
+        "operationId": "get_suite",
         "parameters": [
           {
             "in": "path",
@@ -13302,7 +13302,7 @@
         ]
       },
       "patch": {
-        "operationId": "update_suite_api_v1_suites__suite_id__patch",
+        "operationId": "update_suite",
         "parameters": [
           {
             "in": "path",
@@ -13355,7 +13355,7 @@
     },
     "/api/v1/suites/{suite_id}/batch-preview": {
       "get": {
-        "operationId": "preview_batch_target_api_v1_suites__suite_id__batch_preview_get",
+        "operationId": "preview_batch_target",
         "parameters": [
           {
             "in": "path",
@@ -13451,7 +13451,7 @@
     },
     "/api/v1/suites/{suite_id}/cadence": {
       "get": {
-        "operationId": "get_suite_cadence_api_v1_suites__suite_id__cadence_get",
+        "operationId": "get_suite_cadence",
         "parameters": [
           {
             "in": "path",
@@ -13494,7 +13494,7 @@
     },
     "/api/v1/suites/{suite_id}/checks": {
       "get": {
-        "operationId": "list_checks_api_v1_suites__suite_id__checks_get",
+        "operationId": "list_checks",
         "parameters": [
           {
             "in": "path",
@@ -13515,7 +13515,7 @@
                   "items": {
                     "$ref": "#/components/schemas/CheckRead"
                   },
-                  "title": "Response List Checks Api V1 Suites  Suite Id  Checks Get",
+                  "title": "Response List Checks",
                   "type": "array"
                 }
               }
@@ -13539,7 +13539,7 @@
         ]
       },
       "post": {
-        "operationId": "create_check_api_v1_suites__suite_id__checks_post",
+        "operationId": "create_check",
         "parameters": [
           {
             "in": "path",
@@ -13592,7 +13592,7 @@
     },
     "/api/v1/suites/{suite_id}/checks/dryrun": {
       "post": {
-        "operationId": "dry_run_check_api_v1_suites__suite_id__checks_dryrun_post",
+        "operationId": "dry_run_check",
         "parameters": [
           {
             "in": "path",
@@ -13645,7 +13645,7 @@
     },
     "/api/v1/suites/{suite_id}/checks/{check_id}": {
       "delete": {
-        "operationId": "delete_check_api_v1_suites__suite_id__checks__check_id__delete",
+        "operationId": "delete_check",
         "parameters": [
           {
             "in": "path",
@@ -13689,7 +13689,7 @@
         ]
       },
       "get": {
-        "operationId": "get_check_api_v1_suites__suite_id__checks__check_id__get",
+        "operationId": "get_check",
         "parameters": [
           {
             "in": "path",
@@ -13740,7 +13740,7 @@
         ]
       },
       "patch": {
-        "operationId": "update_check_api_v1_suites__suite_id__checks__check_id__patch",
+        "operationId": "update_check",
         "parameters": [
           {
             "in": "path",
@@ -13804,7 +13804,7 @@
     "/api/v1/suites/{suite_id}/checks/{check_id}/baseline": {
       "get": {
         "description": "Null (not 404) when the check has no baseline yet \u2014 a fresh check, a\nnon-stateful kind, or one just re-baselined (#592) via delete-then-recapture\nare all \"nothing to overlay\" for the trend chart (#594), not an error state.\n404 still applies for a missing/cross-suite check (`svc.get_check_baseline`).",
-        "operationId": "get_check_baseline_api_v1_suites__suite_id__checks__check_id__baseline_get",
+        "operationId": "get_check_baseline",
         "parameters": [
           {
             "in": "path",
@@ -13840,7 +13840,7 @@
                       "type": "null"
                     }
                   ],
-                  "title": "Response Get Check Baseline Api V1 Suites  Suite Id  Checks  Check Id  Baseline Get"
+                  "title": "Response Get Check Baseline"
                 }
               }
             },
@@ -13865,7 +13865,7 @@
     },
     "/api/v1/suites/{suite_id}/checks/{check_id}/history": {
       "get": {
-        "operationId": "list_check_result_history_api_v1_suites__suite_id__checks__check_id__history_get",
+        "operationId": "list_check_result_history",
         "parameters": [
           {
             "in": "path",
@@ -13908,7 +13908,7 @@
                   "items": {
                     "$ref": "#/components/schemas/CheckResultPointRead"
                   },
-                  "title": "Response List Check Result History Api V1 Suites  Suite Id  Checks  Check Id  History Get",
+                  "title": "Response List Check Result History",
                   "type": "array"
                 }
               }
@@ -13935,7 +13935,7 @@
     "/api/v1/suites/{suite_id}/checks/{check_id}/rebaseline": {
       "post": {
         "description": "Deliberately a delete-then-recapture-next-run, not an immediate recapture:\nrecapturing here would run datasource introspection (schema_drift) or a target\nquery (anomaly) on the API request thread. 204 whether or not a baseline\nexisted (idempotent); 422 for a non-stateful kind (nothing to re-baseline).",
-        "operationId": "rebaseline_check_api_v1_suites__suite_id__checks__check_id__rebaseline_post",
+        "operationId": "rebaseline_check",
         "parameters": [
           {
             "in": "path",
@@ -13981,7 +13981,7 @@
     },
     "/api/v1/suites/{suite_id}/checks/{check_id}/snooze": {
       "delete": {
-        "operationId": "clear_check_snooze_api_v1_suites__suite_id__checks__check_id__snooze_delete",
+        "operationId": "clear_check_snooze",
         "parameters": [
           {
             "in": "path",
@@ -14032,7 +14032,7 @@
         ]
       },
       "post": {
-        "operationId": "snooze_check_api_v1_suites__suite_id__checks__check_id__snooze_post",
+        "operationId": "snooze_check",
         "parameters": [
           {
             "in": "path",
@@ -14095,7 +14095,7 @@
     },
     "/api/v1/suites/{suite_id}/checks/{check_id}/versions": {
       "get": {
-        "operationId": "list_check_versions_api_v1_suites__suite_id__checks__check_id__versions_get",
+        "operationId": "list_check_versions",
         "parameters": [
           {
             "in": "path",
@@ -14126,7 +14126,7 @@
                   "items": {
                     "$ref": "#/components/schemas/CheckVersionRead"
                   },
-                  "title": "Response List Check Versions Api V1 Suites  Suite Id  Checks  Check Id  Versions Get",
+                  "title": "Response List Check Versions",
                   "type": "array"
                 }
               }
@@ -14153,7 +14153,7 @@
     "/api/v1/suites/{suite_id}/checks/{check_id}/versions/{version_no}/restore": {
       "post": {
         "description": "Edit-gated exactly like `update_check`, because that's what this does under the hood \u2014 re-\napplies the chosen version's snapshot through the same validated PATCH path and records the\nresult as a new version.",
-        "operationId": "restore_check_version_api_v1_suites__suite_id__checks__check_id__versions__version_no__restore_post",
+        "operationId": "restore_check_version",
         "parameters": [
           {
             "in": "path",
@@ -14215,7 +14215,7 @@
     },
     "/api/v1/suites/{suite_id}/column-policy": {
       "get": {
-        "operationId": "get_column_policy_api_v1_suites__suite_id__column_policy_get",
+        "operationId": "get_column_policy",
         "parameters": [
           {
             "in": "path",
@@ -14256,7 +14256,7 @@
         ]
       },
       "put": {
-        "operationId": "set_column_policy_api_v1_suites__suite_id__column_policy_put",
+        "operationId": "set_column_policy",
         "parameters": [
           {
             "in": "path",
@@ -14309,7 +14309,7 @@
     },
     "/api/v1/suites/{suite_id}/column-policy/suggest": {
       "post": {
-        "operationId": "suggest_column_policy_api_v1_suites__suite_id__column_policy_suggest_post",
+        "operationId": "suggest_column_policy",
         "parameters": [
           {
             "in": "path",
@@ -14362,7 +14362,7 @@
     },
     "/api/v1/suites/{suite_id}/columns": {
       "get": {
-        "operationId": "list_columns_api_v1_suites__suite_id__columns_get",
+        "operationId": "list_columns",
         "parameters": [
           {
             "in": "path",
@@ -14510,7 +14510,7 @@
     },
     "/api/v1/suites/{suite_id}/deletion_impact": {
       "get": {
-        "operationId": "get_deletion_impact_api_v1_suites__suite_id__deletion_impact_get",
+        "operationId": "get_deletion_impact",
         "parameters": [
           {
             "in": "path",
@@ -14553,7 +14553,7 @@
     },
     "/api/v1/suites/{suite_id}/export": {
       "get": {
-        "operationId": "export_suite_api_v1_suites__suite_id__export_get",
+        "operationId": "export_suite",
         "parameters": [
           {
             "in": "path",
@@ -14596,7 +14596,7 @@
     },
     "/api/v1/suites/{suite_id}/notification-channels": {
       "get": {
-        "operationId": "list_suite_channels_api_v1_suites__suite_id__notification_channels_get",
+        "operationId": "list_suite_channels",
         "parameters": [
           {
             "in": "path",
@@ -14617,7 +14617,7 @@
                   "items": {
                     "$ref": "#/components/schemas/ChannelRead"
                   },
-                  "title": "Response List Suite Channels Api V1 Suites  Suite Id  Notification Channels Get",
+                  "title": "Response List Suite Channels",
                   "type": "array"
                 }
               }
@@ -14643,7 +14643,7 @@
     },
     "/api/v1/suites/{suite_id}/notification-channels/{channel_id}": {
       "delete": {
-        "operationId": "unlink_suite_channel_api_v1_suites__suite_id__notification_channels__channel_id__delete",
+        "operationId": "unlink_suite_channel",
         "parameters": [
           {
             "in": "path",
@@ -14687,7 +14687,7 @@
         ]
       },
       "put": {
-        "operationId": "link_suite_channel_api_v1_suites__suite_id__notification_channels__channel_id__put",
+        "operationId": "link_suite_channel",
         "parameters": [
           {
             "in": "path",
@@ -14733,7 +14733,7 @@
     },
     "/api/v1/suites/{suite_id}/notifications": {
       "delete": {
-        "operationId": "delete_notifications_api_v1_suites__suite_id__notifications_delete",
+        "operationId": "delete_notifications",
         "parameters": [
           {
             "in": "path",
@@ -14767,7 +14767,7 @@
         ]
       },
       "get": {
-        "operationId": "get_notifications_api_v1_suites__suite_id__notifications_get",
+        "operationId": "get_notifications",
         "parameters": [
           {
             "in": "path",
@@ -14808,7 +14808,7 @@
         ]
       },
       "put": {
-        "operationId": "put_notifications_api_v1_suites__suite_id__notifications_put",
+        "operationId": "put_notifications",
         "parameters": [
           {
             "in": "path",
@@ -14861,7 +14861,7 @@
     },
     "/api/v1/suites/{suite_id}/profile": {
       "post": {
-        "operationId": "profile_columns_api_v1_suites__suite_id__profile_post",
+        "operationId": "profile_columns",
         "parameters": [
           {
             "in": "path",
@@ -14915,7 +14915,7 @@
     "/api/v1/suites/{suite_id}/run": {
       "post": {
         "description": "Queue a run of the suite and dispatch it to the worker.",
-        "operationId": "trigger_suite_run_api_v1_suites__suite_id__run_post",
+        "operationId": "trigger_suite_run",
         "parameters": [
           {
             "in": "path",
@@ -14958,7 +14958,7 @@
     },
     "/api/v1/suites/{suite_id}/shares": {
       "get": {
-        "operationId": "list_shares_api_v1_suites__suite_id__shares_get",
+        "operationId": "list_shares",
         "parameters": [
           {
             "in": "path",
@@ -14979,7 +14979,7 @@
                   "items": {
                     "$ref": "#/components/schemas/ShareRead"
                   },
-                  "title": "Response List Shares Api V1 Suites  Suite Id  Shares Get",
+                  "title": "Response List Shares",
                   "type": "array"
                 }
               }
@@ -15003,7 +15003,7 @@
         ]
       },
       "post": {
-        "operationId": "grant_share_api_v1_suites__suite_id__shares_post",
+        "operationId": "grant_share",
         "parameters": [
           {
             "in": "path",
@@ -15056,7 +15056,7 @@
     },
     "/api/v1/suites/{suite_id}/shares/{user_id}": {
       "delete": {
-        "operationId": "revoke_share_api_v1_suites__suite_id__shares__user_id__delete",
+        "operationId": "revoke_share",
         "parameters": [
           {
             "in": "path",
@@ -15100,7 +15100,7 @@
         ]
       },
       "patch": {
-        "operationId": "update_share_api_v1_suites__suite_id__shares__user_id__patch",
+        "operationId": "update_share",
         "parameters": [
           {
             "in": "path",
@@ -15163,7 +15163,7 @@
     },
     "/api/v1/trigger-bindings": {
       "get": {
-        "operationId": "list_trigger_bindings_api_v1_trigger_bindings_get",
+        "operationId": "list_trigger_bindings",
         "parameters": [
           {
             "in": "query",
@@ -15223,7 +15223,7 @@
                   "items": {
                     "$ref": "#/components/schemas/TriggerBindingRead"
                   },
-                  "title": "Response List Trigger Bindings Api V1 Trigger Bindings Get",
+                  "title": "Response List Trigger Bindings",
                   "type": "array"
                 }
               }
@@ -15247,7 +15247,7 @@
         ]
       },
       "post": {
-        "operationId": "create_trigger_binding_api_v1_trigger_bindings_post",
+        "operationId": "create_trigger_binding",
         "requestBody": {
           "content": {
             "application/json": {
@@ -15288,7 +15288,7 @@
     },
     "/api/v1/trigger-bindings/{binding_id}": {
       "delete": {
-        "operationId": "delete_trigger_binding_api_v1_trigger_bindings__binding_id__delete",
+        "operationId": "delete_trigger_binding",
         "parameters": [
           {
             "in": "path",
@@ -15322,7 +15322,7 @@
         ]
       },
       "get": {
-        "operationId": "get_trigger_binding_api_v1_trigger_bindings__binding_id__get",
+        "operationId": "get_trigger_binding",
         "parameters": [
           {
             "in": "path",
@@ -15363,7 +15363,7 @@
         ]
       },
       "patch": {
-        "operationId": "update_trigger_binding_api_v1_trigger_bindings__binding_id__patch",
+        "operationId": "update_trigger_binding",
         "parameters": [
           {
             "in": "path",
@@ -15416,7 +15416,7 @@
     },
     "/api/v1/users/search": {
       "get": {
-        "operationId": "search_users_api_v1_users_search_get",
+        "operationId": "search_users",
         "parameters": [
           {
             "description": "Email or name substring (min 2 chars).",
@@ -15451,7 +15451,7 @@
                   "items": {
                     "$ref": "#/components/schemas/UserSummary"
                   },
-                  "title": "Response Search Users Api V1 Users Search Get",
+                  "title": "Response Search Users",
                   "type": "array"
                 }
               }
@@ -15478,7 +15478,7 @@
     "/healthz": {
       "get": {
         "description": "Liveness: is the process up. Deliberately does NOT touch the database.",
-        "operationId": "healthz_healthz_get",
+        "operationId": "healthz",
         "responses": {
           "200": {
             "content": {
@@ -15487,7 +15487,7 @@
                   "additionalProperties": {
                     "type": "string"
                   },
-                  "title": "Response Healthz Healthz Get",
+                  "title": "Response Healthz",
                   "type": "object"
                 }
               }
@@ -15501,7 +15501,7 @@
     "/readyz": {
       "get": {
         "description": "Readiness: can this instance actually serve \u2014 i.e. can it READ the database.",
-        "operationId": "readyz_readyz_get",
+        "operationId": "readyz",
         "responses": {
           "200": {
             "content": {
@@ -15510,7 +15510,7 @@
                   "additionalProperties": {
                     "type": "string"
                   },
-                  "title": "Response Readyz Readyz Get",
+                  "title": "Response Readyz",
                   "type": "object"
                 }
               }
