@@ -728,3 +728,14 @@ Created in AWS account `251783195294` for the Athena adapter's live battery. Cre
   - delete the secret `dataq/it/athena-reader` with force-delete;
   - drop database `dataq_athena_it`;
   - delete the `athena-results/` and `athena-data/` prefixes.
+
+## 2026-09-28 — AWS RDS `dataq-app` recovered from the account-suspension KMS lock (maintainer-approved)
+
+- **Symptom:** the AWS deployment answered `/healthz` 200, but **every authenticated call returned 500**. The API's newest CloudWatch log lines were from 2026-09-08, so failing requests weren't reaching the API log at all.
+- **Cause:** RDS instance `dataq-app` was in `inaccessible-encryption-credentials-recoverable` after the account suspension. Its AWS-managed KMS key (`76e3e129-…`) was already `Enabled` again when checked, but RDS stays locked until the instance is started.
+- **Action:** at 2026-09-28T17:27Z, `aws rds start-db-instance --db-instance-identifier dataq-app`, approved by the maintainer. Status went `starting` → `configuring-enhanced-monitoring` → `backing-up` → `backing-up`.
+- **Verified after recovery:**
+  - `/api/v1/me` and `/api/v1/suites` return 200 with the admin PAT.
+  - A worker-executed suite run completed (`AWS S3 — Orders Header CSV`: succeeded, 2/3), so the worker and database path work end to end.
+  - An export → import → export round trip was identical; its test copy was deleted.
+  - These runs were also the `dataq-client` AWS acceptance check.

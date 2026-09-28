@@ -7,7 +7,8 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Added
 
-- **Python client and CLI (`dataq-client`).** `pip install dataq-client`, then
+- **Python client and CLI (`dataq-client`).** Install the wheel attached to the release (or the
+  latest from `main`), then
   `dataq run <suite> --wait` gates a CI step on a suite's result with a documented exit code
   (0 ok · 1 warn · 2 fail · 3 run error · 4 client error). The Python API keeps a run's
   lifecycle and its worst severity as separate fields, and exposes every REST endpoint through
