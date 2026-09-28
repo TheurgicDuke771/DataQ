@@ -77,14 +77,28 @@ for name, check in spec["checks"].items():
         valid.append(rule)
 df = spark.table(spec["table"])
 rows = df.count()
-if valid:
-    out = engine.apply_checks_by_metadata(df, valid)
-    counts = {{
+def failing_counts(rules):
+    out = engine.apply_checks_by_metadata(df, rules)
+    return {{
         r["name"]: r["count"]
         for r in out.select(F.explode("_errors").alias("e")).groupBy("e.name").count().collect()
     }}
+
+if valid:
+    try:
+        counts = failing_counts(valid)
+    except Exception:
+        # One rule that fails at run time must not error its siblings: apply each alone.
+        counts = {{}}
+        for rule in valid:
+            try:
+                counts.update(failing_counts([rule]))
+                counts.setdefault(rule["name"], 0)
+            except Exception as exc:
+                results[rule["name"]] = {{"error": type(exc).__name__ + ": " + str(exc)[:300]}}
     for rule in valid:
-        results[rule["name"]] = {{"failing": int(counts.get(rule["name"], 0))}}
+        if rule["name"] not in results:
+            results[rule["name"]] = {{"failing": int(counts.get(rule["name"], 0))}}
 dbutils.notebook.exit(json.dumps({{"rows": rows, "results": results, "dqx": "{DQX_VERSION}"}}))
 """
 
@@ -108,7 +122,10 @@ def _literal(value: Any, *, what: str) -> Any:
     if isinstance(value, int | float):
         return value
     if isinstance(value, str) and len(value) <= _MAX_STRING_CHARS:
-        return "'" + value.replace("'", "''") + "'"
+        # Spark processes backslash escapes inside string literals and has no `''` escape (it
+        # reads 'O''Brien' as 'O' 'Brien' = OBrien): backslashes are doubled, then quotes
+        # become \', so `x\' || col || \'` stays a literal and O'Brien matches O'Brien.
+        return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
     raise DqxConfigError(f"{what} must be a number or a string of at most {_MAX_STRING_CHARS}")
 
 

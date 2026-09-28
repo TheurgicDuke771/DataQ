@@ -11,6 +11,9 @@ import pytest
 from backend.app.datasources import databricks_dqx as dqx
 from backend.app.datasources.databricks_dqx import DqxConfigError, build_dqx_rule
 
+BS = chr(92)  # one backslash, spelled so no reader has to count escapes
+Q = BS + "'"  # the escaped quote Spark reads as an apostrophe (it has no '' escape)
+
 
 def test_a_column_is_backtick_quoted_after_the_identifier_allowlist() -> None:
     rule = build_dqx_rule("dqx:is_not_null", {"column": "email"})
@@ -25,15 +28,15 @@ def test_a_column_that_is_not_a_plain_identifier_is_refused(column: Any) -> None
 
 def test_list_strings_become_escaped_literals_never_expressions() -> None:
     """DQX evaluates a bare string with `F.expr` — 'SM CASE' was resolved as a COLUMN named SM,
-    live. Every string must reach it as a quoted literal, embedded quotes doubled."""
+    live. Every string must reach it as a quoted Spark literal."""
     rule = build_dqx_rule(
         "dqx:is_in_list",
         {"column": "status", "allowed": ["SM CASE", "it's", "x') OR true --", 3, 2.5]},
     )
     assert rule["arguments"]["allowed"] == [
         "'SM CASE'",
-        "'it''s'",
-        "'x'') OR true --'",
+        "'it" + Q + "s'",
+        "'x" + Q + ") OR true --'",
         3,
         2.5,
     ]
@@ -355,3 +358,38 @@ def test_a_permanent_poll_failure_is_not_retried() -> None:
     with pytest.raises(httpx.HTTPStatusError):
         _jobs(handler).wait(1, sleep=lambda _s: None)
     assert calls["n"] == 1
+
+
+@pytest.mark.parametrize(
+    ("value", "literal"),
+    [
+        # x\' || p_container || \'  →  every backslash doubled, every quote escaped
+        (
+            "x" + BS + "' || p_container || " + BS + "'",
+            "'x" + BS + BS + Q + " || p_container || " + BS + BS + Q + "'",
+        ),
+        ("ends" + BS, "'ends" + BS + BS + "'"),
+    ],
+)
+def test_backslashes_are_escaped_before_quotes(value: str, literal: str) -> None:
+    """Spark processes backslash escapes in string literals: live (2026-09-28) the first value
+    escaped its literal into an expression referencing a column, and one such value failed the
+    whole job. Both must stay plain literals."""
+    rule = build_dqx_rule("dqx:is_in_list", {"column": "p_container", "allowed": [value]})
+    assert rule["arguments"]["allowed"] == [literal]
+
+
+def test_an_apostrophe_is_a_backslash_escaped_quote_not_doubled() -> None:
+    """Spark has no '' escape: live, 'O''Brien' parsed as OBrien, so an allowed O'Brien never
+    matched its rows. The backslash-escaped quote is what Spark reads as an apostrophe."""
+    rule = build_dqx_rule("dqx:is_in_list", {"column": "name", "allowed": ["O'Brien"]})
+    assert rule["arguments"]["allowed"] == ["'O" + Q + "Brien'"]
+
+
+def test_the_notebook_isolates_a_rule_that_fails_at_run_time() -> None:
+    """A combined pass that raises (live: an invalid regex) falls back to one rule at a time, so
+    only that rule errors — never every DQX check in the run."""
+    notebook = dqx.RUNNER_NOTEBOOK
+    assert "counts = failing_counts(valid)" in notebook
+    assert "counts.update(failing_counts([rule]))" in notebook
+    assert 'results[rule["name"]] = {"error": type(exc).__name__' in notebook
