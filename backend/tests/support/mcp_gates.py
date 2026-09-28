@@ -61,7 +61,9 @@ GATES: dict[str, str] = {
     "get_incident": "incident:view",
     "resolve_incident": "incident:edit",
     # ── workspace-role gated: no suite to hang a resource gate on ─────────── `test_connection`
-    # spends a stored credential against a remote system; `import_suite` CREATES a suite.
+    # and `browse_connection` spend a stored credential against a remote system; `import_suite`
+    # CREATES a suite.
+    "browse_connection": "role:member",
     "import_suite": "role:member",
     "test_connection": "role:member",
 }

@@ -663,6 +663,7 @@ def _viewer_probe_args(tool_name: str, suite: Suite) -> dict[str, Any]:
         # role:member — no suite argument at all, which is the point: these are
         # the capabilities with no resource ladder to ride.
         "test_connection": {"connection_id": _REAL_CONNECTION},
+        "browse_connection": {"connection_id": _REAL_CONNECTION},
         "import_suite": {
             "connection_id": _REAL_CONNECTION,
             "name": "imported probe",
