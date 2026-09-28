@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "98e7647d3d27",
+  "strategy": "manual-commit",
+  "branch": "feature/dqx-engine",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/app/datasources/databricks_dqx.py",
+    "backend/tests/datasources/test_databricks_dqx.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/98/e7647d3d27/0/metadata.json",
+      "transcript": "/98/e7647d3d27/0/full.jsonl",
+      "compact_transcript": "/98/e7647d3d27/0/transcript.jsonl",
+      "content_hash": "/98/e7647d3d27/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 182,
+    "cache_creation_tokens": 131924,
+    "cache_read_tokens": 69311433,
+    "output_tokens": 76581,
+    "api_call_count": 91
+  }
+}
