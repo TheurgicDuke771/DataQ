@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "82a682d318bf",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2138-mssql-comparison-derived-table",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/ops-log.md",
+    "docs/site/guides/datasources-checks.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/82/a682d318bf/0/metadata.json",
+      "transcript": "/82/a682d318bf/0/full.jsonl",
+      "compact_transcript": "/82/a682d318bf/0/transcript.jsonl",
+      "content_hash": "/82/a682d318bf/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 4313,
+    "cache_read_tokens": 3208367,
+    "output_tokens": 2403,
+    "api_call_count": 4
+  }
+}
