@@ -93,6 +93,9 @@ class Settings(BaseSettings):
 
     # Snowflake GET_LINEAGE seeds walked per refresh (#892) — a latency/cost bound.
     warehouse_lineage_max_seeds: int = 500
+    # COLUMN-domain GET_LINEAGE seeds per refresh (#2106): one call per column of each edge whose
+    # column grain nothing else recorded (views and dynamic tables). 0 disables the pass.
+    warehouse_lineage_max_column_seeds: int = Field(default=300, ge=0)
 
     # Hours after which a warehouse lineage source shows STALE independent of error state (#1091) —
     # catches a refresh loop that silently STOPS. 0 disables.

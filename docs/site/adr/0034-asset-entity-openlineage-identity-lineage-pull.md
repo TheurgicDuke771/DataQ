@@ -250,3 +250,17 @@ to nothing and must be reported as "nothing recorded", never "unrelated".
   warehouse verdict always wins. Propagation can therefore only add masking relative to the warehouse-tag
   classification ladder, never remove it. DQ dimensions (ADR 0038) are not propagated: a dimension classifies a
   *check*, not a column, so there is nothing upstream to inherit.
+
+## Amendment (2026-09-28): view and dynamic-table column lineage on Snowflake
+
+Column pairs on the `GET_LINEAGE` tier came only from `ACCESS_HISTORY`, which records DML writes.
+A view or dynamic table is never a DML write, so the dbt staging and mart layer, where column
+placement matters most, had table edges with no column detail. `GET_LINEAGE` at `COLUMN` domain
+does answer for them. After the `ACCESS_HISTORY` refinement, DataQ seeds one `COLUMN`-domain
+upstream call per column of each edge still without pairs. The pass is bounded by
+`WAREHOUSE_LINEAGE_MAX_COLUMN_SEEDS` with loud truncation, and like the `ACCESS_HISTORY` pass it
+is refinement only: it never adds a table edge and never fails the table edges.
+
+Live on the reference account (`DATAQ_READER`), all 8 staging and mart edges went from no column
+pairs to 2–11 each, including derivations (`ORDER_TOTAL → LIFETIME_VALUE`,
+`LINE_TOTAL → RECONCILED_SUBTOTAL`). The daily refresh took about 65 s longer.

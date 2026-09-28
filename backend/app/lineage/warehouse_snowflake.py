@@ -301,6 +301,10 @@ class SnowflakeLineageProvider:
                 edges, column_grain, column_note, columns_authoritative = (
                     self._refine_with_column_pairs(conn, namespace, database, top.edges)
                 )
+                edges, column_grain, column_note, complete = self._refine_with_column_lineage(
+                    conn, namespace, database, edges, column_grain, column_note
+                )
+                columns_authoritative = columns_authoritative and complete
                 return WarehouseLineageResult(
                     edges=edges,
                     tier=LineageTier.SNOWFLAKE_GET_LINEAGE,
@@ -325,6 +329,10 @@ class SnowflakeLineageProvider:
                     conn, namespace, database, tuple(merged_top.values())
                 )
             )
+            edges, column_grain, column_note, complete = self._refine_with_column_lineage(
+                conn, namespace, database, edges, column_grain, column_note
+            )
+            columns_authoritative = columns_authoritative and complete
             notes = []
             if skipped:
                 notes.append("partial traversal — " + "; ".join(skipped))
@@ -468,6 +476,127 @@ class SnowflakeLineageProvider:
             unanchored_table_pairs=len(pairs_by_edge),
         )
         return tuple(refined), ColumnGrain.CAPTURED, None, True
+
+    def _refine_with_column_lineage(
+        self,
+        conn: Any,
+        namespace: str,
+        database: str,
+        edges: tuple[LineageEdgePair, ...],
+        column_grain: ColumnGrain | None,
+        column_note: str | None,
+    ) -> tuple[tuple[LineageEdgePair, ...], ColumnGrain | None, str | None, bool]:
+        """COLUMN-domain GET_LINEAGE for the edges ACCESS_HISTORY left without column pairs (#2106).
+
+        ACCESS_HISTORY records DML writes only, so a view or dynamic table — the dbt staging and
+        mart layer — never gets column pairs from it. GET_LINEAGE answers per COLUMN, one call
+        per seed column, bounded by `warehouse_lineage_max_column_seeds` with loud truncation.
+        Like the ACCESS_HISTORY pass: refinement only, never a new table edge, never a reason to
+        fail the table edges.
+
+        The last element says whether the pass saw every edge it owed an answer. A failed listing,
+        a failed call or a truncation is NOT complete, so the refresh merges rather than clearing
+        pairs an earlier refresh captured (the #1710 rule).
+        """
+        cap = get_settings().warehouse_lineage_max_column_seeds
+        bare = {e.downstream.name for e in edges if not e.column_pairs}
+        if cap <= 0 or not bare:
+            return edges, column_grain, column_note, cap > 0
+        try:
+            columns = conn.execute(
+                text(
+                    f"SELECT table_schema, table_name, column_name "  # noqa: S608  # nosec B608
+                    f"FROM {_quote_ident(database)}.INFORMATION_SCHEMA.COLUMNS "
+                    "WHERE table_schema <> 'INFORMATION_SCHEMA' "
+                    "ORDER BY table_schema, table_name, ordinal_position"
+                )
+            ).all()
+        except Exception as exc:
+            log.warning(
+                "warehouse_lineage_column_seeds_failed",
+                source=self.source,
+                error_type=type(exc).__name__,
+            )
+            return (
+                edges,
+                column_grain,
+                _join_notes(column_note, "view column lineage unavailable: could not list columns"),
+                False,
+            )
+        seeds = [
+            ".".join(_quote_ident(p) for p in (database, schema, table, column))
+            for schema, table, column in columns
+            if format_snowflake_name(database, schema, table) in bare
+        ]
+        truncated = len(seeds) > cap
+        if truncated:
+            log.warning(
+                "get_lineage_column_seeds_truncated",
+                source=self.source,
+                cap=cap,
+                enumerated=len(seeds),
+            )
+            seeds = seeds[:cap]
+        raw = _EdgeSet()
+        failures = 0
+        for seed in seeds:
+            try:
+                rows = conn.execute(
+                    text(
+                        "SELECT source_object_database, source_object_schema, "
+                        "source_object_name, source_object_domain, source_status, "
+                        "source_column_name, target_object_database, "
+                        "target_object_schema, target_object_name, "
+                        "target_object_domain, target_status, target_column_name "
+                        "FROM TABLE(SNOWFLAKE.CORE.GET_LINEAGE(:obj, 'COLUMN', :dir, 1))"
+                    ),
+                    {"obj": seed, "dir": "UPSTREAM"},
+                ).all()
+            except Exception as exc:
+                failures += 1
+                if failures == 1:
+                    log.warning(
+                        "get_lineage_column_call_failed",
+                        source=self.source,
+                        error_type=type(exc).__name__,
+                    )
+                continue
+            self._collect_get_lineage_rows(rows, namespace=namespace, into=raw)
+        pairs_by_edge: dict[tuple[str, str], set[tuple[str, str]]] = {}
+        for up, down, pairs in raw.rows():
+            if pairs:
+                pairs_by_edge.setdefault((up.name, down.name), set()).update(pairs)
+        refined: list[LineageEdgePair] = []
+        matched = 0
+        for edge in edges:
+            found = pairs_by_edge.get((edge.upstream.name, edge.downstream.name))
+            if edge.column_pairs or not found:
+                refined.append(edge)
+                continue
+            matched += 1
+            refined.append(
+                LineageEdgePair(
+                    upstream=edge.upstream,
+                    downstream=edge.downstream,
+                    column_pairs=tuple(sorted(found))[:MAX_COLUMN_PAIRS_PER_EDGE],
+                )
+            )
+        log.info(
+            "warehouse_lineage_column_domain",
+            source=self.source,
+            seeds=len(seeds),
+            failed_calls=failures,
+            edges_with_columns=matched,
+        )
+        notes = column_note
+        if truncated:
+            notes = _join_notes(notes, f"view column lineage truncated at {cap} column seeds")
+        if failures:
+            notes = _join_notes(
+                notes, f"view column lineage: {failures} of {len(seeds)} column call(s) failed"
+            )
+        grain = ColumnGrain.CAPTURED if matched else column_grain
+        return tuple(refined), grain, notes, not (truncated or failures)
 
     @staticmethod
     def _unavailable_reason(exc: Exception, skipped: list[str]) -> str:
@@ -954,3 +1083,15 @@ def _reraise_confirmed_or_transient(
     """
     _reraise_if_feature_unsupported(exc, not_authorized_label=not_authorized_label)
     raise _FeatureUnsupportedError(f"{label} ({type(exc).__name__})", transient=True) from exc
+
+
+def _quote_ident(part: str) -> str:
+    """A Snowflake identifier as GET_LINEAGE / a FROM clause reads it: bare when it is already
+    the unquoted-UPPER form, double-quoted (inner quotes doubled) otherwise."""
+    if part.isidentifier() and part == part.upper() and part.isascii():
+        return part
+    return '"' + part.replace('"', '""') + '"'
+
+
+def _join_notes(first: str | None, second: str) -> str:
+    return f"{first}; {second}" if first else second
