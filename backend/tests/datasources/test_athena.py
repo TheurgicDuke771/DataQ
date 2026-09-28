@@ -48,6 +48,17 @@ def test_an_unusable_config_is_refused(overrides: dict[str, Any]) -> None:
         _config(**overrides)
 
 
+@pytest.mark.parametrize("blank", ["", "  ", None])
+def test_a_cleared_workgroup_or_catalog_falls_back_to_the_default(blank: Any) -> None:
+    config = _config(work_group=blank, catalog=blank)
+    assert (config.work_group, config.database) == ("primary", "awsdatacatalog")
+
+
+def test_a_china_region_is_refused_rather_than_sent_to_the_wrong_endpoint() -> None:
+    with pytest.raises(ValidationError, match="China"):
+        _config(region="cn-north-1")
+
+
 def test_the_catalog_is_stored_as_the_catalog_reports_it() -> None:
     assert _config(catalog="AwsDataCatalog").database == "awsdatacatalog"
     assert _config().database == "awsdatacatalog"

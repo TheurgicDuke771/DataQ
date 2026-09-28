@@ -23,7 +23,7 @@ from __future__ import annotations
 import re
 from typing import Any, ClassVar
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, ValidationInfo, field_validator, model_validator
 
 from backend.app.datasources.generic_sql import GenericSqlConfig, SqlCatalog, SqlEngineSpec
 from backend.app.datasources.trino import _column_caps
@@ -65,10 +65,23 @@ class AthenaConfig(GenericSqlConfig):
         if not isinstance(region, str) or not _REGION.fullmatch(region.strip()):
             raise ValueError("region must be an AWS region such as us-east-2")
         region = region.strip()
+        if region.startswith("cn-"):
+            raise ValueError(
+                "AWS China regions (endpoint amazonaws.com.cn) are not supported for Athena"
+            )
         host = data.get("host")
         if host is not None and host != _endpoint(region):
             raise ValueError("an Athena connection's endpoint comes from its region")
         return {**data, "region": region, "host": _endpoint(region)}
+
+    @field_validator("work_group", "database", mode="before")
+    @classmethod
+    def _blank_is_the_default(cls, value: Any, info: ValidationInfo) -> Any:
+        # A cleared optional form field arrives as "" — it means "use the default".
+        if value is None or (isinstance(value, str) and not value.strip()):
+            assert info.field_name is not None  # nosec B101
+            return cls.model_fields[info.field_name].default
+        return value
 
     @field_validator("database", mode="before")
     @classmethod
