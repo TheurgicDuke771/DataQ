@@ -122,9 +122,10 @@ def _literal(value: Any, *, what: str) -> Any:
     if isinstance(value, int | float):
         return value
     if isinstance(value, str) and len(value) <= _MAX_STRING_CHARS:
-        # Spark processes backslash escapes inside string literals, so a backslash is doubled
-        # before the quote: `x\' || col || \'` must stay a literal, not become an expression.
-        return "'" + value.replace("\\", "\\\\").replace("'", "''") + "'"
+        # Spark processes backslash escapes inside string literals and has no `''` escape (it
+        # reads 'O''Brien' as 'O' 'Brien' = OBrien): backslashes are doubled, then quotes
+        # become \', so `x\' || col || \'` stays a literal and O'Brien matches O'Brien.
+        return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
     raise DqxConfigError(f"{what} must be a number or a string of at most {_MAX_STRING_CHARS}")
 
 
