@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "b66a6ef4d4a7",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1655-snowflake-cortex",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "backend/app/llm/snowflake_cortex.py",
+    "backend/app/services/llm_service.py",
+    "backend/tests/llm/test_snowflake_cortex.py",
+    "backend/tests/services/test_llm_service.py",
+    "docs/site/adr/0042-llm-provider-seam.md",
+    "frontend/src/components/admin/LlmSettingsPanel.tsx",
+    "frontend/tests/components/LlmSettingsPanel.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b6/6a6ef4d4a7/0/metadata.json",
+      "transcript": "/b6/6a6ef4d4a7/0/full.jsonl",
+      "compact_transcript": "/b6/6a6ef4d4a7/0/transcript.jsonl",
+      "content_hash": "/b6/6a6ef4d4a7/0/content_hash.txt",
+      "prompt": "/b6/6a6ef4d4a7/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 40,
+    "cache_creation_tokens": 75902,
+    "cache_read_tokens": 6662108,
+    "output_tokens": 9489,
+    "api_call_count": 20
+  }
+}
