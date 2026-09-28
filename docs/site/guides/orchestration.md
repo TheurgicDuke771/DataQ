@@ -52,6 +52,13 @@ Registering any connection — orchestration providers included — is **Admin-o
   > `artifacts_uri: adls://<account>/<container>/<prefix>` with `jobs: ["dbt"]`. Pasting the
   > publisher's own output variable verbatim usually double-counts the job segment (the poll
   > then looks in `<prefix>/dbt/dbt/latest/` and finds nothing).
+- **ADLS artifacts** are read with a SAS by default. Choose **Service principal** to read them
+  as an Entra app instead (tenant ID, client ID, client secret). The app needs a data-plane
+  role on the container, such as *Storage Blob Data Reader*. For an ADLS-compatible endpoint
+  such as Fabric **OneLake**, whose SAS lasts at most an hour, set **Account URL** to
+  `https://onelake.blob.fabric.microsoft.com`; the workspace is then the container:
+  `adls://onelake/<workspace>/<lakehouse>.Lakehouse/Files/<prefix>`. DataQ cannot read a client
+  secret's expiry, so track it in Entra ID.
 - Copy the callback snippet
   ([`integrations/dbt/`](https://github.com/TheurgicDuke771/DataQ/tree/main/integrations/dbt))
   and run it right after `dbt build`, pointed at that run's `run_results.json`. It HMAC-signs

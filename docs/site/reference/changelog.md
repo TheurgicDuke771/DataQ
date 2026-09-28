@@ -50,6 +50,10 @@ the per-PR history lives in the repo's commit log and pull requests.
   TLS is `require` by default. *Column values unique* needs the `CREATE TEMPORARY TABLES`
   grant — see [Datasources & checks](../guides/datasources-checks.md#mysql-mariadb).
 
+- **dbt artifacts on OneLake, or as a service principal.** A dbt connection can read its
+  ADLS artifacts as an Entra service principal, and from an ADLS-compatible endpoint such as
+  Fabric OneLake — see [Orchestration](../guides/orchestration.md).
+
 - **Amazon Redshift datasource.** Connect a provisioned Redshift cluster or a Serverless
   workgroup with a database user and run every SQL-capable check, custom SQL, all monitors,
   the profiler, schema → table browsing and inventory sync. Sessions are read-only at the
