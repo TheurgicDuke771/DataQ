@@ -12,6 +12,7 @@ export const CONNECTION_TYPES = [
   'mysql',
   'trino',
   'mssql',
+  'athena',
   'adf',
   'airflow',
   'dbt',
@@ -35,6 +36,7 @@ export const CONNECTION_KIND: Record<ConnectionType, ConnectionKind> = {
   mysql: 'datasource',
   trino: 'datasource',
   mssql: 'datasource',
+  athena: 'datasource',
   adf: 'orchestration',
   airflow: 'orchestration',
   dbt: 'orchestration',
@@ -65,6 +67,7 @@ export const DATASOURCE_CATEGORIES = [
   'mysql',
   'trino',
   'mssql',
+  'athena',
 ] as const;
 export type DatasourceCategory = (typeof DATASOURCE_CATEGORIES)[number];
 
@@ -78,6 +81,7 @@ export const DATASOURCE_CATEGORY: Record<ConnectionType, DatasourceCategory | nu
   mysql: 'mysql',
   trino: 'trino',
   mssql: 'mssql',
+  athena: 'athena',
   adf: null,
   airflow: null,
   dbt: null,
@@ -92,6 +96,7 @@ export const DATASOURCE_CATEGORY_LABELS: Record<DatasourceCategory, string> = {
   mysql: 'MySQL / MariaDB',
   trino: 'Trino',
   mssql: 'SQL Server',
+  athena: 'Amazon Athena',
 };
 
 /**
@@ -105,6 +110,7 @@ export const SQL_QUERYABLE_TYPES: ConnectionType[] = [
   'mysql',
   'trino',
   'mssql',
+  'athena',
 ];
 
 export const isSqlQueryable = (type: ConnectionType): boolean => SQL_QUERYABLE_TYPES.includes(type);
@@ -126,6 +132,7 @@ export const MONITOR_CAPABLE_TYPES: ConnectionType[] = [
   'mysql',
   'trino',
   'mssql',
+  'athena',
   'iceberg',
   ...FILE_TYPES,
 ];
@@ -144,6 +151,7 @@ export const SQL_BATCH_TYPES: ConnectionType[] = [
   'mysql',
   'trino',
   'mssql',
+  'athena',
 ];
 
 export const runsSqlBatch = (type: ConnectionType): boolean => SQL_BATCH_TYPES.includes(type);
@@ -252,6 +260,7 @@ export const CONNECTION_TYPE_LABELS: Record<ConnectionType, string> = {
   mysql: 'MySQL / MariaDB',
   trino: 'Trino',
   mssql: 'SQL Server',
+  athena: 'Amazon Athena',
   adf: 'Azure Data Factory',
   airflow: 'Airflow',
   dbt: 'dbt',

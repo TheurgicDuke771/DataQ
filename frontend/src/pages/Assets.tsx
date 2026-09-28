@@ -209,6 +209,7 @@ const KIND_ICON: Record<DatasourceKind, ReactNode> = {
   postgres: <DatabaseOutlined />,
   mysql: <DatabaseOutlined />,
   trino: <DatabaseOutlined />,
+  athena: <DatabaseOutlined />,
   mssql: <DatabaseOutlined />,
   other: <FileOutlined />,
 };

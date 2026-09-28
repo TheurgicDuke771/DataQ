@@ -13,6 +13,7 @@
 | MySQL / MariaDB (any server — self-hosted or a managed service) | host + port + database + user, password; TLS mode | ✅ | ✅ |
 | Trino (any cluster, incl. Starburst — and every catalog it federates) | host + port + catalog + user; password, JWT or none; TLS + optional private CA | ✅ | ✅ |
 | SQL Server / T-SQL (SQL Server, Azure SQL, Synapse; Fabric SQL via the ODBC lane) | host + port + database; SQL login (user, password) or Entra service principal (tenant + client ID, client secret) | ✅ | ✅ |
+| Amazon Athena (serverless SQL over S3 through the Glue catalog) | region + IAM access key (key ID, secret access key); optional workgroup, query-results location, data catalog | ✅ | ✅ |
 
 ## Add a connection
 
@@ -298,6 +299,52 @@ and whatever access control the cluster enforces.
 - **No column tags, no warehouse-native lineage.** DataQ reads no column-classification
   source from Trino, and Trino keeps no lineage log DataQ reads — lineage comes from dbt,
   OpenLineage or a catalog, and an empty graph means "not observed".
+
+### Amazon Athena
+
+Serverless SQL over data in S3, through the AWS Glue catalog. It is an engine on the generic
+SQL base, like Trino (Athena's own engine is Trino-based).
+
+- **Fields:** the **region** (the endpoint follows from it — there is no host or port), the
+  IAM **access key ID** with the **secret access key** as the stored secret, and optionally a
+  **workgroup** (default `primary`), a **query-results location** (`s3://bucket/prefix/`;
+  needed unless the workgroup enforces its own), a **data catalog** (default
+  `awsdatacatalog`, the Glue catalog) and a **default database**. A connection reads one data
+  catalog; a Glue database is the schema, so a target is `database.table` and its asset is
+  `catalog.database.table`.
+- **Every check is a billed query.** Athena charges per byte scanned, with a per-query
+  minimum, and every check, monitor, profile, browse listing and inventory sync is a query.
+  Each also takes seconds: a 24-check suite runs for a few minutes. Prefer Parquet or ORC
+  tables and partitions, which Athena scans far less of.
+- **Not read-only at the session — the IAM policy is the guarantee.** Athena has no
+  read-only session. Custom SQL still passes DataQ's validator, which rejects writes and DDL,
+  but give DataQ an IAM principal that can only read:
+
+  ```json
+  {
+    "Statement": [
+      {"Effect": "Allow", "Resource": "*", "Action": ["athena:StartQueryExecution",
+        "athena:GetQueryExecution", "athena:GetQueryResults", "athena:StopQueryExecution",
+        "athena:GetWorkGroup", "glue:GetDatabase", "glue:GetDatabases", "glue:GetTable",
+        "glue:GetTables", "glue:GetPartitions"]},
+      {"Effect": "Allow", "Action": ["s3:GetBucketLocation", "s3:ListBucket"],
+       "Resource": "arn:aws:s3:::your-bucket"},
+      {"Effect": "Allow", "Action": ["s3:GetObject"],
+       "Resource": "arn:aws:s3:::your-bucket/your-data/*"},
+      {"Effect": "Allow", "Action": ["s3:GetObject", "s3:PutObject"],
+       "Resource": "arn:aws:s3:::your-bucket/athena-results/*"}
+    ]
+  }
+  ```
+
+  Query results land in the results location, so changing the region, workgroup or results
+  location counts as moving the credential, and the edit asks for it again.
+- **Names are lower case.** Glue folds every name to lower case, so the database and table
+  must be typed that way (a mixed-case name is refused when you save).
+- **Type names** for `to_be_of_type` are the bare Athena names: `DECIMAL`, `TIMESTAMP`,
+  `VARCHAR`, `BIGINT`.
+- **No column tags, no warehouse-native lineage.** Lineage comes from dbt, OpenLineage or a
+  catalog, and an empty graph means "not observed".
 
 ### SQL Server / Azure SQL / Fabric (T-SQL)
 
@@ -678,7 +725,7 @@ and a learned baseline. **Whole-table set comparisons** (columns match an expect
 ordered list) are what the *Schema-drift* monitor does, against a captured baseline. For
 anything with no vetted type, write a custom-SQL check.
 
-### Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino — ADR 0019)
+### Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server / Athena — ADR 0019)
 
 A read-only SQL rule in the Monaco editor: **any rows returned are failures**. Use
 `{batch}` as a placeholder for the suite's target table
@@ -783,7 +830,7 @@ a bounded CSV header sample) for ADLS Gen2/S3 flat files, and the loaded table's
 metadata for Iceberg. Re-baseline explicitly once you've reviewed a drift and want
 it as the new normal — it is never re-baselined for you.
 
-### Anomaly monitor (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino — ADR 0012)
+### Anomaly monitor (Snowflake / Unity Catalog / the generic SQL engines — ADR 0012)
 
 *Is this value abnormal for this dataset?* Where a volume monitor asks "is the row
 count inside a range I chose?", the anomaly monitor learns the range: it keeps a
@@ -894,6 +941,7 @@ the type your warehouse/catalog shows you:
 | PostgreSQL | SQL (dialect-native) | `NUMERIC(12, 2)` for `numeric(12,2)`, `TIMESTAMP WITH TIME ZONE` for `timestamptz`, `TEXT`, `INTEGER` |
 | MySQL / MariaDB | SQL (SQLAlchemy type class) | `DECIMAL` for `DECIMAL(12,2)`, `VARCHAR`, `INTEGER`, `TIMESTAMP`, `DATETIME`, `TINYINT` for `BOOLEAN` |
 | Trino | SQL (dialect-native) | `DECIMAL(12, 2)`, `VARCHAR` / `VARCHAR(20)`, `TIMESTAMP(6)`, `TIMESTAMP(6) WITH TIME ZONE`, `BIGINT` |
+| Amazon Athena | SQL (bare type name) | `DECIMAL`, `TIMESTAMP`, `VARCHAR`, `BIGINT`, `BOOLEAN` |
 | SQL Server | SQL (SQLAlchemy type name) | `DECIMAL` for `decimal(12,2)`, `INTEGER` for `int`, `NVARCHAR`, `DATETIME2`, `DATETIMEOFFSET`, `BIT` |
 | Unity Catalog | pandas DataFrame (not Arrow-backed) | `int64` for non-nullable `BIGINT` (**`float64` if the column contains NULLs**); `object` or `str` for `STRING`; `date` for `DATE` |
 | ADLS Gen2 / S3 (CSV) | pandas DataFrame (not Arrow-backed) | `int64`/`float64`/`bool` for numerics (**NULLs upcast integers to `float64`**); `object` or `str` for strings |

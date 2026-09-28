@@ -290,10 +290,11 @@ DataQ runs checks *against* your data; it is **not** a copy of your data. What i
   against an IP entry, never the certificate's CN) — live-verified to refuse a connection made
   by IP address and one whose certificate chains to an untrusted CA. PostgreSQL and MySQL connections
   default to `require`; see [Datasources & checks](../guides/datasources-checks.md).
-- **Datasource writes:** PostgreSQL and MySQL sessions are read-only at the server. **Trino
-  and SQL Server have no equivalent session setting**, so there the protection is the
+- **Datasource writes:** PostgreSQL and MySQL sessions are read-only at the server. **Trino,
+  SQL Server and Athena have no equivalent session setting**, so there the protection is the
   custom-SQL validator plus the account's own access control — on SQL Server a
-  `db_datareader`-only login, as the datasource guide shows.
+  `db_datareader`-only login, on Athena an IAM policy that can only read, as the datasource
+  guide shows.
 - **At rest:** PostgreSQL, the object stores, and the secret store (Key Vault / AWS Secrets
   Manager) encrypt at rest in both reference deployments. The AWS cache (ElastiCache — the
   Celery broker and rate-limit counters, not a data store) currently does **not**.
@@ -460,7 +461,7 @@ confirm your DataQ connection role can still read both tags.
 
 ### Where it applies
 
-Only **Snowflake** and **Unity Catalog** have a column-tag source DataQ reads. PostgreSQL, MySQL, Trino, ADLS,
+Only **Snowflake** and **Unity Catalog** have a column-tag source DataQ reads. PostgreSQL, MySQL, Trino, SQL Server, Athena, ADLS,
 S3, Iceberg and flat files have no authoritative source to read, so for those the
 classification remains the suite's own policy, the name/value classifier, and
 fail-closed mode. This is a limit of the platforms, not a gap in the
@@ -512,7 +513,7 @@ values happen to look harmless and the rows behind them do not.
 | Lane | Where the population signal comes from |
 |---|---|
 | Flat files (ADLS, S3), Iceberg, the Unity Catalog DataFrame batch | The failing rows of the table already in memory (up to 5,000): from the failing-row list the check builds when an identifier column is set, otherwise read directly off the in-memory table. No extra query either way |
-| Snowflake, PostgreSQL, MySQL, Trino, SQL Server, Unity Catalog SQL pushdown | One **extra, bounded query** per failing check: the check's own failing condition, selecting only the tested column and the identifier column, `LIMIT 5000` |
+| Snowflake, PostgreSQL, MySQL, Trino, SQL Server, Athena, Unity Catalog SQL pushdown | One **extra, bounded query** per failing check: the check's own failing condition, selecting only the tested column and the identifier column, `LIMIT 5000` |
 
 The extra query on the warehouse lanes is issued only when all of these hold:
 the check found more than 20 unexpected rows (including a check that still
