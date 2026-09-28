@@ -141,7 +141,7 @@ Airflow callbacks require the user to add a snippet to their DAGs (we can't muta
 
 ## 6. Working agreements (rules above feature work)
 
-Full list (40 rules across 8 categories) lives in [CONTRIBUTING.md](CONTRIBUTING.md). Highlights:
+Full list (42 rules across 8 categories) lives in [CONTRIBUTING.md](CONTRIBUTING.md). Highlights:
 
 ### Commit & change discipline
 Per-functionality workflow, in order:
@@ -196,7 +196,7 @@ Per-functionality workflow, in order:
 
 ## 7. Required reading before coding
 
-1. [CONTRIBUTING.md](CONTRIBUTING.md) — full 40-rule working agreements + DoD + commit/branch conventions
+1. [CONTRIBUTING.md](CONTRIBUTING.md) — full 42-rule working agreements + DoD + commit/branch conventions
 2. [docs/site/adr/](docs/site/adr/) — all ADRs (architecture decisions with rationale)
 3. [context/DataQ_platform_roadmap.md](context/DataQ_platform_roadmap.md) — the 8-week, 100-task product roadmap
 4. The current week's milestone target (see §13 below)
@@ -270,7 +270,7 @@ The full decision index — one line per ADR with status — lives at **[docs/si
 | Story ledger (curated narrative wins — internal) | [docs/stories.md](docs/stories.md) |
 | System architecture diagram | [docs/site/architecture/overview.md](docs/site/architecture/overview.md) |
 | Architecture Decision Records | [docs/site/adr/](docs/site/adr/) |
-| Working agreements (full 40-rule list) | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| Working agreements (full 42-rule list) | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | Live task tracker (post-v1, per-PR status) | [docs/progress.md](docs/progress.md) — the completed v1 ledger is archived at [docs/progress-v1.md](docs/progress-v1.md) |
 | **Deploy runbook + pre-/post-deploy checklists** | [deploy/README.md](deploy/README.md) — provisioning, the `workflow_dispatch` Deploy flow, and the **pre-deploy** (CI green, docs current, migration-safe) + **post-deploy smoke** (login, UI renders, every high-level flow works, infra rolled) checklists. **Run both around every deploy.** |
 | Memory (cross-session AI context) | `~/.claude/projects/-Users-arijit-Coding-Python-DataQ/memory/` |
