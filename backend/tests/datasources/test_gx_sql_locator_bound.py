@@ -198,6 +198,56 @@ def test_custom_sql_still_reports_its_unexpected_row_count(tmp_path: Path) -> No
     assert check.observed_value == {"observed_value": _FAILING_ROWS}
 
 
+def test_custom_sql_row_fetch_is_bounded_in_sql(tmp_path: Path) -> None:
+    """GX sends the custom-SQL row sample (`unexpected_rows_query.table`) unbounded and
+    `fetchmany`s 200 rows client-side, so the warehouse materialises every failing row (#2082).
+    The row statement must carry the LIMIT; the COUNT must not, or the count is capped too.
+    """
+    from great_expectations.constants import MAX_RESULT_RECORDS
+
+    query = "SELECT * FROM {batch} WHERE order_number IS NULL"
+    context, batch_definition = _sql_batch_definition(tmp_path, failing=_FAILING_ROWS, name="rows")
+    with _StatementSpy() as spy:
+        outcome = run_expectations(
+            context,
+            batch_definition=batch_definition,
+            checks=[CheckSpec(CUSTOM_SQL_EXPECTATION_TYPE, {"unexpected_rows_query": query})],
+            name="custom-sql-bound",
+        )
+
+    user_statements = [(sql, p) for sql, p in spy.calls if "order_number IS NULL" in sql]
+    counts = [sql for sql, _ in user_statements if "COUNT(" in sql.upper()]
+    rows = [(sql, p) for sql, p in user_statements if "COUNT(" not in sql.upper()]
+    assert len(counts) == 1 and "LIMIT" not in counts[0].upper(), counts
+    assert len(rows) == 1, rows
+    statement, params = rows[0]
+    assert "LIMIT" in statement.upper(), statement
+    assert MAX_RESULT_RECORDS in tuple(params or ()), (statement, params)
+    assert outcome.checks[0].observed_value == {"observed_value": _FAILING_ROWS}
+
+
+def test_bounded_statement_wraps_only_where_the_limit_cannot_reorder() -> None:
+    """T-SQL rejects an ORDER BY inside a derived table (#2138), and elsewhere a derived
+    table's ORDER BY need not survive the outer LIMIT — both keep GX's client-side cut."""
+    from sqlalchemy.dialects import mssql, postgresql
+
+    from backend.app.datasources.gx_metrics import bounded_statement
+
+    t_sql: Any = mssql.dialect()  # type: ignore[no-untyped-call]
+    postgres: Any = postgresql.dialect()  # type: ignore[no-untyped-call]
+    plain = "SELECT * FROM t WHERE a < 0"
+    ordered = "SELECT * FROM t WHERE a < 0 Order  By a"
+
+    assert str(bounded_statement(plain, dialect=t_sql, limit=200)) == plain
+    assert str(bounded_statement(ordered, dialect=postgres, limit=200)) == ordered
+    compiled = str(
+        bounded_statement(plain, dialect=postgres, limit=200).compile(
+            dialect=postgres, compile_kwargs={"literal_binds": True}
+        )
+    )
+    assert compiled.endswith("LIMIT 200") and f"({plain})" in compiled
+
+
 def test_undetermined_lane_falls_back_loudly() -> None:
     """A GX rename of the `data_asset` / `datasource` chain drops the SQL lanes onto the frame
     lane's wider cap — a larger locator fetch out of the warehouse, invisible unless it says so.

@@ -14,6 +14,7 @@ import great_expectations as gx
 import great_expectations.expectations as gxe
 
 from backend.app.core.logging import get_logger
+from backend.app.datasources import gx_metrics  # noqa: F401  (registers the GX overrides)
 from backend.app.datasources.base import (
     SAMPLE_ROW_CAP,
     VALUE_SIGNAL_SAMPLE_FAILED,
