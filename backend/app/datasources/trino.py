@@ -264,7 +264,7 @@ TRINO = SqlEngineSpec(
             " ORDER BY schema_name LIMIT :lim"
         ),
         tables_sql=(
-            "SELECT table_schema, table_name FROM information_schema.tables"
+            "SELECT table_schema, table_name, table_type FROM information_schema.tables"
             " WHERE table_schema <> 'information_schema'"
             " AND table_type IN ('BASE TABLE', 'VIEW')"
             " AND (:schema IS NULL OR table_schema = :schema)"

@@ -151,10 +151,22 @@ def test_schema_level_binds_the_catalog_rather_than_interpolating_it(fake_sql: _
 
 
 def test_table_level_reuses_the_inventory_enumeration_query(fake_sql: _FakeConn) -> None:
-    fake_sql.rows = [("dataq_retail", "gold", "daily_revenue"), ("dataq_retail", "gold", None)]
+    fake_sql.rows = [
+        ("dataq_retail", "gold", "daily_revenue", "MANAGED"),
+        ("dataq_retail", "gold", "revenue_v", "VIEW"),
+        ("dataq_retail", "gold", "revenue_mv", "MATERIALIZED_VIEW"),
+        ("dataq_retail", "gold", "events", "STREAMING_TABLE"),
+        ("dataq_retail", "gold", None, "MANAGED"),
+    ]
     listing = _catalog(_conn("unity_catalog", _UC_CONFIG), catalog="dataq_retail", schema="gold")
     assert listing.level == "table"
-    assert [e.name for e in listing.entries] == ["daily_revenue"]  # NULL row dropped
+    # NULL row dropped; UC's own labels (live-verified) normalized.
+    assert [(e.name, e.object_type) for e in listing.entries] == [
+        ("daily_revenue", "table"),
+        ("revenue_v", "view"),
+        ("revenue_mv", "materialized_view"),
+        ("events", "streaming_table"),
+    ]
     sql, params = fake_sql.calls[0]
     # The ADR 0040 query and its exclusions, narrowed by bound filters.
     assert "system.information_schema.tables" in sql
@@ -232,10 +244,21 @@ def test_snowflake_lists_schemas_then_binds_the_schema_for_tables(fake_sql: _Fak
     sql, params = fake_sql.calls[0]
     assert "INFORMATION_SCHEMA.SCHEMATA" in sql and params == {"lim": 6}
 
-    fake_sql.rows = [("ORDERS",)]
+    # Snowflake's own shapes, live-verified: a dynamic table is a BASE TABLE with IS_DYNAMIC.
+    fake_sql.rows = [
+        ("DAILY", "BASE TABLE", "YES"),
+        ("ORDERS", "BASE TABLE", "NO"),
+        ("ORDERS_V", "VIEW", "NO"),
+        ("ORDERS_MV", "MATERIALIZED VIEW", "NO"),
+    ]
     listing = _catalog(_conn("snowflake", _SF_CONFIG), schema="RETAIL", limit=5)
     assert listing.level == "table"
-    assert [e.name for e in listing.entries] == ["ORDERS"]
+    assert [(e.name, e.object_type) for e in listing.entries] == [
+        ("DAILY", "dynamic_table"),
+        ("ORDERS", "table"),
+        ("ORDERS_V", "view"),
+        ("ORDERS_MV", "materialized_view"),
+    ]
     sql, params = fake_sql.calls[1]
     assert "table_schema = :schema" in sql and "RETAIL" not in sql
     assert params == {"schema": "RETAIL", "lim": 6}
@@ -288,11 +311,14 @@ def test_iceberg_lists_top_level_namespaces_then_their_tables(
     conn = _conn("iceberg", _ICE_CONFIG, secret_ref=None)
     listing = _catalog(conn)
     assert listing.level == "schema"
-    assert [e.name for e in listing.entries] == ["finance", "retail"]
+    assert [(e.name, e.object_type) for e in listing.entries] == [
+        ("finance", None),
+        ("retail", None),
+    ]
 
     listing = _catalog(conn, schema="retail", limit=1)
     assert listing.level == "table"
-    assert [e.name for e in listing.entries] == ["invoices"]
+    assert [(e.name, e.object_type) for e in listing.entries] == [("invoices", "table")]
     assert listing.truncated is True
     assert fake_iceberg.listed == ["retail"]
 

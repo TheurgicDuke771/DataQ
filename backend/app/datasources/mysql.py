@@ -100,7 +100,7 @@ MYSQL = SqlEngineSpec(
             " ORDER BY schema_name LIMIT :lim"
         ),
         tables_sql=(
-            "SELECT table_schema, table_name FROM information_schema.tables"  # noqa: S608  # nosec B608
+            "SELECT table_schema, table_name, table_type FROM information_schema.tables"  # noqa: S608  # nosec B608
             f" WHERE table_schema NOT IN {_SYSTEM_SCHEMAS}"
             " AND table_type IN ('BASE TABLE', 'VIEW', 'SYSTEM VERSIONED')"
             " AND (:schema IS NULL OR table_schema = :schema)"

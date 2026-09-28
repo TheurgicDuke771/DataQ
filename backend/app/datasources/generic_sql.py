@@ -34,7 +34,7 @@ from backend.app.datasources.base import (
     ValueSignalGate,
 )
 from backend.app.datasources.monitors import FRESHNESS, VOLUME, run_monitors_over_engine
-from backend.app.datasources.sql import LazyEngine, is_sql_identifier
+from backend.app.datasources.sql import LazyEngine, is_sql_identifier, object_type
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -735,12 +735,19 @@ def table_rows(
     spec: SqlEngineSpec, conn: Any, *, schema: str | None = None, limit: int | None = None
 ) -> list[tuple[str, str]]:
     """``(schema, table)`` for every table/view the credential may read, optionally one schema."""
+    return [(s, t) for s, t, _ in typed_table_rows(spec, conn, schema=schema, limit=limit)]
+
+
+def typed_table_rows(
+    spec: SqlEngineSpec, conn: Any, *, schema: str | None = None, limit: int | None = None
+) -> list[tuple[str, str, str]]:
+    """:func:`table_rows` plus each relation's normalized :func:`sql.object_type`."""
     from sqlalchemy import text
 
     rows = conn.execute(
         text(spec.catalog.tables_sql), {"schema": schema, "lim": _limit(limit)}
     ).all()
-    return [(str(s), str(t)) for s, t in rows if s and t]
+    return [(str(s), str(t), object_type(kind)) for s, t, kind in rows if s and t]
 
 
 # "No limit" as a bind value every engine accepts: Trino refuses an ORDER BY … LIMIT above

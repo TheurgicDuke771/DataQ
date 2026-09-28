@@ -2969,8 +2969,10 @@ def browse_connection(
       list schemas) and never pass ``catalog``. On Iceberg a "schema" is a
       top-level **namespace** (nested namespaces are not listed). ``level`` says
       which of catalog / schema / table the ``entries`` are. At the table level,
-      **entries include views and materialized views alongside base tables**,
-      with no field telling them apart.
+      each entry carries an ``object_type``: ``table``, ``view``,
+      ``materialized_view``, ``dynamic_table`` (Snowflake) or
+      ``streaming_table`` (Unity Catalog). Freshness and volume monitors on a
+      plain ``view`` re-run its query rather than reading stored rows.
     - **``kind: "files"``** — ADLS Gen2 and S3. ``prefix`` is a folder inside the
       connection's own container/bucket (``root``); the result is the
       ``folders`` and ``files`` directly under it, not recursive. A file's
@@ -3064,7 +3066,10 @@ def _browse_listing(
         "level": tables.level,
         "catalog": tables.catalog,
         "schema": tables.schema,
-        "entries": [{"name": e.name, "selectable": e.selectable} for e in tables.entries],
+        "entries": [
+            {"name": e.name, "selectable": e.selectable, "object_type": e.object_type}
+            for e in tables.entries
+        ],
         "truncated": tables.truncated,
         "limit": tables.limit,
     }

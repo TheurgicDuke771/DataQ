@@ -523,7 +523,11 @@ def test_browse_walks_schemas_then_tables(db_session: Any, trino: TrinoTarget) -
     top = browse_service.browse_catalog(connection, catalog=None, schema=None, **kwargs)
     tables = browse_service.browse_catalog(connection, catalog=None, schema=trino.schema, **kwargs)
     assert top.level == "schema" and trino.schema in [e.name for e in top.entries]
-    assert [e.name for e in tables.entries] == ["big_orders", "orders", "orders_lc"]
+    assert [(e.name, e.object_type) for e in tables.entries] == [
+        ("big_orders", "view"),
+        ("orders", "table"),
+        ("orders_lc", "table"),
+    ]
 
 
 # ───────────────────────────── end to end ─────────────────────────────

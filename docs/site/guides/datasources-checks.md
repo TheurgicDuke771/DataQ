@@ -602,6 +602,11 @@ target still works everywhere.
   connection's one container or bucket and fills **File path** with the file you pick.
   **Browse folders…** (batch mode) fills **Prefix** with the folder you are in.
 
+At the table level a tag marks anything that is not a plain table: **View**,
+**Materialized view**, **Dynamic table** (Snowflake) or **Streaming table** (Unity
+Catalog). A freshness or volume monitor on a plain view re-runs the view's query on every
+check rather than reading stored rows.
+
 Each level is **one bounded request** of up to 200 names. When a level holds more, the
 picker says so ("Showing the first 200 … there are more") rather than presenting a partial
 list as the whole thing — type the name into the field instead. A name DataQ cannot target

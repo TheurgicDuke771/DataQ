@@ -125,6 +125,29 @@ describe('CatalogBrowserButton', () => {
     expect(onPick).toHaveBeenCalledWith({ schema: 'Sales', table: 'Orders' });
   });
 
+  it('marks views and other non-table relations, leaving plain tables untagged', async () => {
+    const user = userEvent.setup();
+    mockCatalog.mockResolvedValueOnce(level('schema', ['gold'])).mockResolvedValueOnce(
+      level('table', [], {
+        schema: 'gold',
+        entries: [
+          { name: 'orders', selectable: true, object_type: 'table' },
+          { name: 'orders_v', selectable: true, object_type: 'view' },
+          { name: 'daily', selectable: true, object_type: 'dynamic_table' },
+        ],
+      }),
+    );
+    render(<CatalogBrowserButton connectionId="sf1" onPick={vi.fn()} root="schema" />);
+
+    await user.click(screen.getByRole('button', { name: /Browse schemas/ }));
+    await user.click(await screen.findByRole('button', { name: /gold/ }));
+    expect(await screen.findByText('View')).toBeInTheDocument();
+    expect(screen.getByText('Dynamic table')).toBeInTheDocument();
+    expect(screen.queryByText('Table')).not.toBeInTheDocument();
+    // The tag sits beside the pick button, never inside its accessible name.
+    expect(screen.getByRole('button', { name: /orders_v/ })).not.toHaveTextContent('View');
+  });
+
   it('says which schema is empty on a schema-rooted connection', async () => {
     const user = userEvent.setup();
     mockCatalog

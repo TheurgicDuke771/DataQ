@@ -491,7 +491,7 @@ MSSQL = MssqlEngineSpec(
             " ORDER BY TABLE_SCHEMA"
         ),
         tables_sql=(
-            "SELECT TOP (:lim) TABLE_SCHEMA, TABLE_NAME"  # noqa: S608  # nosec B608
+            "SELECT TOP (:lim) TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE"  # noqa: S608  # nosec B608
             f" FROM INFORMATION_SCHEMA.TABLES WHERE {_READABLE}"
             " AND (:schema IS NULL OR TABLE_SCHEMA = :schema)"
             " ORDER BY TABLE_SCHEMA, TABLE_NAME"

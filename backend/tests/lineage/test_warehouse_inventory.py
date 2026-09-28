@@ -111,7 +111,7 @@ class TestUnityCatalogEnumeration:
     def test_real_capture_rows_become_lower_case_identities(self) -> None:
         raw = json.loads((_FIXTURES / "uc_tables_casing.json").read_text())
         rows = [
-            (r["table_catalog"], r["table_schema"], r["table_name"])
+            (r["table_catalog"], r["table_schema"], r["table_name"], r.get("table_type", "MANAGED"))
             for r in raw
             if r["table_catalog"] not in ("system", "samples", "__databricks_internal")
             and r["table_schema"] != "information_schema"
@@ -135,6 +135,6 @@ class TestUnityCatalogEnumeration:
         assert "'STREAMING_TABLE'" in conn.sql
 
     def test_null_rows_are_skipped(self) -> None:
-        conn = _FakeConn([("workspace", None, "t"), ("workspace", "s", "t")])
+        conn = _FakeConn([("workspace", None, "t", "MANAGED"), ("workspace", "s", "t", "VIEW")])
         idents = UnityCatalogLineageProvider().enumerate_tables(conn, connection_config=_UC_CONFIG)
         assert [i.name for i in idents] == ["workspace.s.t"]

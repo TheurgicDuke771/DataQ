@@ -152,9 +152,9 @@ def test_catalog_browse_response_shape_and_no_credential(
     actor, headers = as_role("member")
     conn = _connection(db_session, actor, secret_store, "unity_catalog")
     fake_sql.rows = [
-        ("dataq_retail", "gold", "daily_revenue"),
-        ("dataq_retail", "gold", "bad-name"),
-        ("dataq_retail", "gold", "zeta"),
+        ("dataq_retail", "gold", "daily_revenue", "MANAGED"),
+        ("dataq_retail", "gold", "bad-name", "VIEW"),
+        ("dataq_retail", "gold", "zeta", "MANAGED"),
     ]
     resp = client.get(
         f"/api/v1/connections/{conn.id}/browse/catalog",
@@ -167,8 +167,8 @@ def test_catalog_browse_response_shape_and_no_credential(
         "catalog": "dataq_retail",
         "schema": "gold",
         "entries": [
-            {"name": "daily_revenue", "selectable": True},
-            {"name": "bad-name", "selectable": False},
+            {"name": "daily_revenue", "selectable": True, "object_type": "table"},
+            {"name": "bad-name", "selectable": False, "object_type": "view"},
         ],
         "truncated": True,
         "limit": 2,
