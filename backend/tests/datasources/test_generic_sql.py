@@ -456,7 +456,7 @@ def test_a_failed_run_also_logs_no_false_pool_errors(
         engine = sa.create_engine("sqlite://", creator=connections.connect, poolclass=StaticPool)
         held = engine.connect()
         held.exec_driver_sql("select 1")
-        engine.cycle = engine
+        engine.cycle = engine  # type: ignore[attr-defined]
         raise RuntimeError("the warehouse went away mid-run")
 
     monkeypatch.setattr(generic_sql, "GxConnectionSource", _Recording)
