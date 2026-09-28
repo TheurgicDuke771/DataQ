@@ -1,0 +1,39 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "e62bc1a05ccf",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-2131-athena-adapter",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/datasources/athena.py",
+    "backend/app/datasources/generic_sql.py",
+    "backend/app/datasources/gx_metrics.py",
+    "backend/app/datasources/sql_engines.py",
+    "backend/app/lineage/warehouse_unity_catalog.py",
+    "backend/app/mcp/server.py",
+    "backend/app/services/browse_service.py",
+    "backend/app/services/failure_classifier.py",
+    "backend/app/services/run_service.py",
+    "backend/requirements.txt",
+    "backend/tests/datasources/test_athena.py",
+    "backend/tests/integration/test_athena_datasource.py",
+    "backend/tests/lineage/test_warehouse_inventory.py",
+    "backend/tests/services/test_credential_health.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/e6/2bc1a05ccf/0/metadata.json",
+      "transcript": "/e6/2bc1a05ccf/0/full.jsonl",
+      "compact_transcript": "/e6/2bc1a05ccf/0/transcript.jsonl",
+      "content_hash": "/e6/2bc1a05ccf/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2,
+    "cache_creation_tokens": 1406,
+    "cache_read_tokens": 792667,
+    "output_tokens": 1167,
+    "api_call_count": 1
+  }
+}
