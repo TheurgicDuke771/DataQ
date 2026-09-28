@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "0b611ec3e043",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1829-dataq-client",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "CONTRIBUTING.md",
+    "docs/site/reference/api-compatibility.md",
+    "packages/dataq-client/src/dataq_client/generated/models/privacy_settings_write.py",
+    "packages/dataq-client/src/dataq_client/generated/models/scoring_weights_write.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0b/611ec3e043/0/metadata.json",
+      "transcript": "/0b/611ec3e043/0/full.jsonl",
+      "compact_transcript": "/0b/611ec3e043/0/transcript.jsonl",
+      "content_hash": "/0b/611ec3e043/0/content_hash.txt",
+      "prompt": "/0b/611ec3e043/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 18,
+    "cache_creation_tokens": 4890,
+    "cache_read_tokens": 8292831,
+    "output_tokens": 3024,
+    "api_call_count": 9
+  }
+}
