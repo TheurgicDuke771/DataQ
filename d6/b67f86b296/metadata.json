@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "d6b67f86b296",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1819-duration-rendering",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/core/jsonsafe.py",
+    "backend/tests/core/test_jsonsafe.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/d6/b67f86b296/0/metadata.json",
+      "transcript": "/d6/b67f86b296/0/full.jsonl",
+      "compact_transcript": "/d6/b67f86b296/0/transcript.jsonl",
+      "content_hash": "/d6/b67f86b296/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12,
+    "cache_creation_tokens": 8245,
+    "cache_read_tokens": 3595744,
+    "output_tokens": 6815,
+    "api_call_count": 6
+  }
+}
