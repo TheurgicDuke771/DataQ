@@ -5,8 +5,18 @@ API. Trigger a suite, wait for it, and gate a CI job or a scheduled task on the 
 Python or from a shell.
 
 ```bash
-pip install dataq-client
+# A released version: the wheel attached to the DataQ release matching your server
+pip install https://github.com/TheurgicDuke771/DataQ/releases/download/v1.2.0/dataq_client-1.2.0-py3-none-any.whl
+
+# The latest from main
+pip install "git+https://github.com/TheurgicDuke771/DataQ.git@main#subdirectory=packages/dataq-client"
+
+# The latest from main, editable (to track or change the client locally)
+git clone https://github.com/TheurgicDuke771/DataQ.git && pip install -e DataQ/packages/dataq-client
 ```
+
+It is not published to PyPI. Each DataQ release carries the client's wheel and sdist as release
+assets.
 
 Authenticate with a personal access token (`dq_live_…`, minted in DataQ under Profile → API
 keys). The token acts as its owning user, with the same workspace role and per-suite grants.
@@ -35,7 +45,7 @@ dataq import orders.json --connection <connection-id>
 A CI gate is one step:
 
 ```yaml
-- run: pip install dataq-client && dataq run "$SUITE_ID" --wait
+- run: pip install https://github.com/TheurgicDuke771/DataQ/releases/download/v1.2.0/dataq_client-1.2.0-py3-none-any.whl && dataq run "$SUITE_ID" --wait
   env:
     DATAQ_URL: ${{ vars.DATAQ_URL }}
     DATAQ_PAT: ${{ secrets.DATAQ_PAT }}

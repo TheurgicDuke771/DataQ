@@ -1,9 +1,8 @@
 name: Publish dataq-client
 
-# Publishes the Python client to PyPI from a release tag only — never a branch or a fork build.
-# Authenticates with PyPI trusted publishing (OIDC): no PyPI token is stored anywhere. Configure it
-# once on PyPI (project dataq-client → Publishing → add this repository, this workflow file and the
-# `pypi` environment) before the first tag.
+# Attaches the Python client's wheel and sdist to the GitHub Release for a release tag — never a
+# branch or a fork build. The package is not published to PyPI; users install the wheel from the
+# release, or the latest from main (see packages/dataq-client/README.md).
 on:
   push:
     tags: ["v*"]
@@ -13,13 +12,11 @@ permissions:
 
 jobs:
   publish:
-    name: Build and publish dataq-client
+    name: Build dataq-client and attach it to the release
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    environment: pypi
     permissions:
-      contents: read
-      id-token: write  # trusted publishing
+      contents: write  # create the release if needed, and upload its assets
     steps:
       - uses: actions/checkout@v7
 
@@ -45,7 +42,14 @@ jobs:
       - name: Build
         run: python -m build packages/dataq-client --outdir dist
 
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@v1.14.2
-        with:
-          packages-dir: dist
+      - name: Attach to the GitHub Release
+        # Creates the release when the tag has none yet (its notes can be edited afterwards);
+        # otherwise adds the files to the existing one. --clobber makes a re-run idempotent.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" \
+              --notes "Python client: install with \`pip install\` and the \`dataq_client-*.whl\` below."
+          fi
+          gh release upload "$GITHUB_REF_NAME" dist/* --clobber

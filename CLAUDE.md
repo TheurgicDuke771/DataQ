@@ -68,7 +68,7 @@ DataQ/
 │   ├── src/
 │   └── tests/
 ├── packages/
-│   └── dataq-client/            # Python client + `dataq` CLI (#1829): generated from docs/site/reference/openapi.json by scripts/generate-dataq-client.py (CI drift-checked), plus a hand-written convenience layer; published to PyPI from a release tag
+│   └── dataq-client/            # Python client + `dataq` CLI (#1829): generated from docs/site/reference/openapi.json by scripts/generate-dataq-client.py (CI drift-checked), plus a hand-written convenience layer; its wheel + sdist are attached to the GitHub Release by publish-client.yml on a release tag (not on PyPI), or installed from main
 ├── docs/
 │   ├── site/                    # everything PUBLISHED to the docs site (docs_dir) — guides, architecture.md, adr/, compliance/
 │   └── *.md                     # internal planning docs (progress/retro/ops-log/…) — outside docs_dir, never built

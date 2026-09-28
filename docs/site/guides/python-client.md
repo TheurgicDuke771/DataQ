@@ -5,8 +5,18 @@ pipelines, notebooks and schedulers. Its most common use is gating a deploy on a
 result: trigger a suite, wait for it, and fail the pipeline step if a check failed.
 
 ```bash
-pip install dataq-client
+# A released version: the wheel attached to the DataQ release matching your server
+pip install https://github.com/TheurgicDuke771/DataQ/releases/download/v1.2.0/dataq_client-1.2.0-py3-none-any.whl
+
+# The latest from main
+pip install "git+https://github.com/TheurgicDuke771/DataQ.git@main#subdirectory=packages/dataq-client"
+
+# The latest from main, editable (to track or change the client locally)
+git clone https://github.com/TheurgicDuke771/DataQ.git && pip install -e DataQ/packages/dataq-client
 ```
+
+The client is not published to PyPI. Each DataQ release carries its wheel and sdist as release
+assets; install the one matching your server's version.
 
 It authenticates with a [personal access token](api-keys.md), which acts as the user who minted
 it, with the same workspace role and per-suite grants.
@@ -34,7 +44,9 @@ A GitHub Actions step:
 
 ```yaml
 - name: Data-quality gate
-  run: pip install dataq-client && dataq run "$SUITE_ID" --wait
+  run: |
+    pip install https://github.com/TheurgicDuke771/DataQ/releases/download/v1.2.0/dataq_client-1.2.0-py3-none-any.whl
+    dataq run "$SUITE_ID" --wait
   env:
     DATAQ_URL: ${{ vars.DATAQ_URL }}
     DATAQ_PAT: ${{ secrets.DATAQ_PAT }}
