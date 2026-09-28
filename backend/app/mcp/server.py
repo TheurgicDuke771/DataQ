@@ -67,6 +67,7 @@ from backend.app.orchestration import markers
 from backend.app.services import (
     asset_view_service,
     audit_service,
+    browse_service,
     channel_service,
     check_service,
     connection_service,
@@ -2933,6 +2934,109 @@ def test_connection(connection_id: str) -> dict[str, Any]:
             "type": connection.type,
             "env": connection.env,
             "ok": True,
+        }
+
+
+@mcp.tool
+def browse_connection(
+    connection_id: str,
+    catalog: Annotated[str, Field(min_length=1, max_length=255)] | None = None,
+    schema: Annotated[str, Field(min_length=1, max_length=255)] | None = None,
+    prefix: Annotated[str, Field(max_length=1024)] = "",
+    limit: Annotated[int, Field(ge=1, le=browse_service.MAX_LIMIT)] = browse_service.DEFAULT_LIMIT,
+) -> dict[str, Any]:
+    """List what a connection can see, one level at a time, to pick a suite's run target.
+
+    Use this before ``update_suite`` sets a target or ``import_suite`` needs one:
+    it names the tables or files that exist instead of guessing a
+    ``catalog.schema.table`` or a file key, which saves cleanly and then fails
+    every run. Once a target is set, ``list_columns`` lists its columns.
+
+    Returns one level per call, keyed by ``kind``:
+
+    - **``kind: "tables"``** — Unity Catalog and the SQL databases (PostgreSQL,
+      MySQL/MariaDB, Trino, SQL Server/Azure SQL). No ``catalog`` lists catalogs;
+      a ``catalog`` lists its schemas; ``catalog`` + ``schema`` lists tables.
+      A SQL database connection pins one database, so it has **no catalog
+      level**: start at ``schema`` (omit it to list schemas) and never pass
+      ``catalog``. ``level`` says which of catalog / schema / table the
+      ``entries`` are.
+    - **``kind: "files"``** — ADLS Gen2 and S3. ``prefix`` is a folder inside the
+      connection's own container/bucket (``root``); the result is the
+      ``folders`` and ``files`` directly under it, not recursive.
+
+    Caveats:
+
+    - **Privilege-filtered.** The listing is what the connection's *stored
+      credential* can see, not what exists. A table missing here may exist and
+      be hidden from that role; do not report it as absent from the warehouse.
+    - **``truncated: true`` means this is only the first ``limit`` entries** of
+      the level, not all of them. The target can still be named explicitly.
+    - An entry with **``selectable: false``** is not a plain SQL identifier,
+      and DataQ cannot target it; do not pick it.
+    - **Not supported for Snowflake or Iceberg connections** (nor ADF/Airflow/dbt,
+      which are orchestration, not datasources): the call fails and says so. For
+      those, ask the user for the target.
+    - A failure is classified (for example "access denied" or "not found") but
+      the driver's own message is withheld.
+
+    Nothing is changed and no data values are read, only names. Requires the
+    **member** workspace role, like ``test_connection``: it spends a stored
+    credential against a remote system.
+    """
+    cid = _parse_uuid(connection_id, field="connection_id")
+    with _ctx() as (session, user), _service_errors():
+        # Connection-scoped, like `test_connection`: no suite to gate on. Mirrors the REST
+        # browse routes' `MemberUser`.
+        _require_role(user, DEFAULT_WORKSPACE_ROLE)
+        connection = connection_service.get_connection(session, cid)
+        base = {"connection_id": connection_id, "type": connection.type}
+        if connection.type in browse_service.FILE_BROWSE_TYPES:
+            if catalog is not None or schema is not None:
+                raise ToolError("a file connection is browsed by prefix, not catalog/schema")
+            files = browse_service.browse_files(
+                connection,
+                session=session,
+                prefix=prefix,
+                limit=limit,
+                secret_store=get_secret_store(),
+            )
+            return {
+                **base,
+                "kind": "files",
+                "root": files.root,
+                "prefix": files.prefix,
+                "folders": files.folders,
+                "files": [
+                    {
+                        "path": f.path,
+                        "size": f.size,
+                        "last_modified": f.last_modified.isoformat() if f.last_modified else None,
+                    }
+                    for f in files.files
+                ],
+                "truncated": files.truncated,
+                "limit": files.limit,
+            }
+        if prefix:
+            raise ToolError("a table connection is browsed by catalog/schema, not prefix")
+        tables = browse_service.browse_catalog(
+            connection,
+            session=session,
+            catalog=catalog,
+            schema=schema,
+            limit=limit,
+            secret_store=get_secret_store(),
+        )
+        return {
+            **base,
+            "kind": "tables",
+            "level": tables.level,
+            "catalog": tables.catalog,
+            "schema": tables.schema,
+            "entries": [{"name": e.name, "selectable": e.selectable} for e in tables.entries],
+            "truncated": tables.truncated,
+            "limit": tables.limit,
         }
 
 

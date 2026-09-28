@@ -22,7 +22,7 @@ The endpoint accepts the **same credentials as the REST API** (ADR [0008](../adr
     [0032](../adr/0032-email-otp-signin.md)) has no identity provider to issue bearer
     tokens, so an **API key is the only `/mcp` credential** there — mint one as
     below and use it exactly the same way. Everything else is identical, including
-    all 51 tools and per-suite permissions. Two rejections are deliberate in that
+    all 52 tools and per-suite permissions. Two rejections are deliberate in that
     mode: a raw JWT is refused (there is nothing to validate it against), and your
     **sign-in session is never accepted** — it is a browser credential and does not
     authenticate `/mcp`, whether presented as a bearer or carried as a cookie.
@@ -80,7 +80,7 @@ Start it via the command palette (`Cmd/Ctrl+Shift+P`) → **MCP: List Servers** 
 
 **Cursor** (`~/.cursor/mcp.json`) uses the same `mcpServers` shape as Claude Desktop.
 
-## The 51 tools
+## The 52 tools
 
 Each tool is a thin wrapper over the same service layer as the REST API — per-suite
 authorization (`view` for a read, `edit` for a mutation) and failing-sample redaction apply
@@ -95,12 +95,12 @@ The tools split three ways, not two:
 - **Changes state** (18) — every one gates on `edit` access to the affected suite (schedule,
   binding and incident tools via the suite they target); `import_suite` additionally requires
   the **member** workspace role, since it has no existing suite to gate on.
-- **Live probes** (5) — `profile_column`, `list_columns`, `dryrun_check`,
-  `suggest_column_policy`, `test_connection` persist nothing but open a live datasource
-  connection with stored credentials. They are gated like writes, not reads, because they
-  spend a real credential against a remote system: the first four require `edit` on the suite
-  whose connection they probe, and `test_connection` (which has no suite) requires the
-  **member** workspace role.
+- **Live probes** (6) — `profile_column`, `list_columns`, `dryrun_check`,
+  `suggest_column_policy`, `test_connection`, `browse_connection` persist nothing but open a
+  live datasource connection with stored credentials. They are gated like writes, not reads,
+  because they spend a real credential against a remote system: the first four require `edit`
+  on the suite whose connection they probe, and `test_connection` and `browse_connection`
+  (which have no suite) require the **member** workspace role.
 
 ## Troubleshooting
 

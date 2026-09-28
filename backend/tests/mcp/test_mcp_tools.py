@@ -4988,3 +4988,110 @@ def test_get_doc_still_requires_authentication(db_session: Any, monkeypatch: Any
 
     with pytest.raises(ToolError):
         server.get_doc("best-practices")
+
+
+# ─────────────── browse_connection (#2100) ───────────────
+
+
+def _connection_of_type(db_session: Any, user: Any, conn_type: str, config: dict[str, Any]) -> Any:
+    suite = _suite(db_session, user)
+    connection = db_session.get(Connection, suite.connection_id)
+    connection.type = conn_type
+    connection.config = config
+    db_session.commit()
+    return connection
+
+
+def test_browse_connection_lists_a_table_level(db_session: Any, monkeypatch: Any) -> None:
+    from backend.app.services import browse_service
+
+    user = _user(db_session)
+    connection = _connection_of_type(
+        db_session, user, "unity_catalog", {"workspace_url": "https://w", "warehouse_id": "w1"}
+    )
+    _as(monkeypatch, db_session, user)
+    seen: dict[str, Any] = {}
+
+    def _catalog(conn: Any, **kw: Any) -> Any:
+        seen.update(kw)
+        return browse_service.CatalogListing(
+            level="table",
+            catalog="main",
+            schema="gold",
+            entries=[
+                browse_service.CatalogEntry(name="orders", selectable=True),
+                browse_service.CatalogEntry(name="weird name", selectable=False),
+            ],
+            truncated=True,
+            limit=2,
+        )
+
+    monkeypatch.setattr(browse_service, "browse_catalog", _catalog)
+    out = server.browse_connection(str(connection.id), catalog="main", schema="gold", limit=2)
+
+    assert seen["catalog"] == "main" and seen["schema"] == "gold" and seen["limit"] == 2
+    assert out["kind"] == "tables" and out["level"] == "table"
+    assert out["entries"] == [
+        {"name": "orders", "selectable": True},
+        {"name": "weird name", "selectable": False},
+    ]
+    assert out["truncated"] is True
+
+
+def test_browse_connection_lists_a_file_prefix(db_session: Any, monkeypatch: Any) -> None:
+    import datetime as dt
+
+    from backend.app.datasources.flatfile import BrowseFile
+    from backend.app.services import browse_service
+
+    user = _user(db_session)
+    connection = _connection_of_type(db_session, user, "s3", {"bucket": "landing"})
+    _as(monkeypatch, db_session, user)
+    monkeypatch.setattr(
+        browse_service,
+        "browse_files",
+        lambda conn, **kw: browse_service.FileListing(
+            root="landing",
+            prefix=kw["prefix"],
+            folders=["raw/2026/"],
+            files=[BrowseFile(path="raw/a.csv", size=10, last_modified=dt.datetime(2026, 1, 2))],
+            truncated=False,
+            limit=kw["limit"],
+        ),
+    )
+
+    out = server.browse_connection(str(connection.id), prefix="raw/")
+
+    assert out["kind"] == "files" and out["root"] == "landing" and out["prefix"] == "raw/"
+    assert out["files"] == [
+        {"path": "raw/a.csv", "size": 10, "last_modified": "2026-01-02T00:00:00"}
+    ]
+    assert out["truncated"] is False
+
+
+def test_browse_connection_refuses_the_other_kinds_arguments(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    user = _user(db_session)
+    files = _connection_of_type(db_session, user, "s3", {"bucket": "landing"})
+    tables = _connection_of_type(
+        db_session, user, "unity_catalog", {"workspace_url": "https://w", "warehouse_id": "w1"}
+    )
+    _as(monkeypatch, db_session, user)
+
+    with pytest.raises(ToolError, match="by prefix"):
+        server.browse_connection(str(files.id), catalog="main")
+    with pytest.raises(ToolError, match="by catalog/schema"):
+        server.browse_connection(str(tables.id), prefix="raw/")
+
+
+def test_browse_connection_says_a_snowflake_connection_is_unsupported(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    with pytest.raises(ToolError, match="not supported for 'snowflake'"):
+        server.browse_connection(str(suite.connection_id))
