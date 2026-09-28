@@ -82,3 +82,45 @@ class BoundedUnexpectedRowsQueryTable(UnexpectedRowsQueryTable):  # type: ignore
 # materialises one Python string per cell, and an unhashable cell falls back to pickling the frame:
 # a unique 49-char column peaked at 626 B/row with the hash, 48 without (#2149).
 pandas_execution_engine.HASH_THRESHOLD = 0
+
+
+_REGEX_MODULES = (
+    "great_expectations.expectations.metrics.util",
+    "great_expectations.expectations.regex_based_column_map_expectation",
+    "great_expectations.expectations.metrics.column_aggregate_metrics.column_values_match_regex_values",
+    "great_expectations.expectations.metrics.column_aggregate_metrics.column_values_not_match_regex_values",
+    "great_expectations.expectations.metrics.column_map_metrics.column_values_match_regex",
+    "great_expectations.expectations.metrics.column_map_metrics.column_values_not_match_regex",
+    "great_expectations.expectations.metrics.column_map_metrics.column_values_match_regex_list",
+    "great_expectations.expectations.metrics.column_map_metrics.column_values_not_match_regex_list",
+)
+
+
+def _with_athena_regex(original: Any) -> Any:
+    """GX has a regex branch for Trino but none for Athena, whose engine is Trino's: every regex
+    expectation errored on the pyathena dialect (#2131, live-found)."""
+
+    def get_dialect_regex_expression(
+        column: Any, regex: str, dialect: Any, positive: bool = True
+    ) -> Any:
+        if getattr(dialect, "name", None) == "awsathena":
+            match = sa.func.regexp_like(column, sa.literal(regex))
+            return match if positive else sa.not_(match)
+        return original(column, regex, dialect, positive)
+
+    get_dialect_regex_expression.dataq_athena = True  # type: ignore[attr-defined]
+    return get_dialect_regex_expression
+
+
+def _install_athena_regex() -> None:
+    import importlib
+
+    name = "get_dialect_regex_expression"
+    for module_name in _REGEX_MODULES:
+        module = importlib.import_module(module_name)
+        current = getattr(module, name)
+        if not getattr(current, "dataq_athena", False):
+            setattr(module, name, _with_athena_regex(current))
+
+
+_install_athena_regex()

@@ -188,6 +188,10 @@ class GenericSqlConfig(BaseModel):
         """Whether this config authenticates with the connection's stored secret."""
         return True
 
+    def url_query(self) -> dict[str, str]:
+        """Non-secret driver options the URL's query carries (Athena's workgroup)."""
+        return {}
+
 
 @dataclass(frozen=True)
 class ColumnCaps:
@@ -292,6 +296,8 @@ class SqlEngineSpec:
     #: ``config`` → ``(types, reason)`` for a gap that depends on WHERE the connection points
     #: rather than on the engine (a Fabric SQL endpoint refuses the temp tables GX's multi-column
     #: SQL Server metrics build). ``None`` = no config-dependent gaps.
+    #: OpenLineage's convention for a regional service endpoint (Athena) names no port.
+    namespace_includes_port: bool = True
     config_unsupported_expectation_types: (
         Callable[[GenericSqlConfig], tuple[frozenset[str], str]] | None
     ) = None
@@ -319,6 +325,7 @@ class SqlEngineSpec:
             host=config.host,
             port=config.effective_port,
             database=config.url_database(),
+            query=config.url_query(),
         )
 
     def url_string(self, config: GenericSqlConfig, secret: str | None) -> str:
@@ -396,6 +403,8 @@ class SqlEngineSpec:
         host = config.host.lower()
         if ":" in host:  # an IPv6 literal needs its brackets back in an authority
             host = f"[{host}]"
+        if not self.namespace_includes_port:
+            return f"{self.namespace_scheme}://{host}"
         return f"{self.namespace_scheme}://{host}:{config.effective_port}"
 
     def asset_name(self, config: GenericSqlConfig, *, schema: str, table: str) -> str:
