@@ -520,6 +520,8 @@ def _execute(
     """Register the suite + validation definition (GX 1.x requires both on the
     ephemeral per-run context before ``run()``) and map the result.
     """
+    frame = (batch_parameters or {}).get("dataframe")
+    checks = [_date_bounds_as_dates(check, frame) for check in checks]
     suite = context.suites.add(
         gx.ExpectationSuite(
             name=name,
@@ -532,7 +534,52 @@ def _execute(
     result = validation_definition.run(
         batch_parameters=batch_parameters, result_format=result_format
     )
-    return to_suite_outcome(result, checks, frame=(batch_parameters or {}).get("dataframe"))
+    return to_suite_outcome(result, checks, frame=frame)
+
+
+_DATE_BOUND_KEYS = ("min_value", "max_value")
+
+
+def _is_arrow_date(frame: Any, column: Any) -> bool:
+    import pandas as pd
+    import pyarrow as pa
+
+    if frame is None or not isinstance(column, str) or column not in frame.columns:
+        return False
+    dtype = frame[column].dtype
+    return isinstance(dtype, pd.ArrowDtype) and pa.types.is_date(dtype.pyarrow_dtype)
+
+
+def _as_date(value: Any) -> Any:
+    """A midnight datetime (or its ISO string) as the date it names; anything else unchanged."""
+    import datetime as dt
+
+    parsed = value
+    if isinstance(value, str):
+        try:
+            parsed = dt.datetime.fromisoformat(value)
+        except ValueError:
+            return value
+    if isinstance(parsed, dt.datetime) and parsed.tzinfo is None and parsed.time() == dt.time():
+        return parsed.date().isoformat()
+    return value
+
+
+def _date_bounds_as_dates(check: CheckSpec, frame: Any) -> CheckSpec:
+    """On a frame lane, a DATE column is an Arrow date, which a datetime bound cannot be compared
+    with (#2175): a bound or set member naming a midnight becomes that date. Only what GX sees
+    changes — the outcome keeps the authored kwargs."""
+    kwargs = check.kwargs or {}
+    if not _is_arrow_date(frame, kwargs.get("column")):
+        return check
+    changed = {key: _as_date(kwargs[key]) for key in _DATE_BOUND_KEYS if key in kwargs}
+    if isinstance(kwargs.get("value_set"), list):
+        changed["value_set"] = [_as_date(v) for v in kwargs["value_set"]]
+    if changed == {key: kwargs[key] for key in changed}:
+        return check
+    return replace(
+        check, kwargs={**kwargs, **changed}, authored_kwargs=check.authored_kwargs or kwargs
+    )
 
 
 def _is_sql_batch(batch_definition: Any) -> bool:

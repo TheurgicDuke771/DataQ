@@ -2208,6 +2208,42 @@ def test_a_date_column_is_evaluated_against_date_bounds_and_sets() -> None:
     assert (column_max["errored"], column_max["success"]) == (False, True)
 
 
+def test_a_midnight_datetime_bound_on_a_date_column_still_evaluates() -> None:
+    """Checks authored with datetime-shaped bounds ran on the datetime64 frame; on an Arrow date
+    they would error (#2175). The bound is read as the date it names; the outcome still reports
+    what was authored."""
+    between, column_min, in_set, off_midnight = _date_frame_outcomes(
+        [
+            CheckSpec(
+                expectation_type="expect_column_values_to_be_between",
+                kwargs={"column": "d", "min_value": "2026-01-03T00:00:00"},
+            ),
+            CheckSpec(
+                expectation_type="expect_column_min_to_be_between",
+                kwargs={"column": "d", "min_value": "2026-01-01T00:00:00"},
+            ),
+            CheckSpec(
+                expectation_type="expect_column_values_to_be_in_set",
+                kwargs={
+                    "column": "d",
+                    "value_set": [f"2026-01-0{day}T00:00:00" for day in range(1, 5)],
+                },
+            ),
+            CheckSpec(
+                expectation_type="expect_column_values_to_be_between",
+                kwargs={"column": "d", "min_value": "2026-01-03T12:00:00"},
+            ),
+        ]
+    )
+    assert between["errored"] is False
+    assert between["sample_failures"]["unexpected_count"] == 2
+    assert between["expected_value"]["min_value"] == "2026-01-03T00:00:00"
+    assert (column_min["errored"], column_min["success"]) == (False, True)
+    assert (in_set["errored"], in_set["success"]) == (False, True)
+    # A time inside the day has no date equivalent: left for GX to refuse, never truncated.
+    assert off_midnight["errored"] is True
+
+
 def test_a_date_locator_stores_as_a_date_like_the_sql_lanes() -> None:
     (outcome,) = _date_frame_outcomes(
         [

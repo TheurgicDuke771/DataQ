@@ -13,6 +13,15 @@ would act on. The step lives in the release checklist in
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking — Unity Catalog `DATE` columns on the frame lane** (sampled suites,
+  `UC_SQL_PUSHDOWN=false`, and the frame-only types such as `to_be_of_type`) are now
+  evaluated as dates, as on Parquet and Iceberg. Before, a date bound errored and a set
+  of ISO dates failed every row. A `to_be_of_type` check on a UC `DATE` column that
+  names `datetime64[ns]` / `datetime64[s]` must be changed to `type_: date`. Datetime
+  bounds at midnight keep working; a bound with a time of day on a `DATE` column errors.
+
 ## [1.1.0] — 2026-08-21
 
 The post-v1 cycle (2026-07-04 → 2026-08-21, six weeks + a stretch week). First tagged

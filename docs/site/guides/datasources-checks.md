@@ -880,8 +880,8 @@ the type your warehouse/catalog shows you:
     dtype names — calibrate from a dry-run rather than assuming the CSV/UC names.
   - **`DATE` columns** on Unity Catalog, Parquet and Iceberg stay dates: use
     `type_: date`, and write date bounds and value sets as dates (`2026-01-02`).
-    A datetime-shaped bound (`2026-01-02T00:00:00`) on a `DATE` column errors on
-    these sources.
+    A bound at midnight (`2026-01-02T00:00:00`) is read as that date; one with a
+    time of day has no date equivalent and errors.
 
 | Datasource | Engine | `type_` guidance |
 |---|---|---|
