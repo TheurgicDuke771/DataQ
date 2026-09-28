@@ -275,6 +275,18 @@ def _batch_validator(batch_definition: Any, batch_parameters: dict[str, Any] | N
     return Validator(execution_engine=batch.data.execution_engine, batches=[batch])
 
 
+def _population_values(rows: Any, spec: CheckSpec, batch_parameters: dict[str, Any] | None) -> Any:
+    """A frame lane with no identifier column gets row LABELS from GX, not locator dicts (#2095);
+    read the tested column's values for those rows straight off the frame already in memory."""
+    frame = (batch_parameters or {}).get("dataframe")
+    column = spec.kwargs.get("column")
+    if frame is None or not isinstance(rows, list) or not rows or isinstance(rows[0], dict):
+        return rows
+    if not isinstance(column, str) or column not in frame.columns:
+        return rows
+    return [{column: value} for value in frame.loc[rows, column].tolist()]
+
+
 def _attach_population_signal(
     outcome: SuiteOutcome,
     *,
@@ -331,7 +343,7 @@ def _attach_population_signal(
             )
             sample = {**check.sample_failures, VALUE_SIGNAL_STATUS_KEY: VALUE_SIGNAL_SAMPLE_FAILED}
         else:
-            rows = rows_by_check.get(i)
+            rows = _population_values(rows_by_check.get(i), checks[i], batch_parameters)
             log.info(
                 "gx_value_signal_sampled",
                 expectation_type=spec.expectation_type,
@@ -554,8 +566,9 @@ def run_expectations(
 ) -> SuiteOutcome:
     """Register the suite + validation definition for `batch_definition` and run.
 
-    `value_signal_gate` (SQL lanes only, #2014) enables the bounded population sample for the
-    checks whose masking the value signal would decide; ``None`` never issues it.
+    `value_signal_gate` enables the bounded population sample for the checks whose masking the
+    value signal would decide (#2014 on the SQL lanes; #2095 on the frame lanes, which only lack
+    it with no identifier column); ``None`` never issues it.
     """
     sql_batch = _is_sql_batch(batch_definition)
     outcome = _execute(
@@ -577,7 +590,7 @@ def run_expectations(
             batch_parameters=batch_parameters,
             result_format=_result_format(sql_batch=sql_batch, index_columns=None),
         )
-    if not sql_batch or value_signal_gate is None:
+    if value_signal_gate is None:
         return outcome
     return _attach_population_signal(
         outcome,

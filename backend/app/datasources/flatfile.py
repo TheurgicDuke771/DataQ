@@ -28,6 +28,7 @@ from backend.app.datasources.base import (
     MonitorSpec,
     SampleSpec,
     SuiteOutcome,
+    ValueSignalGate,
 )
 from backend.app.datasources.gx_runner import run_expectations
 from backend.app.datasources.monitors import (
@@ -1073,6 +1074,8 @@ def file_stat(
 class FlatFileCheckRunner:
     """`CheckRunner` for flat files — loads the file into pandas, runs GX on it."""
 
+    # The run path hands a `value_signal_gate` only to runners advertising it (#2014, #2095).
+    accepts_value_signal_gate: ClassVar[bool] = True
     supported_monitor_kinds: ClassVar[frozenset[str]] = frozenset({FRESHNESS, VOLUME})
 
     def __init__(
@@ -1256,6 +1259,7 @@ class FlatFileCheckRunner:
         schema: str | None,
         checks: list[CheckSpec],
         index_columns: list[str] | None = None,
+        value_signal_gate: ValueSignalGate | None = None,
     ) -> SuiteOutcome:
         # Row-count expectations against a sampled frame measure the SAMPLE
         # (#595 C6) — refused per check, only when sampling is on.
@@ -1276,6 +1280,7 @@ class FlatFileCheckRunner:
             name="suite-flatfile",
             batch_parameters={"dataframe": df},
             index_columns=index_columns,
+            value_signal_gate=value_signal_gate,
         )
         # Stamped on every outcome (#595). REFUSALS deliberately unstamped — the
         # record describes a read and a refused check performed none.

@@ -13,7 +13,13 @@ from backend.app.core.config import get_settings
 from backend.app.core.credential_expiry import azure_sas_expiry
 from backend.app.core.secrets import SecretStore
 from backend.app.core.uri_credentials import inject_uri_password, uri_password
-from backend.app.datasources.base import CheckOutcome, CheckSpec, MonitorSpec, SuiteOutcome
+from backend.app.datasources.base import (
+    CheckOutcome,
+    CheckSpec,
+    MonitorSpec,
+    SuiteOutcome,
+    ValueSignalGate,
+)
 from backend.app.datasources.gx_runner import run_expectations
 from backend.app.datasources.monitors import (
     FRESHNESS,
@@ -310,6 +316,8 @@ class IcebergCheckRunner:
 
     # Runner-advertised monitor capability (#429): EXPLICITLY what this runner implements — never
     # frozenset(MONITOR_KINDS).
+    # The run path hands a `value_signal_gate` only to runners advertising it (#2014, #2095).
+    accepts_value_signal_gate: ClassVar[bool] = True
     supported_monitor_kinds: ClassVar[frozenset[str]] = frozenset({FRESHNESS, VOLUME})
 
     def __init__(
@@ -336,6 +344,7 @@ class IcebergCheckRunner:
         schema: str | None,
         checks: list[CheckSpec],
         index_columns: list[str] | None = None,
+        value_signal_gate: ValueSignalGate | None = None,
     ) -> SuiteOutcome:
         df = self._read_dataframe(table)
         context = gx.get_context(mode="ephemeral")
@@ -348,6 +357,7 @@ class IcebergCheckRunner:
             name="suite-iceberg",
             batch_parameters={"dataframe": df},
             index_columns=index_columns,
+            value_signal_gate=value_signal_gate,
         )
 
     def run_monitors(

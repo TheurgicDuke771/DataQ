@@ -106,7 +106,12 @@ def _run_sql(
     return outcome.checks[0]
 
 
-def _run_frame(frame: pd.DataFrame, *, index_columns: list[str] | None = _INDEX_COLUMNS) -> Any:
+def _run_frame(
+    frame: pd.DataFrame,
+    *,
+    index_columns: list[str] | None = _INDEX_COLUMNS,
+    gate: Any = None,
+) -> Any:
     context = gx.get_context(mode="ephemeral")
     asset = context.data_sources.add_pandas(name="p").add_dataframe_asset(name="t")
     batch_definition = asset.add_batch_definition_whole_dataframe(name="wd")
@@ -117,6 +122,7 @@ def _run_frame(frame: pd.DataFrame, *, index_columns: list[str] | None = _INDEX_
         name="frame",
         batch_parameters={"dataframe": frame},
         index_columns=index_columns,
+        value_signal_gate=gate,
     )
     return outcome.checks[0]
 
@@ -169,9 +175,12 @@ def test_sql_lane_masks_the_same_column_the_frame_lane_masks(
     assert summary[_TESTED]["n"] == _HARMLESS_LEAD + _EMAILS
     assert summary[_TESTED]["email_count"] == _EMAILS
 
+    # Both directions now (#2095): with no identifier column the frame lane classifies from the
+    # population too, so it no longer disagrees with the SQL lane.
+    frame_check = _run_frame(_frame(), index_columns=index_columns, gate=_always)
+    frame_redacted, frame_state, frame_columns = _redacted(frame_check)
+    assert (state, columns) == (frame_state, frame_columns)
     if index_columns:
-        frame_redacted, frame_state, frame_columns = _redacted(_run_frame(_frame()))
-        assert (state, columns) == (frame_state, frame_columns)
         assert redacted["unexpected_index_list"] == frame_redacted["unexpected_index_list"]
 
 
@@ -476,3 +485,47 @@ def test_any_numeric_unexpected_count_opens_the_gate(count: Any) -> None:
 def test_non_numeric_or_capped_count_keeps_the_gate_shut(count: Any) -> None:
     outcome = CheckOutcome(_IN_SET, success=False, sample_failures={"unexpected_count": count})
     assert gx_runner._needs_population_signal(_CHECK, outcome, None, _always) is False
+
+
+# ─────────────── frame lanes with no identifier column (#2095) ───────────────
+
+
+def test_a_frame_lane_without_an_identifier_column_classifies_from_the_population() -> None:
+    """With no identifier column GX hands a frame lane bare row labels, so it had no summary and
+    classified from the 20 capped values — all harmless here, the 480 emails after them unseen
+    — while Snowflake masked the same data. The population now comes off the in-memory frame."""
+    check = _run_frame(_frame(), index_columns=None, gate=_always)
+
+    sample = check.sample_failures
+    assert sample is not None
+    summary = sample[VALUE_SIGNAL_SUMMARY_KEY][_TESTED]
+    assert summary["n"] == _HARMLESS_LEAD + _EMAILS
+    assert summary["email_count"] == _EMAILS
+    redacted, _state, _ = _redacted(check)
+    assert "walk-in" not in str(redacted)
+
+
+def test_a_frame_lane_skips_the_population_when_the_gate_does_not_decide() -> None:
+    check = _run_frame(_frame(), index_columns=None, gate=_never)
+    assert check.sample_failures is not None
+    assert VALUE_SIGNAL_SUMMARY_KEY not in check.sample_failures
+
+
+@pytest.mark.parametrize(
+    "runner_path",
+    [
+        "backend.app.datasources.flatfile.FlatFileCheckRunner",
+        "backend.app.datasources.iceberg.IcebergCheckRunner",
+        "backend.app.datasources.unity_catalog.UnityCatalogCheckRunner",
+    ],
+)
+def test_every_frame_runner_takes_the_gate(runner_path: str) -> None:
+    """`run_service` hands the gate only to a runner that advertises it, and a frame runner that
+    dropped it would silently keep classifying from 20 values (#2095)."""
+    import importlib
+    import inspect
+
+    module_name, cls_name = runner_path.rsplit(".", 1)
+    runner = getattr(importlib.import_module(module_name), cls_name)
+    assert runner.accepts_value_signal_gate is True
+    assert "value_signal_gate" in inspect.signature(runner.run_checks).parameters
