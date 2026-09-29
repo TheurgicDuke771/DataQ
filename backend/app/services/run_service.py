@@ -141,9 +141,11 @@ def _run_outcome_phases(
     comparison_executor: Callable[[Check], CheckOutcome] | None = None,
     stateful_monitor_executor: Callable[[Check], CheckOutcome] | None = None,
     value_signal_gate: ValueSignalGate | None = None,
+    native_previous: Callable[[list[Check]], list[dict[str, Any] | None]] | None = None,
 ) -> Iterator[OutcomePhase]:
     """Run a suite's checks, dispatched by `check.kind` (ADR 0012), yielding each
-    unit of execution as it resolves.
+    unit of execution as it resolves. ``native_previous`` supplies each batched native check's
+    last evaluated ``observed_value`` (a DQX stream check resumes from it).
     """
 
     # Engine partition first (ADR 0036): native checks route via `run_native_check` when
@@ -163,6 +165,9 @@ def _run_outcome_phases(
             if _engine(c) != GX_ENGINE and _engine(c) in advertised:
                 by_engine.setdefault(_engine(c), []).append(i)
         for engine, indices in by_engine.items():
+            batch_kwargs: dict[str, Any] = {}
+            if native_previous is not None:
+                batch_kwargs["previous"] = native_previous([checks[i] for i in indices])
             outcomes = cast(
                 list[CheckOutcome],
                 batch_run(
@@ -173,6 +178,7 @@ def _run_outcome_phases(
                     ],
                     table=table,
                     schema=schema,
+                    **batch_kwargs,
                 ),
             )
             batched.update(indices)
@@ -318,6 +324,27 @@ def _executor_outcome(
     return executor(check)
 
 
+def latest_evaluated_observed(session: Session, checks: list[Check]) -> list[dict[str, Any] | None]:
+    """Each check's most recent evaluated (not skip/error) ``observed_value``, in order.
+
+    A persisted result is the only resume point a DQX stream check has, so a job whose result
+    was discarded is re-read next run rather than skipped."""
+    ids = [c.id for c in checks if c.id is not None]
+    latest: dict[uuid.UUID, dict[str, Any] | None] = {}
+    if ids:
+        rows = session.execute(
+            select(Result.check_id, Result.observed_value)
+            .where(
+                Result.check_id.in_(ids),
+                Result.status.not_in(RESULT_OPERATIONAL_STATUSES),
+            )
+            .order_by(Result.check_id, Result.created_at.desc(), Result.id.desc())
+            .distinct(Result.check_id)
+        )
+        latest = dict(rows.tuples().all())
+    return [latest.get(c.id) for c in checks]
+
+
 def _cancelled_mid_run(session: Session, run: Run) -> bool:
     """Did a cancel commit (from the API session) while this run was executing?"""
     if session.scalar(select(Run.status).where(Run.id == run.id)) != "cancelled":
@@ -384,6 +411,7 @@ def execute_run(
             comparison_executor=comparison_executor,
             stateful_monitor_executor=stateful_monitor_executor,
             value_signal_gate=value_signal_gate,
+            native_previous=lambda batch: latest_evaluated_observed(session, batch),
         ):
             rows = [
                 _build_result(run.id, checks[i], check_outcome, zero_sample=zero_sample)

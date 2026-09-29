@@ -669,7 +669,10 @@ def get_suite_results(suite_id: str) -> dict[str, Any]:
     ``observed_value`` / ``metric_value`` is a Snowflake DMF metric, not a GX
     expectation output, and the two have different semantics; a ``dqx`` result's
     ``metric_value`` is its failing-row count, and it never carries sample rows,
-    so a null sample there is not "no failing rows"), its pass/warn/fail/critical (or
+    so a null sample there is not "no failing rows"; a ``dqx`` result whose
+    ``observed_value`` has a ``stream`` block counted only the rows appended since
+    the check's previous run — ``rows`` is that increment, not the table size, and
+    a ``skip`` there means no new rows, not a healthy table), its pass/warn/fail/critical (or
     skip/error) status, the observed vs expected value (**redacted on the same
     column-aware policy as the samples** — a masked observed value is not the
     measured one), how much of the dataset the check actually saw (``sampling``
@@ -1273,7 +1276,9 @@ def get_run_results(run_id: str) -> dict[str, Any]:
     the check runs against a platform-native engine like ``dmf`` or ``dqx``; a
     ``dmf`` result's observed/metric value is a Snowflake DMF metric, not a GX
     expectation output, and the two have different semantics; a ``dqx`` result's
-    metric value is its failing-row count, with no sample rows), its
+    metric value is its failing-row count, with no sample rows; one with a
+    ``stream`` block in its observed value covers only the rows appended since the
+    check's previous run), its
     pass/warn/fail/critical (or skip/error) status, the observed vs expected
     value, how much of the dataset the check saw, and any sample failing rows
     (PII-redacted; see ``get_suite_results`` for what a null sample's
@@ -2127,7 +2132,10 @@ def create_check(
     offer — ``dmf`` on Snowflake (its own metric types, e.g. ``dmf:null_count``)
     and ``dqx`` on Unity Catalog (Databricks DQX row rules, e.g.
     ``dqx:is_not_null``, run as a serverless job in the user's own workspace,
-    about a minute per run) — rather than a GX expectation. Passing a
+    about a minute per run; its config also takes an optional ``mode`` —
+    ``snapshot``, the default, reads the whole table, and ``stream`` counts only
+    rows appended since the check's last run and needs the connection's DQX
+    checkpoint volume) — rather than a GX expectation. Passing a
     ``gx``-shaped ``expectation_type``/``config`` with ``engine="dmf"``, or
     vice versa, is refused with a 422 naming the mismatch — it is not
     auto-detected from the type string. A connection that doesn't offer the
