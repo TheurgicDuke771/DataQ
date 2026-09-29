@@ -9546,6 +9546,12 @@ snapshot was written still applies. A lineage walk that hits its size cap logs
 therefore mask more than the tags alone would, but never less. Set
 `LINEAGE_CLASSIFICATION_PROPAGATION=false` to turn it off.
 
+To see why a column is masked when nobody tagged it, open the asset: **Masked through lineage**
+lists every column masked only by inheritance, each with the upstream column it inherits from.
+The same list is `inherited_classifications` on `GET /api/v1/assets/{id}` and the MCP `get_asset`
+tool. If the lineage is wrong, tag the downstream column `public` in the warehouse; its own tag
+wins.
+
 **The tag name is matched without its namespace**, and that is a constraint on
 you rather than a feature: DataQ honours a tag *named* `dataq_classification`
 wherever it lives, because knowing which database or schema should be

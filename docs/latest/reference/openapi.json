@@ -662,6 +662,25 @@
             "title": "Failing Lineage Sources",
             "type": "array"
           },
+          "inherited_classifications": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/InheritedClassificationRead"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inherited Classifications"
+          },
+          "inherited_classifications_truncated": {
+            "default": false,
+            "title": "Inherited Classifications Truncated",
+            "type": "boolean"
+          },
           "lineage_edges": {
             "items": {
               "$ref": "#/components/schemas/LineageEdgeRead"
@@ -4902,6 +4921,52 @@
           "latest_status"
         ],
         "title": "IncidentRead",
+        "type": "object"
+      },
+      "InheritedClassificationRead": {
+        "description": "A column masked as sensitive only because recorded lineage traces it to a sensitive\nupstream column. Tagging the column `public` in the warehouse overrides the inheritance.",
+        "properties": {
+          "column": {
+            "title": "Column",
+            "type": "string"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/InheritedSourceRead"
+            },
+            "title": "Sources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "column",
+          "sources"
+        ],
+        "title": "InheritedClassificationRead",
+        "type": "object"
+      },
+      "InheritedSourceRead": {
+        "properties": {
+          "asset_id": {
+            "format": "uuid",
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "asset_name": {
+            "title": "Asset Name",
+            "type": "string"
+          },
+          "column": {
+            "title": "Column",
+            "type": "string"
+          }
+        },
+        "required": [
+          "asset_id",
+          "asset_name",
+          "column"
+        ],
+        "title": "InheritedSourceRead",
         "type": "object"
       },
       "InventorySyncRead": {
