@@ -62,7 +62,7 @@ def _asset(db_session: Any, conn: Connection, table: str, *, seen: datetime = NO
 
 
 def _auto(db_session: Any, asset: Asset) -> Suite:
-    suite = db_session.scalar(
+    suite: Suite | None = db_session.scalar(
         select(Suite).where(Suite.asset_id == asset.id, Suite.origin == "auto")
     )
     assert suite is not None
@@ -74,7 +74,9 @@ def _checks(db_session: Any, suite: Suite) -> dict[str, Check]:
 
 
 def _schedule(db_session: Any, suite: Suite) -> Schedule:
-    schedule = db_session.scalar(select(Schedule).where(Schedule.suite_id == suite.id))
+    schedule: Schedule | None = db_session.scalar(
+        select(Schedule).where(Schedule.suite_id == suite.id)
+    )
     assert schedule is not None
     return schedule
 

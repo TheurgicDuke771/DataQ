@@ -20,14 +20,22 @@ class AssetMetadataUpdate:
     means "unassign" rather than "leave as is".
 
         Attributes:
+            auto_coverage_excluded (bool | None | Unset):
             description (None | str | Unset):
             owner_user_id (None | Unset | UUID):
     """
 
+    auto_coverage_excluded: bool | None | Unset = UNSET
     description: None | str | Unset = UNSET
     owner_user_id: None | Unset | UUID = UNSET
 
     def to_dict(self) -> dict[str, Any]:
+        auto_coverage_excluded: bool | None | Unset
+        if isinstance(self.auto_coverage_excluded, Unset):
+            auto_coverage_excluded = UNSET
+        else:
+            auto_coverage_excluded = self.auto_coverage_excluded
+
         description: None | str | Unset
         if isinstance(self.description, Unset):
             description = UNSET
@@ -45,6 +53,8 @@ class AssetMetadataUpdate:
         field_dict: dict[str, Any] = {}
 
         field_dict.update({})
+        if auto_coverage_excluded is not UNSET:
+            field_dict["auto_coverage_excluded"] = auto_coverage_excluded
         if description is not UNSET:
             field_dict["description"] = description
         if owner_user_id is not UNSET:
@@ -55,6 +65,17 @@ class AssetMetadataUpdate:
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         d = dict(src_dict)
+
+        def _parse_auto_coverage_excluded(data: object) -> bool | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(bool | None | Unset, data)
+
+        auto_coverage_excluded = _parse_auto_coverage_excluded(
+            d.pop("auto_coverage_excluded", UNSET)
+        )
 
         def _parse_description(data: object) -> None | str | Unset:
             if data is None:
@@ -83,6 +104,7 @@ class AssetMetadataUpdate:
         owner_user_id = _parse_owner_user_id(d.pop("owner_user_id", UNSET))
 
         asset_metadata_update = cls(
+            auto_coverage_excluded=auto_coverage_excluded,
             description=description,
             owner_user_id=owner_user_id,
         )
