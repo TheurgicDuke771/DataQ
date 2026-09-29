@@ -140,17 +140,27 @@ def _unity_catalog_estimate(
     if target.sampling is not None and 0 < settings.run_max_scan_rows < target.sampling.rows:
         # Refused by the sample cap before any probe or read, so it holds nothing.
         return MemoryEstimate(bytes=0, basis="uc_over_cap")
-    runner = build_unity_catalog_runner(
-        config=dict(connection.config),
-        secret_ref=connection.secret_ref,
-        secret_store=get_secret_store(),
-        catalog=target.catalog,
-        sampling=target.sampling,
-    )
     try:
-        rows, row_bytes = runner.probe_frame(table=target.table, schema=target.schema)
-    finally:
-        runner.close()
+        runner = build_unity_catalog_runner(
+            config=dict(connection.config),
+            secret_ref=connection.secret_ref,
+            secret_store=get_secret_store(),
+            catalog=target.catalog,
+            sampling=target.sampling,
+        )
+        try:
+            rows, row_bytes = runner.probe_frame(table=target.table, schema=target.schema)
+        finally:
+            runner.close()
+    except Exception:
+        # A transient failure (a waking warehouse) can clear before the runner's own probes,
+        # so reserve the most the runner would load rather than leave it unmetered.
+        log.warning(
+            "run_admission_uc_probe_failed", connection_id=str(connection.id), exc_info=True
+        )
+        if settings.run_max_frame_bytes > 0:
+            return MemoryEstimate(bytes=settings.run_max_frame_bytes, basis="uc_probe_failed")
+        return MemoryEstimate(bytes=0, basis="uc_probe_failed", exclusive=True)
     need = rows * row_bytes
     over_rows = target.sampling is None and 0 < settings.run_max_scan_rows < rows
     if over_rows or 0 < settings.run_max_frame_bytes < need:

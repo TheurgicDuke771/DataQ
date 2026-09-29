@@ -337,15 +337,31 @@ def test_a_unity_catalog_connection_without_a_credential_is_not_probed(stub_uc: 
     assert built == []
 
 
-def test_a_failed_unity_catalog_probe_releases_the_engine_and_does_not_fail_the_run(
+def test_a_failed_unity_catalog_probe_reserves_the_frame_cap_and_releases_the_engine(
     stub_uc: Any,
 ) -> None:
-    # The read path raises its own classified error moments later.
+    # A waking warehouse can answer the runner's probes moments later; the frame must not
+    # then load unmetered.
     built = stub_uc(fail=True)
     run, session = _graph("unity_catalog", target=_UC_TARGET, expectation_types=_FRAME_TYPES)
 
-    assert run_admission.estimate_run_memory(_sess(session), run) is None
+    assert run_admission.estimate_run_memory(_sess(session), run) == run_admission.MemoryEstimate(
+        bytes=get_settings().run_max_frame_bytes, basis="uc_probe_failed"
+    )
     assert built[0].closed
+
+
+def test_a_failed_unity_catalog_probe_without_a_frame_cap_runs_alone(
+    monkeypatch: pytest.MonkeyPatch, stub_uc: Any
+) -> None:
+    monkeypatch.setenv("RUN_MAX_FRAME_BYTES", "0")
+    get_settings.cache_clear()
+    stub_uc(fail=True)
+    run, session = _graph("unity_catalog", target=_UC_TARGET, expectation_types=_FRAME_TYPES)
+
+    estimate = run_admission.estimate_run_memory(_sess(session), run)
+
+    assert estimate is not None and estimate.exclusive
 
 
 def test_an_over_cap_object_is_clamped_to_the_cap_it_will_be_refused_at(

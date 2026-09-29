@@ -870,7 +870,8 @@ is the whole estimate on an otherwise-pushdown suite.
 `COUNT(*)` (or the sample's row count) × the width probe's bytes per row. The frame
 cap is checked against the same product, so a frame the runner would refuse
 reserves **nothing**, and a 10k-row frame reserves a few MiB instead of the whole
-1.25 GiB cap. That costs two metadata queries per run, which the runner repeats; a
+1.25 GiB cap. A probe that fails reserves the whole cap, since the runner's own
+probes may succeed moments later. That costs two metadata queries per run, which the runner repeats; a
 deferred run carries its estimate, so a re-queue does not probe again.
 
 **Iceberg** is sized from the same manifest plan its row-cap probe reads. That is
