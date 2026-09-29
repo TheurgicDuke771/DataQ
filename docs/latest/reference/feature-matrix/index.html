@@ -2975,7 +2975,7 @@ five mechanisms:</p>
 </tr>
 <tr>
 <td>ADLS Gen2 (files)</td>
-<td><code>abfss://{container}@{account}.dfs.core.windows.net</code> (a sovereign cloud or another ADLS-compatible endpoint keeps its own DFS host: <code>abfss://{container}@{account}.dfs.core.chinacloudapi.cn</code>, <code>abfss://{workspace}@onelake.dfs.fabric.microsoft.com</code>) / pattern <strong>base prefix</strong></td>
+<td><code>abfss://{container}@{account}.dfs.core.windows.net</code> (a sovereign cloud or another ADLS-compatible endpoint keeps its own DFS host: <code>abfss://{container}@{account}.dfs.core.chinacloudapi.cn</code>, <code>abfss://{workspace}@onelake.dfs.fabric.microsoft.com</code>; a path-style emulator endpoint such as Azurite's is named after its own host and the account in its path: <code>abfss://{container}@{host}:{port}/{account}</code>) / pattern <strong>base prefix</strong></td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">—</td>
 <td style="text-align: center;">✅</td>
