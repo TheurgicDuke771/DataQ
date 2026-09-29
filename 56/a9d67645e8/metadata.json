@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "56a9d67645e8",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2204-gx-project-lock",
+  "checkpoints_count": 2,
+  "files_touched": [
+    ".env.app.example",
+    "backend/app/core/config.py",
+    "backend/app/datasources/flatfile.py",
+    "backend/app/datasources/generic_sql.py",
+    "backend/app/datasources/gx_runner.py",
+    "backend/app/datasources/iceberg.py",
+    "backend/app/datasources/snowflake.py",
+    "backend/app/datasources/unity_catalog.py",
+    "backend/app/services/dryrun_service.py",
+    "backend/tests/api/test_checks.py",
+    "backend/tests/datasources/test_generic_sql.py",
+    "backend/tests/datasources/test_gx_runner.py",
+    "backend/tests/datasources/test_mssql.py",
+    "backend/tests/datasources/test_snowflake.py",
+    "deploy/README.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/56/a9d67645e8/0/metadata.json",
+      "transcript": "/56/a9d67645e8/0/full.jsonl",
+      "compact_transcript": "/56/a9d67645e8/0/transcript.jsonl",
+      "content_hash": "/56/a9d67645e8/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 6,
+    "cache_creation_tokens": 2803,
+    "cache_read_tokens": 746509,
+    "output_tokens": 2687,
+    "api_call_count": 3
+  }
+}
