@@ -1,0 +1,11 @@
+Okay, start in order as planned
+
+---
+
+<task-notification>
+<task-id>biq9282s9</task-id>
+<tool-use-id>toolu_01X9qgMXVn4WQZKgPiNQKViJ</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4c1f817b-4fd7-4aa0-8c19-edd245c026d7/tasks/biq9282s9.output</output-file>
+<status>failed</status>
+<summary>Background command "Run a host celery worker for the demo e2e" failed with exit code 144</summary>
+</task-notification>
