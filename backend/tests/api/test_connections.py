@@ -3,6 +3,7 @@
 import json
 import uuid
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -520,30 +521,46 @@ def test_draft_test_iceberg_glue_catalog_with_no_secret_succeeds(
     assert resp.json() == {"ok": True}
 
 
-def test_draft_test_dbt_file_scheme_with_no_secret_succeeds(
-    client: tuple[TestClient, FakeSecretStore],
-) -> None:
-    """End-to-end against the REAL `DbtConnectionAdapter` — a local `file://`
-    artifacts path needs no credential (the connection docstring); a
-    not-yet-published job is still a green test, so nothing needs to be
-    mocked or pre-created on disk.
-    """
-    api, _ = client
-    resp = api.post(
+def _draft_dbt_test(api: TestClient, artifacts_uri: str) -> Any:
+    return api.post(
         "/api/v1/connections/test",
         json={
             "type": "dbt",
             "env": "dev",
             "config": {
                 "project_name": "analytics",
-                "artifacts_uri": "file:///tmp/does-not-exist-351",
+                "artifacts_uri": artifacts_uri,
                 "jobs": ["nightly"],
             },
             "secret": None,
         },
     )
+
+
+def test_draft_test_dbt_file_scheme_with_no_secret_succeeds(
+    client: tuple[TestClient, FakeSecretStore], tmp_path: Path
+) -> None:
+    """End-to-end against the REAL `DbtConnectionAdapter` — a local `file://`
+    artifacts path needs no credential (the connection docstring).
+    """
+    api, _ = client
+    latest = tmp_path / "nightly" / "latest"
+    latest.mkdir(parents=True)
+    (latest / "run_results.json").write_text('{"metadata": {}, "results": []}')
+
+    resp = _draft_dbt_test(api, f"file://{tmp_path}")
     assert resp.status_code == 200
     assert resp.json() == {"ok": True}
+
+
+def test_draft_test_dbt_with_nothing_published_fails_naming_the_path(
+    client: tuple[TestClient, FakeSecretStore], tmp_path: Path
+) -> None:
+    # A mistyped artifacts_uri used to test green while the poller found nothing (#2215).
+    api, _ = client
+    resp = _draft_dbt_test(api, f"file://{tmp_path}")
+    assert resp.status_code == 502
+    assert f"file://{tmp_path}/nightly/latest/run_results.json" in resp.json()["error"]["message"]
 
 
 def test_test_endpoint_secret_optional_saved_connection_succeeds(
