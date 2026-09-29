@@ -844,3 +844,12 @@ User-approved (#1602 SQL Server leg, "option a"). Same shape as the 2026-09-28 #
 - **Inside `dataq_test`:** contained SQL user `dataq_reader` (`db_datareader`), password generated straight into KV `mssql-test-reader`; seed `dbo.Orders` (the lane's 4 rows) plus `dbo.Amounts` / `dbo.AmountsEmpty` for the aggregate tests. Seeded through DataQ's own TDS hostname validator (`mssql_tds.install()`), since pytds's built-in check fails on the current pyOpenSSL.
 - **Live lane (PR #2239 branch):** `test_mssql_live.py` 16 passed, 7 skipped (service-principal / Fabric / ODBC variants, no resources), including the two new aggregate tests.
 - **14:59:53Z–15:00:46Z — torn down, verified:** server `dataq-mssql-6600f6` deleted (removing `dataq_test` and firewall rule `claude-maint-20260929`); KV `mssql-test-sqladmin` and `mssql-test-reader` deleted and purged. `az sql server list -g dataq-rg` is empty; no `mssql-test*` secret, active or soft-deleted. **Expected state: none of these resources exist.**
+
+## 2026-09-29 — Azure OpenAI deployment and Bedrock short-term key for the live-LLM lane
+
+User-approved: test the Azure OpenAI and Amazon Bedrock LLM providers while the clouds exist. Lane: `backend/tests/e2e/test_llm_live.py` (issue #2251 came out of it).
+
+- **17:06:25Z — Azure:** deployment `dataq-llm-test` (`gpt-4.1-mini` 2025-04-14, GlobalStandard, capacity 10, pay-per-token) on the existing AI Services resource `royarijit04-9527-resource` (`dataq-rg`, westus3). The resource key was read inline into the test's environment, never printed.
+- **Bedrock, us-east-2:** no resource created. A short-term Bedrock API key (a SigV4-presigned `CallWithBearerToken` token, 1-hour expiry) was generated inline from `dataq-deploy`'s credentials for each run and never printed; models `openai.gpt-oss-20b-1:0` and `openai.gpt-oss-120b-1:0`.
+- **Results:** Azure OpenAI 8 of 8. Bedrock found #2251 (inline `<reasoning>`), fixed; after the fix, `prompt_json` structured output 5 of 5 on both gpt-oss models and `native` 4 of 5.
+- **17:14:40Z — torn down, verified:** deployment `dataq-llm-test` deleted; the resource lists 0 deployments. The Bedrock keys expire on their own. **Expected state: no deployment on `royarijit04-9527-resource`; nothing on AWS.**
