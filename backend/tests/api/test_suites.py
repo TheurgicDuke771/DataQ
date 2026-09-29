@@ -1577,6 +1577,33 @@ def test_profile_flat_file_explicit_format_overrides_extension(
     assert resp.json()["file_format"] == "parquet"
 
 
+@pytest.mark.parametrize(("file_format", "status"), [("json", 201), ("xlsx", 422)])
+def test_a_flat_file_target_accepts_json_and_nothing_unlisted(
+    client: TestClient, db_session: Any, file_format: str, status: int
+) -> None:
+    conn = _typed_connection(db_session, "s3", {"bucket": "b", "region": "us-east-1"})
+    resp = client.post(
+        "/api/v1/suites",
+        json=_payload(conn.id, target={"path": "raw/events.jsonl", "file_format": file_format}),
+    )
+    assert resp.status_code == status, resp.json()
+    if status == 201:
+        assert resp.json()["target"]["file_format"] == "json"
+
+
+def test_profile_flat_file_explicit_json_format_is_accepted(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sid = _s3_suite(client, db_session)
+    _patch_dataframe(monkeypatch, pd.DataFrame({"a": [1, 2]}))
+    resp = client.post(
+        f"/api/v1/suites/{sid}/profile",
+        json={"path": "data/blob", "file_format": "json", "columns": ["a"]},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["file_format"] == "json"
+
+
 def test_profile_flat_file_missing_path_returns_422(client: TestClient, db_session: Any) -> None:
     sid = _s3_suite(client, db_session)
     resp = client.post(f"/api/v1/suites/{sid}/profile", json={"columns": ["a"]})
