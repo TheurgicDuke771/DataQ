@@ -2799,9 +2799,10 @@ runners, which stateful kinds never reach.</p>
 diffs a live column-name/type snapshot against a stored baseline and flags
 add/drop/type-change. Unlike custom SQL it never goes through a <code>CheckRunner</code>/GX at
 all, so it isn't gated to SQL datasources: introspection is per-datasource —
-<code>information_schema</code> for Snowflake/Unity Catalog, the Parquet footer or a bounded
-CSV header sample for ADLS/S3 flat files, and the loaded table's own metadata for
-Iceberg (no data scan on any of them except the CSV sample). Re-baseline explicitly
+<code>information_schema</code> for Snowflake/Unity Catalog, the Parquet footer, a bounded
+CSV header sample or a JSON file's first 1 MiB for ADLS/S3 flat files, and the loaded
+table's own metadata for Iceberg (no data scan on any of them except the CSV and JSON
+samples). Re-baseline explicitly
 once a drift is expected and reviewed.</p>
 <p>ᶜ <strong>Unity Catalog custom SQL is supported since v1.1.</strong> It runs against a GX
 Databricks-SQL batch over the target table. Since v1.2, ordinary catalog
@@ -2909,7 +2910,8 @@ Iceberg (computed natively via <code>pyiceberg</code> scans, not SQL; ADR 0012/0
 S3 flat files (over the resolved batch). On a flat file, a freshness monitor with <strong>no
 timestamp column</strong> measures the object's arrival time instead — catching a producer that
 stopped sending files, which a timestamp inside the data cannot see. Flat-file suites target a file or a batch pattern (e.g.
-<code>orders_*.csv</code>) in CSV or Parquet; Iceberg suites target a <code>namespace.table</code>. Dry-run
+<code>orders_*.csv</code>) in CSV, Parquet or JSON (JSON Lines / an array of flat objects; nested JSON is
+refused); Iceberg suites target a <code>namespace.table</code>. Dry-run
 preview works on every datasource with a runner — Snowflake, Unity Catalog, flat files,
 and Iceberg.</p>
 <h2 id="assets-lineage-datasources">Assets &amp; lineage × datasources<a class="headerlink" href="#assets-lineage-datasources" title="Permanent link">¶</a></h2>

@@ -15,7 +15,8 @@ Stores you write checks **against** (see [Datasources & checks](datasources-chec
 - **Snowflake** (DEV / QA / UAT) — key-pair or password auth.
 - **Unity Catalog (Databricks)** — three-level `catalog.schema.table`.
 - **ADLS Gen2** and **AWS S3 (or any S3-compatible store)** — flat files, a single object or a **batch** pattern
-  (`orders_*.csv`, latest-or-specific) in **CSV** or **Parquet**.
+  (`orders_*.csv`, latest-or-specific) in **CSV**, **Parquet** or **JSON** (JSON Lines or an
+  array of flat objects).
 - **Apache Iceberg** — native `pyiceberg` read straight from object storage, no query
   engine in front: `namespace.table` addressing, REST / SQL / Glue / Hive catalogs,
   credential-less catalogs supported, also reads Delta UniForm tables (ADR 0030).
@@ -50,7 +51,8 @@ anomaly / comparison** monitor kinds:
 - **Schema-drift monitor** — flags a column added, dropped, or type-changed against a
   stored baseline (did the shape change under you?). Also runs on **every** datasource —
   introspection is per-store (SQL `information_schema`, a Parquet footer / CSV header
-  sample for flat files, Iceberg table metadata), never a data scan.
+  sample / a JSON file's first block for flat files, Iceberg table metadata), never a
+  full data scan.
 - **Anomaly monitor** — a rolling z-score baseline over a check's `metric_value` history,
   with optional seasonality (weekday-aware); flags a value that is abnormal *for this
   dataset* rather than one crossing a fixed threshold. Skips on cold start instead of

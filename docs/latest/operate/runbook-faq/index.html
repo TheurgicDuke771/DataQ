@@ -2497,7 +2497,8 @@
   triggered, not continuous.</li>
 <li><strong>Single tenant</strong>, suite-level access sharing <strong>plus a stored workspace role</strong> — Admin / Member / Viewer (ADR 0033); connection management is Admin-only. <code>WORKSPACE_ADMIN_EMAILS</code> is a bootstrap seed and lockout break-glass, not the day-to-day mechanism.</li>
 <li>Interactive <strong>datasource browsing</strong> (container browser, 3-level UC catalog picker) is
-  deferred — you specify targets explicitly. JSON flat files deferred (CSV/Parquet in v1).</li>
+  deferred — you specify targets explicitly. JSON flat files (JSON Lines or an array of
+  flat objects) are read beside CSV/Parquet; nested JSON is refused.</li>
 <li>Auth is one of <strong>OIDC SSO (Azure AD or Cognito) or email OTP (ADR 0032, IdP-less)</strong>,
   plus <strong>PATs</strong> (<code>dq_live_…</code>, ADR 0026) for headless/API/MCP clients — no
   username/password login, and no separate service-account principal yet (ADR 0026

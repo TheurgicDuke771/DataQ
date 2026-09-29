@@ -2653,7 +2653,8 @@ and reacts to your pipelines — all behind SSO, with an AI-assistant surface.</
 <li><strong>Snowflake</strong> (DEV / QA / UAT) — key-pair or password auth.</li>
 <li><strong>Unity Catalog (Databricks)</strong> — three-level <code>catalog.schema.table</code>.</li>
 <li><strong>ADLS Gen2</strong> and <strong>AWS S3 (or any S3-compatible store)</strong> — flat files, a single object or a <strong>batch</strong> pattern
-  (<code>orders_*.csv</code>, latest-or-specific) in <strong>CSV</strong> or <strong>Parquet</strong>.</li>
+  (<code>orders_*.csv</code>, latest-or-specific) in <strong>CSV</strong>, <strong>Parquet</strong> or <strong>JSON</strong> (JSON Lines or an
+  array of flat objects).</li>
 <li><strong>Apache Iceberg</strong> — native <code>pyiceberg</code> read straight from object storage, no query
   engine in front: <code>namespace.table</code> addressing, REST / SQL / Glue / Hive catalogs,
   credential-less catalogs supported, also reads Delta UniForm tables (ADR 0030).</li>
@@ -2690,7 +2691,8 @@ anomaly / comparison</strong> monitor kinds:</p>
 <li><strong>Schema-drift monitor</strong> — flags a column added, dropped, or type-changed against a
   stored baseline (did the shape change under you?). Also runs on <strong>every</strong> datasource —
   introspection is per-store (SQL <code>information_schema</code>, a Parquet footer / CSV header
-  sample for flat files, Iceberg table metadata), never a data scan.</li>
+  sample / a JSON file's first block for flat files, Iceberg table metadata), never a
+  full data scan.</li>
 <li><strong>Anomaly monitor</strong> — a rolling z-score baseline over a check's <code>metric_value</code> history,
   with optional seasonality (weekday-aware); flags a value that is abnormal <em>for this
   dataset</em> rather than one crossing a fixed threshold. Skips on cold start instead of

@@ -1083,6 +1083,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Flat files: formats and CSV delimiters">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#json-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JSON files
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
           <li class="md-nav__item">
@@ -2849,6 +2866,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Flat files: formats and CSV delimiters">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#json-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JSON files
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
           <li class="md-nav__item">
@@ -3189,7 +3223,7 @@ recorded as a rejected credential; a wrong tenant or client ID, or a missing dat
 reported as a configuration or permission problem instead.</p>
 <h3 id="onelake-fabric-lakehouse-files">OneLake (Fabric lakehouse files)<a class="headerlink" href="#onelake-fabric-lakehouse-files" title="Permanent link">¶</a></h3>
 <p>Microsoft Fabric OneLake serves the same Blob API, so an <strong>ADLS Gen2</strong> connection reads a
-lakehouse's <code>Files/</code> area — CSV and Parquet, with every flat-file check, freshness (including
+lakehouse's <code>Files/</code> area — CSV, Parquet and JSON, with every flat-file check, freshness (including
 arrival-time), volume, the profiler, browsing and batch targets. There is no separate
 connection type:</p>
 <table>
@@ -3725,7 +3759,10 @@ notes on the same table should never see two different verdicts.</p>
 <p>Checks with no dimension set are counted separately ("N checks have no dimension
 set") rather than filed under a dimension — otherwise "Not covered" would be wrong.</p>
 <h3 id="flat-files-formats-and-csv-delimiters">Flat files: formats and CSV delimiters<a class="headerlink" href="#flat-files-formats-and-csv-delimiters" title="Permanent link">¶</a></h3>
-<p>Flat-file connections (ADLS Gen2 / S3) read <code>.csv</code> and <code>.parquet</code>/<code>.pq</code>. <strong>The CSV
+<p>Flat-file connections (ADLS Gen2 / S3) read <code>.csv</code>, <code>.parquet</code>/<code>.pq</code>, and JSON as
+<code>.jsonl</code>/<code>.ndjson</code>/<code>.json</code> (see <a href="#json-files">JSON files</a> below). The run reads the
+format from the file's <strong>extension</strong>; a target's <em>File format</em> choice is used by the
+profiler and column listing. <strong>The CSV
 delimiter is detected per file, not per connection</strong> — a connection is a whole
 bucket/container and the files under it need not agree, so DataQ sniffs each file's
 header. Comma, semicolon, tab, and pipe are recognised; anything it can't decide
@@ -3733,6 +3770,43 @@ header. Comma, semicolon, tab, and pipe are recognised; anything it can't decide
 <p>If a file uses some other separator, DataQ will parse the whole header as one
 column — the symptom is a <strong>column dropdown offering a single long name</strong> like
 <code>id;email;amount</code>. Convert the file to one of the four separators, or to Parquet.</p>
+<h4 id="json-files">JSON files<a class="headerlink" href="#json-files" title="Permanent link">¶</a></h4>
+<p>DataQ reads two JSON shapes, told apart by the file's first character, whatever the
+extension:</p>
+<ul>
+<li><strong>JSON Lines</strong> (NDJSON) — one object per line. The usual shape for event and log
+  exports, and the one to prefer: it streams, so sampling and counting never hold the
+  file.</li>
+<li><strong>A top-level array of objects</strong> — <code>[{...}, {...}]</code>, compact or pretty-printed.</li>
+</ul>
+<p>Each object is one row and each key a column. What is refused, with a message naming
+the problem rather than a generic read failure:</p>
+<ul>
+<li><strong>Nested values.</strong> A column holding an object or an array (<code>"address": {...}</code>,
+  <code>"tags": [...]</code>) has no single scalar type for a check to run against, so the file is
+  refused and the columns named. Flatten upstream — <code>address_city</code>, not
+  <code>address.city</code>. Counting rows (a volume monitor) still works on such a file; every
+  path that reads columns refuses it.</li>
+<li><strong>A column whose type changes</strong> — a number in one row and a string in another.
+  <code>null</code> is fine anywhere, and whole numbers mixed with decimals read as decimals.</li>
+<li>An array whose elements are not all objects, a repeated key in one object, a
+  pretty-printed object in a <code>.jsonl</code> file (JSON Lines means one per line), or text
+  that is not UTF-8.</li>
+</ul>
+<p><strong>Types.</strong> Numbers read as <code>int64</code> or <code>double</code> (an integer column with a <code>null</code> stays
+an integer), <code>true</code>/<code>false</code> as <code>bool</code>, and <strong>every string as a string</strong> — including
+ISO timestamps and dates. JSON has no date type, and the reader underneath would
+otherwise guess <code>timestamp</code> for <code>2026-01-01T10:00:00</code> but not for
+<code>2026-01-01T10:00:00.5</code>, so a column's type would change with its data. Freshness
+parses a timestamp string, exactly as it does for CSV. A number too large for 64
+bits reads as a <code>double</code> and loses precision — send identifiers that large as strings.</p>
+<p><strong>Sampling a JSON file</strong> (see below) types it from its <strong>first 1 MiB</strong>. The full read
+types every row, so the two can only disagree when the early rows are not
+representative — a field that first appears later, a column that is <code>null</code> early and
+holds values later, or whole numbers early and decimals later. A sampled run refuses
+such a file rather than silently retyping it mid-stream; turn sampling off, or make the
+first rows representative. Column listing, the profiler and schema drift read the same
+first block, so a field that first appears deep in a file is not listed there.</p>
 <h3 id="very-large-targets-sampling-and-the-scan-cap">Very large targets: sampling and the scan cap<a class="headerlink" href="#very-large-targets-sampling-and-the-scan-cap" title="Permanent link">¶</a></h3>
 <p>Snowflake and Iceberg monitors answer from the warehouse or from file metadata, so
 size is not a worker concern there. <strong>Unity Catalog is different for the checks that
@@ -4049,7 +4123,7 @@ whole prefix.</p>
 then each run diffs the live snapshot against it and flags any add / drop /
 type-change. Introspection is per-datasource, never a <code>CheckRunner</code>/GX pass or a
 data scan: <code>information_schema</code> for Snowflake/Unity Catalog/PostgreSQL/MySQL/Trino, the Parquet footer (or
-a bounded CSV header sample) for ADLS Gen2/S3 flat files, and the loaded table's own
+a bounded CSV header sample, or a JSON file's first 1 MiB) for ADLS Gen2/S3 flat files, and the loaded table's own
 metadata for Iceberg. Re-baseline explicitly once you've reviewed a drift and want
 it as the new normal — it is never re-baselined for you.</p>
 <h3 id="anomaly-monitor-snowflake-unity-catalog-the-generic-sql-engines-adr-0012">Anomaly monitor (Snowflake / Unity Catalog / the generic SQL engines — ADR 0012)<a class="headerlink" href="#anomaly-monitor-snowflake-unity-catalog-the-generic-sql-engines-adr-0012" title="Permanent link">¶</a></h3>
@@ -4165,7 +4239,7 @@ the type your warehouse/catalog shows you:</p>
 <li>String columns on <strong>Unity Catalog and CSV</strong> reads are plain pandas <code>object</code> dtype
     (these reads are <em>not</em> Arrow-backed). Both <code>type_: object</code> (exact dtype match) and
     <code>type_: str</code> (row-wise value-type match) pass — pick either.</li>
-<li><strong>Parquet and Iceberg</strong> reads <em>are</em> Arrow-backed and can report Arrow-flavored
+<li><strong>Parquet, JSON and Iceberg</strong> reads <em>are</em> Arrow-backed and can report Arrow-flavored
     dtype names — calibrate from a dry-run rather than assuming the CSV/UC names.</li>
 <li><strong><code>DATE</code> columns</strong> on Unity Catalog, Parquet and Iceberg stay dates: use
     <code>type_: date</code>, and write date bounds and value sets as dates (<code>2026-01-02</code>).
@@ -4231,10 +4305,15 @@ the type your warehouse/catalog shows you:</p>
 <td>pandas DataFrame (Arrow-backed)</td>
 <td>Arrow-flavored dtype names — confirm via a dry-run's <code>observed_value</code></td>
 </tr>
+<tr>
+<td>ADLS Gen2 / S3 (JSON)</td>
+<td>pandas DataFrame (Arrow-backed)</td>
+<td>Python value type names — <code>int</code>, <code>float</code>, <code>str</code>, <code>bool</code> (an integer column with NULLs stays <code>int</code>); <code>int64</code> / <code>object</code> do <strong>not</strong> pass</td>
+</tr>
 </tbody>
 </table>
 <p><strong>Calibration tip:</strong> don't guess — <strong>dry-run first</strong>, but know where the trail runs
-out. On <strong>Snowflake, PostgreSQL, Trino and the Arrow-backed sources</strong> (Parquet/Iceberg), a failing
+out. On <strong>Snowflake, PostgreSQL, Trino and the Arrow-backed sources</strong> (Parquet/JSON/Iceberg), a failing
 result's <code>observed_value</code> carries the <em>exact</em> string GX expected — copy it into
 <code>type_</code> and re-run to confirm green. On <strong>Unity Catalog / CSV</strong>, a wrong value-type
 guess (e.g. <code>int64</code> against a string column) falls to GX's row-wise compare, which
