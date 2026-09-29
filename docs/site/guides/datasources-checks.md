@@ -639,8 +639,13 @@ checks and a daily schedule. After its first run it adds *Data is fresh* on `ord
 - **Leaving a table out.** On the asset page, an admin can switch off *Include in automatic
   coverage*. The table's suite is paused, not deleted, and its history stays. Switching coverage
   off for the whole connection pauses all of its automatic suites the same way.
-- **Cost.** Each covered table runs a few warehouse queries once a day, at a time spread across
-  the day by table. A connection covers at most 500 tables (`AUTO_COVERAGE_MAX_ASSETS`); past
+- **Cost.** Each covered table runs its checks once a day, at a time spread across the day by
+  table. The row-count and freshness checks are cheap aggregates, but the **column-profile check
+  reads the whole table**: it counts nulls and distinct values for up to 100 columns. On an engine
+  that bills by data scanned, Amazon Athena especially, that is a full scan of every covered table
+  every day, so estimate it before switching coverage on, and exclude large tables you don't need
+  watched this closely. Deleting the column-profile check from a suite stops it for that table for
+  good. Once a week each covered table is also profiled for suggested rules. A connection covers at most 500 tables (`AUTO_COVERAGE_MAX_ASSETS`); past
   that, the first 500 by name are covered and the overflow is logged.
 - **Who can see them.** Automatic suites have no human owner. Workspace admins see all of them
   and can share them; everyone sees the asset's health, which includes them.

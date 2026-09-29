@@ -2,10 +2,10 @@
 
 For every connection with ``auto_coverage`` switched on, each table its inventory lists (not
 excluded, still being seen) gets one suite with ``origin='auto'`` and no human owner, holding
-ordinary checks that report change against the table's own history: row count and freshness
-anomaly, and schema drift. The daily reconciler only ever ADDS what is missing: it never edits
-an existing check, never recreates one a person deleted, and pauses (never deletes) the suites
-of tables that stop being covered.
+ordinary checks that report change against the table's own history: row count, freshness and
+column-profile anomaly, and schema drift. The daily reconciler only ever ADDS what is missing:
+it never edits an existing check, never recreates one a person deleted, and pauses (never
+deletes) the suites of tables that stop being covered.
 """
 
 from __future__ import annotations
