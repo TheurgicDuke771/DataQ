@@ -823,3 +823,11 @@ This teardown was part of the approved re-provisioning plan. It ran after all th
 - **Verified:**
   - `az sql server list -g dataq-rg` is empty;
   - no `mssql-test*` secret remains, active or soft-deleted.
+
+## 2026-09-29 — Athena and Redshift live-test resources re-created for #1602 (us-east-2)
+
+User-approved (#1602 "option a": recreate briefly, verify the aggregate monitor's Athena and Redshift lanes, tear down). Run as `dataq-deploy` in account `251783195294`, same shape as the 2026-09-28 #2131/#1682 entries, tagged `purpose=dataq-1602-it`.
+
+- **2026-09-29T09:33:26Z — Athena:** IAM user `dataq-athena-it-reader` with inline policy `athena-read` (Athena query + Glue read, S3 read on `dataq-landing-251783195294/athena-data/*`, write on `…/athena-results/reader/*`). One access key minted straight into Secrets Manager as `dataq/it/athena-reader`, never printed or written to disk. Glue database `dataq_athena_it` (empty).
+- **2026-09-29T09:33:48Z — Redshift Serverless:** namespace `dataq-it-rs` (database `dev`, admin `dqadmin`, password managed by Redshift in `redshift!dataq-it-rs-dqadmin-…`) and workgroup `dataq-it-rs` (base 8 RPUs, publicly accessible). Inbound TCP 5439 from the maintainer's IP (/32) on the default VPC security group `sg-0c047e1aaf5c17416`.
+- **Expected state:** temporary. The live lanes have not run yet (the next step, waiting for the workgroup, was blocked by the auto-mode classifier as a security-weakening action, and is pending the maintainer's decision). **Teardown** when done: delete workgroup then namespace `dataq-it-rs`; force-delete `dataq/it/athena-reader` (and `dataq/it/redshift-reader` if created); delete the IAM user's access key, inline policy, then the user; delete Glue database `dataq_athena_it`; empty `athena-results/` and `athena-data/`; revoke the 5439 rule on `sg-0c047e1aaf5c17416`.
