@@ -498,3 +498,63 @@ def test_a_connection_test_always_presents_the_secret_to_entra(
     assert len(_FakeCredential.requests) == 2
     # And the fresh token does not stand in for a cached one either way.
     assert _token().token == "token-1"
+
+
+def _refusing_props(
+    fake: type[_RecordingClient], monkeypatch: pytest.MonkeyPatch, status: int
+) -> None:
+    from azure.core.exceptions import HttpResponseError
+
+    real = fake.get_container_client
+
+    def _container(self: _RecordingClient, name: str) -> Any:
+        container = real(self, name)
+
+        def _props() -> dict[str, str]:
+            self.calls.append(f"props:{name}")
+            error = HttpResponseError(message="AuthorizationPermissionMismatch")
+            error.status_code = status
+            raise error
+
+        container.get_container_properties = _props
+        return container
+
+    monkeypatch.setattr(fake, "get_container_client", _container)
+
+
+def test_a_container_sas_that_cannot_read_properties_tests_green_by_listing(
+    fake_sdk: type[_RecordingClient], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A service SAS can't read container properties (#2214) but lists and reads every blob.
+    _refusing_props(fake_sdk, monkeypatch, 403)
+
+    AdlsConnectionAdapter().test(dict(_SAS_CONFIG), "sv=1&sr=c&sp=rl&sig=x")
+
+    calls = _last(fake_sdk).calls
+    assert calls[0] == "props:data" and calls[1].startswith("walk:")
+    assert _last(fake_sdk).closed
+
+
+def test_a_container_sas_that_cannot_list_either_still_fails(
+    fake_sdk: type[_RecordingClient], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from azure.core.exceptions import HttpResponseError
+
+    _refusing_props(fake_sdk, monkeypatch, 403)
+    fake_sdk.walk_error = HttpResponseError(message="AuthorizationPermissionMismatch")
+
+    with pytest.raises(HttpResponseError):
+        AdlsConnectionAdapter().test(dict(_SAS_CONFIG), "sv=1&sr=c&sp=r&sig=x")
+    assert _last(fake_sdk).closed
+
+
+def test_a_non_permission_properties_failure_is_not_masked_by_the_listing(
+    fake_sdk: type[_RecordingClient], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from azure.core.exceptions import HttpResponseError
+
+    _refusing_props(fake_sdk, monkeypatch, 404)  # the container does not exist
+
+    with pytest.raises(HttpResponseError):
+        AdlsConnectionAdapter().test(dict(_SAS_CONFIG), "sv=1&sig=x")
+    assert _last(fake_sdk).calls == ["props:data"]
