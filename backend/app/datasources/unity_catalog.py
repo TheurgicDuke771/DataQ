@@ -23,6 +23,7 @@ from backend.app.datasources.base import (
 from backend.app.datasources.databricks_dqx import DQX_ENGINE, DqxJobs, run_dqx_batch
 from backend.app.datasources.gx_runner import ephemeral_gx_context, run_expectations
 from backend.app.datasources.monitors import (
+    AGGREGATE,
     FRESHNESS,
     VOLUME,
     row_count_from_scalar,
@@ -361,7 +362,7 @@ class UnityCatalogCheckRunner:
 
     # Runner-advertised monitor capability (#429): EXPLICITLY what this runner implements — never
     # frozenset(MONITOR_KINDS).
-    supported_monitor_kinds: ClassVar[frozenset[str]] = frozenset({FRESHNESS, VOLUME})
+    supported_monitor_kinds: ClassVar[frozenset[str]] = frozenset({FRESHNESS, VOLUME, AGGREGATE})
     # The run path hands a `value_signal_gate` only to runners advertising it (#2014).
     accepts_value_signal_gate: ClassVar[bool] = True
     # DQX (ADR 0036 §6) runs as a serverless job in the connection's own workspace.

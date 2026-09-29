@@ -29,9 +29,12 @@ from backend.app.datasources.base import (
 )
 from backend.app.datasources.gx_runner import ephemeral_gx_context, run_expectations
 from backend.app.datasources.monitors import (
+    AGGREGATE,
     FRESHNESS,
     VOLUME,
     MonitorConfigError,
+    aggregate_of_series,
+    aggregate_params,
     freshness_column,
     run_monitor_specs,
 )
@@ -1071,7 +1074,7 @@ def file_stat(
 class FlatFileCheckRunner:
     """`CheckRunner` for flat files — loads the file into pandas, runs GX on it."""
 
-    supported_monitor_kinds: ClassVar[frozenset[str]] = frozenset({FRESHNESS, VOLUME})
+    supported_monitor_kinds: ClassVar[frozenset[str]] = frozenset({FRESHNESS, VOLUME, AGGREGATE})
 
     def __init__(
         self,
@@ -1214,6 +1217,8 @@ class FlatFileCheckRunner:
             )
 
         def _wants_frame(spec: MonitorSpec) -> bool:
+            if spec.kind == AGGREGATE:
+                return True
             if spec.kind != FRESHNESS:
                 return False
             try:
@@ -1236,6 +1241,16 @@ class FlatFileCheckRunner:
         def scalar_for(spec: MonitorSpec) -> Any:
             if spec.kind == VOLUME:
                 return rows()
+            if spec.kind == AGGREGATE:
+                params = aggregate_params(spec.config)
+                df = dataframe()
+                if params.column not in df.columns:
+                    raise MonitorConfigError(
+                        f"aggregate column {params.column!r} is not in {table!r}"
+                    )
+                return aggregate_of_series(
+                    df[params.column], params.aggregate, source=params.source
+                )
             column = freshness_column(spec.config)
             if column is None:
                 return arrived_at

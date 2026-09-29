@@ -191,18 +191,21 @@ def _iceberg_estimate(
         summary_scan_fallback_reason,
     )
     from backend.app.datasources.monitors import (
+        AGGREGATE,
         FRESHNESS,
         VOLUME,
     )
 
     kinds = {c.kind for c in checks}
     monitors = kinds & {FRESHNESS, VOLUME}
-    if "expectation" not in kinds and not monitors:
+    # An aggregate monitor always scans its column, so it is priced like a read.
+    scans = bool(kinds & {"expectation", AGGREGATE})
+    if not scans and not monitors:
         return None
     config = IcebergConfig.model_validate(connection.config)
     secret, catalog_secret = iceberg_credentials(config, connection.secret_ref, get_secret_store())
     table = load_iceberg_table(config, secret, target.table, catalog_secret)
-    if "expectation" in kinds:
+    if scans:
         basis_prefix = "iceberg"
     else:
         # Monitors answer from snapshot metadata unless it cannot prove the answer; then the

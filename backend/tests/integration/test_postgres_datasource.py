@@ -707,3 +707,62 @@ def test_a_suite_run_persists_results_end_to_end(db_session: Any, pg: PgTarget) 
     assert by_check[checks[0].id].status == "fail"
     assert by_check[checks[1].id].status == "pass"
     assert by_check[checks[1].id].observed_value == {"row_count": 6, "deviation_pct": 0.0}
+
+
+# ───────────────────────── aggregate monitor (#1602) ─────────────────────────
+
+
+@pytest.fixture
+def pg_amounts(pg: PgTarget) -> Iterator[None]:
+    """A mixed-case NUMERIC column holding `AMOUNTS`, an all-NULL column, and an empty table —
+    created for this test, readable by the least-privileged role, dropped afterwards."""
+    from backend.tests.support.aggregate_lane import AMOUNTS
+
+    assert TEST_DATABASE_URL is not None
+    admin = create_engine(TEST_DATABASE_URL)
+    table, empty = f'"{pg.schema}"."Amounts"', f'"{pg.schema}".amounts_empty'
+    try:
+        with admin.begin() as conn:
+            conn.execute(text(f'CREATE TABLE {table} ("Amount" numeric(9, 2), blank numeric)'))
+            for value in AMOUNTS:
+                conn.execute(text(f"INSERT INTO {table} VALUES (:v, NULL)").bindparams(v=value))
+            conn.execute(text(f'CREATE TABLE {empty} ("Amount" numeric(9, 2))'))
+            conn.execute(text(f"GRANT SELECT ON {table}, {empty} TO {pg.role}"))
+        yield
+    finally:
+        with admin.begin() as conn:
+            conn.execute(text(f"DROP TABLE IF EXISTS {table}, {empty}"))
+        admin.dispose()
+
+
+def test_every_aggregate_is_exact_over_psycopg2(pg: PgTarget, pg_amounts: None) -> None:
+    from backend.tests.support.aggregate_lane import assert_aggregates
+
+    runner = _runner(pg)
+    try:
+        assert_aggregates(
+            runner,
+            table="Amounts",
+            schema=pg.schema,
+            column="Amount",
+            null_column="blank",
+            empty_table="amounts_empty",
+        )
+    finally:
+        runner.close()
+
+
+def test_the_aggregate_monitor_runs_and_previews_end_to_end(
+    db_session: Any, pg: PgTarget, pg_amounts: None
+) -> None:
+    from backend.tests.support.aggregate_lane import assert_run_path_and_dry_run
+
+    assert_run_path_and_dry_run(
+        db_session,
+        conn_type="postgres",
+        config=pg.config,
+        secret_ref="pg-ref",
+        secret_store=_store(pg),
+        target={"table": "Amounts", "schema": pg.schema},
+        column="Amount",
+    )

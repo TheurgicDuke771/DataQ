@@ -615,3 +615,65 @@ def test_a_suite_run_persists_results_end_to_end(db_session: Any, redshift: Reds
     }
     assert [by_check[c.id].status for c in checks] == ["fail", "fail", "pass", "pass"]
     assert by_check[checks[2].id].observed_value == {"row_count": 6, "deviation_pct": 0.0}
+
+
+# ───────────────────────── aggregate monitor (#1602) ─────────────────────────
+
+
+@pytest.fixture
+def redshift_amounts(redshift: RedshiftTarget) -> Iterator[None]:
+    """`AMOUNTS` in a DECIMAL column, an all-NULL column and an empty table in the module's
+    schema, readable by the reader and dropped afterwards."""
+    from backend.tests.support.aggregate_lane import AMOUNTS
+
+    table, empty = f"{redshift.schema}.amounts", f"{redshift.schema}.amounts_empty"
+    rows = ", ".join(f"({'NULL' if v is None else v}, NULL)" for v in AMOUNTS)
+    try:
+        _admin(
+            [
+                f"CREATE TABLE {table} (amount DECIMAL(9, 2), blank DOUBLE PRECISION)",
+                f"INSERT INTO {table} VALUES {rows}",
+                f"CREATE TABLE {empty} (amount DECIMAL(9, 2))",
+                f"GRANT SELECT ON {table}, {empty} TO {_READER}",
+            ]
+        )
+        yield
+    finally:
+        _admin([f"DROP TABLE IF EXISTS {table}", f"DROP TABLE IF EXISTS {empty}"])
+
+
+def test_every_aggregate_is_exact_over_psycopg2_on_redshift(
+    redshift: RedshiftTarget, redshift_amounts: None
+) -> None:
+    """Redshift keeps AVG and MEDIAN of a DECIMAL at the column's scale; the double cast is what
+    makes them exact."""
+    from backend.tests.support.aggregate_lane import assert_aggregates
+
+    runner = _runner(redshift)
+    try:
+        assert_aggregates(
+            runner,
+            table="amounts",
+            schema=redshift.schema,
+            column="amount",
+            null_column="blank",
+            empty_table="amounts_empty",
+        )
+    finally:
+        runner.close()
+
+
+def test_the_aggregate_monitor_runs_and_previews_end_to_end(
+    db_session: Any, redshift: RedshiftTarget, redshift_amounts: None
+) -> None:
+    from backend.tests.support.aggregate_lane import assert_run_path_and_dry_run
+
+    assert_run_path_and_dry_run(
+        db_session,
+        conn_type="redshift",
+        config=redshift.config,
+        secret_ref=_SECRET_REF,
+        secret_store=redshift.store,
+        target={"table": "amounts", "schema": redshift.schema},
+        column="amount",
+    )

@@ -342,8 +342,14 @@ def test_volume_bad_range_raises(config: dict[str, object]) -> None:
 
 
 def test_monitor_kinds_exposed() -> None:
-    assert monitors.MONITOR_KINDS == ("freshness", "volume", "schema_drift", "anomaly")
-    assert monitors.SCALAR_MONITOR_KINDS == ("freshness", "volume")
+    assert monitors.MONITOR_KINDS == (
+        "freshness",
+        "volume",
+        "schema_drift",
+        "anomaly",
+        "aggregate",
+    )
+    assert monitors.SCALAR_MONITOR_KINDS == ("freshness", "volume", "aggregate")
     # The partition is DERIVED from `build_statement is None`, not hand-listed.
     assert monitors.STATEFUL_MONITOR_KINDS == ("schema_drift", "anomaly")
 

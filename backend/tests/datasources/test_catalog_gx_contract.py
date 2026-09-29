@@ -188,7 +188,7 @@ def test_custom_sql_entry_matches_backend_constants() -> None:
 
 # Kinds the BACKEND supports that the frontend catalog does not offer yet, because their authoring
 # UI ships in a separate PR.
-_KINDS_PENDING_A_CATALOG_ENTRY: set[str] = set()
+_KINDS_PENDING_A_CATALOG_ENTRY: set[str] = {"aggregate"}
 
 
 def test_monitor_entries_match_backend_kinds() -> None:

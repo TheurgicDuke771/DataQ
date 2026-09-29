@@ -900,7 +900,9 @@ def test_sql_batch_expectation_types_is_explicit() -> None:
 def test_supported_monitor_kinds_is_explicit() -> None:
     # #880 review: NEVER frozenset(MONITOR_KINDS) — that would auto-advertise every future registry
     # kind and self-defeat the per-kind gate.
-    assert UnityCatalogCheckRunner.supported_monitor_kinds == frozenset({"freshness", "volume"})
+    assert UnityCatalogCheckRunner.supported_monitor_kinds == frozenset(
+        {"freshness", "volume", "aggregate"}
+    )
 
 
 # ───────────────── scale-aware execution: sampling + guardrail (#595) ─────────

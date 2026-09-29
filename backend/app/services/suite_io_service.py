@@ -175,6 +175,7 @@ def import_suite(
                 c["config"],
                 expectation_type=c["expectation_type"],
                 connection_type=connection.type,
+                warn_threshold=c["warn_threshold"],
                 fail_threshold=c["fail_threshold"],
                 critical_threshold=c["critical_threshold"],
             )

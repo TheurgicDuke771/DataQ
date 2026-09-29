@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import statistics
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any, ClassVar
 
 import pandas as pd
@@ -975,7 +977,9 @@ def test_freshness_unknown_column_on_real_schema_is_config_error(
 def test_supported_monitor_kinds_is_explicit() -> None:
     # #880 review: NEVER frozenset(MONITOR_KINDS) — that would auto-advertise every future registry
     # kind and self-defeat the per-kind gate.
-    assert IcebergCheckRunner.supported_monitor_kinds == frozenset({"freshness", "volume"})
+    assert IcebergCheckRunner.supported_monitor_kinds == frozenset(
+        {"freshness", "volume", "aggregate"}
+    )
 
 
 # ───────────────────────── scan cap (#1328), over a REAL local catalog ─
@@ -1221,3 +1225,131 @@ def test_the_comparison_dataset_reader_is_unaffected_by_the_run_cap(
         secret_store=FakeSecretStore(),
     )
     assert len(frame) == 3
+
+
+# ───────────────── aggregate monitor (#1602), over a REAL local catalog ─
+
+
+def _amount_table(catalog: Any, name: str, amounts: list[Any] | None) -> Any:
+    schema = pa.schema(
+        [("id", pa.int64()), ("amount", pa.decimal128(9, 2)), ("label", pa.string())]
+    )
+    table = catalog.create_table(name, schema=schema)
+    if amounts:
+        table.append(
+            pa.table(
+                {
+                    "id": pa.array(range(len(amounts)), pa.int64()),
+                    "amount": pa.array(amounts, pa.decimal128(9, 2)),
+                    "label": pa.array(["x"] * len(amounts), pa.string()),
+                },
+                schema=schema,
+            )
+        )
+    return table
+
+
+def _aggregate(aggregate: str, column: str = "amount", **bounds: Any) -> MonitorSpec:
+    return MonitorSpec(
+        kind="aggregate",
+        config={
+            "aggregate": aggregate,
+            "column": column,
+            **(bounds or {"min_value": 0}),
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    ("aggregate", "expected"),
+    [
+        ("mean", 61 / 3),
+        ("median", 20.5),
+        ("sum", 61.0),
+        ("stdev", statistics.stdev([10.5, 20.5, 30.0])),
+        ("min", 10.5),
+        ("max", 30.0),
+    ],
+)
+def test_an_iceberg_aggregate_reads_the_decimal_column_skipping_nulls(
+    tmp_path: Any, aggregate: str, expected: float
+) -> None:
+    catalog, properties = _local_catalog(tmp_path)
+    _amount_table(
+        catalog,
+        "sales.orders",
+        [Decimal("10.50"), None, Decimal("20.50"), Decimal("30.00")],
+    )
+    [outcome] = _local_runner(properties).run_monitors(
+        table="sales.orders", schema=None, monitors=[_aggregate(aggregate)]
+    )
+    assert outcome.errored is False, outcome.error_message
+    assert outcome.metric_value == pytest.approx(expected)
+    assert outcome.observed_value is not None
+    assert outcome.observed_value["source"] == "scan"
+
+
+@pytest.mark.parametrize("amounts", [None, [None, None]], ids=["empty", "all-null"])
+def test_an_iceberg_aggregate_with_no_values_errors_rather_than_reading_zero(
+    tmp_path: Any, amounts: list[Any] | None
+) -> None:
+    catalog, properties = _local_catalog(tmp_path)
+    _amount_table(catalog, "sales.orders", amounts)
+    [outcome] = _local_runner(properties).run_monitors(
+        table="sales.orders", schema=None, monitors=[_aggregate("sum", min_value=1)]
+    )
+    assert outcome.errored is True
+    assert outcome.metric_value is None
+    assert "SUM(amount) is NULL" in str(outcome.error_message)
+
+
+def test_an_iceberg_aggregate_over_a_bad_column_errors_alone(tmp_path: Any) -> None:
+    catalog, properties = _local_catalog(tmp_path)
+    _amount_table(catalog, "sales.orders", [Decimal("1.00")])
+    missing, text, ok = _local_runner(properties).run_monitors(
+        table="sales.orders",
+        schema=None,
+        monitors=[
+            _aggregate("max", "nope"),
+            _aggregate("max", "label"),
+            _aggregate("max"),
+        ],
+    )
+    assert "unknown aggregate column" in str(missing.error_message)
+    assert "non-numeric" in str(text.error_message)
+    assert ok.errored is False and ok.metric_value == 1.0
+
+
+def test_an_oversized_iceberg_aggregate_is_refused_before_the_scan(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RUN_MAX_SCAN_ROWS_ICEBERG", "2")
+    get_settings.cache_clear()
+    catalog, properties = _local_catalog(tmp_path)
+    _amount_table(catalog, "sales.orders", [Decimal("1"), Decimal("2"), Decimal("3")])
+    [outcome] = _local_runner(properties).run_monitors(
+        table="sales.orders", schema=None, monitors=[_aggregate("mean")]
+    )
+    assert outcome.errored is True
+    assert "over the scan cap of 2" in str(outcome.error_message)
+
+
+def test_an_iceberg_aggregate_runs_and_previews_end_to_end(db_session: Any, tmp_path: Any) -> None:
+    """Author → `execute_run` → `results.metric_value`, and `dry_run_check`, over the local
+    catalog with the shared lane dataset."""
+    from backend.tests.support.aggregate_lane import (
+        AMOUNTS,
+        assert_run_path_and_dry_run,
+    )
+
+    catalog, properties = _local_catalog(tmp_path)
+    _amount_table(catalog, "sales.amounts", AMOUNTS)
+    assert_run_path_and_dry_run(
+        db_session,
+        conn_type="iceberg",
+        config=properties,
+        secret_ref=None,
+        secret_store=FakeSecretStore({}),
+        target={"namespace": "sales", "table": "amounts"},
+        column="amount",
+    )

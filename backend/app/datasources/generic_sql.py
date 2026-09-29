@@ -35,7 +35,7 @@ from backend.app.datasources.base import (
     SuiteOutcome,
     ValueSignalGate,
 )
-from backend.app.datasources.monitors import FRESHNESS, VOLUME, run_monitors_over_engine
+from backend.app.datasources.monitors import AGGREGATE, FRESHNESS, VOLUME, run_monitors_over_engine
 from backend.app.datasources.sql import LazyEngine, is_sql_identifier, object_type
 
 if TYPE_CHECKING:
@@ -310,6 +310,9 @@ class SqlEngineSpec:
     config_unsupported_expectation_types: (
         Callable[[GenericSqlConfig], tuple[frozenset[str], str]] | None
     ) = None
+    #: Whether the engine has an exact median aggregate — the `aggregate` monitor's median is
+    #: refused at author time where it has only an approximate percentile (or none).
+    exact_median: bool = True
     #: OpenLineage's convention for a regional service endpoint (Athena) names no port.
     namespace_includes_port: bool = True
     #: ``config`` → the namespace's host part, for an engine whose OpenLineage convention is not
@@ -502,7 +505,7 @@ class GenericSqlCheckRunner:
     """`CheckRunner` for a generic SQL engine: one GX SQL batch per run, monitors by scalar SQL."""
 
     # Runner-advertised monitor capability (#429): EXPLICITLY what this runner implements.
-    supported_monitor_kinds: ClassVar[frozenset[str]] = frozenset({FRESHNESS, VOLUME})
+    supported_monitor_kinds: ClassVar[frozenset[str]] = frozenset({FRESHNESS, VOLUME, AGGREGATE})
     # The run path hands a `value_signal_gate` only to runners advertising it (#2014).
     accepts_value_signal_gate: ClassVar[bool] = True
 
