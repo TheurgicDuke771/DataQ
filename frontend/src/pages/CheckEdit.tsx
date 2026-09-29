@@ -271,6 +271,7 @@ function CheckEditForm({
                   field={field}
                   connectionType={connectionType}
                   configValues={configValues}
+                  dmfCapability={dmfCapability}
                 />
               ))}
             <DimensionField spec={spec} />
@@ -284,7 +285,7 @@ function CheckEditForm({
             <ColumnProfilePanel suiteId={suiteId} target={target} column={column} />
           </Form.Item>
         )}
-        {!spec?.kind && effectiveEngine === 'gx' && (
+        {!spec?.kind && effectiveEngine !== 'dqx' && (
           <Form.Item>
             <DryRunPreview
               suiteId={suiteId}
