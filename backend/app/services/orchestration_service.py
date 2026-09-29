@@ -244,11 +244,42 @@ def _record_env_near_misses(
             )
 
 
+def trigger_marker(provider: str, pipeline_or_dag_id: str, provider_run_id: str) -> str:
+    """The `runs.triggered_by` value that correlates a suite run with one pipeline run."""
+    return f"{provider}:{pipeline_or_dag_id}:{provider_run_id}"
+
+
+def insert_triggered_run(session: Session, *, suite_id: uuid.UUID, marker: str) -> Run | None:
+    """Queue one run of ``suite_id`` for ``marker``, or ``None`` if one already exists.
+
+    Atomic dedup: the partial unique index `uq_runs_suite_triggered_by` (#308) + ON CONFLICT DO
+    NOTHING makes a second ingestion of the same pipeline-run event (webhook + poll, poll +
+    gap-recovery, or a pipeline gate + the run's own success event) a no-op instead of a
+    double-trigger or an IntegrityError. The caller commits and dispatches.
+    """
+    return session.scalars(
+        pg_insert(Run)
+        .values(
+            suite_id=suite_id,
+            # Bespoke Run construction (atomic dedup needs pg_insert) — the ORM sibling is
+            # `run_dispatch.new_queued_run`; a new stamped run field must land in BOTH.
+            asset_id=select(Suite.asset_id).where(Suite.id == suite_id).scalar_subquery(),
+            status="queued",
+            triggered_by=marker,
+        )
+        .on_conflict_do_nothing(
+            index_elements=["suite_id", "triggered_by"],
+            index_where=_ORCH_TRIGGER_PREDICATE,
+        )
+        .returning(Run)
+    ).one_or_none()
+
+
 def _trigger_suites(
     session: Session, *, provider: str, connection: Connection, update: RunUpdate
 ) -> list[Run]:
     """Create one queued `Run` per enabled `trigger_binding` for a succeeded run."""
-    marker = f"{provider}:{update.pipeline_or_dag_id}:{update.provider_run_id}"
+    marker = trigger_marker(provider, update.pipeline_or_dag_id, update.provider_run_id)
     bindings = list(
         session.scalars(
             select(TriggerBinding).where(
@@ -263,28 +294,7 @@ def _trigger_suites(
         _record_env_near_misses(session, provider=provider, connection=connection, update=update)
     created: list[Run] = []
     for binding in bindings:
-        # Atomic dedup: the partial unique index `uq_runs_suite_triggered_by` (#308) + ON CONFLICT
-        # DO NOTHING makes a concurrent second ingestion of the same pipeline-run event (webhook +
-        # poll, or poll + gap-recovery) a graceful no-op instead of a double-trigger or an
-        # IntegrityError.
-        run = session.scalars(
-            pg_insert(Run)
-            .values(
-                suite_id=binding.suite_id,
-                # Bespoke Run construction (atomic dedup needs pg_insert) — the ORM sibling is
-                # `run_dispatch.new_queued_run`; a new stamped run field must land in BOTH.
-                asset_id=select(Suite.asset_id)
-                .where(Suite.id == binding.suite_id)
-                .scalar_subquery(),
-                status="queued",
-                triggered_by=marker,
-            )
-            .on_conflict_do_nothing(
-                index_elements=["suite_id", "triggered_by"],
-                index_where=_ORCH_TRIGGER_PREDICATE,
-            )
-            .returning(Run)
-        ).one_or_none()
+        run = insert_triggered_run(session, suite_id=binding.suite_id, marker=marker)
         if run is not None:
             created.append(run)
 

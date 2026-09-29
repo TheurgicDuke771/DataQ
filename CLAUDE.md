@@ -113,11 +113,12 @@ DataQ/
 - Trino — any cluster (incl. Starburst), one catalog per connection (#1685), the federation multiplier on the same base. **No read-only session exists on Trino** — the Trino user's access control is the guarantee; names must be lower case; password/JWT only over verified TLS. Amazon Athena was split out to #2131.
 - SQL Server / T-SQL (`mssql`, #1679, ADR 0044) — SQL Server, Azure SQL, Synapse, Fabric SQL on the same base. Driver `python-tds` (MIT, shipped) with DataQ's own hostname validator + named-instance fix (`datasources/mssql_tds.py`); TLS always verified; SQL login or Entra service principal. **Not read-only at the session** (TDS has no such setting) — the custom-SQL gate + a `db_datareader` login are the guard. Fabric needs the user-installed ODBC lane until #2126; DataQ never ships msodbcsql18/pyodbc.
 
-**Orchestration providers** are NOT datasources. They are workflow engines whose pipelines/DAGs we observe and react to. Their *only* three responsibilities in DataQ:
+**Orchestration providers** are NOT datasources. They are workflow engines whose pipelines/DAGs we observe and react to. Their *only* four responsibilities in DataQ:
 
 1. **Monitor** pipeline/DAG runs → stored in `pipeline_runs` table (separate from `runs` / `results`).
 2. **Detect failure** in near-real-time via provider-specific event channels (webhook for both).
 3. **Trigger suite execution on successful completion** via `trigger_bindings` (`provider`, `pipeline_or_dag_id`, `suite_id`, `env`). Failure events alert the user but do NOT trigger suite runs.
+4. **Answer a gate request** (ADR 0046): `POST /api/v1/orchestration/gate` lets a pipeline stage start its bound suites for this run and wait for the verdict, or only read it. Provider-agnostic (keyed by bindings and the `triggered_by` marker, which also keeps it idempotent with responsibility 3). DataQ still never pauses or fails a pipeline — the customer's DAG acts on the answer.
 
 All three providers implement a single `OrchestrationProvider` interface — ADF is the reference implementation, Airflow is the second, dbt (ADR 0029) is the third (artifact-poll + HMAC callback, no host REST API). **Never hardcode ADF-only logic; always go through the abstraction.**
 
