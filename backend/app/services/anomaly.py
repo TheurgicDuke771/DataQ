@@ -18,6 +18,8 @@ from backend.app.datasources.base import CheckOutcome
 from backend.app.datasources.monitors import (
     ANOMALY,
     ANOMALY_DEGENERATE_Z,
+    COLUMN_PROFILE_MAX_COLUMNS,
+    COLUMN_PROFILE_METRIC,
     FRESHNESS,
     ROW_COUNT_METRIC,
     VOLUME,
@@ -25,15 +27,22 @@ from backend.app.datasources.monitors import (
     MonitorConfigError,
     anomaly_params,
     build_monitor_statement,
+    column_profile_statement,
     freshness_age_hours,
     monitor_expectation_type,
     monitor_outcome,
+    qualified_table,
     row_count_from_scalar,
 )
 from backend.app.db.models import Check, Connection, MonitorBaseline
 from backend.app.services.failure_classifier import safe_failure_reason
 from backend.app.services.monitor_baseline import get_baseline, insert_baseline_if_absent
-from backend.app.services.profile_service import ProfileUnsupportedError, _open_connection
+from backend.app.services.profile_service import (
+    ProfileUnsupportedError,
+    _open_connection,
+    build_columns_query,
+    resolve_effective_schema,
+)
 
 log = get_logger(__name__)
 
@@ -92,6 +101,186 @@ def measure_metric(
         # An empty table (or an all-NULL column) has no age.
         raise MonitorConfigError(f"{source} is unavailable, anomaly can't measure freshness age")
     return freshness_age_hours(scalar, now=now, source=source, column=params.column)
+
+
+# ───────────────────────── column profile (ADR 0047) ─────────────────────────
+
+NULL_PCT = "null_pct"
+DISTINCT = "distinct"
+_SERIES_SEP = "\x1f"
+#: Spread floors, so a steady series is not flagged for a trivial change: null % never below
+#: 1 percentage point, distinct count never below 10% of its mean.
+_NULL_PCT_STDDEV_FLOOR = 1.0
+_DISTINCT_STDDEV_FLOOR_RATIO = 0.1
+#: Deviations named in the result, largest first.
+_COLUMN_PROFILE_REPORTED = 10
+
+
+@dataclass(frozen=True)
+class ColumnProfile:
+    row_count: int
+    series: dict[str, float]
+    columns_measured: int
+    columns_total: int
+    distinct_available: bool
+
+
+def series_key(column: str, metric: str) -> str:
+    return f"{column}{_SERIES_SEP}{metric}"
+
+
+def measure_column_profile(
+    connection: Connection,
+    *,
+    table: str,
+    schema: str | None,
+    catalog: str | None,
+    secret_store: SecretStore,
+) -> ColumnProfile:
+    """Every column's null % and distinct count, in one query (null % only if the distinct pass
+    fails, e.g. on a type that can't be cast to a string)."""
+    effective_schema = resolve_effective_schema(connection, schema)
+    try:
+        with _open_connection(connection, secret_store) as conn:
+            dialect = conn.dialect if catalog is not None else None
+            columns_all = list(
+                conn.execute(build_columns_query(effective_schema, table, catalog, dialect)).keys()
+            )
+            columns = columns_all[:COLUMN_PROFILE_MAX_COLUMNS]
+            target = qualified_table(table=table, schema=schema, catalog=catalog, dialect=dialect)
+            distinct = True
+            try:
+                row = conn.execute(column_profile_statement(target, columns, distinct=True)).one()
+            except Exception:
+                # A column type the engine can't cast or compare: keep the null rates.
+                conn.rollback()
+                distinct = False
+                row = conn.execute(column_profile_statement(target, columns, distinct=False)).one()
+    except ProfileUnsupportedError as exc:
+        raise MonitorConfigError(
+            f"anomaly monitors need a SQL datasource, not {connection.type!r}"
+        ) from exc
+    values = list(row)
+    row_count = int(row_count_from_scalar(values[0]))
+    series: dict[str, float] = {}
+    step = 2 if distinct else 1
+    for i, name in enumerate(columns):
+        non_null = int(values[1 + i * step] or 0)
+        if row_count > 0:
+            series[series_key(name, NULL_PCT)] = round(
+                100.0 * (row_count - non_null) / row_count, 6
+            )
+        if distinct:
+            series[series_key(name, DISTINCT)] = float(values[2 + i * step] or 0)
+    return ColumnProfile(
+        row_count=row_count,
+        series=series,
+        columns_measured=len(columns),
+        columns_total=len(columns_all),
+        distinct_available=distinct,
+    )
+
+
+def load_profile_observations(
+    row: MonitorBaseline | None,
+) -> list[tuple[datetime, dict[str, float]]]:
+    if row is None:
+        return []
+    payload = row.baseline if isinstance(row.baseline, dict) else {}
+    if payload.get("version") != BASELINE_VERSION:
+        return []
+    if payload.get("target_metric") != COLUMN_PROFILE_METRIC:
+        return []
+    out: list[tuple[datetime, dict[str, float]]] = []
+    for entry in payload.get("observations") or []:
+        if not isinstance(entry, dict) or not isinstance(entry.get("values"), dict):
+            continue
+        try:
+            ts = as_utc(datetime.fromisoformat(str(entry.get("ts"))))
+        except (TypeError, ValueError):
+            continue
+        values = {
+            str(k): float(v)
+            for k, v in entry["values"].items()
+            if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+        }
+        out.append((ts, values))
+    return out
+
+
+def score_column_profile(
+    profile: ColumnProfile,
+    observations: list[tuple[datetime, dict[str, float]]],
+    *,
+    now: datetime,
+    params: AnomalyParams,
+) -> dict[str, Any]:
+    """Score each series against its own history. Null % counts in both directions; a distinct
+    count only when it falls (growth is normal; a collapse is not)."""
+    considered = (
+        [o for o in observations if o[0].weekday() == now.weekday()]
+        if params.seasonality
+        else observations
+    )
+    deviations: list[dict[str, Any]] = []
+    scored = 0
+    for key, value in profile.series.items():
+        priors = [vals[key] for _, vals in considered if key in vals][-params.window :]
+        if len(priors) < params.min_points:
+            continue
+        scored += 1
+        column, _, metric = key.partition(_SERIES_SEP)
+        mean = statistics.fmean(priors)
+        stddev = statistics.stdev(priors) if len(priors) > 1 else 0.0
+        if metric == NULL_PCT:
+            spread = max(stddev, _NULL_PCT_STDDEV_FLOOR)
+            z = abs(value - mean) / spread
+        else:
+            spread = max(stddev, _DISTINCT_STDDEV_FLOOR_RATIO * abs(mean))
+            z = (mean - value) / spread if spread > 0 and value < mean else 0.0
+        deviations.append(
+            {
+                "column": column,
+                "metric": metric,
+                "value": round(value, 6),
+                "mean": round(mean, 6),
+                "z_score": round(z, 6),
+            }
+        )
+    deviations.sort(key=lambda d: d["z_score"], reverse=True)
+    payload: dict[str, Any] = {
+        "target_metric": COLUMN_PROFILE_METRIC,
+        "row_count": profile.row_count,
+        "columns_measured": profile.columns_measured,
+        "columns_total": profile.columns_total,
+        "distinct_available": profile.distinct_available,
+        "series_scored": scored,
+        "window": params.window,
+        "min_points": params.min_points,
+        "seasonality": params.seasonality,
+    }
+    if scored == 0:
+        payload["insufficient_history"] = True
+        payload["reason"] = "insufficient_history"
+        return payload
+    payload["z_score"] = deviations[0]["z_score"]
+    payload["deviations"] = deviations[:_COLUMN_PROFILE_REPORTED]
+    return payload
+
+
+def dump_profile_baseline(
+    observations: list[tuple[datetime, dict[str, float]]], params: AnomalyParams
+) -> dict[str, Any]:
+    return {
+        "version": BASELINE_VERSION,
+        "target_metric": COLUMN_PROFILE_METRIC,
+        "window": params.window,
+        "seasonality": params.seasonality,
+        "observations": [
+            {"ts": ts.isoformat(), "values": values}
+            for ts, values in observations[-params.retained_observations :]
+        ],
+    }
 
 
 # ───────────────────────── baseline payload ─────────────────────────
@@ -218,6 +407,8 @@ def build_anomaly_executor(
         now = datetime.now(UTC)
         try:
             params = anomaly_params(config)
+            if params.target_metric == COLUMN_PROFILE_METRIC:
+                return _column_profile_outcome(check, config, params, now)
             value = measure_metric(
                 connection,
                 table=target_table,
@@ -265,6 +456,34 @@ def build_anomaly_executor(
         if persist:
             kept = trim([*observations, Observation(ts=now, value=value)], params)
             baseline = dump_baseline(kept, params)
+            if row is None:
+                insert_baseline_if_absent(
+                    session, check_id=check.id, kind=ANOMALY, baseline=baseline
+                )
+            else:
+                row.baseline = baseline
+        else:
+            payload["dry_run"] = True
+        return monitor_outcome(ANOMALY, scalar=payload, config=config, now=now)
+
+    def _column_profile_outcome(
+        check: Check, config: dict[str, Any], params: AnomalyParams, now: datetime
+    ) -> CheckOutcome:
+        profile = measure_column_profile(
+            connection,
+            table=target_table,
+            schema=target_schema,
+            catalog=target_catalog,
+            secret_store=secret_store,
+        )
+        row = get_baseline(session, check.id, for_update=persist)
+        observations = load_profile_observations(row)
+        payload = score_column_profile(profile, observations, now=now, params=params)
+        if row is not None:
+            payload["baseline_captured_at"] = row.captured_at.isoformat()
+            payload["baseline_updated_at"] = row.updated_at.isoformat()
+        if persist:
+            baseline = dump_profile_baseline([*observations, (now, profile.series)], params)
             if row is None:
                 insert_baseline_if_absent(
                     session, check_id=check.id, kind=ANOMALY, baseline=baseline

@@ -310,9 +310,13 @@ def _schema_drift_outcome(scalar: Any, config: dict[str, Any], now: datetime) ->
 
 ROW_COUNT_METRIC = "row_count"
 FRESHNESS_AGE_METRIC = "freshness_age_hours"
+# Every column's null % and distinct count in one query, each baselined separately (ADR 0047).
+COLUMN_PROFILE_METRIC = "column_profile"
 # RAW quantities, not other monitors' banded metrics — an anomaly check is
 # self-contained and never depends on a sibling check.
-ANOMALY_TARGET_METRICS = (ROW_COUNT_METRIC, FRESHNESS_AGE_METRIC)
+ANOMALY_TARGET_METRICS = (ROW_COUNT_METRIC, FRESHNESS_AGE_METRIC, COLUMN_PROFILE_METRIC)
+#: Columns one column_profile run measures (first N by table order; the rest are reported).
+COLUMN_PROFILE_MAX_COLUMNS = 100
 
 _ANOMALY_DEFAULT_WINDOW = 14
 _ANOMALY_DEFAULT_MIN_POINTS = 7
@@ -373,7 +377,7 @@ def anomaly_params(config: dict[str, Any]) -> AnomalyParams:
         # author about what is watched.
         raise MonitorConfigError(
             f"anomaly column applies only to target_metric={FRESHNESS_AGE_METRIC!r}; "
-            f"{ROW_COUNT_METRIC!r} measures COUNT(*) and takes no column"
+            f"{target_metric!r} takes no column"
         )
     else:
         column = None
@@ -398,6 +402,24 @@ def anomaly_params(config: dict[str, Any]) -> AnomalyParams:
         min_points=min_points,
         seasonality=seasonality,
     )
+
+
+def column_profile_statement(
+    target: TableClause, columns: list[str], *, distinct: bool
+) -> Select[Any]:
+    """One row: ``COUNT(*)``, then per column ``COUNT(col)`` and (when ``distinct``) the distinct
+    count over the column cast to a string, so a JSON or variant column can still be counted."""
+    from sqlalchemy import String, cast, func, select
+    from sqlalchemy import column as sql_column
+    from sqlalchemy import distinct as sql_distinct
+
+    parts: list[Any] = [func.count()]
+    for name in columns:
+        col: Any = sql_column(folding_identifier(name))
+        parts.append(func.count(col))
+        if distinct:
+            parts.append(func.count(sql_distinct(cast(col, String))))
+    return select(*parts).select_from(target)
 
 
 def _validate_anomaly(config: dict[str, Any]) -> None:

@@ -1054,6 +1054,26 @@ see what "normal" currently means. SQL datasources only: the anomaly executor ta
 its own measurement over a live SQL connection, which the natively-computed Iceberg
 and flat-file monitor paths don't expose.
 
+**Column profile** is a third target metric that watches every column at once. One
+query per run measures each column's **null percentage** and **distinct count**, and
+each of those gets its own history. The result names the columns that moved, largest
+deviation first, and its metric (the z-score the thresholds read) is the largest one.
+
+- A null rate is flagged whichever way it moves. A distinct count is flagged only when
+  it **falls**: a growing table's distinct counts rise every day, but a column that
+  collapses from 50 values to 1 is a problem.
+- A column that has never had a null is not flagged for one stray null: the spread a
+  null rate is measured against is never taken as less than 1 percentage point, and a
+  distinct count's never as less than 10% of its mean.
+- It measures the first 100 columns in table order and reports how many there are in
+  total. If a column's type can't be counted distinct, it keeps the null rates and says
+  `distinct_available: false` rather than failing.
+
+For example, with `{"target_metric": "column_profile", "window": 8, "min_points": 3}` on
+`orders`, three runs build the history. When a load then leaves `customer_email` empty,
+the next run reports `customer_email` · `null_pct` · value `100` against a mean of about
+`2`, and fails.
+
 ### Comparison check (all datasources — ADR 0015)
 
 *Does this dataset reconcile against that one?* A comparison check diffs the suite's
