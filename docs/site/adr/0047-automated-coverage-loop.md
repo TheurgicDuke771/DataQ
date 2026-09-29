@@ -32,9 +32,13 @@ and a wrong claim is a false alert on every run.
    asset, `suites.origin = 'auto'` (a new column, `'user'` for everything else; one automatic
    suite per asset, enforced by a partial unique index). It holds ordinary checks of existing
    kinds and runs through the same runner, results, incidents, severity routing, notifications,
-   UI and MCP as any suite. There is no second result path. Ownership follows ADR 0027: the
-   admin who switched coverage on owns the suites, workspace admins see all of them, and the
-   asset's health rollup stays workspace-true (ADR 0037), so every member sees the verdict.
+   UI and MCP as any suite. There is no second result path. The suites have **no human owner**
+   (`created_by` is NULL, and their creation is a machine write kept out of the audit log,
+   ADR 0041 §2.1). Visibility follows ADR 0027: workspace admins see all of them and can share
+   them like any suite, and the asset's health rollup stays workspace-true (ADR 0037), so every
+   member sees the verdict. *(Amended 2026-09-30: the first draft named the admin who switched
+   coverage on as owner; an owner who never created the suite made no sense for a system-owned
+   one.)*
 
 3. **Universal baselines start without approval.** Each automatic suite gets, where the table
    allows:
