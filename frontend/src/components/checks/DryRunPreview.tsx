@@ -63,6 +63,7 @@ export function DryRunPreview({
       });
       const result = await dryRunCheck(suiteId, {
         expectation_type: expectationType,
+        engine: payload.engine,
         config: payload.config,
         warn_threshold: payload.warn_threshold,
         fail_threshold: payload.fail_threshold,

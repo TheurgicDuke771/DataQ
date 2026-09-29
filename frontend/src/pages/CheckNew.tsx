@@ -71,6 +71,8 @@ export function CheckNew() {
   const spec = expectationType ? EXPECTATION_BY_TYPE[expectationType] : undefined;
   const showEngineChoice = showEngineChoiceFor(spec, connectionType);
   const effectiveEngine = effectiveEngineFor(spec, connectionType, engineChoice);
+  const dmfCapability =
+    state.status === 'ok' ? state.data.connection?.engine_capabilities?.dmf : undefined;
 
   // Start the config form clean each time an expectation is (re)picked — after the <Form> mounts
   // (it only renders in the config step).
@@ -135,13 +137,7 @@ export function CheckNew() {
           <Form.Item name="name" label="Name" rules={[{ required: true }]}>
             <Input placeholder="e.g. order_id not null" />
           </Form.Item>
-          {showEngineChoice && (
-            <EngineField
-              dmfCapability={
-                state.status === 'ok' ? state.data.connection?.engine_capabilities?.dmf : undefined
-              }
-            />
-          )}
+          {showEngineChoice && <EngineField dmfCapability={dmfCapability} />}
           {suiteId && isCustomSql(expectationType) && (
             <Form.Item>
               <SqlGeneratePanel suiteId={suiteId} form={form} />
@@ -163,6 +159,7 @@ export function CheckNew() {
                   field={field}
                   connectionType={connectionType}
                   configValues={configValues}
+                  dmfCapability={dmfCapability}
                 />
               ))
           )}
@@ -173,7 +170,7 @@ export function CheckNew() {
               <Form.Item>
                 <ColumnProfilePanel suiteId={suiteId} target={target} column={column} />
               </Form.Item>
-              {!spec.kind && effectiveEngine === 'gx' && (
+              {!spec.kind && effectiveEngine !== 'dqx' && (
                 <Form.Item>
                   <DryRunPreview
                     suiteId={suiteId}

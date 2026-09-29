@@ -272,6 +272,8 @@ _TEXT_BYTES_PER_CHAR = 3
 _NESTED_CELL_BYTES = 170
 _NESTED_BYTES_PER_CHAR = 6.5
 _LENGTH_SAMPLE_ROWS = 1000
+#: Rows of the ``TABLESAMPLE`` draw the width probe averages lengths over beyond the head (#2221).
+_WIDTH_SAMPLE_ROWS = 10_000
 
 
 def _fixed_cell_bytes(arrow_type: Any) -> int | None:
@@ -328,6 +330,25 @@ def _mean_text_length(column: Any) -> float:
         return sum(len(str(v)) for v in values) / len(values) if values else 0.0
     mean = pc.mean(lengths).as_py()
     return float(mean) if mean is not None else 0.0
+
+
+def _length_expression(column: str, arrow_type: Any) -> str:
+    """Databricks SQL for the length `_mean_text_length` measures on ``column`` (quoted)."""
+    import pyarrow as pa
+
+    if pa.types.is_nested(arrow_type):
+        return f"length(to_json({column}))"
+    if any(
+        check(arrow_type)
+        for check in (
+            pa.types.is_string,
+            pa.types.is_large_string,
+            pa.types.is_binary,
+            pa.types.is_large_binary,
+        )
+    ):
+        return f"length({column})"
+    return f"length(CAST({column} AS STRING))"
 
 
 def _fetchall_arrow(cursor: Any) -> Any:
@@ -474,11 +495,19 @@ class UnityCatalogCheckRunner:
                 conn.execute(select(func.count()).select_from(target)).scalar_one()
             )
 
-    def _probe_row_bytes(self, *, table: str, schema: str | None) -> int:
-        """Column types and text lengths from a head sample's Arrow result — the width probe."""
+    def _probe_row_bytes(
+        self, *, table: str, schema: str | None, total_rows: int | None = None
+    ) -> int:
+        """Column types from a head read's Arrow schema; text lengths from the head AND a random
+        draw across the table, the longer mean winning (#2221).
+
+        A head alone sees only the first files, so a table whose later loads hold longer text
+        is priced from the short ones. A head shorter than its limit is the whole table, so it
+        needs no draw. ``total_rows`` sizes the draw; it is counted when not passed.
+        """
+        qualified = self._qualified(table, schema)
         head = self._fetch_arrow(
-            f"SELECT * FROM {self._qualified(table, schema)} "  # noqa: S608  # nosec B608
-            f"LIMIT {_LENGTH_SAMPLE_ROWS}"
+            f"SELECT * FROM {qualified} LIMIT {_LENGTH_SAMPLE_ROWS}"  # noqa: S608  # nosec B608
         )
         columns = {field.name: field.type for field in head.schema}
         lengths = {
@@ -486,7 +515,40 @@ class UnityCatalogCheckRunner:
             for name, kind in columns.items()
             if _fixed_cell_bytes(kind) is None
         }
+        if lengths and head.num_rows >= _LENGTH_SAMPLE_ROWS:
+            if total_rows is None:
+                total_rows = self._count_rows(table=table, schema=schema)
+            drawn = self._sampled_lengths(qualified, {n: columns[n] for n in lengths}, total_rows)
+            lengths = {name: max(mean, drawn.get(name, 0.0)) for name, mean in lengths.items()}
         return frame_row_bytes(columns, lengths)
+
+    def _sampled_lengths(
+        self, qualified: str, columns: dict[str, Any], total_rows: int
+    ) -> dict[str, float]:
+        """Mean length of each column over a Bernoulli draw of ~`_WIDTH_SAMPLE_ROWS` rows,
+        aggregated in the warehouse so one row comes back, whatever the widths.
+
+        No ``LIMIT`` on the draw: it would keep whichever files the warehouse read first,
+        the head bias again (it priced a skewed table 1.2x its exact mean, live).
+        """
+        quote = self._engine.get().dialect.identifier_preparer.quote_identifier
+        names = list(columns)
+        averages = ", ".join(
+            f"avg({_length_expression(quote(name), columns[name])}) AS w{i}"
+            for i, name in enumerate(names)
+        )
+        projection = ", ".join(quote(name) for name in names)
+        percent = format_sample_percent(_sample_percent(_WIDTH_SAMPLE_ROWS, total_rows))
+        drawn = self._fetch_arrow(
+            f"SELECT {averages} FROM (SELECT {projection} FROM {qualified} "  # noqa: S608  # nosec B608
+            f"TABLESAMPLE ({percent} PERCENT))"
+        )
+        values = drawn.to_pylist()[0] if drawn.num_rows else {}
+        return {
+            name: float(values[f"w{i}"])
+            for i, name in enumerate(names)
+            if values.get(f"w{i}") is not None
+        }
 
     def probe_frame(self, *, table: str, schema: str | None) -> tuple[int, int]:
         """``(rows, bytes per row)`` of the frame this runner's read would materialise.
@@ -498,13 +560,16 @@ class UnityCatalogCheckRunner:
             rows = self._sampling.rows
         else:
             rows = self._count_rows(table=table, schema=schema)
-        return rows, self._probe_row_bytes(table=table, schema=schema)
+        total = None if self._sampling is not None else rows
+        return rows, self._probe_row_bytes(table=table, schema=schema, total_rows=total)
 
-    def _enforce_frame_cap(self, rows: int, *, table: str, schema: str | None) -> None:
+    def _enforce_frame_cap(
+        self, rows: int, *, table: str, schema: str | None, total_rows: int | None = None
+    ) -> None:
         cap = get_settings().run_max_frame_bytes
         if cap <= 0:
             return
-        row_bytes = self._probe_row_bytes(table=table, schema=schema)
+        row_bytes = self._probe_row_bytes(table=table, schema=schema, total_rows=total_rows)
         enforce_frame_cap(rows, row_bytes=row_bytes, cap=cap, target=f"table {table!r}")
 
     def _read_sampled_table(
@@ -571,7 +636,7 @@ class UnityCatalogCheckRunner:
         if cap > 0 or settings.run_max_frame_bytes > 0:
             rows = self._count_rows(table=table, schema=schema)
             enforce_row_cap(rows, cap=cap, target=f"table {table!r}")
-            self._enforce_frame_cap(rows, table=table, schema=schema)
+            self._enforce_frame_cap(rows, table=table, schema=schema, total_rows=rows)
         return self._read_table(table=table, schema=schema), None
 
     def run_checks(

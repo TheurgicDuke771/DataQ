@@ -208,33 +208,59 @@ def _fixed_cell_bytes(arrow_type: Any) -> int | None:
     return None
 
 
+def _on_disk_row_bytes(task: Any) -> float:
+    return int(task.file.file_size_in_bytes) / max(int(task.file.record_count), 1)
+
+
+def _sample_files(tasks: list[Any]) -> list[Any]:
+    """The data files the width sample reads: the first planned (the head, as before #2221), the
+    largest, and the one with the most on-disk bytes per row — the file most likely to hold
+    the long text a head sample misses. At most three reads, whatever the file count.
+    """
+    if not tasks:
+        return []
+    picks = [
+        tasks[0],
+        max(tasks, key=lambda t: int(t.file.file_size_in_bytes)),
+        max(tasks, key=_on_disk_row_bytes),
+    ]
+    return list({t.file.file_path: t for t in picks}.values())
+
+
 def _sampled_cell_sizes(table: Any, variable: list[tuple[int, Any]]) -> dict[int, float]:
-    """Mean Arrow bytes per cell of each variable-width field, keyed by field id, from the first
-    rows of the first data file. A field is missing when it could not be sampled: the file is
-    not Parquet, it lacks the column, or reading it failed.
+    """Mean Arrow bytes per cell of each variable-width field, keyed by field id: the largest
+    per-file mean over the first rows of each file `_sample_files` picks (#2221). A field is
+    missing when no picked file holds the column.
+
+    A picked file that cannot be sampled — not Parquet, or its read failed — prices every
+    field at the conservative fallback, since it may hold the widest cells.
 
     Read straight from the Parquet file, one column at a time: a pyiceberg scan honours a row
     limit only after reading whole files, which cost 0.9 GiB to sample 1,000 rows of a
     long-text table on the rig. Matched by field id, so a renamed column still resolves (by
     name only for a file written without ids).
     """
-    task = next(iter(table.scan().plan_files()), None)
-    if task is None:
-        return {}
-    fmt = task.file.file_format
-    if str(getattr(fmt, "value", fmt)).lower() != "parquet":
-        return {}
-    try:
-        return _read_cell_sizes(table, task.file.file_path, variable)
-    except Exception:
-        # The data file is unreadable while the metadata was not (a 403 on data files, a
-        # timeout): price every column at the fallback rather than leave the run unmetered.
-        log.warning(
-            "iceberg_width_sample_failed",
-            table=".".join(str(part) for part in table.name()),
-            exc_info=True,
-        )
-        return {}
+    fallback = {field_id: float(_UNSAMPLED_CELL_ARROW_BYTES) for field_id, _ in variable}
+    sizes: dict[int, float] = {}
+    for task in _sample_files(list(table.scan().plan_files())):
+        fmt = task.file.file_format
+        if str(getattr(fmt, "value", fmt)).lower() != "parquet":
+            file_sizes = fallback
+        else:
+            try:
+                file_sizes = _read_cell_sizes(table, task.file.file_path, variable)
+            except Exception:
+                # The data file is unreadable while the metadata was not (a 403 on data files,
+                # a timeout): price at the fallback rather than leave the run unmetered.
+                log.warning(
+                    "iceberg_width_sample_failed",
+                    table=".".join(str(part) for part in table.name()),
+                    exc_info=True,
+                )
+                file_sizes = fallback
+        for field_id, size in file_sizes.items():
+            sizes[field_id] = max(size, sizes.get(field_id, 0.0))
+    return sizes
 
 
 def _read_cell_sizes(
@@ -275,10 +301,10 @@ def snapshot_row_bytes(table: Any) -> int:
     """Estimated peak worker bytes per row of a full snapshot read, priced by Arrow type.
 
     Fixed-width columns are priced from the schema alone. Variable-width ones (strings, binary,
-    nested) are priced from the Arrow size of their first rows, since neither the manifests nor
-    the Parquet footers record a decoded size. A column the sample cannot see (a non-Parquet
-    file, or one that lacks the column) is priced at a conservative size, not as empty: the
-    other files may hold plenty of it.
+    nested) are priced from the Arrow size of the first rows of up to three data files, the
+    widest file's mean winning, since neither the manifests nor the Parquet footers record a
+    decoded size. A column no sampled file holds (or a file that cannot be sampled) is priced
+    at a conservative size, not as empty: the other files may hold plenty of it.
     """
     schema = table.schema()
     total = 0

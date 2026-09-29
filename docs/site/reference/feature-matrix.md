@@ -58,7 +58,10 @@ omission.
 first platform-native check engine — an alternative `check.engine` for seven expectation
 types (null count, null percent, duplicate count, unique count, blank count, future-timestamp
 percent, accepted values) plus the freshness monitor, invoking Snowflake's
-own `SNOWFLAKE.CORE.*` metric functions instead of a GX expectation. Engine is selected per
+own `SNOWFLAKE.CORE.*` metric functions instead of a GX expectation. It also runs **custom
+DMFs** (`dmf:custom`): a function the customer created, named `DATABASE.SCHEMA.FUNCTION` and
+called over columns of the suite's table; connection tests list the ones the role can use for
+the editor to suggest. Engine is selected per
 check, on a Snowflake connection only; `kind` stays `expectation` either way. Testing or
 re-authenticating a Snowflake connection also probes DMF availability (Enterprise Edition +
 grant) and stores the result on the connection — surfaced on the connection list and, as a caveat

@@ -1,4 +1,5 @@
 import {
+  AutoComplete,
   Divider,
   Flex,
   Form,
@@ -14,6 +15,7 @@ import { lazy, Suspense } from 'react';
 
 import type { ConnectionType, DmfCapability } from '../../api/connections';
 import { ENGINE_LABEL } from './checkBadges';
+import { customDmfListingNote } from './customDmf';
 import { parseList } from './checkForm';
 import { validateCustomSqlQuery } from './customSql';
 import {
@@ -53,6 +55,7 @@ export function ConfigFieldItem({
   field,
   connectionType,
   configValues,
+  dmfCapability,
 }: {
   field: ConfigField;
   /** Suite's connection type — drives the `type_` field's datasource-tailored
@@ -60,6 +63,8 @@ export function ConfigFieldItem({
   connectionType?: ConnectionType;
   /** Live sibling config values (the same object `fieldVisible`/`showWhen` reads). */
   configValues?: Record<string, unknown>;
+  /** The connection's probed DMF capability — the custom-DMF field's suggestions. */
+  dmfCapability?: DmfCapability;
 }) {
   const label = field.optional ? `${field.label} (optional)` : field.label;
   const rules: Rule[] = field.optional ? [] : [{ required: true }];
@@ -91,6 +96,36 @@ export function ConfigFieldItem({
             )
           : Promise.resolve(),
     });
+  }
+  if (field.type === 'dmf_function') {
+    return (
+      <Form.Item
+        name={['config', field.name]}
+        label={label}
+        rules={rules}
+        normalize={(value: unknown) => (typeof value === 'string' ? value.trim() : value)}
+        extra={
+          <Flex vertical>
+            <span>{field.help}</span>
+            <span data-testid="custom-dmf-listing">{customDmfListingNote(dmfCapability)}</span>
+          </Flex>
+        }
+      >
+        <AutoComplete
+          options={(dmfCapability?.custom_functions ?? []).map((fn) => ({
+            value: fn.name,
+            label: `${fn.name} ${fn.signature}`,
+          }))}
+          showSearch={{
+            filterOption: (input, option) =>
+              String(option?.value ?? '')
+                .toUpperCase()
+                .includes(input.toUpperCase()),
+          }}
+          placeholder="DATABASE.SCHEMA.FUNCTION"
+        />
+      </Form.Item>
+    );
   }
   if (field.type === 'sql') {
     // Inline mirror of the backend read-only guardrail (ADR 0019) for fast feedback; the backend is

@@ -425,6 +425,17 @@
     "dataframeOnly": false
   },
   {
+    "type": "dmf:custom",
+    "kind": "expectation",
+    "dimension": null,
+    "fields": [
+      "function",
+      "columns"
+    ],
+    "noThresholds": false,
+    "dataframeOnly": false
+  },
+  {
     "type": "dqx:is_not_null",
     "kind": "expectation",
     "dimension": "completeness",

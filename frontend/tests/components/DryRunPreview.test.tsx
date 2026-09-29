@@ -94,6 +94,7 @@ describe('DryRunPreview', () => {
     await waitFor(() =>
       expect(mockDryRun).toHaveBeenCalledWith('s1', {
         expectation_type: NOT_NULL,
+        engine: 'gx',
         config: { column: 'order_id' },
         warn_threshold: 1,
         fail_threshold: null,
@@ -104,6 +105,37 @@ describe('DryRunPreview', () => {
     expect(await screen.findByText('warn')).toBeInTheDocument();
     expect(screen.getByText('2.5')).toBeInTheDocument();
     expect(screen.getByText(/"unexpected_percent":2.5/)).toBeInTheDocument();
+  });
+
+  it('previews a DMF check on the DMF engine, not through GX', async () => {
+    mockDryRun.mockResolvedValue({
+      status: 'fail',
+      metric_value: 2,
+      observed_value: { value: 2 },
+      expected_value: null,
+    });
+    const config = { function: 'DATAQ_DB.QUALITY.NEG_AMOUNT', columns: 'AMOUNT' };
+    render(
+      <Harness
+        expectationType="dmf:custom"
+        target={TARGET}
+        initialValues={{ config, fail_threshold: 1 }}
+      />,
+    );
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: 'Dry-run preview' }));
+
+    await waitFor(() =>
+      expect(mockDryRun).toHaveBeenCalledWith(
+        's1',
+        expect.objectContaining({
+          expectation_type: 'dmf:custom',
+          engine: 'dmf',
+          config: { function: 'DATAQ_DB.QUALITY.NEG_AMOUNT', columns: ['AMOUNT'] },
+        }),
+      ),
+    );
   });
 
   it('clears a stale result when the expectation changes', async () => {

@@ -787,7 +787,7 @@ Snowflake, PostgreSQL, MySQL and Trino are unaffected — their schema comes fro
 ### Snowflake DMF (ADR 0036)
 
 On a Snowflake connection, the check editor offers a separate **Snowflake DMF**
-category for seven types — null count, null percent, duplicate count, unique count,
+category: your own custom DMFs (below), and seven system types — null count, null percent, duplicate count, unique count,
 blank count (VARCHAR columns; empty or space-only strings — not NULLs, and tabs/newlines
 aren't treated as blank), future-timestamp percent (DATE / TIMESTAMP_LTZ /
 TIMESTAMP_TZ columns) and accepted values (below) — that run on Snowflake's own `SNOWFLAKE.CORE.*` **Data Metric Functions** instead of a
@@ -806,6 +806,34 @@ in full.
 schedule, because it counts changes since its previous scheduled run. Attaching one needs table
 ownership, which DataQ's read-only role deliberately lacks. Use the schema-drift monitor
 instead.
+
+**Custom DMF** runs a data metric function your team created in Snowflake with
+`CREATE DATA METRIC FUNCTION`. Give it the function's fully qualified name
+(`DATABASE.SCHEMA.FUNCTION`) and the suite table's columns, in the order the function's
+`TABLE(...)` argument declares them. DataQ calls it the same on-demand way as the system
+functions:
+
+```sql
+SELECT DATAQ_DB.QUALITY.NEG_AMOUNT(SELECT AMOUNT FROM RETAIL.ORDERS)
+```
+
+- **Names are identifiers, never SQL.** Each part of the name and each column must be a
+  plain identifier (letters, digits, `_`, `$`). Anything else is refused when you save. An
+  all-lower-case name is left unquoted, so Snowflake reads it in upper case; any other name is
+  quoted exactly as you typed it.
+- **The return value is the metric.** It is banded by the thresholds, higher = worse, and a
+  fail or critical threshold is required. It is shown as-is, never masked, so write
+  functions that return a count or a percentage, not a data value. The check's dimension is
+  left unclassified unless you set one, because DataQ cannot know what the function measures.
+- **What the role needs:** `USAGE` on the function and on its database and schema, plus
+  `SELECT` on the table. A function the role cannot use fails exactly like one that does not
+  exist, and the check's error says so.
+- **Picking a function.** Testing the connection lists the custom DMFs its role can use, and
+  the editor suggests them. The list is only as fresh as the last test, so re-test after
+  creating a function. You can always type a name that isn't listed. Functions in the
+  `SNOWFLAKE` database are refused: use their own DMF check types.
+- **Preview it first.** DMF checks, custom ones included, can be dry-run from the editor. A
+  wrong name, missing grant or mismatched column list shows up there before you save.
 
 ### Databricks DQX (ADR 0036)
 

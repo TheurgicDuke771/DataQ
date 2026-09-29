@@ -11,9 +11,11 @@ from backend.app.datasources.base import CheckOutcome
 from backend.app.datasources.monitors import (
     FRESHNESS,
     MonitorConfigError,
+    _echo,
     _ident,
     monitor_expectation_type,
 )
+from backend.app.datasources.sql import is_sql_identifier
 from backend.app.services.failure_classifier import safe_failure_reason
 
 log = get_logger(__name__)
@@ -32,12 +34,18 @@ DMF_COLUMN_METRICS: dict[str, str] = {
 # ACCEPTED_VALUES cannot be called ad hoc (it needs an attached, scheduled DMF), but
 # SYSTEM$DATA_METRIC_SCAN evaluates it with no attachment and only SELECT rights (#2084).
 DMF_ACCEPTED_VALUES = "dmf:accepted_values"
-DMF_EXPECTATION_TYPES = (*DMF_COLUMN_METRICS, DMF_ACCEPTED_VALUES)
+# A customer-defined DMF (`CREATE DATA METRIC FUNCTION`), named by its fully qualified identifier
+# and called ad hoc over bare columns of the target, like the system ones (#2226).
+DMF_CUSTOM = "dmf:custom"
+DMF_EXPECTATION_TYPES = (*DMF_COLUMN_METRICS, DMF_ACCEPTED_VALUES, DMF_CUSTOM)
 #: The config keys each dmf:* expectation type takes.
 DMF_CONFIG_KEYS: dict[str, frozenset[str]] = {
     **{t: frozenset({"column"}) for t in DMF_COLUMN_METRICS},
     DMF_ACCEPTED_VALUES: frozenset({"column", "value_set"}),
+    DMF_CUSTOM: frozenset({"function", "columns"}),
 }
+_MAX_CUSTOM_COLUMNS = 20
+_MAX_FUNCTION_NAME_CHARS = 770  # three 255-char identifiers and two dots
 _METRIC_NAMES = {**DMF_COLUMN_METRICS, DMF_ACCEPTED_VALUES: "ACCEPTED_VALUES"}
 _MAX_ACCEPTED_VALUES = 500
 _MAX_VALUE_CHARS = 1_000
@@ -77,6 +85,58 @@ def build_dmf_statement(
         )
     column = _quoted(config.get("column"), what="column")
     return f"SELECT SNOWFLAKE.CORE.{function}(SELECT {column} FROM {target})"  # noqa: S608  # nosec B608
+
+
+def parse_custom_dmf_name(name: object) -> tuple[str, str, str]:
+    """``<database>.<schema>.<function>``, each part through the identifier allowlist (#428).
+
+    The system DMFs have their own check types, so the ``SNOWFLAKE`` database is refused:
+    called this way, ACCEPTED_VALUES and SCHEMA_CHANGE_COUNT return the sentinel ``-1``.
+    """
+    if not isinstance(name, str) or len(name) > _MAX_FUNCTION_NAME_CHARS:
+        raise MonitorConfigError(
+            "'function' must be a fully qualified name <database>.<schema>.<function>, "
+            f"got {_echo(name)}"
+        )
+    parts = name.split(".")
+    if len(parts) != 3 or not all(is_sql_identifier(part) for part in parts):
+        raise MonitorConfigError(
+            "'function' must be a fully qualified name <database>.<schema>.<function> of plain "
+            f"identifiers (letters, digits, _ and $), got {_echo(name)}"
+        )
+    if parts[0].upper() == "SNOWFLAKE":
+        raise MonitorConfigError(
+            "'function' names a Snowflake system DMF — use its own DMF check type instead"
+        )
+    return parts[0], parts[1], parts[2]
+
+
+def custom_dmf_columns(config: dict[str, Any]) -> list[str]:
+    """The DMF's arguments: 1 to 20 bare columns of the suite's target, in signature order."""
+    columns = config.get("columns")
+    if not isinstance(columns, list) or not 1 <= len(columns) <= _MAX_CUSTOM_COLUMNS:
+        raise MonitorConfigError(
+            f"'columns' must be a list of 1 to {_MAX_CUSTOM_COLUMNS} column names, in the order "
+            "the DMF's TABLE(...) argument declares them"
+        )
+    return [_ident(column, what="column") for column in columns]
+
+
+def build_custom_dmf_statement(config: dict[str, Any], *, table: str, schema: str | None) -> str:
+    """The ad-hoc invocation ``SELECT <db>.<schema>.<dmf>(SELECT <col>[, …] FROM <t>)``."""
+    database, dmf_schema, name = parse_custom_dmf_name(config.get("function"))
+    function = ".".join(
+        (
+            _quoted(database, what="DMF database"),
+            _quoted(dmf_schema, what="DMF schema"),
+            _quoted(name, what="DMF name"),
+        )
+    )
+    columns = ", ".join(_quoted(c, what="column") for c in custom_dmf_columns(config))
+    target = _quoted(table, what="table")
+    if schema is not None:
+        target = f"{_quoted(schema, what='schema')}.{target}"
+    return f"SELECT {function}(SELECT {columns} FROM {target})"  # noqa: S608  # nosec B608
 
 
 def _sql_literal(value: Any) -> str:
@@ -172,6 +232,30 @@ def _column_metric_outcome(
     )
 
 
+def _custom_outcome(scalar: Any, config: dict[str, Any]) -> CheckOutcome:
+    expected = {
+        "engine": DMF_ENGINE,
+        "metric": config.get("function"),
+        "columns": config.get("columns"),
+    }
+    if scalar is None:
+        return CheckOutcome(
+            expectation_type=DMF_CUSTOM,
+            success=False,
+            errored=True,
+            error_message="the custom DMF returned NULL, so there is no metric to band",
+            expected_value=expected,
+        )
+    value = float(scalar)
+    return CheckOutcome(
+        expectation_type=DMF_CUSTOM,
+        success=True,  # thresholds band it (authoring requires a fail or critical one)
+        metric_value=value,
+        observed_value={"value": value},
+        expected_value=expected,
+    )
+
+
 def evaluate_dmf_check(
     fetch_scalar: Any,
     *,
@@ -186,6 +270,9 @@ def evaluate_dmf_check(
     privilege problem on one metric never silences its siblings.
     """
     try:
+        if kind == "expectation" and expectation_type == DMF_CUSTOM:
+            scalar = fetch_scalar(build_custom_dmf_statement(config, table=table, schema=schema))
+            return _custom_outcome(scalar, config)
         if kind == "expectation" and expectation_type == DMF_ACCEPTED_VALUES:
             statement, params = build_accepted_values_scan(config, table=table, schema=schema)
             scalar = fetch_scalar(statement, params)
@@ -204,11 +291,14 @@ def evaluate_dmf_check(
     except Exception as exc:
         # Classified, never raw (#900): a Snowflake DMF failure text can carry the statement (and
         # DMF privilege errors name objects).
+        classify = (
+            _classify_custom_dmf_error if expectation_type == DMF_CUSTOM else _classify_dmf_error
+        )
         return CheckOutcome(
             expectation_type=expectation_type,
             success=False,
             errored=True,
-            error_message=_classify_dmf_error(exc),
+            error_message=classify(exc),
         )
 
 
@@ -349,3 +439,83 @@ def _classify_dmf_error(exc: Exception) -> str:
             "FUNCTION) granted to the connection's role"
         )
     return safe_failure_reason(exc)
+
+
+def _classify_custom_dmf_error(exc: Exception) -> str:
+    """Fixed guidance for a custom DMF (#2226), from the live Snowflake shapes. A DMF the role
+    has no USAGE on fails exactly like one that does not exist (002141), so one message covers both.
+    """
+    if isinstance(exc, MonitorConfigError):
+        return str(exc)
+    text = str(exc)
+    if "Unknown user-defined function" in text or "Unknown function" in text:
+        return (
+            "the custom DMF does not exist, or the connection's role cannot use it — grant "
+            "the role USAGE on the DMF and on its database and schema"
+        )
+    if "Invalid argument types" in text:
+        return (
+            "the check's columns don't match the custom DMF's signature — list exactly the "
+            "columns its TABLE(...) argument declares, in order, with compatible types"
+        )
+    if "invalid identifier" in text:
+        return "a configured column does not exist on the run target (or the role cannot see it)"
+    if "does not exist or not authorized" in text:
+        return (
+            "the run target, or the custom DMF's schema, does not exist or the role cannot "
+            "see it — check the suite's run target and the role's USAGE grants"
+        )
+    if "Unsupported feature" in text or "Enterprise Edition" in text:
+        return "data metric functions need Snowflake Enterprise Edition or higher"
+    return safe_failure_reason(exc)
+
+
+# SHOW needs no warehouse and lists only the DMFs the role can use: live-verified 2026-09-29, a
+# non-admin role saw a custom DMF only once it held USAGE on it.
+_CUSTOM_DMF_LISTING = "SHOW DATA METRIC FUNCTIONS IN ACCOUNT"
+MAX_LISTED_CUSTOM_DMFS = 200
+_MAX_SIGNATURE_CHARS = 300
+
+
+def _referenceable(part: str) -> bool:
+    # DataQ leaves an all-lower-case identifier unquoted (#937), so a DMF created as a quoted
+    # lower-case name would fold to upper case and never resolve.
+    return is_sql_identifier(part) and (part != part.lower() or not any(c.isalpha() for c in part))
+
+
+def list_custom_dmfs(fetch_all: Any) -> dict[str, Any]:
+    """The custom-DMF half of the ``dmf`` capability (#2226). Never raises.
+
+    ``custom_functions`` is ``None`` when the listing itself failed, else the visible DMFs
+    outside the ``SNOWFLAKE`` database that a check can name.
+    """
+    try:
+        rows = fetch_all(_CUSTOM_DMF_LISTING)
+    except Exception as exc:
+        log.warning("dmf_custom_listing_failed", error_type=type(exc).__name__)
+        return {
+            "custom_functions": None,
+            "custom_functions_reason": "custom DMFs couldn't be listed for this connection's "
+            "role — you can still name one; the list is refreshed on the next connection test",
+        }
+    listed: dict[tuple[str, str], dict[str, str]] = {}
+    unlisted = 0
+    for row in rows:
+        parts = tuple(str(row.get(key) or "") for key in ("catalog_name", "schema_name", "name"))
+        if parts[0].upper() == "SNOWFLAKE":
+            continue
+        if not all(_referenceable(part) for part in parts):
+            unlisted += 1
+            continue
+        arguments = str(row.get("arguments") or "")
+        signature = arguments.removeprefix(parts[2]).strip()[:_MAX_SIGNATURE_CHARS]
+        qualified = ".".join(parts)
+        listed[(qualified, signature)] = {"name": qualified, "signature": signature}
+    functions = [listed[key] for key in sorted(listed)]
+    result: dict[str, Any] = {
+        "custom_functions": functions[:MAX_LISTED_CUSTOM_DMFS],
+        "custom_functions_truncated": len(functions) > MAX_LISTED_CUSTOM_DMFS,
+    }
+    if unlisted:
+        result["custom_functions_unlisted"] = unlisted
+    return result
