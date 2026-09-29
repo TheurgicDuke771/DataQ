@@ -839,7 +839,7 @@ CSV and a ~930 MiB idle worker:
 The budget default is `RUN_MAX_SCAN_BYTES × 8`, which admits one at-the-cap CSV
 read and leaves the second slot for the pushdown and sampled work that costs
 nothing. The other cap-bounded estimates — an at-the-cap Parquet read, a batch
-target, the Unity Catalog frame lane at its frame cap — come out *above* the whole
+target, a Unity Catalog frame near its frame cap — come out *above* the whole
 budget, so they are admitted only when nothing else holds any. That is the
 intended answer rather than a mis-tuned default: the measured peaks for exactly
 those cases (1,278 MiB Parquet at 5M rows, 1,681 MiB for a 1M-row UC frame) do
@@ -865,6 +865,14 @@ the worker, and charging them for one would serialise the cheapest work on the
 platform. They are **not** exempt from a comparison check, whose two sides
 materialise in the worker on every datasource — that estimate is added on top, and
 is the whole estimate on an otherwise-pushdown suite.
+
+**Unity Catalog** frame suites are sized from the runner's own two probes:
+`COUNT(*)` (or the sample's row count) × the width probe's bytes per row. The frame
+cap is checked against the same product, so a frame the runner would refuse
+reserves **nothing**, and a 10k-row frame reserves a few MiB instead of the whole
+1.25 GiB cap. A probe that fails reserves the whole cap, since the runner's own
+probes may succeed moments later. That costs two metadata queries per run, which the runner repeats; a
+deferred run carries its estimate, so a re-queue does not probe again.
 
 **Iceberg** is sized from the same manifest plan its row-cap probe reads. That is
 metadata only, never a data read. It reserves the **larger** of two figures:
