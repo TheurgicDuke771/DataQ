@@ -1,6 +1,6 @@
 # ADR 0047 — Automated coverage: system-owned suites over the asset inventory
 
-- **Status:** Proposed (2026-09-29)
+- **Status:** Accepted (2026-09-30)
 - **Date:** 2026-09-29
 - **Deciders:** @TheurgicDuke771
 - **Related:** ADR [0012](0012-monitor-kind-seam.md) (monitor kinds), [0027](0027-suite-permission-model-workspace-admin.md) (suite permissions), [0034](0034-asset-entity-openlineage-identity-lineage-pull.md) (assets, incidents), [0037](0037-workspace-visible-asset-identity.md) (workspace-true asset health), [0038](0038-dq-dimension-classification.md) (dimensions), [0040](0040-warehouse-inventory-sync-table-enumeration-seam.md) (inventory sync), [0042](0042-llm-provider-seam.md) (LLM suggestions).
