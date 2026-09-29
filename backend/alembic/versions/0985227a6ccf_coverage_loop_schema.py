@@ -10,7 +10,9 @@ Adds, all additive:
 - ``incidents.resolution`` (NULL, CHECK ``fixed|expected_change|false_positive``).
 
 Every new NOT NULL column has a constant default, so PostgreSQL adds it without a table
-rewrite, and the running image never writes these columns, so this deploys ahead of the code.
+rewrite; the CHECK constraints are added NOT VALID and validated after the transaction, and the
+index is built CONCURRENTLY, so no step holds an exclusive lock for a table scan. The running
+image never writes these columns, so this deploys ahead of the code.
 
 Rollback: downgrade drops the index, constraints and columns. Safe while no automatic suite
 exists; afterwards it discards which suites and checks the coverage loop owns.
@@ -30,6 +32,17 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
+_CHECKS = (
+    ("suites", "ck_suites_suite_origin_valid", "origin IN ('user', 'auto')"),
+    ("checks", "ck_checks_check_origin_valid", "origin IN ('user', 'auto', 'suggestion')"),
+    (
+        "incidents",
+        "ck_incidents_incident_resolution_valid",
+        "resolution IN ('fixed', 'expected_change', 'false_positive')",
+    ),
+)
+
+
 def upgrade() -> None:
     op.add_column(
         "suites",
@@ -38,22 +51,9 @@ def upgrade() -> None:
     op.add_column(
         "suites", sa.Column("auto_state", postgresql.JSONB(none_as_null=True), nullable=True)
     )
-    op.create_check_constraint(
-        op.f("ck_suites_suite_origin_valid"), "suites", "origin IN ('user', 'auto')"
-    )
-    op.create_index(
-        "uq_suites_auto_per_asset",
-        "suites",
-        ["asset_id"],
-        unique=True,
-        postgresql_where=sa.text("origin = 'auto'"),
-    )
     op.add_column(
         "checks",
         sa.Column("origin", sa.String(16), nullable=False, server_default=sa.text("'user'")),
-    )
-    op.create_check_constraint(
-        op.f("ck_checks_check_origin_valid"), "checks", "origin IN ('user', 'auto', 'suggestion')"
     )
     op.add_column(
         "assets",
@@ -62,20 +62,27 @@ def upgrade() -> None:
         ),
     )
     op.add_column("incidents", sa.Column("resolution", sa.String(32), nullable=True))
-    op.create_check_constraint(
-        op.f("ck_incidents_incident_resolution_valid"),
-        "incidents",
-        "resolution IN ('fixed', 'expected_change', 'false_positive')",
-    )
+    # NOT VALID: adding the constraint is metadata-only; the row scan happens in VALIDATE below,
+    # outside this transaction, under a lock that does not block reads or writes.
+    for table, name, predicate in _CHECKS:
+        op.execute(f"ALTER TABLE {table} ADD CONSTRAINT {name} CHECK ({predicate}) NOT VALID")
+    with op.get_context().autocommit_block():
+        for table, name, _ in _CHECKS:
+            op.execute(f"ALTER TABLE {table} VALIDATE CONSTRAINT {name}")
+        # One automatic suite per asset; CONCURRENTLY so building it never blocks `suites`.
+        op.execute(
+            "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uq_suites_auto_per_asset "
+            "ON suites (asset_id) WHERE origin = 'auto'"
+        )
 
 
 def downgrade() -> None:
-    op.drop_constraint(op.f("ck_incidents_incident_resolution_valid"), "incidents", type_="check")
+    with op.get_context().autocommit_block():
+        op.execute("DROP INDEX CONCURRENTLY IF EXISTS uq_suites_auto_per_asset")
+    for table, name, _ in reversed(_CHECKS):
+        op.execute(f"ALTER TABLE {table} DROP CONSTRAINT IF EXISTS {name}")
     op.drop_column("incidents", "resolution")
     op.drop_column("assets", "auto_coverage_excluded")
-    op.drop_constraint(op.f("ck_checks_check_origin_valid"), "checks", type_="check")
     op.drop_column("checks", "origin")
-    op.drop_index("uq_suites_auto_per_asset", table_name="suites")
-    op.drop_constraint(op.f("ck_suites_suite_origin_valid"), "suites", type_="check")
     op.drop_column("suites", "auto_state")
     op.drop_column("suites", "origin")
