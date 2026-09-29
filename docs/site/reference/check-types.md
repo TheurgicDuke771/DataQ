@@ -6,7 +6,7 @@ offers. Every GX type on this page is executed in CI on a dataframe batch, and o
 
 | | Count |
 |---|---|
-| Check types in the editor | 47 |
+| Check types in the editor | 48 |
 | GX expectation types vetted by the backend | 25 |
 
 How to read a row: **Parameters** are the editor's fields (`mostly` is GX's optional row
