@@ -122,7 +122,8 @@ def _unity_catalog_estimate(
     connection: Connection, target: ResolvedTarget, checks: list[Check]
 ) -> MemoryEstimate | None:
     """Sized by the runner's own row and width probes, so a small frame reserves what it
-    needs instead of the whole frame cap — two metadata queries, not a data read (#2145).
+    needs instead of the whole frame cap (#2145): a count, a 1,000-row head and one length
+    aggregate over a sampled draw (#2221), never the frame itself.
     """
     from backend.app.datasources.unity_catalog import (
         build_unity_catalog_runner,
@@ -178,8 +179,8 @@ def _iceberg_estimate(
     manifest plan the row-cap probe uses, priced per row by Arrow type (#2146).
 
     Fixed-width columns cost nothing to price. Variable-width ones are sampled from the first
-    rows, because rows alone are width-blind and file bytes are blind to dictionary-encoded
-    strings, which are small on disk and full-width in memory.
+    rows of up to three data files (#2221), because rows alone are width-blind and file bytes
+    are blind to dictionary-encoded strings, which are small on disk and full-width in memory.
     """
     from backend.app.datasources.iceberg import (
         ICEBERG_RUN_OVERHEAD_BYTES,

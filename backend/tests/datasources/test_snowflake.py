@@ -608,6 +608,24 @@ class _ScalarResult:
     def first(self) -> object:
         return self._value
 
+    def mappings(self) -> "_ScalarResult":
+        return self
+
+    def all(self) -> object:
+        return self._value
+
+
+# SHOW DATA METRIC FUNCTIONS rows, keyed as SQLAlchemy's `.mappings()` keys them (live-verified).
+_SHOW_DMFS = [
+    {"catalog_name": "SNOWFLAKE", "schema_name": "CORE", "name": "NULL_COUNT", "arguments": ""},
+    {
+        "catalog_name": "DATAQ_DB",
+        "schema_name": "QUALITY",
+        "name": "NEG_AMOUNT",
+        "arguments": "NEG_AMOUNT(TABLE(NUMBER)) RETURN NUMBER",
+    },
+]
+
 
 class _FakeScalarConn:
     """Not a `_FakeConn` subclass — `.execute(...)` here returns an object with
@@ -624,6 +642,8 @@ class _FakeScalarConn:
         self._executed.append(sql)
         if "INFORMATION_SCHEMA.COLUMNS" in sql:
             return _ScalarResult(("RETAIL", "ORDERS", "ID"))
+        if sql.startswith("SHOW DATA METRIC FUNCTIONS"):
+            return _ScalarResult(_SHOW_DMFS)
         if self._raises:
             raise RuntimeError("Insufficient privileges to operate on data metric function")
         return _ScalarResult((0,))
@@ -652,7 +672,15 @@ def test_adapter_probe_dmf_available(monkeypatch: pytest.MonkeyPatch) -> None:
     engine = _FakeScalarEngine([])
     monkeypatch.setattr("sqlalchemy.create_engine", lambda url, **kw: engine)
     result = SnowflakeConnectionAdapter().probe_dmf(_CONFIG, "p@ss")
-    assert result == {"available": True, "status": "available"}
+    assert result == {
+        "available": True,
+        "status": "available",
+        # #2226: the custom DMFs the role can use ride the same probe; system ones are left out.
+        "custom_functions": [
+            {"name": "DATAQ_DB.QUALITY.NEG_AMOUNT", "signature": "(TABLE(NUMBER)) RETURN NUMBER"}
+        ],
+        "custom_functions_truncated": False,
+    }
     assert engine.disposed is True
 
 

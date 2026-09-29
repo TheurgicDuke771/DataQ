@@ -179,17 +179,21 @@ def test_a_fixed_width_schema_is_priced_without_reading_any_data(
     assert snapshot_row_bytes(table) == 26 + 14 + 8 + 34 + 14 + 26
 
 
-def test_variable_width_columns_are_sampled_one_at_a_time_from_one_file(
+def test_variable_width_columns_are_sampled_one_at_a_time_from_at_most_three_files(
     catalog: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A pyiceberg scan applies its row limit only after reading whole files — 0.9 GiB to
-    sample 1,000 rows of a long-text table on the rig — so the sample never goes through it."""
+    sample 1,000 rows of a long-text table on the rig — so the sample never goes through it.
+    However many files the snapshot holds, the sample reads three at most (#2221)."""
     import pyarrow.parquet as pq
     from pyiceberg.table import DataScan
 
     cat, _ = catalog
     table = _low_cardinality(cat, "sales.labels", 3000)
-    table.append(table.scan().to_arrow())  # a second data file, which must not be read
+    head = table.scan().to_arrow()
+    for rows in (500, 1500, 2500, 100):  # four more data files of different sizes
+        table.append(head.slice(0, rows))
+    assert len(list(table.scan().plan_files())) == 5
     reads: list[tuple[str, list[str], int]] = []
     real_iter = pq.ParquetFile.iter_batches
 
@@ -202,10 +206,12 @@ def test_variable_width_columns_are_sampled_one_at_a_time_from_one_file(
 
     snapshot_row_bytes(table)
 
-    assert sorted(columns[0] for _, columns, _ in reads) == sorted(f"label_{i}" for i in range(12))
+    files = {file for file, *_ in reads}
+    assert 1 < len(files) <= 3
+    assert len(reads) == 12 * len(files)
+    assert {columns[0] for _, columns, _ in reads} == {f"label_{i}" for i in range(12)}
     assert all(len(columns) == 1 for _, columns, _ in reads)
     assert {size for *_, size in reads} == {iceberg_mod._WIDTH_SAMPLE_ROWS}
-    assert len({file for file, *_ in reads}) == 1
 
 
 def _sampled_row_bytes(table: Any, fixed: int) -> int:
@@ -299,10 +305,11 @@ def _without_field_ids(schema: pa.Schema) -> pa.Schema:
     return pa.schema([pa.field(f.name, f.type, f.nullable) for f in schema])
 
 
-def test_a_column_the_sampled_file_lacks_is_priced_at_the_fallback_not_as_empty(
+def test_a_column_the_first_file_lacks_is_priced_from_a_file_that_holds_it(
     catalog: Any, tmp_path: Any
 ) -> None:
-    """The sampled file holding none of a column says nothing about the other files."""
+    """The head file holding none of a column says nothing about the other files, and the
+    wider file the sample also reads does hold it (#2221)."""
     import pyarrow.parquet as pq
 
     cat, _ = catalog
@@ -322,7 +329,25 @@ def test_a_column_the_sampled_file_lacks_is_priced_at_the_fallback_not_as_empty(
     pq.write_table(pa.table({"id": pa.array(range(5), pa.int64())}), lacking)
     table.add_files([f"file://{lacking}"])
     first = next(iter(table.scan().plan_files())).file.file_path
-    assert first == f"file://{lacking}"  # the file the sample reads has no `note` column
+    assert first == f"file://{lacking}"  # the head file has no `note` column
+
+    # 400 characters plus the large_string's 8-byte offset.
+    per_cell = iceberg_mod._VARIABLE_CELL_BYTES + int(iceberg_mod._VARIABLE_BYTES_FACTOR * 408)
+    assert snapshot_row_bytes(table) == 26 + per_cell
+
+
+def test_a_column_no_sampled_file_holds_is_priced_at_the_fallback_not_as_empty(
+    catalog: Any, tmp_path: Any
+) -> None:
+    import pyarrow.parquet as pq
+
+    cat, _ = catalog
+    table = cat.create_table(
+        "sales.orders", schema=pa.schema([("id", pa.int64()), ("note", pa.large_string())])
+    )
+    lacking = tmp_path / "ids_only.parquet"
+    pq.write_table(pa.table({"id": pa.array(range(5), pa.int64())}), lacking)
+    table.add_files([f"file://{lacking}"])
 
     per_cell = iceberg_mod._VARIABLE_CELL_BYTES + int(
         iceberg_mod._VARIABLE_BYTES_FACTOR * iceberg_mod._UNSAMPLED_CELL_ARROW_BYTES
@@ -437,6 +462,87 @@ def test_nested_and_binary_columns_are_priced_from_their_sample(catalog: Any) ->
     table.append(data)
 
     assert snapshot_row_bytes(table) * rows >= _decoded_bytes(table)
+
+
+def _skewed(cat: Any, name: str, rows: int) -> Any:
+    """A file of long high-entropy payloads, then a short-text append (#2221). pyiceberg plans
+    the newest manifest first, so the short file is the head the old sample read alone."""
+    table = cat.create_table(
+        name, schema=pa.schema([("id", pa.int64()), ("payload", pa.large_string())])
+    )
+    table.append(
+        pa.table(
+            {
+                "id": pa.array(range(rows), pa.int64()),
+                "payload": pa.array(
+                    [os.urandom(1000).hex() for _ in range(rows)], pa.large_string()
+                ),
+            }
+        )
+    )
+    table.append(
+        pa.table(
+            {
+                "id": pa.array(range(rows, 2 * rows), pa.int64()),
+                "payload": pa.array([f"s{r}" for r in range(rows)], pa.large_string()),
+            }
+        )
+    )
+    return table
+
+
+def test_long_text_outside_the_head_file_is_not_priced_from_the_short_head(catalog: Any) -> None:
+    """#2221: the head file alone priced this table at a sliver of its decoded size."""
+    import pyarrow.parquet as pq
+
+    cat, properties = catalog
+    rows = 1500
+    table = _skewed(cat, "sales.skewed", rows)
+    first = next(iter(table.scan().plan_files())).file.file_path.removeprefix("file://")
+    assert pq.read_table(first).column("payload")[0].as_py().startswith("s")  # head is short
+
+    estimate = _estimate(properties, "sales.skewed")
+
+    assert estimate is not None
+    assert estimate.bytes - ICEBERG_RUN_OVERHEAD_BYTES >= _decoded_bytes(table)
+
+
+def test_one_unreadable_sampled_file_still_prices_at_least_the_fallback(
+    catalog: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A file that fails to read may hold the widest cells, so the readable ones cannot
+    price the column below the fallback on their own."""
+    import pyarrow.parquet as pq
+
+    cat, _ = catalog
+    table = cat.create_table(
+        "sales.orders", schema=pa.schema([("id", pa.int64()), ("note", pa.large_string())])
+    )
+    for rows in (10, 20):
+        table.append(
+            pa.table(
+                {
+                    "id": pa.array(range(rows), pa.int64()),
+                    "note": pa.array(["ab"] * rows, pa.large_string()),
+                }
+            )
+        )
+    real_init = pq.ParquetFile.__init__
+    opened: list[int] = []
+
+    def _second_unreadable(self: Any, *args: Any, **kwargs: Any) -> None:
+        opened.append(1)
+        if len(opened) == 2:
+            raise OSError("AWS Error ACCESS_DENIED during GetObject operation")
+        real_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(pq.ParquetFile, "__init__", _second_unreadable)
+
+    per_cell = iceberg_mod._VARIABLE_CELL_BYTES + int(
+        iceberg_mod._VARIABLE_BYTES_FACTOR * iceberg_mod._UNSAMPLED_CELL_ARROW_BYTES
+    )
+    assert snapshot_row_bytes(table) == 26 + per_cell
+    assert len(opened) == 2
 
 
 # ── the estimate ──

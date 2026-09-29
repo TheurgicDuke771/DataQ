@@ -12,7 +12,12 @@ from pydantic import ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.v1._base import TOTAL_COUNT_HEADER, ApiModel, total_count_responses
+from backend.app.api.v1._base import (
+    TOTAL_COUNT_HEADER,
+    ApiModel,
+    ApiRequestModel,
+    total_count_responses,
+)
 from backend.app.core.auth import get_current_user
 from backend.app.core.roles import is_workspace_admin
 from backend.app.db.models import (
@@ -28,6 +33,7 @@ from backend.app.db.session import get_db
 from backend.app.orchestration import markers
 from backend.app.services import (
     audit_service,
+    gate_service,
     orchestration_service,
     privacy_settings_service,
     run_dispatch,
@@ -530,6 +536,71 @@ def list_pipelines(
     orchestration_service.validate_read_filters(provider=provider, env=env)
     pipelines = orchestration_service.list_pipelines(db, provider=provider, env=env, limit=limit)
     return [PipelineRunRead.model_validate(p) for p in pipelines]
+
+
+class GateRequest(ApiRequestModel):
+    """A pipeline stage asking whether it may continue (ADR 0046)."""
+
+    provider: Literal["adf", "airflow", "dbt"]
+    pipeline_or_dag_id: str = Field(min_length=1, max_length=256)
+    env: Literal["dev", "qa", "uat", "prod"]
+    provider_run_id: str = Field(min_length=1, max_length=256)
+    fail_on: Literal["warn", "fail", "critical"] = Field(
+        default="fail", description="The lowest check severity that fails the gate."
+    )
+    trigger: bool = Field(
+        default=True,
+        description=(
+            "Start the bound suites' runs for this pipeline run (needs `edit`), or only report on "
+            "runs that already exist for it (`view`)."
+        ),
+    )
+
+
+class GateSuiteRead(ApiModel):
+    suite_id: uuid.UUID
+    run_id: uuid.UUID | None
+    run_status: str | None
+    state: Literal["awaiting_trigger", "running", "passed", "failed", "error"]
+    checks_total: int
+    checks_passed: int
+    worst_severity: str | None
+    has_error: bool
+
+
+class GateRead(ApiModel):
+    state: Literal["awaiting_trigger", "running", "passed", "failed", "error"]
+    fail_on: str
+    triggered_by: str
+    created_runs: int
+    retry_after_seconds: int | None
+    suites: list[GateSuiteRead]
+
+
+@router.post(
+    "/orchestration/gate",
+    response_model=GateRead,
+    summary="Ask whether a pipeline may continue: start and report its bound suites' runs",
+)
+def pipeline_gate(
+    payload: GateRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> GateRead:
+    """Idempotent per `provider_run_id`: poll the same request until `state` is terminal
+    (`passed`, `failed` or `error`). DataQ never pauses or fails the pipeline itself.
+    """
+    outcome = gate_service.evaluate_gate(
+        db,
+        user_id=current_user.id,
+        provider=payload.provider,
+        pipeline_or_dag_id=payload.pipeline_or_dag_id,
+        env=payload.env,
+        provider_run_id=payload.provider_run_id,
+        fail_on=payload.fail_on,
+        trigger=payload.trigger,
+    )
+    return GateRead.model_validate(outcome, from_attributes=True)
 
 
 class NearMissRead(ApiModel):

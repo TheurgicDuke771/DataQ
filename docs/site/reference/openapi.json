@@ -4220,6 +4220,201 @@
         "title": "FileBrowseRead",
         "type": "object"
       },
+      "GateRead": {
+        "properties": {
+          "created_runs": {
+            "title": "Created Runs",
+            "type": "integer"
+          },
+          "fail_on": {
+            "title": "Fail On",
+            "type": "string"
+          },
+          "retry_after_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry After Seconds"
+          },
+          "state": {
+            "enum": [
+              "awaiting_trigger",
+              "running",
+              "passed",
+              "failed",
+              "error"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "suites": {
+            "items": {
+              "$ref": "#/components/schemas/GateSuiteRead"
+            },
+            "title": "Suites",
+            "type": "array"
+          },
+          "triggered_by": {
+            "title": "Triggered By",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "fail_on",
+          "triggered_by",
+          "created_runs",
+          "retry_after_seconds",
+          "suites"
+        ],
+        "title": "GateRead",
+        "type": "object"
+      },
+      "GateRequest": {
+        "additionalProperties": false,
+        "description": "A pipeline stage asking whether it may continue (ADR 0046).",
+        "properties": {
+          "env": {
+            "enum": [
+              "dev",
+              "qa",
+              "uat",
+              "prod"
+            ],
+            "title": "Env",
+            "type": "string"
+          },
+          "fail_on": {
+            "default": "fail",
+            "description": "The lowest check severity that fails the gate.",
+            "enum": [
+              "warn",
+              "fail",
+              "critical"
+            ],
+            "title": "Fail On",
+            "type": "string"
+          },
+          "pipeline_or_dag_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Pipeline Or Dag Id",
+            "type": "string"
+          },
+          "provider": {
+            "enum": [
+              "adf",
+              "airflow",
+              "dbt"
+            ],
+            "title": "Provider",
+            "type": "string"
+          },
+          "provider_run_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Provider Run Id",
+            "type": "string"
+          },
+          "trigger": {
+            "default": true,
+            "description": "Start the bound suites' runs for this pipeline run (needs `edit`), or only report on runs that already exist for it (`view`).",
+            "title": "Trigger",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "provider",
+          "pipeline_or_dag_id",
+          "env",
+          "provider_run_id"
+        ],
+        "title": "GateRequest",
+        "type": "object"
+      },
+      "GateSuiteRead": {
+        "properties": {
+          "checks_passed": {
+            "title": "Checks Passed",
+            "type": "integer"
+          },
+          "checks_total": {
+            "title": "Checks Total",
+            "type": "integer"
+          },
+          "has_error": {
+            "title": "Has Error",
+            "type": "boolean"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "run_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Status"
+          },
+          "state": {
+            "enum": [
+              "awaiting_trigger",
+              "running",
+              "passed",
+              "failed",
+              "error"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "suite_id": {
+            "format": "uuid",
+            "title": "Suite Id",
+            "type": "string"
+          },
+          "worst_severity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worst Severity"
+          }
+        },
+        "required": [
+          "suite_id",
+          "run_id",
+          "run_status",
+          "state",
+          "checks_total",
+          "checks_passed",
+          "worst_severity",
+          "has_error"
+        ],
+        "title": "GateSuiteRead",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -12320,6 +12515,48 @@
         "summary": "Receive a dbt build callback event",
         "tags": [
           "orchestration"
+        ]
+      }
+    },
+    "/api/v1/orchestration/gate": {
+      "post": {
+        "description": "Idempotent per `provider_run_id`: poll the same request until `state` is terminal\n(`passed`, `failed` or `error`). DataQ never pauses or fails the pipeline itself.",
+        "operationId": "pipeline_gate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GateRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ask whether a pipeline may continue: start and report its bound suites' runs",
+        "tags": [
+          "runs"
         ]
       }
     },

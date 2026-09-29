@@ -46,11 +46,13 @@ from backend.app.datasources.sampling import (
 from backend.app.datasources.snowflake_dmf import (
     DMF_ACCEPTED_VALUES,
     DMF_CONFIG_KEYS,
+    DMF_CUSTOM,
     DMF_ENGINE,
     DMF_EXPECTATION_TYPES,
     DMF_KINDS,
     DMF_UNBANDABLE_TYPES,
     build_accepted_values_scan,
+    build_custom_dmf_statement,
 )
 from backend.app.datasources.sql import is_sql_identifier
 from backend.app.datasources.sql_engines import sql_engine
@@ -253,7 +255,15 @@ def validate_engine_compatibility(
             raise CheckConfigInvalidError(
                 str(exc), detail={"expectation_type": expectation_type}
             ) from exc
-    if not is_sql_identifier(config.get("column")):
+    if expectation_type == DMF_CUSTOM:
+        # The run path's own builder, so authoring and running cannot disagree on what is valid.
+        try:
+            build_custom_dmf_statement(config, table="t", schema=None)
+        except MonitorConfigError as exc:
+            raise CheckConfigInvalidError(
+                str(exc), detail={"expectation_type": expectation_type}
+            ) from exc
+    elif not is_sql_identifier(config.get("column")):
         raise CheckConfigInvalidError(
             "a dmf column metric needs a valid 'column' identifier in config",
             detail={"expectation_type": expectation_type},

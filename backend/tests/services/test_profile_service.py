@@ -1611,11 +1611,11 @@ def test_list_columns_iceberg_returns_schema_names(
 
     captured: dict[str, Any] = {}
 
-    def fake(config: Any, secret: Any, identifier: str, catalog_secret: Any = None) -> list[str]:
+    def fake(config: Any, secret: Any, identifier: str, catalog_secret: Any = None) -> Any:
         captured["identifier"] = identifier
-        return ["id", "amount", "city"]
+        return _FakeIcebergTable(pd.DataFrame(columns=["id", "amount", "city"]))
 
-    monkeypatch.setattr(svc, "iceberg_column_names", fake)
+    monkeypatch.setattr(svc, "load_iceberg_table", fake)
     cols = svc.list_columns(
         _iceberg_conn(),
         session=db_session,
@@ -1643,10 +1643,10 @@ def test_list_columns_iceberg_read_failure_returns_502(
 ) -> None:
     from backend.app.services import profile_service as svc
 
-    def boom(config: Any, secret: Any, identifier: str) -> Any:
+    def boom(config: Any, secret: Any, identifier: str, catalog_secret: Any = None) -> Any:
         raise RuntimeError("catalog unreachable")
 
-    monkeypatch.setattr(svc, "iceberg_column_names", boom)
+    monkeypatch.setattr(svc, "load_iceberg_table", boom)
     with pytest.raises(svc.ProfileFailedError):
         svc.list_columns(
             _iceberg_conn(),
@@ -1677,3 +1677,76 @@ def test_to_native_renders_decimal_identically_to_sanitize_json(
     flat_file = _to_native(raw)
     assert flat_file == sanitize_json(raw) == expected
     assert not isinstance(flat_file, str)
+
+
+# ── one catalog + table load per suggest (#2105) ──
+
+
+def _real_iceberg_catalog(tmp_path: Any) -> dict[str, Any]:
+    """A real pyiceberg SQL catalog (sqlite + local warehouse) holding `sales.orders`."""
+    import pyarrow as pa
+    from pyiceberg.catalog.sql import SqlCatalog
+
+    uri = f"sqlite:///{tmp_path}/catalog.db"
+    catalog = SqlCatalog("t", uri=uri, warehouse=f"file://{tmp_path}/wh")
+    catalog.create_namespace("sales")
+    data = pa.table({"id": pa.array([1, 2, 3], pa.int64()), "email": ["a@x.io", "b@x.io", None]})
+    catalog.create_table("sales.orders", schema=data.schema).append(data)
+    return {
+        "catalog_name": "t",
+        "catalog_type": "sql",
+        "catalog_uri": uri,
+        "warehouse": f"file://{tmp_path}/wh",
+    }
+
+
+@pytest.fixture
+def catalog_loads(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Every `load_table` the real SQL catalog serves: the catalog round trip #2105 counts."""
+    from pyiceberg.catalog.sql import SqlCatalog
+
+    real = SqlCatalog.load_table
+    loads: list[str] = []
+
+    def counting(self: Any, identifier: Any) -> Any:
+        loads.append(str(identifier))
+        return real(self, identifier)
+
+    monkeypatch.setattr(SqlCatalog, "load_table", counting)
+    return loads
+
+
+def test_suggest_loads_an_iceberg_table_once_for_list_and_profile(
+    db_session: Any, tmp_path: Any, catalog_loads: list[str]
+) -> None:
+    from backend.app.services import profile_service as svc
+
+    conn = _conn(conn_type="iceberg", config=_real_iceberg_catalog(tmp_path), secret_ref=None)
+    catalog_loads.clear()  # pyiceberg's own loads while writing the fixture
+
+    suggestion = svc.suggest_policy_for_target(
+        conn, session=db_session, table="orders", namespace="sales", secret_store=FakeSecretStore()
+    )
+
+    assert catalog_loads == ["sales.orders"]
+    assert suggestion  # listed and profiled from the one loaded table
+
+
+def test_outside_a_suggest_each_iceberg_call_loads_its_own_table(
+    db_session: Any, tmp_path: Any, catalog_loads: list[str]
+) -> None:
+    # The memo is scoped: a later request must see a table's new snapshot, not a stale one.
+    from backend.app.services import profile_service as svc
+
+    conn = _conn(conn_type="iceberg", config=_real_iceberg_catalog(tmp_path), secret_ref=None)
+    catalog_loads.clear()  # pyiceberg's own loads while writing the fixture
+    for _ in range(2):
+        svc.list_columns(
+            conn,
+            session=db_session,
+            table="orders",
+            namespace="sales",
+            secret_store=FakeSecretStore(),
+        )
+
+    assert catalog_loads == ["sales.orders", "sales.orders"]

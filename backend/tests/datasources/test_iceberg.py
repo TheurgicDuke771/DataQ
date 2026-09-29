@@ -104,6 +104,9 @@ def test_test_loads_catalog_and_lists_namespaces(monkeypatch: pytest.MonkeyPatch
             calls["listed"] = True
             return [("sales",)]
 
+        def list_tables(self, namespace: tuple[str]) -> list[tuple[str, str]]:
+            return []
+
     def fake_load_catalog(name: str, **props: Any) -> _FakeCatalog:
         calls["name"] = name
         calls["props"] = props
@@ -125,6 +128,54 @@ def test_test_propagates_catalog_failure(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setattr("pyiceberg.catalog.load_catalog", boom)
     with pytest.raises(RuntimeError, match="catalog unreachable"):
         IcebergConnectionAdapter().test(dict(_REST_CONFIG), "tok")
+
+
+def _sql_catalog_with_table(tmp_path: Any) -> tuple[dict[str, Any], Any]:
+    """A real pyiceberg SQL catalog (sqlite + local warehouse) with one table."""
+    import pyarrow as pa
+    from pyiceberg.catalog.sql import SqlCatalog
+
+    uri = f"sqlite:///{tmp_path}/c.db"
+    warehouse = f"file://{tmp_path}/wh"
+    catalog = SqlCatalog("t", uri=uri, warehouse=warehouse)
+    catalog.create_namespace("sales")
+    data = pa.table({"id": pa.array([1], pa.int64())})
+    table = catalog.create_table("sales.orders", schema=data.schema)
+    table.append(data)
+    config = {
+        "catalog_name": "t",
+        "catalog_type": "sql",
+        "catalog_uri": uri,
+        "warehouse": warehouse,
+    }
+    return config, catalog.load_table("sales.orders")
+
+
+def test_test_reads_a_tables_metadata_from_the_warehouse(tmp_path: Any) -> None:
+    config, _ = _sql_catalog_with_table(tmp_path)
+    IcebergConnectionAdapter().test(config, None)  # no raise
+
+
+def test_test_fails_when_the_warehouse_cannot_be_read(tmp_path: Any) -> None:
+    # The catalog answers, but the metadata file it points at can't be read: what a wrong or
+    # unauthorised storage credential looks like. Listing alone passed this (#1274).
+    import os
+
+    config, table = _sql_catalog_with_table(tmp_path)
+    os.remove(table.metadata_location.removeprefix("file://"))
+
+    with pytest.raises(Exception):  # noqa: B017 - pyiceberg surfaces the store's own error type
+        IcebergConnectionAdapter().test(config, None)
+
+
+def test_test_passes_on_a_catalog_with_no_table(tmp_path: Any) -> None:
+    from pyiceberg.catalog.sql import SqlCatalog
+
+    uri = f"sqlite:///{tmp_path}/c.db"
+    SqlCatalog("t", uri=uri, warehouse=f"file://{tmp_path}/wh").create_namespace("empty")
+    IcebergConnectionAdapter().test(
+        {"catalog_name": "t", "catalog_type": "sql", "catalog_uri": uri}, None
+    )
 
 
 # ───────────────────────── read runner (fakes over a real Arrow scan) ─

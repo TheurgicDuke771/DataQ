@@ -10,7 +10,11 @@ import {
 } from '../../api/connections';
 import { CUSTOM_SQL_EXPECTATION_TYPE, CUSTOM_SQL_QUERY_KEY } from './customSql';
 
-export type ConfigFieldType = 'string' | 'number' | 'list' | 'sql' | 'select' | 'boolean';
+export type ConfigFieldType =
+  'string' | 'number' | 'list' | 'sql' | 'select' | 'boolean' | 'dmf_function';
+
+/** A customer-defined Snowflake DMF, named by its fully qualified identifier. */
+export const CUSTOM_DMF_EXPECTATION_TYPE = 'dmf:custom';
 
 /** The check `kind` (ADR 0012). `expectation` (incl. custom-SQL) is GX; the
  *  monitor kinds run a scalar SQL aggregate instead. Sent to the backend. */
@@ -999,6 +1003,32 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
       'Snowflake’s system UNIQUE_COUNT metric function, computed natively in the warehouse. Degrades downward, so this type carries no thresholds — read the observed value directly.',
     category: 'Snowflake DMF',
     fields: [COLUMN],
+  },
+  {
+    type: CUSTOM_DMF_EXPECTATION_TYPE,
+    engine: 'dmf',
+    label: 'Custom DMF',
+    description:
+      'A data metric function your team created in Snowflake (CREATE DATA METRIC FUNCTION), called in the warehouse over columns of this suite’s table. Its return value is the metric, shown as-is — write DMFs that return a count or a percentage, not a data value.',
+    category: 'Snowflake DMF',
+    fields: [
+      {
+        name: 'function',
+        label: 'Data metric function',
+        type: 'dmf_function',
+        help: 'Fully qualified: DATABASE.SCHEMA.FUNCTION. The connection’s role needs USAGE on the function and on its database and schema.',
+      },
+      {
+        name: 'columns',
+        label: 'Columns',
+        type: 'list',
+        help: 'The columns to pass, in the order the function’s TABLE(...) argument declares them.',
+      },
+    ],
+    thresholds: {
+      help: 'Band the function’s return value (higher = worse). A fail or critical threshold is required.',
+      requireFailOrCritical: true,
+    },
   },
   // Databricks DQX (ADR 0036 §6) — runs in the connection's own workspace, never in DataQ.
   {

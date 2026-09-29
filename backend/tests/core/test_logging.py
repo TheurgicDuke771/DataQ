@@ -601,3 +601,33 @@ def test_an_unmarked_exception_from_the_same_new_caller_still_gets_a_traceback(
     record = json.loads(line)
     assert record["level"] == "error"
     assert "exception" in record  # full traceback rendered, as normal
+
+
+@pytest.mark.parametrize(
+    "transport",
+    [
+        "azure.core.pipeline.policies.http_logging_policy",
+        "urllib3.connectionpool",
+        "requests",
+        "httpcore.http11",
+        "httpx",
+    ],
+)
+def test_the_exporters_transport_logs_never_re_enter_the_bridge_at_debug(
+    in_memory_log_exporter: Any, monkeypatch: pytest.MonkeyPatch, transport: str
+) -> None:
+    """#2033: at DEBUG the OTLP exporter's `urllib3` upload logs looped back into the bridge,
+    the same shape as the #852 `azure.core` outage. Application DEBUG lines still export."""
+    monkeypatch.setenv("LOG_LEVEL", "DEBUG")
+    get_settings.cache_clear()
+    configure_logging()
+    root = std_logging.getLogger()
+    std_logging.getLogger(transport).debug("POST /v1/logs HTTP/1.1 200")
+    std_logging.getLogger("backend.app.services.gate_service").debug("app debug line")
+    std_logging.getLogger("requests_oauthlib").debug("not a transport of ours")
+    _flush_bridge(root)
+
+    bodies = [str(log.log_record.body) for log in in_memory_log_exporter.get_finished_logs()]
+    assert not any("POST /v1/logs" in body for body in bodies)
+    assert any("app debug line" in body for body in bodies)
+    assert any("not a transport of ours" in body for body in bodies)

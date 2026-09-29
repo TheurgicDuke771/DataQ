@@ -34,6 +34,7 @@ from backend.app.datasources.monitors import AGGREGATE, FRESHNESS, VOLUME, run_m
 from backend.app.datasources.snowflake_dmf import (
     DMF_ENGINE,
     evaluate_dmf_check,
+    list_custom_dmfs,
     probe_dmf_capability,
 )
 from backend.app.datasources.sql import LazyEngine, fold_reflection_keyed_columns
@@ -373,4 +374,7 @@ class SnowflakeConnectionAdapter:
     def _probe_dmf_on_connection(conn: Any) -> dict[str, Any]:
         from sqlalchemy import text
 
-        return probe_dmf_capability(lambda stmt: conn.execute(text(stmt)).first())
+        return {
+            **probe_dmf_capability(lambda stmt: conn.execute(text(stmt)).first()),
+            **list_custom_dmfs(lambda stmt: conn.execute(text(stmt)).mappings().all()),
+        }

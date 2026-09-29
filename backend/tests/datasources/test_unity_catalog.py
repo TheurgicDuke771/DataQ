@@ -2063,6 +2063,147 @@ def test_the_probe_prices_a_head_sample_by_its_arrow_schema(
     assert statements == ["SELECT * FROM main.s.t LIMIT 1000"]
 
 
+def _probe_over(
+    monkeypatch: pytest.MonkeyPatch, head: pa.Table, drawn: pa.Table
+) -> tuple[UnityCatalogCheckRunner, list[str]]:
+    """A runner whose head read returns ``head`` and whose width draw returns ``drawn``."""
+    statements: list[str] = []
+
+    def _fetch_arrow(_self: Any, statement: str) -> Any:
+        statements.append(statement)
+        return drawn if "TABLESAMPLE" in statement else head
+
+    monkeypatch.setattr(UnityCatalogCheckRunner, "_fetch_arrow", _fetch_arrow)
+    runner = _uc_runner()
+    monkeypatch.setattr(runner, "_qualified", lambda table, schema: f"main.{schema}.{table}")
+    return runner, statements
+
+
+def _short_head(rows: int = 1000) -> pa.Table:
+    return pa.table(
+        {
+            "id": pa.array(range(rows), pa.int64()),
+            "note": pa.array(["ab"] * rows),
+            "tags": pa.array([["a"]] * rows, pa.list_(pa.string())),
+        }
+    )
+
+
+def _head_price(head: pa.Table) -> int:
+    columns = {f.name: f.type for f in head.schema}
+    lengths = {
+        name: unity_catalog._mean_text_length(head.column(name))
+        for name, kind in columns.items()
+        if unity_catalog._fixed_cell_bytes(kind) is None
+    }
+    return unity_catalog.frame_row_bytes(columns, lengths)
+
+
+def test_a_full_head_is_widened_by_a_draw_across_the_table(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#2221: later loads with far longer text than the first files. The head alone priced
+    this shape at 0.04x its exact mean on a live skewed table."""
+    drawn = pa.table({"w0": pa.array([2000.0]), "w1": pa.array([30.0])})
+    runner, statements = _probe_over(monkeypatch, _short_head(), drawn)
+
+    row_bytes = _REAL_PROBE_ROW_BYTES(runner, table="t", schema="s", total_rows=2_000_000)
+
+    draw = (
+        "SELECT avg(length(`note`)) AS w0, avg(length(to_json(`tags`))) AS w1 "
+        "FROM (SELECT `note`, `tags` FROM main.s.t TABLESAMPLE (0.600000 PERCENT))"
+    )
+    assert row_bytes == 44 + (42 + 3 * 2000) + (170 + int(6.5 * 30))
+    assert statements == ["SELECT * FROM main.s.t LIMIT 1000", draw]
+
+
+def test_the_head_still_wins_where_the_draw_is_shorter(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The draw only ever raises a column's price, so no table is priced below #2087's."""
+    drawn = pa.table({"w0": pa.array([1.0]), "w1": pa.array([None], pa.float64())})
+    runner, _ = _probe_over(monkeypatch, _short_head(), drawn)
+
+    assert _REAL_PROBE_ROW_BYTES(runner, table="t", schema="s", total_rows=50_000) == (
+        _head_price(_short_head())
+    )
+
+
+def test_the_draw_is_sized_from_a_count_when_none_is_passed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    drawn = pa.table({"w0": pa.array([5.0]), "w1": pa.array([5.0])})
+    runner, statements = _probe_over(monkeypatch, _short_head(), drawn)
+    monkeypatch.setattr(runner, "_count_rows", lambda **_kw: 8_000)
+
+    _REAL_PROBE_ROW_BYTES(runner, table="t", schema="s")
+
+    # Under the draw's size the percentage is the whole table: an exact mean.
+    assert "TABLESAMPLE (100.000000 PERCENT)" in statements[-1]
+
+
+def test_a_fixed_width_table_never_draws(monkeypatch: pytest.MonkeyPatch) -> None:
+    head = pa.table({"id": pa.array(range(1000), pa.int64())})
+    runner, statements = _probe_over(monkeypatch, head, pa.table({}))
+    monkeypatch.setattr(runner, "_count_rows", lambda **_kw: pytest.fail("no draw, no count"))
+
+    assert _REAL_PROBE_ROW_BYTES(runner, table="t", schema="s") == 44
+    assert len(statements) == 1
+
+
+def test_probe_frame_sizes_an_unsampled_draw_from_its_own_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _sampling_runner(None)
+    counts: list[str] = []
+    seen: list[Any] = []
+
+    def _count(**_kw: Any) -> int:
+        counts.append("count")
+        return 12_345
+
+    def _probe(**kw: Any) -> int:
+        seen.append(kw["total_rows"])
+        return 1_400
+
+    monkeypatch.setattr(runner, "_count_rows", _count)
+    monkeypatch.setattr(runner, "_probe_row_bytes", _probe)
+
+    assert runner.probe_frame(table="orders", schema="sales") == (12_345, 1_400)
+    assert seen == [12_345] and counts == ["count"]
+
+
+def test_a_samples_width_draw_counts_the_table_not_the_sample(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _sampling_runner(SampleSpec(strategy="head", rows=5_000))
+    seen: list[Any] = []
+
+    def _probe(**kw: Any) -> int:
+        seen.append(kw["total_rows"])
+        return 2_340
+
+    monkeypatch.setattr(runner, "_probe_row_bytes", _probe)
+
+    runner.probe_frame(table="orders", schema="sales")
+
+    assert seen == [None]
+
+
+@pytest.mark.parametrize(
+    ("arrow_type", "expression"),
+    [
+        (pa.string(), "length(`c`)"),
+        (pa.large_string(), "length(`c`)"),
+        (pa.binary(), "length(`c`)"),
+        (pa.list_(pa.string()), "length(to_json(`c`))"),
+        (pa.map_(pa.string(), pa.int64()), "length(to_json(`c`))"),
+        (pa.struct([("a", pa.int32())]), "length(to_json(`c`))"),
+        (pa.null(), "length(CAST(`c` AS STRING))"),
+    ],
+)
+def test_the_draw_measures_each_type_as_the_head_does(arrow_type: Any, expression: str) -> None:
+    assert unity_catalog._length_expression("`c`", arrow_type) == expression
+
+
 def test_binary_is_priced_by_its_bytes_not_its_escaped_repr() -> None:
     blob = bytes(range(0x80, 0x100)) * 16  # 2 KiB of non-printable bytes
     column = pa.chunked_array([pa.array([blob, None], pa.binary())])
