@@ -20,9 +20,6 @@ exists; afterwards it discards which suites and checks the coverage loop owns.
 
 from collections.abc import Sequence
 
-import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
-
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -44,31 +41,38 @@ _CHECKS = (
 
 
 def upgrade() -> None:
-    op.add_column(
-        "suites",
-        sa.Column("origin", sa.String(16), nullable=False, server_default=sa.text("'user'")),
+    # Re-runnable throughout: the autocommit block below commits the columns and the unvalidated
+    # constraints before the revision is recorded, so a timeout in VALIDATE or the index build
+    # must not leave a migration that fails on "already exists" when retried.
+    op.execute(
+        "ALTER TABLE suites ADD COLUMN IF NOT EXISTS origin VARCHAR(16) NOT NULL DEFAULT 'user'"
     )
-    op.add_column(
-        "suites", sa.Column("auto_state", postgresql.JSONB(none_as_null=True), nullable=True)
+    op.execute("ALTER TABLE suites ADD COLUMN IF NOT EXISTS auto_state JSONB")
+    op.execute(
+        "ALTER TABLE checks ADD COLUMN IF NOT EXISTS origin VARCHAR(16) NOT NULL DEFAULT 'user'"
     )
-    op.add_column(
-        "checks",
-        sa.Column("origin", sa.String(16), nullable=False, server_default=sa.text("'user'")),
+    op.execute(
+        "ALTER TABLE assets ADD COLUMN IF NOT EXISTS "
+        "auto_coverage_excluded BOOLEAN NOT NULL DEFAULT false"
     )
-    op.add_column(
-        "assets",
-        sa.Column(
-            "auto_coverage_excluded", sa.Boolean(), nullable=False, server_default=sa.text("false")
-        ),
-    )
-    op.add_column("incidents", sa.Column("resolution", sa.String(32), nullable=True))
+    op.execute("ALTER TABLE incidents ADD COLUMN IF NOT EXISTS resolution VARCHAR(32)")
     # NOT VALID: adding the constraint is metadata-only; the row scan happens in VALIDATE below,
     # outside this transaction, under a lock that does not block reads or writes.
     for table, name, predicate in _CHECKS:
-        op.execute(f"ALTER TABLE {table} ADD CONSTRAINT {name} CHECK ({predicate}) NOT VALID")
+        # Every interpolated value is a constant above.
+        add = f"ALTER TABLE {table} ADD CONSTRAINT {name} CHECK ({predicate}) NOT VALID"
+        exists = f"SELECT 1 FROM pg_constraint WHERE conname = '{name}'"  # noqa: S608  # nosec B608
+        op.execute(f"DO $$ BEGIN IF NOT EXISTS ({exists}) THEN {add}; END IF; END $$")
     with op.get_context().autocommit_block():
         for table, name, _ in _CHECKS:
             op.execute(f"ALTER TABLE {table} VALIDATE CONSTRAINT {name}")
+        # A failed CONCURRENTLY build leaves an INVALID index that enforces nothing, and
+        # IF NOT EXISTS would then skip the rebuild — drop it first.
+        op.execute(
+            "DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_index WHERE indexrelid = "
+            "to_regclass('uq_suites_auto_per_asset') AND NOT indisvalid) "
+            "THEN EXECUTE 'DROP INDEX uq_suites_auto_per_asset'; END IF; END $$"
+        )
         # One automatic suite per asset; CONCURRENTLY so building it never blocks `suites`.
         op.execute(
             "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uq_suites_auto_per_asset "
