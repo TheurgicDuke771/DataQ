@@ -19,6 +19,13 @@ read by a ``db_datareader``-only SQL login — note the three different datetime
         (4, 'b@x.io', 'phone', 99999.99, '2026-09-27T08:00', '2026-09-27T08:00-07:00',
             '2026-09-27', 0, N'');
 
+The aggregate-monitor tests (#1602) also read, with the same login::
+
+    CREATE TABLE dbo.Amounts (Amount decimal(9, 2), Blank float);
+    INSERT dbo.Amounts VALUES (10.50, NULL), (NULL, NULL), (20.50, NULL), (30.01, NULL),
+        (-4.25, NULL), (7.00, NULL), (1.00, NULL);
+    CREATE TABLE dbo.AmountsEmpty (Amount decimal(9, 2));
+
 Environment: ``DATAQ_MSSQL_LIVE_HOST`` / ``_DATABASE`` / ``_USER`` / ``_PASSWORD`` (SQL login);
 optionally ``_TENANT_ID`` / ``_CLIENT_ID`` / ``_CLIENT_SECRET`` (a service principal that is a
 ``db_datareader`` contained user) and ``_FABRIC_HOST`` / ``_FABRIC_DATABASE`` (a Fabric
@@ -607,7 +614,9 @@ def test_browse_walks_schemas_then_tables(db_session: Any) -> None:
     top = browse_service.browse_catalog(connection, catalog=None, schema=None, **kwargs)
     tables = browse_service.browse_catalog(connection, catalog=None, schema="dbo", **kwargs)
     assert top.level == "schema" and [e.name for e in top.entries] == ["dbo"]
-    assert tables.level == "table" and [e.name for e in tables.entries] == ["Orders"]
+    # The documented seed: the battery's table plus the aggregate tests' two.
+    assert tables.level == "table"
+    assert sorted(e.name for e in tables.entries) == ["Amounts", "AmountsEmpty", "Orders"]
 
 
 # ───────────────────────────── end to end ─────────────────────────────
@@ -851,3 +860,41 @@ def test_fabric_item_battery(item: str, db_session: Any) -> None:
         for r in db_session.scalars(select(Result).where(Result.run_id == run.id))
     }
     assert statuses == {persisted[0].id: "fail", persisted[1].id: "pass"}
+
+
+# ───────────────────────── aggregate monitor (#1602) ─────────────────────────
+
+
+def test_every_aggregate_is_exact_on_sql_server() -> None:
+    """T-SQL has no MEDIAN, STDDEV or exact-type AVG: the windowed median, STDEV and a widened
+    SUM, each on a double, must still match the Python values."""
+    from backend.tests.support.aggregate_lane import assert_aggregates
+
+    runner = _runner()
+    try:
+        assert_aggregates(
+            runner,
+            table="Amounts",
+            schema="dbo",
+            column="Amount",
+            null_column="Blank",
+            empty_table="AmountsEmpty",
+        )
+    finally:
+        runner.close()
+
+
+def test_the_aggregate_monitor_runs_and_previews_end_to_end_on_sql_server(
+    db_session: Any,
+) -> None:
+    from backend.tests.support.aggregate_lane import assert_run_path_and_dry_run
+
+    assert_run_path_and_dry_run(
+        db_session,
+        conn_type="mssql",
+        config=_sql_config(),
+        secret_ref="mssql-ref",
+        secret_store=_store(None),
+        target={"table": "Amounts", "schema": "dbo"},
+        column="Amount",
+    )
