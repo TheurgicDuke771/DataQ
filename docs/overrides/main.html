@@ -4,11 +4,13 @@
   Header action row on every page: View as Markdown · Copy as Markdown · Ask AI ▾.
   The Markdown lives at <page url>index.md (docs/hooks/llm_export.py). "Ask AI" opens the
   page in the reader's OWN assistant with a prefilled prompt — nothing is proxied by us.
+  The prompt leads with the HTML page: ChatGPT's web reader declines a raw text/markdown file,
+  while every assistant reads the HTML. The Markdown copy is offered as the cleaner source.
 #}
 {% block content %}
   {% if page.file and page.file.src_uri != "404.md" %}
     {% set md_url = page.canonical_url ~ "index.md" %}
-    {% set prompt = "Read " ~ md_url ~ " (the DataQ documentation page \"" ~ page.title ~ "\") and help me with questions about it." %}
+    {% set prompt = "Read the DataQ documentation page \"" ~ page.title ~ "\" at " ~ page.canonical_url ~ " (a plain Markdown copy is at " ~ md_url ~ ") and help me with questions about it." %}
     <div class="dq-actions">
       <a class="dq-action" href="index.md" target="_blank" rel="noopener" title="Open this page as raw Markdown">
         {% include ".icons/material/language-markdown-outline.svg" %} Markdown
