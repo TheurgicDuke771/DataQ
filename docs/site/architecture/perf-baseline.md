@@ -874,19 +874,42 @@ reserves **nothing**, and a 10k-row frame reserves a few MiB instead of the whol
 probes may succeed moments later. That costs two metadata queries per run, which the runner repeats; a
 deferred run carries its estimate, so a re-queue does not probe again.
 
-**Iceberg** is sized from the same manifest plan its row-cap probe reads. That is
-metadata only, never a data read. It reserves the **larger** of two figures:
-planned rows × `RUN_ADMISSION_ROW_BYTES`, and data-file bytes × the format's
-expansion factor (Parquet 9×). Each figure alone is blind in a different way:
+**Iceberg** is priced by column type, the way the Unity Catalog frame lane is.
+The row count comes from the same manifest plan the row-cap probe reads, so it is
+metadata only. The estimate is:
 
-- **Rows** are width-blind: a 40-column table costs the same as a 6-column one.
-- **File bytes** miss dictionary-encoded strings, which are tiny on disk and
-  full-width once read into memory.
+> 140 MiB + planned rows × the per-row cost of the table's Arrow schema
 
-A table over `RUN_MAX_SCAN_ROWS_ICEBERG` reserves **nothing**, because the row-cap
-probe refuses it before any data is read. Even the cap's worth, 3M rows × 1 KiB
-at the defaults, would be about three times the whole budget, and would hold back
-a run that is certain to be refused until the worker drained.
+Fixed-width columns are priced from the schema alone, with no data read:
+8 B per boolean cell, 14 B per integer, float or temporal cell of 32 bits or
+fewer, 26 B at 64 bits and 34 B per decimal. Strings, binary and nested columns
+(list, map, struct) cost 8 B + 3 × their mean Arrow size per cell. That size is
+sampled, because no metadata records it:
+
+- The manifests carry each column's **on-disk** size and value bounds truncated
+  to 16 characters. A dictionary-encoded column of 20 distinct 100-character
+  labels is about 160 KB per 250k rows on disk and 26 MiB once decoded.
+- The Parquet footer's "uncompressed" size is still the dictionary-encoded size,
+  so it misses the same way.
+
+The sample is the first 1,000 rows of the first data file, read straight from
+Parquet one column at a time. Columns are matched by field id, so a renamed
+column still resolves; a file written without ids is matched by name. A
+pyiceberg scan with a row limit was tried first and rejected: pyiceberg applies
+the limit only after reading whole files, and sampling a long-text table that
+way peaked at 0.9 GiB, which is most of what the run itself uses, spent
+*before* the run has reserved anything. Read directly, the sample never peaked
+above 22 MiB or took longer than 123 ms on the rig, locally or over S3. If
+the first data file is not Parquet, there is nothing to sample, so each
+variable-width cell is priced at 128 Arrow bytes, a 100-character string. A
+table whose columns are all fixed-width reads no data at all. The sample sees
+only the start of one file, so a table whose later files hold much longer text
+than its first is priced low.
+
+A table over `RUN_MAX_SCAN_ROWS_ICEBERG` reserves **nothing**, because the
+row-cap probe refuses it before any data is read. Reserving even the cap's
+worth would hold back a run that is certain to be refused until the worker
+drained. A table with no snapshot reserves nothing either: it reads nothing.
 
 A suite of freshness/volume monitors answers from snapshot metadata and reserves
 nothing (`run_admission_iceberg_metadata_only`). The exception is a snapshot whose
@@ -897,25 +920,92 @@ logged as `run_admission_iceberg_monitor_fallback` with the reason. A freshness
 fallback caused by a data file that lacks column bounds is only visible by
 planning the scan. It reads a single column and is not reserved for.
 
-Measured on a local MinIO warehouse with a SQLite catalog, using the real
-`IcebergCheckRunner` and five expectations, one process per table. The actual
-figure is the peak RSS increase over the process baseline:
+##### How the costs were measured
 
-| Table | Columns | Rows | Data files | Actual | Reserved | Basis |
+On the rig (1 CPU / 2 GiB, swap off), against a local SQLite `SqlCatalog`
+over a `file://` warehouse, using the real `IcebergCheckRunner` and five
+expectations: unique on one `int64` key column, not-null and between on the
+other, and not-null on two columns of the type under test. Each run is one fresh container, and the
+figure is peak RSS over the process baseline taken after imports. Each shape
+is 2 key columns plus 8 columns of one type (4 for the 160-character text),
+measured at two row counts. The per-cell cost is the slope between them, with
+the key columns' cost taken out:
+
+| Type | Arrow B/cell | Measured B/cell | Priced at |
+|---|---|---|---|
+| boolean | — | 9.6 | 8 |
+| int32 | — | 15.9 | 14 |
+| date | — | 11.7 | 14 |
+| int64 | — | 20.5 | 26 |
+| double | — | 25.9 | 26 |
+| timestamp | — | 28.6 | 26 |
+| timestamptz | — | 23.7 | 26 |
+| decimal(18,2) | — | 35.1 | 34 |
+| string, 4 random chars | 12 | 23.8 | 44 |
+| string, 20 random chars | 28 | 60.0 | 92 |
+| string, 160 random chars | 168 | 502 | 512 |
+| string, 8 chars, 20 distinct values | 16 | 19.5 | 56 |
+| string, 32 chars, 20 distinct values | 40 | 62.5 | 128 |
+| string, 100 chars, 20 distinct values | 108 | 143 | 332 |
+| binary, 16 random bytes | 24 | 63.6 | 80 |
+| list of 3 int64 | 32 | 48.4 | 104 |
+| struct of int64 + double | 16 | 33.3 | 56 |
+
+Text cost is not a fixed multiple of its size. Incompressible text and binary
+cost 2–3× their Arrow size, because the compressed pages are held while they
+decode. Dictionary-encoded text costs 1.2–1.6×. The priced rate covers the
+incompressible case, so a dictionary-encoded cell is over-reserved 2–3×; with the
+fixed part, whole runs of it land 1.6–1.9× over.
+
+The fixed part of each run comes out differently per shape: 31–296 MiB. The
+narrow six-column curve below has an intercept of about 40 MiB. The costs were
+fitted together, by a grid search over the per-cell prices and the intercept
+that minimises the worst over-reservation while keeping every measured run,
+and every shape extrapolated along its own slope to the 3M-row cap, at least 3%
+over its measured peak (the extrapolations land 1.05–2.23× over). A few
+fixed-width prices sit just under their measured slope (booleans, int32,
+timestamp, decimal). The intercept covers that difference up to the cap:
+extrapolated to 3M rows, those shapes still come in 1.10–1.27× over.
+
+Before and after, on every measured table (estimates in MiB, with the ratio to
+the measured peak):
+
+| Table | Cols | Rows | Data files | Measured | Before | After |
 |---|---|---|---|---|---|---|
-| narrow | 6 | 1M | 17.5 MiB | 309 MiB | 977 MiB | rows |
-| narrow | 6 | 2M | 35.1 MiB | 430 MiB | 1,953 MiB | rows |
-| wide (random strings) | 20 | 1M | 108 MiB | 1,245 MiB | 977 MiB | rows |
-| wider (random strings) | 40 | 500k | 111 MiB | 1,230 MiB | 1,000 MiB | file bytes |
-| low-cardinality strings | 20 | 1M | 22.6 MiB | 1,058 MiB | 977 MiB | rows |
+| order lines (the curve) | 6 | 1M | 16.5 MiB | 181 | 977 (5.40×) | 289 (1.60×) |
+| order lines | 6 | 2M | 33.0 MiB | 319 | 1,953 (6.12×) | 438 (1.37×) |
+| order lines | 6 | 3M | 49.5 MiB | 481 | 2,930 (6.09×) | 586 (1.22×) |
+| order lines | 6 | 4M | 66.0 MiB | 628 | 3,906 (6.23×) | 735 (1.17×) |
+| order lines | 6 | 5M | 82.5 MiB | 740 | 4,883 (6.60×) | 884 (1.19×) |
+| 10 × int64 | 10 | 1M | 64.6 MiB | 276 | 977 (3.54×) | 388 (1.41×) |
+| 2 × int64 + 8 × int32 | 10 | 1M | 49.7 MiB | 206 | 977 (4.75×) | 296 (1.44×) |
+| 2 × int64 + 8 × boolean | 10 | 1M | 4.5 MiB | 147 | 977 (6.63×) | 251 (1.70×) |
+| 2 × int64 + 8 × decimal | 10 | 1M | 50.6 MiB | 345 | 977 (2.83×) | 449 (1.30×) |
+| 8 × string, 4 random chars | 10 | 1M | 41.5 MiB | 421 | 977 (2.32×) | 525 (1.25×) |
+| 8 × string, 20 random chars | 10 | 1M | 118.8 MiB | 717 | 1,069 (1.49×) | 891 (1.24×) |
+| 8 × string, 8 chars, 20 values | 10 | 1M | 8.2 MiB | 330 | 977 (2.96×) | 617 (1.87×) |
+| 8 × string, 32 chars, 20 values | 10 | 1M | 8.2 MiB | 616 | 977 (1.59×) | 1,166 (1.89×) |
+| 8 × string, 100 chars, 20 values | 10 | 500k | 4.1 MiB | 862 | 488 (**0.57×**) | 1,431 (1.66×) |
+| 8 × string, 100 chars, 20 values | 10 | 1M | 8.3 MiB | 1,428 | 977 (**0.68×**) | 2,723 (1.91×) |
+| 4 × string, 160 random chars | 6 | 500k | 208.9 MiB | 994 | 1,880 (1.89×) | 1,141 (1.15×) |
+| 8 × binary, 16 bytes | 10 | 1M | 138.6 MiB | 659 | 1,247 (1.89×) | 800 (1.21×) |
+| 8 × list of 3 int64 | 10 | 500k | 16.1 MiB | 494 | 488 (**0.99×**) | 562 (1.14×) |
+| 8 × struct | 10 | 1M | 86.0 MiB | 371 | 977 (2.63×) | 617 (1.66×) |
+| 20 × string, 8 random chars | 22 | 1M | 140.8 MiB | 733 | 1,267 (1.73×) | 1,258 (1.72×) |
+| 20 × string, 10 chars, 20 values | 22 | 1M | 15.2 MiB | 733 | 977 (1.33×) | 1,372 (1.87×) |
+| 40 × string, 8 random chars | 42 | 500k | 139.0 MiB | 743 | 1,251 (1.68×) | 1,233 (1.66×) |
 
-The narrow table reserves 3–4.5× more than it uses, the same over-reservation
-the row factor has always carried. The wide shapes come in 8–22% under. Most of
-that gap is a fixed ~190 MiB per run, the intercept of the narrow 1M → 2M line,
-which no lane's estimate counts. Without that intercept the wide rows are within
-8%. Neither figure measures the width of a dictionary-heavy table exactly. The
-figures in the low-cardinality row show that, and it is the same row-count
-blindness the Unity Catalog frame lane has.
+Across all 49 runs (every shape at both row counts, the whole curve, and four
+repeats against a local MinIO warehouse), the new estimate reads 1.07–2.14× the
+measured peak and never under. The old one read 0.57–6.63×. On MinIO, peaks came
+within 5% of the same tables on a `file://` warehouse, so object storage does
+not add a cost of its own.
+
+An earlier measurement, on MinIO, put the fixed part at about 190 MiB and a
+20-column × 1M-row dictionary-encoded table at 1,058 MiB. Both figures predate
+the frame lanes switching off GX's whole-frame fingerprint. Re-measured, a table
+of the same shape peaks at 733–747 MiB (`file://` and MinIO), and the narrow
+curve's fixed part is about 40 MiB.
 
 #### Database growth — the reads a user waits on
 
