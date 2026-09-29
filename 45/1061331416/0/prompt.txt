@@ -1,0 +1,8 @@
+<task-notification>
+<task-id>b8edjx612</task-id>
+<tool-use-id>toolu_01Vzxuo7r5WRzqtWunDf9UyZ</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4c1f817b-4fd7-4aa0-8c19-edd245c026d7/tasks/b8edjx612.output</output-file>
+<status>completed</status>
+<summary>Monitor "PR 2264 merge" stream ended</summary>
+<event>2264 not on auto-merge: OPEN auto=false</event>
+</task-notification>
