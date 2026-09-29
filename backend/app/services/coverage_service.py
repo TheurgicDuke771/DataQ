@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.config import get_settings
 from backend.app.core.logging import get_logger
+from backend.app.datasources.sql import is_sql_identifier
 from backend.app.db.models import Asset, Check, Connection, MonitorBaseline, Schedule, Suite
 from backend.app.services import check_service, cron, suite_service
 from backend.app.services.asset_identity import resolve_asset_identity
@@ -127,19 +128,23 @@ def _auto_suite(session: Session, asset: Asset) -> Suite | None:
     return session.scalar(select(Suite).where(Suite.asset_id == asset.id, Suite.origin == "auto"))
 
 
-def _freshness_column(session: Session, check_names: dict[str, Check]) -> str | None:
-    """A load or event timestamp column, from the schema-drift check's captured baseline."""
-    schema_check = check_names.get(SCHEMA_CHECK)
-    if schema_check is None:
+def _freshness_column(session: Session, schema_check_id: uuid.UUID | None) -> str | None:
+    """A load or event timestamp column, from the schema-drift check's captured baseline.
+
+    Only plain SQL identifiers qualify: the anomaly config refuses anything else, and one
+    table's rejected column must not stall the rest.
+    """
+    if schema_check_id is None:
         return None
     baseline = session.scalar(
-        select(MonitorBaseline.baseline).where(MonitorBaseline.check_id == schema_check.id)
+        select(MonitorBaseline.baseline).where(MonitorBaseline.check_id == schema_check_id)
     )
     columns = (baseline or {}).get("columns") or []
     timestamps = [
         str(c.get("name"))
         for c in columns
         if any(t in str(c.get("type", "")).upper() for t in ("TIMESTAMP", "DATETIME"))
+        and is_sql_identifier(c.get("name"))
     ]
     if not timestamps:
         return None
@@ -162,9 +167,9 @@ def _add_check(
     kind: str,
     config: dict[str, Any],
     thresholds: dict[str, int] | None,
-) -> None:
+) -> Check:
     t = thresholds or {}
-    check_service.create_check(
+    return check_service.create_check(
         session,
         suite_id=suite.id,
         name=name,
@@ -180,35 +185,39 @@ def _add_check(
 
 
 def _ensure_checks(session: Session, suite: Suite) -> int:
+    """Add each universal check once, tracked by role -> check id in ``auto_state['checks']``.
+
+    Tracking by id, not name, means a person can rename a check without it being re-added, and a
+    recorded id that no longer exists is a check a person deleted: never recreated.
+    """
     state = dict(suite.auto_state or {})
-    declined = set(state.get("declined", []))
-    existing = {c.name: c for c in session.scalars(select(Check).where(Check.suite_id == suite.id))}
+    roles: dict[str, str] = dict(state.get("checks", {}))
+    live = {str(cid) for cid in session.scalars(select(Check.id).where(Check.suite_id == suite.id))}
     created = 0
 
-    def wanted(name: str) -> bool:
-        return name not in existing and name not in declined
-
-    if wanted(SCHEMA_CHECK):
-        _add_check(
-            session, suite, name=SCHEMA_CHECK, kind="schema_drift", config={}, thresholds=None
-        )
+    def add(role: str, **spec: Any) -> None:
+        nonlocal created
+        check = _add_check(session, suite, **spec)
+        roles[role] = str(check.id)
         created += 1
-    if wanted(VOLUME_CHECK):
-        _add_check(
-            session,
-            suite,
+
+    if "schema" not in roles:
+        add("schema", name=SCHEMA_CHECK, kind="schema_drift", config={}, thresholds=None)
+    if "volume" not in roles:
+        add(
+            "volume",
             name=VOLUME_CHECK,
             kind="anomaly",
             config={"target_metric": "row_count", **_ANOMALY_WINDOW},
             thresholds=_ANOMALY_THRESHOLDS,
         )
-        created += 1
-    if wanted(FRESHNESS_CHECK):
-        column = _freshness_column(session, existing)
+    if "freshness" not in roles:
+        schema_id = roles.get("schema")
+        schema_uuid = uuid.UUID(schema_id) if schema_id and schema_id in live else None
+        column = _freshness_column(session, schema_uuid)
         if column is not None:
-            _add_check(
-                session,
-                suite,
+            add(
+                "freshness",
                 name=FRESHNESS_CHECK,
                 kind="anomaly",
                 config={
@@ -219,27 +228,28 @@ def _ensure_checks(session: Session, suite: Suite) -> int:
                 thresholds=_ANOMALY_THRESHOLDS,
             )
             state.pop("freshness_gap", None)
-            created += 1
-        elif SCHEMA_CHECK in existing:
+        elif schema_uuid is not None and session.scalar(
             # The schema is known only after the first run; before it, there is nothing to say.
-            baseline_known = session.scalar(
-                select(MonitorBaseline.id).where(
-                    MonitorBaseline.check_id == existing[SCHEMA_CHECK].id
-                )
-            )
-            if baseline_known is not None:
-                state["freshness_gap"] = "no timestamp column to measure freshness by"
+            select(MonitorBaseline.id).where(MonitorBaseline.check_id == schema_uuid)
+        ):
+            state["freshness_gap"] = "no timestamp column to measure freshness by"
+    state["checks"] = roles
     if state != (suite.auto_state or {}):
         suite.auto_state = state
         session.commit()
     return created
 
 
-def _set_schedule(session: Session, suite: Suite, *, enabled: bool, now: datetime) -> str | None:
-    """Ensure the suite's daily schedule exists and is on or off; returns the transition."""
+def _set_schedule(session: Session, suite: Suite, *, covered: bool, now: datetime) -> str | None:
+    """Keep a covered suite's daily schedule on, and pause an uncovered one.
+
+    Resumes only a schedule this loop paused (``auto_state['paused_by_coverage']``): a schedule a
+    person switched off stays off.
+    """
+    state = dict(suite.auto_state or {})
     schedule = session.scalar(select(Schedule).where(Schedule.suite_id == suite.id))
     if schedule is None:
-        if not enabled:
+        if not covered:
             return None
         expr = _cron_for(suite.asset_id or suite.id)
         session.add(
@@ -253,13 +263,46 @@ def _set_schedule(session: Session, suite: Suite, *, enabled: bool, now: datetim
         )
         session.commit()
         return None
-    if schedule.enabled == enabled:
-        return None
-    schedule.enabled = enabled
-    if enabled:
+    transition: str | None = None
+    if covered and not schedule.enabled and state.get("paused_by_coverage"):
+        schedule.enabled = True
         schedule.next_run_at = cron.next_fire(schedule.cron, schedule.timezone, after=now)
+        state.pop("paused_by_coverage", None)
+        transition = "resumed"
+    elif not covered and schedule.enabled:
+        schedule.enabled = False
+        state["paused_by_coverage"] = True
+        transition = "paused"
+    if transition is None:
+        return None
+    suite.auto_state = state
     session.commit()
-    return "resumed" if enabled else "paused"
+    return transition
+
+
+def _reconcile_asset(
+    session: Session, connection: Connection, asset: Asset, report: ReconcileReport, now: datetime
+) -> None:
+    suite = _auto_suite(session, asset)
+    if suite is None:
+        target = target_for_asset(connection, asset)
+        if target is None:
+            report.skipped_assets.append(asset.name)
+            return
+        suite = suite_service.create_suite(
+            session,
+            name=(SUITE_NAME_PREFIX + asset.name)[:128],
+            description="Created by automatic coverage: change against this table's history.",
+            connection_id=connection.id,
+            created_by=None,
+            target=target,
+            origin="auto",
+            machine_write=True,
+        )
+        report.suites_created += 1
+    report.checks_created += _ensure_checks(session, suite)
+    if _set_schedule(session, suite, covered=True, now=now) == "resumed":
+        report.suites_resumed += 1
 
 
 def reconcile_connection(
@@ -273,32 +316,25 @@ def reconcile_connection(
     )
     covered_ids = {a.id for a in assets}
     for asset in assets:
-        suite = _auto_suite(session, asset)
-        if suite is None:
-            target = target_for_asset(connection, asset)
-            if target is None:
-                report.skipped_assets.append(asset.name)
-                continue
-            suite = suite_service.create_suite(
-                session,
-                name=(SUITE_NAME_PREFIX + asset.name)[:128],
-                description="Created by automatic coverage: change against this table's history.",
-                connection_id=connection.id,
-                created_by=None,
-                target=target,
-                origin="auto",
-                machine_write=True,
+        name = asset.name
+        try:
+            _reconcile_asset(session, connection, asset, report, moment)
+        except Exception:
+            # One table's failure must not stall the rest of the connection, every day.
+            session.rollback()
+            report.skipped_assets.append(name)
+            log.warning(
+                "auto_coverage_asset_failed",
+                connection_id=str(connection.id),
+                asset=name,
+                exc_info=True,
             )
-            report.suites_created += 1
-        report.checks_created += _ensure_checks(session, suite)
-        if _set_schedule(session, suite, enabled=True, now=moment) == "resumed":
-            report.suites_resumed += 1
     # Pause the connection's automatic suites that are no longer covered.
     for suite in session.scalars(
         select(Suite).where(Suite.connection_id == connection.id, Suite.origin == "auto")
     ):
         if suite.asset_id not in covered_ids:
-            if _set_schedule(session, suite, enabled=False, now=moment) == "paused":
+            if _set_schedule(session, suite, covered=False, now=moment) == "paused":
                 report.suites_paused += 1
     if report.skipped_assets:
         log.info(

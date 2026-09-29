@@ -1235,12 +1235,6 @@ def delete_check(
     """Delete a check."""
     check = get_check(session, suite_id, check_id)
     audit_before = audit_service.snapshot("check", check)
-    if check.origin == "auto":
-        # A person removed a coverage-loop check: never recreate it (ADR 0047 §6).
-        suite = get_suite(session, suite_id)
-        state = dict(suite.auto_state or {})
-        state["declined"] = sorted({*state.get("declined", []), check.name})
-        suite.auto_state = state
     session.delete(check)
     audit_service.record_entity_change(
         session,

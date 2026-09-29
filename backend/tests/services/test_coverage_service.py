@@ -129,7 +129,6 @@ def test_a_check_a_person_deleted_is_never_recreated(db_session: Any, conn: Conn
     cov.reconcile_connection(db_session, conn, now=NOW)
 
     assert cov.VOLUME_CHECK not in _checks(db_session, suite)
-    assert cov.VOLUME_CHECK in (_auto(db_session, orders).auto_state or {})["declined"]
 
 
 def _capture_schema(db_session: Any, suite: Suite, columns: list[dict[str, str]]) -> None:
@@ -245,3 +244,64 @@ def test_daily_slots_spread_across_the_day() -> None:
     slots = {cov._cron_for(uuid.uuid4()) for _ in range(50)}
     assert len(slots) > 40
     assert all(len(s.split()) == 5 and s.endswith("* * *") for s in slots)
+
+
+def test_a_renamed_check_is_not_added_again(db_session: Any, conn: Connection) -> None:
+    orders = _asset(db_session, conn, "orders")
+    cov.reconcile_connection(db_session, conn, now=NOW)
+    suite = _auto(db_session, orders)
+    _checks(db_session, suite)[cov.VOLUME_CHECK].name = "Orders volume"
+    db_session.commit()
+
+    assert cov.reconcile_connection(db_session, conn, now=NOW).checks_created == 0
+    assert set(_checks(db_session, suite)) == {"Orders volume", cov.SCHEMA_CHECK}
+
+
+def test_a_schedule_a_person_paused_stays_paused(db_session: Any, conn: Connection) -> None:
+    orders = _asset(db_session, conn, "orders")
+    cov.reconcile_connection(db_session, conn, now=NOW)
+    suite = _auto(db_session, orders)
+    _schedule(db_session, suite).enabled = False
+    db_session.commit()
+
+    report = cov.reconcile_connection(db_session, conn, now=NOW)
+
+    assert report.suites_resumed == 0
+    assert not _schedule(db_session, suite).enabled
+
+
+def test_a_column_name_that_is_not_an_identifier_is_not_chosen(
+    db_session: Any, conn: Connection
+) -> None:
+    orders = _asset(db_session, conn, "orders")
+    cov.reconcile_connection(db_session, conn, now=NOW)
+    suite = _auto(db_session, orders)
+    _capture_schema(db_session, suite, [{"name": "Load Time", "type": "TIMESTAMP"}])
+
+    report = cov.reconcile_connection(db_session, conn, now=NOW)
+
+    assert report.skipped_assets == []
+    assert cov.FRESHNESS_CHECK not in _checks(db_session, suite)
+    assert "freshness_gap" in (_auto(db_session, orders).auto_state or {})
+
+
+def test_one_failing_table_does_not_stop_the_rest(
+    db_session: Any, conn: Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _asset(db_session, conn, "a_broken")
+    healthy = _asset(db_session, conn, "b_healthy")
+    real = cov._ensure_checks
+
+    def flaky(session: Any, suite: Suite) -> int:
+        if suite.name.endswith("a_broken"):
+            raise RuntimeError("boom")
+        return real(session, suite)
+
+    monkeypatch.setattr(cov, "_ensure_checks", flaky)
+    report = cov.reconcile_connection(db_session, conn, now=NOW)
+
+    assert report.skipped_assets == [f"{healthy.name[:-len('b_healthy')]}a_broken"]
+    assert set(_checks(db_session, _auto(db_session, healthy))) == {
+        cov.SCHEMA_CHECK,
+        cov.VOLUME_CHECK,
+    }
