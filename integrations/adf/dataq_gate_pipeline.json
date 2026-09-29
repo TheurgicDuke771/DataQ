@@ -24,7 +24,7 @@
             {
               "name": "Get DataQ token",
               "type": "WebActivity",
-              "secureOutput": true,
+              "policy": { "secureOutput": true },
               "typeProperties": {
                 "method": "GET",
                 "url": "https://<your-key-vault>.vault.azure.net/secrets/dataq-gate-pat?api-version=7.4",
@@ -35,7 +35,7 @@
               "name": "Ask DataQ gate",
               "type": "WebActivity",
               "dependsOn": [{ "activity": "Get DataQ token", "dependencyConditions": ["Succeeded"] }],
-              "secureInput": true,
+              "policy": { "secureInput": true },
               "typeProperties": {
                 "method": "POST",
                 "url": { "value": "@concat(pipeline().parameters.dataqUrl, '/api/v1/orchestration/gate')", "type": "Expression" },
