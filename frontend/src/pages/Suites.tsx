@@ -41,6 +41,7 @@ import {
   type Suite,
 } from '../api/suites';
 import { AssetLink } from '../components/assets/AssetLink';
+import { AutomaticTag } from '../components/suites/AutomaticTag';
 import { DimensionTag, EngineTag, formatThresholdsCompact } from '../components/checks/checkBadges';
 import { isSnoozed, SnoozedTag } from '../components/checks/snooze';
 import { ConnectionTypeAvatar } from '../components/connections/connectionVisuals';
@@ -109,6 +110,7 @@ function SuiteIdentity({
             <Tag color={ENV_COLORS[conn.env]} style={{ marginInlineEnd: 0 }}>
               {envLabel(conn.env)}
             </Tag>
+            <AutomaticTag origin={suite.origin} />
           </Flex>
         ) : (
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -464,6 +466,7 @@ function SuiteDetail({
               <Tag color={ENV_COLORS[connection.env]}>{envLabel(connection.env)}</Tag>
               {/* Links back to the asset this suite's target resolves to (#773). */}
               <AssetLink assetId={suite.asset_id} />
+              <AutomaticTag origin={suite.origin} />
             </Flex>
           ) : (
             <Typography.Text type="secondary">Connection {suite.connection_id}</Typography.Text>
@@ -738,6 +741,7 @@ function ChecksList({
                   <Typography.Text strong>{check.name}</Typography.Text>
                   {/* Engine + dimension badges (#1551, checkBadges.tsx). */}
                   <EngineTag engine={check.engine} />
+                  <AutomaticTag origin={check.origin} />
                   <DimensionTag dimension={check.dimension} />
                   <SnoozedTag check={check} now={now} />
                 </Flex>

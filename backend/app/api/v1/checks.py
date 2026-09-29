@@ -77,6 +77,8 @@ class CheckRead(ApiModel):
     # Who evaluates this check (ADR 0036); 'gx' unless a native engine was chosen.
     engine: str
     expectation_type: str
+    #: 'auto' = added by automatic coverage; 'suggestion' = an accepted suggestion (ADR 0047).
+    origin: str = "user"
     # NULL = unclassified (ADR 0038): an underivable type nobody has classified.
     # Consumers must render it as a coverage gap, never bucket it silently.
     dimension: str | None = None

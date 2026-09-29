@@ -179,6 +179,9 @@ class Settings(BaseSettings):
 
     # Per-connection cap on tables synced per tick (#919).
     asset_inventory_max_tables: int = 2000
+    # Automatic coverage (ADR 0047): the most tables one connection covers; each is a daily
+    # warehouse query cost. 0 = no cap.
+    auto_coverage_max_assets: int = Field(default=500, ge=0)
 
     # Orphan-SECRET sweep (#1059): credential writes are outside the DB transaction, so a failure
     # can strand a vault entry forever.
