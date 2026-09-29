@@ -124,6 +124,7 @@ lists which).
 - [ADR 0044 — MSSQL / T-SQL adapter: TDS driver choice and Entra service-principal auth](https://theurgicduke771.github.io/DataQ/docs/latest/adr/0044-mssql-tds-driver-and-entra-auth/index.md): The Theme-8 MSSQL row adds one `mssql` datasource type covering everything that speaks SQL Server's TDS protocol on port 1433: SQL Server itself, Azure SQL Data
 - [ADR 0045 — Engine-generic SQL datasource base](https://theurgicduke771.github.io/DataQ/docs/latest/adr/0045-engine-generic-sql-datasource-base/index.md): Theme 8 queues several SQL datasources that GX reaches through a SQLAlchemy dialect and DataQ
 - [ADR 0046 — Pipeline DQ gate: an orchestrator asks DataQ whether to continue](https://theurgicduke771.github.io/DataQ/docs/latest/adr/0046-pipeline-dq-gate/index.md): Orchestration providers (ADF, Airflow, dbt) have exactly three responsibilities in DataQ:
+- [ADR 0047 — Automated coverage: system-owned suites over the asset inventory](https://theurgicduke771.github.io/DataQ/docs/latest/adr/0047-automated-coverage-loop/index.md): DataQ runs what a human authors. A table nobody wrote a check for is not monitored, and a
 
 ## Optional
 

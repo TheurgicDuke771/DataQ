@@ -2706,6 +2706,11 @@
 <td>Pipeline DQ gate — a fourth orchestration responsibility: <strong>answer a gate request</strong>. One provider-agnostic endpoint (<code>POST /orchestration/gate</code>) keyed by trigger bindings: <strong>trigger-and-wait</strong> (starts the bound suites' runs for this pipeline run under the success-event marker, so polls and the later success event are idempotent; needs <code>edit</code>) or <strong>status only</strong> (<code>view</code>); states <code>awaiting_trigger</code> · <code>running</code> · <code>passed</code> · <code>failed</code> (at/above <code>fail_on</code>) · <code>error</code>; a bound suite the caller can't see refuses the gate; clients are the <code>dataq gate</code> CLI, an Airflow sensor and an ADF Until-loop snippet, all fail-closed; DataQ still never mutates a pipeline</td>
 <td>Accepted</td>
 </tr>
+<tr>
+<td><a href="0047-automated-coverage-loop/">0047</a></td>
+<td>Automated coverage — <strong>per-connection switch</strong> (<code>auto_coverage</code>, enumerable warehouse types only, per-asset exclusion) turns every inventory table into a <strong>system-owned suite</strong> (<code>suites.origin = 'auto'</code>, one per asset) of ordinary checks, so runs, results, incidents, alerts, UI and MCP need nothing new; <strong>universal baselines start without approval</strong> (row-count and freshness anomaly, schema drift, and a new one-query <code>column_profile</code> anomaly metric over every column's null % and distinct count), while <strong>rules that assert something</strong> (not-null, unique, accepted values, ranges, from profiling or the LLM suggester) wait in a <code>check_suggestions</code> review queue; <strong>full severity</strong> (warn 3σ, fail 4σ, critical 6σ; schema change fails); the reconciler adds missing checks only and never overrides a person's edit or resurrects a deleted check; daily staggered schedules and <code>AUTO_COVERAGE_MAX_ASSETS</code> bound the warehouse cost; incident <code>resolution</code> makes the <strong>false-positive rate</strong> a tracked figure beside coverage</td>
+<td>Accepted</td>
+</tr>
 </tbody>
 </table>
 
