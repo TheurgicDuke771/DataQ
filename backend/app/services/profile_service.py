@@ -35,7 +35,6 @@ from backend.app.datasources.iceberg import (
     load_iceberg_table,
     read_iceberg_dataframe,
 )
-from backend.app.datasources.iceberg import list_iceberg_columns as iceberg_column_names
 from backend.app.datasources.snowflake import (
     SnowflakeConfig,
     build_connect_args,
@@ -421,6 +420,9 @@ class _SharedConnections:
 
     def __init__(self) -> None:
         self._live: dict[Any, tuple[Any, AbstractContextManager[Any]]] = {}
+        # A loaded Iceberg table per (connection, identifier): listing then profiling it would
+        # otherwise load the catalog and the table twice (#2105).
+        self.iceberg_tables: dict[tuple[Any, str], _LoadedIcebergTable] = {}
 
     @staticmethod
     def _key(connection: Connection) -> Any:
@@ -938,6 +940,35 @@ def _iceberg_identifier(table: str, namespace: str | None) -> str:
     return f"{folded}.{table}" if folded else table
 
 
+@dataclass(frozen=True)
+class _LoadedIcebergTable:
+    config: IcebergConfig
+    secret: str | None
+    catalog_secret: str | None
+    table: Any
+
+
+def _load_iceberg(
+    connection: Connection, identifier: str, secret_store: SecretStore
+) -> _LoadedIcebergTable:
+    """Resolve the credentials and load the table, once per `shared_connection` scope."""
+    shared = _SHARED_CONNECTIONS.get()
+    key = (_SharedConnections._key(connection), identifier)
+    if shared is not None and key in shared.iceberg_tables:
+        return shared.iceberg_tables[key]
+    config = IcebergConfig.model_validate(connection.config)
+    secret, catalog_secret = iceberg_credentials(config, connection.secret_ref, secret_store)
+    loaded = _LoadedIcebergTable(
+        config,
+        secret,
+        catalog_secret,
+        load_iceberg_table(config, secret, identifier, catalog_secret),
+    )
+    if shared is not None:
+        shared.iceberg_tables[key] = loaded
+    return loaded
+
+
 def _read_iceberg_dataframe(
     connection: Connection, *, identifier: str, columns: list[str], secret_store: SecretStore
 ) -> Any:
@@ -948,10 +979,8 @@ def _read_iceberg_dataframe(
     so an all-or-partially-invalid column list 422s without ever reading data), then materialise
     the already-loaded table as a projected, sampled DataFrame.
     """
-    config = IcebergConfig.model_validate(connection.config)
-    secret, catalog_secret = iceberg_credentials(config, connection.secret_ref, secret_store)
-    table = load_iceberg_table(config, secret, identifier, catalog_secret)
-    available = [field.name for field in table.schema().fields]
+    loaded = _load_iceberg(connection, identifier, secret_store)
+    available = [field.name for field in loaded.table.schema().fields]
     missing = [c for c in columns if c not in available]
     if missing:
         raise ProfileColumnNotFoundError(
@@ -959,13 +988,13 @@ def _read_iceberg_dataframe(
             detail={"missing": missing, "available": available[:50]},
         )
     return read_iceberg_dataframe(
-        config,
-        secret,
+        loaded.config,
+        loaded.secret,
         identifier,
         columns=columns,
         limit=_SAMPLE_ROWS,
-        table=table,
-        catalog_secret=catalog_secret,
+        table=loaded.table,
+        catalog_secret=loaded.catalog_secret,
     )
 
 
@@ -975,9 +1004,8 @@ def _list_iceberg_columns(
     """Resolve config + optional secret and list the target's schema field names
     (metadata only, no data scan) — the Iceberg column-listing I/O seam.
     """
-    config = IcebergConfig.model_validate(connection.config)
-    secret, catalog_secret = iceberg_credentials(config, connection.secret_ref, secret_store)
-    return iceberg_column_names(config, secret, identifier, catalog_secret)
+    table = _load_iceberg(connection, identifier, secret_store).table
+    return [field.name for field in table.schema().fields]
 
 
 def profile_iceberg(
