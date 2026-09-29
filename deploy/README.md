@@ -619,3 +619,25 @@ Terraform, listed here so the table's Azure values aren't mistaken for the only 
   documented in [Security & data handling](../docs/site/security/overview.md#authentication--access))
   as a **prerequisite before granting broad workspace-admin** — this access breadth
   raises the bar.
+
+## Upgrading the Redis server
+
+The Redis **server** is pinned to 7.x in four places: both compose files, the Azure Container App
+(`deploy/terraform/azure/redis.tf`) and AWS ElastiCache (`deploy/terraform/aws/elasticache.tf`).
+`backend/tests/test_redis_server_pin.py` fails if any of them moves, because Dependabot doesn't
+watch Docker images or IaC engine versions. Redis 8 bundles the **Vector Sets** module, which
+carries an unpatched remote-code-execution class (duplicate HNSW node IDs through `RESTORE`,
+then `VREM` / `VLINKS`). Before moving to 8.x:
+
+1. Run `MODULE LIST` on the new server and confirm the vector-sets module is not loaded. Don't
+   assume the default.
+2. If it is loaded, disable module loading, or confirm the duplicate-HNSW-ID path is fixed
+   upstream by then.
+3. Keep `--requirepass` and internal-only ingress (`external_enabled = false` on Azure, the
+   security group on AWS) regardless.
+4. Don't read "the image built and Celery connected" as proof: a working broker shows
+   reachability, not that the command surface is absent.
+5. Update the pin test in the same PR.
+
+This is the **server**. The unrelated `redis-py` client pin (8.x ignored in `dependabot.yml`,
+because `kombu[redis]` caps `redis<6.5`) is a different thing.
