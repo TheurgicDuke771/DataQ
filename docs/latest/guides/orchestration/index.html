@@ -2621,6 +2621,9 @@ you run a tiny <strong>post-build wrapper</strong>:</p>
 <code>artifacts_uri: adls://&lt;account&gt;/&lt;container&gt;/&lt;prefix&gt;</code> with <code>jobs: ["dbt"]</code>. Pasting the
 publisher's own output variable verbatim usually double-counts the job segment (the poll
 then looks in <code>&lt;prefix&gt;/dbt/dbt/latest/</code> and finds nothing).</p>
+<p><strong>Test connection</strong> reads the first job's <code>run_results.json</code> and fails, naming the exact
+path it looked up, when nothing is there. For a new project, run the job once before
+testing.</p>
 </blockquote>
 </li>
 <li><strong>ADLS artifacts</strong> are read with a SAS by default. Choose <strong>Service principal</strong> to read them

@@ -3338,6 +3338,10 @@ Registering any connection — orchestration providers included — is **Admin-o
   > `artifacts_uri: adls://<account>/<container>/<prefix>` with `jobs: ["dbt"]`. Pasting the
   > publisher's own output variable verbatim usually double-counts the job segment (the poll
   > then looks in `<prefix>/dbt/dbt/latest/` and finds nothing).
+  >
+  > **Test connection** reads the first job's `run_results.json` and fails, naming the exact
+  > path it looked up, when nothing is there. For a new project, run the job once before
+  > testing.
 - **ADLS artifacts** are read with a SAS by default. Choose **Service principal** to read them
   as an Entra app instead (tenant ID, client ID, client secret). The app needs a data-plane
   role on the container, such as *Storage Blob Data Reader*. For an ADLS-compatible endpoint
