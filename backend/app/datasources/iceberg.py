@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, model_validator
 
 from backend.app.core.config import get_settings
 from backend.app.core.credential_expiry import azure_sas_expiry
+from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.core.uri_credentials import inject_uri_password, uri_password
 from backend.app.datasources.base import CheckOutcome, CheckSpec, MonitorSpec, SuiteOutcome
@@ -22,6 +23,8 @@ from backend.app.datasources.monitors import (
     validate_monitor_config,
 )
 from backend.app.datasources.sampling import enforce_row_cap
+
+log = get_logger(__name__)
 
 # Catalog backends pyiceberg's ``load_catalog`` understands.
 IcebergCatalogType = Literal["rest", "sql", "glue", "hive"]
@@ -208,23 +211,39 @@ def _fixed_cell_bytes(arrow_type: Any) -> int | None:
 def _sampled_cell_sizes(table: Any, variable: list[tuple[int, Any]]) -> dict[int, float]:
     """Mean Arrow bytes per cell of each variable-width field, keyed by field id, from the first
     rows of the first data file. A field is missing when it could not be sampled: the file is
-    not Parquet, or it lacks the column.
+    not Parquet, it lacks the column, or reading it failed.
 
     Read straight from the Parquet file, one column at a time: a pyiceberg scan honours a row
     limit only after reading whole files, which cost 0.9 GiB to sample 1,000 rows of a
     long-text table on the rig. Matched by field id, so a renamed column still resolves (by
     name only for a file written without ids).
     """
-    import pyarrow.parquet as pq
-
     task = next(iter(table.scan().plan_files()), None)
     if task is None:
         return {}
     fmt = task.file.file_format
     if str(getattr(fmt, "value", fmt)).lower() != "parquet":
         return {}
+    try:
+        return _read_cell_sizes(table, task.file.file_path, variable)
+    except Exception:
+        # The data file is unreadable while the metadata was not (a 403 on data files, a
+        # timeout): price every column at the fallback rather than leave the run unmetered.
+        log.warning(
+            "iceberg_width_sample_failed",
+            table=".".join(str(part) for part in table.name()),
+            exc_info=True,
+        )
+        return {}
+
+
+def _read_cell_sizes(
+    table: Any, file_path: str, variable: list[tuple[int, Any]]
+) -> dict[int, float]:
+    import pyarrow.parquet as pq
+
     sizes: dict[int, float] = {}
-    with table.io.new_input(task.file.file_path).open() as stream:
+    with table.io.new_input(file_path).open() as stream:
         parquet = pq.ParquetFile(stream, buffer_size=_WIDTH_SAMPLE_BUFFER_BYTES, pre_buffer=False)
         names = {
             int(f.metadata[b"PARQUET:field_id"]): f.name

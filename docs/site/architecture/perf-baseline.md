@@ -900,9 +900,11 @@ the limit only after reading whole files, and sampling a long-text table that
 way peaked at 0.9 GiB, which is most of what the run itself uses, spent
 *before* the run has reserved anything. Read directly, the sample never peaked
 above 22 MiB or took longer than 123 ms on the rig, locally or over S3. A
-column the sample cannot see (the first data file is not Parquet, or predates
-the column) is priced at 128 Arrow bytes, a 100-character string, not as
-empty: the other files may hold plenty of it. A
+column the sample cannot see (the first data file is not Parquet, predates
+the column, or cannot be read) is priced at 128 Arrow bytes, a 100-character
+string, not as empty: the other files may hold plenty of it. A failed read
+logs `iceberg_width_sample_failed` and still reserves; only a failure to plan
+the scan leaves the run without an estimate, as before. A
 table whose columns are all fixed-width reads no data at all. The sample sees
 only the start of one file, so a table whose later files hold much longer text
 than its first is priced low.

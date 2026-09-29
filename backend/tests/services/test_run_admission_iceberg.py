@@ -358,6 +358,71 @@ def test_with_no_parquet_file_to_sample_a_variable_cell_is_priced_conservatively
     assert snapshot_row_bytes(table) == 26 + 12 * per_cell
 
 
+def test_a_failed_sample_read_reserves_the_fallback_rather_than_going_unmetered(
+    catalog: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The manifests read fine but the data file does not (a 403 on data files, a timeout).
+    Escaping would make `estimate_run_memory` return None — a run admitted with nothing held."""
+    import pyarrow.parquet as pq
+
+    cat, properties = catalog
+    rows = 30
+    _low_cardinality(cat, "sales.labels", rows)
+
+    def _unreadable(*_a: Any, **_k: Any) -> None:
+        raise OSError("AWS Error ACCESS_DENIED during GetObject operation")
+
+    monkeypatch.setattr(pq.ParquetFile, "__init__", _unreadable)
+    warned: list[tuple[str, dict[str, Any]]] = []
+
+    class _Log:
+        def warning(self, event: str, **kw: Any) -> None:
+            warned.append((event, kw))
+
+    monkeypatch.setattr(iceberg_mod, "log", _Log(), raising=False)
+
+    estimate = _estimate(properties, "sales.labels")
+
+    per_cell = iceberg_mod._VARIABLE_CELL_BYTES + int(
+        iceberg_mod._VARIABLE_BYTES_FACTOR * iceberg_mod._UNSAMPLED_CELL_ARROW_BYTES
+    )
+    assert estimate == run_admission.MemoryEstimate(
+        bytes=ICEBERG_RUN_OVERHEAD_BYTES + rows * (26 + 12 * per_cell),
+        basis="iceberg_schema_width",
+    )
+    assert [(event, kw["table"], kw["exc_info"]) for event, kw in warned] == [
+        ("iceberg_width_sample_failed", "sales.labels", True)
+    ]
+
+
+def test_a_failed_manifest_read_still_fails_the_estimate(
+    catalog: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only the data-file sample is caught: a planning failure keeps today's path (logged by
+    `run_admission_estimate_failed`, the run's own read raising the real error)."""
+    cat, properties = catalog
+    _low_cardinality(cat, "sales.labels", 30)
+    real_load = iceberg_mod.load_iceberg_table
+    calls = {"n": 0}
+
+    def _load(*args: Any, **kwargs: Any) -> Any:
+        table = real_load(*args, **kwargs)
+        real_scan = table.scan
+
+        def _scan(**kw: Any) -> Any:
+            calls["n"] += 1
+            if calls["n"] > 1:  # the row count plans fine; the sampler's own plan does not
+                raise OSError("manifest list unreadable")
+            return real_scan(**kw)
+
+        table.scan = _scan
+        return table
+
+    monkeypatch.setattr(iceberg_mod, "load_iceberg_table", _load)
+
+    assert _estimate(properties, "sales.labels") is None
+
+
 def test_nested_and_binary_columns_are_priced_from_their_sample(catalog: Any) -> None:
     cat, _ = catalog
     rows = 50
