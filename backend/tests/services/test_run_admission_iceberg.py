@@ -251,6 +251,31 @@ def test_a_renamed_column_is_sampled_by_field_id(catalog: Any) -> None:
     assert snapshot_row_bytes(table) * rows >= _decoded_bytes(table)
 
 
+def test_a_struct_that_gained_a_child_since_the_file_was_written_is_still_sampled(
+    catalog: Any,
+) -> None:
+    """The file's struct lacks the new child; the sample is sized in the schema's struct."""
+    import pyarrow.parquet as pq
+    from pyiceberg.types import StringType
+
+    cat, _ = catalog
+    rows = 50
+    data = pa.table({"point": pa.array([{"x": "a" * 60, "y": 2.0}] * rows)})
+    table = cat.create_table("sales.points", schema=data.schema)
+    table.append(data)
+    with table.update_schema() as update:
+        update.add_column(("point", "z"), StringType())
+    table = cat.load_table("sales.points")
+    first = next(iter(table.scan().plan_files())).file.file_path.removeprefix("file://")
+    stored = pq.read_table(first).column("point")
+    schema_type = table.schema().as_arrow().field("point").type
+    assert stored.type.num_fields == 2 and schema_type.num_fields == 3
+
+    assert snapshot_row_bytes(table) == iceberg_mod._VARIABLE_CELL_BYTES + int(
+        iceberg_mod._VARIABLE_BYTES_FACTOR * stored.cast(schema_type).nbytes / rows
+    )
+
+
 def test_a_file_written_without_field_ids_is_sampled_by_name(catalog: Any, tmp_path: Any) -> None:
     """`add_files` registers foreign Parquet (no field ids) through a name mapping."""
     import pyarrow.parquet as pq

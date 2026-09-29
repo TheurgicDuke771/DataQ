@@ -215,7 +215,6 @@ def _sampled_cell_sizes(table: Any, variable: list[tuple[int, Any]]) -> dict[int
     long-text table on the rig. Matched by field id, so a renamed column still resolves (by
     name only for a file written without ids).
     """
-    import pyarrow as pa
     import pyarrow.parquet as pq
 
     task = next(iter(table.scan().plan_files()), None)
@@ -247,12 +246,8 @@ def _sampled_cell_sizes(table: Any, variable: list[tuple[int, Any]]) -> dict[int
             )
             if batch is None or batch.num_rows == 0:
                 continue
-            column = batch.column(0)
-            try:
-                # The calibration measured the read's own types (large offsets, promoted ints).
-                column = column.cast(arrow_field.type)
-            except (pa.ArrowInvalid, pa.ArrowNotImplementedError):
-                pass
+            # The costs were fitted on the schema's own Arrow types (large offsets).
+            column = batch.column(0).cast(arrow_field.type)
             sizes[field_id] = column.nbytes / batch.num_rows
     return sizes
 
