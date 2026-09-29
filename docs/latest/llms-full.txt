@@ -7167,22 +7167,42 @@ sampled, because no metadata records it:
 - The Parquet footer's "uncompressed" size is still the dictionary-encoded size,
   so it misses the same way.
 
-The sample is the first 1,000 rows of the first data file, read straight from
-Parquet one column at a time. Columns are matched by field id, so a renamed
-column still resolves; a file written without ids is matched by name. A
+The sample is the first 1,000 rows of each of up to three data files, read
+straight from Parquet one column at a time: the first planned file, the
+largest, and the one with the most on-disk bytes per row (the file most likely
+to hold long text). Each column is priced at the widest file's mean.
+Previously it read only the first planned file, which pyiceberg orders newest
+first, so a table whose other files held much longer text was priced low.
+Columns are matched by field id, so a renamed column still resolves; a file written without ids is matched by name. A
 pyiceberg scan with a row limit was tried first and rejected: pyiceberg applies
 the limit only after reading whole files, and sampling a long-text table that
 way peaked at 0.9 GiB, which is most of what the run itself uses, spent
 *before* the run has reserved anything. Read directly, the sample never peaked
 above 22 MiB or took longer than 123 ms on the rig, locally or over S3. A
-column the sample cannot see (the first data file is not Parquet, predates
-the column, or cannot be read) is priced at 128 Arrow bytes, a 100-character
-string, not as empty: the other files may hold plenty of it. A failed read
-logs `iceberg_width_sample_failed` and still reserves; only a failure to plan
-the scan leaves the run without an estimate, as before. A
-table whose columns are all fixed-width reads no data at all. The sample sees
-only the start of one file, so a table whose later files hold much longer text
-than its first is priced low.
+column no sampled file holds is priced at 128 Arrow bytes, a 100-character
+string, not as empty: the other files may hold plenty of it. A sampled file
+that is not Parquet or cannot be read prices every variable-width column at
+least at that 128, since it may be the widest. A failed read logs
+`iceberg_width_sample_failed` and still reserves; only a failure to plan the
+scan leaves the run without an estimate, as before. A table whose columns are
+all fixed-width reads no data at all.
+
+Measured locally on a 20-file, 400k-row table with one high-entropy and
+one low-cardinality text column:
+
+| Table | Old estimate | New estimate | Old sample | New sample |
+|---|---|---|---|---|
+| Uniform widths | 3.46× decoded | 3.46× decoded | 8.4 ms | 8.5 ms |
+| 3 of 20 files hold 1,200-char text, the head file 8-char | **0.61×** decoded | 17.1× decoded | 8.3 ms | 19.7 ms |
+
+Files of equal size and width resolve to one file, so the common case costs
+nothing extra. The skewed case now over-reserves: pricing every row at the
+widest sampled file is an upper bound, and a record-weighted mean of three
+files would under-price the opposite skew (most files long, a short head). An
+over-reservation defers a run behind others; it never refuses one. The
+remaining blind spot is a file of long **dictionary-encoded** text that is
+neither the largest nor the widest on disk, since its on-disk bytes per row are
+small.
 
 A table over `RUN_MAX_SCAN_ROWS_ICEBERG` reserves **nothing**, because the
 row-cap probe refuses it before any data is read. Reserving even the cap's
@@ -7553,6 +7573,35 @@ B/row (four small nested columns, 13–31 printed chars each) and 1,595 B/row (t
 larger ones, 59–73 chars). That is about 142 + 5.3 × the printed length per cell,
 priced with headroom as 170 + 6.5 × length: 1.19× and 1.20× the measurement. At the
 plain text rate the same views would have read 0.45× and 0.51×.
+
+**The mean lengths are no longer the head's alone.** `SELECT * … LIMIT
+1000` reads the first files, so a table whose later loads held longer text was
+priced from the short ones. When the head fills its limit (a shorter head is
+the whole table) and the table has variable-width columns, the probe also runs
+one aggregate over a Bernoulli draw of about 10,000 rows:
+`SELECT avg(length(c)), … FROM (SELECT c, … FROM t TABLESAMPLE (p PERCENT))`,
+with `length(to_json(c))` for nested columns. Each column takes the longer of
+the two means, so no table is priced below the head estimate. The draw has no
+`LIMIT`: with one, the warehouse kept the files it read first and priced a
+skewed table at 1.20× its exact mean instead of 0.99×. Measured live on
+2026-09-29 (serverless SQL warehouse, result cache off), against the same model
+evaluated at each table's exact mean lengths:
+
+| Table | Rows | Head only | Head + draw | Probe, head only | Probe, head + draw |
+|---|---|---|---|---|---|
+| Skewed: 20k 5-char rows, then 20k 2,000-char | 40,000 | **0.04×** | 0.99× | 1.35 s | 2.38 s |
+| The same as a view with ARRAY / MAP / STRUCT | 40,000 | **0.04×** | 0.99× | 1.37 s | 2.57 s |
+| `samples.tpch.lineitem` | 29,999,795 | 1.00× | 1.00× | 2.49 s | 3.81 s |
+| `samples.tpch.orders` | 7,500,000 | 1.01× | 1.01× | 1.50 s | 2.46 s |
+| `samples.tpch.part` | 1,000,000 | 1.00× | 1.00× | 1.52 s | 2.50 s |
+| `samples.tpch.customer` | 750,000 | 1.00× | 1.00× | 3.75 s | 3.68 s |
+
+The draw adds about a second per probe; it reads only the variable-width
+columns, but Bernoulli sampling still scans them in full. The runner's frame
+cap passes its row count in; a sampled suite's probe counts the table first,
+which adds about half a second more. On the skewed table with a 100 MB frame
+cap, the runner now refuses the read at 155 MB estimated, where the head alone
+priced it at 6 MB and admitted it.
 
 The estimate gates the read against `RUN_MAX_FRAME_BYTES` (1.25 GiB) and is
 what admission reserves for a UC frame suite. Before the Arrow read, a 1M-row
