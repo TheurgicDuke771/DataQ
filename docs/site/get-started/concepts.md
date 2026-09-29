@@ -17,7 +17,7 @@ flowchart LR
 |---|---|---|
 | **Connection** | How DataQ reaches one datasource (or one orchestrator), with its credential kept in the secret store | Connections |
 | **Suite** | A named set of checks against one target table or file | Suites |
-| **Check** | One rule: a value expectation, a monitor (freshness, volume, schema drift, anomaly), a comparison, or custom SQL | Suite → Checks |
+| **Check** | One rule: a value expectation, a monitor (freshness, volume, aggregate, schema drift, anomaly), a comparison, or custom SQL | Suite → Checks |
 | **Run** | One execution of a suite: manual, scheduled, or triggered by a pipeline | Results |
 | **Result** | What each check found: pass · warn · fail · critical, plus the number it measured | Run detail |
 | **Incident** | A critical breach anchored to the asset it hit, with evidence, until someone resolves it | Dashboard, Assets |
@@ -47,9 +47,10 @@ flowchart LR
 - **Connection** — credentials + config for one datasource or orchestration provider.
 - **Suite** — a named collection of checks that runs against one connection's target
   (a table, a file/path, a Unity Catalog table, or an Iceberg `namespace.table`).
-- **Check** — a single data-quality rule. Six kinds: a **Great Expectations expectation**
+- **Check** — a single data-quality rule. Seven kinds: a **Great Expectations expectation**
   (e.g. "this column is never null", or a custom SQL rule), or one of the monitor kinds —
   **freshness** (is the data stale?), **volume** (did the load land whole?),
+  **aggregate** (is a column's mean / median / sum / spread / min / max inside its bands?),
   **schema drift** (did the shape change?), **anomaly** (is this value abnormal for this
   dataset?), and **comparison** (does it reconcile against a baseline dataset?).
 - **Run** — one execution of a suite. Each check produces a **result** with a status:

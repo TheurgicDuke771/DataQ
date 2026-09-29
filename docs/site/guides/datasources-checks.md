@@ -759,10 +759,10 @@ outside the editor cannot smuggle in a type the editor would not offer; the refu
 whether the type is unknown to Great Expectations altogether or simply not enabled here,
 and lists what is.
 
-Two groups are deliberately absent. **Scalar aggregates** (`expect_column_mean_to_be_between`
-and its siblings) report a single number and no unexpected-%, so severity bands have
-nothing to band — a *Volume* or *Anomaly* monitor measures that shape properly, with trends
-and a learned baseline. **Whole-table set comparisons** (columns match an expected set or
+Two groups are deliberately absent. **GX's scalar aggregates**
+(`expect_column_mean_to_be_between` and its siblings) report a single number and no
+unexpected-%, so severity bands have nothing to band — the *Aggregate* monitor measures that
+shape properly, with two-sided bands and a trend. **Whole-table set comparisons** (columns match an expected set or
 ordered list) are what the *Schema-drift* monitor does, against a captured baseline. For
 anything with no vetted type, write a custom-SQL check.
 
@@ -860,6 +860,33 @@ band the % by which the count falls outside the range (a spike can exceed 100%),
 leave them blank for binary in-range pass/fail. On a flat file the count is over the
 **resolved batch** — the single file the target's batch pattern selects, not the
 whole prefix.
+
+### Aggregate monitor (all datasources — ADR 0012)
+
+*Is this column's statistic where it should be?* Pick one statistic — **mean, median, sum,
+standard deviation, min or max** — over one numeric column, and set **two-sided bands**:
+*Fail below / Fail above*, optionally a tighter *Warn below / Warn above* inside them and a
+wider *Critical below / Critical above* outside them. The bands nest (critical ⊇ fail ⊇ warn,
+bounds inclusive) and are checked when you save. An aggregate fails too low as well as too
+high, so it takes **no** warn/fail/critical threshold — those band a metric that only gets
+worse upward, and the editor hides them.
+
+The statistic itself is stored as the result's metric every run, so the **trend view** plots it
+with the bands drawn in, and it is ready for a future anomaly baseline. Semantics match SQL on
+every datasource: NULLs are skipped, the standard deviation is the sample one (n − 1), and mean,
+median and standard deviation are computed over a double-precision float — several engines
+(Databricks, Trino, Athena, Redshift, MySQL/MariaDB) otherwise round a DECIMAL average to a
+fixed number of places. An **empty table or an all-NULL column reports error**, never a pass
+on a made-up 0 (a standard deviation needs at least two values). A text or date column is an
+error too: the monitor needs a numeric column.
+
+Warehouses compute it with one pushdown query (Unity Catalog included); flat files and Iceberg
+read the one column into the worker, under the same scan caps as a check. **Median** is exact
+wherever it is offered and is **not offered on MySQL/MariaDB, Trino or Athena**, which have
+only an approximate percentile — use the mean there, or a custom-SQL check with the engine's
+`approx_percentile`. Its DQ dimension is left for you to set, since a statistic can speak to
+accuracy, validity or consistency depending on why you wrote it. Under zero-sample mode a
+**min or max** result keeps its status but not its value: that value is one cell of the table.
 
 ### Schema-drift monitor (all datasources — ADR 0012)
 

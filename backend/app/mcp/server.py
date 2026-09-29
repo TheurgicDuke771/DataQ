@@ -935,7 +935,8 @@ def list_checks(
     Use this for 'what does the orders suite actually check?' or before editing a
     check, to find its id. Returns, per check: its id, human name, kind
     (``expectation`` for a Great Expectations rule, or a monitor kind —
-    ``freshness`` / ``volume`` / ``schema_drift`` / ``anomaly`` / ``comparison``),
+    ``freshness`` / ``volume`` / ``aggregate`` / ``schema_drift`` / ``anomaly`` /
+    ``comparison``),
     the expectation type, ``engine`` (ADR 0036 — ``gx`` unless it was authored
     against a platform-native engine like ``dmf``), its DQ dimension (accuracy /
     completeness / consistency / integrity / timeliness / uniqueness / validity,
@@ -2070,9 +2071,10 @@ def create_check(
     **DataQ enables a vetted SUBSET of GX's built-ins, not all of them.** A type
     outside it is refused even when Great Expectations itself has it — the error
     says which of the two happened and lists every accepted type, so read it
-    rather than re-guessing. Scalar aggregates (``expect_column_mean_to_be_between``
-    and siblings) are deliberately absent: use a ``volume`` or ``anomaly`` monitor
-    for those, and a custom-SQL check for any rule with no vetted type.
+    rather than re-guessing. GX's scalar aggregates
+    (``expect_column_mean_to_be_between`` and siblings) are deliberately absent: use
+    the ``aggregate`` monitor below for those, and a custom-SQL check for any rule
+    with no vetted type.
 
     **`config` is validated against GX's own schema only — never against the
     datasource.** A column name that doesn't exist (a typo, wrong case) is
@@ -2080,17 +2082,32 @@ def create_check(
     suite runs. Confirm a column name with `list_columns` first. For an
     ``expectation``-kind check, `dryrun_check` can also preview it against
     live data before creating it — but `dryrun_check` only supports
-    `expectation`, `schema_drift` and `anomaly`; a `freshness` or `volume`
-    monitor has no preview and can only be checked by creating it and running
-    the suite.
+    `expectation`, `aggregate`, `schema_drift` and `anomaly`; a `freshness` or
+    `volume` monitor has no preview and can only be checked by creating it and
+    running the suite.
 
     For a monitor rather than a rule, set ``kind`` and pair it with
     ``expectation_type="monitor:<kind>"``: ``freshness`` (hours since
     ``MAX(column)``), ``volume`` (row count vs ``min_rows``/``max_rows`` — this
     counts the true dataset size on every datasource, including ADLS / S3 /
     Iceberg, unlike an ordinary row-count *expectation* check on a sampled
-    suite, which measures the sample), ``schema_drift`` (columns
-    added/removed/retyped vs a learned baseline), or ``anomaly`` (see below).
+    suite, which measures the sample), ``aggregate`` (see below),
+    ``schema_drift`` (columns added/removed/retyped vs a learned baseline), or
+    ``anomaly`` (see below).
+
+    **`aggregate`** — "the average order amount should stay between 10 and 90" —
+    measures ONE statistic of ONE numeric column every run and records the value
+    itself as the result's metric (so it trends). Its config takes ``aggregate``
+    (``mean`` / ``median`` / ``sum`` / ``stdev`` (sample, n-1) / ``min`` / ``max``),
+    ``column``, and two-sided bounds: ``min_value`` / ``max_value`` fail outside
+    them; optional ``warn_min`` / ``warn_max`` (inside the fail band) warn and
+    ``critical_min`` / ``critical_max`` (outside it) go critical. At least one bound
+    is required, the bands must nest, and unknown keys are refused. It takes NO
+    warn/fail/critical threshold arguments — passing one is refused, because those
+    band a metric that only gets worse upward. An empty table or all-NULL column
+    reports ``error``, not a pass on 0; a text/date column is also an ``error``.
+    ``median`` is refused on MySQL/MariaDB, Trino and Athena (no exact median
+    there). The dimension is left unset unless you pass one.
 
     For a cross-dataset reconciliation check use ``kind="comparison"`` with
     ``expectation_type="comparison:records"``, ``source_connection_id`` (the
@@ -2397,8 +2414,10 @@ def dryrun_check(
     precondition was not met), the metric it measured, and the observed vs
     expected values.
 
-    **Only ``expectation``, ``schema_drift`` and ``anomaly`` kinds can be
-    previewed with the default ``gx`` engine.** A ``freshness`` or ``volume``
+    **Only ``expectation``, ``aggregate``, ``schema_drift`` and ``anomaly`` kinds
+    can be previewed with the default ``gx`` engine.** An ``aggregate`` preview
+    reads the whole target (it is never sampled) and reports the measured value
+    as the metric. A ``freshness`` or ``volume``
     monitor check has no ``gx`` dry-run support — refused with an error. The
     one exception: ``kind="freshness"`` WITH ``engine="dmf"`` (Snowflake) CAN
     be previewed — it runs the native DMF freshness query, not the GX path.
@@ -3839,10 +3858,13 @@ def get_incident(incident_id: str) -> dict[str, Any]:
     ``kind_detail`` names the fields specific to the failing check's monitor kind
     (`age_hours` for freshness, `deviation_pct` for volume, `added`/`removed`/
     `type_changed` for schema_drift, `z_score`/`insufficient_history` for
-    anomaly) instead of making you parse `failing_result.observed_value`'s four
+    anomaly, `aggregate`/`column`/`breached_bound` for aggregate — its measured
+    value is `failing_result.metric_value`, which is NOT column-masked the way
+    `observed_value` is, so on a min/max over a policy-sensitive column it is one
+    real cell) instead of making you parse `failing_result.observed_value`'s
     different JSONB shapes yourself. It is null for an ordinary GX expectation or
     a comparison check — the common case, where `observed_value` already IS the
-    shape. For a `freshness`/`volume`/`schema_drift`/`anomaly` check it is
+    shape. For a `freshness`/`volume`/`aggregate`/`schema_drift`/`anomaly` check it is
     non-null whenever the card carries one at all: `evidence` is only ever
     captured from a genuinely warned/failed/critical occurrence of that check
     (never an operationally-errored or skipped one), so a null `kind_detail`
@@ -3904,7 +3926,7 @@ def get_incident(incident_id: str) -> dict[str, Any]:
       run — most runs. It means "no orchestration pipeline triggered this", which
       is normal, not a missing pipeline or a DataQ failure.
     - `kind_detail` null is benign for an `expectation`/`comparison` check, but
-      NOT for a `freshness`/`volume`/`schema_drift`/`anomaly` one — every card
+      NOT for a `freshness`/`volume`/`aggregate`/`schema_drift`/`anomaly` one — every card
       is captured from a genuinely warned/failed/critical occurrence of its
       check (an operational error or skip never reaches this card), so there a
       null means the same rare thing a null `check_name` above means.
