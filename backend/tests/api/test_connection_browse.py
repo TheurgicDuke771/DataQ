@@ -18,6 +18,8 @@ from backend.app.main import app
 from backend.app.services import browse_service
 from backend.tests.support.fake_secret_store import FakeSecretStore, override_secret_store
 
+pytestmark = pytest.mark.usefixtures("reachable_stores")
+
 _CREDENTIAL = "dapi-stored-credential-never-echoed"
 _CONFIGS: dict[str, dict[str, Any]] = {
     "unity_catalog": {"workspace_url": "https://dbc-1.cloud.databricks.com", "warehouse_id": "w"},

@@ -16,6 +16,8 @@ from backend.app.db.models import Connection, User
 from backend.app.db.session import get_db
 from backend.app.main import app
 
+pytestmark = pytest.mark.usefixtures("reachable_stores")
+
 
 @pytest.fixture
 def client(db_session: Any) -> Iterator[TestClient]:

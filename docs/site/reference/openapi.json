@@ -3231,6 +3231,12 @@
             "description": "Credential; write-only, never returned",
             "title": "Secret"
           },
+          "skip_test": {
+            "default": false,
+            "description": "Save without running the connectivity test first (#1927) \u2014 for a store the API cannot reach at authoring time. Recorded on the audit event.",
+            "title": "Skip Test",
+            "type": "boolean"
+          },
           "type": {
             "title": "Type",
             "type": "string"
@@ -3527,12 +3533,36 @@
             "minLength": 1,
             "title": "Secret",
             "type": "string"
+          },
+          "skip_test": {
+            "default": false,
+            "description": "Save without running the connectivity test first (#1927) \u2014 for a store the API cannot reach at authoring time. Recorded on the audit event.",
+            "title": "Skip Test",
+            "type": "boolean"
           }
         },
         "required": [
           "secret"
         ],
         "title": "ConnectionReauth",
+        "type": "object"
+      },
+      "ConnectionReauthResult": {
+        "properties": {
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "tested": {
+            "title": "Tested",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "tested"
+        ],
+        "title": "ConnectionReauthResult",
         "type": "object"
       },
       "ConnectionTestResult": {
@@ -3601,6 +3631,12 @@
             ],
             "description": "Rotate the credential; write-only",
             "title": "Secret"
+          },
+          "skip_test": {
+            "default": false,
+            "description": "Save without running the connectivity test first (#1927) \u2014 for a store the API cannot reach at authoring time. Recorded on the audit event.",
+            "title": "Skip Test",
+            "type": "boolean"
           }
         },
         "title": "ConnectionUpdate",
@@ -9731,6 +9767,7 @@
         ]
       },
       "put": {
+        "description": "An enabled config is live-tested first (the `POST /admin/llm/test` probe) and refused with\n422 `llm_test_failed_on_save` if it fails (#1927); a disabled one is saved untested.",
         "operationId": "put_llm_settings",
         "requestBody": {
           "content": {
@@ -11036,6 +11073,7 @@
         ]
       },
       "post": {
+        "description": "The config and credential(s) are tested first (#1927); a failing test refuses the create\nwith 422 `connection_test_failed_on_save` and writes nothing, unless `skip_test` is sent.",
         "operationId": "create_connection",
         "requestBody": {
           "content": {
@@ -11194,6 +11232,7 @@
         ]
       },
       "patch": {
+        "description": "A config or credential change is tested before it is written (#1927) \u2014 422\n`connection_test_failed_on_save` on failure unless `skip_test`; a rename alone is not tested.",
         "operationId": "update_connection",
         "parameters": [
           {
@@ -11430,7 +11469,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ConnectionTestResult"
+                  "$ref": "#/components/schemas/ConnectionReauthResult"
                 }
               }
             },

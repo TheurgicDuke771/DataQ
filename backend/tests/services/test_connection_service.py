@@ -23,6 +23,8 @@ from backend.app.services.connection_service import (
 from backend.tests.support.certs import self_signed_ca_pem
 from backend.tests.support.fake_secret_store import FakeSecretStore
 
+pytestmark = pytest.mark.usefixtures("reachable_stores")
+
 _SF_CONFIG = {
     "account": "ab12345.eu-west-1",
     "user": "svc_dataq",
@@ -137,7 +139,7 @@ def test_create_persists_row_and_writes_secret(db_session: Any) -> None:
 
 def test_create_without_secret_leaves_secret_ref_null(db_session: Any) -> None:
     store = FakeSecretStore()
-    conn = _create(db_session, store, secret=None)
+    conn = _create(db_session, store, secret=None, skip_test=True)
     assert conn.secret_ref is None
     assert store.data == {}
 
@@ -211,6 +213,7 @@ def test_update_changes_name_and_config(db_session: Any) -> None:
         name="renamed",
         config={**_SF_CONFIG, "warehouse": "WH_BIG"},
         secret_store=FakeSecretStore(),
+        skip_test=True,
     )
     assert updated.name == "renamed"
     assert updated.config["warehouse"] == "WH_BIG"
@@ -259,6 +262,7 @@ def test_an_unrelated_config_edit_keeps_the_inventory_sync_state(db_session: Any
         conn.id,
         config={**_SF_CONFIG, "inventory_sync": True, "warehouse": "WH_OTHER"},
         secret_store=FakeSecretStore(),
+        skip_test=True,
     )
 
     assert updated.inventory_sync_failing_since is not None
@@ -286,6 +290,7 @@ def test_update_config_reresolves_bound_suite_assets(db_session: Any) -> None:
         conn.id,
         config={**_SF_CONFIG, "database": "WAREHOUSE"},
         secret_store=FakeSecretStore(),
+        skip_test=True,
     )
 
     db_session.expire_all()
@@ -469,7 +474,7 @@ def test_test_connection_adapter_failure_raises(
 
 
 def test_test_connection_without_secret_raises(db_session: Any) -> None:
-    conn = _create(db_session, FakeSecretStore(), secret=None)
+    conn = _create(db_session, FakeSecretStore(), secret=None, skip_test=True)
     with pytest.raises(ConnectionTestFailedError, match="no stored credential"):
         svc.test_connection(db_session, conn.id, secret_store=FakeSecretStore())
 
@@ -494,7 +499,7 @@ def test_test_connection_secret_optional_no_secret_ref_succeeds(
     adapter is `secret_optional`, not 502 'no stored credential to test with'.
     """
     store = FakeSecretStore()
-    conn = _create(db_session, store, secret=None)
+    conn = _create(db_session, store, secret=None, skip_test=True)
     assert conn.secret_ref is None
     adapter = _OptionalSecretAdapter()
     monkeypatch.setattr(svc, "get_connection_adapter", lambda t: adapter)
@@ -507,7 +512,7 @@ def test_test_connection_secret_required_adapter_unaffected(db_session: Any) -> 
     behavior — this is `test_test_connection_without_secret_raises` above,
     reasserted here as the explicit negative half of the #351 parity pair.
     """
-    conn = _create(db_session, FakeSecretStore(), secret=None)
+    conn = _create(db_session, FakeSecretStore(), secret=None, skip_test=True)
     with pytest.raises(ConnectionTestFailedError, match="no stored credential"):
         svc.test_connection(db_session, conn.id, secret_store=FakeSecretStore())
 
@@ -1936,6 +1941,7 @@ def test_update_name_or_config_records_new_version(db_session: Any) -> None:
         name="renamed",
         config={**_SF_CONFIG, "warehouse": "WH_BIG"},
         secret_store=FakeSecretStore(),
+        skip_test=True,
         actor_id=actor.id,
     )
     versions = _versions(db_session, conn.id)
@@ -1973,7 +1979,7 @@ def test_create_without_secret_still_snapshots_v1(db_session: Any) -> None:
     """The credential-less create path still records v1 (conn.id is flushed before
     the snapshot regardless of whether a secret is written).
     """
-    conn = _create(db_session, FakeSecretStore(), secret=None)
+    conn = _create(db_session, FakeSecretStore(), secret=None, skip_test=True)
     versions = _versions(db_session, conn.id)
     assert [v.version_no for v in versions] == [1]
     assert versions[0].connection_id == conn.id

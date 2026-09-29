@@ -86,6 +86,7 @@ from .connection_read import ConnectionRead
 from .connection_read_config import ConnectionReadConfig
 from .connection_read_engine_capabilities_type_0 import ConnectionReadEngineCapabilitiesType0
 from .connection_reauth import ConnectionReauth
+from .connection_reauth_result import ConnectionReauthResult
 from .connection_test_result import ConnectionTestResult
 from .connection_update import ConnectionUpdate
 from .connection_update_config_type_0 import ConnectionUpdateConfigType0
@@ -335,6 +336,7 @@ __all__ = (
     "ConnectionReadConfig",
     "ConnectionReadEngineCapabilitiesType0",
     "ConnectionReauth",
+    "ConnectionReauthResult",
     "ConnectionTestResult",
     "ConnectionUpdate",
     "ConnectionUpdateConfigType0",

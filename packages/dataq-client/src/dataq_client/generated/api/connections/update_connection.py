@@ -73,6 +73,9 @@ def sync_detailed(
 ) -> Response[ConnectionRead | HTTPValidationError]:
     """Update a connection
 
+     A config or credential change is tested before it is written (#1927) — 422
+    `connection_test_failed_on_save` on failure unless `skip_test`; a rename alone is not tested.
+
     Args:
         connection_id (UUID):
         body (ConnectionUpdate):
@@ -105,6 +108,9 @@ def sync(
 ) -> ConnectionRead | HTTPValidationError | None:
     """Update a connection
 
+     A config or credential change is tested before it is written (#1927) — 422
+    `connection_test_failed_on_save` on failure unless `skip_test`; a rename alone is not tested.
+
     Args:
         connection_id (UUID):
         body (ConnectionUpdate):
@@ -131,6 +137,9 @@ async def asyncio_detailed(
     body: ConnectionUpdate,
 ) -> Response[ConnectionRead | HTTPValidationError]:
     """Update a connection
+
+     A config or credential change is tested before it is written (#1927) — 422
+    `connection_test_failed_on_save` on failure unless `skip_test`; a rename alone is not tested.
 
     Args:
         connection_id (UUID):
@@ -161,6 +170,9 @@ async def asyncio(
     body: ConnectionUpdate,
 ) -> ConnectionRead | HTTPValidationError | None:
     """Update a connection
+
+     A config or credential change is tested before it is written (#1927) — 422
+    `connection_test_failed_on_save` on failure unless `skip_test`; a rename alone is not tested.
 
     Args:
         connection_id (UUID):

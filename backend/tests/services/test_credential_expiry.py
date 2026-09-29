@@ -6,10 +6,14 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+import pytest
+
 from backend.app.datasources import registry
 from backend.app.db.models import Connection, User
 from backend.app.services import connection_service as svc
 from backend.tests.support.fake_secret_store import FakeSecretStore
+
+pytestmark = pytest.mark.usefixtures("reachable_stores")
 
 # An account SAS expiring 2026-07-29. `sig` is a made-up blob, not a credential.
 _SAS = "sv=2022-11-02&ss=b&sp=rl&se=2026-07-29T05:59:59Z&sig=notarealsignature%3D"

@@ -146,6 +146,26 @@ def stub_run_dispatch(request: pytest.FixtureRequest, monkeypatch: pytest.Monkey
 
 
 @pytest.fixture
+def reachable_stores(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Make every registered adapter's live `test` pass, for tests that save connections to
+    stores that do not exist (#1927). The save-time gate still runs; only the probe is stubbed.
+    A test marked `real_adapter_test` keeps the real probes. Returns the types probed, in order.
+    """
+    from backend.app.datasources import registry
+
+    probed: list[str] = []
+    if request.node.get_closest_marker("real_adapter_test") is not None:
+        return probed
+    for conn_type, adapter in registry._ADAPTERS.items():
+
+        def _pass(raw: object, secret: object, _type: str = conn_type, **_: object) -> None:
+            probed.append(_type)
+
+        monkeypatch.setattr(adapter, "test", _pass)
+    return probed
+
+
+@pytest.fixture
 def clean_kv_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Strip every KV_SECRET_* env var so tests start from a clean slate."""
     import os
