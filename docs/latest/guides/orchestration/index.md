@@ -44,7 +44,9 @@ with no host API dependency (ADR 0029). dbt Core has no callback hook like Airfl
 you run a tiny **post-build wrapper**:
 
 Registering any connection — orchestration providers included — is **Admin-only** (ADR
-[0033](../adr/0033-workspace-roles-rbac.md)).
+[0033](../adr/0033-workspace-roles-rbac.md)), and is tested before it is saved like any other
+connection: if the orchestrator is down when you register it, an Admin can save without testing
+and test later (see [A connection is tested before it is saved](datasources-checks.md#a-connection-is-tested-before-it-is-saved)).
 
 - Register a **dbt connection** (Connections → dbt) with its `project_name`, the `jobs` it
   publishes, and the `artifacts_uri` where builds land (`adls://…`, `s3://…`, or `file://…`)
@@ -57,8 +59,11 @@ Registering any connection — orchestration providers included — is **Admin-o
   > then looks in `<prefix>/dbt/dbt/latest/` and finds nothing).
   >
   > **Test connection** reads the first job's `run_results.json` and fails, naming the exact
-  > path it looked up, when nothing is there. For a new project, run the job once before
-  > testing.
+  > path it looked up, when nothing is there. Creating the connection runs the same test and
+  > refuses to save on failure, so a **new project** that has never built cannot be saved as
+  > is: either run the job once first, or — as an Admin — choose **Create without testing**
+  > (`skip_test: true` over the API), then run the job and test again. The poller picks the
+  > first run up once it is published.
 - **ADLS artifacts** are read with a SAS by default. Choose **Service principal** to read them
   as an Entra app instead (tenant ID, client ID, client secret). The app needs a data-plane
   role on the container, such as *Storage Blob Data Reader*. For an ADLS-compatible endpoint

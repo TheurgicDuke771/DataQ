@@ -2635,7 +2635,9 @@ post-build callback — so it works with any dbt runner (Core, Cloud, an orchest
 with no host API dependency (ADR 0029). dbt Core has no callback hook like Airflow's, so
 you run a tiny <strong>post-build wrapper</strong>:</p>
 <p>Registering any connection — orchestration providers included — is <strong>Admin-only</strong> (ADR
-<a href="../../adr/0033-workspace-roles-rbac/">0033</a>).</p>
+<a href="../../adr/0033-workspace-roles-rbac/">0033</a>), and is tested before it is saved like any other
+connection: if the orchestrator is down when you register it, an Admin can save without testing
+and test later (see <a href="../datasources-checks/#a-connection-is-tested-before-it-is-saved">A connection is tested before it is saved</a>).</p>
 <ul>
 <li>Register a <strong>dbt connection</strong> (Connections → dbt) with its <code>project_name</code>, the <code>jobs</code> it
   publishes, and the <code>artifacts_uri</code> where builds land (<code>adls://…</code>, <code>s3://…</code>, or <code>file://…</code>)
@@ -2647,8 +2649,11 @@ you run a tiny <strong>post-build wrapper</strong>:</p>
 publisher's own output variable verbatim usually double-counts the job segment (the poll
 then looks in <code>&lt;prefix&gt;/dbt/dbt/latest/</code> and finds nothing).</p>
 <p><strong>Test connection</strong> reads the first job's <code>run_results.json</code> and fails, naming the exact
-path it looked up, when nothing is there. For a new project, run the job once before
-testing.</p>
+path it looked up, when nothing is there. Creating the connection runs the same test and
+refuses to save on failure, so a <strong>new project</strong> that has never built cannot be saved as
+is: either run the job once first, or — as an Admin — choose <strong>Create without testing</strong>
+(<code>skip_test: true</code> over the API), then run the job and test again. The poller picks the
+first run up once it is published.</p>
 </blockquote>
 </li>
 <li><strong>ADLS artifacts</strong> are read with a SAS by default. Choose <strong>Service principal</strong> to read them

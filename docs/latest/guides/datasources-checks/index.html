@@ -932,6 +932,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#a-connection-is-tested-before-it-is-saved" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A connection is tested before it is saved
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#onelake-fabric-lakehouse-files" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2715,6 +2726,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#a-connection-is-tested-before-it-is-saved" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A connection is tested before it is saved
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#onelake-fabric-lakehouse-files" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3197,13 +3219,33 @@
 </tbody>
 </table>
 <h2 id="add-a-connection">Add a connection<a class="headerlink" href="#add-a-connection" title="Permanent link">¶</a></h2>
-<p>Adding, editing, deleting or re-crendentialing a connection requires the <strong>Admin</strong> workspace
+<p>Adding, editing, deleting or re-credentialing a connection requires the <strong>Admin</strong> workspace
 role (ADR <a href="../../adr/0033-workspace-roles-rbac/">0033</a>) — connections are shared infrastructure
 holding credentials, and every suite in the workspace runs on them. Members and Viewers can
 see and reference them, and Members can run the saved-connection <strong>Test</strong>.</p>
 <p>In the UI, <strong>Connections → Add connection</strong>, pick the datasource, fill the type-specific
 fields, and <strong>Test</strong> it (a live reachability probe). Credentials are stored in the secret
 store (Azure Key Vault / AWS Secrets Manager / OpenBao, depending on deployment), never in the database.</p>
+<h3 id="a-connection-is-tested-before-it-is-saved">A connection is tested before it is saved<a class="headerlink" href="#a-connection-is-tested-before-it-is-saved" title="Permanent link">¶</a></h3>
+<p><strong>Create</strong> runs the same live test as the <strong>Test</strong> button first, and saves nothing if it fails:
+the form shows the reason and the connection is not created. The same applies when you edit a
+connection's settings or credential (a rename alone is not tested) and when you
+<strong>re-authenticate</strong> — a new credential that does not work is refused, and the stored one stays
+in place.</p>
+<p>If the test fails for a reason that does not mean the connection is wrong, an Admin can choose
+<strong>Create without testing</strong> (or <strong>Save without testing</strong> / <strong>Rotate without testing</strong>). Use it
+when:</p>
+<ul>
+<li>the store is not reachable from the DataQ API right now, but will be from the workers that
+  run the checks;</li>
+<li>an orchestrator (ADF, Airflow) is down while you register it;</li>
+<li>a <strong>new dbt project</strong> has not published a <code>run_results.json</code> yet — its test fails until the
+  first build does (see <a href="../orchestration/">Orchestration</a>).</li>
+</ul>
+<p>A connection saved this way is not verified: its credential health reads <em>Unknown</em>, and the
+audit log records that its test was skipped. Test it once the store is reachable. Over the API,
+send <code>skip_test: true</code> with the create, update or re-auth request; see the
+<a href="../../reference/rest-api/#connections">REST API</a>.</p>
 <p>Snowflake supports two auth modes: <strong>password</strong> and <strong>key pair (RSA)</strong>. For key pair,
 paste the PEM private key; if the key is passphrase-protected (PKCS#8), fill the optional
 <strong>Key passphrase</strong> field — both parts are stored together as one secret and rotate
@@ -3319,8 +3361,9 @@ warehouse credits and cannot report on a connection nobody has exercised.</p>
 <p>Only credential <strong>rejections</strong> move this signal. A missing SELECT grant, an unreachable
 host and a bad table name all leave it untouched, because none of them says the credential
 is dead — those surface as the run's own failure reason instead.</p>
-<p>Re-authenticating a connection, or a passing <strong>Test connection</strong>, clears the signal
-immediately; you do not have to wait for the next scheduled run to confirm a rotation
+<p>Re-authenticating a connection (which tests the new credential first), or a passing <strong>Test
+connection</strong>, clears the signal immediately — a credential rotated in <em>without</em> testing resets
+it to <strong>Unknown</strong> instead; you do not have to wait for the next scheduled run to confirm a rotation
 worked. Workspace admins see every datasource connection's credential health together on
 the admin health view.</p>
 <p>Orchestration providers (ADF, Airflow, dbt) do not carry this signal — their equivalent is

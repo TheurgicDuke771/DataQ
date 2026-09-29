@@ -2482,7 +2482,9 @@ OpenAI-compatible endpoint.</em></p>
 endpoints) the base URL, paste the API key, and press <strong>Test</strong> — it makes one tiny call
 with the values in the form and reports the model and latency. Nothing is saved by Test,
 but the probe itself is recorded like any other call, and it runs whether or not the
-enable switch is on. Then <strong>Save</strong> and switch on <em>Enable outbound LLM calls</em>.</p>
+enable switch is on. Then <strong>Save</strong> and switch on <em>Enable outbound LLM calls</em>. Saving with
+calls enabled runs the same test first and saves nothing if it fails; saving with them disabled
+skips the test, so a provider that stopped working can always be switched off.</p>
 <p><a class="glightbox" data-type="image" data-width="auto" data-height="auto" href="../../assets/screenshots/admin-llm-settings.png" data-desc-position="bottom"><img alt="The LLM provider panel on Admin → Settings: provider, model, base URL, API key, structured-output mode and the enable switch" class="screenshot" src="../../assets/screenshots/admin-llm-settings.png"></a></p>
 <p><em>The key is write-only: it is stored in your secret store, never shown again, and never
 forwarded if you later change the provider or endpoint — you re-enter it on purpose.</em></p>

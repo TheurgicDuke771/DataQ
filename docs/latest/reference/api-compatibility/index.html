@@ -1433,6 +1433,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#recorded-exceptions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recorded exceptions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#the-export-documents-version" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2421,6 +2432,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#recorded-exceptions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recorded exceptions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#the-export-documents-version" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2566,6 +2588,24 @@ ignored, so a misspelled field fails loudly rather than being dropped.</p>
 <p>The one exception is a <strong>security fix</strong>. When keeping the old behaviour would leave a
 vulnerability open, the change can take effect immediately. It is still announced under
 <strong>Breaking</strong>, with the reason.</p>
+<h2 id="recorded-exceptions">Recorded exceptions<a class="headerlink" href="#recorded-exceptions" title="Permanent link">¶</a></h2>
+<p>Changes that took effect without the deprecation window above, and why:</p>
+<table>
+<thead>
+<tr>
+<th>Release</th>
+<th>Change</th>
+<th>Why no deprecation window</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Unreleased</td>
+<td><code>POST /connections</code>, a config- or credential-changing <code>PATCH /connections/{id}</code>, and <code>POST /connections/{id}/reauth</code> return <code>422 connection_test_failed_on_save</code> and write nothing when the connection's test fails; <code>PUT /admin/llm</code> does the same for an enabled provider (<code>422 llm_test_failed_on_save</code>).</td>
+<td>A request this now refuses used to save a connection that could not work, and a failing re-auth used to overwrite a working credential. A client that wants the old behaviour sends the new optional <code>skip_test: true</code>, so no client is left without a path.</td>
+</tr>
+</tbody>
+</table>
 <h2 id="the-export-documents-version">The export document's <code>version</code><a class="headerlink" href="#the-export-documents-version" title="Permanent link">¶</a></h2>
 <p>The <code>version</code> field is the compatibility lever for the suite document:</p>
 <ul>

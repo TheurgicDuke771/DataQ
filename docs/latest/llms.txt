@@ -27,7 +27,7 @@ lists which).
 - [AI features (LLM)](https://theurgicduke771.github.io/DataQ/docs/latest/guides/ai-features/index.md): DataQ can call a language model **you choose** for three jobs: turn a sentence into a
 - [API keys (PATs)](https://theurgicduke771.github.io/DataQ/docs/latest/guides/api-keys/index.md): DataQ can mint you a **personal access token (PAT)** — a long-lived, revocable
 - [Best practices](https://theurgicduke771.github.io/DataQ/docs/latest/guides/best-practices/index.md): Field-tested guidance for getting signal (not noise) out of DataQ. Everything here is
-- [Datasources & checks](https://theurgicduke771.github.io/DataQ/docs/latest/guides/datasources-checks/index.md): Adding, editing, deleting or re-crendentialing a connection requires the **Admin** workspace
+- [Datasources & checks](https://theurgicduke771.github.io/DataQ/docs/latest/guides/datasources-checks/index.md): Adding, editing, deleting or re-credentialing a connection requires the **Admin** workspace
 - [Features overview](https://theurgicduke771.github.io/DataQ/docs/latest/guides/features/index.md): Everything DataQ offers, by area. This is the readable tour — for the terse
 - [AI assistants (MCP)](https://theurgicduke771.github.io/DataQ/docs/latest/guides/mcp-setup/index.md): DataQ ships a built-in [MCP](https://modelcontextprotocol.io) server so AI assistants — Claude Desktop, Claude.ai, VS Code / GitHub Copilot, Cursor — can answer
 - [Notifications & alerting](https://theurgicduke771.github.io/DataQ/docs/latest/guides/notifications/index.md): DataQ alerts on run outcomes over **Microsoft Teams**, **Slack**, and **email** — all

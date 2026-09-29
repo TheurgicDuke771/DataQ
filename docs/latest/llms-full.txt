@@ -1361,7 +1361,9 @@ OpenAI-compatible endpoint.*
 endpoints) the base URL, paste the API key, and press **Test** — it makes one tiny call
 with the values in the form and reports the model and latency. Nothing is saved by Test,
 but the probe itself is recorded like any other call, and it runs whether or not the
-enable switch is on. Then **Save** and switch on *Enable outbound LLM calls*.
+enable switch is on. Then **Save** and switch on *Enable outbound LLM calls*. Saving with
+calls enabled runs the same test first and saves nothing if it fails; saving with them disabled
+skips the test, so a provider that stopped working can always be switched off.
 
 ![The LLM provider panel on Admin → Settings: provider, model, base URL, API key, structured-output mode and the enable switch](../assets/screenshots/admin-llm-settings.png){ .screenshot }
 
@@ -1794,7 +1796,7 @@ If you **repoint a suite to a different target** after a policy exists, DataQ do
 
 ## Add a connection
 
-Adding, editing, deleting or re-crendentialing a connection requires the **Admin** workspace
+Adding, editing, deleting or re-credentialing a connection requires the **Admin** workspace
 role (ADR [0033](../adr/0033-workspace-roles-rbac.md)) — connections are shared infrastructure
 holding credentials, and every suite in the workspace runs on them. Members and Viewers can
 see and reference them, and Members can run the saved-connection **Test**.
@@ -1802,6 +1804,29 @@ see and reference them, and Members can run the saved-connection **Test**.
 In the UI, **Connections → Add connection**, pick the datasource, fill the type-specific
 fields, and **Test** it (a live reachability probe). Credentials are stored in the secret
 store (Azure Key Vault / AWS Secrets Manager / OpenBao, depending on deployment), never in the database.
+
+### A connection is tested before it is saved
+
+**Create** runs the same live test as the **Test** button first, and saves nothing if it fails:
+the form shows the reason and the connection is not created. The same applies when you edit a
+connection's settings or credential (a rename alone is not tested) and when you
+**re-authenticate** — a new credential that does not work is refused, and the stored one stays
+in place.
+
+If the test fails for a reason that does not mean the connection is wrong, an Admin can choose
+**Create without testing** (or **Save without testing** / **Rotate without testing**). Use it
+when:
+
+- the store is not reachable from the DataQ API right now, but will be from the workers that
+  run the checks;
+- an orchestrator (ADF, Airflow) is down while you register it;
+- a **new dbt project** has not published a `run_results.json` yet — its test fails until the
+  first build does (see [Orchestration](orchestration.md)).
+
+A connection saved this way is not verified: its credential health reads *Unknown*, and the
+audit log records that its test was skipped. Test it once the store is reachable. Over the API,
+send `skip_test: true` with the create, update or re-auth request; see the
+[REST API](../reference/rest-api.md#connections).
 
 Snowflake supports two auth modes: **password** and **key pair (RSA)**. For key pair,
 paste the PEM private key; if the key is passphrase-protected (PKCS#8), fill the optional
@@ -1898,8 +1923,9 @@ Only credential **rejections** move this signal. A missing SELECT grant, an unre
 host and a bad table name all leave it untouched, because none of them says the credential
 is dead — those surface as the run's own failure reason instead.
 
-Re-authenticating a connection, or a passing **Test connection**, clears the signal
-immediately; you do not have to wait for the next scheduled run to confirm a rotation
+Re-authenticating a connection (which tests the new credential first), or a passing **Test
+connection**, clears the signal immediately — a credential rotated in *without* testing resets
+it to **Unknown** instead; you do not have to wait for the next scheduled run to confirm a rotation
 worked. Workspace admins see every datasource connection's credential health together on
 the admin health view.
 
@@ -3456,7 +3482,9 @@ with no host API dependency (ADR 0029). dbt Core has no callback hook like Airfl
 you run a tiny **post-build wrapper**:
 
 Registering any connection — orchestration providers included — is **Admin-only** (ADR
-[0033](../adr/0033-workspace-roles-rbac.md)).
+[0033](../adr/0033-workspace-roles-rbac.md)), and is tested before it is saved like any other
+connection: if the orchestrator is down when you register it, an Admin can save without testing
+and test later (see [A connection is tested before it is saved](datasources-checks.md#a-connection-is-tested-before-it-is-saved)).
 
 - Register a **dbt connection** (Connections → dbt) with its `project_name`, the `jobs` it
   publishes, and the `artifacts_uri` where builds land (`adls://…`, `s3://…`, or `file://…`)
@@ -3469,8 +3497,11 @@ Registering any connection — orchestration providers included — is **Admin-o
   > then looks in `<prefix>/dbt/dbt/latest/` and finds nothing).
   >
   > **Test connection** reads the first job's `run_results.json` and fails, naming the exact
-  > path it looked up, when nothing is there. For a new project, run the job once before
-  > testing.
+  > path it looked up, when nothing is there. Creating the connection runs the same test and
+  > refuses to save on failure, so a **new project** that has never built cannot be saved as
+  > is: either run the job once first, or — as an Admin — choose **Create without testing**
+  > (`skip_test: true` over the API), then run the job and test again. The poller picks the
+  > first run up once it is published.
 - **ADLS artifacts** are read with a SAS by default. Choose **Service principal** to read them
   as an Entra app instead (tenant ID, client ID, client secret). The app needs a data-plane
   role on the container, such as *Storage Blob Data Reader*. For an ADLS-compatible endpoint
@@ -4247,6 +4278,14 @@ The one exception is a **security fix**. When keeping the old behaviour would le
 vulnerability open, the change can take effect immediately. It is still announced under
 **Breaking**, with the reason.
 
+## Recorded exceptions
+
+Changes that took effect without the deprecation window above, and why:
+
+| Release | Change | Why no deprecation window |
+|---|---|---|
+| Unreleased | `POST /connections`, a config- or credential-changing `PATCH /connections/{id}`, and `POST /connections/{id}/reauth` return `422 connection_test_failed_on_save` and write nothing when the connection's test fails; `PUT /admin/llm` does the same for an enabled provider (`422 llm_test_failed_on_save`). | A request this now refuses used to save a connection that could not work, and a failing re-auth used to overwrite a working credential. A client that wants the old behaviour sends the new optional `skip_test: true`, so no client is left without a path. |
+
 ## The export document's `version`
 
 The `version` field is the compatibility lever for the suite document:
@@ -4276,6 +4315,23 @@ Notable, user-facing changes. Dates are the release/merge date. This is a curate
 the per-PR history lives in the repo's commit log and pull requests.
 
 ## Unreleased
+
+### Breaking
+
+- **A connection that fails its own test is no longer saved.** Creating a connection, changing
+  its settings or credential, and re-authenticating it now run the connection's test first. If
+  the test fails, the request returns `422` with `error.code`
+  `connection_test_failed_on_save` and nothing is written — a re-authentication keeps the
+  stored credential instead of replacing it with one that does not work (before, it replaced
+  it and then reported the failure). The reason is the same safe message **Test** gives. An
+  Admin can still save on purpose, for a store the API cannot reach while you set it up or a
+  new dbt project with no `run_results.json` yet: **Create/Save/Rotate without testing** in the
+  UI, or `"skip_test": true` in the request body; the audit log records it. Saving an
+  **enabled** LLM provider (`PUT /admin/llm`) likewise runs its test first
+  (`llm_test_failed_on_save`); a disabled one is saved untested. API clients that create
+  connections with a config that fails its test must fix the config or send `skip_test`. See
+  [A connection is tested before it is saved](../guides/datasources-checks.md#a-connection-is-tested-before-it-is-saved)
+  and [API compatibility](api-compatibility.md#recorded-exceptions).
 
 ### Added
 
@@ -5207,7 +5263,7 @@ in production — this page is the reference.)
 | GET / PATCH / DELETE | `/connections/{id}` | Read / update / delete. |
 | POST | `/connections/test` | Test an **unsaved draft** connection — nothing is persisted. |
 | POST | `/connections/{id}/test` | Test live connectivity. |
-| POST | `/connections/{id}/reauth` | Rotate the credential and verify. |
+| POST | `/connections/{id}/reauth` | Test a new credential, then rotate it in. |
 | GET | `/connections/{id}/versions` | Config-change history (ADR 0020 snapshots — never credentials). |
 | GET | `/connections/{id}/browse/catalog` | Unity Catalog only: one level of catalogs → schemas → tables (`?catalog=&schema=&limit=`). |
 | GET | `/connections/{id}/browse/files` | ADLS Gen2 / S3 only: the folders and files directly under `?prefix=` in the connection's container/bucket. |
@@ -5219,6 +5275,20 @@ is Member+, as are the two `browse/*` listings (they open the datasource with th
 credential, and a Member is exactly who points a new suite at a connection); list and read are
 open to any authenticated user (responses carry `has_secret`, never secret material). A Member's PAT hitting `POST /connections` gets `403` regardless of
 any suite grant — the two axes are independent.
+
+**Tested before saved.** `POST /connections`, a `PATCH` that changes `config`, `secret`
+or `catalog_secret`, and `POST /connections/{id}/reauth` run the connection's test first. On
+failure they return `422` with `error.code` `connection_test_failed_on_save` and write nothing —
+no row, no credential, and a re-auth leaves the stored credential in place. The message is the
+same classified, secret-free reason `POST /connections/{id}/test` gives. Send `"skip_test": true`
+in the body to save without the test (for a store the API cannot reach at authoring time); the
+audit event records `connection_test: "skipped"` (otherwise `"passed"`, or `"not_required"` for
+a rename or an `inventory_sync`-only change). A re-auth sent with `skip_test` answers
+`{"ok": true, "tested": false}`.
+
+`PUT /admin/llm` likewise live-tests an **enabled** provider config (the `POST /admin/llm/test`
+probe) before saving it and returns `422` `llm_test_failed_on_save` if the test fails; a config
+saved with `enabled: false` is not tested, so a broken provider can always be switched off.
 
 **Browsing.** Both `browse/*` listings return **names only** — no credential, no cell
 value — one level per call. `limit` defaults to 200 (max 500); a level holding more than that

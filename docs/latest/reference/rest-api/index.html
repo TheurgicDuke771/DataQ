@@ -2746,7 +2746,7 @@ in production — this page is the reference.)</p>
 <tr>
 <td>POST</td>
 <td><code>/connections/{id}/reauth</code></td>
-<td>Rotate the credential and verify.</td>
+<td>Test a new credential, then rotate it in.</td>
 </tr>
 <tr>
 <td>GET</td>
@@ -2772,6 +2772,18 @@ is Member+, as are the two <code>browse/*</code> listings (they open the datasou
 credential, and a Member is exactly who points a new suite at a connection); list and read are
 open to any authenticated user (responses carry <code>has_secret</code>, never secret material). A Member's PAT hitting <code>POST /connections</code> gets <code>403</code> regardless of
 any suite grant — the two axes are independent.</p>
+<p><strong>Tested before saved.</strong> <code>POST /connections</code>, a <code>PATCH</code> that changes <code>config</code>, <code>secret</code>
+or <code>catalog_secret</code>, and <code>POST /connections/{id}/reauth</code> run the connection's test first. On
+failure they return <code>422</code> with <code>error.code</code> <code>connection_test_failed_on_save</code> and write nothing —
+no row, no credential, and a re-auth leaves the stored credential in place. The message is the
+same classified, secret-free reason <code>POST /connections/{id}/test</code> gives. Send <code>"skip_test": true</code>
+in the body to save without the test (for a store the API cannot reach at authoring time); the
+audit event records <code>connection_test: "skipped"</code> (otherwise <code>"passed"</code>, or <code>"not_required"</code> for
+a rename or an <code>inventory_sync</code>-only change). A re-auth sent with <code>skip_test</code> answers
+<code>{"ok": true, "tested": false}</code>.</p>
+<p><code>PUT /admin/llm</code> likewise live-tests an <strong>enabled</strong> provider config (the <code>POST /admin/llm/test</code>
+probe) before saving it and returns <code>422</code> <code>llm_test_failed_on_save</code> if the test fails; a config
+saved with <code>enabled: false</code> is not tested, so a broken provider can always be switched off.</p>
 <p><strong>Browsing.</strong> Both <code>browse/*</code> listings return <strong>names only</strong> — no credential, no cell
 value — one level per call. <code>limit</code> defaults to 200 (max 500); a level holding more than that
 comes back with <code>truncated: true</code>, so the list is a prefix of the level, never presented as all

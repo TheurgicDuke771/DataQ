@@ -1485,6 +1485,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#breaking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#added" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2406,6 +2417,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#breaking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#added" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2524,6 +2546,23 @@
 <p>Notable, user-facing changes. Dates are the release/merge date. This is a curated summary —
 the per-PR history lives in the repo's commit log and pull requests.</p>
 <h2 id="unreleased">Unreleased<a class="headerlink" href="#unreleased" title="Permanent link">¶</a></h2>
+<h3 id="breaking">Breaking<a class="headerlink" href="#breaking" title="Permanent link">¶</a></h3>
+<ul>
+<li><strong>A connection that fails its own test is no longer saved.</strong> Creating a connection, changing
+  its settings or credential, and re-authenticating it now run the connection's test first. If
+  the test fails, the request returns <code>422</code> with <code>error.code</code>
+  <code>connection_test_failed_on_save</code> and nothing is written — a re-authentication keeps the
+  stored credential instead of replacing it with one that does not work (before, it replaced
+  it and then reported the failure). The reason is the same safe message <strong>Test</strong> gives. An
+  Admin can still save on purpose, for a store the API cannot reach while you set it up or a
+  new dbt project with no <code>run_results.json</code> yet: <strong>Create/Save/Rotate without testing</strong> in the
+  UI, or <code>"skip_test": true</code> in the request body; the audit log records it. Saving an
+  <strong>enabled</strong> LLM provider (<code>PUT /admin/llm</code>) likewise runs its test first
+  (<code>llm_test_failed_on_save</code>); a disabled one is saved untested. API clients that create
+  connections with a config that fails its test must fix the config or send <code>skip_test</code>. See
+  <a href="../../guides/datasources-checks/#a-connection-is-tested-before-it-is-saved">A connection is tested before it is saved</a>
+  and <a href="../api-compatibility/#recorded-exceptions">API compatibility</a>.</li>
+</ul>
 <h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">¶</a></h3>
 <ul>
 <li><strong>Python client and CLI (<code>dataq-client</code>).</strong> Install the wheel attached to the release (or the
