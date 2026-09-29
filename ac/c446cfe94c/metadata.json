@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "acc446cfe94c",
+  "strategy": "manual-commit",
+  "branch": "perf/issue-2105-profiler-load-once",
+  "checkpoints_count": 9,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/ac/c446cfe94c/0/metadata.json",
+      "transcript": "/ac/c446cfe94c/0/full.jsonl",
+      "compact_transcript": "/ac/c446cfe94c/0/transcript.jsonl",
+      "content_hash": "/ac/c446cfe94c/0/content_hash.txt",
+      "prompt": "/ac/c446cfe94c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 860,
+    "cache_creation_tokens": 675062,
+    "cache_read_tokens": 172298854,
+    "output_tokens": 293395,
+    "api_call_count": 430
+  }
+}
