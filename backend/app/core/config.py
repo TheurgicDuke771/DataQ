@@ -271,7 +271,8 @@ class Settings(BaseSettings):
     run_admission_expansion_csv: float = Field(default=8.0, gt=0)
     run_admission_expansion_parquet: float = Field(default=9.0, gt=0)
     run_admission_expansion_default: float = Field(default=9.0, gt=0)
-    # Row-shaped estimates (a sampled flat-file read, comparison sides, the Iceberg floor).
+    # Row-shaped estimates (a sampled flat-file read, comparison sides). UC and Iceberg price rows
+    # by type instead.
     run_admission_row_bytes: int = Field(default=1024, gt=0)
     # A reservation outlives the child holding it by at most this long: an OOM SIGKILL never
     # runs the release, so the lease is what frees the budget.

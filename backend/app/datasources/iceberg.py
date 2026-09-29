@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, ClassVar, Literal
 
@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, model_validator
 
 from backend.app.core.config import get_settings
 from backend.app.core.credential_expiry import azure_sas_expiry
+from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.core.uri_credentials import inject_uri_password, uri_password
 from backend.app.datasources.base import CheckOutcome, CheckSpec, MonitorSpec, SuiteOutcome
@@ -22,6 +23,8 @@ from backend.app.datasources.monitors import (
     validate_monitor_config,
 )
 from backend.app.datasources.sampling import enforce_row_cap
+
+log = get_logger(__name__)
 
 # Catalog backends pyiceberg's ``load_catalog`` understands.
 IcebergCatalogType = Literal["rest", "sql", "glue", "hive"]
@@ -170,28 +173,129 @@ def scan_row_count(table: Any) -> int:
     return int(table.scan().count())
 
 
-@dataclass(frozen=True)
-class PlannedScan:
-    """What a full scan will read, from manifest metadata: rows, and data-file bytes
-    keyed by lower-cased file format (``parquet`` / ``orc`` / ``avro``)."""
+#: Peak worker bytes per cell of a full snapshot read, GX run included (#2146): 2 GiB / 1 CPU rig,
+#: 49 runs over 21 table shapes (docs/site/architecture/perf-baseline.md), 1.07-2.14x the peak.
+_BOOL_CELL_BYTES = 8
+_NARROW_CELL_BYTES = 14  # integer / float / temporal of 32 bits or fewer
+_WIDE_CELL_BYTES = 26  # the same types at 64 bits
+_DECIMAL_CELL_BYTES = 34
+#: Strings, binary and nested cells scale with their Arrow size, which no metadata carries:
+#: a dictionary-encoded column is a few bytes per cell on disk, so it is sampled.
+_VARIABLE_CELL_BYTES = 8
+_VARIABLE_BYTES_FACTOR = 3.0
+_WIDTH_SAMPLE_ROWS = 1000
+_WIDTH_SAMPLE_BUFFER_BYTES = 1 << 20
+#: The Arrow size a variable-width cell is priced at when the sample cannot see its column:
+#: a 100-character string with its 8-byte offset, rounded up.
+_UNSAMPLED_CELL_ARROW_BYTES = 128
+#: What a full read costs beyond its cells, whatever the table: the intercept of the fit.
+ICEBERG_RUN_OVERHEAD_BYTES = 140 * 1024 * 1024
 
-    rows: int
-    bytes_by_format: dict[str, int]
+
+def _fixed_cell_bytes(arrow_type: Any) -> int | None:
+    import pyarrow as pa
+
+    if pa.types.is_boolean(arrow_type):
+        return _BOOL_CELL_BYTES
+    if pa.types.is_decimal(arrow_type):
+        return _DECIMAL_CELL_BYTES
+    if (
+        pa.types.is_integer(arrow_type)
+        or pa.types.is_floating(arrow_type)
+        or pa.types.is_temporal(arrow_type)
+    ):
+        return _NARROW_CELL_BYTES if arrow_type.bit_width <= 32 else _WIDE_CELL_BYTES
+    return None
 
 
-def planned_scan(table: Any) -> PlannedScan:
-    """Plan the scan once and total its data files — manifest metadata, never a data read.
+def _sampled_cell_sizes(table: Any, variable: list[tuple[int, Any]]) -> dict[int, float]:
+    """Mean Arrow bytes per cell of each variable-width field, keyed by field id, from the first
+    rows of the first data file. A field is missing when it could not be sampled: the file is
+    not Parquet, it lacks the column, or reading it failed.
 
-    ``int()`` because both values cross a driver boundary.
+    Read straight from the Parquet file, one column at a time: a pyiceberg scan honours a row
+    limit only after reading whole files, which cost 0.9 GiB to sample 1,000 rows of a
+    long-text table on the rig. Matched by field id, so a renamed column still resolves (by
+    name only for a file written without ids).
     """
-    rows = 0
-    by_format: dict[str, int] = {}
-    for task in table.scan().plan_files():
-        rows += int(task.file.record_count)
-        fmt = task.file.file_format
-        key = str(getattr(fmt, "value", fmt)).lower()
-        by_format[key] = by_format.get(key, 0) + int(task.file.file_size_in_bytes)
-    return PlannedScan(rows=rows, bytes_by_format=by_format)
+    task = next(iter(table.scan().plan_files()), None)
+    if task is None:
+        return {}
+    fmt = task.file.file_format
+    if str(getattr(fmt, "value", fmt)).lower() != "parquet":
+        return {}
+    try:
+        return _read_cell_sizes(table, task.file.file_path, variable)
+    except Exception:
+        # The data file is unreadable while the metadata was not (a 403 on data files, a
+        # timeout): price every column at the fallback rather than leave the run unmetered.
+        log.warning(
+            "iceberg_width_sample_failed",
+            table=".".join(str(part) for part in table.name()),
+            exc_info=True,
+        )
+        return {}
+
+
+def _read_cell_sizes(
+    table: Any, file_path: str, variable: list[tuple[int, Any]]
+) -> dict[int, float]:
+    import pyarrow.parquet as pq
+
+    sizes: dict[int, float] = {}
+    with table.io.new_input(file_path).open() as stream:
+        parquet = pq.ParquetFile(stream, buffer_size=_WIDTH_SAMPLE_BUFFER_BYTES, pre_buffer=False)
+        names = {
+            int(f.metadata[b"PARQUET:field_id"]): f.name
+            for f in parquet.schema_arrow
+            if f.metadata and b"PARQUET:field_id" in f.metadata
+        }
+        if not names:
+            present = set(parquet.schema_arrow.names)
+            names = {fid: f.name for fid, f in variable if f.name in present}
+        for field_id, arrow_field in variable:
+            name = names.get(field_id)
+            if name is None:
+                continue
+            batch = next(
+                parquet.iter_batches(
+                    batch_size=_WIDTH_SAMPLE_ROWS, columns=[name], use_threads=False
+                ),
+                None,
+            )
+            if batch is None or batch.num_rows == 0:
+                continue
+            # The costs were fitted on the schema's own Arrow types (large offsets).
+            column = batch.column(0).cast(arrow_field.type)
+            sizes[field_id] = column.nbytes / batch.num_rows
+    return sizes
+
+
+def snapshot_row_bytes(table: Any) -> int:
+    """Estimated peak worker bytes per row of a full snapshot read, priced by Arrow type.
+
+    Fixed-width columns are priced from the schema alone. Variable-width ones (strings, binary,
+    nested) are priced from the Arrow size of their first rows, since neither the manifests nor
+    the Parquet footers record a decoded size. A column the sample cannot see (a non-Parquet
+    file, or one that lacks the column) is priced at a conservative size, not as empty: the
+    other files may hold plenty of it.
+    """
+    schema = table.schema()
+    total = 0
+    variable: list[tuple[int, Any]] = []
+    for field, arrow_field in zip(schema.fields, schema.as_arrow(), strict=True):
+        fixed = _fixed_cell_bytes(arrow_field.type)
+        if fixed is None:
+            variable.append((field.field_id, arrow_field))
+        else:
+            total += fixed
+    if not variable:
+        return total
+    sizes = _sampled_cell_sizes(table, variable)
+    for field_id, _ in variable:
+        mean = sizes.get(field_id, _UNSAMPLED_CELL_ARROW_BYTES)
+        total += _VARIABLE_CELL_BYTES + int(_VARIABLE_BYTES_FACTOR * mean)
+    return total
 
 
 def planned_row_count(table: Any) -> int:

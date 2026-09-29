@@ -175,16 +175,19 @@ def _iceberg_estimate(
     connection: Connection, target: ResolvedTarget, checks: list[Check]
 ) -> MemoryEstimate | None:
     """The native read materialises the whole current snapshot, so it is sized from the same
-    manifest plan the row-cap probe uses — metadata only, never a data read.
+    manifest plan the row-cap probe uses, priced per row by Arrow type (#2146).
 
-    Rows alone are width-blind and file bytes alone are blind to dictionary-encoded strings,
-    which are small on disk and full-width in memory; the larger of the two is reserved.
+    Fixed-width columns cost nothing to price. Variable-width ones are sampled from the first
+    rows, because rows alone are width-blind and file bytes are blind to dictionary-encoded
+    strings, which are small on disk and full-width in memory.
     """
     from backend.app.datasources.iceberg import (
+        ICEBERG_RUN_OVERHEAD_BYTES,
         IcebergConfig,
         iceberg_credentials,
         load_iceberg_table,
-        planned_scan,
+        planned_row_count,
+        snapshot_row_bytes,
         summary_scan_fallback_reason,
     )
     from backend.app.datasources.monitors import (
@@ -214,27 +217,18 @@ def _iceberg_estimate(
             reason=reason,
         )
         basis_prefix = "iceberg_monitor_fallback"
-    scan = planned_scan(table)
-    settings = get_settings()
-    cap = settings.iceberg_scan_row_cap
-    if cap > 0 and scan.rows > cap:
+    rows = planned_row_count(table)
+    cap = get_settings().iceberg_scan_row_cap
+    if cap > 0 and rows > cap:
         # Refused by the row-cap probe before anything is read, so it holds nothing.
         return MemoryEstimate(bytes=0, basis="iceberg_over_cap")
-    by_rows = scan.rows * settings.run_admission_row_bytes
-    by_bytes = int(
-        sum(
-            size
-            * (
-                settings.run_admission_expansion_parquet
-                if fmt == "parquet"
-                else settings.run_admission_expansion_default
-            )
-            for fmt, size in scan.bytes_by_format.items()
-        )
+    if rows == 0:
+        # A snapshot-less table reads nothing, so it is not charged the read's overhead.
+        return MemoryEstimate(bytes=0, basis=f"{basis_prefix}_empty")
+    return MemoryEstimate(
+        bytes=ICEBERG_RUN_OVERHEAD_BYTES + rows * snapshot_row_bytes(table),
+        basis=f"{basis_prefix}_schema_width",
     )
-    if by_rows >= by_bytes:
-        return MemoryEstimate(bytes=by_rows, basis=f"{basis_prefix}_planned_rows")
-    return MemoryEstimate(bytes=by_bytes, basis=f"{basis_prefix}_file_bytes")
 
 
 def _comparison_bytes(checks: list[Check]) -> int:
