@@ -65,7 +65,7 @@ in production — this page is the reference.)
 | GET / PATCH / DELETE | `/connections/{id}` | Read / update / delete. |
 | POST | `/connections/test` | Test an **unsaved draft** connection — nothing is persisted. |
 | POST | `/connections/{id}/test` | Test live connectivity. |
-| POST | `/connections/{id}/reauth` | Rotate the credential and verify. |
+| POST | `/connections/{id}/reauth` | Test a new credential, then rotate it in. |
 | GET | `/connections/{id}/versions` | Config-change history (ADR 0020 snapshots — never credentials). |
 | GET | `/connections/{id}/browse/catalog` | Unity Catalog only: one level of catalogs → schemas → tables (`?catalog=&schema=&limit=`). |
 | GET | `/connections/{id}/browse/files` | ADLS Gen2 / S3 only: the folders and files directly under `?prefix=` in the connection's container/bucket. |
@@ -77,6 +77,20 @@ is Member+, as are the two `browse/*` listings (they open the datasource with th
 credential, and a Member is exactly who points a new suite at a connection); list and read are
 open to any authenticated user (responses carry `has_secret`, never secret material). A Member's PAT hitting `POST /connections` gets `403` regardless of
 any suite grant — the two axes are independent.
+
+**Tested before saved.** `POST /connections`, a `PATCH` that changes `config`, `secret`
+or `catalog_secret`, and `POST /connections/{id}/reauth` run the connection's test first. On
+failure they return `422` with `error.code` `connection_test_failed_on_save` and write nothing —
+no row, no credential, and a re-auth leaves the stored credential in place. The message is the
+same classified, secret-free reason `POST /connections/{id}/test` gives. Send `"skip_test": true`
+in the body to save without the test (for a store the API cannot reach at authoring time); the
+audit event records `connection_test: "skipped"` (otherwise `"passed"`, or `"not_required"` for
+a rename or an `inventory_sync`-only change). A re-auth sent with `skip_test` answers
+`{"ok": true, "tested": false}`.
+
+`PUT /admin/llm` likewise live-tests an **enabled** provider config (the `POST /admin/llm/test`
+probe) before saving it and returns `422` `llm_test_failed_on_save` if the test fails; a config
+saved with `enabled: false` is not tested, so a broken provider can always be switched off.
 
 **Browsing.** Both `browse/*` listings return **names only** — no credential, no cell
 value — one level per call. `limit` defaults to 200 (max 500); a level holding more than that

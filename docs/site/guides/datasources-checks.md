@@ -18,7 +18,7 @@
 
 ## Add a connection
 
-Adding, editing, deleting or re-crendentialing a connection requires the **Admin** workspace
+Adding, editing, deleting or re-credentialing a connection requires the **Admin** workspace
 role (ADR [0033](../adr/0033-workspace-roles-rbac.md)) — connections are shared infrastructure
 holding credentials, and every suite in the workspace runs on them. Members and Viewers can
 see and reference them, and Members can run the saved-connection **Test**.
@@ -26,6 +26,29 @@ see and reference them, and Members can run the saved-connection **Test**.
 In the UI, **Connections → Add connection**, pick the datasource, fill the type-specific
 fields, and **Test** it (a live reachability probe). Credentials are stored in the secret
 store (Azure Key Vault / AWS Secrets Manager / OpenBao, depending on deployment), never in the database.
+
+### A connection is tested before it is saved
+
+**Create** runs the same live test as the **Test** button first, and saves nothing if it fails:
+the form shows the reason and the connection is not created. The same applies when you edit a
+connection's settings or credential (a rename alone is not tested) and when you
+**re-authenticate** — a new credential that does not work is refused, and the stored one stays
+in place.
+
+If the test fails for a reason that does not mean the connection is wrong, an Admin can choose
+**Create without testing** (or **Save without testing** / **Rotate without testing**). Use it
+when:
+
+- the store is not reachable from the DataQ API right now, but will be from the workers that
+  run the checks;
+- an orchestrator (ADF, Airflow) is down while you register it;
+- a **new dbt project** has not published a `run_results.json` yet — its test fails until the
+  first build does (see [Orchestration](orchestration.md)).
+
+A connection saved this way is not verified: its credential health reads *Unknown*, and the
+audit log records that its test was skipped. Test it once the store is reachable. Over the API,
+send `skip_test: true` with the create, update or re-auth request; see the
+[REST API](../reference/rest-api.md#connections).
 
 Snowflake supports two auth modes: **password** and **key pair (RSA)**. For key pair,
 paste the PEM private key; if the key is passphrase-protected (PKCS#8), fill the optional
@@ -122,8 +145,9 @@ Only credential **rejections** move this signal. A missing SELECT grant, an unre
 host and a bad table name all leave it untouched, because none of them says the credential
 is dead — those surface as the run's own failure reason instead.
 
-Re-authenticating a connection, or a passing **Test connection**, clears the signal
-immediately; you do not have to wait for the next scheduled run to confirm a rotation
+Re-authenticating a connection (which tests the new credential first), or a passing **Test
+connection**, clears the signal immediately — a credential rotated in *without* testing resets
+it to **Unknown** instead; you do not have to wait for the next scheduled run to confirm a rotation
 worked. Workspace admins see every datasource connection's credential health together on
 the admin health view.
 
