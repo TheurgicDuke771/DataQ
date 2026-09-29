@@ -1,0 +1,90 @@
+{
+  "name": "dataq_gate_example",
+  "properties": {
+    "description": "Runs the DataQ suites bound to this pipeline for this run and fails the pipeline if they fail (DataQ ADR 0046). Put the three activities between the stage that lands data and the stages that consume it.",
+    "parameters": {
+      "dataqUrl": { "type": "string", "defaultValue": "https://dataq.example.com" },
+      "dataqEnv": { "type": "string", "defaultValue": "dev" },
+      "failOn": { "type": "string", "defaultValue": "fail" }
+    },
+    "variables": {
+      "gateState": { "type": "String", "defaultValue": "running" }
+    },
+    "activities": [
+      {
+        "name": "Wait for DataQ gate",
+        "type": "Until",
+        "typeProperties": {
+          "expression": {
+            "value": "@or(equals(variables('gateState'), 'passed'), or(equals(variables('gateState'), 'failed'), equals(variables('gateState'), 'error')))",
+            "type": "Expression"
+          },
+          "timeout": "0.00:30:00",
+          "activities": [
+            {
+              "name": "Get DataQ token",
+              "type": "WebActivity",
+              "secureOutput": true,
+              "typeProperties": {
+                "method": "GET",
+                "url": "https://<your-key-vault>.vault.azure.net/secrets/dataq-gate-pat?api-version=7.4",
+                "authentication": { "type": "MSI", "resource": "https://vault.azure.net" }
+              }
+            },
+            {
+              "name": "Ask DataQ gate",
+              "type": "WebActivity",
+              "dependsOn": [{ "activity": "Get DataQ token", "dependencyConditions": ["Succeeded"] }],
+              "secureInput": true,
+              "typeProperties": {
+                "method": "POST",
+                "url": { "value": "@concat(pipeline().parameters.dataqUrl, '/api/v1/orchestration/gate')", "type": "Expression" },
+                "headers": {
+                  "Content-Type": "application/json",
+                  "Authorization": { "value": "@concat('Bearer ', activity('Get DataQ token').output.value)", "type": "Expression" }
+                },
+                "body": {
+                  "value": "@json(concat('{\"provider\":\"adf\",\"pipeline_or_dag_id\":\"', pipeline().Pipeline, '\",\"env\":\"', pipeline().parameters.dataqEnv, '\",\"provider_run_id\":\"', pipeline().RunId, '\",\"fail_on\":\"', pipeline().parameters.failOn, '\",\"trigger\":true}'))",
+                  "type": "Expression"
+                }
+              }
+            },
+            {
+              "name": "Record gate state",
+              "type": "SetVariable",
+              "dependsOn": [{ "activity": "Ask DataQ gate", "dependencyConditions": ["Succeeded"] }],
+              "typeProperties": {
+                "variableName": "gateState",
+                "value": { "value": "@activity('Ask DataQ gate').output.state", "type": "Expression" }
+              }
+            },
+            {
+              "name": "Poll interval",
+              "type": "Wait",
+              "dependsOn": [{ "activity": "Record gate state", "dependencyConditions": ["Succeeded"] }],
+              "typeProperties": { "waitTimeInSeconds": 30 }
+            }
+          ]
+        }
+      },
+      {
+        "name": "Stop unless the gate passed",
+        "type": "IfCondition",
+        "dependsOn": [{ "activity": "Wait for DataQ gate", "dependencyConditions": ["Succeeded"] }],
+        "typeProperties": {
+          "expression": { "value": "@equals(variables('gateState'), 'passed')", "type": "Expression" },
+          "ifFalseActivities": [
+            {
+              "name": "DataQ gate stopped the pipeline",
+              "type": "Fail",
+              "typeProperties": {
+                "message": { "value": "@concat('DataQ gate ', variables('gateState'), ' for run ', pipeline().RunId)", "type": "Expression" },
+                "errorCode": "DATAQ_GATE"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

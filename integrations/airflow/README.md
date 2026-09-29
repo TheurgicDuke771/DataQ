@@ -95,3 +95,25 @@ The snippet logs to the Airflow task/processor logger and never raises:
 - **`http=200` but no run in DataQ** — `DATAQ_AIRFLOW_BASE_URL` doesn't match any
   registered Airflow connection's `base_url`, so the event is accepted but
   unattributable (returns `{"status": "ignored"}`).
+
+## Gate a DAG on DataQ's verdict
+
+`dataq_gate.py` is a `PythonSensor` callable that stops a DAG when its data fails (DataQ ADR 0046).
+Put it between the task that lands data and the tasks that consume it:
+
+```python
+from airflow.sensors.python import PythonSensor
+from dataq_gate import dataq_gate
+
+gate = PythonSensor(
+    task_id="dataq_gate", python_callable=dataq_gate, mode="reschedule",
+    poke_interval=30, timeout=1800,
+)
+load >> gate >> publish
+```
+
+The first poke starts every suite bound to this DAG for this DAG run; later pokes repeat the
+same idempotent request. The sensor succeeds on `passed` and fails the task on `failed` or
+`error`. Set `DATAQ_URL`, `DATAQ_PAT` (a user with **edit** on the bound suites) and `DATAQ_ENV`;
+optionally `DATAQ_GATE_FAIL_ON` and `DATAQ_GATE_TRIGGER=false`. Unlike the callback, the gate is
+fail-closed: if DataQ can't be reached, the poke raises.

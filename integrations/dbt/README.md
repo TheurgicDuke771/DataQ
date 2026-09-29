@@ -60,3 +60,19 @@ double-counted or double-triggered.
   break your build.
 - The HMAC is computed over the exact POSTed bytes, matching DataQ's constant-time
   check on the raw request body (identical scheme to `integrations/airflow/`).
+
+## Gate the next step on DataQ's verdict
+
+dbt has no hook that can block downstream work mid-run, so gate between invocations with the
+`dataq` CLI (installed from the DataQ GitHub Release, see the Python client docs):
+
+```bash
+dbt build --select staging
+RUN_ID=$(jq -r .metadata.invocation_id target/run_results.json)
+dataq gate --provider dbt --pipeline <job> --env prod --run-id "$RUN_ID" || exit 1
+dbt build --select marts
+```
+
+`dataq gate` starts the suites bound to the job for this run id, waits, and exits `0` on
+`passed`, `2` on `failed`, `3` on `error` and `4` if it timed out or couldn't reach DataQ
+(DataQ ADR 0046). It reads `DATAQ_URL` and `DATAQ_PAT` from the environment.

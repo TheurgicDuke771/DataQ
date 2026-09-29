@@ -60,6 +60,21 @@ The token is read from `DATAQ_PAT` only, never from a command-line flag, where i
 shell history and process listings. To treat warnings as a pass, allow exit code 1 in your
 pipeline (for example `dataq run … --wait || [ $? -eq 1 ]`).
 
+### Gate a pipeline between its own stages
+
+A suite run gates one suite. `dataq gate` gates a **pipeline**: it runs every suite bound to
+the pipeline (Suite → Triggers) for this pipeline run, waits, and exits `0` passed, `2` failed,
+`3` error or `4` timed out or unreachable (see
+[Gate a pipeline on DataQ](orchestration.md#gate-a-pipeline-on-dataq)):
+
+```bash
+dataq gate --provider dbt --pipeline nightly_build --env prod --run-id "$RUN_ID"
+dataq gate --provider airflow --pipeline load_finance --env prod --run-id "$RUN_ID" \
+  --fail-on warn --no-trigger     # only report on runs the success event already started
+```
+
+Repeating the command for the same run id never starts a second run.
+
 Other commands:
 
 ```bash

@@ -15,9 +15,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from dataq_client.generated.api.incidents import acknowledge_incident, resolve_incident
-from dataq_client.generated.api.runs import get_run, get_run_progress
+from dataq_client.generated.api.runs import get_run, get_run_progress, pipeline_gate
 from dataq_client.generated.api.suites import export_suite, import_suite, trigger_suite_run
 from dataq_client.generated.client import AuthenticatedClient
+from dataq_client.generated.models.gate_request import GateRequest
+from dataq_client.generated.models.gate_request_env import GateRequestEnv
+from dataq_client.generated.models.gate_request_fail_on import GateRequestFailOn
+from dataq_client.generated.models.gate_request_provider import GateRequestProvider
 from dataq_client.generated.models.incident_action_request import IncidentActionRequest
 from dataq_client.generated.models.suite_import_request import SuiteImportRequest
 from dataq_client.generated.types import Response
@@ -25,6 +29,10 @@ from dataq_client.generated.types import Response
 #: The server's run lifecycle; a run in one of the last three will not change again.
 RUN_STATUSES = ("queued", "running", "succeeded", "failed", "cancelled")
 TERMINAL_RUN_STATUSES = frozenset({"succeeded", "failed", "cancelled"})
+
+#: A pipeline gate's answers; the last three are final.
+GATE_STATES = ("awaiting_trigger", "running", "passed", "failed", "error")
+TERMINAL_GATE_STATES = frozenset({"passed", "failed", "error"})
 
 #: Polls never come faster than this: a PAT is rate-limited like any other caller.
 MIN_POLL_INTERVAL = 5.0
@@ -48,6 +56,29 @@ class AuthError(DataQError):
 
 class RateLimitedError(DataQError):
     """429. Raised, never retried in a loop: back off before calling again."""
+
+
+class GateTimeoutError(Exception):
+    """The gate had no final answer within the timeout."""
+
+    def __init__(self, state: str, timeout: float) -> None:
+        super().__init__(f"the gate was still {state} after {timeout:g}s")
+        self.state = state
+        self.timeout = timeout
+
+
+@dataclass(frozen=True)
+class GateOutcome:
+    """A pipeline gate's answer (ADR 0046): ``state`` plus each bound suite's run."""
+
+    state: str
+    fail_on: str
+    triggered_by: str
+    suites: list[dict[str, Any]]
+
+    @property
+    def finished(self) -> bool:
+        return self.state in TERMINAL_GATE_STATES
 
 
 class RunTimeoutError(Exception):
@@ -208,6 +239,53 @@ class DataQClient:
                 raise RunTimeoutError(run_uuid, progress.status, timeout)
             sleep(min(wait, remaining))
             wait = min(wait * 1.5, MAX_POLL_INTERVAL)
+
+    def gate(
+        self,
+        *,
+        provider: str,
+        pipeline_or_dag_id: str,
+        env: str,
+        provider_run_id: str,
+        fail_on: str = "fail",
+        trigger: bool = True,
+        timeout: float = 1800.0,
+        sleep: Callable[[float], None] = time.sleep,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> GateOutcome:
+        """Ask whether a pipeline may continue, and wait for the answer.
+
+        With ``trigger`` (needs ``edit`` on the bound suites) the first request starts their
+        runs for this ``provider_run_id``; every later poll is the same idempotent request.
+        Without it, the gate only reports on runs already triggered for it (``view``).
+        Returns once ``state`` is ``passed``, ``failed`` or ``error``; raises
+        `GateTimeoutError` after ``timeout`` seconds. Polls at the server's
+        ``retry_after_seconds`` hint, never faster than 5 s.
+        """
+        body = GateRequest(
+            provider=GateRequestProvider(provider),
+            pipeline_or_dag_id=pipeline_or_dag_id,
+            env=GateRequestEnv(env),
+            provider_run_id=provider_run_id,
+            fail_on=GateRequestFailOn(fail_on),
+            trigger=trigger,
+        )
+        deadline = clock() + timeout
+        while True:
+            read = _ok(pipeline_gate.sync_detailed(client=self.api, body=body))
+            state = read.state.value
+            if state in TERMINAL_GATE_STATES:
+                return GateOutcome(
+                    state=state,
+                    fail_on=read.fail_on,
+                    triggered_by=read.triggered_by,
+                    suites=[suite.to_dict() for suite in read.suites],
+                )
+            remaining = deadline - clock()
+            if remaining <= 0:
+                raise GateTimeoutError(state, timeout)
+            hint = float(read.retry_after_seconds or MIN_POLL_INTERVAL)
+            sleep(min(max(hint, MIN_POLL_INTERVAL), remaining))
 
     def export_suite(self, suite_id: uuid.UUID | str) -> dict[str, Any]:
         """The suite's portable document (its checks and thresholds, no connection or grants)."""

@@ -11,6 +11,9 @@ not run the pipelines. Azure Data Factory, Apache Airflow, and dbt all sit behin
 3. **Trigger on success** — if a successful run matches an enabled **trigger binding**
    (`provider` + `pipeline/DAG id` + `env` → `suite_id`), DataQ queues that suite.
    *Failures alert but never trigger a run.*
+4. **Answer a gate** — a pipeline stage can ask DataQ whether to continue, and stop its own
+   downstream stages when the data fails ([Gate a pipeline on DataQ](#gate-a-pipeline-on-dataq)).
+   DataQ still never pauses or fails a pipeline itself.
 
 ## ADF
 
@@ -360,3 +363,40 @@ silent-empty descents stay fake-driven — a live Enterprise account cannot prod
 In the UI, open a suite's **Triggers** and bind it to a `(provider, pipeline/DAG, env)`.
 When that pipeline next succeeds, the suite runs automatically and you'll see the run
 correlated to the pipeline run on the **Results → Pipelines** view.
+
+## Gate a pipeline on DataQ
+
+A trigger binding runs suites *after* a pipeline finishes. A **gate** lets a pipeline wait for
+DataQ's verdict *between* its own stages, so bad data never reaches the stages after it.
+
+The pipeline calls `POST /api/v1/orchestration/gate` with its `provider`, pipeline/DAG id,
+`env` and this run's id, then repeats the same call until the answer is final:
+
+| `state` | Meaning |
+|---|---|
+| `running` | the bound suites' runs are queued or running; ask again after `retry_after_seconds` |
+| `awaiting_trigger` | status-only mode, and no run exists yet for this pipeline run |
+| `passed` | every bound suite finished below `fail_on` (default `fail`) |
+| `failed` | some check finished at or above `fail_on` |
+| `error` | a run failed or was cancelled, or a check couldn't be evaluated |
+
+- **Trigger-and-wait** (the default): the first call starts one run of every enabled bound
+  suite for this pipeline run, and later calls never start another. The pipeline's own
+  success event reuses the same runs too. This needs **edit** on every bound suite.
+- **Status only** (`"trigger": false`): DataQ starts nothing and reports on the runs that
+  already exist for that pipeline run, e.g. a downstream pipeline gating on an upstream run
+  its success event triggered. This needs **view**.
+- A bound suite the caller can't see refuses the gate rather than being skipped, since
+  skipping it could pass a pipeline that suite says to stop.
+
+Ready-made clients, all fail-closed (`failed` and `error` both stop the pipeline):
+
+- **Any shell step, and dbt between invocations:** `dataq gate` from the
+  [Python client](python-client.md), which exits `0` passed, `2` failed,
+  `3` error, `4` timeout or unreachable.
+- **Airflow:** the `PythonSensor` callable in
+  [`integrations/airflow/dataq_gate.py`](https://github.com/TheurgicDuke771/DataQ/tree/main/integrations/airflow).
+- **Azure Data Factory:** the Until-loop pipeline in
+  [`integrations/adf/`](https://github.com/TheurgicDuke771/DataQ/tree/main/integrations/adf).
+
+Use a personal access token (`dq_live_…`) for the calls.
