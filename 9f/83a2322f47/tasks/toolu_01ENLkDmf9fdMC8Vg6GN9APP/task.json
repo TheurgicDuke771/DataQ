@@ -1,0 +1,7 @@
+{
+  "tool_use_id": "toolu_01ENLkDmf9fdMC8Vg6GN9APP",
+  "agent_id": "afce7d37b7cecb783",
+  "subagent_type": "general-purpose",
+  "task_description": "Triage open issues by platform",
+  "started_at": "2026-09-29T13:04:24.318237+05:30"
+}
