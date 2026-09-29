@@ -1,12 +1,14 @@
-"""The ``dataq`` command line: run a suite and gate on it, export and import suites.
+"""The ``dataq`` command line: run a suite or a pipeline gate and exit by the result, export and
+import suites.
 
 Exit codes, so a CI step or a scheduler task needs no Python::
 
-    0  the run finished and nothing failed
+    0  the run finished and nothing failed (``gate``: passed)
     1  the worst result was a warning
-    2  a check failed (fail or critical)
+    2  a check failed (fail or critical) (``gate``: failed at or above ``--fail-on``)
     3  the run itself did not complete (failed, cancelled) or a check could not be evaluated
-    4  a client, auth or transport problem — DataQ's verdict is unknown
+       (``gate``: error)
+    4  a client, auth or transport problem, or a timeout — DataQ's verdict is unknown
 
 The token comes from ``DATAQ_PAT`` only (a flag would land in shell history); the URL from
 ``--url`` or ``DATAQ_URL``.
@@ -21,7 +23,14 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from dataq_client.client import DataQClient, DataQError, RunOutcome, RunTimeoutError
+from dataq_client.client import (
+    DataQClient,
+    DataQError,
+    GateOutcome,
+    GateTimeoutError,
+    RunOutcome,
+    RunTimeoutError,
+)
 
 EXIT_OK, EXIT_WARN, EXIT_FAIL, EXIT_RUN_ERROR, EXIT_CLIENT_ERROR = 0, 1, 2, 3, 4
 
@@ -35,6 +44,22 @@ def exit_code(outcome: RunOutcome) -> int:
     if outcome.worst_severity == "warn":
         return EXIT_WARN
     return EXIT_OK
+
+
+_GATE_EXIT = {"passed": EXIT_OK, "failed": EXIT_FAIL, "error": EXIT_RUN_ERROR}
+
+
+def _print_gate(outcome: GateOutcome, *, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(asdict(outcome)))
+        return
+    print(f"gate {outcome.triggered_by}: {outcome.state} (fail on {outcome.fail_on})")
+    for suite in outcome.suites:
+        print(
+            f"  suite {suite['suite_id']}: {suite['state']}"
+            f" · worst severity {suite.get('worst_severity') or 'none'}"
+            f" · {suite.get('checks_passed', 0)}/{suite.get('checks_total', 0)} passed"
+        )
 
 
 def _print_outcome(outcome: RunOutcome, *, as_json: bool) -> None:
@@ -76,6 +101,23 @@ def _parser() -> argparse.ArgumentParser:
     wait.add_argument("--interval", type=float, default=5.0)
     wait.add_argument("--json", action="store_true")
 
+    gate = commands.add_parser(
+        "gate",
+        help="ask whether a pipeline may continue: run its bound suites and exit by the verdict",
+    )
+    gate.add_argument("--provider", required=True, choices=("adf", "airflow", "dbt"))
+    gate.add_argument("--pipeline", required=True, help="the bound pipeline, DAG or dbt job id")
+    gate.add_argument("--env", required=True, choices=("dev", "qa", "uat", "prod"))
+    gate.add_argument("--run-id", required=True, help="this pipeline run's id (the dedup key)")
+    gate.add_argument("--fail-on", default="fail", choices=("warn", "fail", "critical"))
+    gate.add_argument(
+        "--no-trigger",
+        action="store_true",
+        help="only report on runs already triggered for this pipeline run (needs view, not edit)",
+    )
+    gate.add_argument("--timeout", type=float, default=1800.0)
+    gate.add_argument("--json", action="store_true")
+
     export = commands.add_parser("export", help="write a suite's document to a file or stdout")
     export.add_argument("suite_id")
     export.add_argument("-o", "--output", help="file to write (default: stdout)")
@@ -99,6 +141,18 @@ def _run(args: argparse.Namespace, client: DataQClient) -> int:
         outcome = client.wait_for_run(args.run_id, timeout=args.timeout, interval=args.interval)
         _print_outcome(outcome, as_json=args.json)
         return exit_code(outcome)
+    if args.command == "gate":
+        verdict = client.gate(
+            provider=args.provider,
+            pipeline_or_dag_id=args.pipeline,
+            env=args.env,
+            provider_run_id=args.run_id,
+            fail_on=args.fail_on,
+            trigger=not args.no_trigger,
+            timeout=args.timeout,
+        )
+        _print_gate(verdict, as_json=args.json)
+        return _GATE_EXIT[verdict.state]
     if args.command == "export":
         text = json.dumps(client.export_suite(args.suite_id), indent=2) + "\n"
         if args.output:
@@ -117,6 +171,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         with DataQClient(args.url) as client:
             return _run(args, client)
+    except GateTimeoutError as exc:
+        print(f"dataq: {exc}", file=sys.stderr)
+        return EXIT_CLIENT_ERROR
     except RunTimeoutError as exc:
         print(f"dataq: {exc} — it is still running on the server", file=sys.stderr)
         return EXIT_CLIENT_ERROR

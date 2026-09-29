@@ -9,7 +9,15 @@ from typing import Any
 
 import httpx
 import pytest
-from dataq_client import AuthError, DataQClient, RateLimitedError, RunOutcome, RunTimeoutError, cli
+from dataq_client import (
+    AuthError,
+    DataQClient,
+    GateTimeoutError,
+    RateLimitedError,
+    RunOutcome,
+    RunTimeoutError,
+    cli,
+)
 
 SUITE = uuid.UUID("11111111-1111-1111-1111-111111111111")
 RUN = uuid.UUID("22222222-2222-2222-2222-222222222222")
@@ -262,3 +270,92 @@ def test_cli_client_problems_exit_four(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("DATAQ_PAT", raising=False)
     monkeypatch.setattr(cli, "DataQClient", DataQClient)
     assert cli.main(["--url", "https://dq.example.com", "run", str(SUITE)]) == 4
+
+
+# ── pipeline gate (ADR 0046) ─────────────────────────────────────────────────────────────
+
+
+def _gate(state: str, *, retry: int | None = 15, worst: str | None = None) -> dict[str, Any]:
+    return {
+        "state": state,
+        "fail_on": "fail",
+        "triggered_by": "airflow:nightly:r1",
+        "created_runs": 0,
+        "retry_after_seconds": retry,
+        "suites": [
+            {
+                "suite_id": str(SUITE),
+                "run_id": str(RUN),
+                "run_status": "running" if state == "running" else "succeeded",
+                "state": state,
+                "checks_total": 3,
+                "checks_passed": 2,
+                "worst_severity": worst,
+                "has_error": state == "error",
+            }
+        ],
+    }
+
+
+_GATE_ARGS: dict[str, Any] = {
+    "provider": "airflow",
+    "pipeline_or_dag_id": "nightly",
+    "env": "dev",
+    "provider_run_id": "r1",
+}
+
+
+def test_the_gate_repeats_the_same_request_until_a_final_state() -> None:
+    server = _Server(
+        _json(200, _gate("running")),
+        _json(200, _gate("running")),
+        _json(200, _gate("failed", retry=None, worst="fail")),
+    )
+    sleeps: list[float] = []
+    outcome = _client(server).gate(**_GATE_ARGS, sleep=sleeps.append, clock=lambda: 0.0)
+    assert (outcome.state, outcome.finished) == ("failed", True)
+    assert outcome.suites[0]["worst_severity"] == "fail"
+    assert sleeps == [15.0, 15.0]
+    bodies = [json.loads(request.content) for request in server.requests]
+    assert all(body == bodies[0] for body in bodies)
+    assert bodies[0]["provider_run_id"] == "r1" and bodies[0]["trigger"] is True
+    assert server.requests[0].url.path == "/api/v1/orchestration/gate"
+
+
+def test_the_gate_never_polls_faster_than_five_seconds() -> None:
+    server = _Server(_json(200, _gate("running", retry=1)), _json(200, _gate("passed", retry=None)))
+    sleeps: list[float] = []
+    _client(server).gate(**_GATE_ARGS, sleep=sleeps.append, clock=lambda: 0.0)
+    assert sleeps == [5.0]
+
+
+def test_a_gate_still_running_at_the_deadline_times_out() -> None:
+    server = _Server(*[_json(200, _gate("awaiting_trigger"))] * 3)
+    now = [0.0]
+
+    def _sleep(seconds: float) -> None:
+        now[0] += seconds
+
+    with pytest.raises(GateTimeoutError, match="awaiting_trigger"):
+        _client(server).gate(
+            **_GATE_ARGS, trigger=False, timeout=20.0, sleep=_sleep, clock=lambda: now[0]
+        )
+
+
+@pytest.mark.parametrize(("state", "code"), [("passed", 0), ("failed", 2), ("error", 3)])
+def test_cli_gate_exits_by_the_verdict(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], state: str, code: int
+) -> None:
+    server = _Server(_json(200, _gate(state, retry=None)))
+    monkeypatch.setattr(cli, "DataQClient", lambda url: _client(server))
+    argv = ["gate", "--provider", "airflow", "--pipeline", "nightly", "--env", "dev"]
+    assert cli.main([*argv, "--run-id", "r1"]) == code
+    assert f"gate airflow:nightly:r1: {state}" in capsys.readouterr().out
+
+
+def test_cli_gate_timeout_exits_four(monkeypatch: pytest.MonkeyPatch) -> None:
+    server = _Server(*[_json(200, _gate("running", retry=5))] * 5)
+    monkeypatch.setattr(cli, "DataQClient", lambda url: _client(server))
+    monkeypatch.setattr("dataq_client.client.time.sleep", lambda _s: None)
+    argv = ["gate", "--provider", "airflow", "--pipeline", "nightly", "--env", "dev"]
+    assert cli.main([*argv, "--run-id", "r1", "--timeout", "0"]) == 4
