@@ -67,6 +67,9 @@ def sync_detailed(
 ) -> Response[ConnectionRead | HTTPValidationError]:
     """Create a connection
 
+     The config and credential(s) are tested first (#1927); a failing test refuses the create
+    with 422 `connection_test_failed_on_save` and writes nothing, unless `skip_test` is sent.
+
     Args:
         body (ConnectionCreate):
 
@@ -96,6 +99,9 @@ def sync(
 ) -> ConnectionRead | HTTPValidationError | None:
     """Create a connection
 
+     The config and credential(s) are tested first (#1927); a failing test refuses the create
+    with 422 `connection_test_failed_on_save` and writes nothing, unless `skip_test` is sent.
+
     Args:
         body (ConnectionCreate):
 
@@ -119,6 +125,9 @@ async def asyncio_detailed(
     body: ConnectionCreate,
 ) -> Response[ConnectionRead | HTTPValidationError]:
     """Create a connection
+
+     The config and credential(s) are tested first (#1927); a failing test refuses the create
+    with 422 `connection_test_failed_on_save` and writes nothing, unless `skip_test` is sent.
 
     Args:
         body (ConnectionCreate):
@@ -146,6 +155,9 @@ async def asyncio(
     body: ConnectionCreate,
 ) -> ConnectionRead | HTTPValidationError | None:
     """Create a connection
+
+     The config and credential(s) are tested first (#1927); a failing test refuses the create
+    with 422 `connection_test_failed_on_save` and writes nothing, unless `skip_test` is sent.
 
     Args:
         body (ConnectionCreate):

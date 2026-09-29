@@ -46,6 +46,7 @@ CATEGORY_ORDER = [
     "Table shape",
     "Freshness",
     "Volume",
+    "Aggregate",
     "Schema",
     "Anomaly",
     "Comparison",
@@ -62,6 +63,9 @@ CATEGORY_INTRO = {
     + "flat files), reported in hours, banded by age. Requires a fail or critical threshold.",
     "Volume": "Did the load deliver the expected row count? Banded by count. Requires a fail or "
     + "critical threshold.",
+    "Aggregate": "Does a column statistic — mean, median, sum, standard deviation, min or "
+    + "max — stay inside two-sided bands? The value is recorded every run, so it trends; an "
+    + "empty table or all-NULL column reports error, never a made-up 0.",
     "Schema": "Did the table's columns change against a captured baseline?",
     "Anomaly": "Is today's value unusual against a rolling baseline of this check's own history? "
     + "Skips until enough history exists.",
@@ -130,6 +134,8 @@ def params(entry: dict) -> str:
 
 
 def thresholds(entry: dict, cap: str | None) -> str:
+    if entry["kind"] == "aggregate":
+        return "Two-sided warn / fail / critical bounds, set as parameters"
     if entry["noThresholds"] or cap == "_UNBANDED":
         return "None — pass/fail only"
     if entry["requireFailOrCritical"]:
@@ -165,6 +171,12 @@ def runs_on(entry: dict, cap: str | None, pushdown: set[str], ds: dict) -> str:
             " — not "
             + ", ".join(labels[t] for t in dialect_gap)
             + " (no translation for that SQL dialect; refused at author time)"
+        )
+    if entry["kind"] == "aggregate":
+        note += (
+            " — median not on "
+            + ", ".join(labels[t] for t in ("mysql", "trino", "athena"))
+            + " (no exact median; refused at author time)"
         )
     if entry["type"] in pushdown and "unity_catalog" in types:
         note += " · SQL pushdown on Unity Catalog"
@@ -322,10 +334,11 @@ def render(
     lines += [
         "## Not offered, and why",
         "",
-        "**Scalar aggregates** (`expect_column_mean_to_be_between` and its "
-        + "siblings) report one number",
-        "and no unexpected-%, so severity bands have nothing to band — a Volume or Anomaly monitor",
-        "measures that shape with trends and a learned baseline. **Whole-table column-set",
+        "**GX's scalar aggregates** (`expect_column_mean_to_be_between` and its siblings) "
+        + "report one",
+        "number and no unexpected-%, so severity bands have nothing to band — the Aggregate "
+        + "monitor",
+        "measures that shape instead, with two-sided bands and a trend. **Whole-table column-set",
         "comparisons** are what the Schema-drift monitor does against a captured baseline. For",
         "anything else, write a custom-SQL check.",
         "",

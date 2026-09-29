@@ -30,7 +30,7 @@ from backend.app.datasources.gx_runner import (
     run_expectations,
     to_suite_outcome,
 )
-from backend.app.datasources.monitors import FRESHNESS, VOLUME, run_monitors_over_engine
+from backend.app.datasources.monitors import AGGREGATE, FRESHNESS, VOLUME, run_monitors_over_engine
 from backend.app.datasources.snowflake_dmf import (
     DMF_ENGINE,
     evaluate_dmf_check,
@@ -162,7 +162,7 @@ class SnowflakeCheckRunner:
 
     # Runner-advertised monitor capability (#429): EXPLICITLY what this runner implements — never
     # frozenset(MONITOR_KINDS).
-    supported_monitor_kinds: ClassVar[frozenset[str]] = frozenset({FRESHNESS, VOLUME})
+    supported_monitor_kinds: ClassVar[frozenset[str]] = frozenset({FRESHNESS, VOLUME, AGGREGATE})
     # Native engines this runner evaluates (ADR 0036): the run path routes a check whose `engine` is
     # advertised here to `run_native_check`; anything else lands as a classified per-check error.
     supported_native_engines: ClassVar[frozenset[str]] = frozenset({DMF_ENGINE})

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
+from decimal import Decimal
+from itertools import pairwise
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -22,6 +25,7 @@ FRESHNESS = "freshness"
 VOLUME = "volume"
 SCHEMA_DRIFT = "schema_drift"
 ANOMALY = "anomaly"
+AGGREGATE = "aggregate"
 
 _EXPECTATION_PREFIX = "monitor:"
 
@@ -435,6 +439,246 @@ def _anomaly_outcome(scalar: Any, config: dict[str, Any], now: datetime) -> Chec
     )
 
 
+# ───────────────────────── aggregate (#1602) ─────────────────────────
+# One column aggregate per check; the aggregate itself is `metric_value`, so it trends and can be
+# baselined. Its bands are two-sided (too low OR too high), so they live in config, nested
+# critical ⊇ fail ⊇ warn, instead of the one-sided warn ≤ fail ≤ critical threshold columns.
+
+AGGREGATE_MEAN = "mean"
+AGGREGATE_MEDIAN = "median"
+AGGREGATE_SUM = "sum"
+AGGREGATE_STDEV = "stdev"
+AGGREGATE_MIN = "min"
+AGGREGATE_MAX = "max"
+AGGREGATES = (
+    AGGREGATE_MEAN,
+    AGGREGATE_MEDIAN,
+    AGGREGATE_SUM,
+    AGGREGATE_STDEV,
+    AGGREGATE_MIN,
+    AGGREGATE_MAX,
+)
+# MIN/MAX return one literal cell rather than a computed statistic, so zero-sample mode keeps
+# them out of the result like GX's min/max expectations (#1486).
+AGGREGATE_CELL_VALUES = frozenset({AGGREGATE_MIN, AGGREGATE_MAX})
+_AGGREGATE_SQL_NAME = {
+    AGGREGATE_MEAN: "AVG",
+    AGGREGATE_MEDIAN: "MEDIAN",
+    AGGREGATE_SUM: "SUM",
+    AGGREGATE_STDEV: "STDDEV_SAMP",
+    AGGREGATE_MIN: "MIN",
+    AGGREGATE_MAX: "MAX",
+}
+# Outermost to innermost on each side: a value below `critical_min` is critical, below
+# `min_value` fail, below `warn_min` warn.
+AGGREGATE_LOWER_BOUNDS = ("critical_min", "min_value", "warn_min")
+AGGREGATE_UPPER_BOUNDS = ("critical_max", "max_value", "warn_max")
+_AGGREGATE_BOUND_TIER = {
+    "critical_min": "critical",
+    "critical_max": "critical",
+    "min_value": "fail",
+    "max_value": "fail",
+    "warn_min": "warn",
+    "warn_max": "warn",
+}
+_AGGREGATE_KEYS = frozenset({"aggregate", "column", *_AGGREGATE_BOUND_TIER})
+
+
+@dataclass(frozen=True)
+class AggregateParams:
+    """A validated `aggregate` check config; ``bounds`` holds only the bounds that are set."""
+
+    aggregate: str
+    column: str
+    bounds: dict[str, float]
+
+    @property
+    def source(self) -> str:
+        return f"{_AGGREGATE_SQL_NAME[self.aggregate]}({self.column})"
+
+
+def _aggregate_bound(config: dict[str, Any], key: str) -> float | None:
+    raw = config.get(key)
+    if raw is None:
+        return None
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)) or not math.isfinite(raw):
+        raise MonitorConfigError(f"aggregate {key} must be a finite number: {_echo(raw)}")
+    return float(raw)
+
+
+def aggregate_params(config: dict[str, Any]) -> AggregateParams:
+    """Parse + validate an `aggregate` config — the one parse the author gate, the run path and
+    the dry-run share, so a config that saves is a config that runs.
+    """
+    unknown = sorted(str(k) for k in set(config) - _AGGREGATE_KEYS)
+    if unknown:
+        raise MonitorConfigError(
+            f"aggregate config has unknown keys {_echo(unknown)}; it takes aggregate, column and "
+            f"the bounds {', '.join(AGGREGATE_LOWER_BOUNDS + AGGREGATE_UPPER_BOUNDS)}"
+        )
+    aggregate = config.get("aggregate")
+    if aggregate not in AGGREGATES:
+        raise MonitorConfigError(
+            f"aggregate must be one of {', '.join(AGGREGATES)}: {_echo(aggregate)}"
+        )
+    column = _ident(config.get("column"), what="aggregate column")
+    bounds = {
+        key: value
+        for key in _AGGREGATE_BOUND_TIER
+        if (value := _aggregate_bound(config, key)) is not None
+    }
+    if not bounds:
+        raise MonitorConfigError(
+            "an aggregate monitor needs at least one bound (min_value / max_value, or a warn / "
+            "critical bound) — without one it can never fail"
+        )
+    for lower_side, keys in ((True, AGGREGATE_LOWER_BOUNDS), (False, AGGREGATE_UPPER_BOUNDS)):
+        present = [k for k in keys if k in bounds]
+        for outer, inner in pairwise(present):
+            ordered = (
+                bounds[outer] <= bounds[inner] if lower_side else bounds[outer] >= bounds[inner]
+            )
+            if not ordered:
+                raise MonitorConfigError(
+                    f"aggregate {outer} ({bounds[outer]}) must be "
+                    f"{'<=' if lower_side else '>='} {inner} ({bounds[inner]}) — the critical "
+                    "band must contain the fail band, which must contain the warn band"
+                )
+    lowers = [bounds[k] for k in AGGREGATE_LOWER_BOUNDS if k in bounds]
+    uppers = [bounds[k] for k in AGGREGATE_UPPER_BOUNDS if k in bounds]
+    if lowers and uppers and max(lowers) > min(uppers):
+        raise MonitorConfigError(
+            f"aggregate lower bound {max(lowers)} is above upper bound {min(uppers)} — no value "
+            "could pass"
+        )
+    return AggregateParams(aggregate=str(aggregate), column=column, bounds=bounds)
+
+
+def aggregate_value(scalar: Any, *, source: str) -> float | None:
+    """A SQL aggregate scalar → float, ``None`` kept as ``None`` (no non-NULL input). Drivers hand
+    back ``Decimal`` (Snowflake, Databricks, psycopg2 NUMERIC), ``int`` or ``float``.
+    """
+    if scalar is None:
+        return None
+    if isinstance(scalar, bool) or not isinstance(scalar, (int, float, Decimal)):
+        # The value is target data — never echoed, only its type.
+        raise MonitorConfigError(
+            f"{source} is not numeric (got {type(scalar).__name__}) — an aggregate monitor "
+            "needs a numeric column"
+        )
+    value = float(scalar)
+    if not math.isfinite(value):
+        raise MonitorConfigError(f"{source} is not a finite number (NaN or infinity)")
+    return value
+
+
+def aggregate_of_series(series: Any, aggregate: str, *, source: str) -> float | None:
+    """The aggregate of a pandas Series (flat files, Iceberg) with SQL's NULL semantics: NULLs are
+    skipped, and no non-NULL input — or fewer than two for ``stdev`` — gives ``None``, never the
+    ``0`` pandas returns for an empty sum.
+    """
+    import numpy as np
+    import pandas as pd
+
+    if pd.api.types.is_bool_dtype(series.dtype):
+        raise MonitorConfigError(f"{source} is over a boolean column, not a numeric one")
+    values = series.dropna()
+    if pd.api.types.is_numeric_dtype(values.dtype):
+        array = values.astype("float64").to_numpy()
+    elif values.dtype == object and all(
+        isinstance(v, (int, float, Decimal)) and not isinstance(v, bool) for v in values
+    ):
+        array = np.array([float(v) for v in values], dtype="float64")
+    else:
+        raise MonitorConfigError(
+            f"{source} is over a non-numeric column (dtype {values.dtype}) — an aggregate "
+            "monitor needs a numeric column"
+        )
+    array = array[~np.isnan(array)]
+    if array.size == 0 or (aggregate == AGGREGATE_STDEV and array.size < 2):
+        return None
+    reducers: dict[str, Callable[[Any], Any]] = {
+        AGGREGATE_MEAN: np.mean,
+        AGGREGATE_MEDIAN: np.median,
+        AGGREGATE_SUM: np.sum,
+        AGGREGATE_STDEV: lambda a: np.std(a, ddof=1),
+        AGGREGATE_MIN: np.min,
+        AGGREGATE_MAX: np.max,
+    }
+    return aggregate_value(float(reducers[aggregate](array)), source=source)
+
+
+def _aggregate_tier(value: float, bounds: dict[str, float]) -> tuple[str, str | None]:
+    """The tier ``value`` falls in and the bound it breached (outermost first; inclusive)."""
+    for tier in ("critical", "fail", "warn"):
+        for key, bound_tier in _AGGREGATE_BOUND_TIER.items():
+            if bound_tier != tier or key not in bounds:
+                continue
+            limit = bounds[key]
+            if value < limit if key in AGGREGATE_LOWER_BOUNDS else value > limit:
+                return tier, key
+    return "pass", None
+
+
+def _validate_aggregate(config: dict[str, Any]) -> None:
+    aggregate_params(config)
+
+
+def _aggregate_statement(target: TableClause, config: dict[str, Any]) -> Select[Any]:
+    from sqlalchemy import column as sql_column
+
+    from backend.app.datasources.aggregate_sql import aggregate_statement
+
+    params = aggregate_params(config)
+    return aggregate_statement(
+        target, params.aggregate, sql_column(folding_identifier(params.column))
+    )
+
+
+def _aggregate_outcome(scalar: Any, config: dict[str, Any], now: datetime) -> CheckOutcome:
+    params = aggregate_params(config)
+    expectation_type = monitor_expectation_type(AGGREGATE)
+    expected: dict[str, Any] = {
+        "monitor": AGGREGATE,
+        "aggregate": params.aggregate,
+        "column": params.column,
+        **params.bounds,
+    }
+    value = aggregate_value(scalar, source=params.source)
+    if value is None:
+        needs = (
+            " (a sample standard deviation needs at least two)"
+            if params.aggregate == AGGREGATE_STDEV
+            else ""
+        )
+        return CheckOutcome(
+            expectation_type=expectation_type,
+            success=False,
+            errored=True,
+            error_message=(
+                f"{params.source} is NULL — the table is empty or {params.column} has no "
+                f"non-NULL values{needs}, so the aggregate can't be assessed"
+            ),
+            expected_value=expected,
+        )
+    tier, breached = _aggregate_tier(value, params.bounds)
+    observed: dict[str, Any] = {
+        "aggregate": params.aggregate,
+        "column": params.column,
+        "observed_value": value,
+    }
+    if breached is not None:
+        observed["breached_bound"] = breached
+    return CheckOutcome(
+        expectation_type=expectation_type,
+        success=tier == "pass",
+        metric_value=value,
+        observed_value=observed,
+        expected_value=expected,
+        severity=tier,
+    )
+
+
 @dataclass(frozen=True)
 class MonitorKindStrategy:
     """One monitor kind's behavior behind the #726 registry; ``build_statement``
@@ -458,6 +702,9 @@ MONITOR_KIND_REGISTRY: dict[str, MonitorKindStrategy] = {
     ),
     # Stateful (#593): services/anomaly.py measures, scores, hands payload here.
     ANOMALY: MonitorKindStrategy(ANOMALY, _validate_anomaly, _anomaly_outcome, None),
+    AGGREGATE: MonitorKindStrategy(
+        AGGREGATE, _validate_aggregate, _aggregate_outcome, _aggregate_statement
+    ),
 }
 
 # Derived, never hand-maintained.

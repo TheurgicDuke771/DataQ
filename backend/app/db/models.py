@@ -66,7 +66,15 @@ def worst_severity(statuses: Iterable[str]) -> str | None:
 
 
 # Monitor-kind discriminator (ADR 0012; `comparison` per ADR 0014/0015).
-CHECK_KINDS = ("expectation", "freshness", "volume", "schema_drift", "anomaly", "comparison")
+CHECK_KINDS = (
+    "expectation",
+    "freshness",
+    "volume",
+    "schema_drift",
+    "anomaly",
+    "comparison",
+    "aggregate",
+)
 COMPARISON_KIND = "comparison"
 # Check engines (ADR 0036) — WHO evaluates, orthogonal to `kind`.
 CHECK_ENGINES = ("gx", "dmf", "dqx", "dataplex")

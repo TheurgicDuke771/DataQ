@@ -29,6 +29,8 @@ from backend.app.datasources.expectation_allowlist import (
     is_allowed,
 )
 from backend.app.datasources.monitors import (
+    AGGREGATE,
+    AGGREGATE_MEDIAN,
     ANOMALY,
     FRESHNESS,
     MONITOR_KINDS,
@@ -53,6 +55,7 @@ from backend.app.datasources.snowflake_dmf import (
     build_custom_dmf_statement,
 )
 from backend.app.datasources.sql import is_sql_identifier
+from backend.app.datasources.sql_engines import sql_engine
 from backend.app.db.models import (
     CHECK_ENGINES,
     CHECK_ORDER,
@@ -360,6 +363,7 @@ def validate_monitor_check(
     *,
     expectation_type: str,
     connection_type: str,
+    warn_threshold: Decimal | None,
     fail_threshold: Decimal | None,
     critical_threshold: Decimal | None,
 ) -> None:
@@ -408,6 +412,36 @@ def validate_monitor_check(
             "(standard deviations from the learned baseline) — without one it can never "
             "fail (no threshold) or always fails (zero)",
             detail={"kind": kind},
+        )
+    if kind == AGGREGATE:
+        _validate_aggregate_check(
+            config,
+            connection_type=connection_type,
+            thresholds=(warn_threshold, fail_threshold, critical_threshold),
+        )
+
+
+def _validate_aggregate_check(
+    config: dict[str, Any],
+    *,
+    connection_type: str,
+    thresholds: tuple[Decimal | None, Decimal | None, Decimal | None],
+) -> None:
+    if any(t is not None for t in thresholds):
+        raise CheckConfigInvalidError(
+            "an aggregate monitor takes no warn/fail/critical threshold: those band a metric "
+            "that only gets worse upward, and an aggregate fails too low as well as too high. "
+            "Set its two-sided bands in config instead (min_value/max_value, "
+            "warn_min/warn_max, critical_min/critical_max)",
+            detail={"kind": AGGREGATE},
+        )
+    spec = sql_engine(connection_type)
+    if config.get("aggregate") == AGGREGATE_MEDIAN and spec is not None and not spec.exact_median:
+        raise CheckConfigInvalidError(
+            f"{spec.display_name} has no exact median aggregate (only an approximate "
+            "percentile), so a median monitor can't be computed there — use mean, or a "
+            "custom-SQL check with the engine's approximate percentile",
+            detail={"kind": AGGREGATE, "connection_type": connection_type},
         )
 
 
@@ -869,6 +903,7 @@ def create_check(
             config,
             expectation_type=expectation_type,
             connection_type=_connection_type(session, suite),
+            warn_threshold=warn_threshold,
             fail_threshold=fail_threshold,
             critical_threshold=critical_threshold,
         )
@@ -988,6 +1023,7 @@ def _validate_kind_specific_config(
             config,
             expectation_type=expectation_type,
             connection_type=_connection_type(session, suite),
+            warn_threshold=warn_threshold,
             fail_threshold=fail_threshold,
             critical_threshold=critical_threshold,
         )

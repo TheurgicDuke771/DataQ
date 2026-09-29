@@ -527,3 +527,66 @@ describe('Databricks DQX category (ADR 0036 §6)', () => {
     expect(group?.specs.every((spec) => spec.engine === 'dqx')).toBe(true);
   });
 });
+
+describe('aggregate monitor (#1602)', () => {
+  const spec = () => EXPECTATION_BY_TYPE['monitor:aggregate'];
+  const aggregateOptions = (type: ConnectionType | undefined): string[] =>
+    (configFieldsFor(spec(), type).find((f) => f.name === 'aggregate')?.options ?? []).map(
+      (o) => o.value,
+    );
+
+  it.each<ConnectionType>(['snowflake', 'unity_catalog', 'postgres', 'iceberg', 's3', 'adls_gen2'])(
+    'offers the Aggregate category on monitor-capable datasource %s',
+    (type) => {
+      expect(categoryNames(expectationsByCategoryFor(type))).toContain('Aggregate');
+    },
+  );
+
+  it.each<ConnectionType>(['adf', 'airflow'])(
+    'hides Aggregate on orchestration type %s',
+    (type) => {
+      expect(categoryNames(expectationsByCategoryFor(type))).not.toContain('Aggregate');
+    },
+  );
+
+  it('is kind=aggregate with its bands in config, no threshold block and no derived dimension', () => {
+    expect(spec().kind).toBe('aggregate');
+    expect(spec().noThresholds).toBe(true);
+    expect(spec().dimension).toBeUndefined();
+    expect(spec().fields.map((f) => f.name)).toEqual([
+      'aggregate',
+      'column',
+      'min_value',
+      'max_value',
+      'warn_min',
+      'warn_max',
+      'critical_min',
+      'critical_max',
+    ]);
+  });
+
+  it('drops median only where the engine has no exact median', () => {
+    expect(aggregateOptions('postgres')).toContain('median');
+    expect(aggregateOptions('mssql')).toContain('median');
+    for (const type of ['mysql', 'trino', 'athena'] as ConnectionType[]) {
+      expect(aggregateOptions(type)).toEqual(['mean', 'sum', 'stdev', 'min', 'max']);
+    }
+  });
+
+  it('submits the bands in config and never a threshold', () => {
+    const payload = buildCheckPayload({
+      name: 'mean amount',
+      expectation_type: 'monitor:aggregate',
+      config: { aggregate: 'mean', column: 'amount', min_value: 0, max_value: 50, warn_max: '' },
+      fail_threshold: 5,
+    });
+    expect(payload.kind).toBe('aggregate');
+    expect(payload.config).toEqual({
+      aggregate: 'mean',
+      column: 'amount',
+      min_value: 0,
+      max_value: 50,
+    });
+    expect(payload.fail_threshold).toBeNull();
+  });
+});

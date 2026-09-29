@@ -18,7 +18,7 @@
 
 ## Add a connection
 
-Adding, editing, deleting or re-crendentialing a connection requires the **Admin** workspace
+Adding, editing, deleting or re-credentialing a connection requires the **Admin** workspace
 role (ADR [0033](../adr/0033-workspace-roles-rbac.md)) — connections are shared infrastructure
 holding credentials, and every suite in the workspace runs on them. Members and Viewers can
 see and reference them, and Members can run the saved-connection **Test**.
@@ -26,6 +26,29 @@ see and reference them, and Members can run the saved-connection **Test**.
 In the UI, **Connections → Add connection**, pick the datasource, fill the type-specific
 fields, and **Test** it (a live reachability probe). Credentials are stored in the secret
 store (Azure Key Vault / AWS Secrets Manager / OpenBao, depending on deployment), never in the database.
+
+### A connection is tested before it is saved
+
+**Create** runs the same live test as the **Test** button first, and saves nothing if it fails:
+the form shows the reason and the connection is not created. The same applies when you edit a
+connection's settings or credential (a rename alone is not tested) and when you
+**re-authenticate** — a new credential that does not work is refused, and the stored one stays
+in place.
+
+If the test fails for a reason that does not mean the connection is wrong, an Admin can choose
+**Create without testing** (or **Save without testing** / **Rotate without testing**). Use it
+when:
+
+- the store is not reachable from the DataQ API right now, but will be from the workers that
+  run the checks;
+- an orchestrator (ADF, Airflow) is down while you register it;
+- a **new dbt project** has not published a `run_results.json` yet — its test fails until the
+  first build does (see [Orchestration](orchestration.md)).
+
+A connection saved this way is not verified: its credential health reads *Unknown*, and the
+audit log records that its test was skipped. Test it once the store is reachable. Over the API,
+send `skip_test: true` with the create, update or re-auth request; see the
+[REST API](../reference/rest-api.md#connections).
 
 Snowflake supports two auth modes: **password** and **key pair (RSA)**. For key pair,
 paste the PEM private key; if the key is passphrase-protected (PKCS#8), fill the optional
@@ -122,8 +145,9 @@ Only credential **rejections** move this signal. A missing SELECT grant, an unre
 host and a bad table name all leave it untouched, because none of them says the credential
 is dead — those surface as the run's own failure reason instead.
 
-Re-authenticating a connection, or a passing **Test connection**, clears the signal
-immediately; you do not have to wait for the next scheduled run to confirm a rotation
+Re-authenticating a connection (which tests the new credential first), or a passing **Test
+connection**, clears the signal immediately — a credential rotated in *without* testing resets
+it to **Unknown** instead; you do not have to wait for the next scheduled run to confirm a rotation
 worked. Workspace admins see every datasource connection's credential health together on
 the admin health view.
 
@@ -816,10 +840,10 @@ outside the editor cannot smuggle in a type the editor would not offer; the refu
 whether the type is unknown to Great Expectations altogether or simply not enabled here,
 and lists what is.
 
-Two groups are deliberately absent. **Scalar aggregates** (`expect_column_mean_to_be_between`
-and its siblings) report a single number and no unexpected-%, so severity bands have
-nothing to band — a *Volume* or *Anomaly* monitor measures that shape properly, with trends
-and a learned baseline. **Whole-table set comparisons** (columns match an expected set or
+Two groups are deliberately absent. **GX's scalar aggregates**
+(`expect_column_mean_to_be_between` and its siblings) report a single number and no
+unexpected-%, so severity bands have nothing to band — the *Aggregate* monitor measures that
+shape properly, with two-sided bands and a trend. **Whole-table set comparisons** (columns match an expected set or
 ordered list) are what the *Schema-drift* monitor does, against a captured baseline. For
 anything with no vetted type, write a custom-SQL check.
 
@@ -976,6 +1000,33 @@ band the % by which the count falls outside the range (a spike can exceed 100%),
 leave them blank for binary in-range pass/fail. On a flat file the count is over the
 **resolved batch** — the single file the target's batch pattern selects, not the
 whole prefix.
+
+### Aggregate monitor (all datasources — ADR 0012)
+
+*Is this column's statistic where it should be?* Pick one statistic — **mean, median, sum,
+standard deviation, min or max** — over one numeric column, and set **two-sided bands**:
+*Fail below / Fail above*, optionally a tighter *Warn below / Warn above* inside them and a
+wider *Critical below / Critical above* outside them. The bands nest (critical ⊇ fail ⊇ warn,
+bounds inclusive) and are checked when you save. An aggregate fails too low as well as too
+high, so it takes **no** warn/fail/critical threshold — those band a metric that only gets
+worse upward, and the editor hides them.
+
+The statistic itself is stored as the result's metric every run, so the **trend view** plots it
+with the bands drawn in, and it is ready for a future anomaly baseline. Semantics match SQL on
+every datasource: NULLs are skipped, the standard deviation is the sample one (n − 1), and mean,
+median and standard deviation are computed over a double-precision float — several engines
+(Databricks, Trino, Athena, Redshift, MySQL/MariaDB) otherwise round a DECIMAL average to a
+fixed number of places. An **empty table or an all-NULL column reports error**, never a pass
+on a made-up 0 (a standard deviation needs at least two values). A text or date column is an
+error too: the monitor needs a numeric column.
+
+Warehouses compute it with one pushdown query (Unity Catalog included); flat files and Iceberg
+read the one column into the worker, under the same scan caps as a check. **Median** is exact
+wherever it is offered and is **not offered on MySQL/MariaDB, Trino or Athena**, which have
+only an approximate percentile — use the mean there, or a custom-SQL check with the engine's
+`approx_percentile`. Its DQ dimension is left for you to set, since a statistic can speak to
+accuracy, validity or consistency depending on why you wrote it. Under zero-sample mode a
+**min or max** result keeps its status but not its value: that value is one cell of the table.
 
 ### Schema-drift monitor (all datasources — ADR 0012)
 

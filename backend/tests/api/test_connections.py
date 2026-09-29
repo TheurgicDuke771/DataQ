@@ -22,6 +22,8 @@ from backend.app.services import credential_health
 from backend.app.services.failure_classifier import AUTH_FAILURE_REASON
 from backend.tests.support.fake_secret_store import FakeSecretStore, override_secret_store
 
+pytestmark = pytest.mark.usefixtures("reachable_stores")
+
 _SF_CONFIG = {
     "account": "ab12345.eu-west-1",
     "user": "svc_dataq",
@@ -364,23 +366,23 @@ def test_reauth_rotates_credential_and_verifies(
     monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _PassAdapter())
     resp = api.post(f"/api/v1/connections/{cid}/reauth", json={"secret": "rotated"})
     assert resp.status_code == 200
-    assert resp.json() == {"ok": True}
+    assert resp.json() == {"ok": True, "tested": True}
     assert store.data[_ref(cid)] == "rotated"  # credential rotated in the store
 
 
-def test_reauth_failed_verify_returns_502_but_rotation_persists(
+def test_reauth_failed_verify_returns_422_and_keeps_the_old_credential(
     client: tuple[TestClient, FakeSecretStore], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     api, store = client
     cid = api.post("/api/v1/connections", json=_create_payload()).json()["id"]
 
-    # The new credential is stored, then the probe rejects it → 502. The rotation
-    # is intentionally kept (the old credential was already expired).
+    # #1927: the new credential is tested BEFORE it is written, so a rejected one never
+    # replaces the stored one.
     monkeypatch.setattr(svc, "get_connection_adapter", lambda t: _FailAdapter())
     resp = api.post(f"/api/v1/connections/{cid}/reauth", json={"secret": "still-bad"})
-    assert resp.status_code == 502
-    assert resp.json()["error"]["code"] == "connection_test_failed"
-    assert store.data[_ref(cid)] == "still-bad"
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "connection_test_failed_on_save"
+    assert store.data[_ref(cid)] == "p@ss"
 
 
 def test_reauth_secret_write_failure_returns_502(
@@ -493,6 +495,7 @@ def test_draft_test_secret_optional_adapter_allows_missing_secret(
     assert adapter.received_secret is None
 
 
+@pytest.mark.real_adapter_test
 def test_draft_test_iceberg_glue_catalog_with_no_secret_succeeds(
     client: tuple[TestClient, FakeSecretStore], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -537,6 +540,7 @@ def _draft_dbt_test(api: TestClient, artifacts_uri: str) -> Any:
     )
 
 
+@pytest.mark.real_adapter_test
 def test_draft_test_dbt_file_scheme_with_no_secret_succeeds(
     client: tuple[TestClient, FakeSecretStore], tmp_path: Path
 ) -> None:
@@ -553,6 +557,7 @@ def test_draft_test_dbt_file_scheme_with_no_secret_succeeds(
     assert resp.json() == {"ok": True}
 
 
+@pytest.mark.real_adapter_test
 def test_draft_test_dbt_with_nothing_published_fails_naming_the_path(
     client: tuple[TestClient, FakeSecretStore], tmp_path: Path
 ) -> None:
@@ -563,6 +568,7 @@ def test_draft_test_dbt_with_nothing_published_fails_naming_the_path(
     assert f"file://{tmp_path}/nightly/latest/run_results.json" in resp.json()["error"]["message"]
 
 
+@pytest.mark.real_adapter_test
 def test_test_endpoint_secret_optional_saved_connection_succeeds(
     client: tuple[TestClient, FakeSecretStore], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -571,6 +577,12 @@ def test_test_endpoint_secret_optional_saved_connection_succeeds(
     not 502 "connection has no stored credential to test with".
     """
     api, _ = client
+
+    class _FakeCatalog:
+        def list_namespaces(self) -> list[str]:
+            return []
+
+    monkeypatch.setattr("pyiceberg.catalog.load_catalog", lambda name, **props: _FakeCatalog())
     created = api.post(
         "/api/v1/connections",
         json={
@@ -584,11 +596,6 @@ def test_test_endpoint_secret_optional_saved_connection_succeeds(
     assert created.json()["has_secret"] is False
     cid = created.json()["id"]
 
-    class _FakeCatalog:
-        def list_namespaces(self) -> list[str]:
-            return []
-
-    monkeypatch.setattr("pyiceberg.catalog.load_catalog", lambda name, **props: _FakeCatalog())
     resp = api.post(f"/api/v1/connections/{cid}/test")
     assert resp.status_code == 200
     assert resp.json() == {"ok": True}
@@ -661,6 +668,7 @@ def test_patch_rotates_catalog_secret_reusing_the_same_ref(
     assert store.data[ref] == "pw-v2"
 
 
+@pytest.mark.real_adapter_test
 def test_draft_test_iceberg_sql_catalog_with_catalog_secret_injects_password(
     client: tuple[TestClient, FakeSecretStore], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -899,7 +907,8 @@ def test_list_reports_a_never_used_credential_as_unknown_never_healthy(
     """A connection nothing has run against has been observed not at all — and the whole
     point of the signal is that silence must not read as a clean bill of health (#828)."""
     api, _ = client
-    api.post("/api/v1/connections", json=_create_payload(name="fresh"))
+    # Saved untested (#1927): a passing save-time test would itself be an observation.
+    api.post("/api/v1/connections", json=_create_payload(name="fresh", skip_test=True))
 
     [row] = api.get("/api/v1/connections").json()
 

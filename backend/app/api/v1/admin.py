@@ -635,7 +635,10 @@ def put_llm_settings(
     db: Annotated[Session, Depends(get_db)],
     secret_store: Annotated[SecretStore, Depends(get_secret_store)],
 ) -> LlmSettingsRead:
-    row = llm_service.save_settings(
+    """An enabled config is live-tested first (the `POST /admin/llm/test` probe) and refused with
+    422 `llm_test_failed_on_save` if it fails (#1927); a disabled one is saved untested.
+    """
+    row = llm_service.save_tested_settings(
         db,
         draft=llm_service.LlmSettingsDraft(
             provider=payload.provider,

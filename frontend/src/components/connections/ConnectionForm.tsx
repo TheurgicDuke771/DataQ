@@ -10,11 +10,13 @@ import {
   createConnection,
   ENV_COLORS,
   envLabel,
+  SAVE_TEST_FAILED_CODE,
   testConnection,
   testDraftConnection,
   updateConnection,
 } from '../../api/connections';
 import { ConnectionTypeFields } from './ConnectionTypeFields';
+import { SaveTestFailedAlert } from './SaveTestFailedAlert';
 import {
   activeAuthOption,
   composeSecret,
@@ -25,6 +27,7 @@ import {
 } from './connectionFormSpec';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { errorMessage } from '../../utils/errors';
+import { apiFieldError } from '../../utils/fieldErrors';
 
 interface FormValues {
   name: string;
@@ -64,6 +67,8 @@ export function ConnectionForm({
   const { run, loading: submitting } = useAsyncAction(`${isEdit ? 'Update' : 'Create'} failed`);
   const [testState, setTestState] = useState<TestState>('idle');
   const [testError, setTestError] = useState<string>();
+  // The server's save-time test refused the last Save (#1927) — its safe reason, shown on the form.
+  const [saveTestFailure, setSaveTestFailure] = useState<string>();
 
   // Seed the form: an edit prefills name + config; a create seeds the new type's config defaults
   // (e.g. the auth-type) and clears any fields left over from a previously-picked type.
@@ -102,6 +107,7 @@ export function ConnectionForm({
       setTestState('idle');
       setTestError(undefined);
     }
+    setSaveTestFailure(undefined);
   };
 
   // #1401: the backend refuses a config change that moves where this connection's stored credential
@@ -111,28 +117,54 @@ export function ConnectionForm({
     ? movedDestinationFields(type, editedConfig, connection.config)
     : [];
 
-  const onFinish = (values: FormValues) =>
+  // The server tests the config before writing it (#1927); `skipTest` is the Admin escape hatch.
+  const save = (values: FormValues, skipTest: boolean) =>
     run(async () => {
-      const saved = isEdit
-        ? await updateConnection(connection.id, {
-            name: values.name,
-            config: values.config ?? {},
-            catalog_secret: values.catalogSecret || undefined,
-            // Only when a destination moved — an ordinary edit still sends no
-            // credential, so a routine rename can never overwrite a working one.
-            secret: movedDestinations.length > 0 ? buildSecret(values) : undefined,
-          })
-        : await createConnection({
-            name: values.name,
-            type,
-            env: values.env,
-            config: values.config ?? {},
-            secret: buildSecret(values),
-            catalog_secret: values.catalogSecret || undefined,
-          });
-      message.success(`Connection “${values.name}” ${isEdit ? 'updated' : 'created'}`);
+      let saved: Connection;
+      try {
+        saved = isEdit
+          ? await updateConnection(connection.id, {
+              name: values.name,
+              config: values.config ?? {},
+              catalog_secret: values.catalogSecret || undefined,
+              // Only when a destination moved — an ordinary edit still sends no
+              // credential, so a routine rename can never overwrite a working one.
+              secret: movedDestinations.length > 0 ? buildSecret(values) : undefined,
+              skip_test: skipTest || undefined,
+            })
+          : await createConnection({
+              name: values.name,
+              type,
+              env: values.env,
+              config: values.config ?? {},
+              secret: buildSecret(values),
+              catalog_secret: values.catalogSecret || undefined,
+              skip_test: skipTest || undefined,
+            });
+      } catch (err) {
+        if (apiFieldError(err)?.code !== SAVE_TEST_FAILED_CODE) throw err;
+        setSaveTestFailure(errorMessage(err));
+        return;
+      }
+      setSaveTestFailure(undefined);
+      message.success(
+        `Connection “${values.name}” ${isEdit ? 'updated' : 'created'}` +
+          (skipTest ? ' without testing' : ''),
+      );
       onSaved(saved);
     });
+
+  const onFinish = (values: FormValues) => save(values, false);
+
+  const onSaveUntested = async () => {
+    let values: FormValues;
+    try {
+      values = await form.validateFields();
+    } catch {
+      return;
+    }
+    await save(values, true);
+  };
 
   // Create mode: probe the config/secret just typed — nothing is persisted (#351).
   const onTest = async () => {
@@ -225,7 +257,21 @@ export function ConnectionForm({
         {testState === 'ok' && <Badge status="success" text="Connected" />}
         {testState === 'failed' && <Badge status="error" text={testError ?? 'Connection failed'} />}
       </Flex>
-      <Flex justify="end" gap={8}>
+      {saveTestFailure !== undefined && (
+        <SaveTestFailedAlert
+          type={type}
+          reason={saveTestFailure}
+          skipLabel={isEdit ? 'Save without testing' : 'Create without testing'}
+          skipping={submitting}
+          onSkip={onSaveUntested}
+        />
+      )}
+      <Flex justify="end" align="center" gap={8} wrap>
+        <Typography.Text type="secondary" style={{ marginRight: 'auto' }}>
+          {isEdit
+            ? 'A config or credential change is tested before it is saved.'
+            : 'The connection is tested before it is created.'}
+        </Typography.Text>
         <Button onClick={onCancel}>{isEdit ? 'Cancel' : 'Back'}</Button>
         <Button type="primary" htmlType="submit" loading={submitting}>
           {isEdit ? 'Save' : 'Create'}

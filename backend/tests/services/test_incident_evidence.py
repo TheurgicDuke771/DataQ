@@ -998,3 +998,33 @@ def test_pre_resolved_context_is_used_verbatim(db_session: Any, world: dict[str,
         context=context,
     )
     assert card["failing_result"]["observed_value"]["observed_value"] == "<redacted>"
+
+
+def test_kind_detail_aggregate_names_the_breach_but_not_the_value(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    """The measured value may be one cell (MIN/MAX); `failing_result` carries it through the
+    column-aware redaction ladder, so the lifted detail must not carry it around that.
+    """
+    check = _monitor_check(db_session, world["suite"], "aggregate")
+    run = _run(db_session, world["suite"])
+    result = Result(
+        run_id=run.id,
+        check_id=check.id,
+        status="fail",
+        metric_value=987654.32,
+        observed_value={
+            "aggregate": "max",
+            "column": "salary",
+            "observed_value": 987654.32,
+            "breached_bound": "max_value",
+        },
+    )
+    db_session.add(result)
+    db_session.commit()
+    card = build_evidence(db_session, run=run, result=result, check=check, asset=world["asset"])
+    assert card["kind_detail"] == {
+        "aggregate": "max",
+        "column": "salary",
+        "breached_bound": "max_value",
+    }

@@ -68,7 +68,10 @@ def test_every_check_type_has_an_example() -> None:
         *DMF_EXPECTATION_TYPES,
         *DQX_EXPECTATION_TYPES,
         *COMPARISON_EXPECTATION_TYPES,
-        *(f"monitor:{kind}" for kind in ("freshness", "volume", "schema_drift", "anomaly")),
+        *(
+            f"monitor:{kind}"
+            for kind in ("freshness", "volume", "schema_drift", "anomaly", "aggregate")
+        ),
     }
     assert set(examples.EXAMPLES) == known - ALLOWLIST_ONLY_TYPES | {CUSTOM_SQL_EXPECTATION_TYPE}
 

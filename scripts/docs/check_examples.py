@@ -362,6 +362,12 @@ EXAMPLES.update(
             "report every added, dropped or retyped column. `legacy_code` is never compared.",
             kind="schema_drift",
         ),
+        "monitor:aggregate": _described(
+            {"aggregate": "mean", "column": "amount", "min_value": 50, "warn_max": 100},
+            "Reports the mean of `amount` as the metric and records it every run, so it trends. "
+            "On the sample the mean is 105.87: above `warn_max`, inside the fail band, so WARN.",
+            kind="aggregate",
+        ),
         "monitor:anomaly": _described(
             {"target_metric": "row_count", "window": 14, "min_points": 7, "seasonality": True},
             "Reports the z-score of today's row count against the last 14 runs on the same "

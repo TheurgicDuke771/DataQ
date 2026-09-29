@@ -524,3 +524,63 @@ def test_enumeration_is_privilege_filtered_and_joins_the_suite_target_identity(
     target = resolve_asset_identity("mysql", my.config, {"table": "Orders"})
     assert target.name == f"{my.database}.Orders"
     assert (target.namespace, target.name) in {(i.namespace, i.name) for i in identities}
+
+
+# ───────────────────────── aggregate monitor (#1602) ─────────────────────────
+
+
+@pytest.fixture
+def my_amounts(my: MyTarget) -> Iterator[None]:
+    """`AMOUNTS` in a mixed-case DECIMAL column, an all-NULL column and an empty table, dropped
+    afterwards. The reader's database-level SELECT grant covers them."""
+    from backend.tests.support.aggregate_lane import AMOUNTS
+
+    admin = create_engine(my.admin_url)
+    table, empty = f"`{my.database}`.`Amounts`", f"`{my.database}`.amounts_empty"
+    try:
+        with admin.begin() as conn:
+            conn.execute(text(f"CREATE TABLE {table} (`Amount` DECIMAL(9,2), blank DOUBLE)"))
+            for value in AMOUNTS:
+                conn.execute(text(f"INSERT INTO {table} VALUES (:v, NULL)").bindparams(v=value))
+            conn.execute(text(f"CREATE TABLE {empty} (`Amount` DECIMAL(9,2))"))
+        yield
+    finally:
+        with admin.begin() as conn:
+            conn.execute(text(f"DROP TABLE IF EXISTS {table}, {empty}"))
+        admin.dispose()
+
+
+def test_every_aggregate_but_median_is_exact_over_pymysql(my: MyTarget, my_amounts: None) -> None:
+    """MySQL has no exact median (MariaDB only a window form MySQL lacks), so the author gate
+    refuses one; every other aggregate crosses PyMySQL as a `Decimal` or `float`."""
+    from backend.tests.support.aggregate_lane import assert_aggregates
+
+    runner = _runner(my)
+    try:
+        assert_aggregates(
+            runner,
+            table="Amounts",
+            schema=my.database,
+            column="Amount",
+            null_column="blank",
+            empty_table="amounts_empty",
+            exact_median=False,
+        )
+    finally:
+        runner.close()
+
+
+def test_the_aggregate_monitor_runs_and_previews_end_to_end(
+    db_session: Any, my: MyTarget, my_amounts: None
+) -> None:
+    from backend.tests.support.aggregate_lane import assert_run_path_and_dry_run
+
+    assert_run_path_and_dry_run(
+        db_session,
+        conn_type="mysql",
+        config=my.config,
+        secret_ref="my-ref",
+        secret_store=_store(my),
+        target={"table": "Amounts", "schema": my.database},
+        column="Amount",
+    )

@@ -100,6 +100,25 @@ describe('CheckTrend', () => {
     ).toBeInTheDocument();
   });
 
+  it('draws an aggregate check its two-sided config bands, not the empty threshold columns', async () => {
+    mockHistory.mockResolvedValue([
+      { run_id: 'r1', status: 'pass', metric_value: 42, created_at: '2026-06-10T00:00:00Z' },
+    ]);
+    const aggregateCheck = {
+      id: 'c1',
+      kind: 'aggregate',
+      warn_threshold: null,
+      fail_threshold: null,
+      critical_threshold: null,
+      config: { aggregate: 'mean', column: 'amount', min_value: 10, warn_max: 80, max_value: 90 },
+    };
+    render(<CheckTrend suiteId="s1" check={aggregateCheck} />);
+    expect(
+      await screen.findByText('Thresholds: Fail < 10 · Warn > 80 · Fail > 90'),
+    ).toBeInTheDocument();
+    expect(mockBaseline).not.toHaveBeenCalled();
+  });
+
   it('fetches + renders the anomaly baseline overlay when the check kind is anomaly', async () => {
     mockHistory.mockResolvedValue([
       { run_id: 'r1', status: 'pass', metric_value: 0.4, created_at: '2026-06-10T00:00:00Z' },

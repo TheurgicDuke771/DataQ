@@ -1,6 +1,7 @@
 import { App as AntApp } from 'antd';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { AxiosError, AxiosHeaders } from 'axios';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -1045,5 +1046,170 @@ describe('ConnectionForm — dbt ADLS service principal', () => {
       client_id: 'client-guid',
     });
     expect(payload.secret).toBe('the-client-secret');
+  }, 20_000);
+});
+
+/** What the axios interceptor hands a caller for a DataQ error envelope. */
+function apiError(code: string, message: string): AxiosError {
+  const err = new AxiosError(message, 'ERR_BAD_REQUEST', undefined, undefined, {
+    status: 422,
+    statusText: 'Unprocessable Entity',
+    headers: {},
+    config: { headers: new AxiosHeaders() },
+    data: { error: { code, message } },
+  });
+  err.message = message;
+  return err;
+}
+
+describe('ConnectionForm — tested before save (#1927)', () => {
+  const lake: Connection = {
+    id: 'conn-adls-9',
+    name: 'lake',
+    type: 'adls_gen2',
+    env: 'dev',
+    config: { account_url: 'https://a.blob.core.windows.net', container: 'raw' },
+    has_secret: true,
+    created_by: 'u1',
+  };
+
+  async function fillAdlsCreate(user: ReturnType<typeof userEvent.setup>) {
+    await user.type(await screen.findByLabelText('Name'), 'lake');
+    await selectOption(user, 'DEV');
+    await user.type(screen.getByLabelText('Account URL'), 'https://a.blob.core.windows.net');
+    await user.type(screen.getByLabelText('Container'), 'raw');
+    await user.type(screen.getByLabelText('SAS token', { selector: 'input' }), 'sv=1&sig=bad');
+  }
+
+  it('shows a failing save-time test on the form and does not report the connection as saved', async () => {
+    const user = userEvent.setup();
+    const onSaved = vi.fn();
+    mockCreate.mockRejectedValue(
+      apiError('connection_test_failed_on_save', 'connection test failed'),
+    );
+    render(
+      <AntApp>
+        <ConnectionForm type="adls_gen2" onSaved={onSaved} onCancel={vi.fn()} />
+      </AntApp>,
+    );
+
+    await fillAdlsCreate(user);
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    expect(
+      await screen.findByText('Connection test failed, so nothing was saved'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('connection test failed')).toBeInTheDocument();
+    expect(screen.getByText(/not reachable from the DataQ API/)).toBeInTheDocument();
+    expect(mockCreate.mock.calls[0][0].skip_test).toBeUndefined();
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it('creates without testing only when the Admin asks, sending skip_test', async () => {
+    const user = userEvent.setup();
+    const onSaved = vi.fn();
+    mockCreate
+      .mockRejectedValueOnce(apiError('connection_test_failed_on_save', 'connection test failed'))
+      .mockResolvedValueOnce(lake);
+    render(
+      <AntApp>
+        <ConnectionForm type="adls_gen2" onSaved={onSaved} onCancel={vi.fn()} />
+      </AntApp>,
+    );
+
+    await fillAdlsCreate(user);
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+    await user.click(await screen.findByRole('button', { name: 'Create without testing' }));
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(lake));
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+    expect(mockCreate.mock.calls[1][0]).toMatchObject({ name: 'lake', skip_test: true });
+  });
+
+  it('clears the failure once a field changes, since it no longer describes what would be saved', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockRejectedValue(
+      apiError('connection_test_failed_on_save', 'connection test failed'),
+    );
+    render(
+      <AntApp>
+        <ConnectionForm type="adls_gen2" onSaved={vi.fn()} onCancel={vi.fn()} />
+      </AntApp>,
+    );
+
+    await fillAdlsCreate(user);
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+    await screen.findByRole('button', { name: 'Create without testing' });
+    await user.type(screen.getByLabelText('Container'), '2');
+
+    expect(
+      screen.queryByRole('button', { name: 'Create without testing' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('leaves any other save error to the toast, with no skip offered', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockRejectedValue(apiError('connection_conflict', 'already exists'));
+    render(
+      <AntApp>
+        <ConnectionForm type="adls_gen2" onSaved={vi.fn()} onCancel={vi.fn()} />
+      </AntApp>,
+    );
+
+    await fillAdlsCreate(user);
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    expect(await screen.findByText('Create failed: already exists')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Create without testing' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('offers "Save without testing" on an edit whose test fails', async () => {
+    const user = userEvent.setup();
+    const onSaved = vi.fn();
+    mockUpdate
+      .mockRejectedValueOnce(apiError('connection_test_failed_on_save', 'connection test failed'))
+      .mockResolvedValueOnce(lake);
+    render(
+      <AntApp>
+        <ConnectionForm type="adls_gen2" connection={lake} onSaved={onSaved} onCancel={vi.fn()} />
+      </AntApp>,
+    );
+
+    await user.type(await screen.findByLabelText('Container'), '-2');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await user.click(await screen.findByRole('button', { name: 'Save without testing' }));
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(mockUpdate.mock.calls[0][1].skip_test).toBeUndefined();
+    expect(mockUpdate.mock.calls[1][1]).toMatchObject({ skip_test: true });
+  });
+
+  it('explains why a new dbt project fails its test', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockRejectedValue(
+      apiError(
+        'connection_test_failed_on_save',
+        'connection test failed: no run_results.json at file:///dbt/nightly/latest/run_results.json',
+      ),
+    );
+    render(
+      <AntApp>
+        <ConnectionForm type="dbt" onSaved={vi.fn()} onCancel={vi.fn()} />
+      </AntApp>,
+    );
+
+    await user.type(await screen.findByLabelText('Name'), 'dbt-new');
+    await selectOption(user, 'DEV');
+    await user.type(screen.getByLabelText('Project name'), 'analytics');
+    await user.type(screen.getByLabelText('Artifacts URI'), 'file:///dbt');
+    await user.type(screen.getByLabelText('Jobs'), 'nightly,');
+    await user.click(screen.getByRole('button', { name: 'Create' }));
+
+    expect(
+      await screen.findByText(/no run_results\.json until its first build/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create without testing' })).toBeInTheDocument();
   }, 20_000);
 });

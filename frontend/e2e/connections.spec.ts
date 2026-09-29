@@ -68,6 +68,14 @@ test.describe('Connections page', () => {
     await page.getByLabel('Password').fill('sekret');
     await page.getByRole('button', { name: 'Create' }).click();
 
+    // Create tests the connection first (#1927); the placeholder account cannot pass, so nothing
+    // is saved and the form offers the Admin-only untested save.
+    await expect(page.getByText('Connection test failed, so nothing was saved')).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page).toHaveURL(/\/connections\/new$/);
+    await page.getByRole('button', { name: 'Create without testing' }).click();
+
     // Back on the list, the new connection card is visible.
     await expect(page).toHaveURL(/\/connections$/);
     const card = page.locator('.ant-card').filter({ hasText: name });

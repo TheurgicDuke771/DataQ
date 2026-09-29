@@ -64,7 +64,8 @@ def _expectation_params() -> list[Any]:
 def test_fixture_is_present_and_nonempty() -> None:
     """A gutted fixture must fail loudly, not vacuously pass the loops below."""
     assert len(_expectations()) >= 8
-    assert len(_monitors()) == 4  # freshness, volume, schema_drift (#592), anomaly (#593)
+    # freshness, volume, schema_drift (#592), anomaly (#593), aggregate (#1602)
+    assert len(_monitors()) == 5
     assert len(_comparisons()) == 2  # records + columns grains (#799)
     assert len(_dmf_entries()) == len(DMF_EXPECTATION_TYPES)  # ADR 0036 §6
 
@@ -90,7 +91,9 @@ def test_catalog_no_thresholds_flag_matches_the_backend_unbandable_sets() -> Non
     from backend.app.datasources.snowflake_dmf import DMF_UNBANDABLE_TYPES
 
     flagged = {e["type"] for e in _catalog() if e.get("noThresholds")}
-    assert flagged == set(DMF_UNBANDABLE_TYPES) | set(UNBANDED_EXPECTATION_TYPES)
+    # The aggregate monitor's bands are two-sided and live in config (#1602).
+    aggregate = monitors.monitor_expectation_type(monitors.AGGREGATE)
+    assert flagged == set(DMF_UNBANDABLE_TYPES) | set(UNBANDED_EXPECTATION_TYPES) | {aggregate}
 
 
 def test_catalog_dataframe_only_flag_matches_the_runner_set() -> None:
@@ -216,6 +219,12 @@ def test_monitor_fields_match_engine_config_keys() -> None:
         "target_metric",
         "window",
     ]
+    assert set(by_kind[monitors.AGGREGATE]) == {
+        "aggregate",
+        "column",
+        *monitors.AGGREGATE_LOWER_BOUNDS,
+        *monitors.AGGREGATE_UPPER_BOUNDS,
+    }
 
 
 # ─────────── catalog ↔ dimension-derivation contract (ADR 0038, #124) ──────────

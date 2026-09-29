@@ -320,7 +320,14 @@ export interface ConnectionCreate {
   config: Record<string, unknown>;
   secret?: string;
   catalog_secret?: string;
+  /** Save without the connectivity test the server otherwise runs first (#1927). Admin-only,
+   *  like every connection write; recorded on the audit event. */
+  skip_test?: boolean;
 }
+
+/** The error code a create/update/reauth answers with when the config fails its own test —
+ *  nothing was written (#1927). */
+export const SAVE_TEST_FAILED_CODE = 'connection_test_failed_on_save';
 
 export async function createConnection(payload: ConnectionCreate): Promise<Connection> {
   const { data } = await api.post<Connection>('/connections', payload);
@@ -331,7 +338,7 @@ export async function createConnection(payload: ConnectionCreate): Promise<Conne
  * A draft-test payload is exactly a create payload minus `name` — a draft has no row and needs
  * none (#351).
  */
-export type ConnectionDraftTest = Omit<ConnectionCreate, 'name'>;
+export type ConnectionDraftTest = Omit<ConnectionCreate, 'name' | 'skip_test'>;
 
 /**
  * Live connectivity test for an UNSAVED draft — the config/secret the user just typed on
@@ -348,6 +355,8 @@ export interface ConnectionUpdate {
   config?: Record<string, unknown>;
   secret?: string;
   catalog_secret?: string;
+  /** See `ConnectionCreate.skip_test` — only a config/credential change is tested at all. */
+  skip_test?: boolean;
 }
 
 export async function updateConnection(id: string, payload: ConnectionUpdate): Promise<Connection> {
@@ -359,9 +368,19 @@ export async function deleteConnection(id: string): Promise<void> {
   await api.delete(`/connections/${id}`);
 }
 
-/** Rotate the credential and verify it in one step (bad credential → error). */
-export async function reauthConnection(id: string, secret: string): Promise<{ ok: boolean }> {
-  const { data } = await api.post<{ ok: boolean }>(`/connections/${id}/reauth`, { secret });
+/**
+ * Test a new credential and rotate it in only if it works — a failing one is refused with
+ * `SAVE_TEST_FAILED_CODE` and the stored credential stays. `skipTest` rotates it untested.
+ */
+export async function reauthConnection(
+  id: string,
+  secret: string,
+  skipTest = false,
+): Promise<{ ok: boolean; tested?: boolean }> {
+  const { data } = await api.post<{ ok: boolean; tested?: boolean }>(`/connections/${id}/reauth`, {
+    secret,
+    skip_test: skipTest,
+  });
   return data;
 }
 

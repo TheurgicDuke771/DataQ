@@ -19,7 +19,7 @@ export const CUSTOM_DMF_EXPECTATION_TYPE = 'dmf:custom';
 /** The check `kind` (ADR 0012). `expectation` (incl. custom-SQL) is GX; the
  *  monitor kinds run a scalar SQL aggregate instead. Sent to the backend. */
 export type CheckKind =
-  'expectation' | 'freshness' | 'volume' | 'schema_drift' | 'anomaly' | 'comparison';
+  'expectation' | 'freshness' | 'volume' | 'schema_drift' | 'anomaly' | 'aggregate' | 'comparison';
 
 /**
  * Expectation categories — the GX-Cloud-style classification the check editor groups by. v1 ships
@@ -30,6 +30,7 @@ export type ExpectationCategory =
   | 'Table shape'
   | 'Freshness'
   | 'Volume'
+  | 'Aggregate'
   | 'Schema'
   | 'Anomaly'
   | 'Custom SQL'
@@ -45,6 +46,7 @@ export const EXPECTATION_CATEGORIES: ExpectationCategory[] = [
   'Table shape',
   'Freshness',
   'Volume',
+  'Aggregate',
   'Schema',
   'Snowflake DMF',
   'Databricks DQX',
@@ -61,7 +63,7 @@ export const COMPARISON_COLUMNS_EXPECTATION_TYPE = 'comparison:columns';
  * Monitor categories (ADR 0012) — gated by `supportsMonitors` (below), which is BROADER than SQL-
  * queryable: Iceberg and flat files (adls_gen2/s3) also offer them.
  */
-export const MONITOR_CATEGORIES: ExpectationCategory[] = ['Freshness', 'Volume'];
+export const MONITOR_CATEGORIES: ExpectationCategory[] = ['Freshness', 'Volume', 'Aggregate'];
 
 /** The seven canonical DQ dimensions (ADR 0038) — the *semantic quality aspect* a check measures. */
 export const DQ_DIMENSIONS = [
@@ -221,6 +223,19 @@ export function effectiveEngineFor(
 }
 
 const COLUMN: ConfigField = { name: 'column', label: 'Column', type: 'string' };
+
+const AGGREGATE_OPTIONS = [
+  { value: 'mean', label: 'Mean' },
+  { value: 'median', label: 'Median' },
+  { value: 'sum', label: 'Sum' },
+  { value: 'stdev', label: 'Standard deviation' },
+  { value: 'min', label: 'Minimum' },
+  { value: 'max', label: 'Maximum' },
+];
+
+/** Mirrors the backend engine specs' `exact_median = False`: only an approximate percentile
+ *  (Trino, Athena) or none (MySQL). */
+const NO_EXACT_MEDIAN: ConnectionType[] = ['mysql', 'trino', 'athena'];
 
 /** Every DQX check: read the whole table, or only the rows appended since the last run. */
 const DQX_MODE: ConfigField = {
@@ -713,6 +728,71 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     },
   },
   {
+    type: 'monitor:aggregate',
+    // No `dimension` (mirrors backend `check_dimension._BY_KIND`, which has no `aggregate`
+    // entry): whether a column statistic speaks to accuracy, validity or consistency depends on
+    // why the author wrote it.
+    kind: 'aggregate',
+    label: 'Aggregate statistic',
+    description:
+      'A column statistic — mean, median, sum, standard deviation, min or max — stays inside two-sided bands. The value itself is recorded every run, so it trends. An empty table or an all-NULL column reports error, never a made-up 0.',
+    category: 'Aggregate',
+    fields: [
+      {
+        name: 'aggregate',
+        label: 'Statistic',
+        type: 'select',
+        options: AGGREGATE_OPTIONS,
+        help: 'Standard deviation is the sample one (n − 1). Median is exact, so it is not offered on MySQL, Trino or Athena, which have only an approximate percentile.',
+      },
+      { ...COLUMN, help: 'A numeric column. NULLs are skipped, as SQL aggregates do.' },
+      {
+        name: 'min_value',
+        label: 'Fail below',
+        type: 'number',
+        optional: true,
+        help: 'Fail when the statistic is below this. Set at least one bound on any tier.',
+      },
+      {
+        name: 'max_value',
+        label: 'Fail above',
+        type: 'number',
+        optional: true,
+        help: 'Fail when the statistic is above this.',
+      },
+      {
+        name: 'warn_min',
+        label: 'Warn below',
+        type: 'number',
+        optional: true,
+        help: 'Warn when below this (inside the fail band, so at or above "Fail below").',
+      },
+      {
+        name: 'warn_max',
+        label: 'Warn above',
+        type: 'number',
+        optional: true,
+        help: 'Warn when above this (at or below "Fail above").',
+      },
+      {
+        name: 'critical_min',
+        label: 'Critical below',
+        type: 'number',
+        optional: true,
+        help: 'Critical when below this (outside the fail band, so at or below "Fail below").',
+      },
+      {
+        name: 'critical_max',
+        label: 'Critical above',
+        type: 'number',
+        optional: true,
+        help: 'Critical when above this (at or above "Fail above").',
+      },
+    ],
+    // Its bands are two-sided and live in config; the backend refuses the one-sided thresholds.
+    noThresholds: true,
+  },
+  {
     type: 'monitor:schema_drift',
     dimension: 'consistency',
     kind: 'schema_drift',
@@ -1157,6 +1237,15 @@ export function configFieldsFor(
   spec: ExpectationSpec,
   connectionType: ConnectionType | undefined,
 ): ConfigField[] {
+  if (spec.kind === 'aggregate') {
+    if (connectionType === undefined || !NO_EXACT_MEDIAN.includes(connectionType))
+      return spec.fields;
+    return spec.fields.map((field) =>
+      field.name === 'aggregate'
+        ? { ...field, options: field.options?.filter((o) => o.value !== 'median') }
+        : field,
+    );
+  }
   if (
     spec.kind !== 'freshness' ||
     connectionType === undefined ||

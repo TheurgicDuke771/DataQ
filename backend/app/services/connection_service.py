@@ -61,6 +61,15 @@ class ConnectionTestFailedError(DataQError):
     code = "connection_test_failed"
 
 
+class ConnectionSaveTestFailedError(DataQError):
+    """A create / connectivity-changing update / reauth whose config fails its own test (#1927).
+    Nothing was written; an Admin may resend with ``skip_test=true``.
+    """
+
+    status_code = 422
+    code = "connection_test_failed_on_save"
+
+
 class ConnectionSecretWriteError(DataQError):
     status_code = 502
     code = "connection_secret_write_failed"
@@ -196,6 +205,19 @@ def _reject_uncredentialed_redirect(
             "must be re-supplied in the same request",
             detail={"fields": sorted(moved), "required": missing},
         )
+
+
+# Config keys that change what DataQ does with a connection, not how it connects — a change
+# confined to them is saved without a connectivity test (#1927).
+_BEHAVIOUR_ONLY_CONFIG_KEYS = frozenset({"inventory_sync"})
+
+
+def _connectivity_view(conn_type: str, config: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        k: v
+        for k, v in _with_config_defaults(conn_type, config).items()
+        if k not in _BEHAVIOUR_ONLY_CONFIG_KEYS
+    }
 
 
 def _reject_missing_required_secret(
@@ -399,8 +421,9 @@ def create_connection(
     created_by: uuid.UUID,
     secret_store: SecretStore,
     catalog_secret: str | None = None,
+    skip_test: bool = False,
 ) -> Connection:
-    """Validate, persist, and (if given) write the credential(s)."""
+    """Validate, test (unless ``skip_test``), persist, and write the credential(s)."""
     _reject_empty_credentials(secret=secret, catalog_secret=catalog_secret)
     _validated_config(conn_type, config)
     _validate_env(env)
@@ -410,6 +433,15 @@ def create_connection(
     if catalog_secret is not None:
         _validate_extra_secret_supported(conn_type, config, "catalog")
     _reject_missing_required_secret(conn_type, config, has_secret=secret is not None)
+    capabilities: dict[str, Any] = {}
+    if not skip_test:
+        _test_before_save(
+            conn_type,
+            config,
+            secret,
+            {"catalog_secret": catalog_secret} if catalog_secret is not None else {},
+            capabilities=capabilities,
+        )
 
     conn = Connection(
         name=name,
@@ -433,6 +465,7 @@ def create_connection(
             _refresh_credential_expiry(conn, secret)
         if catalog_secret is not None:
             _write_extra_secret(conn, catalog_secret, secret_store, field="catalog")
+        _apply_test_outcome(conn, tested=not skip_test, capabilities=capabilities)
         # v1 snapshot — atomic with the insert (same commit).
         record_connection_version(session, conn, actor_id=created_by)
         # And the audit event, also same-commit (ADR 0041 §2.1).
@@ -442,6 +475,7 @@ def create_connection(
             entity_type="connection",
             entity=conn,
             actor=created_by,
+            annotations={"connection_test": "skipped" if skip_test else "passed"},
         )
         session.commit()
     except IntegrityError as exc:
@@ -583,8 +617,13 @@ def update_connection(
     secret_store: SecretStore,
     actor_id: uuid.UUID | None = None,
     catalog_secret: str | None = None,
+    skip_test: bool = False,
 ) -> Connection:
-    """Partial update of name / config / secret(s). Type and env are immutable."""
+    """Partial update of name / config / secret(s). Type and env are immutable.
+
+    A change to the config or either credential is tested before anything is written (#1927);
+    a rename alone is not.
+    """
     _reject_empty_credentials(secret=secret, catalog_secret=catalog_secret)
     conn = get_connection(session, connection_id)
     # Capture before commit: a unique violation rolls back and expires the
@@ -594,39 +633,61 @@ def update_connection(
     # a snapshot read afterwards would record the new state as the old one.
     audit_before = audit_service.snapshot("connection", conn)
 
+    stored_config = dict(conn.config or {})
+    effective_config = stored_config
     if config is not None:
         _validated_config(conn.type, config)
         # #1118: a client may echo back the `*_secret_name` it read off this connection (the GET →
         # edit one field → PATCH the whole config flow), but may not introduce or repoint one.
-        _reject_foreign_secret_names(config, stored=conn.config or {})
-        stored_config = conn.config or {}
+        _reject_foreign_secret_names(config, stored=stored_config)
         # Compare against the MERGED config, not the raw payload: a PATCH that omits
         # `catalog_secret_name` has it carried over.
-        merged_config = _carry_over_secret_name_keys(stored_config, config)
+        effective_config = _carry_over_secret_name_keys(stored_config, config)
         _reject_uncredentialed_redirect(
             conn.type,
             stored=stored_config,
-            incoming=merged_config,
+            incoming=effective_config,
             has_stored_secret=conn.secret_ref is not None,
             supplied_secret=secret,
             supplied_extra_secrets={"catalog": catalog_secret},
         )
         _reject_missing_required_secret(
-            conn.type, merged_config, has_secret=conn.secret_ref is not None or secret is not None
+            conn.type,
+            effective_config,
+            has_secret=conn.secret_ref is not None or secret is not None,
         )
+    if catalog_secret is not None:
+        _validate_extra_secret_supported(conn.type, effective_config, "catalog")
+
+    config_changed = config is not None and _connectivity_view(
+        conn.type, stored_config
+    ) != _connectivity_view(conn.type, effective_config)
+    needs_test = config_changed or secret is not None or catalog_secret is not None
+    tested = needs_test and not skip_test
+    capabilities: dict[str, Any] = {}
+    if tested:
+        extras = _extra_secrets(effective_config, secret_store)
+        if catalog_secret is not None:
+            extras["catalog_secret"] = catalog_secret
+        _test_before_save(
+            conn.type,
+            effective_config,
+            secret if secret is not None else _stored_secret_for_test(conn, secret_store),
+            extras,
+            capabilities=capabilities,
+        )
+
+    if config is not None:
         # Asset-first default (2026-09): a connection syncs unless `inventory_sync` is
         # explicitly `false` — an absent key is opted IN, not opted out.
         was_syncing = stored_config.get("inventory_sync") is not False
-        conn.config = merged_config
+        conn.config = effective_config
         if was_syncing and (conn.config or {}).get("inventory_sync") is False:
             # Turning the ADR 0040 toggle OFF ends the sync, so the outcome state describes
             # something that no longer happens (#1104).
             conn.inventory_sync_last_attempted_at = None
             conn.inventory_sync_last_error = None
             conn.inventory_sync_failing_since = None
-    if catalog_secret is not None:
-        # After the `config is not None` branch above.
-        _validate_extra_secret_supported(conn.type, conn.config, "catalog")
     if name is not None:
         conn.name = name
     # Snapshot only a *real* name/config change.
@@ -661,6 +722,18 @@ def update_connection(
         # The rotated credential has its own lifetime — including "none", which
         # must clear the previous date rather than leave a stale warning (#838).
         _refresh_credential_expiry(conn, secret)
+    untested_target_change = config_changed and not tested
+    if untested_target_change:
+        # What was probed describes the previous target.
+        conn.engine_capabilities = {}
+    _apply_test_outcome(
+        conn,
+        tested=tested,
+        capabilities=capabilities,
+        credential_changed=secret is not None
+        or catalog_secret is not None
+        or untested_target_change,
+    )
 
     try:
         # Snapshot the post-update state, atomic with the update (same commit).
@@ -674,6 +747,7 @@ def update_connection(
             entity=conn,
             actor=actor_id,
             before=audit_before,
+            annotations={"connection_test": _test_disposition(needs_test, skip_test)},
         )
         session.commit()
     except IntegrityError as exc:
@@ -712,11 +786,21 @@ def reauth_connection(
     secret: str,
     secret_store: SecretStore,
     actor_id: uuid.UUID | None = None,
+    skip_test: bool = False,
 ) -> None:
-    """Rotate an existing connection's credential and verify it, in one step."""
+    """Test a new credential and, only if it works (or ``skip_test``), rotate it in (#1927)."""
     _reject_empty_credentials(secret=secret)
     conn = get_connection(session, connection_id)
     before = audit_service.snapshot("connection", conn)
+    capabilities: dict[str, Any] = {}
+    if not skip_test:
+        _test_before_save(
+            conn.type,
+            dict(conn.config or {}),
+            secret,
+            _extra_secrets(conn.config or {}, secret_store),
+            capabilities=capabilities,
+        )
     secret_ref = conn.secret_ref or connection_secret_ref(
         connection_id=conn.id, env=conn.env, name=conn.name, conn_type=conn.type
     )
@@ -733,6 +817,9 @@ def reauth_connection(
     # The "fix an expired token" path is exactly where the new expiry matters most:
     # the badge that prompted the rotation must clear on the same request (#838).
     _refresh_credential_expiry(conn, secret)
+    _apply_test_outcome(
+        conn, tested=not skip_test, capabilities=capabilities, credential_changed=True
+    )
     # The event ADR 0020 shipped as a known hole: a credential rotation left no trace of any kind.
     audit_service.record_entity_change(
         session,
@@ -741,13 +828,10 @@ def reauth_connection(
         entity=conn,
         actor=actor_id,
         before=before,
+        annotations={"connection_test": _test_disposition(True, skip_test)},
     )
     session.commit()
-
-    # Verify the freshly-rotated credential through the same probe as /test;
-    # raises ConnectionTestFailedError (502) if the new credential doesn't work.
-    test_connection(session, connection_id, secret_store=secret_store)
-    log.info("connection_reauthed", connection_id=str(connection_id))
+    log.info("connection_reauthed", connection_id=str(connection_id), tested=not skip_test)
 
 
 def list_connection_versions(session: Session, connection_id: uuid.UUID) -> list[ConnectionVersion]:
@@ -1014,6 +1098,83 @@ def _test_failure_message(exc: BaseException) -> str:
     if isinstance(exc, SafeMonitorError) and str(exc):
         return f"connection test failed: {exc}"
     return "connection test failed"
+
+
+def _test_disposition(needs_test: bool, skip_test: bool) -> str:
+    """The audit event's ``connection_test`` annotation (#1927)."""
+    if not needs_test:
+        return "not_required"
+    return "skipped" if skip_test else "passed"
+
+
+def _stored_secret_for_test(conn: Connection, secret_store: SecretStore) -> str | None:
+    if conn.secret_ref is None:
+        return None
+    try:
+        return secret_store.get(conn.secret_ref)
+    except SecretNotFoundError as exc:
+        raise ConnectionSaveTestFailedError(
+            "connection test failed: the stored credential could not be resolved — re-enter it",
+            detail={"connection_id": str(conn.id), "type": conn.type},
+        ) from exc
+
+
+def _test_before_save(
+    conn_type: str,
+    config: Mapping[str, Any],
+    secret: str | None,
+    extra_secrets: Mapping[str, str],
+    *,
+    capabilities: dict[str, Any],
+) -> None:
+    """Probe the config/credential(s) about to be written; refuse the write on failure (#1927).
+
+    Same safe-message rule as ``test_connection``: the driver's text never reaches the client.
+    """
+    adapter = get_connection_adapter(conn_type)
+    if secret is None and not getattr(adapter, "secret_optional", False):
+        raise ConnectionSaveTestFailedError(
+            "connection test failed: a credential is required to test this connection",
+            detail={"type": conn_type},
+        )
+    try:
+        adapter.test(
+            dict(config),
+            secret,
+            **_capability_probe_kwargs(adapter, capabilities),
+            **extra_secrets,
+        )
+    except Exception as exc:
+        log.warning("connection_save_test_failed", type=conn_type, error_type=type(exc).__name__)
+        raise ConnectionSaveTestFailedError(
+            _test_failure_message(exc), detail={"type": conn_type}
+        ) from exc
+
+
+def _apply_test_outcome(
+    conn: Connection,
+    *,
+    tested: bool,
+    capabilities: dict[str, Any],
+    credential_changed: bool = False,
+) -> None:
+    """Carry a save-time test's result onto the row, in the write's own transaction.
+
+    A credential written untested has had nothing observed about it, so its health reads
+    ``unknown`` rather than the verdict on the credential it replaced.
+    """
+    if capabilities:
+        conn.engine_capabilities = capabilities
+    if not credential_health.is_datasource(conn.type) or conn.secret_ref is None:
+        return
+    if tested:
+        conn.last_auth_success_at = datetime.now(UTC)
+    elif credential_changed:
+        conn.last_auth_success_at = None
+    else:
+        return
+    conn.last_auth_error = None
+    conn.consecutive_auth_failures = 0
 
 
 def test_connection(

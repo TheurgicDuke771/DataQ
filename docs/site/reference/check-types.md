@@ -6,7 +6,7 @@ offers. Every GX type on this page is executed in CI on a dataframe batch, and o
 
 | | Count |
 |---|---|
-| Check types in the editor | 47 |
+| Check types in the editor | 48 |
 | GX expectation types vetted by the backend | 25 |
 
 How to read a row: **Parameters** are the editor's fields (`mostly` is GX's optional row
@@ -571,6 +571,34 @@ Did the load deliver the expected row count? Banded by count. Requires a fail or
 
     Reports the row count as the metric; outside the band fails. On the sample, 10 rows passes.
 
+## Aggregate
+
+Does a column statistic — mean, median, sum, standard deviation, min or max — stay inside two-sided bands? The value is recorded every run, so it trends; an empty table or all-NULL column reports error, never a made-up 0.
+
+| Check | Type | What it checks | Dimension | Parameters | Thresholds | Runs on |
+|---|---|---|---|---|---|---|
+| **Aggregate statistic** | `monitor:aggregate` | A column statistic — mean, median, sum, standard deviation, min or max — stays inside two-sided bands. The value itself is recorded every run, so it trends. An empty table or an all-NULL column reports error, never a made-up 0. | — (set it yourself) | `aggregate`, `column`, `min_value` *(optional)*, `max_value` *(optional)*, `warn_min` *(optional)*, `warn_max` *(optional)*, `critical_min` *(optional)*, `critical_max` *(optional)* | Two-sided warn / fail / critical bounds, set as parameters | All datasources — median not on MySQL / MariaDB, Trino, Amazon Athena (no exact median; refused at author time) |
+
+### Examples
+
+??? example "Aggregate statistic"
+
+    ```json
+    {
+      "name": "Aggregate statistic",
+      "expectation_type": "monitor:aggregate",
+      "kind": "aggregate",
+      "config": {
+        "aggregate": "mean",
+        "column": "amount",
+        "min_value": 50,
+        "warn_max": 100
+      }
+    }
+    ```
+
+    Reports the mean of `amount` as the metric and records it every run, so it trends. On the sample the mean is 105.87: above `warn_max`, inside the fail band, so WARN.
+
 ## Schema
 
 Did the table's columns change against a captured baseline?
@@ -1029,9 +1057,9 @@ suite import, which hand the backend raw JSON.
 
 ## Not offered, and why
 
-**Scalar aggregates** (`expect_column_mean_to_be_between` and its siblings) report one number
-and no unexpected-%, so severity bands have nothing to band — a Volume or Anomaly monitor
-measures that shape with trends and a learned baseline. **Whole-table column-set
+**GX's scalar aggregates** (`expect_column_mean_to_be_between` and its siblings) report one
+number and no unexpected-%, so severity bands have nothing to band — the Aggregate monitor
+measures that shape instead, with two-sided bands and a trend. **Whole-table column-set
 comparisons** are what the Schema-drift monitor does against a captured baseline. For
 anything else, write a custom-SQL check.
 

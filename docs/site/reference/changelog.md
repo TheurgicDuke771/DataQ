@@ -5,6 +5,23 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ## Unreleased
 
+### Breaking
+
+- **A connection that fails its own test is no longer saved.** Creating a connection, changing
+  its settings or credential, and re-authenticating it now run the connection's test first. If
+  the test fails, the request returns `422` with `error.code`
+  `connection_test_failed_on_save` and nothing is written — a re-authentication keeps the
+  stored credential instead of replacing it with one that does not work (before, it replaced
+  it and then reported the failure). The reason is the same safe message **Test** gives. An
+  Admin can still save on purpose, for a store the API cannot reach while you set it up or a
+  new dbt project with no `run_results.json` yet: **Create/Save/Rotate without testing** in the
+  UI, or `"skip_test": true` in the request body; the audit log records it. Saving an
+  **enabled** LLM provider (`PUT /admin/llm`) likewise runs its test first
+  (`llm_test_failed_on_save`); a disabled one is saved untested. API clients that create
+  connections with a config that fails its test must fix the config or send `skip_test`. See
+  [A connection is tested before it is saved](../guides/datasources-checks.md#a-connection-is-tested-before-it-is-saved)
+  and [API compatibility](api-compatibility.md#recorded-exceptions).
+
 ### Added
 
 - **Python client and CLI (`dataq-client`).** Install the wheel attached to the release (or the

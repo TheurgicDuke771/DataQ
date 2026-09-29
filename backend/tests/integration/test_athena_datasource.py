@@ -575,3 +575,80 @@ def test_a_suite_run_persists_results_end_to_end(db_session: Any, athena: Athena
     }
     assert [by_check[c.id].status for c in checks] == ["fail", "fail", "pass", "pass"]
     assert by_check[checks[2].id].observed_value == {"row_count": 6, "deviation_pct": 0.0}
+
+
+# ───────────────────────── aggregate monitor (#1602) ─────────────────────────
+
+
+@pytest.fixture
+def athena_amounts(athena: AthenaTarget) -> Iterator[None]:
+    """`AMOUNTS` in a DECIMAL column, an all-NULL column and an empty table, CTAS'd into the
+    module's database and removed (tables and their S3 data) afterwards."""
+    import boto3
+
+    from backend.tests.support.aggregate_lane import AMOUNTS
+
+    rows = ", ".join(
+        f"(CAST({'NULL' if v is None else v} AS decimal(9, 2)), CAST(NULL AS double))"
+        for v in AMOUNTS
+    )
+    location = f"s3://{_BUCKET}/athena-data/{athena.schema}"
+    try:
+        _admin(
+            f"CREATE TABLE {athena.schema}.amounts WITH (format = 'PARQUET', external_location"
+            f" = '{location}/amounts/') AS SELECT * FROM (VALUES {rows}) AS t(amount, blank)"
+        )
+        _admin(
+            f"CREATE TABLE {athena.schema}.amounts_empty WITH (format = 'PARQUET',"
+            f" external_location = '{location}/amounts_empty/') AS SELECT amount FROM"
+            f" {athena.schema}.amounts WHERE false"
+        )
+        yield
+    finally:
+        for table in ("amounts", "amounts_empty"):
+            _admin(f"DROP TABLE IF EXISTS {athena.schema}.{table}")
+        s3 = boto3.client("s3", region_name=_REGION)
+        for prefix in ("amounts/", "amounts_empty/"):
+            for page in s3.get_paginator("list_objects_v2").paginate(
+                Bucket=_BUCKET, Prefix=f"athena-data/{athena.schema}/{prefix}"
+            ):
+                for item in page.get("Contents", []):
+                    s3.delete_object(Bucket=_BUCKET, Key=item["Key"])
+
+
+def test_every_aggregate_but_median_is_exact_over_pyathena(
+    athena: AthenaTarget, athena_amounts: None
+) -> None:
+    """Athena has only `approx_percentile` (median refused at author time) and keeps AVG of a
+    DECIMAL at the column's scale — the double cast is what makes the mean exact."""
+    from backend.tests.support.aggregate_lane import assert_aggregates
+
+    runner = _runner(athena)
+    try:
+        assert_aggregates(
+            runner,
+            table="amounts",
+            schema=athena.schema,
+            column="amount",
+            null_column="blank",
+            empty_table="amounts_empty",
+            exact_median=False,
+        )
+    finally:
+        runner.close()
+
+
+def test_the_aggregate_monitor_runs_and_previews_end_to_end(
+    db_session: Any, athena: AthenaTarget, athena_amounts: None
+) -> None:
+    from backend.tests.support.aggregate_lane import assert_run_path_and_dry_run
+
+    assert_run_path_and_dry_run(
+        db_session,
+        conn_type="athena",
+        config=athena.config,
+        secret_ref=_SECRET_REF,
+        secret_store=athena.store,
+        target={"table": "amounts", "schema": athena.schema},
+        column="amount",
+    )

@@ -199,4 +199,5 @@ ATHENA = SqlEngineSpec(
         ),
     ),
     column_caps=_column_caps,
+    exact_median=False,
 )

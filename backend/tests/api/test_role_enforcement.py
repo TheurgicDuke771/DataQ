@@ -34,6 +34,8 @@ from backend.tests.support.mcp_gates import (
     viewer_denied_tools,
 )
 
+pytestmark = pytest.mark.usefixtures("reachable_stores")
+
 _SF_CONFIG = {
     "account": "ab12345.eu-west-1",
     "user": "svc_dataq",

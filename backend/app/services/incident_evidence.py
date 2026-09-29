@@ -45,7 +45,7 @@ _SAMPLE_LIST_KEYS = frozenset({"partial_unexpected_list", "unexpected_index_list
 
 #: The `check.kind` values `_kind_detail_layer` dispatches on — the single source of truth other
 #: modules (e.g. `llm_rca`) import rather than re-spelling this set independently (#1633 review).
-MONITOR_KINDS = frozenset({"freshness", "volume", "schema_drift", "anomaly"})
+MONITOR_KINDS = frozenset({"freshness", "volume", "schema_drift", "anomaly", "aggregate"})
 
 
 @dataclass(frozen=True)
@@ -241,7 +241,7 @@ def _strip_sample_lists(observed: dict[str, Any] | None) -> dict[str, Any] | Non
 
 def _kind_detail_layer(check: Check | None, result: Result) -> dict[str, Any] | None:
     """The monitor-kind-shaped fields lifted out of the raw ``observed_value``
-    JSONB (#1635), so a consumer doesn't need to know ``MONITOR_KINDS``' four
+    JSONB (#1635), so a consumer doesn't need to know ``MONITOR_KINDS``' several
     different shapes to answer "how stale" / "how anomalous" / "what changed".
     ``None`` for ``expectation``/``comparison`` checks, where
     ``failing_result.observed_value`` already **is** the shape — and whenever
@@ -278,6 +278,14 @@ def _kind_detail_layer(check: Check | None, result: Result) -> dict[str, Any] | 
             "mean": observed.get("mean"),
             "stddev": observed.get("stddev"),
             "insufficient_history": observed.get("insufficient_history", False),
+        }
+    if check.kind == "aggregate":
+        # The measured value is deliberately not lifted: an aggregate MIN/MAX is one cell, and
+        # `failing_result` carries it through the column-aware redaction ladder.
+        return {
+            "aggregate": observed.get("aggregate"),
+            "column": observed.get("column"),
+            "breached_bound": observed.get("breached_bound"),
         }
     return None
 

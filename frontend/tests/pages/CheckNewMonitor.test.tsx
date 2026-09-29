@@ -432,3 +432,37 @@ describe('CheckNew — Snowflake DMF engine (ADR 0036)', () => {
     expect(await screen.findByTitle('Snowflake DMF (native) ⚠')).toBeInTheDocument();
   });
 });
+
+describe('CheckNew — aggregate authoring', () => {
+  it('authors a two-sided aggregate with its bands in config and no threshold block', async () => {
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue({} as Check);
+    renderPage();
+
+    await user.click(await screen.findByText('Aggregate'));
+    await user.click(await screen.findByText('A column statistic', { exact: false }));
+    await user.type(await screen.findByLabelText('Name'), 'order amount mean');
+    await user.click(screen.getByLabelText('Statistic'));
+    await user.click(await screen.findByTitle('Mean'));
+    await user.type(screen.getByLabelText('Column'), 'amount');
+    await user.type(screen.getByLabelText('Fail below (optional)'), '-2.5');
+    await user.type(screen.getByLabelText('Fail above (optional)'), '90');
+
+    // The one-sided threshold block is hidden: the backend refuses it on an aggregate.
+    expect(screen.queryByLabelText('Fail ≥')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Create check' }));
+
+    await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
+    expect(mockCreate).toHaveBeenCalledWith('s1', {
+      name: 'order amount mean',
+      kind: 'aggregate',
+      engine: 'gx',
+      expectation_type: 'monitor:aggregate',
+      config: { aggregate: 'mean', column: 'amount', min_value: -2.5, max_value: 90 },
+      dimension: undefined,
+      warn_threshold: null,
+      fail_threshold: null,
+      critical_threshold: null,
+    });
+  });
+});

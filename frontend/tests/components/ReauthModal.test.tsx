@@ -1,6 +1,7 @@
 import { App as AntApp } from 'antd';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { AxiosError, AxiosHeaders } from 'axios';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { type Connection, reauthConnection } from '../../src/api/connections';
@@ -44,8 +45,41 @@ describe('ReauthModal', () => {
     await user.type(await screen.findByLabelText('New: Password'), 'new-secret');
     await user.click(screen.getByRole('button', { name: 'Rotate credential' }));
 
-    await waitFor(() => expect(mockReauth).toHaveBeenCalledWith('c1', 'new-secret'));
+    await waitFor(() => expect(mockReauth).toHaveBeenCalledWith('c1', 'new-secret', false));
     expect(onDone).toHaveBeenCalled();
+  });
+
+  it('keeps the modal open with the reason when the new credential fails its test (#1927)', async () => {
+    const user = userEvent.setup();
+    const onDone = vi.fn();
+    const err = new AxiosError('connection test failed', 'ERR_BAD_REQUEST', undefined, undefined, {
+      status: 422,
+      statusText: 'Unprocessable Entity',
+      headers: {},
+      config: { headers: new AxiosHeaders() },
+      data: {
+        error: { code: 'connection_test_failed_on_save', message: 'connection test failed' },
+      },
+    });
+    mockReauth.mockRejectedValueOnce(err).mockResolvedValueOnce({ ok: true, tested: false });
+
+    render(
+      <AntApp>
+        <ReauthModal connection={connection} onClose={vi.fn()} onDone={onDone} />
+      </AntApp>,
+    );
+
+    await user.type(await screen.findByLabelText('New: Password'), 'wrong');
+    await user.click(screen.getByRole('button', { name: 'Rotate credential' }));
+
+    expect(
+      await screen.findByText('connection test failed. The stored credential was not changed.'),
+    ).toBeInTheDocument();
+    expect(onDone).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Rotate without testing' }));
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    expect(mockReauth).toHaveBeenLastCalledWith('c1', 'wrong', true);
   });
 
   it('does not call the API with an empty credential', async () => {
@@ -99,6 +133,7 @@ describe('ReauthModal', () => {
       expect(mockReauth).toHaveBeenCalledWith(
         'c1',
         JSON.stringify({ private_key: 'PEM-KEY', passphrase: 'pp' }),
+        false,
       ),
     );
   });
@@ -120,7 +155,7 @@ describe('ReauthModal', () => {
     await user.type(await screen.findByLabelText('New: Private key (PEM)'), 'PEM-KEY');
     await user.click(screen.getByRole('button', { name: 'Rotate credential' }));
 
-    await waitFor(() => expect(mockReauth).toHaveBeenCalledWith('c1', 'PEM-KEY'));
+    await waitFor(() => expect(mockReauth).toHaveBeenCalledWith('c1', 'PEM-KEY', false));
   });
 
   it('does not leak a cancelled passphrase into a later rotation', async () => {
@@ -149,6 +184,6 @@ describe('ReauthModal', () => {
     await user.type(await screen.findByLabelText('New: Password'), 'fresh-pw');
     await user.click(screen.getByRole('button', { name: 'Rotate credential' }));
 
-    await waitFor(() => expect(mockReauth).toHaveBeenCalledWith('c1', 'fresh-pw'));
+    await waitFor(() => expect(mockReauth).toHaveBeenCalledWith('c1', 'fresh-pw', false));
   });
 });
