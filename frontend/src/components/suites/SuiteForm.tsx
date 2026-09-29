@@ -327,6 +327,7 @@ export function TargetFields({
                   options={[
                     { value: 'csv', label: 'CSV' },
                     { value: 'parquet', label: 'Parquet' },
+                    { value: 'json', label: 'JSON (JSON Lines or an array of flat objects)' },
                   ]}
                 />
               </Form.Item>

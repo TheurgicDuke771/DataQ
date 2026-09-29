@@ -9,6 +9,7 @@ import {
 } from '../../api/columnPolicy';
 import { type ColumnTarget, listColumns, type Suite, targetString } from '../../api/suites';
 import { useAsyncData } from '../../hooks/useAsyncData';
+import { asFileFormat } from './suiteTarget';
 import { errorMessage } from '../../utils/errors';
 import { Filter } from '../shared/Filter';
 
@@ -79,7 +80,7 @@ function SamplePolicyForm({
       // Iceberg addresses `namespace.table`; the namespace rides alongside table.
       namespace: targetString(suite.target, 'namespace'),
       path,
-      file_format: targetString(suite.target, 'file_format') as 'csv' | 'parquet' | undefined,
+      file_format: asFileFormat(suite.target?.file_format),
     };
   }, [suite.target]);
 
@@ -116,7 +117,7 @@ function SamplePolicyForm({
         // Iceberg addresses `namespace.table`; the namespace rides alongside table.
         namespace: targetString(suite.target, 'namespace'),
         path: targetString(suite.target, 'path'),
-        file_format: targetString(suite.target, 'file_format') as 'csv' | 'parquet' | undefined,
+        file_format: asFileFormat(suite.target?.file_format),
       });
       setIdentifier(suggestion.identifier_column);
       setPii(suggestion.pii_columns);
