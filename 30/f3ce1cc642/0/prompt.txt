@@ -1,0 +1,5 @@
+Why can't we test SQL Server part of #2239?
+
+---
+
+Let's go with option a
