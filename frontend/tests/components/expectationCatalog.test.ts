@@ -156,13 +156,14 @@ describe('expectationsByCategoryFor (anomaly monitor gating, #593 — SQL-only, 
     expect(spec.dimension).toBeUndefined();
   });
 
-  it('offers exactly the two documented target metrics', () => {
+  it('offers exactly the documented target metrics (backend ANOMALY_TARGET_METRICS)', () => {
     const spec = EXPECTATION_BY_TYPE['monitor:anomaly'];
     const targetMetric = spec.fields.find((f) => f.name === 'target_metric');
     expect(targetMetric?.type).toBe('select');
     expect(targetMetric?.options?.map((o) => o.value)).toEqual([
       'row_count',
       'freshness_age_hours',
+      'column_profile',
     ]);
   });
 
