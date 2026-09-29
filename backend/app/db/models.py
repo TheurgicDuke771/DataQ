@@ -121,6 +121,9 @@ INCIDENT_ACTIVE_STATUSES = ("open", "acknowledged")
 # Why an incident was resolved (ADR 0047 §8); NULL = not said. `false_positive` feeds the
 # false-positive rate shown beside coverage.
 INCIDENT_RESOLUTIONS = ("fixed", "expected_change", "false_positive")
+# Automatic-coverage review queue (ADR 0047 §4).
+SUGGESTION_SOURCES = ("profile", "llm")
+SUGGESTION_STATUSES = ("pending", "accepted", "rejected")
 # Who resolved: a user, or the engine on the first passing result. NULL until resolved.
 INCIDENT_RESOLVED_BY = ("user", "auto")
 
@@ -605,6 +608,48 @@ class MonitorBaseline(Base):
     )
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
+
+
+class CheckSuggestion(Base):
+    """A proposed rule for a covered table, waiting for a person (ADR 0047 §4).
+
+    Rules that assert something about the data (not-null, unique, accepted values) are proposed,
+    never created: accepting one creates the check, rejecting one is remembered, and the
+    ``(suite_id, fingerprint)`` key stops the same rule being proposed again either way.
+    """
+
+    __tablename__ = "check_suggestions"
+    __table_args__ = (
+        _in_check("source", SUGGESTION_SOURCES, "suggestion_source_valid"),
+        _in_check("status", SUGGESTION_STATUSES, "suggestion_status_valid"),
+        UniqueConstraint("suite_id", "fingerprint", name="uq_check_suggestions_rule"),
+        Index("ix_check_suggestions_suite_status", "suite_id", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    suite_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("suites.id", ondelete="CASCADE"), nullable=False
+    )
+    source: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default=text("'pending'")
+    )
+    #: sha256 of the expectation type + canonical config: the rule's identity.
+    fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    name: Mapped[str] = mapped_column(String(256), nullable=False)
+    expectation_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    config: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    #: Why it was proposed, in words (e.g. "never null in 12,480 rows").
+    rationale: Mapped[str | None] = mapped_column(Text)
+    #: The check created on accept; NULL while pending, when rejected, or once that check is gone.
+    check_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("checks.id", ondelete="SET NULL")
+    )
+    decided_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = _created_at()
 
 
 class CheckVersion(Base):

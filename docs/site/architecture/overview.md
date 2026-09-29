@@ -207,6 +207,18 @@ erDiagram
         timestamptz captured_at
         uuid captured_by FK "NULL = run-captured"
     }
+    check_suggestions {
+        uuid id PK
+        uuid suite_id FK "CASCADE — the queue belongs to its automatic suite (ADR 0047)"
+        string source "profile / llm"
+        string status "pending / accepted / rejected — (suite_id, fingerprint) unique, so a rejection is remembered"
+        string fingerprint "sha256 of expectation type + canonical config"
+        string expectation_type
+        jsonb config
+        uuid check_id FK "SET NULL — the check created on accept"
+        uuid decided_by FK "SET NULL"
+        timestamptz decided_at
+    }
     check_versions {
         uuid id PK
         uuid check_id FK
@@ -430,6 +442,9 @@ erDiagram
 
     checks ||--o| monitor_baselines : "diff reference (CASCADE)"
     users |o--o{ monitor_baselines : "captured_by (SET NULL)"
+    suites ||--o{ check_suggestions : "review queue (CASCADE)"
+    checks |o--o{ check_suggestions : "created on accept (SET NULL)"
+    users |o--o{ check_suggestions : "decided_by (SET NULL)"
     checks ||--o{ check_versions : "config history (CASCADE)"
     checks ||--o{ results : "evaluated as (CASCADE)"
     runs ||--o{ results : "produces (CASCADE)"
