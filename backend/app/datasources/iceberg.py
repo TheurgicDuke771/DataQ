@@ -6,7 +6,6 @@ from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, ClassVar, Literal
 
-import great_expectations as gx
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from backend.app.core.config import get_settings
@@ -14,7 +13,7 @@ from backend.app.core.credential_expiry import azure_sas_expiry
 from backend.app.core.secrets import SecretStore
 from backend.app.core.uri_credentials import inject_uri_password, uri_password
 from backend.app.datasources.base import CheckOutcome, CheckSpec, MonitorSpec, SuiteOutcome
-from backend.app.datasources.gx_runner import run_expectations
+from backend.app.datasources.gx_runner import ephemeral_gx_context, run_expectations
 from backend.app.datasources.monitors import (
     FRESHNESS,
     VOLUME,
@@ -342,17 +341,19 @@ class IcebergCheckRunner:
         index_columns: list[str] | None = None,
     ) -> SuiteOutcome:
         df = self._read_dataframe(table)
-        context = gx.get_context(mode="ephemeral")
-        asset = context.data_sources.add_pandas(name="iceberg").add_dataframe_asset(name="table")
-        batch_definition = asset.add_batch_definition_whole_dataframe(name="whole_dataframe")
-        return run_expectations(
-            context,
-            batch_definition=batch_definition,
-            checks=checks,
-            name="suite-iceberg",
-            batch_parameters={"dataframe": df},
-            index_columns=index_columns,
-        )
+        with ephemeral_gx_context() as context:
+            asset = context.data_sources.add_pandas(name="iceberg").add_dataframe_asset(
+                name="table"
+            )
+            batch_definition = asset.add_batch_definition_whole_dataframe(name="whole_dataframe")
+            return run_expectations(
+                context,
+                batch_definition=batch_definition,
+                checks=checks,
+                name="suite-iceberg",
+                batch_parameters={"dataframe": df},
+                index_columns=index_columns,
+            )
 
     def run_monitors(
         self, *, table: str, schema: str | None, monitors: list[MonitorSpec]

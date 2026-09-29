@@ -6,6 +6,8 @@ from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
 from backend.app.datasources.base import SAMPLE_ROW_CAP, CheckSpec
 from backend.app.datasources.gx_runner import (
     _VALUE_SIGNAL_SUMMARY_ROW_CAP,
@@ -500,3 +502,99 @@ def test_a_pandas_run_never_hashes_the_whole_frame(monkeypatch: Any) -> None:
         batch_parameters={"dataframe": frame},
     )
     assert outcome.success is True
+
+
+# ───────────────── one GX validation per process at a time (#2204) ─────────────────
+
+
+def _not_null_run(context: Any, batch_definition: Any, frame: Any) -> Any:
+    from backend.app.datasources.gx_runner import run_expectations
+
+    return run_expectations(
+        context,
+        batch_definition=batch_definition,
+        checks=[
+            CheckSpec(
+                expectation_type="expect_column_values_to_not_be_null", kwargs={"column": "id"}
+            )
+        ],
+        name="s",
+        batch_parameters={"dataframe": frame},
+    )
+
+
+def test_a_second_validation_cannot_install_its_context_mid_run() -> None:
+    """GX resolves the datasource through its process-global project DURING validation, so a
+    context installed by a concurrent run made the first run's lookups hit the wrong one.
+    """
+    import threading
+
+    import pandas as pd
+
+    from backend.app.datasources.gx_runner import ephemeral_gx_context
+
+    frame = pd.DataFrame({"id": [1, 2, 3]})
+    b_entered = threading.Event()
+    b_done = threading.Event()
+
+    def _run_b() -> None:
+        with ephemeral_gx_context() as context:
+            b_entered.set()
+            context.data_sources.add_pandas(name="b")
+        b_done.set()
+
+    with ephemeral_gx_context() as context:
+        batch_definition = (
+            context.data_sources.add_pandas(name="a")
+            .add_dataframe_asset(name="t")
+            .add_batch_definition_whole_dataframe(name="w")
+        )
+        thread = threading.Thread(target=_run_b)
+        thread.start()
+        assert not b_entered.wait(timeout=0.5), "run B entered GX while run A held it"
+        outcome = _not_null_run(context, batch_definition, frame)
+    thread.join(timeout=10)
+
+    assert outcome.checks[0].success is True
+    assert b_done.is_set(), "run B proceeds once run A releases"
+
+
+def test_a_validation_that_waits_too_long_is_refused_as_busy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import threading
+
+    from backend.app.core.config import get_settings
+    from backend.app.datasources.gx_runner import GxContextBusyError, ephemeral_gx_context
+
+    monkeypatch.setenv("GX_CONTEXT_WAIT_SECONDS", "0.1")
+    get_settings.cache_clear()
+    errors: list[BaseException] = []
+
+    def _second() -> None:
+        try:
+            with ephemeral_gx_context():
+                pass
+        except BaseException as exc:
+            errors.append(exc)
+
+    with ephemeral_gx_context():
+        thread = threading.Thread(target=_second)
+        thread.start()
+        thread.join(timeout=10)
+
+    assert len(errors) == 1 and isinstance(errors[0], GxContextBusyError)
+    assert errors[0].status_code == 503
+
+
+def test_a_failed_validation_releases_gx_for_the_next_one() -> None:
+    from great_expectations.data_context.data_context.context_factory import project_manager
+
+    from backend.app.datasources.gx_runner import _GX_PROJECT_LOCK, ephemeral_gx_context
+
+    with pytest.raises(RuntimeError, match="boom"):
+        with ephemeral_gx_context():
+            raise RuntimeError("boom")
+
+    assert not _GX_PROJECT_LOCK.locked()
+    assert getattr(project_manager, "_ProjectManager__project", None) is None

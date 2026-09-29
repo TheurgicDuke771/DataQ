@@ -16,6 +16,7 @@ from backend.app.core.secrets import SecretStore
 from backend.app.datasources.base import CheckOutcome, CheckSpec
 from backend.app.datasources.databricks_dqx import DQX_ENGINE
 from backend.app.datasources.flatfile import BatchNotFoundError
+from backend.app.datasources.gx_runner import GxContextBusyError
 from backend.app.datasources.monitors import ANOMALY, SCHEMA_DRIFT
 from backend.app.datasources.registry import (
     UnsupportedConnectionTypeError,
@@ -224,6 +225,8 @@ def dry_run_check(
                 # One outcome per spec; index inside the guard so a malformed/empty
                 # runner result is a clean 502, not an uncaught IndexError → 500.
                 check_outcome = outcome.checks[0]
+            except GxContextBusyError:
+                raise  # 503: another preview holds GX, not a datasource failure (#2204)
             except Exception as exc:
                 log.warning(
                     "dry_run_failed", connection_type=connection.type, error_type=type(exc).__name__

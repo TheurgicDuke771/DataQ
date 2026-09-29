@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from backend.app.core.errors import SafeMonitorError
+from backend.app.core.errors import DataQError, SafeMonitorError
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.base import (
@@ -442,7 +442,7 @@ class KnownDatasourceLimitationError(SafeMonitorError, RuntimeError):
 
 def explained(spec: SqlEngineSpec, config: GenericSqlConfig, exc: Exception) -> Exception:
     """``exc``, or the engine's explanation of it when it has one."""
-    if spec.explain_failure is None or isinstance(exc, SafeMonitorError):
+    if spec.explain_failure is None or isinstance(exc, (SafeMonitorError, DataQError)):
         return exc
     message = spec.explain_failure(config, exc)
     if not message:
@@ -644,45 +644,42 @@ class GenericSqlCheckRunner:
         value_signal_gate: ValueSignalGate | None,
         read_only: bool,
     ) -> SuiteOutcome:
-        import great_expectations as gx
+        from backend.app.datasources.gx_runner import ephemeral_gx_context, run_expectations
 
-        from backend.app.datasources.gx_runner import run_expectations
-
-        context = gx.get_context(mode="ephemeral")
-        datasource: Any = None
-        try:
-            # GX tests the connection inside `add_*`, so a failure there must still close it.
-            datasource = self._spec.gx_datasource(
-                context,
-                f"{self._spec.conn_type}-{table}",
-                self._spec.url_string(scoped, self._secret),
-                {
-                    "connect_args": self._spec.session_connect_args(
-                        scoped, self._secret, None, read_only=read_only
-                    ),
-                    "creator": connections.connect,
-                    **self._spec.run_engine_options,
-                },
-            )
-            if gx_schema is not None and gx_schema != gx_schema.lower():
-                asset = _add_exact_schema_table_asset(datasource, table=table, schema=gx_schema)
-            else:
-                asset = datasource.add_table_asset(
-                    name=table, table_name=gx_table_name(table), schema_name=gx_schema
+        with ephemeral_gx_context() as context:
+            datasource: Any = None
+            try:
+                # GX tests the connection inside `add_*`, so a failure there must still close it.
+                datasource = self._spec.gx_datasource(
+                    context,
+                    f"{self._spec.conn_type}-{table}",
+                    self._spec.url_string(scoped, self._secret),
+                    {
+                        "connect_args": self._spec.session_connect_args(
+                            scoped, self._secret, None, read_only=read_only
+                        ),
+                        "creator": connections.connect,
+                        **self._spec.run_engine_options,
+                    },
                 )
-            batch_definition = asset.add_batch_definition_whole_table(name="whole_table")
-            return run_expectations(
-                context,
-                batch_definition=batch_definition,
-                checks=checks,
-                name=f"suite-{table}",
-                index_columns=index_columns,
-                value_signal_gate=value_signal_gate,
-            )
-        finally:
-            if datasource is not None:
-                _dispose_gx_engine(datasource)
-            _release_gx_project(context)
+                if gx_schema is not None and gx_schema != gx_schema.lower():
+                    asset = _add_exact_schema_table_asset(datasource, table=table, schema=gx_schema)
+                else:
+                    asset = datasource.add_table_asset(
+                        name=table, table_name=gx_table_name(table), schema_name=gx_schema
+                    )
+                batch_definition = asset.add_batch_definition_whole_table(name="whole_table")
+                return run_expectations(
+                    context,
+                    batch_definition=batch_definition,
+                    checks=checks,
+                    name=f"suite-{table}",
+                    index_columns=index_columns,
+                    value_signal_gate=value_signal_gate,
+                )
+            finally:
+                if datasource is not None:
+                    _dispose_gx_engine(datasource)
 
     def run_monitors(
         self, *, table: str, schema: str | None, monitors: list[MonitorSpec]
@@ -802,20 +799,6 @@ def _add_exact_schema_table_asset(datasource: Any, *, table: str, schema: str) -
     )
     datasource._add_asset(asset)
     return asset
-
-
-def _release_gx_project(context: Any) -> None:
-    """Drop GX's process-global reference to this run's context, if it is still the current one.
-
-    `gx.get_context` stores the context as GX's "project" until the NEXT run replaces it, so a
-    run's context — and the engines holding its connections — outlived the run and was collected
-    during a later run, after this run had closed those connections: the strict-driver ERROR noise
-    of #2141, one run late. A context another run has since installed is left alone.
-    """
-    from great_expectations.data_context.data_context.context_factory import project_manager
-
-    if getattr(project_manager, "_ProjectManager__project", None) is context:
-        project_manager.set_project(None)
 
 
 def _dispose_gx_engine(datasource: Any) -> None:

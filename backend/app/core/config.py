@@ -258,6 +258,9 @@ class Settings(BaseSettings):
     # The UC frame lane's width-aware bound (#2087): estimated resident bytes of the frame,
     # rows x per-column cost. 1.25 GiB leaves a 2 GiB worker ~400 MiB over its ~360 MiB baseline.
     run_max_frame_bytes: int = Field(default=1_342_177_280, ge=0)
+    # GX validations in one process run one at a time (#2204); a dry-run waits this long for
+    # the one in flight before answering 503.
+    gx_context_wait_seconds: float = Field(default=30.0, gt=0)
 
     # ── Worker memory admission control (#1998) ─────────────────────────────── The caps above
     # bound ONE run's read; this bounds the SUM across the prefork children of one worker

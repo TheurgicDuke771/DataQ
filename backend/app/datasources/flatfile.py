@@ -13,8 +13,6 @@ from datetime import UTC, datetime
 from itertools import islice
 from typing import Any, ClassVar
 
-import great_expectations as gx
-
 from backend.app.core.config import get_settings
 from backend.app.core.errors import SafeMonitorError
 from backend.app.core.logging import get_logger
@@ -29,7 +27,7 @@ from backend.app.datasources.base import (
     SampleSpec,
     SuiteOutcome,
 )
-from backend.app.datasources.gx_runner import run_expectations
+from backend.app.datasources.gx_runner import ephemeral_gx_context, run_expectations
 from backend.app.datasources.monitors import (
     FRESHNESS,
     VOLUME,
@@ -1265,18 +1263,20 @@ class FlatFileCheckRunner:
             runnable, refused = split_row_count_checks(checks)
 
         df, sampling = self._load_frame(table)
-        context = gx.get_context(mode="ephemeral")
-        asset = context.data_sources.add_pandas(name="flatfile").add_dataframe_asset(name="file")
-        # Batch arrives via batch_parameters; ephemeral context makes fixed names safe.
-        batch_definition = asset.add_batch_definition_whole_dataframe(name="whole_dataframe")
-        outcome = run_expectations(
-            context,
-            batch_definition=batch_definition,
-            checks=[checks[i] for i in runnable],
-            name="suite-flatfile",
-            batch_parameters={"dataframe": df},
-            index_columns=index_columns,
-        )
+        with ephemeral_gx_context() as context:
+            asset = context.data_sources.add_pandas(name="flatfile").add_dataframe_asset(
+                name="file"
+            )
+            # Batch arrives via batch_parameters; ephemeral context makes fixed names safe.
+            batch_definition = asset.add_batch_definition_whole_dataframe(name="whole_dataframe")
+            outcome = run_expectations(
+                context,
+                batch_definition=batch_definition,
+                checks=[checks[i] for i in runnable],
+                name="suite-flatfile",
+                batch_parameters={"dataframe": df},
+                index_columns=index_columns,
+            )
         # Stamped on every outcome (#595). REFUSALS deliberately unstamped — the
         # record describes a read and a refused check performed none.
         stamped = stamp_sampling(outcome, sampling)

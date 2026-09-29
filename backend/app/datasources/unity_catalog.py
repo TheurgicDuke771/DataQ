@@ -6,7 +6,6 @@ from collections.abc import Iterable
 from typing import Any, ClassVar
 from urllib.parse import quote_plus, urlparse
 
-import great_expectations as gx
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from backend.app.core.config import get_settings
@@ -22,7 +21,7 @@ from backend.app.datasources.base import (
     ValueSignalGate,
 )
 from backend.app.datasources.databricks_dqx import DQX_ENGINE, DqxJobs, run_dqx_batch
-from backend.app.datasources.gx_runner import run_expectations
+from backend.app.datasources.gx_runner import ephemeral_gx_context, run_expectations
 from backend.app.datasources.monitors import (
     FRESHNESS,
     VOLUME,
@@ -626,17 +625,17 @@ class UnityCatalogCheckRunner:
     ) -> SuiteOutcome:
         """The historical UC path: read the table into pandas, validate that frame."""
         df, sampling = self._load_frame(table=table, schema=schema)
-        context = gx.get_context(mode="ephemeral")
-        asset = context.data_sources.add_pandas(name="uc").add_dataframe_asset(name="table")
-        batch_definition = asset.add_batch_definition_whole_dataframe(name="whole_dataframe")
-        outcome = run_expectations(
-            context,
-            batch_definition=batch_definition,
-            checks=checks,
-            name="suite-uc",
-            batch_parameters={"dataframe": df},
-            index_columns=index_columns,
-        )
+        with ephemeral_gx_context() as context:
+            asset = context.data_sources.add_pandas(name="uc").add_dataframe_asset(name="table")
+            batch_definition = asset.add_batch_definition_whole_dataframe(name="whole_dataframe")
+            outcome = run_expectations(
+                context,
+                batch_definition=batch_definition,
+                checks=checks,
+                name="suite-uc",
+                batch_parameters={"dataframe": df},
+                index_columns=index_columns,
+            )
         return stamp_sampling(outcome, sampling)
 
     def _sql_target_problem(self, *, table: str, schema: str | None) -> str | None:
@@ -689,74 +688,79 @@ class UnityCatalogCheckRunner:
         if problem is not None:
             return self._sql_group_errored(checks, problem)
         assert schema is not None  # narrowed by `_sql_target_problem`
-        context = gx.get_context(mode="ephemeral")
-        datasource: Any = None
-        try:
-            checks = _fold_reflection_keyed_columns(checks)
-            datasource, batch_definition = self._sql_batch_definition(
-                context, table=table, schema=schema
-            )
-            # A check on a column that is ALSO an index column runs without the index request: the
-            # locator query would select the column twice and Databricks' arrow layer refuses
-            # ("Can't unify schema with duplicate field names" — live-found, #1532).
-            index_lower = {c.lower() for c in index_columns or ()}
-            clash_set = {i for i, spec in enumerate(checks) if _spec_columns(spec) & index_lower}
-            if not clash_set:
-                return run_expectations(
-                    context,
-                    batch_definition=batch_definition,
-                    checks=checks,
-                    name=f"suite-uc-sql-{table}",
-                    index_columns=index_columns,
-                    value_signal_gate=value_signal_gate,
-                )
-            keep = [i for i in range(len(checks)) if i not in clash_set]
-            clash = sorted(clash_set)
-            outcomes: dict[int, CheckOutcome] = {}
-            success = True
-            if keep:
-                kept_checks = [checks[i] for i in keep]
-                kept = run_expectations(
-                    context,
-                    batch_definition=batch_definition,
-                    checks=kept_checks,
-                    name=f"suite-uc-sql-{table}",
-                    # Same rule as the top of this method: a keep group that is
-                    # pure custom SQL has no use for the index request.
-                    index_columns=(
-                        None
-                        if all(is_custom_sql(s.expectation_type) for s in kept_checks)
-                        else index_columns
-                    ),
-                    value_signal_gate=value_signal_gate,
-                )
-                success = kept.success
-                outcomes.update(zip(keep, kept.checks, strict=True))
-            clashed_checks = [checks[i] for i in clash]
+        # Acquired outside the try: a busy lock must reach the caller, not error the group.
+        with ephemeral_gx_context() as context:
+            datasource: Any = None
             try:
-                clashed = run_expectations(
-                    context,
-                    batch_definition=batch_definition,
-                    checks=clashed_checks,
-                    name=f"suite-uc-sql-noidx-{table}",
-                    value_signal_gate=value_signal_gate,
+                checks = _fold_reflection_keyed_columns(checks)
+                datasource, batch_definition = self._sql_batch_definition(
+                    context, table=table, schema=schema
+                )
+                # A check on a column that is ALSO an index column runs without the index request:
+                # the locator query would select the column twice and Databricks' arrow layer
+                # refuses ("Can't unify schema with duplicate field names" — live-found, #1532).
+                index_lower = {c.lower() for c in index_columns or ()}
+                clash_set = {
+                    i for i, spec in enumerate(checks) if _spec_columns(spec) & index_lower
+                }
+                if not clash_set:
+                    return run_expectations(
+                        context,
+                        batch_definition=batch_definition,
+                        checks=checks,
+                        name=f"suite-uc-sql-{table}",
+                        index_columns=index_columns,
+                        value_signal_gate=value_signal_gate,
+                    )
+                keep = [i for i in range(len(checks)) if i not in clash_set]
+                clash = sorted(clash_set)
+                outcomes: dict[int, CheckOutcome] = {}
+                success = True
+                if keep:
+                    kept_checks = [checks[i] for i in keep]
+                    kept = run_expectations(
+                        context,
+                        batch_definition=batch_definition,
+                        checks=kept_checks,
+                        name=f"suite-uc-sql-{table}",
+                        # Same rule as the top of this method: a keep group that is
+                        # pure custom SQL has no use for the index request.
+                        index_columns=(
+                            None
+                            if all(is_custom_sql(s.expectation_type) for s in kept_checks)
+                            else index_columns
+                        ),
+                        value_signal_gate=value_signal_gate,
+                    )
+                    success = kept.success
+                    outcomes.update(zip(keep, kept.checks, strict=True))
+                clashed_checks = [checks[i] for i in clash]
+                try:
+                    clashed = run_expectations(
+                        context,
+                        batch_definition=batch_definition,
+                        checks=clashed_checks,
+                        name=f"suite-uc-sql-noidx-{table}",
+                        value_signal_gate=value_signal_gate,
+                    )
+                except Exception as exc:
+                    # Error ONLY the not-yet-evaluated group; the keep group's real
+                    # outcomes are already computed and must survive.
+                    log.exception("uc_sql_batch_unavailable", table=table)
+                    clashed = self._sql_group_errored(clashed_checks, classify_failure_reason(exc))
+                success = success and clashed.success
+                outcomes.update(zip(clash, clashed.checks, strict=True))
+                return SuiteOutcome(
+                    success=success, checks=[outcomes[i] for i in range(len(checks))]
                 )
             except Exception as exc:
-                # Error ONLY the not-yet-evaluated group; the keep group's real
-                # outcomes are already computed and must survive.
+                # Building the SQL batch can fail on its own — GX tests the connection inside
+                # `add_databricks_sql` and validates the table inside `add_table_asset`.
                 log.exception("uc_sql_batch_unavailable", table=table)
-                clashed = self._sql_group_errored(clashed_checks, classify_failure_reason(exc))
-            success = success and clashed.success
-            outcomes.update(zip(clash, clashed.checks, strict=True))
-            return SuiteOutcome(success=success, checks=[outcomes[i] for i in range(len(checks))])
-        except Exception as exc:
-            # Building the SQL batch can fail on its own — GX tests the connection inside
-            # `add_databricks_sql` and validates the table inside `add_table_asset`.
-            log.exception("uc_sql_batch_unavailable", table=table)
-            return self._sql_group_errored(checks, classify_failure_reason(exc))
-        finally:
-            if datasource is not None:
-                self._dispose_gx_engine(datasource)
+                return self._sql_group_errored(checks, classify_failure_reason(exc))
+            finally:
+                if datasource is not None:
+                    self._dispose_gx_engine(datasource)
 
     @staticmethod
     def _sql_group_errored(checks: list[CheckSpec], reason: str) -> SuiteOutcome:
