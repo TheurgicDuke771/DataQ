@@ -367,6 +367,8 @@ export async function importSuite(payload: SuiteImportRequest): Promise<Suite> {
 /** Mirrors `CheckDryRunRequest` — preview one check against live data, no persist. */
 export interface CheckDryRunRequest {
   expectation_type: string;
+  /** Evaluating engine (ADR 0036); omitted = `gx`. A `dmf` preview runs in Snowflake. */
+  engine?: string;
   config: Record<string, unknown>;
   warn_threshold?: number | null;
   fail_threshold?: number | null;

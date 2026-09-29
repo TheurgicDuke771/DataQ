@@ -258,6 +258,13 @@ export interface DmfCapability {
   status?: 'available' | 'no_privilege' | 'unsupported_edition' | 'undetermined';
   /** Classified, safe-to-display remediation — never a raw driver/exception message. */
   reason?: string;
+  /** Custom DMFs the role could use at the last test; `null` = the listing failed; absent on
+   *  rows written before custom DMFs were listed. */
+  custom_functions?: { name: string; signature: string }[] | null;
+  custom_functions_truncated?: boolean;
+  /** Visible DMFs left out because their quoted lower-case names can't be referenced. */
+  custom_functions_unlisted?: number;
+  custom_functions_reason?: string;
 }
 
 /** Human-readable labels for the connection types, for grouping + display. */

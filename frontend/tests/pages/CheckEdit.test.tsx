@@ -340,6 +340,119 @@ describe('CheckEdit — Snowflake DMF engine (ADR 0036)', () => {
   });
 });
 
+describe('CheckEdit — custom Snowflake DMF', () => {
+  const existingCustom: Check = {
+    id: 'chk4',
+    suite_id: 's1',
+    name: 'negative amounts',
+    kind: 'expectation',
+    engine: 'dmf',
+    expectation_type: 'dmf:custom',
+    config: { function: 'DATAQ_DB.QUALITY.NEG_AMOUNT', columns: ['AMOUNT', 'DISCOUNT'] },
+    dimension: null,
+    warn_threshold: null,
+    fail_threshold: 1,
+    critical_threshold: null,
+    alert_snoozed_until: null,
+  };
+  const withListing = (dmf: Connection['engine_capabilities']): Connection => ({
+    ...connection,
+    engine_capabilities: dmf,
+  });
+
+  it('prefills the function and columns and round-trips them on save', async () => {
+    const user = userEvent.setup();
+    mockGetSuite.mockResolvedValue(suite);
+    mockGetCheck.mockResolvedValue(existingCustom);
+    mockGetConnection.mockResolvedValue(connection);
+    mockUpdate.mockResolvedValue(existingCustom);
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('Data metric function')).toHaveValue(
+        'DATAQ_DB.QUALITY.NEG_AMOUNT',
+      ),
+    );
+    expect(screen.getByLabelText('Columns')).toHaveValue('AMOUNT, DISCOUNT');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+    expect(mockUpdate).toHaveBeenCalledWith(
+      's1',
+      'chk4',
+      expect.objectContaining({
+        engine: 'dmf',
+        expectation_type: 'dmf:custom',
+        config: { function: 'DATAQ_DB.QUALITY.NEG_AMOUNT', columns: ['AMOUNT', 'DISCOUNT'] },
+      }),
+    );
+  });
+
+  it('suggests the DMFs the connection’s role could use at its last test', async () => {
+    const user = userEvent.setup();
+    mockGetSuite.mockResolvedValue(suite);
+    mockGetCheck.mockResolvedValue(existingCustom);
+    mockGetConnection.mockResolvedValue(
+      withListing({
+        dmf: {
+          available: true,
+          custom_functions: [
+            { name: 'DATAQ_DB.QUALITY.GAP', signature: '(TABLE(NUMBER, NUMBER)) RETURN NUMBER' },
+          ],
+          custom_functions_truncated: false,
+        },
+      }),
+    );
+    renderPage();
+
+    const field = await screen.findByLabelText('Data metric function');
+    expect(screen.getByTestId('custom-dmf-listing')).toHaveTextContent(
+      'Suggestions are the 1 custom DMFs the role could use',
+    );
+    await user.clear(field);
+    await user.type(field, 'gap');
+    expect(
+      await screen.findByText('DATAQ_DB.QUALITY.GAP (TABLE(NUMBER, NUMBER)) RETURN NUMBER'),
+    ).toBeInTheDocument();
+  });
+
+  it('says plainly when the role could see no custom DMFs', async () => {
+    mockGetSuite.mockResolvedValue(suite);
+    mockGetCheck.mockResolvedValue(existingCustom);
+    mockGetConnection.mockResolvedValue(
+      withListing({ dmf: { available: true, custom_functions: [] } }),
+    );
+    renderPage();
+
+    expect(await screen.findByTestId('custom-dmf-listing')).toHaveTextContent(
+      'No custom DMFs were visible to this connection’s role at its last test',
+    );
+  });
+});
+
+describe('customDmfListingNote', () => {
+  it('distinguishes never listed, listing failed, and truncated', async () => {
+    const { customDmfListingNote } = await import('../../src/components/checks/customDmf');
+    expect(customDmfListingNote(undefined)).toMatch(/haven’t been listed/);
+    expect(customDmfListingNote({ available: true })).toMatch(/haven’t been listed/);
+    expect(
+      customDmfListingNote({
+        available: true,
+        custom_functions: null,
+        custom_functions_reason: 'could not list',
+      }),
+    ).toBe('could not list');
+    expect(
+      customDmfListingNote({
+        available: true,
+        custom_functions: [{ name: 'D.S.F', signature: '' }],
+        custom_functions_truncated: true,
+        custom_functions_unlisted: 2,
+      }),
+    ).toMatch(/\(the first 200 only\).*2 more have quoted lower-case names/);
+  });
+});
+
 describe('CheckEdit — restore a version (#283)', () => {
   const editableSuite: Suite = { ...suite, my_permission: 'edit' };
   const versionRow = {

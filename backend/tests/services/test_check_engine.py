@@ -177,6 +177,40 @@ def test_new_dmf_metrics_are_banded_and_require_a_threshold(expectation_type: st
         _compat(expectation_type=expectation_type, fail_threshold=None)
 
 
+_CUSTOM = {"function": "DATAQ_DB.QUALITY.NEG_AMOUNT", "columns": ["AMOUNT", "DISCOUNT"]}
+
+
+def test_custom_dmf_with_a_qualified_name_columns_and_threshold_passes() -> None:
+    _compat(expectation_type="dmf:custom", config=_CUSTOM)  # must not raise
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        {"columns": ["AMOUNT"]},
+        {"function": "DATAQ_DB.QUALITY.NEG_AMOUNT"},
+        {**_CUSTOM, "function": "NEG_AMOUNT"},
+        {**_CUSTOM, "function": "DATAQ_DB.QUALITY.NEG_AMOUNT(SELECT 1)"},
+        {**_CUSTOM, "function": "SNOWFLAKE.CORE.NULL_COUNT"},
+        {**_CUSTOM, "columns": ["AMOUNT; DROP TABLE x"]},
+        {**_CUSTOM, "columns": []},
+        {**_CUSTOM, "column": "AMOUNT"},
+    ],
+)
+def test_custom_dmf_refuses_a_bad_config(config: dict[str, Any]) -> None:
+    with pytest.raises(CheckConfigInvalidError):
+        _compat(expectation_type="dmf:custom", config=config)
+
+
+def test_custom_dmf_requires_a_positive_threshold() -> None:
+    from decimal import Decimal
+
+    with pytest.raises(CheckConfigInvalidError):
+        _compat(expectation_type="dmf:custom", config=_CUSTOM, fail_threshold=None)
+    with pytest.raises(CheckConfigInvalidError):
+        _compat(expectation_type="dmf:custom", config=_CUSTOM, fail_threshold=Decimal(0))
+
+
 def test_dmf_unique_count_refuses_thresholds() -> None:
     # derive_status bands higher-as-worse; a unique count degrades DOWNWARD, so
     # a threshold would invert its meaning — informational metric only.

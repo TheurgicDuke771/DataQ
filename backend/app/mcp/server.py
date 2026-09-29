@@ -667,12 +667,15 @@ def get_suite_results(suite_id: str) -> dict[str, Any]:
     name and id, ``engine`` (ADR 0036 — ``gx`` unless the check runs against a
     platform-native engine like ``dmf`` or ``dqx``; a ``dmf`` result's
     ``observed_value`` / ``metric_value`` is a Snowflake DMF metric, not a GX
-    expectation output, and the two have different semantics; a ``dqx`` result's
+    expectation output, and the two have different semantics — for a
+    ``dmf:custom`` check it is whatever the customer's own function returns, shown
+    unmasked, and DataQ cannot see what that function measures; a ``dqx`` result's
     ``metric_value`` is its failing-row count, and it never carries sample rows,
     so a null sample there is not "no failing rows"), its pass/warn/fail/critical (or
     skip/error) status, the observed vs expected value (**redacted on the same
-    column-aware policy as the samples** — a masked observed value is not the
-    measured one), how much of the dataset the check actually saw (``sampling``
+    column-aware policy as the samples** for a GX result — a masked observed value
+    is not the measured one; a ``dmf`` / ``dqx`` metric is never masked), how much
+    of the dataset the check actually saw (``sampling``
     — null means a complete read; a non-null record means the verdict came from
     a sample), any sample failing rows, and ``redaction`` / ``redacted_columns``
     saying how much of those rows was masked. A masked sample is not an absent
@@ -1272,7 +1275,9 @@ def get_run_results(run_id: str) -> dict[str, Any]:
     status plus, per check: the check name, ``engine`` (ADR 0036 — ``gx`` unless
     the check runs against a platform-native engine like ``dmf`` or ``dqx``; a
     ``dmf`` result's observed/metric value is a Snowflake DMF metric, not a GX
-    expectation output, and the two have different semantics; a ``dqx`` result's
+    expectation output, and the two have different semantics — for a
+    ``dmf:custom`` check it is whatever the customer's own function returns,
+    shown unmasked; a ``dqx`` result's
     metric value is its failing-row count, with no sample rows), its
     pass/warn/fail/critical (or skip/error) status, the observed vs expected
     value, how much of the dataset the check saw, and any sample failing rows
@@ -2118,7 +2123,7 @@ def create_check(
     completeness, consistency, integrity, timeliness, uniqueness, validity);
     leave it unset and DataQ derives it from the check type where derivable.
     **A returned `dimension: null` means "unclassified", not "failed to
-    save"** — accuracy/integrity and custom SQL are never derivable, and an
+    save"** — accuracy/integrity, custom SQL and custom DMFs are never derivable, and an
     unclassified check renders as a coverage gap on the asset scorecard, not
     an error. Only pass ``dimension`` explicitly when the user names one.
 
@@ -2132,6 +2137,18 @@ def create_check(
     vice versa, is refused with a 422 naming the mismatch — it is not
     auto-detected from the type string. A connection that doesn't offer the
     requested engine is refused the same way, naming what it does offer.
+
+    ``dmf:custom`` (``engine="dmf"``) runs a data metric function the
+    customer created in Snowflake: ``config`` is ``{"function":
+    "DATABASE.SCHEMA.FUNCTION", "columns": ["COL_A", ...]}`` — the fully
+    qualified name, and the target's columns in the order the function's
+    ``TABLE(...)`` argument declares them. The function's return value is the
+    metric and a positive fail/critical threshold is required (higher = worse).
+    Its dimension is left unclassified unless the user names one. **No tool here
+    lists which custom DMFs exist** — take the name from the user (the app's
+    check editor suggests the ones the connection's role could use at its last
+    test). A name the role cannot use saves fine and errors at run time as "does
+    not exist, or the role cannot use it"; ``dryrun_check`` catches that first.
 
     **Creating a check does not run it.** It takes effect on the suite's next
     run (manual, scheduled, or trigger-fired) and changes nothing about past
