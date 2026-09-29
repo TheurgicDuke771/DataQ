@@ -8,7 +8,7 @@
 | **Suite** | A named set of checks that runs against one connection's target. |
 | **Check** | One data-quality rule — a Great Expectations *expectation*, or a monitor kind (below). |
 | **Expectation** | A Great Expectations assertion about data (e.g. "column not null"). |
-| **Monitor** | A non-expectation check kind: *freshness* (staleness), *volume* (row-count range), *schema_drift* (column add/drop/retype vs a baseline), *anomaly* (rolling z-score over metric history), or *comparison* (cross-dataset reconciliation). |
+| **Monitor** | A non-expectation check kind: *freshness* (staleness), *volume* (row-count range), *aggregate* (a column statistic in two-sided bands), *schema_drift* (column add/drop/retype vs a baseline), *anomaly* (rolling z-score over metric history), or *comparison* (cross-dataset reconciliation). |
 | **Dimension** | A check's DQ-dimension classification (ADR 0038): accuracy / completeness / consistency / integrity / timeliness / uniqueness / validity. NULL = unclassified, rendered as a coverage gap. |
 | **Run** | One execution of a suite. Lifecycle status: queued → running → succeeded/failed/cancelled. |
 | **Result** | One check's outcome in a run — status **pass / warn / fail / critical** (or *skip* / *error*). |

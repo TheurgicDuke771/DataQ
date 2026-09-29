@@ -47,6 +47,25 @@
 > measurement seam, not an allowlist edit — refused at author time so it can't
 > save clean and error nightly.
 
+> **Amendment (2026-09-29, v1.2) — `aggregate`, the first kind outside the original
+> reserved set, and the first whose bands are two-sided.** A scalar kind (it has a
+> `build_statement`, so every SQL runner computes it by pushdown and flat files /
+> Iceberg read the one column): one of mean / median / sum / stdev / min / max over one
+> numeric column, with **the aggregate itself as `metric_value`** so it trends and can
+> be baselined. It needed a widened `ck_checks_kind_valid` (migration `18f2ee7908cf`,
+> additive) and one more result semantic beside `skip`: **a tier the check decides
+> itself** (`CheckOutcome.severity`, taken as-is by `services/severity.py`). ADR 0016's
+> thresholds band a metric that only gets worse upward; an aggregate fails too low as
+> well as too high, and banding its raw value upward would call a healthy mean
+> "critical" for being large. So its bands live in `config` as nested bounds —
+> critical ⊇ fail ⊇ warn on each side, inclusive, validated at author time — and the
+> warn/fail/critical threshold columns are refused on it, the same way an unbandable
+> DMF metric refuses them. NULL (empty table, all-NULL column, a stdev over one value)
+> is an `error`, never a 0; mean / median / stdev are computed over a double because
+> several engines keep a DECIMAL average at a fixed scale. An exact median does not
+> exist on MySQL, Trino or Athena (`SqlEngineSpec.exact_median`), so it is refused
+> there rather than approximated silently.
+
 ## Context
 
 Every v1 check is a Great Expectations expectation (ADR 0003): a value-level

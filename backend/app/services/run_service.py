@@ -30,9 +30,12 @@ from backend.app.datasources.base import (
     ValueSignalGate,
 )
 from backend.app.datasources.monitors import (
+    AGGREGATE,
+    AGGREGATE_CELL_VALUES,
     MONITOR_KINDS,
     SCALAR_MONITOR_KINDS,
     STATEFUL_MONITOR_KINDS,
+    monitor_expectation_type,
 )
 from backend.app.datasources.sql import strip_statement_echo
 from backend.app.db.chunked_dml import CHUNK_SIZE, chunked_dml
@@ -100,6 +103,9 @@ def _build_result(
     else:
         observed = sanitize_json(outcome.observed_value)
         if zero_sample:
+            if is_cell_scalar(outcome.expectation_type, observed):
+                # An aggregate MIN/MAX's metric IS the cell; the verdict is already in `status`.
+                metric = None
             observed = _strip_row_level_observed_value(
                 observed, expectation_type=outcome.expectation_type
             )
@@ -1228,6 +1234,20 @@ _CELL_SCALAR_EXPECTATION_TYPES = frozenset(
         "expect_column_min_to_be_between",
     }
 )
+_AGGREGATE_EXPECTATION_TYPE = monitor_expectation_type(AGGREGATE)
+
+
+def is_cell_scalar(expectation_type: str | None, observed: Mapping[str, Any] | None) -> bool:
+    """Whether a scalar `observed_value` is one literal cell: GX's min/max expectations, and an
+    `aggregate` monitor measuring MIN or MAX (its `observed_value` names which).
+    """
+    if expectation_type in _CELL_SCALAR_EXPECTATION_TYPES:
+        return True
+    return (
+        expectation_type == _AGGREGATE_EXPECTATION_TYPE
+        and observed is not None
+        and observed.get("aggregate") in AGGREGATE_CELL_VALUES
+    )
 
 
 def _strip_row_level_observed_value(
@@ -1244,7 +1264,7 @@ def _strip_row_level_observed_value(
     if not isinstance(observed, dict) or "observed_value" not in observed:
         return observed
     value = observed["observed_value"]
-    row_level = isinstance(value, list) or expectation_type in _CELL_SCALAR_EXPECTATION_TYPES
+    row_level = isinstance(value, list) or is_cell_scalar(expectation_type, observed)
     if not row_level:
         return observed
     return {key: val for key, val in observed.items() if key != "observed_value"}
@@ -1262,7 +1282,7 @@ def observed_value_exposes_cells(
     if isinstance(values, list) and any(v != _REDACTED_VALUE for v in values):
         return True
     if (
-        expectation_type in _CELL_SCALAR_EXPECTATION_TYPES
+        is_cell_scalar(expectation_type, redacted)
         and values is not None
         and values != _REDACTED_VALUE
     ):

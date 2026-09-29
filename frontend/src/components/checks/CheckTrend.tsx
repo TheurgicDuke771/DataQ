@@ -41,6 +41,8 @@ interface CheckTrendCheck {
   warn_threshold: number | null;
   fail_threshold: number | null;
   critical_threshold: number | null;
+  /** An `aggregate` check's two-sided bands live here, not in the threshold columns. */
+  config?: Record<string, unknown>;
 }
 
 interface CheckTrendProps {
@@ -66,14 +68,37 @@ const THRESHOLD_DASH: Record<'warn' | 'fail' | 'critical', string> = {
 interface ThresholdBand {
   tier: 'warn' | 'fail' | 'critical';
   value: number;
+  /** `≥` for the one-sided threshold columns; `<`/`>` for an aggregate's two-sided bounds. */
+  op: '≥' | '<' | '>';
 }
 
+/** An `aggregate` check's config bounds (backend `monitors.AGGREGATE_*_BOUNDS`), as bands. */
+const AGGREGATE_BOUNDS: { key: string; tier: ThresholdBand['tier']; op: '<' | '>' }[] = [
+  { key: 'critical_min', tier: 'critical', op: '<' },
+  { key: 'min_value', tier: 'fail', op: '<' },
+  { key: 'warn_min', tier: 'warn', op: '<' },
+  { key: 'warn_max', tier: 'warn', op: '>' },
+  { key: 'max_value', tier: 'fail', op: '>' },
+  { key: 'critical_max', tier: 'critical', op: '>' },
+];
+
 function thresholdBands(check: CheckTrendCheck): ThresholdBand[] {
+  if (check.kind === 'aggregate') {
+    const config = check.config ?? {};
+    return AGGREGATE_BOUNDS.flatMap(({ key, tier, op }) => {
+      const value = config[key];
+      return typeof value === 'number' ? [{ tier, value, op }] : [];
+    });
+  }
   const bands: ThresholdBand[] = [];
-  if (check.warn_threshold !== null) bands.push({ tier: 'warn', value: check.warn_threshold });
-  if (check.fail_threshold !== null) bands.push({ tier: 'fail', value: check.fail_threshold });
+  if (check.warn_threshold !== null) {
+    bands.push({ tier: 'warn', value: check.warn_threshold, op: '≥' });
+  }
+  if (check.fail_threshold !== null) {
+    bands.push({ tier: 'fail', value: check.fail_threshold, op: '≥' });
+  }
   if (check.critical_threshold !== null) {
-    bands.push({ tier: 'critical', value: check.critical_threshold });
+    bands.push({ tier: 'critical', value: check.critical_threshold, op: '≥' });
   }
   return bands;
 }
@@ -81,7 +106,7 @@ function thresholdBands(check: CheckTrendCheck): ThresholdBand[] {
 /** "Warn ≥ 1" — shared by the chart's `ReferenceLine` label and the plain-text
  *  caption below, so the two never drift. */
 function bandLabel(band: ThresholdBand): string {
-  return `${band.tier[0].toUpperCase()}${band.tier.slice(1)} ≥ ${band.value}`;
+  return `${band.tier[0].toUpperCase()}${band.tier.slice(1)} ${band.op} ${band.value}`;
 }
 
 /** One raw baseline observation, loosely parsed from the untyped JSONB payload. */
@@ -242,7 +267,7 @@ function MetricChart({ points, bands }: { points: CheckResultPoint[]; bands: Thr
         <Tooltip contentStyle={TOOLTIP_STYLE} />
         {bands.map((band) => (
           <ReferenceLine
-            key={band.tier}
+            key={`${band.tier}${band.op}`}
             y={band.value}
             stroke={severityColor(band.tier)}
             strokeDasharray={THRESHOLD_DASH[band.tier]}

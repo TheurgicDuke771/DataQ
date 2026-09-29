@@ -374,6 +374,7 @@ def _validate_freshness_suggestion(
             config,
             expectation_type=FRESHNESS_EXPECTATION_TYPE,
             connection_type=connection_type,
+            warn_threshold=None,
             fail_threshold=fail_threshold,
             critical_threshold=None,
         )

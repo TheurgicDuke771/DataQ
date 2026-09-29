@@ -115,4 +115,5 @@ MYSQL = SqlEngineSpec(
     # the guard — which also needs the CREATE TEMPORARY TABLES grant (live-found).
     temp_table_types=frozenset({"expect_column_values_to_be_unique"}),
     session_statements=_session_statements,
+    exact_median=False,
 )

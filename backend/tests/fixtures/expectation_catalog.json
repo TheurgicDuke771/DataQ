@@ -304,6 +304,23 @@
     "dataframeOnly": false
   },
   {
+    "type": "monitor:aggregate",
+    "kind": "aggregate",
+    "dimension": null,
+    "fields": [
+      "aggregate",
+      "column",
+      "min_value",
+      "max_value",
+      "warn_min",
+      "warn_max",
+      "critical_min",
+      "critical_max"
+    ],
+    "noThresholds": true,
+    "dataframeOnly": false
+  },
+  {
     "type": "monitor:schema_drift",
     "kind": "schema_drift",
     "dimension": "consistency",

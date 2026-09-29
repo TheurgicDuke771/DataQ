@@ -73,6 +73,9 @@ class CheckOutcome:
     # The badness scalar a *monitor* (freshness/volume, ADR 0012) computed directly — age-hours, %
     # volume deviation.
     metric_value: float | None = None
+    # A tier the check decided itself (the two-sided `aggregate` bands, #1602) — taken as the
+    # result's status instead of banding `metric_value` against the one-sided threshold columns.
+    severity: str | None = None
     # How much of the dataset this check actually saw (#595), or `None` for a complete read.
     sampling: dict[str, Any] | None = None
 

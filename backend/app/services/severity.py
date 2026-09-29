@@ -56,6 +56,8 @@ def resolve_status(
     if outcome.skipped:
         return "skip", None
     metric = extract_metric(outcome)
+    if outcome.severity is not None:
+        return outcome.severity, metric
     status = derive_status(
         success=outcome.success,
         metric_value=metric,

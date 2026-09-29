@@ -3087,3 +3087,177 @@ def test_dryrun_refuses_a_dqx_check_rather_than_waiting_on_a_workspace_job(
     assert resp.json()["error"]["code"] == "dry_run_unsupported"
     assert "Run the suite" in resp.json()["error"]["message"]
     assert runner.native_called_with is None
+
+
+# ───────────────────────── aggregate monitor (#1602) ─────────────────────────
+
+
+def _aggregate_payload(**overrides: Any) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "name": "order amount mean",
+        "kind": "aggregate",
+        "expectation_type": "monitor:aggregate",
+        "config": {
+            "aggregate": "mean",
+            "column": "amount",
+            "min_value": 10,
+            "max_value": 90,
+        },
+    }
+    body.update(overrides)
+    return body
+
+
+@pytest.mark.parametrize(
+    "conn_type",
+    [
+        "snowflake",
+        "unity_catalog",
+        "postgres",
+        "mysql",
+        "trino",
+        "mssql",
+        "athena",
+        "redshift",
+        "iceberg",
+        "s3",
+        "adls_gen2",
+    ],
+)
+def test_create_aggregate_monitor_on_every_monitor_capable_datasource(
+    client: TestClient, db_session: Any, conn_type: str
+) -> None:
+    sid = _suite_id(client, db_session, conn_type=conn_type)
+    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_aggregate_payload())
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["kind"] == "aggregate"
+    # ADR 0038: which dimension an aggregate speaks to depends on why it was written.
+    assert body["dimension"] is None
+
+
+@pytest.mark.parametrize(
+    "thresholds",
+    [{"warn_threshold": 1}, {"fail_threshold": 1}, {"critical_threshold": 1}],
+)
+def test_create_aggregate_with_a_one_sided_threshold_rejected(
+    client: TestClient, db_session: Any, thresholds: dict[str, Any]
+) -> None:
+    sid = _suite_id(client, db_session)
+    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_aggregate_payload(**thresholds))
+    assert resp.status_code == 422
+    assert "two-sided" in resp.json()["error"]["message"]
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        {"aggregate": "mean", "column": "amount"},
+        {"aggregate": "mode", "column": "amount", "min_value": 0},
+        {"aggregate": "mean", "column": "amount", "min_value": 9, "max_value": 1},
+        {"aggregate": "mean", "column": "amount", "min_value": 1, "warn_min": 0},
+    ],
+)
+def test_create_aggregate_with_malformed_config_rejected(
+    client: TestClient, db_session: Any, config: dict[str, Any]
+) -> None:
+    sid = _suite_id(client, db_session)
+    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_aggregate_payload(config=config))
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "check_config_invalid"
+
+
+@pytest.mark.parametrize("conn_type", ["mysql", "trino", "athena"])
+def test_median_is_refused_where_the_engine_has_no_exact_median(
+    client: TestClient, db_session: Any, conn_type: str
+) -> None:
+    sid = _suite_id(client, db_session, conn_type=conn_type)
+    config = {"aggregate": "median", "column": "amount", "min_value": 0}
+    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_aggregate_payload(config=config))
+    assert resp.status_code == 422
+    assert "exact median" in resp.json()["error"]["message"]
+
+
+@pytest.mark.parametrize("conn_type", ["postgres", "mssql", "redshift", "snowflake", "s3"])
+def test_median_is_accepted_where_it_is_exact(
+    client: TestClient, db_session: Any, conn_type: str
+) -> None:
+    sid = _suite_id(client, db_session, conn_type=conn_type)
+    config = {"aggregate": "median", "column": "amount", "min_value": 0}
+    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_aggregate_payload(config=config))
+    assert resp.status_code == 201, resp.text
+
+
+def test_update_aggregate_into_a_threshold_is_rejected(client: TestClient, db_session: Any) -> None:
+    sid = _suite_id(client, db_session)
+    check_id = client.post(f"/api/v1/suites/{sid}/checks", json=_aggregate_payload()).json()["id"]
+    resp = client.patch(f"/api/v1/suites/{sid}/checks/{check_id}", json={"fail_threshold": 5})
+    assert resp.status_code == 422
+
+
+def test_import_refuses_an_aggregate_with_a_threshold(client: TestClient, db_session: Any) -> None:
+    """The import door runs the same monitor gate as create — including the warn threshold."""
+    sid = _suite_id(client, db_session)
+    doc = client.get(f"/api/v1/suites/{sid}/export").json()
+    doc["name"] = "imported"
+    doc["checks"] = [{**_aggregate_payload(), "warn_threshold": 1}]
+    conn_id = db_session.get(Suite, uuid.UUID(sid)).connection_id
+    resp = client.post(
+        "/api/v1/suites/import", json={"document": doc, "connection_id": str(conn_id)}
+    )
+    assert resp.status_code == 422, resp.text
+
+
+class _FakeMonitorRunner:
+    supported_monitor_kinds = frozenset({"aggregate"})
+
+    def __init__(self, scalar: Any) -> None:
+        self._scalar = scalar
+        self.monitors: list[Any] | None = None
+
+    def run_checks(self, **_: Any) -> SuiteOutcome:
+        raise AssertionError("an aggregate preview must not reach the GX path")
+
+    def run_monitors(self, *, table: str, schema: str | None, monitors: list[Any]) -> list[Any]:
+        from backend.app.datasources.monitors import run_monitor_specs
+
+        self.monitors = monitors
+        return run_monitor_specs(
+            lambda _spec: self._scalar, monitors=monitors, now=datetime.now(UTC)
+        )
+
+
+@pytest.mark.parametrize(
+    ("scalar", "status"),
+    [(50, "pass"), (5, "fail"), (95, "fail"), (None, "error")],
+)
+def test_dryrun_aggregate_previews_the_two_sided_verdict(
+    client: TestClient,
+    db_session: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    scalar: Any,
+    status: str,
+) -> None:
+    sid = _suite_id(client, db_session, target=_SF_TARGET)
+    runner = _FakeMonitorRunner(scalar)
+    monkeypatch.setattr(dryrun_service, "build_check_runner", lambda **_: runner)
+    payload = _aggregate_payload()
+    body = {k: payload[k] for k in ("kind", "expectation_type", "config")}
+    resp = client.post(f"/api/v1/suites/{sid}/checks/dryrun", json=body)
+    assert resp.status_code == 200, resp.text
+    result = resp.json()
+    assert result["status"] == status
+    assert runner.monitors is not None and runner.monitors[0].kind == "aggregate"
+    if scalar is None:
+        assert result["metric_value"] is None
+        assert "is NULL" in result["observed_value"]["error"]
+    else:
+        assert result["metric_value"] == float(scalar)
+
+
+def test_dryrun_aggregate_applies_the_author_gate(client: TestClient, db_session: Any) -> None:
+    sid = _suite_id(client, db_session, target=_SF_TARGET)
+    payload = _aggregate_payload(fail_threshold=1)
+    body = {k: payload[k] for k in ("kind", "expectation_type", "config", "fail_threshold")}
+    resp = client.post(f"/api/v1/suites/{sid}/checks/dryrun", json=body)
+    assert resp.status_code == 422

@@ -817,3 +817,74 @@ def test_the_clusters_access_control_is_the_read_only_guarantee(tls: TlsTarget) 
     assert classify_failure_category(exc.value) is FailureCategory.PERMISSION
     assert not is_auth_failure(exc.value)
     assert "sales" in schemas and "hidden" not in schemas
+
+
+# ───────────────────────── aggregate monitor (#1602) ─────────────────────────
+
+
+@pytest.fixture
+def trino_amounts(trino: TrinoTarget) -> Iterator[None]:
+    from backend.tests.support.aggregate_lane import AMOUNTS
+
+    table, empty = (
+        f"memory.{trino.schema}.amounts",
+        f"memory.{trino.schema}.amounts_empty",
+    )
+    rows = ", ".join(
+        (
+            f"(CAST({v} AS decimal(9, 2)), CAST(NULL AS double))"
+            if v is not None
+            else "(CAST(NULL AS decimal(9, 2)), CAST(NULL AS double))"
+        )
+        for v in AMOUNTS
+    )
+    admin = _admin_engine(_URL)
+    try:
+        with admin.connect() as conn:
+            conn.execute(text(f"CREATE TABLE {table} (amount decimal(9, 2), blank double)"))
+            conn.execute(text(f"INSERT INTO {table} VALUES {rows}"))
+            conn.execute(text(f"CREATE TABLE {empty} (amount decimal(9, 2))"))
+        yield
+    finally:
+        with admin.connect() as conn:
+            conn.execute(text(f"DROP TABLE IF EXISTS {table}"))
+            conn.execute(text(f"DROP TABLE IF EXISTS {empty}"))
+        admin.dispose()
+
+
+def test_every_aggregate_but_median_is_exact_over_the_trino_client(
+    trino: TrinoTarget, trino_amounts: None
+) -> None:
+    """Trino has only `approx_percentile`, so median is refused at author time; the rest cross
+    the `trino` client as `Decimal` / `float`."""
+    from backend.tests.support.aggregate_lane import assert_aggregates
+
+    runner = _runner(trino)
+    try:
+        assert_aggregates(
+            runner,
+            table="amounts",
+            schema=trino.schema,
+            column="amount",
+            null_column="blank",
+            empty_table="amounts_empty",
+            exact_median=False,
+        )
+    finally:
+        runner.close()
+
+
+def test_the_aggregate_monitor_runs_and_previews_end_to_end(
+    db_session: Any, trino: TrinoTarget, trino_amounts: None
+) -> None:
+    from backend.tests.support.aggregate_lane import assert_run_path_and_dry_run
+
+    assert_run_path_and_dry_run(
+        db_session,
+        conn_type="trino",
+        config=trino.config,
+        secret_ref=None,
+        secret_store=_STORE,
+        target={"table": "amounts", "schema": trino.schema},
+        column="amount",
+    )

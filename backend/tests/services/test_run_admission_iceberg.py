@@ -825,3 +825,14 @@ def test_the_iceberg_estimate_is_what_admission_reserves(
 
     assert decision.defer is False
     assert reserved == [(str(run.id), ICEBERG_RUN_OVERHEAD_BYTES + 50 * snapshot_row_bytes(table))]
+
+
+def test_an_aggregate_monitor_is_priced_as_the_read_it_is(catalog: Any) -> None:
+    """Unlike volume/freshness, an aggregate never answers from metadata — it scans its column,
+    so clean metadata must not let it run unmetered (#1602)."""
+    cat, properties = catalog
+    _narrow(cat, "sales.orders", 50)
+    estimate = _estimate(properties, "sales.orders", kinds=("volume", "aggregate"))
+    assert estimate is not None
+    assert estimate.basis == "iceberg_schema_width"
+    assert estimate.bytes > 0

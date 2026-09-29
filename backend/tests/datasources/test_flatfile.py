@@ -1,8 +1,10 @@
 """Flat-file IO + GX runner tests."""
 
 import io
+import statistics
 import time
 from datetime import UTC, datetime
+from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
 
@@ -540,7 +542,7 @@ def test_an_unparseable_text_freshness_column_cannot_be_assessed(
 def test_runner_advertises_the_kinds_it_implements() -> None:
     """#429: the run-path gate reads this, so it must match reality."""
     assert flatfile.FlatFileCheckRunner.supported_monitor_kinds == frozenset(
-        {"freshness", "volume"}
+        {"freshness", "volume", "aggregate"}
     )
 
 
@@ -3930,3 +3932,112 @@ def test_preview_budget_clock_starts_at_the_first_object_not_at_client_setup(
     assert result.truncated is False
     assert result.scanned == 2
     assert result.path == "data/orders_2026-09-27.csv"
+
+
+# ── aggregate monitor (#1602), parsed from real CSV / Parquet bytes ──
+
+_AMOUNT_CSV = b"id;amount;label\n1;10.5;a\n2;;b\n3;20.5;c\n4;30;d\n"
+
+
+def _amount_parquet() -> bytes:
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    table = pa.table(
+        {
+            "amount": pa.array(
+                [Decimal("10.50"), None, Decimal("20.50"), Decimal("30.00")],
+                pa.decimal128(9, 2),
+            ),
+            "empty": pa.array([None, None, None, None], pa.float64()),
+        }
+    )
+    buf = io.BytesIO()
+    pq.write_table(table, buf)
+    return buf.getvalue()
+
+
+@pytest.mark.parametrize(
+    ("aggregate", "expected"),
+    [
+        ("mean", 61 / 3),
+        ("median", 20.5),
+        ("sum", 61.0),
+        ("stdev", statistics.stdev([10.5, 20.5, 30.0])),
+        ("min", 10.5),
+        ("max", 30.0),
+    ],
+)
+@pytest.mark.parametrize("path", ["raw/orders.csv", "raw/orders.parquet"])
+def test_an_aggregate_monitor_reads_the_file_like_sql_would(
+    monkeypatch: pytest.MonkeyPatch, aggregate: str, expected: float, path: str
+) -> None:
+    """The NULL is skipped, not counted as zero — on a `;` CSV (the delimiter sniffer's input)
+    and on a Parquet decimal column, which pandas reads Arrow-backed."""
+    content = _AMOUNT_CSV if path.endswith(".csv") else _amount_parquet()
+    _patch_store(monkeypatch, content=content)
+    out = _monitor_runner().run_monitors(
+        table=path,
+        schema=None,
+        monitors=[_spec("aggregate", aggregate=aggregate, column="amount", min_value=0)],
+    )
+    assert out[0].errored is False, out[0].error_message
+    assert out[0].metric_value == pytest.approx(expected, rel=1e-4)
+    assert out[0].severity == "pass"
+
+
+def test_an_aggregate_over_an_all_null_column_errors_rather_than_reading_zero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_store(monkeypatch, content=_amount_parquet())
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.parquet",
+        schema=None,
+        monitors=[_spec("aggregate", aggregate="sum", column="empty", min_value=1)],
+    )
+    assert out[0].errored is True
+    assert out[0].metric_value is None
+    assert "SUM(empty) is NULL" in str(out[0].error_message)
+
+
+def test_an_aggregate_over_a_missing_or_text_column_errors_alone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One bad aggregate errors only itself; the file is read once for all of them."""
+    reads: list[int] = []
+    _patch_store(monkeypatch, content=_AMOUNT_CSV, reads=reads)
+    out = _monitor_runner().run_monitors(
+        table="raw/orders.csv",
+        schema=None,
+        monitors=[
+            _spec("aggregate", aggregate="max", column="nope", min_value=0),
+            _spec("aggregate", aggregate="max", column="label", min_value=0),
+            _spec("aggregate", aggregate="max", column="amount", max_value=10),
+        ],
+    )
+    assert [o.errored for o in out] == [True, True, False]
+    assert "not in" in str(out[0].error_message)
+    assert "non-numeric" in str(out[1].error_message)
+    assert out[2].severity == "fail"
+    assert len(reads) == 1
+
+
+def test_a_volume_beside_an_aggregate_counts_off_the_frame_the_aggregate_reads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The aggregate needs the whole frame anyway, so the volume count must reuse it rather
+    than scan the object a second time with range reads."""
+    reads: list[int] = []
+    ranges: list[tuple[int, int]] = []
+    _patch_store(monkeypatch, content=_AMOUNT_CSV, reads=reads, ranges=ranges)
+    volume, mean = _monitor_runner().run_monitors(
+        table="raw/orders.csv",
+        schema=None,
+        monitors=[
+            _spec("volume", min_rows=1, max_rows=10),
+            _spec("aggregate", aggregate="mean", column="amount", min_value=0),
+        ],
+    )
+    assert volume.observed_value == {"row_count": 4, "deviation_pct": 0.0}
+    assert mean.metric_value == pytest.approx(61 / 3)
+    assert (len(reads), ranges) == (1, [])

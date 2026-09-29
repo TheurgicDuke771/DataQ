@@ -16,9 +16,12 @@ from backend.app.core.uri_credentials import inject_uri_password, uri_password
 from backend.app.datasources.base import CheckOutcome, CheckSpec, MonitorSpec, SuiteOutcome
 from backend.app.datasources.gx_runner import ephemeral_gx_context, run_expectations
 from backend.app.datasources.monitors import (
+    AGGREGATE,
     FRESHNESS,
     VOLUME,
     MonitorConfigError,
+    aggregate_of_series,
+    aggregate_params,
     run_monitor_specs,
     validate_monitor_config,
 )
@@ -456,7 +459,7 @@ class IcebergCheckRunner:
 
     # Runner-advertised monitor capability (#429): EXPLICITLY what this runner implements — never
     # frozenset(MONITOR_KINDS).
-    supported_monitor_kinds: ClassVar[frozenset[str]] = frozenset({FRESHNESS, VOLUME})
+    supported_monitor_kinds: ClassVar[frozenset[str]] = frozenset({FRESHNESS, VOLUME, AGGREGATE})
 
     def __init__(
         self, *, config: IcebergConfig, secret: str | None, catalog_secret: str | None = None
@@ -564,6 +567,17 @@ class IcebergCheckRunner:
                 "source": "scan-fallback",
                 "fallback_reason": reason,
             }
+        if spec.kind == AGGREGATE:
+            params = aggregate_params(spec.config)
+            try:
+                table.schema().find_field(params.column)
+            except Exception as exc:
+                raise MonitorConfigError(f"unknown aggregate column {params.column!r}") from exc
+            enforce_iceberg_row_cap(table, target=target)
+            arrow = table.scan(selected_fields=(params.column,)).to_arrow()
+            series = _to_arrow_backed_pandas(arrow)[params.column]
+            value = aggregate_of_series(series, params.aggregate, source=params.source)
+            return value, {"source": "scan"}
         raise MonitorConfigError(f"unknown monitor kind: {spec.kind!r}")
 
 

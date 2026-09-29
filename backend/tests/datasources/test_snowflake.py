@@ -842,7 +842,9 @@ def test_close_check_runner_never_raises() -> None:
 def test_supported_monitor_kinds_is_explicit() -> None:
     # #880 review: NEVER frozenset(MONITOR_KINDS) — that would auto-advertise every future registry
     # kind and self-defeat the per-kind gate.
-    assert SnowflakeCheckRunner.supported_monitor_kinds == frozenset({"freshness", "volume"})
+    assert SnowflakeCheckRunner.supported_monitor_kinds == frozenset(
+        {"freshness", "volume", "aggregate"}
+    )
 
 
 def test_fold_reflection_keyed_columns_lowercases_all_caps_compound_unique() -> None:

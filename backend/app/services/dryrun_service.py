@@ -13,11 +13,11 @@ from backend.app.core.errors import DataQError
 from backend.app.core.jsonsafe import sanitize_json
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
-from backend.app.datasources.base import CheckOutcome, CheckSpec
+from backend.app.datasources.base import CheckOutcome, CheckSpec, MonitorRunner, MonitorSpec
 from backend.app.datasources.databricks_dqx import DQX_ENGINE
 from backend.app.datasources.flatfile import BatchNotFoundError
 from backend.app.datasources.gx_runner import GxContextBusyError
-from backend.app.datasources.monitors import ANOMALY, SCHEMA_DRIFT
+from backend.app.datasources.monitors import AGGREGATE, ANOMALY, SCHEMA_DRIFT
 from backend.app.datasources.registry import (
     UnsupportedConnectionTypeError,
     build_check_runner,
@@ -31,11 +31,12 @@ from backend.app.services.check_service import (
     validate_engine,
     validate_engine_compatibility,
     validate_expectation_check,
+    validate_monitor_check,
     validate_threshold_ordering,
 )
 from backend.app.services.custom_sql import is_custom_sql, validate_custom_sql_check
 from backend.app.services.failure_classifier import safe_failure_reason
-from backend.app.services.run_service import _strip_row_level_observed_value
+from backend.app.services.run_service import _strip_row_level_observed_value, is_cell_scalar
 from backend.app.services.severity import resolve_status
 
 log = get_logger(__name__)
@@ -131,14 +132,25 @@ def dry_run_check(
             return _dry_run_anomaly(
                 connection, config=config, target=target, secret_store=secret_store
             )
-        if kind != _EXPECTATION_KIND:
+        if kind not in (_EXPECTATION_KIND, AGGREGATE):
             raise DryRunUnsupportedError(
-                f"dry-run supports only 'expectation', 'schema_drift' and 'anomaly' checks; "
-                f"got {kind!r}",
+                "dry-run supports only 'expectation', 'aggregate', 'schema_drift' and 'anomaly' "
+                f"checks; got {kind!r}",
                 detail={"kind": kind},
             )
         # Resolve the target the same way the run path does.
         resolved = run_target.resolve_target(connection.type, target)
+        if kind == AGGREGATE:
+            # The same author gate a save runs: bands, the threshold refusal, the median gap.
+            validate_monitor_check(
+                kind,
+                config,
+                expectation_type=expectation_type,
+                connection_type=connection.type,
+                warn_threshold=warn_threshold,
+                fail_threshold=fail_threshold,
+                critical_threshold=critical_threshold,
+            )
         # Dry-run is the one path that *executes* the query before save, so the custom-SQL read-only
         # guardrail (ADR 0019) must apply here too — outside the try, so a bad query is a clean 422.
         validate_custom_sql_check(
@@ -146,7 +158,7 @@ def dry_run_check(
             config=config,
             connection_type=connection.type,
         )
-        if not is_custom_sql(expectation_type):
+        if kind == _EXPECTATION_KIND and not is_custom_sql(expectation_type):
             # #1510, by the same rule as the threshold check above: a preview must not accept what a
             # save would reject. This is also the one author-time door that EXECUTES the expectation
             # against live data with the stored credential, so the vetted set has to hold here too.
@@ -217,14 +229,23 @@ def dry_run_check(
                 ) from exc
 
             try:
-                outcome = runner.run_checks(
-                    table=table,
-                    schema=resolved.schema,
-                    checks=[CheckSpec(expectation_type=expectation_type, kwargs=dict(config))],
-                )
-                # One outcome per spec; index inside the guard so a malformed/empty
-                # runner result is a clean 502, not an uncaught IndexError → 500.
-                check_outcome = outcome.checks[0]
+                if kind == AGGREGATE:
+                    # Monitor-capable by construction: `validate_monitor_check` above gates the
+                    # connection type on exactly the runners that implement `run_monitors`.
+                    check_outcome = cast(MonitorRunner, runner).run_monitors(
+                        table=table,
+                        schema=resolved.schema,
+                        monitors=[MonitorSpec(kind=kind, config=dict(config))],
+                    )[0]
+                else:
+                    outcome = runner.run_checks(
+                        table=table,
+                        schema=resolved.schema,
+                        checks=[CheckSpec(expectation_type=expectation_type, kwargs=dict(config))],
+                    )
+                    # One outcome per spec; index inside the guard so a malformed/empty
+                    # runner result is a clean 502, not an uncaught IndexError → 500.
+                    check_outcome = outcome.checks[0]
             except GxContextBusyError:
                 raise  # 503: another preview holds GX, not a datasource failure (#2204)
             except Exception as exc:
@@ -255,6 +276,8 @@ def dry_run_check(
                 # Zero-sample mode (#1676): a preview must not show a live row-level value the
                 # persisted path would never write, regardless of the suite's column policy.
                 if zero_sample:
+                    if is_cell_scalar(expectation_type, observed):
+                        metric = None
                     observed = _strip_row_level_observed_value(
                         observed, expectation_type=expectation_type
                     )

@@ -2471,3 +2471,47 @@ def test_a_batch_capable_runner_gets_each_engines_checks_in_one_call() -> None:
         "dqx:is_not_empty",
     ]
     assert [resolved[i].metric_value for i in range(3)] == [0.0, 1.0, 2.0]
+
+
+# ── aggregate monitor (#1602): its MIN/MAX metric is a cell ──
+
+
+def _aggregate_result(aggregate: str, *, zero_sample: bool) -> Result:
+    from backend.app.datasources.monitors import monitor_outcome
+
+    check = Check(
+        id=uuid.uuid4(),
+        kind="aggregate",
+        expectation_type="monitor:aggregate",
+        config={"aggregate": aggregate, "column": "salary", "max_value": 100},
+    )
+    outcome = monitor_outcome(
+        "aggregate", scalar=987654.32, config=check.config, now=datetime.now(UTC)
+    )
+    return run_service._build_result(uuid.uuid4(), check, outcome, zero_sample=zero_sample)
+
+
+@pytest.mark.parametrize("aggregate", ["min", "max"])
+def test_zero_sample_mode_keeps_an_aggregate_min_max_cell_out_of_the_result(
+    aggregate: str,
+) -> None:
+    """`metric_value` is where an aggregate records its value — for MIN/MAX that is one literal
+    cell, so zero-sample mode must drop it from BOTH columns while keeping the verdict.
+    """
+    row = _aggregate_result(aggregate, zero_sample=True)
+    assert row.status == "fail"
+    assert row.metric_value is None
+    assert "987654" not in str(row.observed_value)
+
+
+@pytest.mark.parametrize("aggregate", ["mean", "median", "sum", "stdev"])
+def test_zero_sample_mode_keeps_a_computed_aggregate(aggregate: str) -> None:
+    row = _aggregate_result(aggregate, zero_sample=True)
+    assert row.metric_value == Decimal("987654.32")
+    assert row.observed_value is not None
+    assert row.observed_value["observed_value"] == 987654.32
+
+
+def test_an_aggregate_min_keeps_its_cell_with_zero_sample_mode_off() -> None:
+    row = _aggregate_result("min", zero_sample=False)
+    assert row.metric_value == Decimal("987654.32")
