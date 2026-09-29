@@ -227,6 +227,8 @@ def test_adls_namespace_follows_an_adls_compatible_endpoint(
         # identifier-ok: Azurite's documented loopback endpoint, not a real storage account
         ("http://127.0.0.1:10000/devstoreaccount1", "abfss://ws@127.0.0.1:10000/devstoreaccount1"),
         ("http://localhost:10000/devstoreaccount1/", "abfss://ws@localhost:10000/devstoreaccount1"),
+        # A compose / k8s service name is a single label too.
+        ("http://azurite:10000/devstoreaccount1", "abfss://ws@azurite:10000/devstoreaccount1"),
         ("http://[::1]:10000/devstoreaccount1", "abfss://ws@[::1]:10000/devstoreaccount1"),
         # identifier-ok: a documentation-range address (RFC 5737), not a real endpoint
         ("https://192.0.2.10/lake", "abfss://ws@192.0.2.10/lake"),

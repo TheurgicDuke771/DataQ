@@ -132,14 +132,15 @@ def _path_style_account(account_url: str) -> tuple[str, str] | None:
     """``(endpoint authority, account)`` for a path-style endpoint, or ``None``.
 
     An emulator such as Azurite serves `http://127.0.0.1:10000/<account>`: the account is the
-    first path segment, and the endpoint is not the public cloud (#2199).
+    first path segment, and the endpoint is not the public cloud (#2199). Its host is an IP or a
+    single label (`localhost`, a compose/k8s service name); an Azure account host never is.
     """
     parsed = urlparse(account_url)
     host = parsed.hostname or ""
     try:
         ipaddress.ip_address(host)
     except ValueError:
-        if host != "localhost":
+        if not host or "." in host:
             return None
     account = parsed.path.strip("/").split("/")[0]
     if not account:
