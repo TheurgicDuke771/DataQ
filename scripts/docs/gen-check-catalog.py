@@ -15,11 +15,13 @@ Usage: scripts/docs/gen-check-catalog.py [--check]   (--check: exit 1 if the pag
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 FRONTEND = ROOT / "frontend"
@@ -27,6 +29,7 @@ OUT = ROOT / "docs/site/reference/check-types.md"
 ALLOWLIST = ROOT / "backend/app/datasources/expectation_allowlist.py"
 UC = ROOT / "backend/app/datasources/unity_catalog.py"
 DUMP_DIR = FRONTEND / "node_modules/.cache/docs-catalog"
+EXAMPLES_MODULE = ROOT / "scripts/docs/check_examples.py"
 
 DIMENSION_LABEL = {
     "accuracy": "Accuracy",
@@ -183,8 +186,83 @@ def runs_on(entry: dict, cap: str | None, pushdown: set[str], ds: dict) -> str:
     return names + note
 
 
+def load_examples() -> Any:
+    spec = importlib.util.spec_from_file_location("check_examples", EXAMPLES_MODULE)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _code(value: Any) -> str:
+    return f"`{json.dumps(value)}`"
+
+
+def sample_table(ex: Any) -> list[str]:
+    lines = [
+        '??? info "The sample table every example below runs on"',
+        "",
+        "    Ten orders, with one deliberate defect in most columns.",
+        "",
+        "    | " + " | ".join(ex.SAMPLE_COLUMNS) + " |",
+        "    |" + "---|" * len(ex.SAMPLE_COLUMNS),
+    ]
+    for row in ex.SAMPLE_ROWS:
+        cells = ["NULL" if v is None else str(v).replace("|", "\\|") for v in row]
+        lines.append("    | " + " | ".join(cells) + " |")
+    return [*lines, ""]
+
+
+def outcome(result: dict[str, Any]) -> str:
+    parts = [f"**{result['status'].upper()}**"]
+    count = result["unexpected_count"]
+    if count is not None and result["metric_value"] is not None:
+        parts.append(
+            f"{result['metric_value']:g}% unexpected ({count} row{'' if count == 1 else 's'})"
+        )
+    elif result["observed_value"] is not None:
+        parts.append(f"observed {_code(result['observed_value'])}")
+    if result["unexpected_values"]:
+        parts.append("unexpected values " + _code(result["unexpected_values"]))
+    return " · ".join(parts)
+
+
+def example_block(entry: dict, ex: Any, results: dict[str, Any]) -> list[str]:
+    example = ex.EXAMPLES.get(entry["type"])
+    if example is None:
+        raise SystemExit(f"no example for {entry['type']!r}: add one to {EXAMPLES_MODULE.name}")
+    body: dict[str, Any] = {"name": entry["label"], "expectation_type": entry["type"]}
+    if example.kind != "expectation":
+        body["kind"] = example.kind
+    if example.engine != "gx":
+        body["engine"] = example.engine
+    body["config"] = example.config
+    if example.kind == "comparison":
+        body["source_connection_id"] = "<connection id>"
+    body.update(example.thresholds)
+    lines = [
+        f'??? example "{entry["label"]}"',
+        "",
+        "    ```json",
+        *("    " + line for line in json.dumps(body, indent=2).splitlines()),
+        "    ```",
+        "",
+    ]
+    result = results.get(entry["type"])
+    if result is not None:
+        lines += [f"    **On the sample:** {outcome(result)}", ""]
+    return [*lines, f"    {example.note}", ""]
+
+
 def render(
-    catalog: list[dict], caps: dict[str, str], only: set[str], pushdown: set[str], ds: dict
+    catalog: list[dict],
+    caps: dict[str, str],
+    only: set[str],
+    pushdown: set[str],
+    ds: dict,
+    ex: Any,
+    results: dict[str, Any],
 ) -> str:
     by_cat: dict[str, list[dict]] = {c: [] for c in CATEGORY_ORDER}
     for e in catalog:
@@ -212,6 +290,13 @@ def render(
         + "classified under; you can",
         "change it on any check.",
         "",
+        "Each section ends with **examples**: the body you would send to create the check "
+        + "(`POST /api/v1/suites/{suite_id}/checks`; the same fields work over MCP and in a "
+        + "suite import) and, for every type that runs on a plain table, the result DataQ "
+        + "reports on the sample below. Those results are produced by DataQ's own check "
+        + "engine and re-checked in CI.",
+        "",
+        *sample_table(ex),
     ]
     for cat in CATEGORY_ORDER:
         entries = by_cat.get(cat) or []
@@ -232,7 +317,9 @@ def render(
                 f"{DIMENSION_LABEL.get(e['dimension'])} | {params(e)} | {thresholds(e, cap)} | "
                 f"{runs_on(e, cap, pushdown, ds)} |"
             )
-        lines.append("")
+        lines += ["", "### Examples", ""]
+        for e in entries:
+            lines += example_block(e, ex, results)
     if only:
         lines += [
             "## Authorable outside the editor",
@@ -270,7 +357,9 @@ def main() -> int:
     catalog, ds = dump["catalog"], dump["datasources"]
     caps = parse_allowlist()
     only = set(caps) - {e["type"] for e in catalog}
-    text = render(catalog, caps, only, parse_pushdown(), ds)
+    ex = load_examples()
+    results = json.loads(ex.RESULTS.read_text())
+    text = render(catalog, caps, only, parse_pushdown(), ds, ex, results)
     if check:
         if OUT.exists() and OUT.read_text() == text:
             return 0
