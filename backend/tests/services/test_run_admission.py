@@ -187,77 +187,165 @@ def test_a_unity_catalog_pushdown_suite_bypasses_admission(
     assert run_admission.estimate_run_memory(_sess(session), run) is None
 
 
-def test_a_unity_catalog_frame_suite_reserves_the_frame_byte_cap() -> None:
-    # #2087: the runner refuses any frame estimated over this cap, width included, so it is the
-    # bound — rows x a flat per-row cost undercounts a wide table by 2x or more.
-    run, session = _graph(
-        "unity_catalog",
-        target={"catalog": "main", "schema": "gold", "table": "orders"},
-        expectation_types=("expect_column_values_to_be_of_type",),
-    )
-
-    estimate = run_admission.estimate_run_memory(_sess(session), run)
-
-    assert estimate is not None
-    assert estimate.basis == "uc_frame_byte_cap"
-    assert estimate.bytes == get_settings().run_max_frame_bytes
+_UC_TARGET = {"catalog": "main", "schema": "gold", "table": "orders"}
+_FRAME_TYPES = ("expect_column_values_to_be_of_type",)
 
 
-def test_a_lowered_row_cap_keeps_a_small_unity_catalog_reservation(
-    monkeypatch: pytest.MonkeyPatch,
+class FakeUcRunner:
+    """The two probes admission asks the runner for, and whether it let go of the engine."""
+
+    def __init__(self, *, rows: int, row_bytes: int, sampling: Any, fail: bool) -> None:
+        self.rows, self.row_bytes, self.sampling, self.fail = rows, row_bytes, sampling, fail
+        self.probed: list[tuple[str, str | None]] = []
+        self.closed = False
+
+    def probe_frame(self, *, table: str, schema: str | None) -> tuple[int, int]:
+        self.probed.append((table, schema))
+        if self.fail:
+            raise RuntimeError("warehouse unavailable")
+        rows = self.sampling.rows if self.sampling is not None else self.rows
+        return rows, self.row_bytes
+
+    def close(self) -> None:
+        self.closed = True
+
+
+@pytest.fixture
+def stub_uc(monkeypatch: pytest.MonkeyPatch) -> Any:
+    """Stand in for the UC runner's live probes; returns the runners it built."""
+    built: list[FakeUcRunner] = []
+
+    def _stub(
+        *, rows: int = 10_000, row_bytes: int = 1_400, fail: bool = False
+    ) -> list[FakeUcRunner]:
+        def _build(*, catalog: str, sampling: Any = None, **_kw: Any) -> FakeUcRunner:
+            assert catalog == "main"
+            runner = FakeUcRunner(rows=rows, row_bytes=row_bytes, sampling=sampling, fail=fail)
+            built.append(runner)
+            return runner
+
+        monkeypatch.setattr(
+            "backend.app.datasources.unity_catalog.build_unity_catalog_runner", _build
+        )
+        _stub_secret_store(monkeypatch)
+        return built
+
+    return _stub
+
+
+def test_a_small_unity_catalog_frame_reserves_what_it_needs_not_the_frame_cap(
+    stub_uc: Any,
 ) -> None:
-    # An operator who lowered the row cap had small reservations that fit beside each other;
-    # reserving the whole frame cap would serialise every one of those runs.
-    monkeypatch.setenv("RUN_MAX_SCAN_ROWS", "100000")
-    get_settings.cache_clear()
-    run, session = _graph(
-        "unity_catalog",
-        target={"catalog": "main", "schema": "gold", "table": "orders"},
-        expectation_types=("expect_column_values_to_be_of_type",),
-    )
+    # #2145: reserving the whole 1.25 GiB cap ran every UC frame suite alone, 10k rows included.
+    built = stub_uc(rows=10_000, row_bytes=1_400)
+    run, session = _graph("unity_catalog", target=_UC_TARGET, expectation_types=_FRAME_TYPES)
+
+    estimate = run_admission.estimate_run_memory(_sess(session), run)
+
+    assert estimate == run_admission.MemoryEstimate(bytes=14_000_000, basis="uc_frame_width")
+    assert built[0].probed == [("orders", "gold")]
+    assert built[0].closed
+
+
+def test_a_wide_unity_catalog_frame_is_priced_at_its_width(stub_uc: Any) -> None:
+    # The flat 1,024 B/row under-reserved a 2,340 B/row table by more than half.
+    stub_uc(rows=100_000, row_bytes=2_340)
+    run, session = _graph("unity_catalog", target=_UC_TARGET, expectation_types=_FRAME_TYPES)
 
     estimate = run_admission.estimate_run_memory(_sess(session), run)
 
     assert estimate is not None
-    assert estimate.basis == "uc_frame_row_cap"
-    assert estimate.bytes == 100_000 * get_settings().run_admission_row_bytes
+    assert estimate.bytes == 234_000_000
 
 
-def test_a_unity_catalog_frame_suite_falls_back_to_the_row_cap_without_a_frame_cap(
-    monkeypatch: pytest.MonkeyPatch,
+def test_a_unity_catalog_frame_over_the_frame_cap_holds_nothing(stub_uc: Any) -> None:
+    # The runner refuses it on the same two numbers before reading a row.
+    cap = get_settings().run_max_frame_bytes
+    stub_uc(rows=cap // 1_000 + 1, row_bytes=1_000)
+    run, session = _graph("unity_catalog", target=_UC_TARGET, expectation_types=_FRAME_TYPES)
+
+    assert run_admission.estimate_run_memory(_sess(session), run) == run_admission.MemoryEstimate(
+        bytes=0, basis="uc_over_cap"
+    )
+
+
+def test_a_unity_catalog_frame_over_the_row_cap_holds_nothing(
+    monkeypatch: pytest.MonkeyPatch, stub_uc: Any
 ) -> None:
-    monkeypatch.setenv("RUN_MAX_FRAME_BYTES", "0")
+    monkeypatch.setenv("RUN_MAX_SCAN_ROWS", "1000")
     get_settings.cache_clear()
-    run, session = _graph(
-        "unity_catalog",
-        target={"catalog": "main", "schema": "gold", "table": "orders"},
-        expectation_types=("expect_column_values_to_be_of_type",),
-    )
+    stub_uc(rows=1_001, row_bytes=100)
+    run, session = _graph("unity_catalog", target=_UC_TARGET, expectation_types=_FRAME_TYPES)
 
     estimate = run_admission.estimate_run_memory(_sess(session), run)
 
     assert estimate is not None
-    assert estimate.basis == "uc_frame_row_cap"
-    settings = get_settings()
-    assert estimate.bytes == settings.run_max_scan_rows * settings.run_admission_row_bytes
+    assert (estimate.bytes, estimate.basis) == (0, "uc_over_cap")
 
 
-def test_a_unity_catalog_frame_suite_with_no_cap_at_all_runs_alone(
-    monkeypatch: pytest.MonkeyPatch,
+def test_a_unity_catalog_frame_with_no_caps_is_still_sized_not_run_alone(
+    monkeypatch: pytest.MonkeyPatch, stub_uc: Any
 ) -> None:
     monkeypatch.setenv("RUN_MAX_FRAME_BYTES", "0")
     monkeypatch.setenv("RUN_MAX_SCAN_ROWS", "0")
     get_settings.cache_clear()
+    stub_uc(rows=50_000_000, row_bytes=1_400)
+    run, session = _graph("unity_catalog", target=_UC_TARGET, expectation_types=_FRAME_TYPES)
+
+    estimate = run_admission.estimate_run_memory(_sess(session), run)
+
+    assert estimate == run_admission.MemoryEstimate(bytes=70_000_000_000, basis="uc_frame_width")
+
+
+def test_a_sampled_unity_catalog_run_is_priced_at_the_samples_width(stub_uc: Any) -> None:
+    built = stub_uc(rows=9_000_000, row_bytes=2_000)
     run, session = _graph(
         "unity_catalog",
-        target={"catalog": "main", "schema": "gold", "table": "orders"},
-        expectation_types=("expect_column_values_to_be_of_type",),
+        target={**_UC_TARGET, "sampling": {"strategy": "head", "rows": 20_000}},
+    )
+
+    estimate = run_admission.estimate_run_memory(_sess(session), run)
+
+    assert estimate == run_admission.MemoryEstimate(bytes=40_000_000, basis="uc_sample_width")
+    assert built[0].sampling.rows == 20_000
+
+
+def test_a_unity_catalog_sample_over_the_row_cap_holds_nothing_and_probes_nothing(
+    monkeypatch: pytest.MonkeyPatch, stub_uc: Any
+) -> None:
+    monkeypatch.setenv("RUN_MAX_SCAN_ROWS", "1000")
+    get_settings.cache_clear()
+    built = stub_uc()
+    run, session = _graph(
+        "unity_catalog",
+        target={**_UC_TARGET, "sampling": {"strategy": "head", "rows": 5_000}},
     )
 
     estimate = run_admission.estimate_run_memory(_sess(session), run)
 
     assert estimate is not None
-    assert estimate.basis == "uc_frame_unbounded" and estimate.exclusive
+    assert (estimate.bytes, estimate.basis) == (0, "uc_over_cap")
+    assert built == []
+
+
+def test_a_unity_catalog_connection_without_a_credential_is_not_probed(stub_uc: Any) -> None:
+    built = stub_uc()
+    run, session = _graph("unity_catalog", target=_UC_TARGET, expectation_types=_FRAME_TYPES)
+    cast(Connection, session.get(Connection, None)).secret_ref = None
+
+    assert run_admission.estimate_run_memory(_sess(session), run) is None
+    assert built == []
+
+
+def test_a_failed_unity_catalog_probe_releases_the_engine_and_does_not_fail_the_run(
+    stub_uc: Any,
+) -> None:
+    # The read path raises its own classified error moments later.
+    built = stub_uc(fail=True)
+    run, session = _graph("unity_catalog", target=_UC_TARGET, expectation_types=_FRAME_TYPES)
+
+    assert run_admission.estimate_run_memory(_sess(session), run) is None
+    assert built[0].closed
 
 
 def test_an_over_cap_object_is_clamped_to_the_cap_it_will_be_refused_at(

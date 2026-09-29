@@ -474,6 +474,18 @@ class UnityCatalogCheckRunner:
         }
         return frame_row_bytes(columns, lengths)
 
+    def probe_frame(self, *, table: str, schema: str | None) -> tuple[int, int]:
+        """``(rows, bytes per row)`` of the frame this runner's read would materialise.
+
+        The same two probes `_load_frame` gates the read on, so admission (#2145) reserves
+        what the frame cap is checked against. A sample's rows are its size, not a count.
+        """
+        if self._sampling is not None:
+            rows = self._sampling.rows
+        else:
+            rows = self._count_rows(table=table, schema=schema)
+        return rows, self._probe_row_bytes(table=table, schema=schema)
+
     def _enforce_frame_cap(self, rows: int, *, table: str, schema: str | None) -> None:
         cap = get_settings().run_max_frame_bytes
         if cap <= 0:

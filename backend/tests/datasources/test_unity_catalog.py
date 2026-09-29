@@ -1169,6 +1169,28 @@ def test_a_uc_sample_over_the_row_cap_is_refused(
         )
 
 
+def test_probe_frame_counts_an_unsampled_target_and_prices_its_width(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _sampling_runner(None)
+    monkeypatch.setattr(runner, "_count_rows", lambda **_kw: 12_345)
+    monkeypatch.setattr(runner, "_probe_row_bytes", lambda **_kw: 1_400)
+
+    assert runner.probe_frame(table="orders", schema="sales") == (12_345, 1_400)
+
+
+def test_probe_frame_takes_a_samples_rows_without_counting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _sampling_runner(SampleSpec(strategy="head", rows=5_000))
+    monkeypatch.setattr(
+        runner, "_count_rows", lambda **_kw: pytest.fail("a sample's size is not a count")
+    )
+    monkeypatch.setattr(runner, "_probe_row_bytes", lambda **_kw: 2_340)
+
+    assert runner.probe_frame(table="orders", schema="sales") == (5_000, 2_340)
+
+
 def test_only_the_sampled_group_is_labelled_sampled_not_the_custom_sql_beside_it(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Any
 ) -> None:

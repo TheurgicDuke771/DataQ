@@ -121,25 +121,44 @@ def _flat_file_estimate(connection: Connection, target: ResolvedTarget) -> Memor
 def _unity_catalog_estimate(
     connection: Connection, target: ResolvedTarget, checks: list[Check]
 ) -> MemoryEstimate | None:
-    from backend.app.datasources.unity_catalog import frame_lane_required
+    """Sized by the runner's own row and width probes, so a small frame reserves what it
+    needs instead of the whole frame cap — two metadata queries, not a data read (#2145).
+    """
+    from backend.app.datasources.unity_catalog import (
+        build_unity_catalog_runner,
+        frame_lane_required,
+    )
 
-    sampled = _sample_bytes(target)
-    if sampled is not None:
-        return MemoryEstimate(bytes=sampled, basis="uc_sample")
-    types = [c.expectation_type for c in checks if c.kind == "expectation"]
-    if not frame_lane_required(types):
+    if target.sampling is None:
+        types = [c.expectation_type for c in checks if c.kind == "expectation"]
+        if not frame_lane_required(types):
+            return None
+    if not connection.secret_ref or not target.catalog:
+        log.info("run_admission_no_credential", connection_id=str(connection.id))
         return None
     settings = get_settings()
-    by_rows = settings.run_max_scan_rows * settings.run_admission_row_bytes
-    if settings.run_max_frame_bytes > 0:
-        # The runner refuses any frame estimated over this, width included (#2087). A lowered
-        # row cap still bounds a smaller reservation, though rows alone are width-blind (#2145).
-        if 0 < by_rows < settings.run_max_frame_bytes:
-            return MemoryEstimate(bytes=by_rows, basis="uc_frame_row_cap")
-        return MemoryEstimate(bytes=settings.run_max_frame_bytes, basis="uc_frame_byte_cap")
-    if settings.run_max_scan_rows <= 0:
-        return MemoryEstimate(bytes=0, basis="uc_frame_unbounded", exclusive=True)
-    return MemoryEstimate(bytes=by_rows, basis="uc_frame_row_cap")
+    if target.sampling is not None and 0 < settings.run_max_scan_rows < target.sampling.rows:
+        # Refused by the sample cap before any probe or read, so it holds nothing.
+        return MemoryEstimate(bytes=0, basis="uc_over_cap")
+    runner = build_unity_catalog_runner(
+        config=dict(connection.config),
+        secret_ref=connection.secret_ref,
+        secret_store=get_secret_store(),
+        catalog=target.catalog,
+        sampling=target.sampling,
+    )
+    try:
+        rows, row_bytes = runner.probe_frame(table=target.table, schema=target.schema)
+    finally:
+        runner.close()
+    need = rows * row_bytes
+    over_rows = target.sampling is None and 0 < settings.run_max_scan_rows < rows
+    if over_rows or 0 < settings.run_max_frame_bytes < need:
+        # Refused by the runner's row or frame cap before anything is read.
+        return MemoryEstimate(bytes=0, basis="uc_over_cap")
+    return MemoryEstimate(
+        bytes=need, basis="uc_sample_width" if target.sampling else "uc_frame_width"
+    )
 
 
 def _iceberg_estimate(
