@@ -1,0 +1,21 @@
+you can read the PERF_UC_WORKSPACE_URL and PERF_UC_WAREHOUSE_ID. 
+#2204 give me the pros and cons of option 1 and 2 - 
+```
+a process-wide lock around GX context → validation (simple, but serializes API dry-runs);
+running API-side GX work in the worker (dry-run as a task);
+```
+
+---
+
+<task-notification>
+<task-id>bx8q9nh1d</task-id>
+<tool-use-id>toolu_01PH44ub525LkzdZDKog8PAS</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4c1f817b-4fd7-4aa0-8c19-edd245c026d7/tasks/bx8q9nh1d.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for PR merge or CI failure" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+UC workspace - dbc-4492dde4-090c
+#2204 go with option 1
