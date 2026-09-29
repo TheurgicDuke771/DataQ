@@ -853,3 +853,54 @@ User-approved: test the Azure OpenAI and Amazon Bedrock LLM providers while the 
 - **Bedrock, us-east-2:** no resource created. A short-term Bedrock API key (a SigV4-presigned `CallWithBearerToken` token, 1-hour expiry) was generated inline from `dataq-deploy`'s credentials for each run and never printed; models `openai.gpt-oss-20b-1:0` and `openai.gpt-oss-120b-1:0`.
 - **Results:** Azure OpenAI 8 of 8. Bedrock found #2251 (inline `<reasoning>`), fixed; after the fix, `prompt_json` structured output 5 of 5 on both gpt-oss models and `native` 4 of 5.
 - **17:14:40Z — torn down, verified:** deployment `dataq-llm-test` deleted; the resource lists 0 deployments. The Bedrock keys expire on their own. **Expected state: no deployment on `royarijit04-9527-resource`; nothing on AWS.**
+
+## 2026-09-29 — Athena, Redshift and Azure SQL re-created to live-verify the column profile (#2263/#2266)
+
+User-approved ("go ahead with all three"): recreate briefly, run the `column_profile` tests on each lane, tear down. Same shapes as the #1602 entries, tagged `purpose=dataq-2266-it`. AWS work ran as `dataq-deploy` in account `251783195294`, us-east-2.
+
+- **21:57:23Z — Athena:** IAM user `dataq-athena-it-reader` with inline policy `athena-read`. One access key minted straight into Secrets Manager as `dataq/it/athena-reader`, never printed. Glue database `dataq_athena_it`.
+- **21:57:30Z — Redshift Serverless:** namespace and workgroup `dataq-it-rs` (database `dev`, admin `dqadmin` with a Redshift-managed secret, base 8 RPUs, publicly accessible). Inbound 5439 from the maintainer's IP (/32) on `sg-0c047e1aaf5c17416`. At 21:59:35Z, database user `dq_reader` was created, with its password generated straight into `dataq/it/redshift-reader`.
+- **21:57:57Z — Azure SQL:** logical server `dataq-mssql-abd6f6` (`dataq-rg`, westus2, TLS 1.2), free-offer database `dataq_test`, firewall rule `claude-maint-20260930` for the maintainer's IP.
+  - Admin password generated into KV `mssql-test-sqladmin`.
+  - Contained user `dataq_reader`, password in KV `mssql-test-reader`.
+  - Seeded `dbo.Orders`, `dbo.Amounts` and `dbo.AmountsEmpty`.
+- **Results:**
+  - Athena + Redshift full lanes: 41 passed. Azure SQL: 17 passed, 7 skipped.
+  - Redshift exposed #2267: one uncastable column (GEOMETRY, BOOLEAN) dropped distinct counts for the whole table, and SUPER read 0 distinct. The fix, PR #2268, was re-verified live on all three: Redshift 21 passed.
+- **22:43:36Z–22:45:20Z — torn down, verified:**
+  - Redshift: workgroup, then namespace `dataq-it-rs`, deleted.
+  - Secrets `dataq/it/redshift-reader` and `dataq/it/athena-reader` force-deleted.
+  - IAM access key, inline policy, then user deleted.
+  - Glue database `dataq_athena_it` deleted.
+  - `athena-results/` and `athena-data/` emptied (0 objects).
+  - 5439 rule revoked.
+  - Azure SQL: server `dataq-mssql-abd6f6` deleted (22:44:53Z), and KV `mssql-test-sqladmin` / `mssql-test-reader` deleted and purged.
+  - `list-secrets` shows no `dataq/it/*` or `dataq-it-rs` secret.
+  - **Expected state: none of these resources exist.**
+
+## 2026-09-29 — ADF pipeline gate live-verified against a tunnelled local stack (#2230)
+
+User-approved route: the deployed image predates the gate endpoint, so a scratch local stack was exposed through a temporary Cloudflare quick tunnel instead of rolling prod.
+
+- **Scratch stack:** API + worker on 127.0.0.1:8011 against a fresh database `dataq_gate2230`, PAT-only auth (OTP mode with a dummy mailer, no dev bypass, so the tunnel URL alone granted nothing). A scratch PAT was written straight into KV `dataq-app-kv-aw6laj` as `dataq-gate-pat` (tag `purpose=dataq-2230-it`).
+- **22:37:26Z — access and pipelines:**
+  - Role assignment: `Key Vault Secrets User` for `dataq-harness-adf`'s managed identity, scoped to that one secret.
+  - `cloudflared` quick tunnel started; `cloudflared` was installed on the maintainer machine via Homebrew.
+  - At 22:38:29Z, pipelines `dataq_gate_pass`, `dataq_gate_fail` and `dataq_gate_status` were deployed from `integrations/adf/dataq_gate_pipeline.json`.
+  - The factory's triggers were not touched and stayed `Stopped`.
+- **Results:**
+  - The pass pipeline Succeeded.
+  - The fail pipeline Failed through the `DATAQ_GATE` activity.
+  - The status-only pipeline reported `running` then `passed` with `created_runs: 0`.
+  - Exactly one DataQ run per pipeline run.
+- **Found #2269:** the snippet's `secureOutput` / `secureInput` sat outside `policy`, so the first two runs' history shows the scratch PAT in plain text.
+  - That PAT was revoked at 22:41:21Z and its database was later dropped.
+  - ADF run history can't be deleted; the value there is a dead credential.
+  - After the fix (PR #2272), both activities showed `**********`, and no `dq_live_` value appears in the new runs' history.
+- **22:45:46Z–22:46:28Z — torn down, verified:**
+  - The three pipelines deleted; 0 `dataq_gate*` pipelines remain.
+  - The role assignment deleted (0 on that scope).
+  - `dataq-gate-pat` deleted and purged.
+  - Tunnel, API and worker stopped.
+  - `dataq_gate2230` dropped and Redis db 7 flushed.
+  - **Expected state: none of these exist.** `cloudflared` remains installed on the maintainer machine (`brew uninstall cloudflared` removes it).
