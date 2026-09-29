@@ -208,25 +208,33 @@ def test_variable_width_columns_are_sampled_one_at_a_time_from_one_file(
     assert len({file for file, *_ in reads}) == 1
 
 
-def test_the_sample_is_sized_in_the_schemas_own_arrow_types(catalog: Any) -> None:
-    """The costs were fitted on the Iceberg schema's Arrow types (large offsets), so a file whose
-    writer stored plain `string` is sized as the schema's `large_string`, not as written."""
-    cat, _ = catalog
-    table = _low_cardinality(cat, "sales.labels", 3000)
+def _sampled_row_bytes(table: Any, fixed: int) -> int:
+    """Independent of the sampler: the per-row price of `table`'s variable-width columns as
+    pyiceberg itself reads their first rows, sized in the schema's own Arrow types."""
     types = {f.name: f.type for f in table.schema().as_arrow()}
     head = table.scan(limit=iceberg_mod._WIDTH_SAMPLE_ROWS).to_arrow()
-    assert head.schema.field("label_0").type != types["label_0"]  # the writer's own type differs
-    expected = 26 + sum(
+    return fixed + sum(
         iceberg_mod._VARIABLE_CELL_BYTES
         + int(
             iceberg_mod._VARIABLE_BYTES_FACTOR
             * head.column(name).cast(types[name]).nbytes
             / head.num_rows
         )
-        for name in (f"label_{i}" for i in range(12))
+        for name in types
+        if name != "id"
     )
 
-    assert snapshot_row_bytes(table) == expected
+
+def test_the_sample_is_sized_in_the_schemas_own_arrow_types(catalog: Any) -> None:
+    """The costs were fitted on the Iceberg schema's Arrow types (large offsets), so a file whose
+    writer stored plain `string` is sized as the schema's `large_string`, not as written."""
+    cat, _ = catalog
+    table = _low_cardinality(cat, "sales.labels", 3000)
+    head = table.scan(limit=10).to_arrow()
+    schema_type = table.schema().as_arrow().field("label_0").type
+    assert head.schema.field("label_0").type != schema_type  # the writer's own type differs
+
+    assert snapshot_row_bytes(table) == _sampled_row_bytes(table, fixed=26)
 
 
 def test_a_renamed_column_is_sampled_by_field_id(catalog: Any) -> None:
@@ -239,6 +247,7 @@ def test_a_renamed_column_is_sampled_by_field_id(catalog: Any) -> None:
             update.rename_column(f"label_{i}", f"renamed_{i}")
     table = cat.load_table("sales.labels")
 
+    assert snapshot_row_bytes(table) == _sampled_row_bytes(table, fixed=26)
     assert snapshot_row_bytes(table) * rows >= _decoded_bytes(table)
 
 
@@ -257,6 +266,7 @@ def test_a_file_written_without_field_ids_is_sampled_by_name(catalog: Any, tmp_p
     table.add_files([f"file://{path}"])
     assert pq.ParquetFile(path).schema_arrow.field("label_0").metadata is None
 
+    assert snapshot_row_bytes(table) == _sampled_row_bytes(table, fixed=26)
     assert snapshot_row_bytes(table) * rows >= _decoded_bytes(table)
 
 
@@ -264,17 +274,35 @@ def _without_field_ids(schema: pa.Schema) -> pa.Schema:
     return pa.schema([pa.field(f.name, f.type, f.nullable) for f in schema])
 
 
-def test_a_column_added_after_the_file_was_written_costs_its_base(catalog: Any) -> None:
-    from pyiceberg.types import StringType
+def test_a_column_the_sampled_file_lacks_is_priced_at_the_fallback_not_as_empty(
+    catalog: Any, tmp_path: Any
+) -> None:
+    """The sampled file holding none of a column says nothing about the other files."""
+    import pyarrow.parquet as pq
 
     cat, _ = catalog
-    table = _narrow(cat, "sales.orders", 5)
-    before = snapshot_row_bytes(table)
-    with table.update_schema() as update:
-        update.add_column("note", StringType())
-    table = cat.load_table("sales.orders")
+    rows = 50
+    table = cat.create_table(
+        "sales.orders", schema=pa.schema([("id", pa.int64()), ("note", pa.large_string())])
+    )
+    table.append(
+        pa.table(
+            {
+                "id": pa.array(range(rows), pa.int64()),
+                "note": pa.array(["x" * 400] * rows, pa.large_string()),
+            }
+        )
+    )
+    lacking = tmp_path / "ids_only.parquet"
+    pq.write_table(pa.table({"id": pa.array(range(5), pa.int64())}), lacking)
+    table.add_files([f"file://{lacking}"])
+    first = next(iter(table.scan().plan_files())).file.file_path
+    assert first == f"file://{lacking}"  # the file the sample reads has no `note` column
 
-    assert snapshot_row_bytes(table) == before + iceberg_mod._VARIABLE_CELL_BYTES
+    per_cell = iceberg_mod._VARIABLE_CELL_BYTES + int(
+        iceberg_mod._VARIABLE_BYTES_FACTOR * iceberg_mod._UNSAMPLED_CELL_ARROW_BYTES
+    )
+    assert snapshot_row_bytes(table) == 26 + per_cell
 
 
 def test_with_no_parquet_file_to_sample_a_variable_cell_is_priced_conservatively(

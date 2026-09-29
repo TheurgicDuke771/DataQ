@@ -182,7 +182,7 @@ _VARIABLE_CELL_BYTES = 8
 _VARIABLE_BYTES_FACTOR = 3.0
 _WIDTH_SAMPLE_ROWS = 1000
 _WIDTH_SAMPLE_BUFFER_BYTES = 1 << 20
-#: The Arrow size a variable-width cell is priced at when there is no Parquet file to sample:
+#: The Arrow size a variable-width cell is priced at when the sample cannot see its column:
 #: a 100-character string with its 8-byte offset, rounded up.
 _UNSAMPLED_CELL_ARROW_BYTES = 128
 #: What a full read costs beyond its cells, whatever the table: the intercept of the fit.
@@ -205,25 +205,25 @@ def _fixed_cell_bytes(arrow_type: Any) -> int | None:
     return None
 
 
-def _sampled_cell_sizes(table: Any, variable: list[tuple[int, Any]]) -> dict[int, float] | None:
+def _sampled_cell_sizes(table: Any, variable: list[tuple[int, Any]]) -> dict[int, float]:
     """Mean Arrow bytes per cell of each variable-width field, keyed by field id, from the first
-    rows of the first data file — or ``None`` when there is no Parquet file to sample.
+    rows of the first data file. A field is missing when it could not be sampled: the file is
+    not Parquet, or it lacks the column.
 
     Read straight from the Parquet file, one column at a time: a pyiceberg scan honours a row
     limit only after reading whole files, which cost 0.9 GiB to sample 1,000 rows of a
     long-text table on the rig. Matched by field id, so a renamed column still resolves (by
-    name only for a file written without ids); a column the file predates reads as absent
-    (all null there) and costs its base alone.
+    name only for a file written without ids).
     """
     import pyarrow as pa
     import pyarrow.parquet as pq
 
     task = next(iter(table.scan().plan_files()), None)
     if task is None:
-        return None
+        return {}
     fmt = task.file.file_format
     if str(getattr(fmt, "value", fmt)).lower() != "parquet":
-        return None
+        return {}
     sizes: dict[int, float] = {}
     with table.io.new_input(task.file.file_path).open() as stream:
         parquet = pq.ParquetFile(stream, buffer_size=_WIDTH_SAMPLE_BUFFER_BYTES, pre_buffer=False)
@@ -262,8 +262,9 @@ def snapshot_row_bytes(table: Any) -> int:
 
     Fixed-width columns are priced from the schema alone. Variable-width ones (strings, binary,
     nested) are priced from the Arrow size of their first rows, since neither the manifests nor
-    the Parquet footers record a decoded size. With nothing to sample (a non-Parquet file),
-    they are priced at a conservative size instead.
+    the Parquet footers record a decoded size. A column the sample cannot see (a non-Parquet
+    file, or one that lacks the column) is priced at a conservative size, not as empty: the
+    other files may hold plenty of it.
     """
     schema = table.schema()
     total = 0
@@ -278,7 +279,7 @@ def snapshot_row_bytes(table: Any) -> int:
         return total
     sizes = _sampled_cell_sizes(table, variable)
     for field_id, _ in variable:
-        mean = _UNSAMPLED_CELL_ARROW_BYTES if sizes is None else sizes.get(field_id, 0.0)
+        mean = sizes.get(field_id, _UNSAMPLED_CELL_ARROW_BYTES)
         total += _VARIABLE_CELL_BYTES + int(_VARIABLE_BYTES_FACTOR * mean)
     return total
 
