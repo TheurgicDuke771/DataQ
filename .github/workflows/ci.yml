@@ -125,8 +125,10 @@ jobs:
         # Synchronous CVE gate over the entire runtime + test dependency tree (single source:
         # requirements-dev.txt) + transitive deps, against the PyPI/OSV advisory DB.
         run: |
+          # CVE-2026-49265 is in oauthlib's authorization-server PKCE check, which DataQ never runs;
+          # databricks-sql-connector pins oauthlib<4.0.0, so the fix can't be installed yet (#2260).
           audit() {
-            pip-audit -r backend/requirements-dev.txt \
+            pip-audit -r backend/requirements-dev.txt --ignore-vuln CVE-2026-49265 \
               && pip-audit -r packages/dataq-client/requirements-dev.txt
           }
           for attempt in 1 2 3 4; do
