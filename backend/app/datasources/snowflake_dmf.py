@@ -334,9 +334,11 @@ def probe_dmf_capability(fetch_row: Any) -> dict[str, Any]:
     the result is the `engine_capabilities["dmf"]` shape.
 
     An ad-hoc system-DMF call only accepts a bare column of a table or view, so the
-    probe borrows one the role can already see and reads zero rows of it
-    (``LIMIT 0``: compiled, privilege-checked, nothing scanned). ``available`` is
-    ``None`` when the probe itself couldn't decide — never ``False``.
+    probe borrows one the role can already see and ``EXPLAIN``s the call: Snowflake compiles
+    it, resolving the function and checking the role's privileges exactly as a real call
+    would, and executes nothing. A ``LIMIT`` inside the DMF argument is ignored, so the old
+    ``LIMIT 0`` form counted the whole column (#2233). ``available`` is ``None`` when the
+    probe itself couldn't decide — never ``False``.
     """
     try:
         target = None
@@ -357,7 +359,10 @@ def probe_dmf_capability(fetch_row: Any) -> dict[str, Any]:
             "re-checked on the next connection test"
         )
     schema, table, column = (_quote_identifier(str(part)) for part in target)
-    statement = f"SELECT SNOWFLAKE.CORE.NULL_COUNT(SELECT {column} FROM {schema}.{table} LIMIT 0)"  # noqa: S608  # nosec B608
+    statement = (
+        "EXPLAIN USING TEXT SELECT SNOWFLAKE.CORE.NULL_COUNT"  # noqa: S608  # nosec B608
+        f"(SELECT {column} FROM {schema}.{table})"  # nosec B608
+    )
     try:
         fetch_row(statement)
     except Exception as exc:
@@ -376,6 +381,7 @@ def _classify_probe_failure(exc: Exception) -> dict[str, Any]:
         }
     if (
         "Unknown function" in text
+        or "Unknown user-defined function" in text
         or "Insufficient privileges" in text
         or "SQL access control error" in text
     ):
