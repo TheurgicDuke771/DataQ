@@ -140,6 +140,7 @@ from .lineage_node_read import LineageNodeRead
 from .lineage_source_health_read import LineageSourceHealthRead
 from .list_audit_events_action_class_type_0 import ListAuditEventsActionClassType0
 from .list_columns_file_format_type_0 import ListColumnsFileFormatType0
+from .list_suggestions_status import ListSuggestionsStatus
 from .llm_invocation_queued import LlmInvocationQueued
 from .llm_invocation_read import LlmInvocationRead
 from .llm_invocation_read_response_type_0 import LlmInvocationReadResponseType0
@@ -216,6 +217,8 @@ from .share_update_permission import ShareUpdatePermission
 from .source_connection_ref import SourceConnectionRef
 from .source_connection_ref_in import SourceConnectionRefIn
 from .sql_generation_request import SqlGenerationRequest
+from .suggestion_read import SuggestionRead
+from .suggestion_read_config import SuggestionReadConfig
 from .suite_cadence_read import SuiteCadenceRead
 from .suite_create import SuiteCreate
 from .suite_deletion_impact_read import SuiteDeletionImpactRead
@@ -390,6 +393,7 @@ __all__ = (
     "LineageSourceHealthRead",
     "ListAuditEventsActionClassType0",
     "ListColumnsFileFormatType0",
+    "ListSuggestionsStatus",
     "LlmInvocationQueued",
     "LlmInvocationRead",
     "LlmInvocationReadResponseType0",
@@ -466,6 +470,8 @@ __all__ = (
     "SourceConnectionRef",
     "SourceConnectionRefIn",
     "SqlGenerationRequest",
+    "SuggestionRead",
+    "SuggestionReadConfig",
     "SuiteCadenceRead",
     "SuiteCreate",
     "SuiteDeletionImpactRead",

@@ -21,9 +21,10 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.config import get_settings
 from backend.app.core.logging import get_logger
+from backend.app.core.secrets import get_secret_store
 from backend.app.datasources.sql import is_sql_identifier
 from backend.app.db.models import Asset, Check, Connection, MonitorBaseline, Schedule, Suite
-from backend.app.services import check_service, cron, suite_service
+from backend.app.services import check_service, cron, suggestion_service, suite_service
 from backend.app.services.asset_identity import resolve_asset_identity
 from backend.app.services.inventory_service import INVENTORY_TYPES
 
@@ -60,6 +61,7 @@ _FRESHNESS_NAMES = (
 class ReconcileReport:
     suites_created: int = 0
     checks_created: int = 0
+    suggestions_created: int = 0
     suites_paused: int = 0
     suites_resumed: int = 0
     skipped_assets: list[str] = field(default_factory=list)
@@ -280,6 +282,27 @@ def _set_schedule(session: Session, suite: Suite, *, covered: bool, now: datetim
     return transition
 
 
+#: How often a covered table is re-profiled for new rule suggestions.
+PROFILE_EVERY = timedelta(days=7)
+
+
+def _refresh_suggestions(session: Session, suite: Suite, *, now: datetime) -> int:
+    """Profile the table for the review queue at most every ``PROFILE_EVERY``. A failure is
+    logged and retried on a later pass; it never stops the table's baselines."""
+    last = (suite.auto_state or {}).get("profiled_at")
+    if last and now - datetime.fromisoformat(last) < PROFILE_EVERY:
+        return 0
+    suite_id = suite.id
+    try:
+        return suggestion_service.refresh_from_profile(
+            session, suite, secret_store=get_secret_store()
+        )
+    except Exception:
+        session.rollback()
+        log.warning("auto_coverage_profile_failed", suite_id=str(suite_id), exc_info=True)
+        return 0
+
+
 def _reconcile_asset(
     session: Session, connection: Connection, asset: Asset, report: ReconcileReport, now: datetime
 ) -> None:
@@ -303,6 +326,7 @@ def _reconcile_asset(
     report.checks_created += _ensure_checks(session, suite)
     if _set_schedule(session, suite, covered=True, now=now) == "resumed":
         report.suites_resumed += 1
+    report.suggestions_created += _refresh_suggestions(session, suite, now=now)
 
 
 def reconcile_connection(
@@ -347,6 +371,7 @@ def reconcile_connection(
         connection_id=str(connection.id),
         suites_created=report.suites_created,
         checks_created=report.checks_created,
+        suggestions_created=report.suggestions_created,
         paused=report.suites_paused,
         resumed=report.suites_resumed,
         truncated=report.truncated,

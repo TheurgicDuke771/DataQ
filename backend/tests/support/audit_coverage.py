@@ -87,6 +87,9 @@ AUDITED: Final[dict[tuple[str, str], str]] = {
     # the incident; neither changes the data or re-runs anything.
     ("POST", "/api/v1/incidents/{incident_id}/ack"): "incident.acknowledge",
     ("POST", "/api/v1/incidents/{incident_id}/resolve"): "incident.resolve",
+    # ── Automatic-coverage review queue (ADR 0047).
+    ("POST", "/api/v1/suggestions/{suggestion_id}/accept"): "suggestion.accept",
+    ("POST", "/api/v1/suggestions/{suggestion_id}/reject"): "suggestion.reject",
     # ── The third door.
     ("POST", "/api/v1/_probe/snowflake-suite"): "probe.provision",
     # ── Data-subject-rights erasure (G2 / #432) — a real mutation over regulated
