@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "d84e9933fb82",
+  "strategy": "manual-commit",
+  "branch": "feat/issue-1651-pipeline-dq-gate",
+  "checkpoints_count": 9,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/d8/4e9933fb82/0/metadata.json",
+      "transcript": "/d8/4e9933fb82/0/full.jsonl",
+      "compact_transcript": "/d8/4e9933fb82/0/transcript.jsonl",
+      "content_hash": "/d8/4e9933fb82/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2,
+    "cache_creation_tokens": 2214,
+    "cache_read_tokens": 640560,
+    "output_tokens": 353,
+    "api_call_count": 1,
+    "subagent_tokens": {
+      "input_tokens": 8,
+      "cache_creation_tokens": 4818,
+      "cache_read_tokens": 1619556,
+      "output_tokens": 32,
+      "api_call_count": 4
+    }
+  }
+}
