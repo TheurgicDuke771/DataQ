@@ -2107,12 +2107,12 @@ def test_a_full_head_is_widened_by_a_draw_across_the_table(
 
     row_bytes = _REAL_PROBE_ROW_BYTES(runner, table="t", schema="s", total_rows=2_000_000)
 
-    assert row_bytes == 44 + (42 + 3 * 2000) + (170 + int(6.5 * 30))
-    assert statements == [
-        "SELECT * FROM main.s.t LIMIT 1000",
+    draw = (
         "SELECT avg(length(`note`)) AS w0, avg(length(to_json(`tags`))) AS w1 "
-        "FROM (SELECT `note`, `tags` FROM main.s.t TABLESAMPLE (0.600000 PERCENT))",
-    ]
+        "FROM (SELECT `note`, `tags` FROM main.s.t TABLESAMPLE (0.600000 PERCENT))"
+    )
+    assert row_bytes == 44 + (42 + 3 * 2000) + (170 + int(6.5 * 30))
+    assert statements == ["SELECT * FROM main.s.t LIMIT 1000", draw]
 
 
 def test_the_head_still_wins_where_the_draw_is_shorter(monkeypatch: pytest.MonkeyPatch) -> None:
