@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "e8a889b4b3d9",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2214-adls-container-sas-test",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/e8/a889b4b3d9/0/metadata.json",
+      "transcript": "/e8/a889b4b3d9/0/full.jsonl",
+      "compact_transcript": "/e8/a889b4b3d9/0/transcript.jsonl",
+      "content_hash": "/e8/a889b4b3d9/0/content_hash.txt",
+      "prompt": "/e8/a889b4b3d9/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 122,
+    "cache_creation_tokens": 89123,
+    "cache_read_tokens": 19230214,
+    "output_tokens": 44287,
+    "api_call_count": 61,
+    "subagent_tokens": {
+      "input_tokens": 188,
+      "cache_creation_tokens": 330893,
+      "cache_read_tokens": 19337505,
+      "output_tokens": 1597,
+      "api_call_count": 94
+    }
+  }
+}
