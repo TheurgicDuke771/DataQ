@@ -18,6 +18,7 @@ import hashlib
 import json
 import re
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -29,7 +30,13 @@ from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.db.models import Asset, CheckSuggestion, Connection, Suite
-from backend.app.services import audit_service, check_service, column_tags, profile_service
+from backend.app.services import (
+    audit_service,
+    check_service,
+    column_tags,
+    profile_service,
+    run_target,
+)
 from backend.app.services.suite_authz import require_permission
 
 log = get_logger(__name__)
@@ -87,17 +94,25 @@ def propose(
     return inserted is not None
 
 
-def _sensitive_columns(session: Session, suite: Suite) -> set[str]:
-    policy = suite.column_policy or {}
-    out = {str(c).lower() for c in policy.get("pii_columns", [])}
+def _value_set_is_sensitive(session: Session, suite: Suite) -> Callable[[str, list[Any]], bool]:
+    """The redaction ladder's own test for the TESTED column (``run_service._known_sensitive``):
+    a governance tag (own or inherited through lineage), the suite's policy, fail-closed mode,
+    or an affirmative name/value PII signal. A value set shown in a check is held to the same
+    bar as a failing sample of that column."""
+    from backend.app.services.run_service import _known_sensitive
+
     asset = session.get(Asset, suite.asset_id) if suite.asset_id else None
-    tags = column_tags.effective_column_tags(session, asset) or {}
-    out |= {c.lower() for c, v in tags.items() if str(v).lower() == column_tags.SENSITIVE}
-    return out
+    tags = column_tags.effective_column_tags(session, asset)
+    policy = suite.column_policy
+
+    def sensitive(column: str, values: list[Any]) -> bool:
+        return _known_sensitive(column, values, policy, tags)
+
+    return sensitive
 
 
 def rules_from_profile(
-    profile: profile_service.ProfileResult, *, sensitive: set[str]
+    profile: profile_service.ProfileResult, *, sensitive: Callable[[str, list[Any]], bool]
 ) -> list[dict[str, Any]]:
     """Deterministic proposals from one profile of the table."""
     rows = profile.row_count
@@ -129,14 +144,15 @@ def rules_from_profile(
         elif (
             col.distinct_count is not None
             and 2 <= col.distinct_count <= MAX_ACCEPTED_VALUES
-            and name.lower() not in sensitive
             and len(col.top_values) == col.distinct_count
         ):
             values = sorted(
                 (v["value"] for v in col.top_values if v.get("value") is not None), key=str
             )
-            if values and all(
-                isinstance(v, (str, int)) and not isinstance(v, bool) for v in values
+            if (
+                values
+                and not sensitive(name, values)
+                and all(isinstance(v, (str, int)) and not isinstance(v, bool) for v in values)
             ):
                 rules.append(
                     {
@@ -149,12 +165,32 @@ def rules_from_profile(
     return rules
 
 
+def _classify_before_proposing(
+    session: Session, suite: Suite, connection: Connection, *, secret_store: SecretStore
+) -> None:
+    """Read the warehouse's column tags and derive the suite's redaction policy first. A new
+    automatic suite has neither — tags are cached by a run, the policy by the REST create path —
+    and a value-set proposal must not be judged against an empty classification."""
+    from backend.app.worker.tasks import _auto_classify_columns
+
+    column_tags.refresh_asset_column_tags(
+        session,
+        suite=suite,
+        connection=connection,
+        target=run_target.resolve_target(connection.type, suite.target),
+        secret_store=secret_store,
+    )
+    _auto_classify_columns(session, suite_id=suite.id)
+    session.refresh(suite)
+
+
 def refresh_from_profile(session: Session, suite: Suite, *, secret_store: SecretStore) -> int:
     """Profile the suite's table once and queue what it supports; returns how many were new."""
     connection = session.get(Connection, suite.connection_id)
     target = suite.target or {}
     if connection is None or not target.get("table"):
         return 0
+    _classify_before_proposing(session, suite, connection, secret_store=secret_store)
     profile = profile_service.profile_connection(
         connection,
         session=session,
@@ -174,7 +210,7 @@ def refresh_from_profile(session: Session, suite: Suite, *, secret_store: Secret
     )
     created = sum(
         propose(session, suite, source="profile", **rule)
-        for rule in rules_from_profile(profile, sensitive=_sensitive_columns(session, suite))
+        for rule in rules_from_profile(profile, sensitive=_value_set_is_sensitive(session, suite))
     )
     state = dict(suite.auto_state or {})
     state["profiled_at"] = datetime.now(UTC).isoformat()
@@ -207,23 +243,35 @@ def _pending(session: Session, suggestion_id: uuid.UUID, user_id: uuid.UUID) -> 
 
 
 def accept(session: Session, suggestion_id: uuid.UUID, *, user_id: uuid.UUID) -> CheckSuggestion:
-    """Create the proposed check (through the same validation as any check) and record it."""
+    """Create the proposed check (through the same validation as any check) and record it.
+
+    The suggestion is claimed under its row lock BEFORE the check is created, so the claim and
+    the check commit together (``create_check`` commits): a concurrent accept waiting on the lock
+    then sees ``accepted`` and gets 409 instead of creating a second check.
+    """
     suggestion = _pending(session, suggestion_id, user_id)
-    check = check_service.create_check(
-        session,
-        suite_id=suggestion.suite_id,
-        name=suggestion.name,
-        kind="expectation",
-        expectation_type=suggestion.expectation_type,
-        config=dict(suggestion.config),
-        warn_threshold=None,
-        fail_threshold=None,
-        critical_threshold=None,
-        actor_id=user_id,
-        origin="suggestion",
-    )
-    decided = session.get(CheckSuggestion, suggestion_id)  # create_check committed
-    assert decided is not None  # nosec B101 — just locked and read above
+    suggestion.status = "accepted"
+    suggestion.decided_by = user_id
+    suggestion.decided_at = datetime.now(UTC)
+    try:
+        check = check_service.create_check(
+            session,
+            suite_id=suggestion.suite_id,
+            name=suggestion.name,
+            kind="expectation",
+            expectation_type=suggestion.expectation_type,
+            config=dict(suggestion.config),
+            warn_threshold=None,
+            fail_threshold=None,
+            critical_threshold=None,
+            actor_id=user_id,
+            origin="suggestion",
+        )
+    except Exception:
+        session.rollback()  # the claim goes with the failed create
+        raise
+    decided = session.get(CheckSuggestion, suggestion_id)
+    assert decided is not None  # nosec B101 — claimed above, committed with the check
     _decide(session, decided, status="accepted", user_id=user_id, check_id=check.id)
     return decided
 

@@ -43,7 +43,7 @@ def test_rules_proposed_from_a_profile() -> None:
             _col("email", nulls=10, distinct=4, top=["a", "b", "c", "d"]),
         ],
     )
-    rules = svc.rules_from_profile(profile, sensitive={"email"})
+    rules = svc.rules_from_profile(profile, sensitive=lambda column, _values: column == "email")
     assert _names(rules) == {
         ("expect_column_values_to_not_be_null", "order_id"),
         ("expect_column_values_to_not_be_null", "created_at"),
@@ -56,7 +56,7 @@ def test_rules_proposed_from_a_profile() -> None:
 
 def test_too_few_rows_propose_nothing() -> None:
     profile = ProfileResult(row_count=40, columns=[_col("order_id", distinct=40)])
-    assert svc.rules_from_profile(profile, sensitive=set()) == []
+    assert svc.rules_from_profile(profile, sensitive=lambda *_: False) == []
 
 
 @pytest.fixture
@@ -147,6 +147,7 @@ def test_refresh_from_profile_queues_the_rules(
     db_session: Any, suite: tuple[Suite, User], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     row, owner = suite
+    monkeypatch.setattr(svc, "_classify_before_proposing", lambda *a, **kw: None)
     monkeypatch.setattr(profile_service, "list_columns", lambda *a, **kw: ["order_id"])
     monkeypatch.setattr(
         profile_service,
@@ -156,3 +157,31 @@ def test_refresh_from_profile_queues_the_rules(
     assert svc.refresh_from_profile(db_session, row, secret_store=None) == 2  # type: ignore[arg-type]
     assert (row.auto_state or {}).get("profiled_at")
     assert len(svc.list_suggestions(db_session, row.id, user_id=owner.id)) == 2
+
+
+@pytest.mark.parametrize(
+    ("column", "values", "policy"),
+    [
+        ("contact", ["ana@example.com", "bo@example.com"], None),  # the values look like PII
+        ("tier", ["gold", "silver"], {"pii_columns": ["tier"]}),  # the suite's policy says so
+        ("tier", ["gold", "silver"], {"require_classification": True}),  # fail-closed, unclassified
+    ],
+)
+def test_a_sensitive_value_set_is_never_proposed(
+    db_session: Any, suite: tuple[Suite, User], column: str, values: list[str], policy: Any
+) -> None:
+    row, _ = suite
+    row.column_policy = policy
+    db_session.commit()
+    profile = ProfileResult(row_count=500, columns=[_col(column, nulls=1, distinct=2, top=values)])
+    rules = svc.rules_from_profile(profile, sensitive=svc._value_set_is_sensitive(db_session, row))
+    assert rules == []
+
+
+def test_an_ordinary_value_set_is_proposed(db_session: Any, suite: tuple[Suite, User]) -> None:
+    row, _ = suite
+    profile = ProfileResult(
+        row_count=500, columns=[_col("tier", nulls=1, distinct=2, top=["gold", "silver"])]
+    )
+    rules = svc.rules_from_profile(profile, sensitive=svc._value_set_is_sensitive(db_session, row))
+    assert [r["config"]["value_set"] for r in rules] == [["gold", "silver"]]
