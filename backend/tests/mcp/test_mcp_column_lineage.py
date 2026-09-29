@@ -110,3 +110,20 @@ def test_get_asset_edges_carry_column_coverage(db_session: Any, monkeypatch: Any
     assert by_target[str(w["stg"].id)]["columns"] == (("EMAIL", "EMAIL"),)
     assert by_target[str(w["mart"].id)]["column_coverage"] == "none_recorded"
     assert by_target[str(w["mart"].id)]["columns"] is None
+
+
+def test_get_asset_says_which_columns_are_masked_through_lineage(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    w = _world(db_session)
+    w["raw"].column_tags = {"email": "sensitive"}
+    db_session.commit()
+    _as(monkeypatch, db_session, w["owner"])
+    out = server.get_asset(str(w["stg"].id))
+    assert out["inherited_classifications"] == [
+        {
+            "column": "email",
+            "sources": [{"asset_id": str(w["raw"].id), "asset_name": "RAW", "column": "EMAIL"}],
+        }
+    ]
+    assert out["inherited_classifications_truncated"] is False

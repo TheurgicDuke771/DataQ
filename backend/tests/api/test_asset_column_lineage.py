@@ -188,3 +188,28 @@ def test_asset_detail_unrecorded_grain_is_unknown_not_none_recorded(
     body = client.get(f"/api/v1/assets/{other}").json()
     (edge,) = [e for e in body["lineage_edges"] if e["target"] == str(other)]
     assert edge["columns"] is None and edge["column_coverage"] == "unknown"
+
+
+def test_asset_detail_lists_inherited_classifications(
+    client: TestClient, world: dict[str, Any], db_session: Any
+) -> None:
+    from backend.app.db.models import Asset
+
+    a = world["a"]
+    raw = db_session.get(Asset, a["DB.RAW.ORDERS"])
+    raw.column_tags = {"customer_id": "sensitive"}
+    db_session.commit()
+    body = client.get(f"/api/v1/assets/{a['DB.STG.ORDERS']}").json()
+    assert body["inherited_classifications"] == [
+        {
+            "column": "customer_id",
+            "sources": [
+                {
+                    "asset_id": str(a["DB.RAW.ORDERS"]),
+                    "asset_name": "DB.RAW.ORDERS",
+                    "column": "CUSTOMER_ID",
+                }
+            ],
+        }
+    ]
+    assert body["inherited_classifications_truncated"] is False

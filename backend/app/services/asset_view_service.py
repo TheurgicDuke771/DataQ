@@ -31,7 +31,7 @@ from backend.app.lineage.warehouse import (
     WAREHOUSE_LINEAGE_CONNECTION_TYPES,
     snapshot_lineage_connection_types,
 )
-from backend.app.services import audit_service, scoring_settings_service
+from backend.app.services import audit_service, column_tags, scoring_settings_service
 from backend.app.services.rollup import (
     AGGREGATABLE_RUN_STATUSES,
     evaluated_total,
@@ -205,6 +205,23 @@ class Scorecard:
 
 
 @dataclass(frozen=True)
+class InheritedSource:
+    """An upstream column whose ``sensitive`` classification a column inherits."""
+
+    asset_id: uuid.UUID
+    asset_name: str
+    column: str
+
+
+@dataclass(frozen=True)
+class InheritedClassification:
+    """A column masked as ``sensitive`` only because recorded lineage says it comes from one."""
+
+    column: str
+    sources: list[InheritedSource]
+
+
+@dataclass(frozen=True)
 class AssetDetail:
     """Asset detail: the workspace-true summary + the caller's per-suite breakdown
     + lineage. ``suites`` lists only suites the caller can view (ADR 0027);
@@ -226,6 +243,10 @@ class AssetDetail:
     # can be qualified ("view-level only", "last refreshed 2h ago") rather than presented as
     # complete + current (#828, #858).
     warehouse_lineage_status: list[WarehouseLineageStatus] = field(default_factory=list)
+    # Columns masked only through lineage (#2114). None = could not be determined (a lineage read
+    # failed), never "none inherited"; truncated = the walk hit its depth cap.
+    inherited_classifications: list[InheritedClassification] | None = field(default_factory=list)
+    inherited_classifications_truncated: bool = False
 
 
 # ── internals ────────────────────────────────────────────────────────────────
@@ -450,6 +471,43 @@ def list_visible_assets(
     return [_roll_up(asset, by_asset.get(asset.id, [])) for asset in assets]
 
 
+def _inherited_classifications(
+    session: Session, asset: Asset
+) -> tuple[list[InheritedClassification] | None, bool]:
+    """What `column_tags.effective_column_tags` adds to the asset's own tags, and from where.
+
+    Fail-soft in a SAVEPOINT like the redaction path: a lineage read error reports None
+    (unknown), and the asset page still renders.
+    """
+    try:
+        with session.begin_nested():
+            cells, truncated = column_tags.inherited_sensitive_with_truncation(session, asset)
+    except Exception as exc:
+        log.warning(
+            "inherited_classifications_failed",
+            asset_id=str(asset.id),
+            error_type=type(exc).__name__,
+        )
+        return None, False
+    ids = {aid for sources in cells.values() for aid, _ in sources}
+    names: dict[uuid.UUID, str] = (
+        dict(session.execute(select(Asset.id, Asset.name).where(Asset.id.in_(ids))).tuples().all())
+        if ids
+        else {}
+    )
+    entries = [
+        InheritedClassification(
+            column=column,
+            sources=[
+                InheritedSource(asset_id=aid, asset_name=names.get(aid, str(aid)), column=col)
+                for aid, col in sources
+            ],
+        )
+        for column, sources in sorted(cells.items())
+    ]
+    return entries, truncated
+
+
 def get_visible_asset(
     session: Session, asset_id: uuid.UUID, *, user_id: uuid.UUID, include_all: bool = False
 ) -> AssetDetail:
@@ -487,6 +545,7 @@ def get_visible_asset(
     # One grouped lookup of "which of these assets has any suite" — the structural
     # `is_monitored` fact on the nodes.
     has_suite = _monitored_ids(session, neighbour_ids)
+    inherited, inherited_truncated = _inherited_classifications(session, asset)
     return AssetDetail(
         summary=summary,
         suites=composing,
@@ -499,6 +558,8 @@ def get_visible_asset(
         # off `GET /connections` (unscoped since Week 2).
         failing_lineage_sources=failing_lineage_sources(session),
         warehouse_lineage_status=warehouse_lineage_status(session),
+        inherited_classifications=inherited,
+        inherited_classifications_truncated=inherited_truncated,
     )
 
 

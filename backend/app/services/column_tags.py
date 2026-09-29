@@ -233,13 +233,21 @@ def _cell_sensitive(tags: dict[str, str] | None, column: str) -> bool:
 
 
 def inherited_sensitive(session: Any, asset: Asset) -> dict[str, list[tuple[Any, str]]]:
+    """``inherited_sensitive_with_truncation`` without the truncation flag."""
+    return inherited_sensitive_with_truncation(session, asset)[0]
+
+
+def inherited_sensitive_with_truncation(
+    session: Any, asset: Asset
+) -> tuple[dict[str, list[tuple[Any, str]]], bool]:
     """Columns of ``asset`` that inherit ``sensitive`` from an upstream column through RECORDED
     column lineage, with the upstream ``(asset_id, column)`` cells that justify it.
 
     Additive-only by construction: a column with ANY own warehouse verdict (sensitive or public)
     is skipped — the steward looked at this column, and their answer wins — and nothing ever
     inherits ``public``. Only upstream assets whose tags DataQ has read (a suite ran on them)
-    contribute; an unread upstream contributes nothing, never a clearance.
+    contribute; an unread upstream contributes nothing, never a clearance. The flag is True when
+    the lineage walk hit its depth cap, so a column further upstream was not considered.
     """
     from sqlalchemy import select
 
@@ -247,13 +255,13 @@ def inherited_sensitive(session: Any, asset: Asset) -> dict[str, list[tuple[Any,
     from backend.app.lineage.columns import MAX_TRACE_DEPTH, upstream_column_sources
 
     if not get_settings().lineage_classification_propagation:
-        return {}
+        return {}, False
     walk = upstream_column_sources(session, asset.id, max_depth=MAX_TRACE_DEPTH)
     if walk.truncated:
         # Never below the own-tags floor, but a column beyond the cap is NOT inherited — say so.
         log.warning("column_tags_propagation_truncated", asset_id=str(asset.id))
     if not walk.sources:
-        return {}
+        return {}, walk.truncated
     upstream_ids = {aid for cells in walk.sources.values() for aid, _ in cells}
     tags_by_asset: dict[Any, dict[str, str] | None] = dict(
         session.execute(select(Asset.id, Asset.column_tags).where(Asset.id.in_(upstream_ids)))
@@ -272,7 +280,7 @@ def inherited_sensitive(session: Any, asset: Asset) -> dict[str, list[tuple[Any,
         )
         if hits:
             out[key] = hits
-    return out
+    return out, walk.truncated
 
 
 def effective_column_tags(session: Any, asset: Asset | None) -> dict[str, str] | None:

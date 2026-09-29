@@ -185,6 +185,24 @@ class ScorecardRead(ApiModel):
     unclassified_checks: int
 
 
+class InheritedSourceRead(ApiModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    asset_id: uuid.UUID
+    asset_name: str
+    column: str
+
+
+class InheritedClassificationRead(ApiModel):
+    """A column masked as sensitive only because recorded lineage traces it to a sensitive
+    upstream column. Tagging the column `public` in the warehouse overrides the inheritance."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    column: str
+    sources: list[InheritedSourceRead]
+
+
 class AssetDetailRead(ApiModel):
     """Asset detail: the workspace-true summary + the caller's per-suite breakdown
     + upstream/downstream lineage. `suites` lists only suites the caller can view
@@ -205,6 +223,11 @@ class AssetDetailRead(ApiModel):
     failing_lineage_sources: list[LineageSourceHealthRead] = Field(default_factory=list)
     # Non-empty ⇒ a warehouse lineage source is coarse (degraded tier) or failing.
     warehouse_lineage_status: list[WarehouseLineageStatusRead] = Field(default_factory=list)
+    # null = could not be determined (a lineage read failed), not "nothing inherited".
+    inherited_classifications: list[InheritedClassificationRead] | None = Field(
+        default_factory=list
+    )
+    inherited_classifications_truncated: bool = False
 
 
 class ColumnTraceAssetRead(ApiModel):
