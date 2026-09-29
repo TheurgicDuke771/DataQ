@@ -830,8 +830,9 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
         options: [
           { value: 'row_count', label: 'Row count' },
           { value: 'freshness_age_hours', label: 'Freshness age (hours)' },
+          { value: 'column_profile', label: 'Column profile (every column)' },
         ],
-        help: 'What this check measures every run and learns a baseline for.',
+        help: 'What this check measures every run and learns a baseline for. Column profile measures every column’s null rate and distinct count in one query and names the columns that moved; a distinct count is flagged only when it falls.',
       },
       {
         name: 'column',

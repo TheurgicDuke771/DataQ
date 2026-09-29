@@ -187,6 +187,30 @@ describe('CheckTrend', () => {
     expect(screen.queryByText(/μ=3049/)).not.toBeInTheDocument();
   });
 
+  it('says a column-profile baseline is per column, never "no observations captured yet"', async () => {
+    mockHistory.mockResolvedValue([
+      { run_id: 'r1', status: 'pass', metric_value: 1.2, created_at: '2026-06-10T00:00:00Z' },
+    ]);
+    mockBaseline.mockResolvedValue({
+      kind: 'anomaly',
+      captured_at: '2026-06-08T00:00:00Z',
+      baseline: {
+        version: 1,
+        target_metric: 'column_profile',
+        observations: [
+          { ts: '2026-06-09T00:00:00Z', values: { 'email\u001fnull_pct': 1 } },
+          { ts: '2026-06-10T00:00:00Z', values: { 'email\u001fnull_pct': 2 } },
+        ],
+      },
+    });
+    render(<CheckTrend suiteId="s1" check={anomalyCheck} />);
+
+    expect(await screen.findByTestId('column-profile-baseline-note')).toHaveTextContent(
+      '2 run(s) recorded',
+    );
+    expect(screen.queryByText(/no observations captured yet/)).not.toBeInTheDocument();
+  });
+
   it('shows honest "no observations" copy (never "learned band") when the check has no baseline yet', async () => {
     mockHistory.mockResolvedValue([
       { run_id: 'r1', status: 'pass', metric_value: 0.4, created_at: '2026-06-10T00:00:00Z' },
