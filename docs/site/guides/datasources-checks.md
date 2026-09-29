@@ -832,6 +832,37 @@ with a classified reason. Your GX checks are unaffected.
 expression, so DataQ builds every rule itself: columns must be plain identifiers, list values
 are sent as quoted literals, and limits must be numbers or ISO dates.
 
+**Stream mode.** Each DQX check has a **Read** setting. **Snapshot** (the default) evaluates
+the whole table every run. **Stream** evaluates only the rows appended since the check's last
+successful run, which is what you want on a Lakeflow streaming table or any Delta table that
+grows by appends. It runs in the same one job per run, on your existing schedule. The job reads
+the table as a Delta stream (`readStream` with an `availableNow` trigger), counts failing rows
+per rule, and stops once it has caught up.
+
+- **Where the stream resumes.** DataQ records the Delta version the stream reached with each
+  result, and the next run starts from there. A run whose result was never saved, for example
+  because it was cancelled, is re-read next time instead of skipped. The first run of a stream
+  check reads the whole table.
+- **What the result says.** The failing-row count and the row count cover only the new rows.
+  The result also records the version range it read. A run with no new rows is recorded as
+  `skip`, not `pass`.
+- **Setup.** Set the connection's **DQX checkpoint volume** (`catalog.schema.volume`). Spark
+  needs somewhere to keep a stream checkpoint while the job runs, and serverless compute
+  refuses both temporary and DBFS locations. DataQ uses a fresh folder in that volume for each
+  run and deletes it afterwards. The token needs `READ VOLUME` and `WRITE VOLUME` on it. A
+  stream check on a connection without a volume errors on its own; your other checks still
+  run.
+- **Limits.**
+  - Only appended rows are evaluated. A commit that rewrites existing rows (`UPDATE`,
+    `DELETE`, `MERGE`, an overwrite) is skipped, including any rows it inserted. The result
+    counts the skipped commits in `change_commits_skipped`. Use snapshot mode on a table that
+    is not append-only.
+  - If the table was replaced, or its history no longer reaches the recorded version, the
+    stream restarts from the whole table and the result says why (`restarted`).
+  - Run a stream check more often than the table's `VACUUM` retention (7 days by default).
+    Otherwise the files it needs to resume from can be gone and the job fails. To restart a
+    stream check from the whole table, run it once in snapshot mode.
+
 ### Freshness monitor (all datasources — ADR 0012/0030)
 
 *How stale is the target?* Point it at the load/updated **timestamp column**; the check
