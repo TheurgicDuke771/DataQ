@@ -217,7 +217,7 @@ class _Boom:
         self._calls.append("boom")
         raise RuntimeError("channel down")
 
-    def publish_poll_staleness(self, session, report):  # type: ignore[no-untyped-def]
+    def publish_workspace_signal(self, session, report):  # type: ignore[no-untyped-def]
         self._calls.append("boom")
         raise RuntimeError("channel down")
 
@@ -233,7 +233,7 @@ class _Ok:
         self._calls.append("ok")
         return True  # #1101: the composite counts a channel as delivered only if it says so
 
-    def publish_poll_staleness(self, session, report):  # type: ignore[no-untyped-def]
+    def publish_workspace_signal(self, session, report):  # type: ignore[no-untyped-def]
         self._calls.append("ok")
         return True
 

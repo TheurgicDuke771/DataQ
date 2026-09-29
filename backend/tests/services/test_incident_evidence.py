@@ -330,6 +330,9 @@ def test_upstream_pipeline_layer_with_delay(db_session: Any, world: dict[str, An
     assert up["pipeline_or_dag_id"] == "load_orders"
     assert up["duration_seconds"] == pytest.approx(600, abs=1)
     assert up["delay_seconds_vs_history"] == pytest.approx(540, abs=2)  # 600 - 60
+    # One prior run is a mean, not a baseline (#1653): no z-score is claimed from it.
+    assert up["duration_baseline_points"] == 1
+    assert up["duration_z_score"] is None
 
 
 def test_upstream_pipeline_layer_resolves_airflow_default_run_id(

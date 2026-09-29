@@ -105,6 +105,10 @@ class Settings(BaseSettings):
     # process, NOT the worker.
     poll_staleness_alert_after_s: int = 1800
 
+    # Pipeline-baseline alert (#1653): a bound pipeline whose latest successful run is this many
+    # standard deviations from its recent runs' duration, or that is overdue. 0 disables.
+    pipeline_baseline_z_threshold: float = Field(default=3.0, ge=0)
+
     # How far back a #1186 trigger_env_near_miss row counts as "current" (#1199).
     trigger_env_near_miss_recent_hours: int = Field(default=48, ge=0)
 

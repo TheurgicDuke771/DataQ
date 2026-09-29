@@ -11,8 +11,8 @@ from backend.app.alerting.base import (
     AlertPublisher,
     AlertUndeliverableError,
     ConnectionHealthReport,
-    PollStalenessReport,
     RunReport,
+    WorkspaceSignalReport,
     mark_already_logged,
 )
 from backend.app.core.logging import get_logger
@@ -29,7 +29,7 @@ def _fan_out_delivered_first(
     undeliverable_message: str,
 ) -> bool:
     """Shared delivered-first fan-out for the two health-family seam methods
-    (:meth:`CompositePublisher.publish_health` / ``publish_poll_staleness``): dispatch ``send``
+    (:meth:`CompositePublisher.publish_health` / ``publish_workspace_signal``): dispatch ``send``
     to every publisher, isolating a raising channel from the rest, and raise when **nothing**
     went out — every channel FAILED (re-raise the last error) or every channel quietly SKIPPED
     as unconfigured (raise :class:`AlertUndeliverableError`).
@@ -76,7 +76,7 @@ class CompositePublisher:
     def publish_health(self, session: Session, report: ConnectionHealthReport) -> bool:
         """Fan a connection poll-health edge out to every channel, isolating failures — the same
         contract as :meth:`publish` (#837), with the same delivered-first hinge as
-        :meth:`publish_poll_staleness` below (#1101): the caller claims `health_alerted_at`
+        :meth:`publish_workspace_signal` below (#1101): the caller claims `health_alerted_at`
         BEFORE dispatching the send (#842/#843), so a quiet "every channel is unconfigured" must
         not read as delivered — that would permanently suppress the edge on a fresh install with
         zero channels configured, since the flag would already be set by the time an operator
@@ -92,7 +92,7 @@ class CompositePublisher:
             ),
         )
 
-    def publish_poll_staleness(self, session: Session, report: PollStalenessReport) -> bool:
+    def publish_workspace_signal(self, session: Session, report: WorkspaceSignalReport) -> bool:
         """Fan the workspace poll-staleness edge (#1052) out to every channel with the same
         isolation contract as the other two seam methods — with one difference that the caller
         relies on: **at least one channel must actually send** for the edge to count as
@@ -101,7 +101,7 @@ class CompositePublisher:
         """
         return _fan_out_delivered_first(
             self._publishers,
-            lambda publisher: publisher.publish_poll_staleness(session, report),
+            lambda publisher: publisher.publish_workspace_signal(session, report),
             log_event="channel_staleness_publish_failed",
             log_context={"state": report.state},
             undeliverable_message=(

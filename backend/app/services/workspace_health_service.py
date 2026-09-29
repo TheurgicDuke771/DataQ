@@ -94,7 +94,7 @@ def run_poll_staleness_check(session: Session, *, now: datetime | None = None) -
 
     if stale and not outstanding:
         try:
-            get_health_publisher().publish_poll_staleness(session, report)
+            get_health_publisher().publish_workspace_signal(session, report)
         except AlertUndeliverableError:
             # No channel configured — nothing was sent, so the flag stays unset and every later tick
             # retries; the moment an operator wires a channel.
@@ -125,7 +125,7 @@ def run_poll_staleness_check(session: Session, *, now: datetime | None = None) -
             threshold_seconds=report.threshold_seconds,
         )
         try:
-            get_health_publisher().publish_poll_staleness(session, recovery)
+            get_health_publisher().publish_workspace_signal(session, recovery)
         except AlertUndeliverableError:
             # Channels got UNconfigured while an alert was outstanding.
             session.rollback()

@@ -33,7 +33,6 @@ log = get_logger(__name__)
 # How many recent metric readings the trend layer carries, and how many prior
 # pipeline runs the delay-vs-history baseline averages over.
 _TREND_LIMIT = 10
-_PIPELINE_HISTORY_LIMIT = 10
 # Cross-suite same-asset siblings (#1635): how far back a sibling's latest result
 # still counts as live context, and how many distinct checks the layer carries.
 _SAME_ASSET_SIBLING_WINDOW = timedelta(days=7)
@@ -419,44 +418,25 @@ def _upstream_pipeline_layer(session: Session, *, run: Run) -> dict[str, Any] | 
         "status": pipeline_run.status,
         "started_at": _iso(pipeline_run.started_at),
         "finished_at": _iso(pipeline_run.finished_at),
-        "duration_seconds": _duration_seconds(pipeline_run),
-        "delay_seconds_vs_history": _delay_vs_history(session, pipeline_run),
+        **_duration_layer(session, pipeline_run),
     }
 
 
-def _duration_seconds(pipeline_run: PipelineRun) -> float | None:
-    if pipeline_run.started_at is None or pipeline_run.finished_at is None:
-        return None
-    return (pipeline_run.finished_at - pipeline_run.started_at).total_seconds()
+def _duration_layer(session: Session, pipeline_run: PipelineRun) -> dict[str, Any]:
+    """The run's duration against the same pipeline's prior successful runs (#1653) — the one
+    baseline the pipeline-baseline alert uses too."""
+    # Local import: `alerting.render` imports this module, and the baseline imports alerting.
+    from backend.app.services.pipeline_baseline import run_duration_seconds, score_duration
 
-
-def _delay_vs_history(session: Session, pipeline_run: PipelineRun) -> float | None:
-    """This pipeline run's duration minus the average of its recent prior succeeded
-    runs — positive = slower than usual. ``None`` when either duration or the
-    baseline (needs ≥1 prior completed run) is unavailable (skip gracefully).
-    """
-    this_duration = _duration_seconds(pipeline_run)
-    if this_duration is None:
-        return None
-    prior = session.execute(
-        select(PipelineRun.started_at, PipelineRun.finished_at)
-        .where(
-            PipelineRun.provider == pipeline_run.provider,
-            PipelineRun.pipeline_or_dag_id == pipeline_run.pipeline_or_dag_id,
-            PipelineRun.id != pipeline_run.id,
-            PipelineRun.status == "succeeded",
-            PipelineRun.started_at.is_not(None),
-            PipelineRun.finished_at.is_not(None),
-            PipelineRun.created_at < pipeline_run.created_at,
-        )
-        .order_by(PipelineRun.created_at.desc())
-        .limit(_PIPELINE_HISTORY_LIMIT)
-    ).all()
-    durations = [float((fin - start).total_seconds()) for start, fin in prior]
-    if not durations:
-        return None
-    baseline = sum(durations) / len(durations)
-    return this_duration - baseline
+    score = score_duration(session, pipeline_run)
+    return {
+        "duration_seconds": run_duration_seconds(pipeline_run),
+        "delay_seconds_vs_history": None if score is None else score.delay_seconds,
+        "duration_z_score": (
+            None if score is None or score.z_score is None else round(score.z_score, 2)
+        ),
+        "duration_baseline_points": None if score is None else score.points,
+    }
 
 
 def _blast_radius_layer(session: Session, *, asset: Asset | None) -> dict[str, Any]:

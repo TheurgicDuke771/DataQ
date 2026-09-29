@@ -219,6 +219,43 @@ class ResultPublisher(Protocol):
     def publish(self, session: Session, report: RunReport) -> None: ...
 
 
+@dataclass(frozen=True)
+class PipelineBaselineReport:
+    """A bound pipeline running unusually long or short, or overdue (#1653) — measured against
+    its own run history, before any DQ check has had a chance to fail.
+    """
+
+    state: HealthState
+    provider: str
+    pipeline_or_dag_id: str
+    env: str
+    #: The latest succeeded run's duration, and how it compares to the prior ones (None when the
+    #: duration is not the reason, or on recovery).
+    duration_seconds: float | None = None
+    mean_duration_seconds: float | None = None
+    z_score: float | None = None
+    #: Hours since the last succeeded run, and the cadence threshold it exceeded.
+    hours_since_last_success: float | None = None
+    overdue_threshold_hours: float | None = None
+
+    @property
+    def is_failing(self) -> bool:
+        """Whether this is the failure edge (vs the recovery edge)."""
+        return self.state == HEALTH_FAILING
+
+    @property
+    def is_overdue(self) -> bool:
+        return self.overdue_threshold_hours is not None
+
+    @property
+    def is_slow_or_fast(self) -> bool:
+        return self.z_score is not None
+
+
+#: The workspace-level signals a `HealthPublisher` delivers outside any single connection.
+WorkspaceSignalReport = PollStalenessReport | PipelineBaselineReport
+
+
 @runtime_checkable
 class HealthPublisher(Protocol):
     """Sends a connection's poll-health transition to an external channel."""
@@ -230,10 +267,10 @@ class HealthPublisher(Protocol):
         """
         ...
 
-    def publish_poll_staleness(self, session: Session, report: PollStalenessReport) -> bool:
-        """Deliver the workspace-wide poll-staleness edge (#1052); return whether a
-        message actually left this process (``False`` = quietly skipped, e.g. the
-        channel is unconfigured — a skip must never read as delivered).
+    def publish_workspace_signal(self, session: Session, report: WorkspaceSignalReport) -> bool:
+        """Deliver a workspace-level signal edge — poll staleness (#1052) or a pipeline baseline
+        (#1653); return whether a message actually left this process (``False`` = quietly
+        skipped, e.g. the channel is unconfigured — a skip must never read as delivered).
         """
         ...
 

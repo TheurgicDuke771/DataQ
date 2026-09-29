@@ -104,6 +104,35 @@ push). Disabling the push does **not** blind the UI: the connections list still 
 failing poll with its failure count, and the lineage panel still warns rather than
 showing a confident empty graph.
 
+## Pipeline duration and overdue alerts
+
+A poll-health alert says DataQ can't see the pipeline. This one says it can, and the pipeline
+itself looks wrong, usually before any check on its data has failed.
+
+Every 10 minutes DataQ looks at each pipeline or DAG that a trigger binding points a suite at,
+and compares it with that pipeline's own history in the same environment:
+
+- **Unusual duration.** The latest successful run is scored against the previous 20 successful
+  runs. At 3 or more standard deviations from their mean, in either direction, DataQ alerts.
+  A run that finished far faster than usual often loaded less data than usual. It needs at
+  least 5 earlier runs before it scores anything, and a pipeline that always takes exactly the
+  same time is not flagged for a second's wobble: the spread is never taken as less than 10% of
+  the mean.
+- **Overdue.** No successful run within the pipeline's usual cadence, which is its largest gap
+  between successful runs plus 25%, the same threshold DataQ suggests for a freshness check on a
+  bound suite. The suites it triggers have not run, so their data is going stale before any
+  freshness check says so.
+
+For example, `load_orders` usually takes 12 to 14 minutes. Today's run took 41 minutes, so DataQ
+sends *pipeline ran much slower than usual: airflow load_orders (prod)* with the run's duration,
+the usual duration and how far out it was. When the next run is back to normal, a recovery
+message follows.
+
+Like poll-health alerts, these go to the **workspace** channel, fire once on the crossing, send
+recovery, and are retried until a channel actually delivers them. Tune with
+`PIPELINE_BASELINE_Z_THRESHOLD` (default `3.0`; `0` turns the check off). The incident evidence
+card shows the same comparison for the pipeline run that triggered a failing suite.
+
 ## Troubleshooting
 
 | Symptom | Check |

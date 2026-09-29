@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from backend.app.alerting.base import ConnectionHealthReport, PollStalenessReport, RunReport
+from backend.app.alerting.base import ConnectionHealthReport, RunReport, WorkspaceSignalReport
 from backend.app.core.logging import get_logger
 
 if TYPE_CHECKING:
@@ -34,14 +34,14 @@ class NoopPublisher:
         )
         # The explicit test double COUNTS as delivered — it exists so tests can exercise the
         # stamped path; the real "nothing was sent" case is a real channel returning False (#1101,
-        # mirroring publish_poll_staleness).
+        # mirroring publish_workspace_signal).
         return True
 
-    def publish_poll_staleness(self, session: Session, report: PollStalenessReport) -> bool:
+    def publish_workspace_signal(self, session: Session, report: WorkspaceSignalReport) -> bool:
         log.debug(
             "staleness_publish_noop",
             state=report.state,
-            connection_count=report.connection_count,
+            signal=type(report).__name__,
         )
         # The explicit test double COUNTS as delivered — it exists so tests can exercise the stamped
         # path; the real "nothing was sent" case is a real channel returning False.

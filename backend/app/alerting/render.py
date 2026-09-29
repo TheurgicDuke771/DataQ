@@ -9,8 +9,10 @@ from backend.app.alerting.base import (
     CheckReport,
     ConnectionHealthReport,
     IncidentCard,
+    PipelineBaselineReport,
     PollStalenessReport,
     RunReport,
+    WorkspaceSignalReport,
 )
 from backend.app.services.incident_evidence import blast_radius_assets_and_qualifiers
 
@@ -590,6 +592,88 @@ def staleness_impact(report: PollStalenessReport) -> str:
         "not ingested, bound suites are not triggered, and per-connection health alerts "
         "cannot fire — this alert comes from the API process for exactly that reason."
     )
+
+
+def _pipeline_label(report: PipelineBaselineReport) -> str:
+    return f"{report.provider} {report.pipeline_or_dag_id} ({report.env})"
+
+
+def pipeline_headline(report: PipelineBaselineReport) -> str:
+    """One-line summary of a pipeline-baseline edge (#1653)."""
+    label = _pipeline_label(report)
+    if not report.is_failing:
+        return f"DataQ — pipeline back to normal: {label}"
+    if report.is_overdue:
+        return f"DataQ — pipeline overdue: {label}"
+    if report.duration_seconds is not None and report.mean_duration_seconds is not None:
+        direction = "slower" if report.duration_seconds > report.mean_duration_seconds else "faster"
+        return f"DataQ — pipeline ran much {direction} than usual: {label}"
+    return f"DataQ — pipeline outside its baseline: {label}"
+
+
+def pipeline_facts(report: PipelineBaselineReport) -> list[tuple[str, str]]:
+    """``(label, value)`` pairs for a pipeline-baseline edge."""
+    pairs: list[tuple[str, str | None]] = [
+        ("Pipeline", report.pipeline_or_dag_id),
+        ("Provider", report.provider),
+        ("Environment", report.env),
+        ("Last run took", format_duration(report.duration_seconds)),
+        ("Usually takes", format_duration(report.mean_duration_seconds)),
+        ("Deviation", f"{report.z_score:.1f} standard deviations" if report.z_score else None),
+        (
+            "Since last successful run",
+            (
+                format_duration(report.hours_since_last_success * 3600)
+                if report.hours_since_last_success is not None
+                else None
+            ),
+        ),
+        (
+            "Expected within",
+            (
+                format_duration(report.overdue_threshold_hours * 3600)
+                if report.overdue_threshold_hours is not None
+                else None
+            ),
+        ),
+    ]
+    return [(label, value) for label, value in pairs if value]
+
+
+def pipeline_impact(report: PipelineBaselineReport) -> str:
+    """What the pipeline edge means for data quality, or the all-clear."""
+    if not report.is_failing:
+        return "The pipeline's latest run is within its usual duration and schedule again."
+    if report.is_overdue:
+        return (
+            "No successful run has arrived within the pipeline's usual cadence (its largest "
+            "observed gap plus 25%). Suites bound to it have not been triggered, so their data "
+            "is going stale before any freshness check says so."
+        )
+    return (
+        "The latest successful run took far longer or shorter than its recent runs. A run "
+        "that is unusually fast often loaded less data than usual; check the suites bound to "
+        "it before trusting their results."
+    )
+
+
+def signal_headline(report: WorkspaceSignalReport) -> str:
+    """Headline for any workspace signal the health publishers deliver."""
+    if isinstance(report, PipelineBaselineReport):
+        return pipeline_headline(report)
+    return staleness_headline(report)
+
+
+def signal_facts(report: WorkspaceSignalReport) -> list[tuple[str, str]]:
+    if isinstance(report, PipelineBaselineReport):
+        return pipeline_facts(report)
+    return staleness_facts(report)
+
+
+def signal_impact(report: WorkspaceSignalReport) -> str:
+    if isinstance(report, PipelineBaselineReport):
+        return pipeline_impact(report)
+    return staleness_impact(report)
 
 
 def run_metadata(report: RunReport) -> list[tuple[str, str]]:

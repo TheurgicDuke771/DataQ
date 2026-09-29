@@ -7,11 +7,11 @@ from urllib.parse import urlparse
 import httpx
 from sqlalchemy.orm import Session
 
-from backend.app.alerting.base import ConnectionHealthReport, PollStalenessReport, RunReport
+from backend.app.alerting.base import ConnectionHealthReport, RunReport, WorkspaceSignalReport
 from backend.app.alerting.card import (
     render_teams_health_message,
     render_teams_message,
-    render_teams_staleness_message,
+    render_teams_signal_message,
 )
 from backend.app.alerting.routing import route_for
 from backend.app.core.logging import get_logger
@@ -116,7 +116,7 @@ class TeamsPublisher:
         )
         return True
 
-    def publish_poll_staleness(self, session: Session, report: PollStalenessReport) -> bool:
+    def publish_workspace_signal(self, session: Session, report: WorkspaceSignalReport) -> bool:
         """Post the workspace poll-staleness edge (#1052) to the workspace webhook — same
         resolution as :meth:`publish_health`, but returning **whether a message was actually
         posted**: an unconfigured/ineligible webhook is ``False``, never a quiet success (review
@@ -133,13 +133,13 @@ class TeamsPublisher:
             log.warning("teams_webhook_host_not_allowed", signal="poll_staleness")
             return False
         response = httpx.post(
-            webhook, json=render_teams_staleness_message(report), timeout=self._timeout
+            webhook, json=render_teams_signal_message(report), timeout=self._timeout
         )
         response.raise_for_status()
         log.info(
             "teams_staleness_alert_sent",
             state=report.state,
-            connection_count=report.connection_count,
+            signal=type(report).__name__,
         )
         return True
 
