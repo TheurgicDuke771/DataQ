@@ -139,11 +139,11 @@ def test_revoke_all_for_user_is_attributed_to_the_actor(
     assert all(
         k.revoked_at is not None for k in db_session.query(ApiKey).filter_by(user_id=user.id)
     )
-    events = (
-        db_session.query(AuditEvent)
-        .filter_by(action="api_key.revoke")
-        .order_by(AuditEvent.occurred_at)
-        .all()
+    # One transaction shares one now(), so the events tie on occurred_at: compare the
+    # attribution as a multiset, never by position (#2247).
+    actors = sorted(
+        str(e.actor_user_id)
+        for e in db_session.query(AuditEvent).filter_by(action="api_key.revoke")
     )
-    assert [e.actor_user_id for e in events][-2:] == [other_user.id, other_user.id]
+    assert actors == sorted([str(user.id), str(other_user.id), str(other_user.id)])
     assert svc.revoke_all_for_user(db_session, user.id, actor=other_user) == 0
