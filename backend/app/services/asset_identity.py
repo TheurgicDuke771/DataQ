@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -114,13 +115,36 @@ def _resolve_generic_sql(
 def _resolve_adls_gen2(config: dict[str, Any], target: dict[str, Any]) -> AssetIdentity:
     container = _require(config, "container", "adls_gen2", "config")
     account_url = _require(config, "account_url", "adls_gen2", "config")
+    name = _flatfile_name(target, "adls_gen2")
+    emulator = _path_style_account(account_url)
+    if emulator is not None:
+        authority, account = emulator
+        return AssetIdentity(namespace=f"abfss://{container}@{authority}/{account}", name=name)
     host = _url_host(account_url)
     account = host.split(".")[0] if host else ""
     if not account:
         raise ValueError("adls_gen2 asset identity requires a valid 'account_url'")
     namespace = f"abfss://{container}@{_adls_dfs_authority(host, account)}"
-    name = _flatfile_name(target, "adls_gen2")
     return AssetIdentity(namespace=namespace, name=name)
+
+
+def _path_style_account(account_url: str) -> tuple[str, str] | None:
+    """``(endpoint authority, account)`` for a path-style endpoint, or ``None``.
+
+    An emulator such as Azurite serves `http://127.0.0.1:10000/<account>`: the account is the
+    first path segment, and the endpoint is not the public cloud (#2199).
+    """
+    parsed = urlparse(account_url)
+    host = parsed.hostname or ""
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        if host != "localhost":
+            return None
+    account = parsed.path.strip("/").split("/")[0]
+    if not account:
+        raise ValueError("a path-style adls_gen2 'account_url' must name the account in its path")
+    return _endpoint_authority(account_url), account
 
 
 def _adls_dfs_authority(host: str, account: str) -> str:
@@ -152,9 +176,7 @@ def _resolve_s3(config: dict[str, Any], target: dict[str, Any]) -> AssetIdentity
     # the OpenLineage naming-spec convention and is already persisted on `assets` rows in
     # production; changing it forks every existing S3 asset and orphans its lineage/incidents.
     namespace = (
-        f"s3://{_s3_endpoint_authority(endpoint_url)}/{bucket}"
-        if endpoint_url
-        else f"s3://{bucket}"
+        f"s3://{_endpoint_authority(endpoint_url)}/{bucket}" if endpoint_url else f"s3://{bucket}"
     )
     name = _flatfile_name(target, "s3")
     return AssetIdentity(namespace=namespace, name=name)
@@ -162,10 +184,10 @@ def _resolve_s3(config: dict[str, Any], target: dict[str, Any]) -> AssetIdentity
 
 #: Ports implied by the scheme, so an explicit `:443` on `https://` (or `:80` on `http://`) doesn't
 #: fork the namespace from the equivalent endpoint written without a port.
-_S3_DEFAULT_PORTS = {"http": 80, "https": 443}
+_DEFAULT_PORTS = {"http": 80, "https": 443}
 
 
-def _s3_endpoint_authority(endpoint_url: str) -> str:
+def _endpoint_authority(endpoint_url: str) -> str:
     """``endpoint_url``'s host[:port] — scheme stripped, default port elided, lowercased."""
     parsed = urlparse(endpoint_url)
     host = parsed.hostname or ""
@@ -173,7 +195,7 @@ def _s3_endpoint_authority(endpoint_url: str) -> str:
     if ":" in host:
         host = f"[{host}]"
     port = parsed.port
-    default_port = _S3_DEFAULT_PORTS.get(parsed.scheme)
+    default_port = _DEFAULT_PORTS.get(parsed.scheme)
     return f"{host}:{port}" if port is not None and port != default_port else host
 
 
