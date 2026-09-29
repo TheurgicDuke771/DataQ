@@ -1075,6 +1075,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#gate-a-pipeline-on-dataq" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Gate a pipeline on DataQ
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2532,6 +2543,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#gate-a-pipeline-on-dataq" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Gate a pipeline on DataQ
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2587,6 +2609,9 @@ not run the pipelines. Azure Data Factory, Apache Airflow, and dbt all sit behin
 <li><strong>Trigger on success</strong> — if a successful run matches an enabled <strong>trigger binding</strong>
    (<code>provider</code> + <code>pipeline/DAG id</code> + <code>env</code> → <code>suite_id</code>), DataQ queues that suite.
    <em>Failures alert but never trigger a run.</em></li>
+<li><strong>Answer a gate</strong> — a pipeline stage can ask DataQ whether to continue, and stop its own
+   downstream stages when the data fails (<a href="#gate-a-pipeline-on-dataq">Gate a pipeline on DataQ</a>).
+   DataQ still never pauses or fails a pipeline itself.</li>
 </ol>
 <h2 id="adf">ADF<a class="headerlink" href="#adf" title="Permanent link">¶</a></h2>
 <p>Azure Monitor raises an alert on pipeline events → an <strong>Action Group webhook</strong> (with the
@@ -2949,6 +2974,62 @@ silent-empty descents stay fake-driven — a live Enterprise account cannot prod
 <p>In the UI, open a suite's <strong>Triggers</strong> and bind it to a <code>(provider, pipeline/DAG, env)</code>.
 When that pipeline next succeeds, the suite runs automatically and you'll see the run
 correlated to the pipeline run on the <strong>Results → Pipelines</strong> view.</p>
+<h2 id="gate-a-pipeline-on-dataq">Gate a pipeline on DataQ<a class="headerlink" href="#gate-a-pipeline-on-dataq" title="Permanent link">¶</a></h2>
+<p>A trigger binding runs suites <em>after</em> a pipeline finishes. A <strong>gate</strong> lets a pipeline wait for
+DataQ's verdict <em>between</em> its own stages, so bad data never reaches the stages after it.</p>
+<p>The pipeline calls <code>POST /api/v1/orchestration/gate</code> with its <code>provider</code>, pipeline/DAG id,
+<code>env</code> and this run's id, then repeats the same call until the answer is final:</p>
+<table>
+<thead>
+<tr>
+<th><code>state</code></th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>running</code></td>
+<td>the bound suites' runs are queued or running; ask again after <code>retry_after_seconds</code></td>
+</tr>
+<tr>
+<td><code>awaiting_trigger</code></td>
+<td>status-only mode, and no run exists yet for this pipeline run</td>
+</tr>
+<tr>
+<td><code>passed</code></td>
+<td>every bound suite finished below <code>fail_on</code> (default <code>fail</code>)</td>
+</tr>
+<tr>
+<td><code>failed</code></td>
+<td>some check finished at or above <code>fail_on</code></td>
+</tr>
+<tr>
+<td><code>error</code></td>
+<td>a run failed or was cancelled, or a check couldn't be evaluated</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Trigger-and-wait</strong> (the default): the first call starts one run of every enabled bound
+  suite for this pipeline run, and later calls never start another. The pipeline's own
+  success event reuses the same runs too. This needs <strong>edit</strong> on every bound suite.</li>
+<li><strong>Status only</strong> (<code>"trigger": false</code>): DataQ starts nothing and reports on the runs that
+  already exist for that pipeline run, e.g. a downstream pipeline gating on an upstream run
+  its success event triggered. This needs <strong>view</strong>.</li>
+<li>A bound suite the caller can't see refuses the gate rather than being skipped, since
+  skipping it could pass a pipeline that suite says to stop.</li>
+</ul>
+<p>Ready-made clients, all fail-closed (<code>failed</code> and <code>error</code> both stop the pipeline):</p>
+<ul>
+<li><strong>Any shell step, and dbt between invocations:</strong> <code>dataq gate</code> from the
+  <a href="../python-client/">Python client</a>, which exits <code>0</code> passed, <code>2</code> failed,
+  <code>3</code> error, <code>4</code> timeout or unreachable.</li>
+<li><strong>Airflow:</strong> the <code>PythonSensor</code> callable in
+  <a href="https://github.com/TheurgicDuke771/DataQ/tree/main/integrations/airflow"><code>integrations/airflow/dataq_gate.py</code></a>.</li>
+<li><strong>Azure Data Factory:</strong> the Until-loop pipeline in
+  <a href="https://github.com/TheurgicDuke771/DataQ/tree/main/integrations/adf"><code>integrations/adf/</code></a>.</li>
+</ul>
+<p>Use a personal access token (<code>dq_live_…</code>) for the calls.</p>
 
 
 

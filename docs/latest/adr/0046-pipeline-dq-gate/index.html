@@ -7,13 +7,9 @@
       
       
       
-        <link rel="canonical" href="https://theurgicduke771.github.io/DataQ/docs/latest/guides/python-client/">
+        <link rel="canonical" href="https://theurgicduke771.github.io/DataQ/docs/latest/adr/0046-pipeline-dq-gate/">
       
       
-        <link rel="prev" href="../api-keys/">
-      
-      
-        <link rel="next" href="../admin/">
       
       
         
@@ -24,7 +20,7 @@
     
     
       
-        <title>Python client &amp; CLI - DataQ</title>
+        <title>ADR 0046 — Pipeline DQ gate: an orchestrator asks DataQ whether to continue - DataQ</title>
       
     
     
@@ -87,7 +83,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#python-client-and-cli" class="md-skip">
+        <a href="#adr-0046-pipeline-dq-gate-an-orchestrator-asks-dataq-whether-to-continue" class="md-skip">
           Skip to content
         </a>
       
@@ -127,7 +123,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Python client &amp; CLI
+              ADR 0046 — Pipeline DQ gate: an orchestrator asks DataQ whether to continue
             
           </span>
         </div>
@@ -278,13 +274,11 @@
   
   
   
-    
-  
   
     
     
-      <li class="md-tabs__item md-tabs__item--active">
-        <a href="../" class="md-tabs__link">
+      <li class="md-tabs__item">
+        <a href="../../guides/" class="md-tabs__link">
           
   
   
@@ -722,8 +716,6 @@
       
   
   
-    
-  
   
   
     
@@ -761,23 +753,20 @@
     
     
       
-        
-        
-      
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked="">
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3">
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../" class="md-nav__link ">
+            <a href="../../guides/" class="md-nav__link ">
               
   
   
@@ -795,13 +784,13 @@
             </a>
             
               
-              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="">
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
                 <span class="md-nav__icon md-icon"></span>
               </label>
             
           </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             
@@ -821,7 +810,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../features/" class="md-nav__link">
+      <a href="../../guides/features/" class="md-nav__link">
         
   
   
@@ -849,7 +838,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../datasources-checks/" class="md-nav__link">
+      <a href="../../guides/datasources-checks/" class="md-nav__link">
         
   
   
@@ -877,7 +866,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../scheduling/" class="md-nav__link">
+      <a href="../../guides/scheduling/" class="md-nav__link">
         
   
   
@@ -905,7 +894,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../orchestration/" class="md-nav__link">
+      <a href="../../guides/orchestration/" class="md-nav__link">
         
   
   
@@ -933,7 +922,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../notifications/" class="md-nav__link">
+      <a href="../../guides/notifications/" class="md-nav__link">
         
   
   
@@ -961,7 +950,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mcp-setup/" class="md-nav__link">
+      <a href="../../guides/mcp-setup/" class="md-nav__link">
         
   
   
@@ -989,7 +978,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../ai-features/" class="md-nav__link">
+      <a href="../../guides/ai-features/" class="md-nav__link">
         
   
   
@@ -1017,7 +1006,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../api-keys/" class="md-nav__link">
+      <a href="../../guides/api-keys/" class="md-nav__link">
         
   
   
@@ -1042,37 +1031,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Python client &amp; CLI
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../guides/python-client/" class="md-nav__link">
         
   
   
@@ -1088,87 +1050,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
-      
-        <li class="md-nav__item">
-  <a href="#gate-a-pipeline-step-on-a-suite" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Gate a pipeline step on a suite
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Gate a pipeline step on a suite">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#gate-a-pipeline-between-its-own-stages" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Gate a pipeline between its own stages
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#from-python" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        From Python
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#the-rest-of-the-api" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        The rest of the API
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#versions" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Versions
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1181,7 +1062,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../admin/" class="md-nav__link">
+      <a href="../../guides/admin/" class="md-nav__link">
         
   
   
@@ -1209,7 +1090,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../recommended-usage/" class="md-nav__link">
+      <a href="../../guides/recommended-usage/" class="md-nav__link">
         
   
   
@@ -1237,7 +1118,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../best-practices/" class="md-nav__link">
+      <a href="../../guides/best-practices/" class="md-nav__link">
         
   
   
@@ -1663,7 +1544,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../adr/" class="md-nav__link">
+      <a href="../" class="md-nav__link">
         
   
   
@@ -2372,38 +2253,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
       
         <li class="md-nav__item">
-  <a href="#gate-a-pipeline-step-on-a-suite" class="md-nav__link">
+  <a href="#context" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Gate a pipeline step on a suite
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Gate a pipeline step on a suite">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#gate-a-pipeline-between-its-own-stages" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Gate a pipeline between its own stages
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#from-python" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        From Python
+        Context
       
     </span>
   </a>
@@ -2411,10 +2264,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#the-rest-of-the-api" class="md-nav__link">
+  <a href="#decision" class="md-nav__link">
     <span class="md-ellipsis">
       
-        The rest of the API
+        Decision
       
     </span>
   </a>
@@ -2422,10 +2275,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#versions" class="md-nav__link">
+  <a href="#consequences" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Versions
+        Consequences
       
     </span>
   </a>
@@ -2460,9 +2313,9 @@
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17.5 15.5c0 1.11-.89 2-2 2s-2-.89-2-2 .9-2 2-2 2 .9 2 2m-9-2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.89 2-2-.89-2-2-2M23 15v3c0 .55-.45 1-1 1h-1v1c0 1.11-.89 2-2 2H5a2 2 0 0 1-2-2v-1H2c-.55 0-1-.45-1-1v-3c0-.55.45-1 1-1h1c0-3.87 3.13-7 7-7h1V5.73c-.6-.34-1-.99-1-1.73 0-1.1.9-2 2-2s2 .9 2 2c0 .74-.4 1.39-1 1.73V7h1c3.87 0 7 3.13 7 7h1c.55 0 1 .45 1 1m-2 1h-2v-2c0-2.76-2.24-5-5-5h-4c-2.76 0-5 2.24-5 5v2H3v1h2v3h14v-3h2z"></path></svg> Ask AI <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7.41 8.58 12 13.17l4.59-4.59L18 10l-6 6-6-6z"></path></svg>
         </button>
         <div class="dq-ask__menu" role="menu" hidden="">
-          <a href="https://claude.ai/new?q=Read%20https%3A//theurgicduke771.github.io/DataQ/docs/latest/guides/python-client/index.md%20%28the%20DataQ%20documentation%20page%20%22Python%20client%20%26%20CLI%22%29%20and%20help%20me%20with%20questions%20about%20it." target="_blank" rel="noopener">Claude</a>
-          <a href="https://chatgpt.com/?q=Read%20https%3A//theurgicduke771.github.io/DataQ/docs/latest/guides/python-client/index.md%20%28the%20DataQ%20documentation%20page%20%22Python%20client%20%26%20CLI%22%29%20and%20help%20me%20with%20questions%20about%20it." target="_blank" rel="noopener">ChatGPT</a>
-          <a href="https://github.com/copilot?prompt=Read%20https%3A//theurgicduke771.github.io/DataQ/docs/latest/guides/python-client/index.md%20%28the%20DataQ%20documentation%20page%20%22Python%20client%20%26%20CLI%22%29%20and%20help%20me%20with%20questions%20about%20it." target="_blank" rel="noopener">GitHub Copilot</a>
+          <a href="https://claude.ai/new?q=Read%20https%3A//theurgicduke771.github.io/DataQ/docs/latest/adr/0046-pipeline-dq-gate/index.md%20%28the%20DataQ%20documentation%20page%20%22ADR%200046%20%E2%80%94%20Pipeline%20DQ%20gate%3A%20an%20orchestrator%20asks%20DataQ%20whether%20to%20continue%22%29%20and%20help%20me%20with%20questions%20about%20it." target="_blank" rel="noopener">Claude</a>
+          <a href="https://chatgpt.com/?q=Read%20https%3A//theurgicduke771.github.io/DataQ/docs/latest/adr/0046-pipeline-dq-gate/index.md%20%28the%20DataQ%20documentation%20page%20%22ADR%200046%20%E2%80%94%20Pipeline%20DQ%20gate%3A%20an%20orchestrator%20asks%20DataQ%20whether%20to%20continue%22%29%20and%20help%20me%20with%20questions%20about%20it." target="_blank" rel="noopener">ChatGPT</a>
+          <a href="https://github.com/copilot?prompt=Read%20https%3A//theurgicduke771.github.io/DataQ/docs/latest/adr/0046-pipeline-dq-gate/index.md%20%28the%20DataQ%20documentation%20page%20%22ADR%200046%20%E2%80%94%20Pipeline%20DQ%20gate%3A%20an%20orchestrator%20asks%20DataQ%20whether%20to%20continue%22%29%20and%20help%20me%20with%20questions%20about%20it." target="_blank" rel="noopener">GitHub Copilot</a>
           <a href="../../guides/mcp-setup/" title="Cursor, Claude Desktop and others read these pages over MCP">Connect your assistant (MCP)</a>
         </div>
       </div>
@@ -2476,129 +2329,69 @@
   
 
 
-<h1 id="python-client-and-cli">Python client and CLI<a class="headerlink" href="#python-client-and-cli" title="Permanent link">¶</a></h1>
-<p><code>dataq-client</code> is a Python package and a <code>dataq</code> command for driving DataQ from scripts, CI
-pipelines, notebooks and schedulers. Its most common use is gating a deploy on a data-quality
-result: trigger a suite, wait for it, and fail the pipeline step if a check failed.</p>
-<div class="highlight"><pre><span></span><code><span class="c1"># A released version: the wheel attached to the DataQ release matching your server's version</span>
-<span class="nv">VERSION</span><span class="o">=</span><span class="m">1</span>.2.0<span class="w">   </span><span class="c1"># your DataQ server's version</span>
-pip<span class="w"> </span>install<span class="w"> </span><span class="s2">"https://github.com/TheurgicDuke771/DataQ/releases/download/v</span><span class="nv">$VERSION</span><span class="s2">/dataq_client-</span><span class="nv">$VERSION</span><span class="s2">-py3-none-any.whl"</span>
-
-<span class="c1"># The latest from main</span>
-pip<span class="w"> </span>install<span class="w"> </span><span class="s2">"git+https://github.com/TheurgicDuke771/DataQ.git@main#subdirectory=packages/dataq-client"</span>
-
-<span class="c1"># The latest from main, editable (to track or change the client locally)</span>
-git<span class="w"> </span>clone<span class="w"> </span>https://github.com/TheurgicDuke771/DataQ.git<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>DataQ/packages/dataq-client
-</code></pre></div>
-<p>The client is not published to PyPI. Each <a href="https://github.com/TheurgicDuke771/DataQ/releases">DataQ release</a> from 1.2.0 on carries its wheel
-and sdist as release assets; install the one matching your server's version. Until your server's
-release carries one, install from <code>main</code>.</p>
-<p>It authenticates with a <a href="../api-keys/">personal access token</a>, which acts as the user who minted
-it, with the same workspace role and per-suite grants.</p>
-<h2 id="gate-a-pipeline-step-on-a-suite">Gate a pipeline step on a suite<a class="headerlink" href="#gate-a-pipeline-step-on-a-suite" title="Permanent link">¶</a></h2>
-<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">DATAQ_URL</span><span class="o">=</span>https://dataq.example.com<span class="w">   </span><span class="c1"># the host that serves the DataQ web app</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">DATAQ_PAT</span><span class="o">=</span>dq_live_...<span class="w">                 </span><span class="c1"># from your CI secret store</span>
-
-dataq<span class="w"> </span>run<span class="w"> </span>7c1e…-suite-id<span class="w"> </span>--wait
-</code></pre></div>
-<p><code>--wait</code> polls the run until it finishes and exits with a code your pipeline can act on:</p>
-<table>
-<thead>
-<tr>
-<th>Exit code</th>
-<th>Meaning</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>0</td>
-<td>The run finished and nothing failed</td>
-</tr>
-<tr>
-<td>1</td>
-<td>The worst result was a <strong>warning</strong></td>
-</tr>
-<tr>
-<td>2</td>
-<td>A check <strong>failed</strong> (<code>fail</code> or <code>critical</code>)</td>
-</tr>
-<tr>
-<td>3</td>
-<td>The run itself did not complete (failed or cancelled), or a check could not be evaluated</td>
-</tr>
-<tr>
-<td>4</td>
-<td>A client, authentication or network problem: the result is unknown</td>
-</tr>
-</tbody>
-</table>
-<p>A GitHub Actions step:</p>
-<div class="highlight"><pre><span></span><code><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Data-quality gate</span>
-<span class="w">  </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
-<span class="w">    </span><span class="no">pip install "https://github.com/TheurgicDuke771/DataQ/releases/download/v$DATAQ_VERSION/dataq_client-$DATAQ_VERSION-py3-none-any.whl"</span>
-<span class="w">    </span><span class="no">dataq run "$SUITE_ID" --wait</span>
-<span class="w">  </span><span class="nt">env</span><span class="p">:</span>
-<span class="w">    </span><span class="nt">DATAQ_URL</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ vars.DATAQ_URL }}</span>
-<span class="w">    </span><span class="nt">DATAQ_PAT</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ secrets.DATAQ_PAT }}</span>
-<span class="w">    </span><span class="nt">DATAQ_VERSION</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.2.0</span><span class="w">   </span><span class="c1"># your server's version</span>
-<span class="w">    </span><span class="nt">SUITE_ID</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">7c1e…</span>
-</code></pre></div>
-<p>The token is read from <code>DATAQ_PAT</code> only, never from a command-line flag, where it would land in
-shell history and process listings. To treat warnings as a pass, allow exit code 1 in your
-pipeline (for example <code>dataq run … --wait || [ $? -eq 1 ]</code>).</p>
-<h3 id="gate-a-pipeline-between-its-own-stages">Gate a pipeline between its own stages<a class="headerlink" href="#gate-a-pipeline-between-its-own-stages" title="Permanent link">¶</a></h3>
-<p>A suite run gates one suite. <code>dataq gate</code> gates a <strong>pipeline</strong>: it runs every suite bound to
-the pipeline (Suite → Triggers) for this pipeline run, waits, and exits <code>0</code> passed, <code>2</code> failed,
-<code>3</code> error or <code>4</code> timed out or unreachable (see
-<a href="../orchestration/#gate-a-pipeline-on-dataq">Gate a pipeline on DataQ</a>):</p>
-<div class="highlight"><pre><span></span><code>dataq<span class="w"> </span>gate<span class="w"> </span>--provider<span class="w"> </span>dbt<span class="w"> </span>--pipeline<span class="w"> </span>nightly_build<span class="w"> </span>--env<span class="w"> </span>prod<span class="w"> </span>--run-id<span class="w"> </span><span class="s2">"</span><span class="nv">$RUN_ID</span><span class="s2">"</span>
-dataq<span class="w"> </span>gate<span class="w"> </span>--provider<span class="w"> </span>airflow<span class="w"> </span>--pipeline<span class="w"> </span>load_finance<span class="w"> </span>--env<span class="w"> </span>prod<span class="w"> </span>--run-id<span class="w"> </span><span class="s2">"</span><span class="nv">$RUN_ID</span><span class="s2">"</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--fail-on<span class="w"> </span>warn<span class="w"> </span>--no-trigger<span class="w">     </span><span class="c1"># only report on runs the success event already started</span>
-</code></pre></div>
-<p>Repeating the command for the same run id never starts a second run.</p>
-<p>Other commands:</p>
-<div class="highlight"><pre><span></span><code>dataq<span class="w"> </span><span class="nb">wait</span><span class="w"> </span>&lt;run-id&gt;<span class="w">                               </span><span class="c1"># wait for a run someone else started</span>
-dataq<span class="w"> </span>run<span class="w"> </span>&lt;suite-id&gt;<span class="w"> </span>--wait<span class="w"> </span>--json<span class="w">                </span><span class="c1"># the outcome as JSON</span>
-dataq<span class="w"> </span><span class="nb">export</span><span class="w"> </span>&lt;suite-id&gt;<span class="w"> </span>-o<span class="w"> </span>orders.json<span class="w">            </span><span class="c1"># the suite's portable document</span>
-dataq<span class="w"> </span>import<span class="w"> </span>orders.json<span class="w"> </span>--connection<span class="w"> </span>&lt;conn-id&gt;<span class="w">   </span><span class="c1"># create a suite from it</span>
-</code></pre></div>
-<h2 id="from-python">From Python<a class="headerlink" href="#from-python" title="Permanent link">¶</a></h2>
-<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">dataq_client</span><span class="w"> </span><span class="kn">import</span> <span class="n">DataQClient</span>
-
-<span class="k">with</span> <span class="n">DataQClient</span><span class="p">()</span> <span class="k">as</span> <span class="n">dq</span><span class="p">:</span>            <span class="c1"># reads DATAQ_URL / DATAQ_PAT, or pass them in</span>
-    <span class="n">run</span> <span class="o">=</span> <span class="n">dq</span><span class="o">.</span><span class="n">trigger_run</span><span class="p">(</span><span class="n">suite_id</span><span class="p">)</span>
-    <span class="n">outcome</span> <span class="o">=</span> <span class="n">dq</span><span class="o">.</span><span class="n">wait_for_run</span><span class="p">(</span><span class="n">run</span><span class="o">.</span><span class="n">run_id</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">1800</span><span class="p">)</span>
-
-<span class="k">if</span> <span class="n">outcome</span><span class="o">.</span><span class="n">status</span> <span class="o">!=</span> <span class="s2">"succeeded"</span> <span class="ow">or</span> <span class="n">outcome</span><span class="o">.</span><span class="n">worst_severity</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"fail"</span><span class="p">,</span> <span class="s2">"critical"</span><span class="p">):</span>
-    <span class="k">raise</span> <span class="ne">SystemExit</span><span class="p">(</span><span class="sa">f</span><span class="s2">"data quality gate failed: </span><span class="si">{</span><span class="n">outcome</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-</code></pre></div>
-<p>A run's outcome has <strong>two separate answers</strong>, and the client never merges them into one
-"passed" flag:</p>
+<h1 id="adr-0046-pipeline-dq-gate-an-orchestrator-asks-dataq-whether-to-continue">ADR 0046 — Pipeline DQ gate: an orchestrator asks DataQ whether to continue<a class="headerlink" href="#adr-0046-pipeline-dq-gate-an-orchestrator-asks-dataq-whether-to-continue" title="Permanent link">¶</a></h1>
 <ul>
-<li><strong><code>status</code></strong> says whether the run itself finished: <code>succeeded</code>, <code>failed</code> or <code>cancelled</code>.</li>
-<li><strong><code>worst_severity</code></strong> is the worst check result: <code>warn</code>, <code>fail</code>, <code>critical</code>, or <code>None</code> when
-  nothing failed.</li>
+<li><strong>Status:</strong> Accepted (2026-09-29)</li>
+<li><strong>Date:</strong> 2026-09-29</li>
+<li><strong>Deciders:</strong> @TheurgicDuke771</li>
+<li><strong>Related:</strong> ADR <a href="../0005-severity-tier-weights/">0005</a> / <a href="../0016-severity-derivation-semantics/">0016</a> (severity ladder), <a href="../0026-auth-api-keys-and-principal-seam/">0026</a> (PATs), <a href="../0027-suite-permission-model-workspace-admin/">0027</a> (per-suite <code>view</code>/<code>edit</code>), <a href="../0035-request-rate-limiting/">0035</a> (rate limits); ADR <a href="../0004-orchestration-abstraction/">0004</a> (the <code>OrchestrationProvider</code> contract this extends).</li>
 </ul>
-<p>A run can <strong>succeed</strong> and still report a critical failure: every check ran, and one found bad
-data. It can also <strong>fail</strong> with no results at all, when the target could not be read. Check
-both.</p>
-<p><code>wait_for_run</code> decides a run has finished from its <code>status</code> alone. The pass counts of a run
-that is still going describe only the checks done so far. It polls every 5 seconds at the
-fastest, backing off to 30. When the API rate-limits the token, it raises <code>RateLimitedError</code>
-instead of retrying in a loop.</p>
-<h2 id="the-rest-of-the-api">The rest of the API<a class="headerlink" href="#the-rest-of-the-api" title="Permanent link">¶</a></h2>
-<p><code>DataQClient</code> covers running, waiting, exporting and importing suites, and acknowledging or
-resolving incidents. Every other REST endpoint is available through the generated layer, typed
-from the API's own specification:</p>
-<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">dataq_client.generated.api.suites</span><span class="w"> </span><span class="kn">import</span> <span class="n">list_suites</span>
-
-<span class="k">for</span> <span class="n">suite</span> <span class="ow">in</span> <span class="n">list_suites</span><span class="o">.</span><span class="n">sync</span><span class="p">(</span><span class="n">client</span><span class="o">=</span><span class="n">dq</span><span class="o">.</span><span class="n">api</span><span class="p">)</span> <span class="ow">or</span> <span class="p">[]:</span>
-    <span class="nb">print</span><span class="p">(</span><span class="n">suite</span><span class="o">.</span><span class="n">id</span><span class="p">,</span> <span class="n">suite</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
-</code></pre></div>
-<h2 id="versions">Versions<a class="headerlink" href="#versions" title="Permanent link">¶</a></h2>
-<p>The client is released with DataQ: client <code>1.x.y</code> is generated from server <code>1.x.y</code>. Use the
-client version that matches your server. <a href="../../reference/api-compatibility/">API compatibility</a>
-describes what stays stable across upgrades.</p>
+<h2 id="context">Context<a class="headerlink" href="#context" title="Permanent link">¶</a></h2>
+<p>Orchestration providers (ADF, Airflow, dbt) have exactly three responsibilities in DataQ:
+<strong>monitor</strong> runs, <strong>detect failure</strong>, and <strong>trigger</strong> bound suites when a pipeline run
+<strong>succeeds</strong>. None of them lets a pipeline act on a DQ verdict. The proven feature in this
+market is a <em>circuit breaker</em>: a pipeline stage asks "did the data pass?" and halts its own
+downstream stages on a breach.</p>
+<p>A read-only "did the suite triggered for my run pass?" endpoint would not work for the
+common case. Suites are triggered when a pipeline run <strong>completes</strong>, so a stage in the
+<strong>middle</strong> of a run would be waiting for a trigger that cannot fire until the run it is
+blocking finishes.</p>
+<h2 id="decision">Decision<a class="headerlink" href="#decision" title="Permanent link">¶</a></h2>
+<ol>
+<li><strong>A fourth responsibility: answer a gate request.</strong> DataQ still never mutates a pipeline.
+   The customer's DAG or pipeline chooses to call DataQ and to wait or fail on the answer.
+   The gate is provider-agnostic: it is keyed by the existing <code>trigger_bindings</code>
+   (<code>provider</code>, <code>pipeline_or_dag_id</code>, <code>env</code>) and has no provider-specific branch.</li>
+<li><strong>One endpoint, two modes:</strong> <code>POST /api/v1/orchestration/gate</code> with
+   <code>provider</code>, <code>pipeline_or_dag_id</code>, <code>env</code>, <code>provider_run_id</code>, <code>fail_on</code>
+   (<code>warn</code> | <code>fail</code> | <code>critical</code>, default <code>fail</code>) and <code>trigger</code> (default <code>true</code>).</li>
+<li><strong>Trigger-and-wait</strong> (<code>trigger: true</code>): DataQ ensures one run of every enabled bound
+     suite exists for this pipeline run and returns its current state. The run carries the
+     same <code>triggered_by</code> marker the success-event path uses
+     (<code>&lt;provider&gt;:&lt;pipeline_or_dag_id&gt;:&lt;provider_run_id&gt;</code>), so the existing partial unique
+     index makes it <strong>idempotent</strong>: repeated polls, and the run's own later success event,
+     never start a second run. Polling the same request until a terminal state is the
+     intended client loop.</li>
+<li><strong>Status only</strong> (<code>trigger: false</code>): DataQ creates nothing. It reports on runs that
+     already exist for the marker, e.g. a downstream pipeline gating on an upstream run
+     that the normal success event triggered.</li>
+<li><strong>States, never a bare boolean:</strong> <code>awaiting_trigger</code> (status-only, no run yet),
+   <code>running</code> (any bound run queued or running), <code>passed</code>, <code>failed</code> (some result at or above
+   <code>fail_on</code>), <code>error</code> (a run failed operationally or was cancelled, or a check could not be
+   evaluated). The response lists each bound suite's run, status, worst severity and counts,
+   plus a <code>retry_after_seconds</code> hint. <code>error</code> is distinct from <code>failed</code> so a client can
+   choose; the shipped snippets <strong>fail closed</strong> on both.</li>
+<li><strong>Authorization is the manual-trigger rule.</strong> Starting a suite run is <code>edit</code> on the suite
+   (as <code>POST /suites/{id}/run</code>), so trigger mode requires <code>edit</code> on every bound suite and
+   status-only requires <code>view</code>. Callers use a PAT (<code>dq_live_…</code>). A binding with no enabled
+   suites the caller can see is a 404 with no leak of which suites exist.</li>
+<li><strong>Rate-limited</strong> by the existing per-user API class. A gate poll is cheap once the run
+   exists (the idempotent insert is a no-op), and the client honours <code>retry_after_seconds</code>.</li>
+<li><strong>Clients:</strong> a <code>dataq gate</code> command in the Python client/CLI (the universal client: any
+   shell step, and dbt between <code>dbt build</code> invocations), an Airflow sensor snippet in
+   <code>integrations/airflow/</code>, and an ADF pipeline snippet (Web activity inside an Until loop)
+   in <code>integrations/adf/</code>. All exit or fail non-zero on <code>failed</code> and <code>error</code>, and time out
+   on the client side.</li>
+</ol>
+<h2 id="consequences">Consequences<a class="headerlink" href="#consequences" title="Permanent link">¶</a></h2>
+<ul>
+<li>CLAUDE.md §4's contract becomes four responsibilities; the anti-patterns are unchanged,
+  since the gate reads bindings and runs through generic code.</li>
+<li>No schema change: runs, results and the dedup index already carry everything the gate
+  needs.</li>
+<li>Not in scope: MCP exposure (the gate is machine-to-machine), and DataQ pausing or failing a
+  pipeline itself.</li>
+</ul>
 
 
 
@@ -2632,44 +2425,6 @@ describes what stays stable across upgrades.</p>
       
         <footer class="md-footer">
   
-    
-      
-      <nav class="md-footer__inner md-grid" aria-label="Footer">
-        
-          
-          <a href="../api-keys/" class="md-footer__link md-footer__link--prev" aria-label="Previous: API keys (PATs)">
-            <div class="md-footer__button md-icon">
-              
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"></path></svg>
-            </div>
-            <div class="md-footer__title">
-              <span class="md-footer__direction">
-                Previous
-              </span>
-              <div class="md-ellipsis">
-                API keys (PATs)
-              </div>
-            </div>
-          </a>
-        
-        
-          
-          <a href="../admin/" class="md-footer__link md-footer__link--next" aria-label="Next: Admin control centre">
-            <div class="md-footer__title">
-              <span class="md-footer__direction">
-                Next
-              </span>
-              <div class="md-ellipsis">
-                Admin control centre
-              </div>
-            </div>
-            <div class="md-footer__button md-icon">
-              
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"></path></svg>
-            </div>
-          </a>
-        
-      </nav>
     
   
   <div class="md-footer-meta md-typeset">
