@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "add1bb7b44e8",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2199-azurite-asset-identity",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/ad/d1bb7b44e8/0/metadata.json",
+      "transcript": "/ad/d1bb7b44e8/0/full.jsonl",
+      "compact_transcript": "/ad/d1bb7b44e8/0/transcript.jsonl",
+      "content_hash": "/ad/d1bb7b44e8/0/content_hash.txt",
+      "prompt": "/ad/d1bb7b44e8/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 402,
+    "cache_creation_tokens": 360654,
+    "cache_read_tokens": 49573410,
+    "output_tokens": 129101,
+    "api_call_count": 201
+  }
+}
