@@ -18,7 +18,7 @@ lists which).
 - [Run it automatically](https://theurgicduke771.github.io/DataQ/docs/latest/get-started/connect-pipeline/index.md): A suite you have to remember to run is a suite that stops running. Pick one of the two ways
 - [Your first alert](https://theurgicduke771.github.io/DataQ/docs/latest/get-started/first-alert/index.md): Ten minutes. You end with a message in Teams, Slack or your inbox the next time a check
 - [Your first suite](https://theurgicduke771.github.io/DataQ/docs/latest/get-started/first-suite/index.md): A hands-on walkthrough: from an empty workspace to a check that runs and alerts, in a few
-- [Install](https://theurgicduke771.github.io/DataQ/docs/latest/get-started/install/index.md): Two tracks, matched to why you're here:
+- [Install](https://theurgicduke771.github.io/DataQ/docs/latest/get-started/install/index.md): Three tracks, matched to why you're here:
 
 ## Guides
 
