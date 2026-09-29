@@ -203,6 +203,32 @@ describe('LlmSettingsPanel', () => {
     ).toBeInTheDocument();
   });
 
+  it('Save — a failing save-time provider test shows on the panel and says nothing was saved (#1927)', async () => {
+    mockGet.mockResolvedValue(CONFIGURED);
+    const err = new AxiosError('provider test failed: 401 from provider');
+    err.response = {
+      status: 422,
+      statusText: 'Unprocessable Entity',
+      data: {
+        error: {
+          code: 'llm_test_failed_on_save',
+          message: 'provider test failed: 401 from provider',
+          detail: { error_code: 'llm_auth_failed', error: '401 from provider' },
+        },
+      },
+      headers: new AxiosHeaders(),
+      config: { headers: new AxiosHeaders() },
+    };
+    mockUpdate.mockRejectedValue(err);
+    renderPanel();
+    await screen.findByText('Configured');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByText(/401 from provider — not saved/)).toBeInTheDocument();
+    expect(screen.queryByText('LLM provider settings saved')).not.toBeInTheDocument();
+  });
+
   it('Cortex — picks a Snowflake connection instead of a key and sends only that', async () => {
     mockGet.mockResolvedValue(CONFIGURED);
     mockUpdate.mockResolvedValue(CONFIGURED);

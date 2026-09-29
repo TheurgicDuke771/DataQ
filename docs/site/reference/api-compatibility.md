@@ -65,6 +65,14 @@ The one exception is a **security fix**. When keeping the old behaviour would le
 vulnerability open, the change can take effect immediately. It is still announced under
 **Breaking**, with the reason.
 
+## Recorded exceptions
+
+Changes that took effect without the deprecation window above, and why:
+
+| Release | Change | Why no deprecation window |
+|---|---|---|
+| Unreleased | `POST /connections`, a config- or credential-changing `PATCH /connections/{id}`, and `POST /connections/{id}/reauth` return `422 connection_test_failed_on_save` and write nothing when the connection's test fails; `PUT /admin/llm` does the same for an enabled provider (`422 llm_test_failed_on_save`). | A request this now refuses used to save a connection that could not work, and a failing re-auth used to overwrite a working credential. A client that wants the old behaviour sends the new optional `skip_test: true`, so no client is left without a path. |
+
 ## The export document's `version`
 
 The `version` field is the compatibility lever for the suite document:

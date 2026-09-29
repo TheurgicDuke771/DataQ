@@ -15,6 +15,13 @@ would act on. The step lives in the release checklist in
 
 ### Changed
 
+- **Breaking — connections are tested before they are saved (#1927).** `POST /connections`,
+  a `PATCH` that changes config or a credential, and `POST /connections/{id}/reauth` refuse a
+  config that fails its test with `422 connection_test_failed_on_save` and write nothing (a
+  re-auth keeps the old credential). An Admin can send `skip_test: true` to save anyway; the
+  audit event records it. `PUT /admin/llm` tests an enabled provider first
+  (`422 llm_test_failed_on_save`).
+
 - **Breaking — Unity Catalog `DATE` columns on the frame lane** (sampled suites,
   `UC_SQL_PUSHDOWN=false`, and the frame-only types such as `to_be_of_type`) are now
   evaluated as dates, as on Parquet and Iceberg. Before, a date bound errored and a set

@@ -23,12 +23,15 @@ class ConnectionUpdate:
         config (ConnectionUpdateConfigType0 | None | Unset):
         name (None | str | Unset):
         secret (None | str | Unset): Rotate the credential; write-only
+        skip_test (bool | Unset): Save without running the connectivity test first (#1927) — for a store the API cannot
+            reach at authoring time. Recorded on the audit event. Default: False.
     """
 
     catalog_secret: None | str | Unset = UNSET
     config: ConnectionUpdateConfigType0 | None | Unset = UNSET
     name: None | str | Unset = UNSET
     secret: None | str | Unset = UNSET
+    skip_test: bool | Unset = False
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.connection_update_config_type_0 import (
@@ -61,6 +64,8 @@ class ConnectionUpdate:
         else:
             secret = self.secret
 
+        skip_test = self.skip_test
+
         field_dict: dict[str, Any] = {}
 
         field_dict.update({})
@@ -72,6 +77,8 @@ class ConnectionUpdate:
             field_dict["name"] = name
         if secret is not UNSET:
             field_dict["secret"] = secret
+        if skip_test is not UNSET:
+            field_dict["skip_test"] = skip_test
 
         return field_dict
 
@@ -127,11 +134,14 @@ class ConnectionUpdate:
 
         secret = _parse_secret(d.pop("secret", UNSET))
 
+        skip_test = d.pop("skip_test", UNSET)
+
         connection_update = cls(
             catalog_secret=catalog_secret,
             config=config,
             name=name,
             secret=secret,
+            skip_test=skip_test,
         )
 
         return connection_update

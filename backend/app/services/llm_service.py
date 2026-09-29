@@ -77,6 +77,13 @@ class LLMConfigInvalidError(DataQError):
     code = "llm_config_invalid"
 
 
+class LLMSaveTestFailedError(DataQError):
+    """An enabled provider config whose live test failed; nothing was saved (#1927)."""
+
+    status_code = 422
+    code = "llm_test_failed_on_save"
+
+
 @dataclass(frozen=True)
 class LlmSettingsDraft:
     provider: str
@@ -192,6 +199,28 @@ def save_settings(
     )
     log.info("llm_settings_saved", provider=row.provider, enabled=row.enabled)
     return row
+
+
+def save_tested_settings(
+    session: Session,
+    *,
+    draft: LlmSettingsDraft,
+    actor: User,
+    secret_store: SecretStore,
+) -> LlmSetting:
+    """`save_settings`, refused unless an ENABLED draft passes `test_settings` first (#1927).
+
+    A disabled draft is saved untested: switching off a broken provider must stay possible.
+    """
+    if draft.enabled:
+        outcome = test_settings(session, draft=draft, secret_store=secret_store, actor=actor)
+        if not outcome["ok"]:
+            reason = outcome.get("error") or "no reason given"
+            raise LLMSaveTestFailedError(
+                f"provider test failed: {reason}",
+                detail={"error_code": outcome.get("error_code"), "error": reason},
+            )
+    return save_settings(session, draft=draft, actor=actor, secret_store=secret_store)
 
 
 def _require_row(row: LlmSetting | None, *, require_enabled: bool) -> None:

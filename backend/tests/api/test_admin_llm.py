@@ -17,6 +17,21 @@ from backend.app.services import llm_service
 from backend.tests.support.fake_secret_store import FakeSecretStore
 
 
+class _ReachableProvider:
+    model = "fake"
+
+    def complete(self, *_a: Any, **_kw: Any) -> Any:
+        from backend.app.llm.base import LLMResult
+
+        return LLMResult(text="ok", input_tokens=1, output_tokens=1)
+
+
+@pytest.fixture(autouse=True)
+def _reachable_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`PUT /admin/llm` live-tests an enabled provider first (#1927); no endpoint here exists."""
+    monkeypatch.setattr(llm_service, "_provider_from", lambda **_kw: _ReachableProvider())
+
+
 @pytest.fixture
 def store() -> FakeSecretStore:
     return FakeSecretStore()
@@ -180,9 +195,11 @@ def test_posture_llm_row_flips_with_config(client: TestClient) -> None:
 
 
 def test_cortex_round_trip_reports_its_connection_and_in_warehouse_posture(
-    client: TestClient, db_session: Any
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from backend.app.db.models import Connection
+
+    monkeypatch.setattr(llm_service, "_cortex_provider", lambda *_a, **_kw: _ReachableProvider())
 
     owner = User(id=uuid.uuid4(), email=f"sf-{uuid.uuid4().hex[:6]}@example.com", role="admin")
     conn = Connection(

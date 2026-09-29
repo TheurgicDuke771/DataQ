@@ -414,8 +414,13 @@ def record_entity_change(
     before: Mapping[str, Any] | None = None,
     actor_kind: str = "user",
     if_changed: bool = False,
+    annotations: Mapping[str, Any] | None = None,
 ) -> AuditEvent | None:
-    """`record`, with the `after` payload built from `entity` via the allow-list."""
+    """`record`, with the `after` payload built from `entity` via the allow-list.
+
+    ``annotations`` are facts about the act rather than the entity (e.g. a connection saved
+    without its connectivity test, #1927); they ride in ``after`` beside the snapshot.
+    """
     if entity is not None and getattr(entity, "id", None) is None and entity in session:
         session.flush([entity])
     entity_id = getattr(entity, "id", None) if entity is not None else None
@@ -426,6 +431,8 @@ def record_entity_change(
     before_payload = dict(before) if before is not None else None
     if if_changed and before_payload is not None and before_payload == after:
         return None
+    if annotations and after is not None:
+        after = {**after, **annotations}
     return record(
         session,
         action=action,

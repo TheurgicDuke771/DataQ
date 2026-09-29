@@ -67,6 +67,9 @@ def sync_detailed(
 ) -> Response[HTTPValidationError | LlmSettingsRead]:
     """Save the outbound-LLM provider (admin)
 
+     An enabled config is live-tested first (the `POST /admin/llm/test` probe) and refused with
+    422 `llm_test_failed_on_save` if it fails (#1927); a disabled one is saved untested.
+
     Args:
         body (LlmSettingsUpdate):
 
@@ -96,6 +99,9 @@ def sync(
 ) -> HTTPValidationError | LlmSettingsRead | None:
     """Save the outbound-LLM provider (admin)
 
+     An enabled config is live-tested first (the `POST /admin/llm/test` probe) and refused with
+    422 `llm_test_failed_on_save` if it fails (#1927); a disabled one is saved untested.
+
     Args:
         body (LlmSettingsUpdate):
 
@@ -119,6 +125,9 @@ async def asyncio_detailed(
     body: LlmSettingsUpdate,
 ) -> Response[HTTPValidationError | LlmSettingsRead]:
     """Save the outbound-LLM provider (admin)
+
+     An enabled config is live-tested first (the `POST /admin/llm/test` probe) and refused with
+    422 `llm_test_failed_on_save` if it fails (#1927); a disabled one is saved untested.
 
     Args:
         body (LlmSettingsUpdate):
@@ -146,6 +155,9 @@ async def asyncio(
     body: LlmSettingsUpdate,
 ) -> HTTPValidationError | LlmSettingsRead | None:
     """Save the outbound-LLM provider (admin)
+
+     An enabled config is live-tested first (the `POST /admin/llm/test` probe) and refused with
+    422 `llm_test_failed_on_save` if it fails (#1927); a disabled one is saved untested.
 
     Args:
         body (LlmSettingsUpdate):

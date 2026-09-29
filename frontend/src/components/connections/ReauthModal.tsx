@@ -1,11 +1,15 @@
 import { App, Form, Modal } from 'antd';
+import { useState } from 'react';
 
-import { type Connection, reauthConnection } from '../../api/connections';
+import { type Connection, reauthConnection, SAVE_TEST_FAILED_CODE } from '../../api/connections';
 import { PassphraseField, SecretField } from './ConnectionTypeFields';
 import { activeAuthOption, composeSecret, CONNECTION_FORM_SPECS } from './connectionFormSpec';
+import { SaveTestFailedAlert } from './SaveTestFailedAlert';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
+import { errorMessage } from '../../utils/errors';
+import { apiFieldError } from '../../utils/fieldErrors';
 
-/** Rotate a connection's stored credential. */
+/** Rotate a connection's stored credential — tested first, rotated only if it works (#1927). */
 export function ReauthModal({
   connection,
   onClose,
@@ -19,6 +23,7 @@ export function ReauthModal({
   const { message } = App.useApp();
   const [form] = Form.useForm<{ secret: string; secretPassphrase?: string }>();
   const { run, loading: submitting } = useAsyncAction('Re-auth failed');
+  const [testFailure, setTestFailure] = useState<string>();
 
   const auth = connection ? activeAuthOption(connection.type, connection.config) : undefined;
   const secretLabel =
@@ -30,10 +35,11 @@ export function ReauthModal({
   // (then cancelled) must never ride into another connection's rotation.
   const close = () => {
     form.resetFields();
+    setTestFailure(undefined);
     onClose();
   };
 
-  const onOk = async () => {
+  const rotate = async (skipTest: boolean) => {
     if (!connection) return;
     // antd's Modal `onOk` doesn't catch a rejected handler, so guard the validation rejection here
     // (errors render inline) rather than letting it escape as an unhandled promise rejection.
@@ -45,12 +51,22 @@ export function ReauthModal({
       return;
     }
     await run(async () => {
-      await reauthConnection(
-        connection.id,
-        composeSecret(secret, auth?.passphraseLabel ? secretPassphrase : undefined),
+      try {
+        await reauthConnection(
+          connection.id,
+          composeSecret(secret, auth?.passphraseLabel ? secretPassphrase : undefined),
+          skipTest,
+        );
+      } catch (err) {
+        if (apiFieldError(err)?.code !== SAVE_TEST_FAILED_CODE) throw err;
+        setTestFailure(errorMessage(err));
+        return;
+      }
+      message.success(
+        `${connection.name}: credential rotated${skipTest ? ' without testing' : ''}`,
       );
-      message.success(`${connection.name}: credential rotated`);
       form.resetFields();
+      setTestFailure(undefined);
       onDone();
     });
   };
@@ -59,20 +75,34 @@ export function ReauthModal({
     <Modal
       title={connection ? `Re-authenticate “${connection.name}”` : 'Re-authenticate'}
       open={connection !== null}
-      onOk={onOk}
+      onOk={() => rotate(false)}
       onCancel={close}
       confirmLoading={submitting}
       okText="Rotate credential"
       destroyOnHidden
     >
-      <Form form={form} layout="vertical" requiredMark="optional">
+      <Form
+        form={form}
+        layout="vertical"
+        requiredMark="optional"
+        onValuesChange={() => setTestFailure(undefined)}
+      >
         <SecretField
           label={`New: ${secretLabel}`}
           multiline={auth?.multilineSecret}
-          extra="Rotates the stored credential and verifies it against the datasource."
+          extra="The new credential is tested first; the stored one is replaced only if it works."
         />
         {auth?.passphraseLabel && <PassphraseField label={auth.passphraseLabel} />}
       </Form>
+      {connection && testFailure !== undefined && (
+        <SaveTestFailedAlert
+          type={connection.type}
+          reason={`${testFailure}. The stored credential was not changed.`}
+          skipLabel="Rotate without testing"
+          skipping={submitting}
+          onSkip={() => rotate(true)}
+        />
+      )}
     </Modal>
   );
 }

@@ -42,6 +42,13 @@ class ConnectionCreate(ApiRequestModel):
         ),
         min_length=1,
     )
+    skip_test: bool = Field(
+        default=False,
+        description=(
+            "Save without running the connectivity test first (#1927) — for a store the API "
+            "cannot reach at authoring time. Recorded on the audit event."
+        ),
+    )
 
 
 class ConnectionUpdate(ApiRequestModel):
@@ -54,6 +61,13 @@ class ConnectionUpdate(ApiRequestModel):
         default=None,
         description="Rotate the second (catalog) credential; write-only",
         min_length=1,
+    )
+    skip_test: bool = Field(
+        default=False,
+        description=(
+            "Save without running the connectivity test first (#1927) — for a store the API "
+            "cannot reach at authoring time. Recorded on the audit event."
+        ),
     )
 
 
@@ -179,10 +193,23 @@ class ConnectionRead(ApiModel):
 
 class ConnectionReauth(ApiRequestModel):
     secret: str = Field(min_length=1, description="New credential; write-only, never returned")
+    skip_test: bool = Field(
+        default=False,
+        description=(
+            "Save without running the connectivity test first (#1927) — for a store the API "
+            "cannot reach at authoring time. Recorded on the audit event."
+        ),
+    )
 
 
 class ConnectionTestResult(ApiModel):
     ok: bool
+
+
+class ConnectionReauthResult(ApiModel):
+    ok: bool
+    #: False when sent with `skip_test` — the new credential was stored unverified (#1927).
+    tested: bool
 
 
 class ConnectionDraftTest(ApiRequestModel):
@@ -211,6 +238,9 @@ def create_connection(
     db: Annotated[Session, Depends(get_db)],
     secret_store: Annotated[SecretStore, Depends(get_secret_store)],
 ) -> ConnectionRead:
+    """The config and credential(s) are tested first (#1927); a failing test refuses the create
+    with 422 `connection_test_failed_on_save` and writes nothing, unless `skip_test` is sent.
+    """
     conn = svc.create_connection(
         db,
         name=payload.name,
@@ -221,6 +251,7 @@ def create_connection(
         created_by=current_user.id,
         secret_store=secret_store,
         catalog_secret=payload.catalog_secret,
+        skip_test=payload.skip_test,
     )
     return ConnectionRead.from_model(conn)
 
@@ -291,6 +322,9 @@ def update_connection(
     db: Annotated[Session, Depends(get_db)],
     secret_store: Annotated[SecretStore, Depends(get_secret_store)],
 ) -> ConnectionRead:
+    """A config or credential change is tested before it is written (#1927) — 422
+    `connection_test_failed_on_save` on failure unless `skip_test`; a rename alone is not tested.
+    """
     conn = svc.update_connection(
         db,
         connection_id,
@@ -300,6 +334,7 @@ def update_connection(
         secret_store=secret_store,
         actor_id=current_user.id,
         catalog_secret=payload.catalog_secret,
+        skip_test=payload.skip_test,
     )
     return ConnectionRead.from_model(conn)
 
@@ -344,7 +379,7 @@ def test_connection(
 
 @router.post(
     "/connections/{connection_id}/reauth",
-    response_model=ConnectionTestResult,
+    response_model=ConnectionReauthResult,
     summary="Rotate a connection's credential and verify it",
 )
 def reauth_connection(
@@ -353,17 +388,18 @@ def reauth_connection(
     current_user: AdminUser,
     db: Annotated[Session, Depends(get_db)],
     secret_store: Annotated[SecretStore, Depends(get_secret_store)],
-) -> ConnectionTestResult:
-    # sync def → threadpool; the verify probe is blocking, like /test. Rotates
-    # the credential then probes it; a bad new credential surfaces as 502.
+) -> ConnectionReauthResult:
+    # sync def → threadpool; the probe is blocking, like /test. It runs BEFORE the rotation, so a
+    # bad new credential is refused (422) and the working one stays in place (#1927).
     svc.reauth_connection(
         db,
         connection_id,
         secret=payload.secret,
         secret_store=secret_store,
         actor_id=current_user.id,
+        skip_test=payload.skip_test,
     )
-    return ConnectionTestResult(ok=True)
+    return ConnectionReauthResult(ok=True, tested=not payload.skip_test)
 
 
 # ───────────────────────── version history ─────────────────────────

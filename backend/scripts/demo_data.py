@@ -275,6 +275,8 @@ def _get_or_create_connection(
         secret=secret,
         created_by=owner.id,
         secret_store=secret_store,
+        # Demo credentials reach no real store (#1927).
+        skip_test=True,
     )
 
 

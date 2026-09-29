@@ -119,6 +119,7 @@ testpaths = ["backend/tests"]
 addopts = "--cov=backend/app --cov-report=term-missing --cov-fail-under=80"
 markers = [
     "real_dispatch: opt out of the autouse run_dispatch stub (test dispatch_run itself)",
+    "real_adapter_test: keep the real adapter probes under the reachable_stores fixture (#1927)",
 ]
 # Silence UPSTREAM deprecations we can't fix here — scoped by message so a new warning
 # from our own code still surfaces. All resolve on a dependency upgrade; none are DataQ
