@@ -3885,6 +3885,14 @@ guessing. A schema change fails.</p>
 next daily pass creates <em>Auto: shop.public.orders</em> with the row-count and schema checks and a
 daily schedule. After its first run it adds <em>Data is fresh</em> on <code>ordered_at</code>.</p>
 <ul>
+<li><strong>Suggested rules wait for you.</strong> Once a week DataQ profiles each covered table and proposes
+  rules that assert something about its data: <em>never null</em> for a column with no nulls in at
+  least 100 rows, <em>unique</em> for an id-like column whose values are all distinct, and <em>one of these
+  values</em> for a column with 2 to 10 distinct values. They appear under <strong>Suggested rules</strong> on the
+  suite page, each with the reason (for example "No nulls in 12,480 rows"). Accepting one adds the
+  check; a rejected rule is never suggested again. A column the suite's policy or the warehouse
+  marks sensitive is never proposed as a value set, because that would copy its values into the
+  check.</li>
 <li><strong>Your changes win.</strong> You can edit, snooze or share these suites and checks like any other.
   DataQ only ever adds a missing check. It never changes one you edited, and a check you delete
   is not added back.</li>

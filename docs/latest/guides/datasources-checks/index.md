@@ -632,6 +632,14 @@ For example, with coverage on for a connection whose inventory lists `shop.publi
 next daily pass creates *Auto: shop.public.orders* with the row-count and schema checks and a
 daily schedule. After its first run it adds *Data is fresh* on `ordered_at`.
 
+- **Suggested rules wait for you.** Once a week DataQ profiles each covered table and proposes
+  rules that assert something about its data: *never null* for a column with no nulls in at
+  least 100 rows, *unique* for an id-like column whose values are all distinct, and *one of these
+  values* for a column with 2 to 10 distinct values. They appear under **Suggested rules** on the
+  suite page, each with the reason (for example "No nulls in 12,480 rows"). Accepting one adds the
+  check; a rejected rule is never suggested again. A column the suite's policy or the warehouse
+  marks sensitive is never proposed as a value set, because that would copy its values into the
+  check.
 - **Your changes win.** You can edit, snooze or share these suites and checks like any other.
   DataQ only ever adds a missing check. It never changes one you edited, and a check you delete
   is not added back.

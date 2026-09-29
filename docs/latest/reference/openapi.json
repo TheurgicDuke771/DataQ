@@ -8078,6 +8078,109 @@
         "title": "SqlGenerationRequest",
         "type": "object"
       },
+      "SuggestionRead": {
+        "properties": {
+          "check_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Check Id"
+          },
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By"
+          },
+          "expectation_type": {
+            "title": "Expectation Type",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rationale"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "suite_id": {
+            "format": "uuid",
+            "title": "Suite Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "suite_id",
+          "source",
+          "status",
+          "name",
+          "expectation_type",
+          "config",
+          "rationale",
+          "check_id",
+          "decided_by",
+          "decided_at",
+          "created_at"
+        ],
+        "title": "SuggestionRead",
+        "type": "object"
+      },
       "SuiteCadenceRead": {
         "description": "A suite's bound-pipeline cadence (#1648) \u2014 the deterministic freshness-\nthreshold hint the LLM suggestion prompt also uses when one is configured,\nbut computed here without any LLM at all.",
         "properties": {
@@ -13468,6 +13571,92 @@
         ]
       }
     },
+    "/api/v1/suggestions/{suggestion_id}/accept": {
+      "post": {
+        "operationId": "accept_suggestion",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suggestion_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Suggestion Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuggestionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Accept a proposed rule: it becomes a check in the suite",
+        "tags": [
+          "suggestions"
+        ]
+      }
+    },
+    "/api/v1/suggestions/{suggestion_id}/reject": {
+      "post": {
+        "operationId": "reject_suggestion",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suggestion_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Suggestion Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuggestionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reject a proposed rule; it is not proposed again",
+        "tags": [
+          "suggestions"
+        ]
+      }
+    },
     "/api/v1/suites": {
       "get": {
         "operationId": "list_suites",
@@ -15536,6 +15725,69 @@
         "summary": "Change a user's permission on a suite",
         "tags": [
           "shares"
+        ]
+      }
+    },
+    "/api/v1/suites/{suite_id}/suggestions": {
+      "get": {
+        "operationId": "list_suggestions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suite_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Suite Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "pending",
+              "enum": [
+                "pending",
+                "accepted",
+                "rejected",
+                "all"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SuggestionRead"
+                  },
+                  "title": "Response List Suggestions",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "A suite's proposed rules (automatic coverage review queue)",
+        "tags": [
+          "suggestions"
         ]
       }
     },
