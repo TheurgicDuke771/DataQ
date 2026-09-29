@@ -2132,10 +2132,13 @@ def create_check(
     (the baseline dataset spec) + ``keys`` (join key columns).
 
     **`anomaly`** — "tell me when this looks unusual compared to normal" —
-    learns a rolling mean/stddev of the table's own ``row_count`` or
-    ``freshness_age_hours`` and scores each run's z-score against it. Its
-    config takes:
-    - ``target_metric`` (required): ``row_count`` or ``freshness_age_hours``.
+    learns a rolling mean/stddev of the table's own ``row_count``,
+    ``freshness_age_hours`` or ``column_profile`` and scores each run's z-score
+    against it. ``column_profile`` measures every column's null % and distinct
+    count in one query (a distinct count scores only when it falls) and names
+    the columns that moved in ``observed_value.deviations``. Its config takes:
+    - ``target_metric`` (required): ``row_count``, ``freshness_age_hours`` or
+      ``column_profile``.
     - ``column`` (required only for ``freshness_age_hours``): which timestamp
       column to measure.
     - ``window`` (optional): how many past runs the rolling baseline covers.

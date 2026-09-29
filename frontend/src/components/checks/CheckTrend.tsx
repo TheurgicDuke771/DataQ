@@ -119,6 +119,16 @@ interface Observation {
  * Pulls `{ts, value}` observations out of an `anomaly` baseline's payload
  * (`backend/app/services/anomaly.py`'s documented shape).
  */
+/** A `column_profile` baseline keeps one history per column, not a single series. */
+function isColumnProfile(baseline: CheckBaseline | null): baseline is CheckBaseline {
+  return baseline?.kind === 'anomaly' && baseline.baseline.target_metric === 'column_profile';
+}
+
+function columnProfileRuns(baseline: CheckBaseline): number {
+  const raw = baseline.baseline.observations;
+  return Array.isArray(raw) ? raw.length : 0;
+}
+
 function parseObservations(baseline: CheckBaseline | null): Observation[] {
   if (!baseline || baseline.kind !== 'anomaly') return [];
   const raw = baseline.baseline.observations;
@@ -238,7 +248,16 @@ export function CheckTrend({ suiteId, check, limit = 90 }: CheckTrendProps) {
               statuses={[...new Set(withMetric.map((p) => p.status as ResultStatus))]}
             />
           )}
-          {isAnomaly && (
+          {isAnomaly && isColumnProfile(baseline) && (
+            <Typography.Text
+              type="secondary"
+              style={{ display: 'block', marginTop: 12, fontSize: 12 }}
+              data-testid="column-profile-baseline-note"
+            >
+              {`Column profile baseline — a separate history per column (null % and distinct count), ${columnProfileRuns(baseline)} run(s) recorded. The chart above is each run's largest deviation; a run's detail names the columns that moved.`}
+            </Typography.Text>
+          )}
+          {isAnomaly && !isColumnProfile(baseline) && (
             <AnomalyBaselinePanel observations={observations} meta={anomalyMeta} check={check} />
           )}
         </>
