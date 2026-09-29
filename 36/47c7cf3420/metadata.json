@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "3647c7cf3420",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1653-pipeline-baselines",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/site/guides/notifications.md",
+    "docs/site/guides/orchestration.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/36/47c7cf3420/0/metadata.json",
+      "transcript": "/36/47c7cf3420/0/full.jsonl",
+      "compact_transcript": "/36/47c7cf3420/0/transcript.jsonl",
+      "content_hash": "/36/47c7cf3420/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 122,
+    "cache_creation_tokens": 76130,
+    "cache_read_tokens": 32060189,
+    "output_tokens": 41677,
+    "api_call_count": 61
+  }
+}
