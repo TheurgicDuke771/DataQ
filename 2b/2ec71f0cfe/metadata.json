@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "2b2ec71f0cfe",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1661-column-profile",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/2b/2ec71f0cfe/0/metadata.json",
+      "transcript": "/2b/2ec71f0cfe/0/full.jsonl",
+      "compact_transcript": "/2b/2ec71f0cfe/0/transcript.jsonl",
+      "content_hash": "/2b/2ec71f0cfe/0/content_hash.txt",
+      "prompt": "/2b/2ec71f0cfe/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2164,
+    "cache_creation_tokens": 2545945,
+    "cache_read_tokens": 565330166,
+    "output_tokens": 747253,
+    "api_call_count": 1084
+  }
+}
