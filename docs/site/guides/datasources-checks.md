@@ -620,8 +620,9 @@ data:
 | Row count is normal | The row count against the same weekday in earlier weeks. |
 | Data is fresh | The age of the newest value in a load or event timestamp column, against its history. |
 | Schema is unchanged | Any added, removed or retyped column. |
+| Column profile is normal | Every column's null rate and distinct count against their own history (see *Column profile* under the anomaly monitor). |
 
-The first two are anomaly checks: they warn at 3 standard deviations from the table's history,
+The row-count, freshness and column-profile checks are anomaly checks: they warn at 3 standard deviations from the table's history,
 fail at 4 and go critical at 6, and they skip until the table has four earlier runs on the same
 weekday, so a new suite starts scoring in its fifth week. The freshness check appears after the
 first run, once the schema check has recorded the columns: DataQ prefers a column such as
@@ -629,8 +630,8 @@ first run, once the schema check has recorded the columns: DataQ prefers a colum
 guessing. A schema change fails.
 
 For example, with coverage on for a connection whose inventory lists `shop.public.orders`, the
-next daily pass creates *Auto: shop.public.orders* with the row-count and schema checks and a
-daily schedule. After its first run it adds *Data is fresh* on `ordered_at`.
+next daily pass creates *Auto: shop.public.orders* with the row-count, schema and column-profile
+checks and a daily schedule. After its first run it adds *Data is fresh* on `ordered_at`.
 
 - **Your changes win.** You can edit, snooze or share these suites and checks like any other.
   DataQ only ever adds a missing check. It never changes one you edited, and a check you delete

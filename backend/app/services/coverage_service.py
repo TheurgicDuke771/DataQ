@@ -36,6 +36,7 @@ SUITE_NAME_PREFIX = "Auto: "
 VOLUME_CHECK = "Row count is normal"
 SCHEMA_CHECK = "Schema is unchanged"
 FRESHNESS_CHECK = "Data is fresh"
+PROFILE_CHECK = "Column profile is normal"
 
 #: Anomaly defaults (ADR 0047 §5): warn at 3 standard deviations, fail at 4, critical at 6.
 #: Same-weekday history, 4 points before scoring: a daily suite starts scoring in its fifth week.
@@ -209,6 +210,14 @@ def _ensure_checks(session: Session, suite: Suite) -> int:
             name=VOLUME_CHECK,
             kind="anomaly",
             config={"target_metric": "row_count", **_ANOMALY_WINDOW},
+            thresholds=_ANOMALY_THRESHOLDS,
+        )
+    if "profile" not in roles:
+        add(
+            "profile",
+            name=PROFILE_CHECK,
+            kind="anomaly",
+            config={"target_metric": "column_profile", **_ANOMALY_WINDOW},
             thresholds=_ANOMALY_THRESHOLDS,
         )
     if "freshness" not in roles:
