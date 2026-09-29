@@ -65,9 +65,11 @@ the editor to suggest. Engine is selected per
 check, on a Snowflake connection only; `kind` stays `expectation` either way. Testing or
 re-authenticating a Snowflake connection also probes DMF availability (Enterprise Edition +
 grant) and stores the result on the connection — surfaced on the connection list and, as a caveat
-rather than a hard gate, in the check editor's engine picker. The probe reads zero rows of one
-table the connection's role can already see; if the role can see none, or the probe fails for a
-reason unrelated to DMFs, the connection shows "couldn't determine" rather than "unavailable".
+rather than a hard gate, in the check editor's engine picker. The probe `EXPLAIN`s a system
+DMF call over one table the connection's role can already see: Snowflake compiles it and checks
+the function and the role's privileges, but executes nothing and reads no rows. If the role can
+see no table, or the probe fails for a reason unrelated to DMFs, the connection shows "couldn't
+determine" rather than "unavailable".
 
 ʲ **Databricks DQX** (ADR [0036](../adr/0036-connection-anchored-check-engines.md)) is the
 second platform-native engine: eight row rules evaluated by Databricks Labs DQX in a
