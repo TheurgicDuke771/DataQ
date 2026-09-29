@@ -41,9 +41,18 @@ code in the bundled inbox at **`http://localhost:8025`**. API + Swagger at
   own machine but never the LAN. That matters more than usual for `:8025`, which serves
   live sign-in codes to anyone who can reach it. **Not for production** — a real deploy
   uses the OpenTofu stack (`deploy/terraform/azure`, ADR 0024).
+- **Try it on real data:** add `--profile demo` to the `up` command. It also starts a
+  sample warehouse (PostgreSQL) holding a small shop dataset with deliberate defects, and
+  connects DataQ to it: a connection named *Demo warehouse (PostgreSQL)*, two suites
+  (*Shop orders* and *Shop customers*) whose checks cover value rules, custom SQL,
+  freshness, volume, an aggregate statistic, schema drift and anomaly detection, and an
+  hourly schedule. Both suites run once as the stack starts, so your first sign-in shows
+  real results: several checks fail on purpose, and the anomaly check waits for more
+  history before it scores. The sample warehouse has no host port and is reachable only
+  inside the compose network.
 - **Pin a release** instead of the moving stable tags:
   `DATAQ_BACKEND_TAG=vX.Y.Z DATAQ_FRONTEND_TAG=vX.Y.Z docker compose -f docker-compose.ghcr.yml up`.
-- **Reset:** `docker compose -f docker-compose.ghcr.yml down -v` (drops the seeded DB).
+- **Reset:** `docker compose -f docker-compose.ghcr.yml --profile demo down -v` (drops the seeded DB and the sample warehouse).
 - Omitting `DATAQ_SIGNIN_EMAIL` stops the stack and says so — there is no no-sign-in
   default to fall into.
 

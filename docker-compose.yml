@@ -340,6 +340,54 @@ services:
       marquez-db:
         condition: service_healthy
 
+  # ── Demo warehouse (opt-in: `docker-compose --profile demo up`, #1706) ───────────────────
+  # A sample shop dataset with deliberate defects that DataQ connects to and runs against; see
+  # backend/scripts/seed_demo.py. Network-internal and trust-auth, like marquez-db above.
+  demo-warehouse:
+    image: postgres:16-alpine
+    profiles: ["demo"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: trust
+      POSTGRES_USER: demo
+      POSTGRES_DB: shop
+    volumes:
+      - demo_warehouse_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U demo -d shop"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  demo-seed:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    profiles: ["demo"]
+    restart: "no"
+    command: python -m backend.scripts.seed_demo
+    env_file:
+      - path: .env.app
+        required: false
+    environment:
+      DATABASE_URL: *database-url
+      REDIS_URL: redis://redis:6379/0
+      SECRET_STORE: ${SECRET_STORE:-openbao}
+      OPENBAO_ADDR: http://openbao:8200
+      OPENBAO_TOKEN: ${OPENBAO_TOKEN:?run ./scripts/setup.sh (or set OPENBAO_TOKEN) — ADR 0039}
+      <<: *otp-auth-env
+    volumes:
+      - ./backend:/workspace/backend
+    depends_on:
+      demo-warehouse:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      openbao:
+        condition: service_healthy
+
   # ── Local OTLP consumer (opt-in: `docker-compose --profile telemetry up`) ──── The non-Azure half
   # of the observability seam (#589/#591).
   jaeger:
@@ -355,5 +403,6 @@ services:
 
 volumes:
   postgres_data:
+  demo_warehouse_data:
   pnpm-store:
   marquez_db_data:

@@ -4,6 +4,8 @@
 #   export DATAQ_SIGNIN_EMAIL=you@example.com        # who may sign in (#1150)
 #   docker compose -f docker-compose.ghcr.yml up
 #
+# Add `--profile demo` for a sample warehouse that is already connected, with suites that run.
+#
 # Signs you in with an emailed one-time code (ADR 0032); read the code at the
 # bundled inbox http://localhost:8025. Omitting DATAQ_SIGNIN_EMAIL stops the stack.
 
@@ -189,6 +191,43 @@ services:
       otp-mail-secret:
         condition: service_completed_successfully
 
+  # ── Demo profile (#1706): `docker compose -f docker-compose.ghcr.yml --profile demo up` ─────
+  # A sample warehouse with a small shop dataset and deliberate defects, connected and runnable:
+  # the seed creates the DataQ connection, two suites and an hourly schedule, and starts a first
+  # run of each suite. trust-auth like `postgres` above (eval only) and no host port: it is
+  # reachable only inside this compose network.
+  demo-warehouse:
+    image: postgres:16-alpine
+    profiles: ["demo"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: trust
+      POSTGRES_USER: demo
+      POSTGRES_DB: shop
+    volumes:
+      - ghcr_demo_warehouse_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U demo -d shop"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  demo-seed:
+    image: *backend-image
+    profiles: ["demo"]
+    restart: "no"
+    command: python -m backend.scripts.seed_demo
+    environment: *app-env
+    depends_on:
+      demo-warehouse:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      openbao:
+        condition: service_healthy
+
   # The UI image (nginx).
   frontend:
     image: "ghcr.io/theurgicduke771/dataq-frontend:${DATAQ_FRONTEND_TAG:-latest}"
@@ -204,3 +243,4 @@ services:
 
 volumes:
   ghcr_postgres_data:
+  ghcr_demo_warehouse_data:
