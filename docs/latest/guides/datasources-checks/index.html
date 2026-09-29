@@ -3873,17 +3873,21 @@ data:</p>
 <td>Schema is unchanged</td>
 <td>Any added, removed or retyped column.</td>
 </tr>
+<tr>
+<td>Column profile is normal</td>
+<td>Every column's null rate and distinct count against their own history (see <em>Column profile</em> under the anomaly monitor).</td>
+</tr>
 </tbody>
 </table>
-<p>The first two are anomaly checks: they warn at 3 standard deviations from the table's history,
+<p>The row-count, freshness and column-profile checks are anomaly checks: they warn at 3 standard deviations from the table's history,
 fail at 4 and go critical at 6, and they skip until the table has four earlier runs on the same
 weekday, so a new suite starts scoring in its fifth week. The freshness check appears after the
 first run, once the schema check has recorded the columns: DataQ prefers a column such as
 <code>loaded_at</code> or <code>updated_at</code>, and if the table has no timestamp column it says so instead of
 guessing. A schema change fails.</p>
 <p>For example, with coverage on for a connection whose inventory lists <code>shop.public.orders</code>, the
-next daily pass creates <em>Auto: shop.public.orders</em> with the row-count and schema checks and a
-daily schedule. After its first run it adds <em>Data is fresh</em> on <code>ordered_at</code>.</p>
+next daily pass creates <em>Auto: shop.public.orders</em> with the row-count, schema and column-profile
+checks and a daily schedule. After its first run it adds <em>Data is fresh</em> on <code>ordered_at</code>.</p>
 <ul>
 <li><strong>Suggested rules wait for you.</strong> Once a week DataQ profiles each covered table and proposes
   rules that assert something about its data: <em>never null</em> for a column with no nulls in at
@@ -3899,8 +3903,13 @@ daily schedule. After its first run it adds <em>Data is fresh</em> on <code>orde
 <li><strong>Leaving a table out.</strong> On the asset page, an admin can switch off <em>Include in automatic
   coverage</em>. The table's suite is paused, not deleted, and its history stays. Switching coverage
   off for the whole connection pauses all of its automatic suites the same way.</li>
-<li><strong>Cost.</strong> Each covered table runs a few warehouse queries once a day, at a time spread across
-  the day by table. A connection covers at most 500 tables (<code>AUTO_COVERAGE_MAX_ASSETS</code>); past
+<li><strong>Cost.</strong> Each covered table runs its checks once a day, at a time spread across the day by
+  table. The row-count and freshness checks are cheap aggregates, but the <strong>column-profile check
+  reads the whole table</strong>: it counts nulls and distinct values for up to 100 columns. On an engine
+  that bills by data scanned, Amazon Athena especially, that is a full scan of every covered table
+  every day, so estimate it before switching coverage on, and exclude large tables you don't need
+  watched this closely. Deleting the column-profile check from a suite stops it for that table for
+  good. Once a week each covered table is also profiled for suggested rules. A connection covers at most 500 tables (<code>AUTO_COVERAGE_MAX_ASSETS</code>); past
   that, the first 500 by name are covered and the overflow is logged.</li>
 <li><strong>Who can see them.</strong> Automatic suites have no human owner. Workspace admins see all of them
   and can share them; everyone sees the asset's health, which includes them.</li>
