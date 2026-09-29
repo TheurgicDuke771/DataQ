@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "8455aca5b06a",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1660-suggestions-schema",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/84/55aca5b06a/0/metadata.json",
+      "transcript": "/84/55aca5b06a/0/full.jsonl",
+      "compact_transcript": "/84/55aca5b06a/0/transcript.jsonl",
+      "content_hash": "/84/55aca5b06a/0/content_hash.txt",
+      "prompt": "/84/55aca5b06a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2230,
+    "cache_creation_tokens": 2582924,
+    "cache_read_tokens": 592435819,
+    "output_tokens": 767746,
+    "api_call_count": 1117
+  }
+}
