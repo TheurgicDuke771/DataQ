@@ -1,0 +1,13 @@
+<task-notification>
+<task-id>b2p5v37tf</task-id>
+<tool-use-id>toolu_014t9cHnwErK95Q9LHjeQChN</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4c1f817b-4fd7-4aa0-8c19-edd245c026d7/tasks/b2p5v37tf.output</output-file>
+<status>completed</status>
+<summary>Background command "Comment, auto-merge, wait for CI" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Sure, go ahead with the plan. 
+meanwhile can you give me a status update. 
+Also for ADLS/ADF can we use azurite in local?
