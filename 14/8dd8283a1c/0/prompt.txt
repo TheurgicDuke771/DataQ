@@ -1,0 +1,27 @@
+<task-notification>
+<task-id>bh0zw3dkc</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4c1f817b-4fd7-4aa0-8c19-edd245c026d7/tasks/bh0zw3dkc.output</output-file>
+<status>completed</status>
+<summary>Monitor "PR 2261 merge and CI outcome" stream ended</summary>
+<event>2261 MERGED</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bf8lh82yt</task-id>
+<summary>Monitor event: "PRs 2258 and 2259 merge or fail"</summary>
+<event>2258 MERGED</event>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bf8lh82yt</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4c1f817b-4fd7-4aa0-8c19-edd245c026d7/tasks/bf8lh82yt.output</output-file>
+<status>completed</status>
+<summary>Monitor "PRs 2258 and 2259 merge or fail" stream ended</summary>
+<event>2259 MERGED</event>
+</task-notification>
