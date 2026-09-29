@@ -234,6 +234,8 @@ class AdlsConnectionAdapter:
 
     def test(self, raw: dict[str, Any], secret: str | None, **_: Any) -> None:
         """Read the container's properties with the stored credential; raise on any failure."""
+        from azure.core.exceptions import HttpResponseError
+
         if secret is None:
             raise ValueError("a credential is required to test an ADLS Gen2 connection")
         config = self.validate_config(raw)
@@ -247,7 +249,15 @@ class AdlsConnectionAdapter:
         )
         try:
             container = client.get_container_client(config.container)
-            container.get_container_properties()
+            try:
+                container.get_container_properties()
+            except HttpResponseError as exc:
+                # A service (container) SAS can never read container properties (#2214), yet it
+                # can list and read every blob; a listed entry is then the proof it works.
+                if config.auth_type != "sas" or exc.status_code != 403:
+                    raise
+                next(iter(container.walk_blobs(delimiter="/", results_per_page=1)), None)
+                return
             if config.auth_type == "service_principal":
                 # Container properties are authorized by the control-plane `containers/read`
                 # action, which a plain Contributor holds without any DATA role — so that call
