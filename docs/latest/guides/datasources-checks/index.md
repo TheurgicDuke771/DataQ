@@ -70,6 +70,20 @@ though **Browse** starts there fine. Assets from OneLake are named
 `abfss://<workspace>@onelake.dfs.fabric.microsoft.com/...`. Only public-cloud Entra ID is
 supported for the token (`login.microsoftonline.com`).
 
+### Iceberg on an S3-compatible store
+
+For MinIO, R2, Ceph and similar, set the storage properties on the connection:
+`s3.endpoint` (e.g. `http://minio:9000`), `s3.access-key-id` and `s3.path-style-access=true`,
+with the secret key as the stored credential (`secret_property: s3.secret-access-key`). If
+reads fail with `ACCESS_DENIED` while the store accepts the key elsewhere, add `s3.region`
+(any region the store accepts, e.g. `us-east-1`): pyarrow's S3 client signs with a region,
+and some stores check it.
+
+**Test connection** lists the catalog's namespaces and then loads the first table it finds,
+which reads that table's metadata file from the warehouse with the storage credential. A wrong
+storage credential therefore fails the test. On a catalog with no tables yet, only the catalog
+itself can be checked.
+
 ### Moving a connection to a new host
 
 Editing a field that decides *where* the credential is sent — Snowflake `account`, ADLS

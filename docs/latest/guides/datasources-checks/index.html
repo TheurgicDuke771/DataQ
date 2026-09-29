@@ -943,6 +943,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#iceberg-on-an-s3-compatible-store" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Iceberg on an S3-compatible store
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#moving-a-connection-to-a-new-host" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2698,6 +2709,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#iceberg-on-an-s3-compatible-store" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Iceberg on an S3-compatible store
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#moving-a-connection-to-a-new-host" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3205,6 +3227,17 @@ workspace role. A batch target's prefix must reach inside an item
 though <strong>Browse</strong> starts there fine. Assets from OneLake are named
 <code>abfss://&lt;workspace&gt;@onelake.dfs.fabric.microsoft.com/...</code>. Only public-cloud Entra ID is
 supported for the token (<code>login.microsoftonline.com</code>).</p>
+<h3 id="iceberg-on-an-s3-compatible-store">Iceberg on an S3-compatible store<a class="headerlink" href="#iceberg-on-an-s3-compatible-store" title="Permanent link">¶</a></h3>
+<p>For MinIO, R2, Ceph and similar, set the storage properties on the connection:
+<code>s3.endpoint</code> (e.g. <code>http://minio:9000</code>), <code>s3.access-key-id</code> and <code>s3.path-style-access=true</code>,
+with the secret key as the stored credential (<code>secret_property: s3.secret-access-key</code>). If
+reads fail with <code>ACCESS_DENIED</code> while the store accepts the key elsewhere, add <code>s3.region</code>
+(any region the store accepts, e.g. <code>us-east-1</code>): pyarrow's S3 client signs with a region,
+and some stores check it.</p>
+<p><strong>Test connection</strong> lists the catalog's namespaces and then loads the first table it finds,
+which reads that table's metadata file from the warehouse with the storage credential. A wrong
+storage credential therefore fails the test. On a catalog with no tables yet, only the catalog
+itself can be checked.</p>
 <h3 id="moving-a-connection-to-a-new-host">Moving a connection to a new host<a class="headerlink" href="#moving-a-connection-to-a-new-host" title="Permanent link">¶</a></h3>
 <p>Editing a field that decides <em>where</em> the credential is sent — Snowflake <code>account</code>, ADLS
 <code>account_url</code> / <code>auth_type</code> / <code>tenant_id</code> / <code>client_id</code>, S3/dbt <code>endpoint_url</code>, Unity Catalog <code>workspace_url</code>, Iceberg <code>catalog_uri</code> /
