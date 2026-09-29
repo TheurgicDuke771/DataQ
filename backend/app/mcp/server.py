@@ -673,8 +673,9 @@ def get_suite_results(suite_id: str) -> dict[str, Any]:
     ``metric_value`` is its failing-row count, and it never carries sample rows,
     so a null sample there is not "no failing rows"), its pass/warn/fail/critical (or
     skip/error) status, the observed vs expected value (**redacted on the same
-    column-aware policy as the samples** — a masked observed value is not the
-    measured one), how much of the dataset the check actually saw (``sampling``
+    column-aware policy as the samples** for a GX result — a masked observed value
+    is not the measured one; a ``dmf`` / ``dqx`` metric is never masked), how much
+    of the dataset the check actually saw (``sampling``
     — null means a complete read; a non-null record means the verdict came from
     a sample), any sample failing rows, and ``redaction`` / ``redacted_columns``
     saying how much of those rows was masked. A masked sample is not an absent
