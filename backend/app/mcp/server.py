@@ -672,7 +672,12 @@ def get_suite_results(suite_id: str) -> dict[str, Any]:
     so a null sample there is not "no failing rows"; a ``dqx`` result whose
     ``observed_value`` has a ``stream`` block counted only the rows appended since
     the check's previous run — ``rows`` is that increment, not the table size, and
-    a ``skip`` there means no new rows, not a healthy table), its pass/warn/fail/critical (or
+    a ``skip`` there means no new rows, not a healthy table; a null
+    ``stream.from_version`` (a first stream run) or a non-null ``stream.restarted``
+    means the run re-read the whole table, so it is a fresh baseline, not an
+    increment; and ``stream.change_commits_skipped`` counts update/delete/merge/
+    overwrite commits whose rows were never evaluated, so a clean stream result
+    means nothing appended failed, not that nothing changed), its pass/warn/fail/critical (or
     skip/error) status, the observed vs expected value (**redacted on the same
     column-aware policy as the samples** — a masked observed value is not the
     measured one), how much of the dataset the check actually saw (``sampling``
@@ -1278,7 +1283,9 @@ def get_run_results(run_id: str) -> dict[str, Any]:
     expectation output, and the two have different semantics; a ``dqx`` result's
     metric value is its failing-row count, with no sample rows; one with a
     ``stream`` block in its observed value covers only the rows appended since the
-    check's previous run), its
+    check's previous run, unless ``stream.from_version`` is null or
+    ``stream.restarted`` is set, which mean a whole-table read; see
+    ``get_suite_results`` for ``change_commits_skipped``), its
     pass/warn/fail/critical (or skip/error) status, the observed vs expected
     value, how much of the dataset the check saw, and any sample failing rows
     (PII-redacted; see ``get_suite_results`` for what a null sample's
@@ -2135,7 +2142,9 @@ def create_check(
     about a minute per run; its config also takes an optional ``mode`` —
     ``snapshot``, the default, reads the whole table, and ``stream`` counts only
     rows appended since the check's last run and needs the connection's DQX
-    checkpoint volume) — rather than a GX expectation. Passing a
+    checkpoint volume; its first run reads the whole table, and it never
+    evaluates rows changed by update/delete/merge/overwrite, so a table whose bad
+    data arrives that way wants ``snapshot``) — rather than a GX expectation. Passing a
     ``gx``-shaped ``expectation_type``/``config`` with ``engine="dmf"``, or
     vice versa, is refused with a 422 naming the mismatch — it is not
     auto-detected from the type string. A connection that doesn't offer the
