@@ -1230,6 +1230,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#aggregate-monitor-all-datasources-adr-0012" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Aggregate monitor (all datasources — ADR 0012)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#schema-drift-monitor-all-datasources-adr-0012" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3024,6 +3035,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#aggregate-monitor-all-datasources-adr-0012" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Aggregate monitor (all datasources — ADR 0012)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#schema-drift-monitor-all-datasources-adr-0012" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4009,10 +4031,10 @@ API, the MCP tools and suite import all validate against that same list, so a ch
 outside the editor cannot smuggle in a type the editor would not offer; the refusal says
 whether the type is unknown to Great Expectations altogether or simply not enabled here,
 and lists what is.</p>
-<p>Two groups are deliberately absent. <strong>Scalar aggregates</strong> (<code>expect_column_mean_to_be_between</code>
-and its siblings) report a single number and no unexpected-%, so severity bands have
-nothing to band — a <em>Volume</em> or <em>Anomaly</em> monitor measures that shape properly, with trends
-and a learned baseline. <strong>Whole-table set comparisons</strong> (columns match an expected set or
+<p>Two groups are deliberately absent. <strong>GX's scalar aggregates</strong>
+(<code>expect_column_mean_to_be_between</code> and its siblings) report a single number and no
+unexpected-%, so severity bands have nothing to band — the <em>Aggregate</em> monitor measures that
+shape properly, with two-sided bands and a trend. <strong>Whole-table set comparisons</strong> (columns match an expected set or
 ordered list) are what the <em>Schema-drift</em> monitor does, against a captured baseline. For
 anything with no vetted type, write a custom-SQL check.</p>
 <h3 id="custom-sql-snowflake-unity-catalog-postgresql-mysql-trino-sql-server-athena-redshift-adr-0019">Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server / Athena / Redshift — ADR 0019)<a class="headerlink" href="#custom-sql-snowflake-unity-catalog-postgresql-mysql-trino-sql-server-athena-redshift-adr-0019" title="Permanent link">¶</a></h3>
@@ -4161,6 +4183,29 @@ band the % by which the count falls outside the range (a spike can exceed 100%),
 leave them blank for binary in-range pass/fail. On a flat file the count is over the
 <strong>resolved batch</strong> — the single file the target's batch pattern selects, not the
 whole prefix.</p>
+<h3 id="aggregate-monitor-all-datasources-adr-0012">Aggregate monitor (all datasources — ADR 0012)<a class="headerlink" href="#aggregate-monitor-all-datasources-adr-0012" title="Permanent link">¶</a></h3>
+<p><em>Is this column's statistic where it should be?</em> Pick one statistic — <strong>mean, median, sum,
+standard deviation, min or max</strong> — over one numeric column, and set <strong>two-sided bands</strong>:
+<em>Fail below / Fail above</em>, optionally a tighter <em>Warn below / Warn above</em> inside them and a
+wider <em>Critical below / Critical above</em> outside them. The bands nest (critical ⊇ fail ⊇ warn,
+bounds inclusive) and are checked when you save. An aggregate fails too low as well as too
+high, so it takes <strong>no</strong> warn/fail/critical threshold — those band a metric that only gets
+worse upward, and the editor hides them.</p>
+<p>The statistic itself is stored as the result's metric every run, so the <strong>trend view</strong> plots it
+with the bands drawn in, and it is ready for a future anomaly baseline. Semantics match SQL on
+every datasource: NULLs are skipped, the standard deviation is the sample one (n − 1), and mean,
+median and standard deviation are computed over a double-precision float — several engines
+(Databricks, Trino, Athena, Redshift, MySQL/MariaDB) otherwise round a DECIMAL average to a
+fixed number of places. An <strong>empty table or an all-NULL column reports error</strong>, never a pass
+on a made-up 0 (a standard deviation needs at least two values). A text or date column is an
+error too: the monitor needs a numeric column.</p>
+<p>Warehouses compute it with one pushdown query (Unity Catalog included); flat files and Iceberg
+read the one column into the worker, under the same scan caps as a check. <strong>Median</strong> is exact
+wherever it is offered and is <strong>not offered on MySQL/MariaDB, Trino or Athena</strong>, which have
+only an approximate percentile — use the mean there, or a custom-SQL check with the engine's
+<code>approx_percentile</code>. Its DQ dimension is left for you to set, since a statistic can speak to
+accuracy, validity or consistency depending on why you wrote it. Under zero-sample mode a
+<strong>min or max</strong> result keeps its status but not its value: that value is one cell of the table.</p>
 <h3 id="schema-drift-monitor-all-datasources-adr-0012">Schema-drift monitor (all datasources — ADR 0012)<a class="headerlink" href="#schema-drift-monitor-all-datasources-adr-0012" title="Permanent link">¶</a></h3>
 <p><em>Did the shape change under you?</em> Capture a <strong>baseline</strong> column-name/type snapshot,
 then each run diffs the live snapshot against it and flags any add / drop /

@@ -2451,7 +2451,7 @@
 </tr>
 <tr>
 <td><strong>Check</strong></td>
-<td>One rule: a value expectation, a monitor (freshness, volume, schema drift, anomaly), a comparison, or custom SQL</td>
+<td>One rule: a value expectation, a monitor (freshness, volume, aggregate, schema drift, anomaly), a comparison, or custom SQL</td>
 <td>Suite → Checks</td>
 </tr>
 <tr>
@@ -2495,9 +2495,10 @@
 <li><strong>Connection</strong> — credentials + config for one datasource or orchestration provider.</li>
 <li><strong>Suite</strong> — a named collection of checks that runs against one connection's target
   (a table, a file/path, a Unity Catalog table, or an Iceberg <code>namespace.table</code>).</li>
-<li><strong>Check</strong> — a single data-quality rule. Six kinds: a <strong>Great Expectations expectation</strong>
+<li><strong>Check</strong> — a single data-quality rule. Seven kinds: a <strong>Great Expectations expectation</strong>
   (e.g. "this column is never null", or a custom SQL rule), or one of the monitor kinds —
   <strong>freshness</strong> (is the data stale?), <strong>volume</strong> (did the load land whole?),
+  <strong>aggregate</strong> (is a column's mean / median / sum / spread / min / max inside its bands?),
   <strong>schema drift</strong> (did the shape change?), <strong>anomaly</strong> (is this value abnormal for this
   dataset?), and <strong>comparison</strong> (does it reconcile against a baseline dataset?).</li>
 <li><strong>Run</strong> — one execution of a suite. Each check produces a <strong>result</strong> with a status:

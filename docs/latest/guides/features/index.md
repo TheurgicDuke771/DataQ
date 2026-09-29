@@ -23,9 +23,9 @@ Stores you write checks **against** (see [Datasources & checks](datasources-chec
 
 ## Checks & authoring
 
-A check is one data-quality rule, authored in the UI. Six kinds ship (`check.kind`): GX
-**expectations** (including custom SQL), and the **freshness / volume / schema-drift /
-anomaly / comparison** monitor kinds:
+A check is one data-quality rule, authored in the UI. Seven kinds ship (`check.kind`): GX
+**expectations** (including custom SQL), and the **freshness / volume / aggregate /
+schema-drift / anomaly / comparison** monitor kinds:
 
 - **DQ dimension** — every check is classified by the quality aspect it measures
   (accuracy, completeness, consistency, integrity, timeliness, uniqueness, validity).

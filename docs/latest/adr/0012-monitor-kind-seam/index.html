@@ -2436,6 +2436,24 @@ Iceberg and flat files compute their monitor scalars natively <em>inside their
 runners</em>, which a stateful kind never reaches. Widening it is a per-datasource
 measurement seam, not an allowlist edit — refused at author time so it can't
 save clean and error nightly.</p>
+<p><strong>Amendment (2026-09-29, v1.2) — <code>aggregate</code>, the first kind outside the original
+reserved set, and the first whose bands are two-sided.</strong> A scalar kind (it has a
+<code>build_statement</code>, so every SQL runner computes it by pushdown and flat files /
+Iceberg read the one column): one of mean / median / sum / stdev / min / max over one
+numeric column, with <strong>the aggregate itself as <code>metric_value</code></strong> so it trends and can
+be baselined. It needed a widened <code>ck_checks_kind_valid</code> (migration <code>18f2ee7908cf</code>,
+additive) and one more result semantic beside <code>skip</code>: <strong>a tier the check decides
+itself</strong> (<code>CheckOutcome.severity</code>, taken as-is by <code>services/severity.py</code>). ADR 0016's
+thresholds band a metric that only gets worse upward; an aggregate fails too low as
+well as too high, and banding its raw value upward would call a healthy mean
+"critical" for being large. So its bands live in <code>config</code> as nested bounds —
+critical ⊇ fail ⊇ warn on each side, inclusive, validated at author time — and the
+warn/fail/critical threshold columns are refused on it, the same way an unbandable
+DMF metric refuses them. NULL (empty table, all-NULL column, a stdev over one value)
+is an <code>error</code>, never a 0; mean / median / stdev are computed over a double because
+several engines keep a DECIMAL average at a fixed scale. An exact median does not
+exist on MySQL, Trino or Athena (<code>SqlEngineSpec.exact_median</code>), so it is refused
+there rather than approximated silently.</p>
 </blockquote>
 <h2 id="context">Context<a class="headerlink" href="#context" title="Permanent link">¶</a></h2>
 <p>Every v1 check is a Great Expectations expectation (ADR 0003): a value-level
