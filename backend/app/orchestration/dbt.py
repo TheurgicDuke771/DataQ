@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from backend.app.core.artifacts import ArtifactTooLargeError, load_json_artifact
 from backend.app.core.credential_expiry import azure_sas_expiry
+from backend.app.core.errors import SafeMonitorError
 from backend.app.core.logging import get_logger
 from backend.app.core.s3_endpoint import (
     S3AddressingStyle,
@@ -291,10 +292,24 @@ class DbtConnectionAdapter:
         return azure_sas_expiry(secret)
 
     def test(self, raw: dict[str, Any], secret: str | None, **_: Any) -> None:
-        """Read the first job's `latest/run_results.json`; raise on any failure."""
+        """Read the first job's `latest/run_results.json`; raise on any failure, absence included.
+
+        A mistyped `artifacts_uri` or job reads as absent, and the poller would then find nothing
+        forever while the connection showed green (#2215).
+        """
         config = self.validate_config(raw)
+        job = config.jobs[0]
         # A cached token would keep a revoked client secret testing green.
-        _read_artifact(config, config.jobs[0], secret, fresh_token=True)
+        if _read_artifact(config, job, secret, fresh_token=True) is None:
+            raise DbtArtifactNotFoundError(
+                f"no run_results.json at {config.artifacts_uri}/{job}/{_RUN_RESULTS_RELPATH}. "
+                "Check artifacts_uri and the job name, or run the job once so it publishes "
+                "its artifacts."
+            )
+
+
+class DbtArtifactNotFoundError(SafeMonitorError):
+    """The artifacts store answered, but holds no run_results.json where the config points."""
 
 
 class DbtProvider:

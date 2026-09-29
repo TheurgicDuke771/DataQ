@@ -230,13 +230,30 @@ def test_adapter_test_reads_first_job(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_read(cfg: DbtConfig, job: str, secret: str, **kwargs: Any) -> bytes | None:
         called["job"] = job
         called.update(kwargs)
-        return None  # not-yet-published is still a green test
+        return b"{}"
 
     monkeypatch.setattr(dbt_mod, "_read_artifact", fake_read)
     DbtConnectionAdapter().test(_cfg(jobs=["first", "second"]), "secret")
     assert called["job"] == "first"
     # A cached token would keep a revoked client secret testing green.
     assert called["fresh_token"] is True
+
+
+def test_adapter_test_fails_naming_the_path_when_no_artifact_is_there(tmp_path: Any) -> None:
+    # A mistyped artifacts_uri read as absent and tested green, and the poller found nothing
+    # forever (#2215). Real filesystem, not a mock of the reader.
+    uri = f"file://{tmp_path}"
+    with pytest.raises(dbt_mod.DbtArtifactNotFoundError) as exc:
+        DbtConnectionAdapter().test(_cfg(artifacts_uri=uri, jobs=["nightly"]), "")
+    assert f"{uri}/nightly/latest/run_results.json" in str(exc.value)
+
+
+def test_adapter_test_passes_once_the_job_has_published(tmp_path: Any) -> None:
+    latest = tmp_path / "nightly" / "latest"
+    latest.mkdir(parents=True)
+    (latest / "run_results.json").write_bytes(_run_results("success", "pass"))
+
+    DbtConnectionAdapter().test(_cfg(artifacts_uri=f"file://{tmp_path}", jobs=["nightly"]), "")
 
 
 # ── _read_artifact (the reader seam itself, per scheme) ───────────────────────
