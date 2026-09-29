@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "61559a80af3a",
+  "strategy": "manual-commit",
+  "branch": "docs/ask-ai-html-url",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/61/559a80af3a/0/metadata.json",
+      "transcript": "/61/559a80af3a/0/full.jsonl",
+      "compact_transcript": "/61/559a80af3a/0/transcript.jsonl",
+      "content_hash": "/61/559a80af3a/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1080,
+    "cache_creation_tokens": 1674679,
+    "cache_read_tokens": 258104337,
+    "output_tokens": 387276,
+    "api_call_count": 542
+  }
+}
