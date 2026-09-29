@@ -78,6 +78,10 @@ CHECK_KINDS = (
 COMPARISON_KIND = "comparison"
 # Check engines (ADR 0036) — WHO evaluates, orthogonal to `kind`.
 CHECK_ENGINES = ("gx", "dmf", "dqx", "dataplex")
+
+# Who created a suite or check (ADR 0047): a person, the coverage loop, or an accepted suggestion.
+SUITE_ORIGINS = ("user", "auto")
+CHECK_ORIGINS = ("user", "auto", "suggestion")
 GX_ENGINE = "gx"
 # DQ dimensions (ADR 0038) — third axis, orthogonal to `kind` and `engine`.
 DQ_DIMENSIONS = (
@@ -114,6 +118,9 @@ NOTIFICATION_CHANNEL_TYPES = ("teams", "slack", "email", "webhook")
 # never reopens (a new incident links via `prior_incident_id`).
 INCIDENT_STATUSES = ("open", "acknowledged", "resolved")
 INCIDENT_ACTIVE_STATUSES = ("open", "acknowledged")
+# Why an incident was resolved (ADR 0047 §8); NULL = not said. `false_positive` feeds the
+# false-positive rate shown beside coverage.
+INCIDENT_RESOLUTIONS = ("fixed", "expected_change", "false_positive")
 # Who resolved: a user, or the engine on the first passing result. NULL until resolved.
 INCIDENT_RESOLVED_BY = ("user", "auto")
 
@@ -310,6 +317,10 @@ class Asset(Base):
     )
     # Set only via the workspace-Admin-only PATCH /assets/{id} (#760).
     description: Mapped[str | None] = mapped_column(Text)
+    # Left out of its connection's automatic coverage (ADR 0047).
+    auto_coverage_excluded: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
     first_seen: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -470,6 +481,14 @@ class Suite(Base):
         Index("ix_suites_connection_id", "connection_id"),
         Index("ix_suites_created_by", "created_by"),
         Index("ix_suites_asset_id", "asset_id"),
+        _in_check("origin", SUITE_ORIGINS, "suite_origin_valid"),
+        # One automatic suite per asset (ADR 0047).
+        Index(
+            "uq_suites_auto_per_asset",
+            "asset_id",
+            unique=True,
+            postgresql_where=text("origin = 'auto'"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
@@ -487,6 +506,11 @@ class Suite(Base):
     # Column-redaction policy for failing-row samples (#415): `{"identifier_column": str,
     # "pii_columns": [str]}` — identifier always shown, pii always masked.
     column_policy: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
+    # 'auto' = created and maintained by the coverage loop (ADR 0047).
+    origin: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'user'"))
+    # Coverage-loop bookkeeping for an automatic suite: checks a person deleted (never recreated)
+    # and gaps it recorded instead of guessing. NULL on user suites.
+    auto_state: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     #: Provenance, not lifecycle ownership — SET NULL; RESTRICT would make a user un-erasable (GDPR
     #: Art 17, #432/#1319).
     created_by: Mapped[uuid.UUID | None] = mapped_column(
@@ -506,6 +530,7 @@ class Check(Base):
         _in_check("kind", CHECK_KINDS, "kind_valid"),
         _in_check("engine", CHECK_ENGINES, "engine_valid"),
         _in_check("dimension", DQ_DIMENSIONS, "dimension_valid"),
+        _in_check("origin", CHECK_ORIGINS, "check_origin_valid"),
         # ADR 0015: source ref presence ⇔ kind='comparison', DB-enforced so the run path can trust a
         # comparison row always has a source.
         CheckConstraint(
@@ -527,6 +552,7 @@ class Check(Base):
     )
     # Evaluating engine (ADR 0036).
     engine: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'gx'"))
+    origin: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'user'"))
     expectation_type: Mapped[str] = mapped_column(String(128), nullable=False)
     # DQ dimension (ADR 0038): derived at author time then STORED (SQL GROUP BY + override survival,
     # #889).
@@ -1055,6 +1081,7 @@ class Incident(Base):
     __tablename__ = "incidents"
     __table_args__ = (
         _in_check("status", INCIDENT_STATUSES, "incident_status_valid"),
+        _in_check("resolution", INCIDENT_RESOLUTIONS, "incident_resolution_valid"),
         # Single-sourced from INCIDENT_RESOLVED_BY so vocabulary and constraint can't drift.
         CheckConstraint(
             "resolved_by IS NULL OR resolved_by IN ("
@@ -1095,6 +1122,7 @@ class Incident(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'open'"))
     # 'user' | 'auto'; NULL until resolved.
     resolved_by: Mapped[str | None] = mapped_column(String(16))
+    resolution: Mapped[str | None] = mapped_column(String(32))
     occurrence_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
     # Latest failing occurrence; open time = created_at.
     last_seen_at: Mapped[datetime] = mapped_column(
