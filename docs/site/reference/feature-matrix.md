@@ -73,7 +73,9 @@ reason unrelated to DMFs, the connection shows "couldn't determine" rather than 
 second platform-native engine: eight row rules evaluated by Databricks Labs DQX in a
 serverless job in the connection's own workspace, one job per run. DataQ never ships DQX,
 whose licence permits use only with Databricks services. The job returns failing-row counts
-only. See [Databricks DQX](../guides/datasources-checks.md#databricks-dqx-adr-0036).
+only. A check in **stream** mode evaluates only the rows appended since its last run, so it
+works on Lakeflow streaming tables and append-only Delta tables. See
+[Databricks DQX](../guides/datasources-checks.md#databricks-dqx-adr-0036).
 
 ᵖ **PostgreSQL** — any server, self-hosted or managed; everything runs by pushdown
 on read-only sessions. Every row was verified by an **executed** run against a real

@@ -20,7 +20,12 @@ from backend.app.datasources.base import (
     SuiteOutcome,
     ValueSignalGate,
 )
-from backend.app.datasources.databricks_dqx import DQX_ENGINE, DqxJobs, run_dqx_batch
+from backend.app.datasources.databricks_dqx import (
+    DQX_ENGINE,
+    DqxJobs,
+    checkpoint_root,
+    run_dqx_batch,
+)
 from backend.app.datasources.gx_runner import ephemeral_gx_context, run_expectations
 from backend.app.datasources.monitors import (
     FRESHNESS,
@@ -59,6 +64,16 @@ class UnityCatalogConfig(BaseModel):
     warehouse_id: str
     # Warehouse inventory sync (#919, ADR 0040) — on by default; see SnowflakeConfig.
     inventory_sync: bool = True
+    # `catalog.schema.volume` for the throwaway checkpoints of stream-mode DQX checks.
+    dqx_checkpoint_volume: str | None = None
+
+    @field_validator("dqx_checkpoint_volume")
+    @classmethod
+    def _volume(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        checkpoint_root(value.strip())
+        return value.strip()
 
     @field_validator("workspace_url")
     @classmethod
@@ -859,8 +874,11 @@ class UnityCatalogCheckRunner:
         *,
         table: str,
         schema: str | None,
+        previous: list[dict[str, Any] | None] | None = None,
     ) -> list[CheckOutcome]:
-        """Every ``engine`` check of a run in one batch — one DQX job, not one per check."""
+        """Every ``engine`` check of a run in one batch — one DQX job, not one per check.
+        ``previous`` is each check's last evaluated ``observed_value`` (stream checks resume
+        from it)."""
         specs = [(expectation_type, config) for _kind, expectation_type, config in checks]
         if engine != DQX_ENGINE or schema is None:
             reason = (
@@ -873,7 +891,15 @@ class UnityCatalogCheckRunner:
                 for t, _config in specs
             ]
         jobs = DqxJobs(workspace_url=self._config.workspace_url, token=self._token)
-        return run_dqx_batch(jobs, specs, catalog=self._catalog, schema=schema, table=table)
+        return run_dqx_batch(
+            jobs,
+            specs,
+            catalog=self._catalog,
+            schema=schema,
+            table=table,
+            previous=previous,
+            checkpoint_volume=self._config.dqx_checkpoint_volume,
+        )
 
     def run_native_check(
         self,

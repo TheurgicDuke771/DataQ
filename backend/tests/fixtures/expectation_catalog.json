@@ -440,7 +440,8 @@
     "kind": "expectation",
     "dimension": "completeness",
     "fields": [
-      "column"
+      "column",
+      "mode"
     ],
     "noThresholds": false,
     "dataframeOnly": false
@@ -450,7 +451,8 @@
     "kind": "expectation",
     "dimension": "completeness",
     "fields": [
-      "column"
+      "column",
+      "mode"
     ],
     "noThresholds": false,
     "dataframeOnly": false
@@ -460,7 +462,8 @@
     "kind": "expectation",
     "dimension": "completeness",
     "fields": [
-      "column"
+      "column",
+      "mode"
     ],
     "noThresholds": false,
     "dataframeOnly": false
@@ -471,7 +474,8 @@
     "dimension": "validity",
     "fields": [
       "column",
-      "allowed"
+      "allowed",
+      "mode"
     ],
     "noThresholds": false,
     "dataframeOnly": false
@@ -483,7 +487,8 @@
     "fields": [
       "column",
       "min_limit",
-      "max_limit"
+      "max_limit",
+      "mode"
     ],
     "noThresholds": false,
     "dataframeOnly": false
@@ -494,7 +499,8 @@
     "dimension": "validity",
     "fields": [
       "column",
-      "regex"
+      "regex",
+      "mode"
     ],
     "noThresholds": false,
     "dataframeOnly": false
@@ -505,7 +511,8 @@
     "dimension": "validity",
     "fields": [
       "column",
-      "limit"
+      "limit",
+      "mode"
     ],
     "noThresholds": false,
     "dataframeOnly": false
@@ -516,7 +523,8 @@
     "dimension": "validity",
     "fields": [
       "column",
-      "limit"
+      "limit",
+      "mode"
     ],
     "noThresholds": false,
     "dataframeOnly": false

@@ -192,6 +192,14 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
           'Daily sync of every table this workspace exposes into the asset view. ' +
           'Needs SELECT on system.information_schema for this PAT.',
       },
+      {
+        name: 'dqx_checkpoint_volume',
+        label: 'DQX checkpoint volume',
+        optional: true,
+        extra:
+          'catalog.schema.volume · where stream-mode DQX checks keep a throwaway checkpoint ' +
+          'during a run. Needs READ VOLUME and WRITE VOLUME for this PAT.',
+      },
     ],
     secretLabel: 'Personal access token (PAT)',
     destinationFields: ['workspace_url'],

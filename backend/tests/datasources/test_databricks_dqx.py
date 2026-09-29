@@ -191,10 +191,19 @@ def test_a_malformed_result_is_an_error_not_a_pass(result: Any) -> None:
 def test_the_runner_notebook_pins_dqx_and_never_returns_row_values() -> None:
     assert f"databricks-labs-dqx=={dqx.DQX_VERSION}" in dqx.RUNNER_NOTEBOOK
     assert "failing" in dqx.RUNNER_NOTEBOOK
-    assert ".collect()" in dqx.RUNNER_NOTEBOOK
-    # the only collect() is over the grouped counts, never the table's rows
-    assert dqx.RUNNER_NOTEBOOK.count(".collect()") == 1
-    assert 'groupBy("e.name").count().collect()' in dqx.RUNNER_NOTEBOOK
+    # Every collect() is over grouped counts, table history metadata, or an empty (limit 0)
+    # pre-flight read — never the table's rows. Stream counts come from observed metrics.
+    notebook = dqx.RUNNER_NOTEBOOK
+    allowed = [
+        'groupBy("e.name").count().collect()',
+        '"version", "operation", "operationParameters"\n    ).collect()',
+        ".limit(0).collect()",
+    ]
+    assert notebook.count(".collect()") == len(allowed)
+    for fragment in allowed:
+        assert fragment in notebook
+    assert 'writeStream.format("noop")' in notebook
+    assert "@DQX_VERSION@" not in notebook
 
 
 # ─────────────── the Jobs/Workspace REST seam ───────────────
@@ -390,6 +399,7 @@ def test_the_notebook_isolates_a_rule_that_fails_at_run_time() -> None:
     """A combined pass that raises (live: an invalid regex) falls back to one rule at a time, so
     only that rule errors — never every DQX check in the run."""
     notebook = dqx.RUNNER_NOTEBOOK
-    assert "counts = failing_counts(valid)" in notebook
+    assert "counts = failing_counts(snapshot)" in notebook
     assert "counts.update(failing_counts([rule]))" in notebook
-    assert 'results[rule["name"]] = {"error": type(exc).__name__' in notebook
+    assert 'results[rule["name"]] = run_error(exc)' in notebook
+    assert 'return {"error": type(exc).__name__' in notebook
