@@ -2557,9 +2557,20 @@ code in the bundled inbox at <strong><code>http://localhost:8025</code></strong>
   own machine but never the LAN. That matters more than usual for <code>:8025</code>, which serves
   live sign-in codes to anyone who can reach it. <strong>Not for production</strong> — a real deploy
   uses the OpenTofu stack (<code>deploy/terraform/azure</code>, ADR 0024).</li>
+<li><strong>Try it on real data:</strong> add <code>--profile demo</code> to the <code>up</code> command. It also starts a
+  sample warehouse (PostgreSQL) holding a small shop dataset with deliberate defects, and
+  connects DataQ to it: a connection named <em>Demo warehouse (PostgreSQL)</em>, two suites
+  (<em>Shop orders</em> and <em>Shop customers</em>) whose checks cover value rules, custom SQL,
+  freshness, volume, an aggregate statistic, schema drift and anomaly detection, and an
+  hourly schedule. Both suites run once as the stack starts, so your first sign-in shows
+  real results: several checks fail on purpose, and the anomaly check waits for more
+  history before it scores. No new orders arrive while the stack runs, so the freshness
+  check warns after a day and fails after three, which is the monitor doing its job;
+  restarting the stack makes the data current again. The sample warehouse has no host
+  port and is reachable only inside the compose network.</li>
 <li><strong>Pin a release</strong> instead of the moving stable tags:
   <code>DATAQ_BACKEND_TAG=vX.Y.Z DATAQ_FRONTEND_TAG=vX.Y.Z docker compose -f docker-compose.ghcr.yml up</code>.</li>
-<li><strong>Reset:</strong> <code>docker compose -f docker-compose.ghcr.yml down -v</code> (drops the seeded DB).</li>
+<li><strong>Reset:</strong> <code>docker compose -f docker-compose.ghcr.yml --profile demo down -v</code> (drops the seeded DB and the sample warehouse).</li>
 <li>Omitting <code>DATAQ_SIGNIN_EMAIL</code> stops the stack and says so — there is no no-sign-in
   default to fall into.</li>
 </ul>
