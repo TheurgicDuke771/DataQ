@@ -69,6 +69,8 @@ class SnowflakeConfig(BaseModel):
     # default is documentation only — the real gate is `inventory_service.inventory_opted_in`,
     # which reads the raw connection.config dict and never sees this validated model.
     inventory_sync: bool = True
+    # Automatic coverage (ADR 0047) — off unless switched on; read by coverage_service.
+    auto_coverage: bool = False
     # Auth method. 'password' (default — back-compat for existing configs that carry no auth_type)
     # puts the password in the DSN. 'key_pair' authenticates with an RSA private key passed as
     # `private_key` connect-arg, and the DSN carries no password; the secret is either a bare PEM

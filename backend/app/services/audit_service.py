@@ -146,6 +146,7 @@ _CHECK_FIELDS: Final[tuple[str, ...]] = (
     "name",
     "kind",
     "expectation_type",
+    "origin",
     "dimension",
     "source_connection_id",
     "config",
@@ -176,6 +177,7 @@ _SUITE_FIELDS: Final[tuple[str, ...]] = (
     # The redaction override itself (#415).
     "column_policy",
     "asset_id",
+    "origin",
 )
 
 _SCHEDULE_FIELDS: Final[tuple[str, ...]] = (
@@ -275,6 +277,8 @@ _ASSET_FIELDS: Final[tuple[str, ...]] = (
     "connection_id",
     "owner_user_id",
     "description",
+    # Leaving a table out of automatic coverage is a deliberate admin act (ADR 0047).
+    "auto_coverage_excluded",
 )
 
 # `evidence` is deliberately ABSENT: it is derived from a failing run and can
@@ -289,6 +293,7 @@ _INCIDENT_FIELDS: Final[tuple[str, ...]] = (
     "acknowledge_note",
     "resolved_by_user_id",
     "resolution_note",
+    "resolution",
 )
 
 _SERIALIZERS: Final[dict[str, tuple[str, ...]]] = {

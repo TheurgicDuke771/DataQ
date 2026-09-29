@@ -106,6 +106,15 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
         default: true,
         extra: 'Daily sync of every table in this database into the asset view.',
       },
+      {
+        name: 'auto_coverage',
+        label: 'Automatic coverage',
+        type: 'toggle',
+        optional: true,
+        default: false,
+        extra:
+          'Watch every synced table without writing checks: row count, freshness and schema change against each table’s own history. Each covered table adds a few warehouse queries a day.',
+      },
     ],
     auth: [
       { value: 'password', label: 'Password', secretLabel: 'Password' },
@@ -193,6 +202,15 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
           'Needs SELECT on system.information_schema for this PAT.',
       },
       {
+        name: 'auto_coverage',
+        label: 'Automatic coverage',
+        type: 'toggle',
+        optional: true,
+        default: false,
+        extra:
+          'Watch every synced table without writing checks: row count, freshness and schema change against each table’s own history. Each covered table adds a few warehouse queries a day.',
+      },
+      {
         name: 'dqx_checkpoint_volume',
         label: 'DQX checkpoint volume',
         optional: true,
@@ -234,6 +252,15 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
         default: true,
         extra: 'Daily sync of every table this user can read into the asset view.',
       },
+      {
+        name: 'auto_coverage',
+        label: 'Automatic coverage',
+        type: 'toggle',
+        optional: true,
+        default: false,
+        extra:
+          'Watch every synced table without writing checks: row count, freshness and schema change against each table’s own history. Each covered table adds a few warehouse queries a day.',
+      },
     ],
     secretLabel: 'Password',
     destinationFields: ['host', 'port'],
@@ -273,6 +300,15 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
         default: true,
         extra: 'Daily sync of every table this user can read into the asset view.',
       },
+      {
+        name: 'auto_coverage',
+        label: 'Automatic coverage',
+        type: 'toggle',
+        optional: true,
+        default: false,
+        extra:
+          'Watch every synced table without writing checks: row count, freshness and schema change against each table’s own history. Each covered table adds a few warehouse queries a day.',
+      },
     ],
     secretLabel: 'Password',
     destinationFields: ['host', 'port'],
@@ -304,6 +340,15 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
         optional: true,
         default: true,
         extra: 'Daily sync of every table this user can read into the asset view.',
+      },
+      {
+        name: 'auto_coverage',
+        label: 'Automatic coverage',
+        type: 'toggle',
+        optional: true,
+        default: false,
+        extra:
+          'Watch every synced table without writing checks: row count, freshness and schema change against each table’s own history. Each covered table adds a few warehouse queries a day.',
       },
     ],
     secretLabel: 'Password',
@@ -356,6 +401,15 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
         optional: true,
         default: true,
         extra: 'Daily sync of every table this user can read in the catalog into the asset view.',
+      },
+      {
+        name: 'auto_coverage',
+        label: 'Automatic coverage',
+        type: 'toggle',
+        optional: true,
+        default: false,
+        extra:
+          'Watch every synced table without writing checks: row count, freshness and schema change against each table’s own history. Each covered table adds a few warehouse queries a day.',
       },
     ],
     auth: [
@@ -412,6 +466,15 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
           'Daily sync of every table this key can read into the asset view — each sync is ' +
           'itself a billed Athena query.',
       },
+      {
+        name: 'auto_coverage',
+        label: 'Automatic coverage',
+        type: 'toggle',
+        optional: true,
+        default: false,
+        extra:
+          'Watch every synced table without writing checks: row count, freshness and schema change against each table’s own history. Each covered table adds a few warehouse queries a day.',
+      },
     ],
     secretLabel: 'Secret access key',
     destinationFields: ['region', 'work_group', 's3_staging_dir'],
@@ -460,6 +523,15 @@ export const CONNECTION_FORM_SPECS: Record<ConnectionType, TypeSpec> = {
         optional: true,
         default: true,
         extra: 'Daily sync of every table this login can read into the asset view.',
+      },
+      {
+        name: 'auto_coverage',
+        label: 'Automatic coverage',
+        type: 'toggle',
+        optional: true,
+        default: false,
+        extra:
+          'Watch every synced table without writing checks: row count, freshness and schema change against each table’s own history. Each covered table adds a few warehouse queries a day.',
       },
     ],
     defaultConfig: { driver: 'python-tds' },

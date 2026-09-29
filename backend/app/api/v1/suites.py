@@ -109,6 +109,8 @@ class SuiteRead(ApiModel):
     asset_id: uuid.UUID | None = None
     # Failing-sample redaction policy (#415): {identifier_column?, pii_columns}.
     column_policy: dict[str, Any] | None = None
+    #: 'auto' = owned by automatic coverage (ADR 0047), with no human creator.
+    origin: str = "user"
     #: `None` once the creating user is erased — the row outlives its author (`ondelete=SET NULL`,
     #: #1319).
     created_by: uuid.UUID | None

@@ -99,6 +99,8 @@ class GenericSqlConfig(BaseModel):
     schema_: str | None = Field(default=None, alias="schema")
     # Warehouse inventory sync (ADR 0040) — on by default; see SnowflakeConfig.
     inventory_sync: bool = True
+    # Automatic coverage (ADR 0047) — off unless switched on; read by coverage_service.
+    auto_coverage: bool = False
     sslmode: SslMode = "require"
 
     @field_validator("sslmode", mode="before")

@@ -893,6 +893,18 @@ def sync_asset_inventory() -> int:
         session.close()
 
 
+@celery_app.task(name="reconcile_auto_coverage")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
+def reconcile_auto_coverage() -> dict[str, int]:
+    """Daily, after the inventory sync: bring automatic-coverage suites in line (ADR 0047)."""
+    from backend.app.services import coverage_service
+
+    session = get_session()
+    try:
+        return coverage_service.reconcile_all(session)
+    finally:
+        session.close()
+
+
 @celery_app.task(name="sync_connection_asset_inventory")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
 def sync_connection_asset_inventory(connection_id: str) -> int:
     """One connection's inventory sync, on demand (#1701 admin "Run now").

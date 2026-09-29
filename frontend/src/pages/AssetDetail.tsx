@@ -25,6 +25,7 @@ import {
 } from '../api/assets';
 import { useIsWorkspaceAdmin } from '../auth/useMe';
 import { ColumnLineagePanel } from '../components/assets/ColumnLineagePanel';
+import { CoverageBlock } from '../components/assets/CoverageBlock';
 import { IncidentsPanel } from '../components/assets/IncidentsPanel';
 import { InheritedMaskingPanel } from '../components/assets/InheritedMaskingPanel';
 import { ScorecardPanel } from '../components/assets/ScorecardPanel';
@@ -149,6 +150,13 @@ function AssetDetailBody({
         <OwnerBlock
           assetId={summary.id}
           ownerUserId={summary.owner_user_id}
+          onChanged={onChanged}
+        />
+      )}
+      {isAdmin && (
+        <CoverageBlock
+          assetId={summary.id}
+          excluded={summary.auto_coverage_excluded ?? false}
           onChanged={onChanged}
         />
       )}

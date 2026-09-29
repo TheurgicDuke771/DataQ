@@ -31,6 +31,7 @@ class SuiteRead:
         asset_id (None | Unset | UUID):
         column_policy (None | SuiteReadColumnPolicyType0 | Unset):
         my_permission (None | str | Unset):
+        origin (str | Unset):  Default: 'user'.
     """
 
     connection_id: UUID
@@ -42,6 +43,7 @@ class SuiteRead:
     asset_id: None | Unset | UUID = UNSET
     column_policy: None | SuiteReadColumnPolicyType0 | Unset = UNSET
     my_permission: None | str | Unset = UNSET
+    origin: str | Unset = "user"
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -93,6 +95,8 @@ class SuiteRead:
         else:
             my_permission = self.my_permission
 
+        origin = self.origin
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -111,6 +115,8 @@ class SuiteRead:
             field_dict["column_policy"] = column_policy
         if my_permission is not UNSET:
             field_dict["my_permission"] = my_permission
+        if origin is not UNSET:
+            field_dict["origin"] = origin
 
         return field_dict
 
@@ -208,6 +214,8 @@ class SuiteRead:
 
         my_permission = _parse_my_permission(d.pop("my_permission", UNSET))
 
+        origin = d.pop("origin", UNSET)
+
         suite_read = cls(
             connection_id=connection_id,
             created_by=created_by,
@@ -218,6 +226,7 @@ class SuiteRead:
             asset_id=asset_id,
             column_policy=column_policy,
             my_permission=my_permission,
+            origin=origin,
         )
 
         suite_read.additional_properties = d

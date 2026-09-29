@@ -34,6 +34,8 @@ export interface AssetSummary {
   description: string | null;
   owner_user_id: string | null;
   last_seen: string;
+  /** Left out of its connection's automatic coverage (ADR 0047); absent on older payloads. */
+  auto_coverage_excluded?: boolean;
   suite_count: number;
   /** Rolled up across ALL composing suites' latest runs (workspace-true). */
   worst_severity: 'warn' | 'fail' | 'critical' | null;
@@ -210,6 +212,8 @@ export interface WarehouseLineageStatus {
 export interface AssetMetadataUpdate {
   owner_user_id?: string | null;
   description?: string | null;
+  /** Leave this table out of its connection's automatic coverage (ADR 0047). */
+  auto_coverage_excluded?: boolean;
 }
 
 /**

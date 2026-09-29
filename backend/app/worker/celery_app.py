@@ -197,6 +197,11 @@ def create_celery_app() -> Celery:
                 "task": "sync_asset_inventory",
                 "schedule": crontab(hour="3", minute="17"),  # daily, 03:17 UTC
             },
+            # Automatic coverage (ADR 0047), after the inventory it reads.
+            "reconcile-auto-coverage": {
+                "task": "reconcile_auto_coverage",
+                "schedule": crontab(hour="3", minute="47"),  # daily, 03:47 UTC
+            },
             # Audit-log retention (#1318, ADR 0041 §2.7): own clock and setting,
             # decoupled from the PII sweep — their windows point opposite ways.
             "purge-audit-events": {

@@ -91,10 +91,13 @@ def create_suite(
     name: str,
     description: str | None,
     connection_id: uuid.UUID,
-    created_by: uuid.UUID,
+    created_by: uuid.UUID | None,
     target: dict[str, Any] | None = None,
+    origin: str = "user",
+    machine_write: bool = False,
 ) -> Suite:
-    """Create a suite bound to an existing connection."""
+    """Create a suite bound to an existing connection. ``origin='auto'`` + ``machine_write`` is the
+    coverage loop (ADR 0047): no human owner, and no audit event (ADR 0041 §2.1)."""
     connection = session.get(Connection, connection_id)
     if connection is None:
         raise SuiteConnectionInvalidError(
@@ -120,15 +123,17 @@ def create_suite(
         created_by=created_by,
         target=target,
         asset_id=asset_id,
+        origin=origin,
     )
     session.add(suite)
-    audit_service.record_entity_change(
-        session,
-        action="suite.create",
-        entity_type="suite",
-        entity=suite,
-        actor=created_by,
-    )
+    if not machine_write:
+        audit_service.record_entity_change(
+            session,
+            action="suite.create",
+            entity_type="suite",
+            entity=suite,
+            actor=created_by,
+        )
     session.commit()
     session.refresh(suite)
     log.info("suite_created", suite_id=str(suite.id), connection_id=str(connection_id))

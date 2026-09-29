@@ -18,6 +18,8 @@ export interface Suite {
    * #1319).
    */
   created_by: string | null;
+  /** `auto` = created and maintained by automatic coverage (ADR 0047); absent on older payloads. */
+  origin?: 'user' | 'auto';
   /** The caller's effective level — gates per-suite actions (share, delete).
    *  `owner`/`admin`/`edit`/`view`; absent on older payloads. */
   my_permission?: 'owner' | 'admin' | 'edit' | 'view' | null;
@@ -141,6 +143,8 @@ export interface Check {
   suite_id: string;
   name: string;
   kind: string;
+  /** `auto` = added by automatic coverage; `suggestion` = an accepted suggestion (ADR 0047). */
+  origin?: 'user' | 'auto' | 'suggestion';
   /** Check engine (ADR 0036) — `gx` (default) or `dmf` on a Snowflake connection.
    *  Optional so pre-0036 fixtures need no change. */
   engine?: string;
