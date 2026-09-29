@@ -391,6 +391,10 @@ def list_iceberg_columns(
     return [field.name for field in table.schema().fields]
 
 
+#: How many namespaces Test Connection searches for a table to load (#1274).
+_TEST_NAMESPACE_SCAN = 20
+
+
 class IcebergConnectionAdapter:
     """`ConnectionAdapter` for Iceberg — config validation + a metadata probe."""
 
@@ -428,14 +432,23 @@ class IcebergConnectionAdapter:
         catalog_secret: str | None = None,
         **_: Any,
     ) -> None:
-        """Load the catalog and list namespaces; raise on failure."""
+        """Load the catalog, list namespaces, and load the first table found; raise on failure.
+
+        Listing touches only the catalog, so a wrong or unauthorised STORAGE credential tested
+        green and failed every read (#1274). Loading one table reads its metadata file from the
+        warehouse with that credential. A catalog with no table can only be checked this far.
+        """
         from pyiceberg.catalog import load_catalog
 
         config = self.validate_config(raw)
         catalog: Any = load_catalog(
             config.catalog_name, **config.catalog_properties(secret, catalog_secret)
         )
-        catalog.list_namespaces()
+        for namespace in catalog.list_namespaces()[:_TEST_NAMESPACE_SCAN]:
+            tables = catalog.list_tables(namespace)
+            if tables:
+                catalog.load_table(tables[0])
+                return
 
 
 class IcebergCheckRunner:
