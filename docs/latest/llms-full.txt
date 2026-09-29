@@ -2563,7 +2563,7 @@ Snowflake, PostgreSQL, MySQL and Trino are unaffected — their schema comes fro
 ### Snowflake DMF (ADR 0036)
 
 On a Snowflake connection, the check editor offers a separate **Snowflake DMF**
-category for seven types — null count, null percent, duplicate count, unique count,
+category: your own custom DMFs (below), and seven system types — null count, null percent, duplicate count, unique count,
 blank count (VARCHAR columns; empty or space-only strings — not NULLs, and tabs/newlines
 aren't treated as blank), future-timestamp percent (DATE / TIMESTAMP_LTZ /
 TIMESTAMP_TZ columns) and accepted values (below) — that run on Snowflake's own `SNOWFLAKE.CORE.*` **Data Metric Functions** instead of a
@@ -2582,6 +2582,34 @@ in full.
 schedule, because it counts changes since its previous scheduled run. Attaching one needs table
 ownership, which DataQ's read-only role deliberately lacks. Use the schema-drift monitor
 instead.
+
+**Custom DMF** runs a data metric function your team created in Snowflake with
+`CREATE DATA METRIC FUNCTION`. Give it the function's fully qualified name
+(`DATABASE.SCHEMA.FUNCTION`) and the suite table's columns, in the order the function's
+`TABLE(...)` argument declares them. DataQ calls it the same on-demand way as the system
+functions:
+
+```sql
+SELECT DATAQ_DB.QUALITY.NEG_AMOUNT(SELECT AMOUNT FROM RETAIL.ORDERS)
+```
+
+- **Names are identifiers, never SQL.** Each part of the name and each column must be a
+  plain identifier (letters, digits, `_`, `$`). Anything else is refused when you save. An
+  all-lower-case name is left unquoted, so Snowflake reads it in upper case; any other name is
+  quoted exactly as you typed it.
+- **The return value is the metric.** It is banded by the thresholds, higher = worse, and a
+  fail or critical threshold is required. It is shown as-is, never masked, so write
+  functions that return a count or a percentage, not a data value. The check's dimension is
+  left unclassified unless you set one, because DataQ cannot know what the function measures.
+- **What the role needs:** `USAGE` on the function and on its database and schema, plus
+  `SELECT` on the table. A function the role cannot use fails exactly like one that does not
+  exist, and the check's error says so.
+- **Picking a function.** Testing the connection lists the custom DMFs its role can use, and
+  the editor suggests them. The list is only as fresh as the last test, so re-test after
+  creating a function. You can always type a name that isn't listed. Functions in the
+  `SNOWFLAKE` database are refused: use their own DMF check types.
+- **Preview it first.** DMF checks, custom ones included, can be dry-run from the editor. A
+  wrong name, missing grant or mismatched column list shows up there before you save.
 
 ### Databricks DQX (ADR 0036)
 
@@ -2831,7 +2859,8 @@ anomaly / comparison** monitor kinds:
   count, value ranges, …) from the GX catalog, with a form editor. On a Snowflake
   connection, six column metrics (null count/percent, duplicate count, unique count, blank
   count, future-timestamp percent) can instead run on Snowflake's own **Data Metric Functions (DMF)** engine — a separate
-  category in the check editor, selected per check.
+  category in the check editor, selected per check. The same category runs **custom DMFs**
+  your team created in Snowflake, over columns of the suite's table.
 - **Custom SQL** — an escape hatch for cross-column/join rules: rows returned = failures.
   Read-only, single-statement (enforced). SQL datasources only.
 - **Freshness monitor** — hours since the latest timestamp (is the data stale?). On a
@@ -4169,6 +4198,12 @@ the per-PR history lives in the repo's commit log and pull requests.
 - **API compatibility policy.** What stays stable across upgrades for the REST API, MCP tools,
   the suite export document and the Python client, and how a breaking change is announced. See
   [API compatibility](api-compatibility.md).
+- **Custom Snowflake DMFs as checks.** On a Snowflake connection, a **Custom DMF** check runs
+  a data metric function your team created, named `DATABASE.SCHEMA.FUNCTION`, over columns of
+  the suite's table. Its return value is banded by the check's thresholds. Testing the
+  connection lists the custom DMFs its role can use, and the editor suggests them. DMF checks
+  can now be dry-run from the editor too. See
+  [Datasources & checks](../guides/datasources-checks.md#snowflake-dmf-adr-0036).
 
 ### Fixed
 
@@ -4405,7 +4440,7 @@ offers. Every GX type on this page is executed in CI on a dataframe batch, and o
 
 | | Count |
 |---|---|
-| Check types in the editor | 46 |
+| Check types in the editor | 47 |
 | GX expectation types vetted by the backend | 25 |
 
 How to read a row: **Parameters** are the editor's fields (`mostly` is GX's optional row
@@ -4513,6 +4548,7 @@ Snowflake's native Data Metric Functions, evaluated inside Snowflake.
 | **Future timestamp percent (DMF)** | `dmf:future_timestamp_percent` | Snowflake’s system FUTURE_TIMESTAMP_PERCENT metric function (0–100): the share of rows dated after the evaluation time. DATE, TIMESTAMP_LTZ and TIMESTAMP_TZ columns only. | Validity | `column` | warn / fail / critical (fail or critical required) | Snowflake |
 | **Accepted values (DMF)** | `dmf:accepted_values` | Snowflake’s system ACCEPTED_VALUES metric function, evaluated in the warehouse: counts rows whose value is not in the list. NULLs are not counted as violations. | Validity | `column`, `value_set` | warn / fail / critical (fail or critical required) | Snowflake |
 | **Unique count (DMF)** | `dmf:unique_count` | Snowflake’s system UNIQUE_COUNT metric function, computed natively in the warehouse. Degrades downward, so this type carries no thresholds — read the observed value directly. | Uniqueness | `column` | None — pass/fail only | Snowflake |
+| **Custom DMF** | `dmf:custom` | A data metric function your team created in Snowflake (CREATE DATA METRIC FUNCTION), called in the warehouse over columns of this suite’s table. Its return value is the metric, shown as-is — write DMFs that return a count or a percentage, not a data value. | — (set it yourself) | `function`, `columns` | warn / fail / critical (fail or critical required) | Snowflake |
 
 ## Databricks DQX
 
@@ -4613,7 +4649,10 @@ omission.
 first platform-native check engine — an alternative `check.engine` for seven expectation
 types (null count, null percent, duplicate count, unique count, blank count, future-timestamp
 percent, accepted values) plus the freshness monitor, invoking Snowflake's
-own `SNOWFLAKE.CORE.*` metric functions instead of a GX expectation. Engine is selected per
+own `SNOWFLAKE.CORE.*` metric functions instead of a GX expectation. It also runs **custom
+DMFs** (`dmf:custom`): a function the customer created, named `DATABASE.SCHEMA.FUNCTION` and
+called over columns of the suite's table; connection tests list the ones the role can use for
+the editor to suggest. Engine is selected per
 check, on a Snowflake connection only; `kind` stays `expectation` either way. Testing or
 re-authenticating a Snowflake connection also probes DMF availability (Enterprise Edition +
 grant) and stores the result on the connection — surfaced on the connection list and, as a caveat
@@ -9698,9 +9737,9 @@ Manual checklist (the mutating tail):
 ## Known limitations
 
 - **GX by default**, with platform-native engines connection-anchored per ADR 0036 — a
-  Snowflake connection additionally offers the **DMF** engine (six expectation types plus
-  freshness); Databricks DQX and Dataplex are trigger-gated and not yet built. Batch-oriented
-  (not streaming).
+  Snowflake connection additionally offers the **DMF** engine (seven system metrics, your own
+  custom DMFs, and freshness), and a Unity Catalog connection the **DQX** engine; Dataplex is
+  trigger-gated and not yet built. Batch-oriented (not streaming).
 - **Single tenant**, suite-level access sharing **plus a stored workspace role** — Admin / Member / Viewer (ADR 0033); connection management is Admin-only. `WORKSPACE_ADMIN_EMAILS` is a bootstrap seed and lockout break-glass, not the day-to-day mechanism.
 - Interactive **datasource browsing** (container browser, 3-level UC catalog picker) is
   deferred — you specify targets explicitly. JSON flat files deferred (CSV/Parquet in v1).
@@ -9949,7 +9988,7 @@ Each ADR captures a single significant architecture decision: the context, the d
 | [0033](0033-workspace-roles-rbac.md) | Workspace roles — **Admin / Member / Viewer** as stored `users.role` on the two-axis model (role × per-suite ladder, ladder untouched); **connection mutations Admin-only** (closes the workspace-global hole, breaking for Members); Viewer capped at `view`; `WORKSPACE_ADMIN_EMAILS` demotes to bootstrap/break-glass; in-app role management + last-admin guard; amends 0027 (admin source) + 0032 (signup default role) | Accepted |
 | [0034](0034-asset-entity-openlineage-identity-lineage-pull.md) | Assets & lineage (gap G-d design) — first-class **asset entity keyed by the OpenLineage dataset-naming spec** (namespace+name adopted verbatim, dbt-ol/Spark byte-compatible; DEV/QA = distinct assets, UI groups over `env`); **lineage emitted/pulled, never built** — OL emission w/ quality facets → dbt `manifest.json` → `lineage_edges` cache → `LineageProvider` seam (Marquez reference; OpenMetadata SDK license-blocked per 0031); incidents anchor to assets (one open per asset+check, evidence-card payload); asset/incident authz derived from suite grants. *Amended 2026-09-27:* column grain stays a refinement on the table edge with a per-edge `column_coverage` reason; Snowflake column pairs come from `ACCESS_HISTORY` on every tier; placement/dedup advisory, classification propagation additive-only | Accepted |
 | [0035](0035-request-rate-limiting.md) | Request rate limiting — **app-level innermost HTTP middleware** (portable per 0028/0013, covers the `/mcp` mount a dependency can't, principal-aware where nginx isn't); fixed-window Redis counter (window index in the key → no EXPIRE race), **no new dep** (INCR over slowapi/limits); **fail-open**; endpoint classes `webhook`(per-IP) · `default`(per-`sha256(token)`) · `unauth`(per-IP), raw token never keyed/logged; `/healthz`+`OPTIONS` exempt; headers on 429 only; nginx `limit_req` out of scope; hard prereq for 0032's OTP | Accepted |
-| [0036](0036-connection-anchored-check-engines.md) | Connection-anchored check engines — **engines are capabilities of connections** (GX universal; `dmf`⇔snowflake, `dqx`⇔unity_catalog, `dataplex`⇔future bigquery); **`check.engine`** per check (supersedes 0003's suite-level `gx \| dqx` toggle); type gates the offer, connection **probe** validates reality (classified remediation, never raw errors); **`kind` ⊥ `engine`** (engines = alternate evaluators of existing kinds; engine-aware backend catalog lands with the dimension-classification work); lifecycle validated save/run/import-time (`error` status, never silent); DMF first build, DQX/Dataplex trigger-gated; scheduled-native ingest deferred to a future ADR | Accepted (amends 0003; DMF first native build; DQX/Dataplex trigger-gated) |
+| [0036](0036-connection-anchored-check-engines.md) | Connection-anchored check engines — **engines are capabilities of connections** (GX universal; `dmf`⇔snowflake, `dqx`⇔unity_catalog, `dataplex`⇔future bigquery); **`check.engine`** per check (supersedes 0003's suite-level `gx \| dqx` toggle); type gates the offer, connection **probe** validates reality (classified remediation, never raw errors); **`kind` ⊥ `engine`** (engines = alternate evaluators of existing kinds; engine-aware backend catalog lands with the dimension-classification work); lifecycle validated save/run/import-time (`error` status, never silent); DMF first build (custom DMFs added by the 2026-09-29 amendment), DQX shipped 2026-09-28 (remote execution), Dataplex trigger-gated; scheduled-native ingest deferred to a future ADR | Accepted (amends 0003; DMF incl. custom DMFs and DQX shipped; Dataplex trigger-gated) |
 | [0037](0037-workspace-visible-asset-identity.md) | Workspace-visible asset identity — **asset identity + lineage topology (incl. column pairs) visible to every member**; aggregate verdicts (health rollup, future scorecard) **workspace-true** (all composing suites, one number for all viewers); grant boundary moves to **suite-derived detail** (composing-suite names/runs/results/samples/incidents — ADR 0027 ladder unchanged, suite-grain 404-no-leak intact); asset detail 200s for all, `restricted_suite_count` replaces redaction; supersedes an earlier identity-redaction regime (amends 0034 decision 5) | Accepted |
 | [0038](0038-dq-dimension-classification.md) | DQ-dimension classification on checks — **seven canonical dimensions** (accuracy/completeness/consistency/integrity/timeliness/uniqueness/validity) as a **closed** vocabulary via table `CHECK`, not a Postgres ENUM (no `ALTER TYPE` friction) and not free text (unbounded values destroy coverage reporting); **derived default → stored → overridable at any time** (stored so the scorecard aggregates in SQL and an override survives); derivation is **deliberately partial** — `accuracy`/`integrity` are never derived and custom SQL has no answer, so **NULL means unclassified** and the scorecard must render it as a gap; **existing rows ARE backfilled** (migration `a7b8c9d0e1f2`; §5 **amended 2026-07-19** — the backfill cannot overwrite a human decision because none existed yet when it ran, while leaving them NULL made the scorecard useless on day one; unmapped types stay NULL); `dimension` ⊥ `kind` ⊥ `engine`; narrows 0036 §4 — lands the derivation map as the backend catalog's seed without moving the frontend catalog server-side, since no native engine exists yet | Accepted |
 | [0039](0039-openbao-self-hosted-secret-backend.md) | Self-hosted secret backend — a fourth `SecretStore` speaking the **KV v2 HTTP API, not a vendor SDK** (one mode serves OpenBao / Vault Community / Enterprise / HCP; no HashiCorp lock-in traded for the Azure one); **OpenBao** (MPL-2.0, LF fork of pre-BUSL Vault 1.14) is the shipped/tested/pinned server — Vault Community is BUSL-1.1 and rule-40-forbidden as a *distributed* component, supported as a *target*; **`SECRET_STORE=openbao` replaces `redis` and `RedisSecretStore` is deleted** (plaintext credentials were the default of the published eval stack), with a loud one-cycle `RuntimeError` shim, **Redis stays** for broker + rate-limit counters; token auth phase 1 (AppRole deferred/filed), dev-mode token generated into the gitignored `.env`; Azure Key Vault remains the prod default (managed identity beats a held token), OpenBao is the BYOL/cloud-neutral option; **an outage is never reportable as a state** — new `SecretStoreUnavailableError`, deliberately NOT a `SecretNotFoundError` subclass, since every caller branches on the TYPE and none reads the message (a sealed vault otherwise renders "not set" on the admin page, skips alert delivery silently, and runs connections with the credential omitted); no status is silent (400=KV v1 mount, 401=gateway, 429=HCP throttle); **`AzureKeyVaultStore` had the same defect since Week 2** and is fixed too (the same invisible-degradation shape seen before); `delete` purges via KV v2 **metadata** delete, fail-soft | Accepted |
@@ -13733,7 +13772,7 @@ DMF outcomes are metric-shaped and ride the existing result semantics unchanged:
 
 | Engine | Gate / trigger | Notes |
 |---|---|---|
-| **DMF** (Snowflake) | Build first | Ad-hoc `SELECT` invocation of system DMFs (`NULL_COUNT`, `NULL_PERCENT`, `DUPLICATE_COUNT`, `UNIQUE_COUNT`, `FRESHNESS`, `BLANK_COUNT`, `FUTURE_TIMESTAMP_PERCENT`) mapped onto existing kinds; custom DMFs later. `ROW_COUNT` was on this list and is out — it has no ad-hoc form (2026-08-22 amendment in §4). `ACCEPTED_VALUES` and `SCHEMA_CHANGE_COUNT` are out for the same reason (Snowflake documents both as "can't call this function directly"; live-confirmed 2026-09-27: a direct call rejects `ACCEPTED_VALUES`'s lambda argument as a syntax error, and without it — or `SCHEMA_CHANGE_COUNT` with no argument — returns the sentinel `-1`, never a measurement. They need the attached, scheduled DMF model — warehouse-side attachment management, not yet built). Ad-hoc DMF arguments must be a bare column of a table or view: an expression, a `VALUES` list or a CTE is refused (`Invalid argument types` / `only supports table-like objects`). **Constraint:** needs a live Snowflake with Enterprise features to build against. |
+| **DMF** (Snowflake) | Build first | Ad-hoc `SELECT` invocation of system DMFs (`NULL_COUNT`, `NULL_PERCENT`, `DUPLICATE_COUNT`, `UNIQUE_COUNT`, `FRESHNESS`, `BLANK_COUNT`, `FUTURE_TIMESTAMP_PERCENT`) mapped onto existing kinds; custom DMFs shipped 2026-09-29 (amendment below). `ROW_COUNT` was on this list and is out — it has no ad-hoc form (2026-08-22 amendment in §4). `ACCEPTED_VALUES` and `SCHEMA_CHANGE_COUNT` are out for the same reason (Snowflake documents both as "can't call this function directly"; live-confirmed 2026-09-27: a direct call rejects `ACCEPTED_VALUES`'s lambda argument as a syntax error, and without it — or `SCHEMA_CHANGE_COUNT` with no argument — returns the sentinel `-1`, never a measurement. They need the attached, scheduled DMF model — warehouse-side attachment management, not yet built). Ad-hoc DMF arguments must be a bare column of a table or view: an expression, a `VALUES` list or a CTE is refused (`Invalid argument types` / `only supports table-like objects`). **Constraint:** needs a live Snowflake with Enterprise features to build against. |
 | **DQX** (Unity Catalog) | A real Databricks/streaming user, **plus** two prereqs | (a) a remote-execution design — DQX's value is Spark-side evaluation, so DataQ must submit work to the workspace, a new architectural capability (today's UC runner pulls into pandas); (b) the Databricks **Labs license check** against ADR 0031's no-source-available guardrail *before* it stays on any roadmap. |
 | **Dataplex** (BigQuery) | A BigQuery-as-datasource decision | BigQuery isn't a DataQ datasource; that decision dominates the cost and comes first. |
 | **Scheduled-native ingest** (DMF schedules / Dataplex scans) | Separate future ADR | Pull-provider shape; must first settle synthetic-runs vs sibling-measurements-table for `results.run_id`. |
@@ -13784,6 +13823,50 @@ builder, so they cannot disagree.
 **Capability probe:** phase 1, gated by connection type only. A missing jobs or workspace
 permission lands as a classified per-check error at run time, as §2 permits. A probe would
 itself cost a job start-up.
+
+## Amendment (2026-09-29): custom DMFs shipped
+
+§6's "custom DMFs later" is built. A Snowflake check of type `dmf:custom` runs a data metric
+function the customer created (`CREATE DATA METRIC FUNCTION`), on the existing `dmf` engine.
+
+- **Shape.** `config` is `{"function": "DATABASE.SCHEMA.FUNCTION", "columns": [...]}`. The
+  name must be fully qualified. Each part goes through the shared SQL-identifier allowlist and
+  is quoted by the usual folding rule (all-lower-case stays bare, anything else is quoted). The
+  `SNOWFLAKE` database is refused, because the system DMFs have their own types and some return
+  a sentinel `-1` when called this way.
+- **Invocation.** The system functions' ad-hoc form, with 1 to 20 bare columns of the suite
+  target, in the function's signature order:
+  `SELECT <db>.<schema>.<dmf>(SELECT <col>[, …] FROM <target>)`. The ad-hoc rule stands: no
+  expressions, no second table. Authoring and the run path share one statement builder, so a
+  config that saves is exactly one that runs.
+- **Result.** The return value is `metric_value`, banded by the check's thresholds
+  (higher = worse, a positive fail or critical threshold required, like the other banded DMF
+  types). It is shown unmasked, like every DMF metric. That is safe only because the function
+  returns a number the customer chose to compute, so the user guide tells authors to return a
+  count or a percentage, never a data value. The dimension is never derived (ADR 0038): NULL
+  unless the author sets one.
+- **Discovery.** The connection-test probe runs `SHOW DATA METRIC FUNCTIONS IN ACCOUNT` and
+  stores the non-`SNOWFLAKE` results in `engine_capabilities.dmf.custom_functions` (capped at
+  200) for the editor to suggest. `SHOW` was chosen over `INFORMATION_SCHEMA.FUNCTIONS`
+  because it needs no warehouse and spans every database the role can see, not just the
+  connection's. The list doubles as the `USAGE` check the issue asked for: Snowflake lists a
+  custom DMF only to a role holding `USAGE` on it.
+- **Errors.** A DMF the role cannot use raises the same `Unknown user-defined function` as one
+  that does not exist, so both get one message naming the grants needed. A column list that
+  doesn't match the signature, an unknown column and a missing schema each get their own fixed
+  message; driver text never reaches the result.
+
+**Live-verified 2026-09-29** on the Enterprise account with the existing least-privileged
+connection role, against a throwaway schema:
+- the probe listed exactly the custom DMFs the role held `USAGE` on;
+- a suite run through the worker path and a dry-run evaluated a one-column and a two-column
+  DMF with the right values and warn / fail / critical bands;
+- an unknown DMF, an ungranted DMF, a wrong column count and an unknown column each landed as
+  a classified per-check error;
+- injection-shaped names and columns were refused at authoring, and the run path refuses them
+  without issuing any SQL.
+
+Scheduled (attached) DMFs stay out of scope, as recorded in §6 and the Context.
 
 
 ---

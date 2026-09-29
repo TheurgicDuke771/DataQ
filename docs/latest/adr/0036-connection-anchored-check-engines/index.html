@@ -2379,6 +2379,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#amendment-2026-09-29-custom-dmfs-shipped" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Amendment (2026-09-29): custom DMFs shipped
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2501,7 +2512,7 @@
 <tr>
 <td><strong>DMF</strong> (Snowflake)</td>
 <td>Build first</td>
-<td>Ad-hoc <code>SELECT</code> invocation of system DMFs (<code>NULL_COUNT</code>, <code>NULL_PERCENT</code>, <code>DUPLICATE_COUNT</code>, <code>UNIQUE_COUNT</code>, <code>FRESHNESS</code>, <code>BLANK_COUNT</code>, <code>FUTURE_TIMESTAMP_PERCENT</code>) mapped onto existing kinds; custom DMFs later. <code>ROW_COUNT</code> was on this list and is out — it has no ad-hoc form (2026-08-22 amendment in §4). <code>ACCEPTED_VALUES</code> and <code>SCHEMA_CHANGE_COUNT</code> are out for the same reason (Snowflake documents both as "can't call this function directly"; live-confirmed 2026-09-27: a direct call rejects <code>ACCEPTED_VALUES</code>'s lambda argument as a syntax error, and without it — or <code>SCHEMA_CHANGE_COUNT</code> with no argument — returns the sentinel <code>-1</code>, never a measurement. They need the attached, scheduled DMF model — warehouse-side attachment management, not yet built). Ad-hoc DMF arguments must be a bare column of a table or view: an expression, a <code>VALUES</code> list or a CTE is refused (<code>Invalid argument types</code> / <code>only supports table-like objects</code>). <strong>Constraint:</strong> needs a live Snowflake with Enterprise features to build against.</td>
+<td>Ad-hoc <code>SELECT</code> invocation of system DMFs (<code>NULL_COUNT</code>, <code>NULL_PERCENT</code>, <code>DUPLICATE_COUNT</code>, <code>UNIQUE_COUNT</code>, <code>FRESHNESS</code>, <code>BLANK_COUNT</code>, <code>FUTURE_TIMESTAMP_PERCENT</code>) mapped onto existing kinds; custom DMFs shipped 2026-09-29 (amendment below). <code>ROW_COUNT</code> was on this list and is out — it has no ad-hoc form (2026-08-22 amendment in §4). <code>ACCEPTED_VALUES</code> and <code>SCHEMA_CHANGE_COUNT</code> are out for the same reason (Snowflake documents both as "can't call this function directly"; live-confirmed 2026-09-27: a direct call rejects <code>ACCEPTED_VALUES</code>'s lambda argument as a syntax error, and without it — or <code>SCHEMA_CHANGE_COUNT</code> with no argument — returns the sentinel <code>-1</code>, never a measurement. They need the attached, scheduled DMF model — warehouse-side attachment management, not yet built). Ad-hoc DMF arguments must be a bare column of a table or view: an expression, a <code>VALUES</code> list or a CTE is refused (<code>Invalid argument types</code> / <code>only supports table-like objects</code>). <strong>Constraint:</strong> needs a live Snowflake with Enterprise features to build against.</td>
 </tr>
 <tr>
 <td><strong>DQX</strong> (Unity Catalog)</td>
@@ -2563,6 +2574,47 @@ builder, so they cannot disagree.</p>
 <p><strong>Capability probe:</strong> phase 1, gated by connection type only. A missing jobs or workspace
 permission lands as a classified per-check error at run time, as §2 permits. A probe would
 itself cost a job start-up.</p>
+<h2 id="amendment-2026-09-29-custom-dmfs-shipped">Amendment (2026-09-29): custom DMFs shipped<a class="headerlink" href="#amendment-2026-09-29-custom-dmfs-shipped" title="Permanent link">¶</a></h2>
+<p>§6's "custom DMFs later" is built. A Snowflake check of type <code>dmf:custom</code> runs a data metric
+function the customer created (<code>CREATE DATA METRIC FUNCTION</code>), on the existing <code>dmf</code> engine.</p>
+<ul>
+<li><strong>Shape.</strong> <code>config</code> is <code>{"function": "DATABASE.SCHEMA.FUNCTION", "columns": [...]}</code>. The
+  name must be fully qualified. Each part goes through the shared SQL-identifier allowlist and
+  is quoted by the usual folding rule (all-lower-case stays bare, anything else is quoted). The
+  <code>SNOWFLAKE</code> database is refused, because the system DMFs have their own types and some return
+  a sentinel <code>-1</code> when called this way.</li>
+<li><strong>Invocation.</strong> The system functions' ad-hoc form, with 1 to 20 bare columns of the suite
+  target, in the function's signature order:
+  <code>SELECT &lt;db&gt;.&lt;schema&gt;.&lt;dmf&gt;(SELECT &lt;col&gt;[, …] FROM &lt;target&gt;)</code>. The ad-hoc rule stands: no
+  expressions, no second table. Authoring and the run path share one statement builder, so a
+  config that saves is exactly one that runs.</li>
+<li><strong>Result.</strong> The return value is <code>metric_value</code>, banded by the check's thresholds
+  (higher = worse, a positive fail or critical threshold required, like the other banded DMF
+  types). It is shown unmasked, like every DMF metric. That is safe only because the function
+  returns a number the customer chose to compute, so the user guide tells authors to return a
+  count or a percentage, never a data value. The dimension is never derived (ADR 0038): NULL
+  unless the author sets one.</li>
+<li><strong>Discovery.</strong> The connection-test probe runs <code>SHOW DATA METRIC FUNCTIONS IN ACCOUNT</code> and
+  stores the non-<code>SNOWFLAKE</code> results in <code>engine_capabilities.dmf.custom_functions</code> (capped at
+  200) for the editor to suggest. <code>SHOW</code> was chosen over <code>INFORMATION_SCHEMA.FUNCTIONS</code>
+  because it needs no warehouse and spans every database the role can see, not just the
+  connection's. The list doubles as the <code>USAGE</code> check the issue asked for: Snowflake lists a
+  custom DMF only to a role holding <code>USAGE</code> on it.</li>
+<li><strong>Errors.</strong> A DMF the role cannot use raises the same <code>Unknown user-defined function</code> as one
+  that does not exist, so both get one message naming the grants needed. A column list that
+  doesn't match the signature, an unknown column and a missing schema each get their own fixed
+  message; driver text never reaches the result.</li>
+</ul>
+<p><strong>Live-verified 2026-09-29</strong> on the Enterprise account with the existing least-privileged
+connection role, against a throwaway schema:
+- the probe listed exactly the custom DMFs the role held <code>USAGE</code> on;
+- a suite run through the worker path and a dry-run evaluated a one-column and a two-column
+  DMF with the right values and warn / fail / critical bands;
+- an unknown DMF, an ungranted DMF, a wrong column count and an unknown column each landed as
+  a classified per-check error;
+- injection-shaped names and columns were refused at authoring, and the run path refuses them
+  without issuing any SQL.</p>
+<p>Scheduled (attached) DMFs stay out of scope, as recorded in §6 and the Context.</p>
 
 
 

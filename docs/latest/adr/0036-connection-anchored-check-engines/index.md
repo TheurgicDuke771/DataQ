@@ -57,7 +57,7 @@ DMF outcomes are metric-shaped and ride the existing result semantics unchanged:
 
 | Engine | Gate / trigger | Notes |
 |---|---|---|
-| **DMF** (Snowflake) | Build first | Ad-hoc `SELECT` invocation of system DMFs (`NULL_COUNT`, `NULL_PERCENT`, `DUPLICATE_COUNT`, `UNIQUE_COUNT`, `FRESHNESS`, `BLANK_COUNT`, `FUTURE_TIMESTAMP_PERCENT`) mapped onto existing kinds; custom DMFs later. `ROW_COUNT` was on this list and is out — it has no ad-hoc form (2026-08-22 amendment in §4). `ACCEPTED_VALUES` and `SCHEMA_CHANGE_COUNT` are out for the same reason (Snowflake documents both as "can't call this function directly"; live-confirmed 2026-09-27: a direct call rejects `ACCEPTED_VALUES`'s lambda argument as a syntax error, and without it — or `SCHEMA_CHANGE_COUNT` with no argument — returns the sentinel `-1`, never a measurement. They need the attached, scheduled DMF model — warehouse-side attachment management, not yet built). Ad-hoc DMF arguments must be a bare column of a table or view: an expression, a `VALUES` list or a CTE is refused (`Invalid argument types` / `only supports table-like objects`). **Constraint:** needs a live Snowflake with Enterprise features to build against. |
+| **DMF** (Snowflake) | Build first | Ad-hoc `SELECT` invocation of system DMFs (`NULL_COUNT`, `NULL_PERCENT`, `DUPLICATE_COUNT`, `UNIQUE_COUNT`, `FRESHNESS`, `BLANK_COUNT`, `FUTURE_TIMESTAMP_PERCENT`) mapped onto existing kinds; custom DMFs shipped 2026-09-29 (amendment below). `ROW_COUNT` was on this list and is out — it has no ad-hoc form (2026-08-22 amendment in §4). `ACCEPTED_VALUES` and `SCHEMA_CHANGE_COUNT` are out for the same reason (Snowflake documents both as "can't call this function directly"; live-confirmed 2026-09-27: a direct call rejects `ACCEPTED_VALUES`'s lambda argument as a syntax error, and without it — or `SCHEMA_CHANGE_COUNT` with no argument — returns the sentinel `-1`, never a measurement. They need the attached, scheduled DMF model — warehouse-side attachment management, not yet built). Ad-hoc DMF arguments must be a bare column of a table or view: an expression, a `VALUES` list or a CTE is refused (`Invalid argument types` / `only supports table-like objects`). **Constraint:** needs a live Snowflake with Enterprise features to build against. |
 | **DQX** (Unity Catalog) | A real Databricks/streaming user, **plus** two prereqs | (a) a remote-execution design — DQX's value is Spark-side evaluation, so DataQ must submit work to the workspace, a new architectural capability (today's UC runner pulls into pandas); (b) the Databricks **Labs license check** against ADR 0031's no-source-available guardrail *before* it stays on any roadmap. |
 | **Dataplex** (BigQuery) | A BigQuery-as-datasource decision | BigQuery isn't a DataQ datasource; that decision dominates the cost and comes first. |
 | **Scheduled-native ingest** (DMF schedules / Dataplex scans) | Separate future ADR | Pull-provider shape; must first settle synthetic-runs vs sibling-measurements-table for `results.run_id`. |
@@ -108,3 +108,47 @@ builder, so they cannot disagree.
 **Capability probe:** phase 1, gated by connection type only. A missing jobs or workspace
 permission lands as a classified per-check error at run time, as §2 permits. A probe would
 itself cost a job start-up.
+
+## Amendment (2026-09-29): custom DMFs shipped
+
+§6's "custom DMFs later" is built. A Snowflake check of type `dmf:custom` runs a data metric
+function the customer created (`CREATE DATA METRIC FUNCTION`), on the existing `dmf` engine.
+
+- **Shape.** `config` is `{"function": "DATABASE.SCHEMA.FUNCTION", "columns": [...]}`. The
+  name must be fully qualified. Each part goes through the shared SQL-identifier allowlist and
+  is quoted by the usual folding rule (all-lower-case stays bare, anything else is quoted). The
+  `SNOWFLAKE` database is refused, because the system DMFs have their own types and some return
+  a sentinel `-1` when called this way.
+- **Invocation.** The system functions' ad-hoc form, with 1 to 20 bare columns of the suite
+  target, in the function's signature order:
+  `SELECT <db>.<schema>.<dmf>(SELECT <col>[, …] FROM <target>)`. The ad-hoc rule stands: no
+  expressions, no second table. Authoring and the run path share one statement builder, so a
+  config that saves is exactly one that runs.
+- **Result.** The return value is `metric_value`, banded by the check's thresholds
+  (higher = worse, a positive fail or critical threshold required, like the other banded DMF
+  types). It is shown unmasked, like every DMF metric. That is safe only because the function
+  returns a number the customer chose to compute, so the user guide tells authors to return a
+  count or a percentage, never a data value. The dimension is never derived (ADR 0038): NULL
+  unless the author sets one.
+- **Discovery.** The connection-test probe runs `SHOW DATA METRIC FUNCTIONS IN ACCOUNT` and
+  stores the non-`SNOWFLAKE` results in `engine_capabilities.dmf.custom_functions` (capped at
+  200) for the editor to suggest. `SHOW` was chosen over `INFORMATION_SCHEMA.FUNCTIONS`
+  because it needs no warehouse and spans every database the role can see, not just the
+  connection's. The list doubles as the `USAGE` check the issue asked for: Snowflake lists a
+  custom DMF only to a role holding `USAGE` on it.
+- **Errors.** A DMF the role cannot use raises the same `Unknown user-defined function` as one
+  that does not exist, so both get one message naming the grants needed. A column list that
+  doesn't match the signature, an unknown column and a missing schema each get their own fixed
+  message; driver text never reaches the result.
+
+**Live-verified 2026-09-29** on the Enterprise account with the existing least-privileged
+connection role, against a throwaway schema:
+- the probe listed exactly the custom DMFs the role held `USAGE` on;
+- a suite run through the worker path and a dry-run evaluated a one-column and a two-column
+  DMF with the right values and warn / fail / critical bands;
+- an unknown DMF, an ungranted DMF, a wrong column count and an unknown column each landed as
+  a classified per-check error;
+- injection-shaped names and columns were refused at authoring, and the run path refuses them
+  without issuing any SQL.
+
+Scheduled (attached) DMFs stay out of scope, as recorded in §6 and the Context.

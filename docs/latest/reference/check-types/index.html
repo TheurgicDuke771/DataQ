@@ -2632,7 +2632,7 @@ offers. Every GX type on this page is executed in CI on a dataframe batch, and o
 <tbody>
 <tr>
 <td>Check types in the editor</td>
-<td>46</td>
+<td>47</td>
 </tr>
 <tr>
 <td>GX expectation types vetted by the backend</td>
@@ -3135,6 +3135,15 @@ change it on any check.</p>
 <td>Uniqueness</td>
 <td><code>column</code></td>
 <td>None — pass/fail only</td>
+<td>Snowflake</td>
+</tr>
+<tr>
+<td><strong>Custom DMF</strong></td>
+<td><code>dmf:custom</code></td>
+<td>A data metric function your team created in Snowflake (CREATE DATA METRIC FUNCTION), called in the warehouse over columns of this suite’s table. Its return value is the metric, shown as-is — write DMFs that return a count or a percentage, not a data value.</td>
+<td>— (set it yourself)</td>
+<td><code>function</code>, <code>columns</code></td>
+<td>warn / fail / critical (fail or critical required)</td>
 <td>Snowflake</td>
 </tr>
 </tbody>

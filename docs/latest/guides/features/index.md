@@ -35,7 +35,8 @@ anomaly / comparison** monitor kinds:
   count, value ranges, …) from the GX catalog, with a form editor. On a Snowflake
   connection, six column metrics (null count/percent, duplicate count, unique count, blank
   count, future-timestamp percent) can instead run on Snowflake's own **Data Metric Functions (DMF)** engine — a separate
-  category in the check editor, selected per check.
+  category in the check editor, selected per check. The same category runs **custom DMFs**
+  your team created in Snowflake, over columns of the suite's table.
 - **Custom SQL** — an escape hatch for cross-column/join rules: rows returned = failures.
   Read-only, single-statement (enforced). SQL datasources only.
 - **Freshness monitor** — hours since the latest timestamp (is the data stale?). On a

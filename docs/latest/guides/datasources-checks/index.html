@@ -3881,7 +3881,7 @@ the suite runs normally. Set the schema on the suite's run target to fix it.
 Snowflake, PostgreSQL, MySQL and Trino are unaffected — their schema comes from the connection.</p>
 <h3 id="snowflake-dmf-adr-0036">Snowflake DMF (ADR 0036)<a class="headerlink" href="#snowflake-dmf-adr-0036" title="Permanent link">¶</a></h3>
 <p>On a Snowflake connection, the check editor offers a separate <strong>Snowflake DMF</strong>
-category for seven types — null count, null percent, duplicate count, unique count,
+category: your own custom DMFs (below), and seven system types — null count, null percent, duplicate count, unique count,
 blank count (VARCHAR columns; empty or space-only strings — not NULLs, and tabs/newlines
 aren't treated as blank), future-timestamp percent (DATE / TIMESTAMP_LTZ /
 TIMESTAMP_TZ columns) and accepted values (below) — that run on Snowflake's own <code>SNOWFLAKE.CORE.*</code> <strong>Data Metric Functions</strong> instead of a
@@ -3898,6 +3898,32 @@ in full.</p>
 schedule, because it counts changes since its previous scheduled run. Attaching one needs table
 ownership, which DataQ's read-only role deliberately lacks. Use the schema-drift monitor
 instead.</p>
+<p><strong>Custom DMF</strong> runs a data metric function your team created in Snowflake with
+<code>CREATE DATA METRIC FUNCTION</code>. Give it the function's fully qualified name
+(<code>DATABASE.SCHEMA.FUNCTION</code>) and the suite table's columns, in the order the function's
+<code>TABLE(...)</code> argument declares them. DataQ calls it the same on-demand way as the system
+functions:</p>
+<div class="highlight"><pre><span></span><code><span class="k">SELECT</span><span class="w"> </span><span class="n">DATAQ_DB</span><span class="p">.</span><span class="n">QUALITY</span><span class="p">.</span><span class="n">NEG_AMOUNT</span><span class="p">(</span><span class="k">SELECT</span><span class="w"> </span><span class="n">AMOUNT</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">RETAIL</span><span class="p">.</span><span class="n">ORDERS</span><span class="p">)</span>
+</code></pre></div>
+<ul>
+<li><strong>Names are identifiers, never SQL.</strong> Each part of the name and each column must be a
+  plain identifier (letters, digits, <code>_</code>, <code>$</code>). Anything else is refused when you save. An
+  all-lower-case name is left unquoted, so Snowflake reads it in upper case; any other name is
+  quoted exactly as you typed it.</li>
+<li><strong>The return value is the metric.</strong> It is banded by the thresholds, higher = worse, and a
+  fail or critical threshold is required. It is shown as-is, never masked, so write
+  functions that return a count or a percentage, not a data value. The check's dimension is
+  left unclassified unless you set one, because DataQ cannot know what the function measures.</li>
+<li><strong>What the role needs:</strong> <code>USAGE</code> on the function and on its database and schema, plus
+  <code>SELECT</code> on the table. A function the role cannot use fails exactly like one that does not
+  exist, and the check's error says so.</li>
+<li><strong>Picking a function.</strong> Testing the connection lists the custom DMFs its role can use, and
+  the editor suggests them. The list is only as fresh as the last test, so re-test after
+  creating a function. You can always type a name that isn't listed. Functions in the
+  <code>SNOWFLAKE</code> database are refused: use their own DMF check types.</li>
+<li><strong>Preview it first.</strong> DMF checks, custom ones included, can be dry-run from the editor. A
+  wrong name, missing grant or mismatched column list shows up there before you save.</li>
+</ul>
 <h3 id="databricks-dqx-adr-0036">Databricks DQX (ADR 0036)<a class="headerlink" href="#databricks-dqx-adr-0036" title="Permanent link">¶</a></h3>
 <p>On a Unity Catalog connection, the check editor offers a <strong>Databricks DQX</strong> category: row
 rules evaluated by <a href="https://github.com/databrickslabs/dqx">Databricks Labs DQX</a> inside your

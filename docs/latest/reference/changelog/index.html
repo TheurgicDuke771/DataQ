@@ -2536,6 +2536,12 @@ the per-PR history lives in the repo's commit log and pull requests.</p>
 <li><strong>API compatibility policy.</strong> What stays stable across upgrades for the REST API, MCP tools,
   the suite export document and the Python client, and how a breaking change is announced. See
   <a href="../api-compatibility/">API compatibility</a>.</li>
+<li><strong>Custom Snowflake DMFs as checks.</strong> On a Snowflake connection, a <strong>Custom DMF</strong> check runs
+  a data metric function your team created, named <code>DATABASE.SCHEMA.FUNCTION</code>, over columns of
+  the suite's table. Its return value is banded by the check's thresholds. Testing the
+  connection lists the custom DMFs its role can use, and the editor suggests them. DMF checks
+  can now be dry-run from the editor too. See
+  <a href="../../guides/datasources-checks/#snowflake-dmf-adr-0036">Datasources &amp; checks</a>.</li>
 </ul>
 <h3 id="fixed">Fixed<a class="headerlink" href="#fixed" title="Permanent link">¶</a></h3>
 <ul>
