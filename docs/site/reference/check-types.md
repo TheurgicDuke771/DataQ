@@ -626,7 +626,7 @@ Is today's value unusual against a rolling baseline of this check's own history?
     }
     ```
 
-    Learns the table's row count over the last 14 runs, compared with the same weekday when `seasonality` is on, and reports the z-score. It skips until 7 runs exist.
+    Reports the z-score of today's row count against the last 14 runs on the same weekday (`seasonality` keeps only those; off, it is the last 14 runs of any day). It skips until 7 such runs exist, so on a daily schedule about seven weeks.
 
 ## Comparison
 
