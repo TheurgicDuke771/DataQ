@@ -48,8 +48,10 @@ code in the bundled inbox at **`http://localhost:8025`**. API + Swagger at
   freshness, volume, an aggregate statistic, schema drift and anomaly detection, and an
   hourly schedule. Both suites run once as the stack starts, so your first sign-in shows
   real results: several checks fail on purpose, and the anomaly check waits for more
-  history before it scores. The sample warehouse has no host port and is reachable only
-  inside the compose network.
+  history before it scores. No new orders arrive while the stack runs, so the freshness
+  check warns after a day and fails after three, which is the monitor doing its job;
+  restarting the stack makes the data current again. The sample warehouse has no host
+  port and is reachable only inside the compose network.
 - **Pin a release** instead of the moving stable tags:
   `DATAQ_BACKEND_TAG=vX.Y.Z DATAQ_FRONTEND_TAG=vX.Y.Z docker compose -f docker-compose.ghcr.yml up`.
 - **Reset:** `docker compose -f docker-compose.ghcr.yml --profile demo down -v` (drops the seeded DB and the sample warehouse).

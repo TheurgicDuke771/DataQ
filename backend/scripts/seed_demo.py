@@ -7,7 +7,8 @@ reader for it, and connects DataQ to it through the same services the API uses: 
 connection, two suites whose checks cover the main check kinds, an hourly schedule, and a
 first run of each suite, so an evaluator signs in to real results.
 
-Idempotent: the data is created once, the reader's password is rotated on every run (through
+Idempotent: the data is created once (its order timestamps move up to now on every later start),
+the reader's password is rotated on every run (through
 `reauth_connection`, so it lands in the secret store the same way a user's would), and a suite
 that already has a run is not run again.
 
@@ -40,6 +41,7 @@ from backend.app.services import (
     schedule_service,
     suite_service,
 )
+from backend.app.worker.tasks import _auto_classify_columns
 from backend.scripts.seed_dev import _share_with_otp_operators
 
 CONNECTION_NAME = "Demo warehouse (PostgreSQL)"
@@ -95,6 +97,15 @@ UPDATE shop.orders SET status = 'refunded' WHERE order_id IN (21, 421, 821);
 UPDATE shop.orders SET customer_email = 'not-an-email' WHERE order_id = 77;
 UPDATE shop.orders SET discount = amount + 10 WHERE order_id IN (99, 999);
 INSERT INTO shop.orders SELECT * FROM shop.orders WHERE order_id = 500;
+"""
+
+#: Run on every later start: no orders arrive while the stack runs, so the freshness check
+#: warns after a day and fails after three; a restart makes the newest order current again.
+_REFRESH_SQL = """
+WITH shift AS (SELECT now() - max(ordered_at) AS d FROM shop.orders)
+UPDATE shop.orders o
+SET ordered_at = o.ordered_at + shift.d, shipped_at = o.shipped_at + shift.d
+FROM shift
 """
 
 _SUITES: list[dict[str, Any]] = [
@@ -245,6 +256,8 @@ def prepare_warehouse(wh: dict[str, Any]) -> tuple[bool, str]:
             if created:
                 # A raw cursor with no parameters: `%` in the script is modulo, not a placeholder.
                 conn.connection.cursor().execute(_DATA_SQL)
+            else:
+                conn.exec_driver_sql(_REFRESH_SQL)
             exists = conn.scalar(text("SELECT 1 FROM pg_roles WHERE rolname = :r"), {"r": READER})
             # READER and SCHEMA are constants; only the password is a value, bound client-side.
             verb = "ALTER" if exists else "CREATE"
@@ -354,6 +367,10 @@ def seed() -> None:
         )
         connection = _connection(session, owner, wh, password)
         suites = [_suite(session, owner, connection, spec) for spec in _SUITES]
+        for suite in suites:
+            # What the REST create route dispatches (#634), run inline so the first run already
+            # has the failing-sample redaction policy. No-op once a suite has a policy.
+            _auto_classify_columns(session, suite_id=suite.id)
         _share_with_otp_operators(session, owner=owner, settings=get_settings())
         started = sum(_first_run(session, owner, suite) for suite in suites)
         print(
