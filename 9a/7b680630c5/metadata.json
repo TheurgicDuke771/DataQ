@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "9a7b680630c5",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2204-gx-project-lock",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/datasources/test_gx_runner.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/9a/7b680630c5/0/metadata.json",
+      "transcript": "/9a/7b680630c5/0/full.jsonl",
+      "compact_transcript": "/9a/7b680630c5/0/transcript.jsonl",
+      "content_hash": "/9a/7b680630c5/0/content_hash.txt",
+      "prompt": "/9a/7b680630c5/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 10,
+    "cache_creation_tokens": 3337,
+    "cache_read_tokens": 1279121,
+    "output_tokens": 1805,
+    "api_call_count": 5
+  }
+}
