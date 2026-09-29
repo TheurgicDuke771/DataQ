@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "9d123bd904df",
+  "strategy": "manual-commit",
+  "branch": "chore/issue-980-redis-server-pin-tripwire",
+  "checkpoints_count": 9,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/9d/123bd904df/0/metadata.json",
+      "transcript": "/9d/123bd904df/0/full.jsonl",
+      "compact_transcript": "/9d/123bd904df/0/transcript.jsonl",
+      "content_hash": "/9d/123bd904df/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 804,
+    "cache_creation_tokens": 635404,
+    "cache_read_tokens": 153356945,
+    "output_tokens": 274416,
+    "api_call_count": 402
+  }
+}
