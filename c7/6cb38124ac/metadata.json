@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "c76cb38124ac",
+  "strategy": "manual-commit",
+  "branch": "docs/cloud-hosting-preferred-for-production",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/c7/6cb38124ac/0/metadata.json",
+      "transcript": "/c7/6cb38124ac/0/full.jsonl",
+      "compact_transcript": "/c7/6cb38124ac/0/transcript.jsonl",
+      "content_hash": "/c7/6cb38124ac/0/content_hash.txt",
+      "prompt": "/c7/6cb38124ac/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 38,
+    "cache_creation_tokens": 27372,
+    "cache_read_tokens": 8207550,
+    "output_tokens": 11636,
+    "api_call_count": 19,
+    "subagent_tokens": {
+      "input_tokens": 148,
+      "cache_creation_tokens": 976170,
+      "cache_read_tokens": 30065870,
+      "output_tokens": 4668,
+      "api_call_count": 73
+    }
+  }
+}
