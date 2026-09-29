@@ -1,0 +1,8 @@
+<task-notification>
+<task-id>bjsv0igru</task-id>
+<tool-use-id>toolu_01Ls3LhymPAysjBxz3Gemix1</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4c1f817b-4fd7-4aa0-8c19-edd245c026d7/tasks/bjsv0igru.output</output-file>
+<status>completed</status>
+<summary>Monitor "PRs 2262 and 2263 merge or fail" stream ended</summary>
+<event>2263 failing: Frontend — tests,</event>
+</task-notification>
