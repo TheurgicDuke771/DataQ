@@ -2491,8 +2491,10 @@
 <ul>
 <li><strong>GX by default</strong>, with platform-native engines connection-anchored per ADR 0036 — a
   Snowflake connection additionally offers the <strong>DMF</strong> engine (seven system metrics, your own
-  custom DMFs, and freshness), and a Unity Catalog connection the <strong>DQX</strong> engine; Dataplex is
-  trigger-gated and not yet built. Batch-oriented (not streaming).</li>
+  custom DMFs, and freshness), and a Unity Catalog connection offers <strong>Databricks DQX</strong> (eight
+  row rules, run as a serverless job in your own workspace; a stream mode evaluates only newly
+  appended rows). Dataplex is trigger-gated and not yet built. Runs are scheduled or
+  triggered, not continuous.</li>
 <li><strong>Single tenant</strong>, suite-level access sharing <strong>plus a stored workspace role</strong> — Admin / Member / Viewer (ADR 0033); connection management is Admin-only. <code>WORKSPACE_ADMIN_EMAILS</code> is a bootstrap seed and lockout break-glass, not the day-to-day mechanism.</li>
 <li>Interactive <strong>datasource browsing</strong> (container browser, 3-level UC catalog picker) is
   deferred — you specify targets explicitly. JSON flat files deferred (CSV/Parquet in v1).</li>

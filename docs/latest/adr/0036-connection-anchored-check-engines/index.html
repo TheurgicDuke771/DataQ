@@ -2390,6 +2390,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#amendment-2026-09-29-a-stream-mode-for-dqx" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Amendment (2026-09-29): a stream mode for DQX
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2615,6 +2626,67 @@ connection role, against a throwaway schema:
 - injection-shaped names and columns were refused at authoring, and the run path refuses them
   without issuing any SQL.</p>
 <p>Scheduled (attached) DMFs stay out of scope, as recorded in §6 and the Context.</p>
+<h2 id="amendment-2026-09-29-a-stream-mode-for-dqx">Amendment (2026-09-29): a stream mode for DQX<a class="headerlink" href="#amendment-2026-09-29-a-stream-mode-for-dqx" title="Permanent link">¶</a></h2>
+<p>Streaming is why DQX sits beside batch-only GX. A DQX check now has an optional
+<code>mode</code>: <code>snapshot</code> (the default, as before) or <code>stream</code>.</p>
+<p><strong>How a check targets a stream.</strong> The target is unchanged: the suite's
+<code>catalog.schema.table</code>. That can be a Lakeflow streaming table or any Delta table that grows by
+appends. <code>stream</code> mode evaluates only the rows appended since the check's last persisted
+result.</p>
+<p><strong>Where evaluation happens.</strong> Evaluation stays in the same one serverless job per run. The
+notebook reads the table with <code>readStream</code> and an <code>availableNow</code> trigger, applies the same
+DQX rules, and sums failing rows per rule from the stream's observed metrics. A <code>noop</code> sink
+means nothing is written. The stream stops once it has caught up. Stream checks that resume
+from the same version share one stream.</p>
+<p><strong>What DataQ persists.</strong> Failing-row counts only, as in batch mode. Each result also records
+a small stream report: the Delta version range it read, the rows it evaluated, the table's
+Delta id, and the number of rewrite commits it skipped. <strong>The resume point is that recorded
+version, held by DataQ and not by a Spark checkpoint.</strong> The next run starts from the latest
+evaluated result's <code>next_version</code>. A job whose result is never saved is therefore re-read,
+not skipped. A persistent checkpoint would already have advanced past rows whose counts were
+lost. The checkpoint Spark requires is a throwaway folder in a UC volume named on the
+connection (<code>dqx_checkpoint_volume</code>). It is deleted after each run. Serverless rejects both
+temporary and DBFS checkpoint locations, which was confirmed live.</p>
+<p><strong>It runs on the existing run and schedule path.</strong> There is no new ingest subsystem, table,
+migration or beat task. The batch hook gains a <code>previous</code> argument, the latest evaluated
+<code>observed_value</code> per check, read from <code>results</code>.</p>
+<p><strong>Invariants kept.</strong> DQX is still installed pinned in the workspace only. Rules still come
+only from the closed vocabulary, through the same builder, and <code>mode</code> never reaches DQX. The
+job still returns only counts: its <code>collect()</code> calls read grouped counts, table history, or
+a <code>limit(0)</code> pre-flight, never rows.</p>
+<p><strong>Honesty rules.</strong>
+- A run with no new rows is <code>skip</code>, not <code>pass</code>.
+- A stream report DataQ cannot trust makes that check error, so it never becomes a resume
+  point.
+- A replaced table (its Delta id changed) or an expired history restarts the stream from the
+  whole table, and the result says <code>restarted</code>.
+- Rewrite commits (<code>UPDATE</code>/<code>DELETE</code>/<code>MERGE</code>/overwrite) are skipped with <code>skipChangeCommits</code>
+  and counted in <code>change_commits_skipped</code>, since the mode is defined over appends.</p>
+<p><strong>A platform fact that shaped the notebook:</strong> a streaming query that fails fails the whole
+Databricks command, even when the Python exception is caught, and even with
+<code>dbutils.notebook.exit</code> in the handler (live). So predictable stream failures are prevented
+up front instead of caught:
+- a resume version past the latest commit starts no stream
+- each rule is pre-flighted on an empty read
+- rewrite commits are skipped rather than raised</p>
+<p>A stream failure that still occurs errors every DQX check in that run.</p>
+<p><strong>Rejected alternatives.</strong>
+- <em>Reading a Lakeflow pipeline's expectation metrics from its event log.</em> It covers only
+  pipelines the user already runs and only the expectations defined inside them. It needs
+  pipeline-id configuration and a second evaluator vocabulary, and it cannot evaluate DataQ's
+  own rules.
+- <em>Provisioning a DQX step inside the user's pipeline.</em> That is pipeline management:
+  DataQ would edit user infrastructure, which the orchestration model (monitor and trigger
+  only) rules out.
+- <em>A persistent checkpoint per check.</em> It is simpler to state, but it loses counts on a failed
+  persist, as described above.</p>
+<p>Both rejected designs are heavier, and neither evaluates a stream with DataQ's rules.</p>
+<p><strong>Live-verified 2026-09-29 (Databricks Free Edition, serverless).</strong> The runs went through
+<code>execute_run</code>, the UC runner and the real job:
+- an append-only Delta table: a full first read, an increment-only second read, a
+  no-new-rows skip, and an <code>UPDATE</code> skipped and counted
+- a Lakeflow streaming table (<code>CREATE STREAMING TABLE … AS SELECT * FROM STREAM …</code>): a first
+  read, then only the rows a <code>REFRESH</code> appended</p>
 
 
 

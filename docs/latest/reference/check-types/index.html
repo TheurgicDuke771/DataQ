@@ -3168,7 +3168,7 @@ change it on any check.</p>
 <td><code>dqx:is_not_null</code></td>
 <td>Rows where the column is NULL.</td>
 <td>Completeness</td>
-<td><code>column</code></td>
+<td><code>column</code>, <code>mode</code> <em>(optional)</em></td>
 <td>warn / fail / critical</td>
 <td>All datasources</td>
 </tr>
@@ -3177,7 +3177,7 @@ change it on any check.</p>
 <td><code>dqx:is_not_empty</code></td>
 <td>Rows where the column is an empty string.</td>
 <td>Completeness</td>
-<td><code>column</code></td>
+<td><code>column</code>, <code>mode</code> <em>(optional)</em></td>
 <td>warn / fail / critical</td>
 <td>All datasources</td>
 </tr>
@@ -3186,7 +3186,7 @@ change it on any check.</p>
 <td><code>dqx:is_not_null_and_not_empty</code></td>
 <td>Rows where the column is NULL or an empty string.</td>
 <td>Completeness</td>
-<td><code>column</code></td>
+<td><code>column</code>, <code>mode</code> <em>(optional)</em></td>
 <td>warn / fail / critical</td>
 <td>All datasources</td>
 </tr>
@@ -3195,7 +3195,7 @@ change it on any check.</p>
 <td><code>dqx:is_in_list</code></td>
 <td>Rows whose value is not one of the allowed values.</td>
 <td>Validity</td>
-<td><code>column</code>, <code>allowed</code></td>
+<td><code>column</code>, <code>allowed</code>, <code>mode</code> <em>(optional)</em></td>
 <td>warn / fail / critical</td>
 <td>All datasources</td>
 </tr>
@@ -3204,7 +3204,7 @@ change it on any check.</p>
 <td><code>dqx:is_in_range</code></td>
 <td>Rows whose value falls outside the inclusive range.</td>
 <td>Validity</td>
-<td><code>column</code>, <code>min_limit</code>, <code>max_limit</code></td>
+<td><code>column</code>, <code>min_limit</code>, <code>max_limit</code>, <code>mode</code> <em>(optional)</em></td>
 <td>warn / fail / critical</td>
 <td>All datasources</td>
 </tr>
@@ -3213,7 +3213,7 @@ change it on any check.</p>
 <td><code>dqx:regex_match</code></td>
 <td>Rows whose value does not match the regular expression.</td>
 <td>Validity</td>
-<td><code>column</code>, <code>regex</code></td>
+<td><code>column</code>, <code>regex</code>, <code>mode</code> <em>(optional)</em></td>
 <td>warn / fail / critical</td>
 <td>All datasources</td>
 </tr>
@@ -3222,7 +3222,7 @@ change it on any check.</p>
 <td><code>dqx:is_not_less_than</code></td>
 <td>Rows whose value is below the limit.</td>
 <td>Validity</td>
-<td><code>column</code>, <code>limit</code></td>
+<td><code>column</code>, <code>limit</code>, <code>mode</code> <em>(optional)</em></td>
 <td>warn / fail / critical</td>
 <td>All datasources</td>
 </tr>
@@ -3231,7 +3231,7 @@ change it on any check.</p>
 <td><code>dqx:is_not_greater_than</code></td>
 <td>Rows whose value is above the limit.</td>
 <td>Validity</td>
-<td><code>column</code>, <code>limit</code></td>
+<td><code>column</code>, <code>limit</code>, <code>mode</code> <em>(optional)</em></td>
 <td>warn / fail / critical</td>
 <td>All datasources</td>
 </tr>

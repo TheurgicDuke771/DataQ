@@ -2650,6 +2650,37 @@ with a classified reason. Your GX checks are unaffected.
 expression, so DataQ builds every rule itself: columns must be plain identifiers, list values
 are sent as quoted literals, and limits must be numbers or ISO dates.
 
+**Stream mode.** Each DQX check has a **Read** setting. **Snapshot** (the default) evaluates
+the whole table every run. **Stream** evaluates only the rows appended since the check's last
+successful run, which is what you want on a Lakeflow streaming table or any Delta table that
+grows by appends. It runs in the same one job per run, on your existing schedule. The job reads
+the table as a Delta stream (`readStream` with an `availableNow` trigger), counts failing rows
+per rule, and stops once it has caught up.
+
+- **Where the stream resumes.** DataQ records the Delta version the stream reached with each
+  result, and the next run starts from there. A run whose result was never saved, for example
+  because it was cancelled, is re-read next time instead of skipped. The first run of a stream
+  check reads the whole table.
+- **What the result says.** The failing-row count and the row count cover only the new rows.
+  The result also records the version range it read. A run with no new rows is recorded as
+  `skip`, not `pass`.
+- **Setup.** Set the connection's **DQX checkpoint volume** (`catalog.schema.volume`). Spark
+  needs somewhere to keep a stream checkpoint while the job runs, and serverless compute
+  refuses both temporary and DBFS locations. DataQ uses a fresh folder in that volume for each
+  run and deletes it afterwards. The token needs `READ VOLUME` and `WRITE VOLUME` on it. A
+  stream check on a connection without a volume errors on its own; your other checks still
+  run.
+- **Limits.**
+  - Only appended rows are evaluated. A commit that rewrites existing rows (`UPDATE`,
+    `DELETE`, `MERGE`, an overwrite) is skipped, including any rows it inserted. The result
+    counts the skipped commits in `change_commits_skipped`. Use snapshot mode on a table that
+    is not append-only.
+  - If the table was replaced, or its history no longer reaches the recorded version, the
+    stream restarts from the whole table and the result says why (`restarted`).
+  - Run a stream check more often than the table's `VACUUM` retention (7 days by default).
+    Otherwise the files it needs to resume from can be gone and the job fails. To restart a
+    stream check from the whole table, run it once in snapshot mode.
+
 ### Freshness monitor (all datasources — ADR 0012/0030)
 
 *How stale is the target?* Point it at the load/updated **timestamp column**; the check
@@ -4570,14 +4601,14 @@ Databricks Labs DQX row rules, evaluated by a serverless job in your own workspa
 
 | Check | Type | What it checks | Dimension | Parameters | Thresholds | Runs on |
 |---|---|---|---|---|---|---|
-| **Not null (DQX)** | `dqx:is_not_null` | Rows where the column is NULL. | Completeness | `column` | warn / fail / critical | All datasources |
-| **Not empty (DQX)** | `dqx:is_not_empty` | Rows where the column is an empty string. | Completeness | `column` | warn / fail / critical | All datasources |
-| **Not null or empty (DQX)** | `dqx:is_not_null_and_not_empty` | Rows where the column is NULL or an empty string. | Completeness | `column` | warn / fail / critical | All datasources |
-| **In list (DQX)** | `dqx:is_in_list` | Rows whose value is not one of the allowed values. | Validity | `column`, `allowed` | warn / fail / critical | All datasources |
-| **In range (DQX)** | `dqx:is_in_range` | Rows whose value falls outside the inclusive range. | Validity | `column`, `min_limit`, `max_limit` | warn / fail / critical | All datasources |
-| **Matches regex (DQX)** | `dqx:regex_match` | Rows whose value does not match the regular expression. | Validity | `column`, `regex` | warn / fail / critical | All datasources |
-| **Not less than (DQX)** | `dqx:is_not_less_than` | Rows whose value is below the limit. | Validity | `column`, `limit` | warn / fail / critical | All datasources |
-| **Not greater than (DQX)** | `dqx:is_not_greater_than` | Rows whose value is above the limit. | Validity | `column`, `limit` | warn / fail / critical | All datasources |
+| **Not null (DQX)** | `dqx:is_not_null` | Rows where the column is NULL. | Completeness | `column`, `mode` *(optional)* | warn / fail / critical | All datasources |
+| **Not empty (DQX)** | `dqx:is_not_empty` | Rows where the column is an empty string. | Completeness | `column`, `mode` *(optional)* | warn / fail / critical | All datasources |
+| **Not null or empty (DQX)** | `dqx:is_not_null_and_not_empty` | Rows where the column is NULL or an empty string. | Completeness | `column`, `mode` *(optional)* | warn / fail / critical | All datasources |
+| **In list (DQX)** | `dqx:is_in_list` | Rows whose value is not one of the allowed values. | Validity | `column`, `allowed`, `mode` *(optional)* | warn / fail / critical | All datasources |
+| **In range (DQX)** | `dqx:is_in_range` | Rows whose value falls outside the inclusive range. | Validity | `column`, `min_limit`, `max_limit`, `mode` *(optional)* | warn / fail / critical | All datasources |
+| **Matches regex (DQX)** | `dqx:regex_match` | Rows whose value does not match the regular expression. | Validity | `column`, `regex`, `mode` *(optional)* | warn / fail / critical | All datasources |
+| **Not less than (DQX)** | `dqx:is_not_less_than` | Rows whose value is below the limit. | Validity | `column`, `limit`, `mode` *(optional)* | warn / fail / critical | All datasources |
+| **Not greater than (DQX)** | `dqx:is_not_greater_than` | Rows whose value is above the limit. | Validity | `column`, `limit`, `mode` *(optional)* | warn / fail / critical | All datasources |
 
 ## Authorable outside the editor
 
@@ -4678,7 +4709,9 @@ reason unrelated to DMFs, the connection shows "couldn't determine" rather than 
 second platform-native engine: eight row rules evaluated by Databricks Labs DQX in a
 serverless job in the connection's own workspace, one job per run. DataQ never ships DQX,
 whose licence permits use only with Databricks services. The job returns failing-row counts
-only. See [Databricks DQX](../guides/datasources-checks.md#databricks-dqx-adr-0036).
+only. A check in **stream** mode evaluates only the rows appended since its last run, so it
+works on Lakeflow streaming tables and append-only Delta tables. See
+[Databricks DQX](../guides/datasources-checks.md#databricks-dqx-adr-0036).
 
 ᵖ **PostgreSQL** — any server, self-hosted or managed; everything runs by pushdown
 on read-only sessions. Every row was verified by an **executed** run against a real
@@ -9752,8 +9785,10 @@ Manual checklist (the mutating tail):
 
 - **GX by default**, with platform-native engines connection-anchored per ADR 0036 — a
   Snowflake connection additionally offers the **DMF** engine (seven system metrics, your own
-  custom DMFs, and freshness), and a Unity Catalog connection the **DQX** engine; Dataplex is
-  trigger-gated and not yet built. Batch-oriented (not streaming).
+  custom DMFs, and freshness), and a Unity Catalog connection offers **Databricks DQX** (eight
+  row rules, run as a serverless job in your own workspace; a stream mode evaluates only newly
+  appended rows). Dataplex is trigger-gated and not yet built. Runs are scheduled or
+  triggered, not continuous.
 - **Single tenant**, suite-level access sharing **plus a stored workspace role** — Admin / Member / Viewer (ADR 0033); connection management is Admin-only. `WORKSPACE_ADMIN_EMAILS` is a bootstrap seed and lockout break-glass, not the day-to-day mechanism.
 - Interactive **datasource browsing** (container browser, 3-level UC catalog picker) is
   deferred — you specify targets explicitly. JSON flat files deferred (CSV/Parquet in v1).
@@ -10002,7 +10037,7 @@ Each ADR captures a single significant architecture decision: the context, the d
 | [0033](0033-workspace-roles-rbac.md) | Workspace roles — **Admin / Member / Viewer** as stored `users.role` on the two-axis model (role × per-suite ladder, ladder untouched); **connection mutations Admin-only** (closes the workspace-global hole, breaking for Members); Viewer capped at `view`; `WORKSPACE_ADMIN_EMAILS` demotes to bootstrap/break-glass; in-app role management + last-admin guard; amends 0027 (admin source) + 0032 (signup default role) | Accepted |
 | [0034](0034-asset-entity-openlineage-identity-lineage-pull.md) | Assets & lineage (gap G-d design) — first-class **asset entity keyed by the OpenLineage dataset-naming spec** (namespace+name adopted verbatim, dbt-ol/Spark byte-compatible; DEV/QA = distinct assets, UI groups over `env`); **lineage emitted/pulled, never built** — OL emission w/ quality facets → dbt `manifest.json` → `lineage_edges` cache → `LineageProvider` seam (Marquez reference; OpenMetadata SDK license-blocked per 0031); incidents anchor to assets (one open per asset+check, evidence-card payload); asset/incident authz derived from suite grants. *Amended 2026-09-27:* column grain stays a refinement on the table edge with a per-edge `column_coverage` reason; Snowflake column pairs come from `ACCESS_HISTORY` on every tier; placement/dedup advisory, classification propagation additive-only | Accepted |
 | [0035](0035-request-rate-limiting.md) | Request rate limiting — **app-level innermost HTTP middleware** (portable per 0028/0013, covers the `/mcp` mount a dependency can't, principal-aware where nginx isn't); fixed-window Redis counter (window index in the key → no EXPIRE race), **no new dep** (INCR over slowapi/limits); **fail-open**; endpoint classes `webhook`(per-IP) · `default`(per-`sha256(token)`) · `unauth`(per-IP), raw token never keyed/logged; `/healthz`+`OPTIONS` exempt; headers on 429 only; nginx `limit_req` out of scope; hard prereq for 0032's OTP | Accepted |
-| [0036](0036-connection-anchored-check-engines.md) | Connection-anchored check engines — **engines are capabilities of connections** (GX universal; `dmf`⇔snowflake, `dqx`⇔unity_catalog, `dataplex`⇔future bigquery); **`check.engine`** per check (supersedes 0003's suite-level `gx \| dqx` toggle); type gates the offer, connection **probe** validates reality (classified remediation, never raw errors); **`kind` ⊥ `engine`** (engines = alternate evaluators of existing kinds; engine-aware backend catalog lands with the dimension-classification work); lifecycle validated save/run/import-time (`error` status, never silent); DMF first build (custom DMFs added by the 2026-09-29 amendment), DQX shipped 2026-09-28 (remote execution), Dataplex trigger-gated; scheduled-native ingest deferred to a future ADR | Accepted (amends 0003; DMF incl. custom DMFs and DQX shipped; Dataplex trigger-gated) |
+| [0036](0036-connection-anchored-check-engines.md) | Connection-anchored check engines — **engines are capabilities of connections** (GX universal; `dmf`⇔snowflake, `dqx`⇔unity_catalog, `dataplex`⇔future bigquery); **`check.engine`** per check (supersedes 0003's suite-level `gx \| dqx` toggle); type gates the offer, connection **probe** validates reality (classified remediation, never raw errors); **`kind` ⊥ `engine`** (engines = alternate evaluators of existing kinds; engine-aware backend catalog lands with the dimension-classification work); lifecycle validated save/run/import-time (`error` status, never silent); DMF first build (custom DMFs added by the 2026-09-29 amendment), DQX shipped 2026-09-28 (remote execution), Dataplex trigger-gated; scheduled-native ingest deferred to a future ADR | Accepted (amends 0003; DMF incl. custom DMFs and DQX shipped, DQX stream mode 2026-09-29; Dataplex trigger-gated) |
 | [0037](0037-workspace-visible-asset-identity.md) | Workspace-visible asset identity — **asset identity + lineage topology (incl. column pairs) visible to every member**; aggregate verdicts (health rollup, future scorecard) **workspace-true** (all composing suites, one number for all viewers); grant boundary moves to **suite-derived detail** (composing-suite names/runs/results/samples/incidents — ADR 0027 ladder unchanged, suite-grain 404-no-leak intact); asset detail 200s for all, `restricted_suite_count` replaces redaction; supersedes an earlier identity-redaction regime (amends 0034 decision 5) | Accepted |
 | [0038](0038-dq-dimension-classification.md) | DQ-dimension classification on checks — **seven canonical dimensions** (accuracy/completeness/consistency/integrity/timeliness/uniqueness/validity) as a **closed** vocabulary via table `CHECK`, not a Postgres ENUM (no `ALTER TYPE` friction) and not free text (unbounded values destroy coverage reporting); **derived default → stored → overridable at any time** (stored so the scorecard aggregates in SQL and an override survives); derivation is **deliberately partial** — `accuracy`/`integrity` are never derived and custom SQL has no answer, so **NULL means unclassified** and the scorecard must render it as a gap; **existing rows ARE backfilled** (migration `a7b8c9d0e1f2`; §5 **amended 2026-07-19** — the backfill cannot overwrite a human decision because none existed yet when it ran, while leaving them NULL made the scorecard useless on day one; unmapped types stay NULL); `dimension` ⊥ `kind` ⊥ `engine`; narrows 0036 §4 — lands the derivation map as the backend catalog's seed without moving the frontend catalog server-side, since no native engine exists yet | Accepted |
 | [0039](0039-openbao-self-hosted-secret-backend.md) | Self-hosted secret backend — a fourth `SecretStore` speaking the **KV v2 HTTP API, not a vendor SDK** (one mode serves OpenBao / Vault Community / Enterprise / HCP; no HashiCorp lock-in traded for the Azure one); **OpenBao** (MPL-2.0, LF fork of pre-BUSL Vault 1.14) is the shipped/tested/pinned server — Vault Community is BUSL-1.1 and rule-40-forbidden as a *distributed* component, supported as a *target*; **`SECRET_STORE=openbao` replaces `redis` and `RedisSecretStore` is deleted** (plaintext credentials were the default of the published eval stack), with a loud one-cycle `RuntimeError` shim, **Redis stays** for broker + rate-limit counters; token auth phase 1 (AppRole deferred/filed), dev-mode token generated into the gitignored `.env`; Azure Key Vault remains the prod default (managed identity beats a held token), OpenBao is the BYOL/cloud-neutral option; **an outage is never reportable as a state** — new `SecretStoreUnavailableError`, deliberately NOT a `SecretNotFoundError` subclass, since every caller branches on the TYPE and none reads the message (a sealed vault otherwise renders "not set" on the admin page, skips alert delivery silently, and runs connections with the credential omitted); no status is silent (400=KV v1 mount, 401=gateway, 429=HCP throttle); **`AzureKeyVaultStore` had the same defect since Week 2** and is fixed too (the same invisible-degradation shape seen before); `delete` purges via KV v2 **metadata** delete, fail-soft | Accepted |
@@ -13881,6 +13916,80 @@ connection role, against a throwaway schema:
   without issuing any SQL.
 
 Scheduled (attached) DMFs stay out of scope, as recorded in §6 and the Context.
+
+## Amendment (2026-09-29): a stream mode for DQX
+
+Streaming is why DQX sits beside batch-only GX. A DQX check now has an optional
+`mode`: `snapshot` (the default, as before) or `stream`.
+
+**How a check targets a stream.** The target is unchanged: the suite's
+`catalog.schema.table`. That can be a Lakeflow streaming table or any Delta table that grows by
+appends. `stream` mode evaluates only the rows appended since the check's last persisted
+result.
+
+**Where evaluation happens.** Evaluation stays in the same one serverless job per run. The
+notebook reads the table with `readStream` and an `availableNow` trigger, applies the same
+DQX rules, and sums failing rows per rule from the stream's observed metrics. A `noop` sink
+means nothing is written. The stream stops once it has caught up. Stream checks that resume
+from the same version share one stream.
+
+**What DataQ persists.** Failing-row counts only, as in batch mode. Each result also records
+a small stream report: the Delta version range it read, the rows it evaluated, the table's
+Delta id, and the number of rewrite commits it skipped. **The resume point is that recorded
+version, held by DataQ and not by a Spark checkpoint.** The next run starts from the latest
+evaluated result's `next_version`. A job whose result is never saved is therefore re-read,
+not skipped. A persistent checkpoint would already have advanced past rows whose counts were
+lost. The checkpoint Spark requires is a throwaway folder in a UC volume named on the
+connection (`dqx_checkpoint_volume`). It is deleted after each run. Serverless rejects both
+temporary and DBFS checkpoint locations, which was confirmed live.
+
+**It runs on the existing run and schedule path.** There is no new ingest subsystem, table,
+migration or beat task. The batch hook gains a `previous` argument, the latest evaluated
+`observed_value` per check, read from `results`.
+
+**Invariants kept.** DQX is still installed pinned in the workspace only. Rules still come
+only from the closed vocabulary, through the same builder, and `mode` never reaches DQX. The
+job still returns only counts: its `collect()` calls read grouped counts, table history, or
+a `limit(0)` pre-flight, never rows.
+
+**Honesty rules.**
+- A run with no new rows is `skip`, not `pass`.
+- A stream report DataQ cannot trust makes that check error, so it never becomes a resume
+  point.
+- A replaced table (its Delta id changed) or an expired history restarts the stream from the
+  whole table, and the result says `restarted`.
+- Rewrite commits (`UPDATE`/`DELETE`/`MERGE`/overwrite) are skipped with `skipChangeCommits`
+  and counted in `change_commits_skipped`, since the mode is defined over appends.
+
+**A platform fact that shaped the notebook:** a streaming query that fails fails the whole
+Databricks command, even when the Python exception is caught, and even with
+`dbutils.notebook.exit` in the handler (live). So predictable stream failures are prevented
+up front instead of caught:
+- a resume version past the latest commit starts no stream
+- each rule is pre-flighted on an empty read
+- rewrite commits are skipped rather than raised
+
+A stream failure that still occurs errors every DQX check in that run.
+
+**Rejected alternatives.**
+- *Reading a Lakeflow pipeline's expectation metrics from its event log.* It covers only
+  pipelines the user already runs and only the expectations defined inside them. It needs
+  pipeline-id configuration and a second evaluator vocabulary, and it cannot evaluate DataQ's
+  own rules.
+- *Provisioning a DQX step inside the user's pipeline.* That is pipeline management:
+  DataQ would edit user infrastructure, which the orchestration model (monitor and trigger
+  only) rules out.
+- *A persistent checkpoint per check.* It is simpler to state, but it loses counts on a failed
+  persist, as described above.
+
+Both rejected designs are heavier, and neither evaluates a stream with DataQ's rules.
+
+**Live-verified 2026-09-29 (Databricks Free Edition, serverless).** The runs went through
+`execute_run`, the UC runner and the real job:
+- an append-only Delta table: a full first read, an increment-only second read, a
+  no-new-rows skip, and an `UPDATE` skipped and counted
+- a Lakeflow streaming table (`CREATE STREAMING TABLE … AS SELECT * FROM STREAM …`): a first
+  read, then only the rows a `REFRESH` appended
 
 
 ---
