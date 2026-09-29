@@ -513,6 +513,21 @@ def test_the_anomaly_monitor_measures_row_count_and_freshness_age() -> None:
     assert age == pytest.approx(max((now - latest).total_seconds() / 3600, 0.0), abs=0.1)
 
 
+def test_the_column_profile_measures_every_column_in_one_query() -> None:
+    """`column_profile` (ADR 0047): SQL Server casts to VARCHAR(max), including nvarchar(max)."""
+    from backend.app.services.anomaly import DISTINCT, NULL_PCT, measure_column_profile, series_key
+
+    profile = measure_column_profile(
+        _connection(), table="Orders", schema="dbo", catalog=None, secret_store=_store()
+    )
+    assert profile.row_count == 4 and profile.columns_measured == profile.columns_total == 9
+    assert profile.distinct_unavailable == ()
+    assert profile.series[series_key("CustomerEmail", NULL_PCT)] == 25.0
+    assert profile.series[series_key("CustomerEmail", DISTINCT)] == 2.0
+    assert profile.series[series_key("Channel", DISTINCT)] == 3.0
+    assert profile.series[series_key("Notes", DISTINCT)] == 3.0  # nvarchar(max), NULL excluded
+
+
 # ───────────────────────────── introspection ─────────────────────────────
 
 

@@ -27,6 +27,7 @@ from backend.app.datasources.monitors import (
     MonitorConfigError,
     anomaly_params,
     build_monitor_statement,
+    column_distinct_probe,
     column_profile_statement,
     freshness_age_hours,
     monitor_expectation_type,
@@ -122,7 +123,10 @@ class ColumnProfile:
     series: dict[str, float]
     columns_measured: int
     columns_total: int
-    distinct_available: bool
+    #: Columns with no distinct count: the engine can't cast the type to a string (Redshift
+    #: GEOMETRY, BOOLEAN), or the cast dropped values (Redshift SUPER objects cast to NULL),
+    #: which would undercount.
+    distinct_unavailable: tuple[str, ...] = ()
 
 
 def series_key(column: str, metric: str) -> str:
@@ -137,8 +141,9 @@ def measure_column_profile(
     catalog: str | None,
     secret_store: SecretStore,
 ) -> ColumnProfile:
-    """Every column's null % and distinct count, in one query (null % only if the distinct pass
-    fails, e.g. on a type that can't be cast to a string)."""
+    """Every column's null % and distinct count, in one query. If the engine refuses to cast
+    some column to a string, a zero-row probe per column finds it and the query runs again
+    without that column's distinct count."""
     effective_schema = resolve_effective_schema(connection, schema)
     try:
         with _open_connection(connection, secret_store) as conn:
@@ -150,37 +155,66 @@ def measure_column_profile(
             target = qualified_table(
                 table=table, schema=effective_schema, catalog=catalog, dialect=dialect
             )
-            distinct = True
+            castable = list(columns)
             try:
-                row = conn.execute(column_profile_statement(target, columns, distinct=True)).one()
+                row = conn.execute(
+                    column_profile_statement(target, columns, distinct=castable)
+                ).one()
             except Exception:
-                # A column type the engine can't cast or compare: keep the null rates.
                 conn.rollback()
-                distinct = False
-                row = conn.execute(column_profile_statement(target, columns, distinct=False)).one()
+                castable = _castable_columns(conn, target, columns)
+                try:
+                    row = conn.execute(
+                        column_profile_statement(target, columns, distinct=castable)
+                    ).one()
+                except Exception:
+                    conn.rollback()
+                    castable = []
+                    row = conn.execute(
+                        column_profile_statement(target, columns, distinct=castable)
+                    ).one()
     except ProfileUnsupportedError as exc:
         raise MonitorConfigError(
             f"anomaly monitors need a SQL datasource, not {connection.type!r}"
         ) from exc
-    values = list(row)
-    row_count = int(row_count_from_scalar(values[0]))
+    values = iter(row)
+    row_count = int(row_count_from_scalar(next(values)))
     series: dict[str, float] = {}
-    step = 2 if distinct else 1
-    for i, name in enumerate(columns):
-        non_null = int(values[1 + i * step] or 0)
+    unavailable: list[str] = []
+    counted = set(castable)
+    for name in columns:
+        non_null = int(next(values) or 0)
         if row_count > 0:
             series[series_key(name, NULL_PCT)] = round(
                 100.0 * (row_count - non_null) / row_count, 6
             )
-        if distinct:
-            series[series_key(name, DISTINCT)] = float(values[2 + i * step] or 0)
+        if name not in counted:
+            unavailable.append(name)
+            continue
+        cast_non_null, distinct = int(next(values) or 0), next(values)
+        if cast_non_null == non_null:
+            series[series_key(name, DISTINCT)] = float(distinct or 0)
+        else:
+            unavailable.append(name)
     return ColumnProfile(
         row_count=row_count,
         series=series,
         columns_measured=len(columns),
         columns_total=len(columns_all),
-        distinct_available=distinct,
+        distinct_unavailable=tuple(unavailable),
     )
+
+
+def _castable_columns(conn: Any, target: Any, columns: list[str]) -> list[str]:
+    castable: list[str] = []
+    for name in columns:
+        try:
+            conn.execute(column_distinct_probe(target, name)).all()
+        except Exception:
+            conn.rollback()
+            continue
+        castable.append(name)
+    return castable
 
 
 def load_profile_observations(
@@ -255,7 +289,7 @@ def score_column_profile(
         "row_count": profile.row_count,
         "columns_measured": profile.columns_measured,
         "columns_total": profile.columns_total,
-        "distinct_available": profile.distinct_available,
+        "distinct_unavailable": list(profile.distinct_unavailable),
         "series_scored": scored,
         "window": params.window,
         "min_points": params.min_points,

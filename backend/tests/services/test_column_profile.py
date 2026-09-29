@@ -73,7 +73,7 @@ def _measure(table: str) -> ColumnProfile:
 
 def test_one_query_measures_null_rate_and_distinct_count_per_column(table: str) -> None:
     profile = _measure(table)
-    assert profile.row_count == 4 and profile.distinct_available
+    assert profile.row_count == 4 and profile.distinct_unavailable == ()
     assert profile.series[series_key("email", NULL_PCT)] == 25.0
     assert profile.series[series_key("email", DISTINCT)] == 2.0
     # A jsonb column has no equality operator; the cast to text still counts it.
@@ -81,19 +81,49 @@ def test_one_query_measures_null_rate_and_distinct_count_per_column(table: str) 
     assert profile.series[series_key("id", NULL_PCT)] == 0.0
 
 
+def _failing_for(columns: set[str]) -> tuple[Any, Any]:
+    """Statement builders whose distinct count errors for ``columns``, as Redshift's does for
+    GEOMETRY: the combined query and that column's probe fail, everything else is real SQL."""
+    from backend.app.datasources.monitors import column_distinct_probe as real_probe
+    from backend.app.datasources.monitors import column_profile_statement as real
+
+    broken = text("SELECT this_is_not_sql(")
+
+    def statement(target: Any, names: list[str], *, distinct: Any) -> Any:
+        return broken if columns & set(distinct) else real(target, names, distinct=distinct)
+
+    def probe(target: Any, name: str) -> Any:
+        return broken if name in columns else real_probe(target, name)
+
+    return statement, probe
+
+
+def test_an_uncastable_column_loses_only_its_own_distinct_count(
+    table: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    statement, probe = _failing_for({"payload"})
+    monkeypatch.setattr(anomaly, "column_profile_statement", statement)
+    monkeypatch.setattr(anomaly, "column_distinct_probe", probe)
+    profile = _measure(table)
+    assert profile.distinct_unavailable == ("payload",)
+    assert profile.series[series_key("email", DISTINCT)] == 2.0
+    assert profile.series[series_key("id", DISTINCT)] == 4.0
+    assert series_key("payload", DISTINCT) not in profile.series
+    assert profile.series[series_key("payload", NULL_PCT)] == 25.0
+
+
 def test_a_failed_distinct_pass_keeps_the_null_rates(
     table: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Every probe passes but the combined query still fails: null rates only."""
     from backend.app.datasources.monitors import column_profile_statement as real
 
-    def no_distinct(target: Any, columns: list[str], *, distinct: bool) -> Any:
-        if distinct:
-            return text("SELECT this_is_not_sql(")
-        return real(target, columns, distinct=False)
+    def statement(target: Any, names: list[str], *, distinct: Any) -> Any:
+        return text("SELECT this_is_not_sql(") if distinct else real(target, names, distinct=())
 
-    monkeypatch.setattr(anomaly, "column_profile_statement", no_distinct)
+    monkeypatch.setattr(anomaly, "column_profile_statement", statement)
     profile = _measure(table)
-    assert not profile.distinct_available
+    assert profile.distinct_unavailable == ("id", "email", "payload")
     assert profile.series == {
         series_key("id", NULL_PCT): 0.0,
         series_key("email", NULL_PCT): 25.0,
@@ -101,14 +131,35 @@ def test_a_failed_distinct_pass_keeps_the_null_rates(
     }
 
 
+def test_a_cast_that_drops_values_records_no_distinct_count(
+    table: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Redshift casts a SUPER object to NULL, so its distinct count would read 0. Here the cast
+    of `email` loses one value; its distinct count must be left out, not undercounted."""
+
+    def statement(target: Any, names: list[str], *, distinct: Any) -> Any:
+        return text(
+            "SELECT COUNT(*), COUNT(id), COUNT(id::text), COUNT(DISTINCT id::text), "
+            "COUNT(email), COUNT(NULLIF(email, 'a@x.io')), "
+            "COUNT(DISTINCT NULLIF(email, 'a@x.io')), "
+            "COUNT(payload), COUNT(payload::text), COUNT(DISTINCT payload::text) "
+            f"FROM public.{table}"
+        )
+
+    monkeypatch.setattr(anomaly, "column_profile_statement", statement)
+    profile = _measure(table)
+    assert profile.distinct_unavailable == ("email",)
+    assert series_key("email", DISTINCT) not in profile.series
+    assert profile.series[series_key("email", NULL_PCT)] == 25.0
+    assert profile.series[series_key("payload", DISTINCT)] == 2.0
+
+
 def _history(values: list[dict[str, float]]) -> list[tuple[datetime, dict[str, float]]]:
     return [(NOW - timedelta(days=len(values) - i), v) for i, v in enumerate(values)]
 
 
 def _profile(series: dict[str, float]) -> ColumnProfile:
-    return ColumnProfile(
-        row_count=100, series=series, columns_measured=1, columns_total=1, distinct_available=True
-    )
+    return ColumnProfile(row_count=100, series=series, columns_measured=1, columns_total=1)
 
 
 def test_cold_start_skips_rather_than_scoring() -> None:
@@ -247,7 +298,7 @@ def test_reserved_and_spaced_column_names_are_quoted(
     finally:
         with _db_engine.begin() as conn:
             conn.execute(text(f"DROP TABLE IF EXISTS public.{name}"))
-    assert profile.distinct_available
+    assert profile.distinct_unavailable == ()
     assert profile.series[series_key("user", NULL_PCT)] == 50.0
     assert profile.series[series_key("order id", NULL_PCT)] == 25.0
     assert profile.series[series_key("order", DISTINCT)] == 4.0
