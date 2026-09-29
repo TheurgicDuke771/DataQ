@@ -1,11 +1,17 @@
 # Getting started
 
-Two tracks, matched to why you're here:
+Three tracks, matched to why you're here:
 
-- **Run / evaluate / self-host** → pull the prebuilt images (below). Recommended.
+- **Production and enterprise teams** → deploy on a cloud platform with a reference stack:
+  Azure Container Apps (primary) or AWS ECS Fargate. See
+  [Production deployment](../operate/deployment.md). This is the recommended way to run DataQ
+  for a team: managed Postgres and Redis, a cloud secret store, your identity provider, and
+  the frontend as the only public surface.
+- **Evaluate or try it locally** → pull the prebuilt images (below). One Docker Compose file
+  on your machine, no cloud account.
 - **Develop / contribute** → build from source with `scripts/setup.sh` ([further down](#develop-from-source)).
 
-## Run from prebuilt images (recommended)
+## Evaluate locally from prebuilt images
 
 ![After sign-in: the Connections page, where the first thing you add is a datasource](../assets/screenshots/connections-list.png){ .screenshot }
 

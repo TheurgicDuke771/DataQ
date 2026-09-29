@@ -24,6 +24,8 @@
 
 ## Quick start
 
+**Run it for a team:** deploy on Azure Container Apps (primary) or AWS ECS Fargate with the reference OpenTofu stacks, the recommended path for production and enterprise teams. See [Production deployment](https://theurgicduke771.github.io/DataQ/docs/latest/operate/deployment/).
+
 **Evaluate in ~5 minutes — Docker only, no cloud account or IdP:**
 
 ```bash
