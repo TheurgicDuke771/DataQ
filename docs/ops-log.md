@@ -833,3 +833,12 @@ User-approved (#1602 "option a": recreate briefly, verify the aggregate monitor'
 - **Paused, then resumed:** the next step (waiting for the workgroup) was blocked by the auto-mode classifier as security-weakening; the maintainer approved continuing. **2026-09-29T10:25:58Z:** database user `dq_reader` created, password generated straight into Secrets Manager as `dataq/it/redshift-reader`.
 - **Live lanes (PR #2239 branch):** Athena 21 passed, Redshift 20 passed, including the aggregate-monitor tests.
 - **2026-09-29T10:37:51Z–10:40:54Z — torn down, verified:** workgroup then namespace `dataq-it-rs` deleted (removing the managed admin secret and all database objects); `dataq/it/redshift-reader` and `dataq/it/athena-reader` force-deleted; the IAM user's access key, inline policy `athena-read`, then the user deleted; Glue database `dataq_athena_it` deleted; `athena-results/` and `athena-data/` emptied (0 objects); the 5439 rule on `sg-0c047e1aaf5c17416` revoked (0 rules on 5439). **Expected state: none of these resources exist.** Teardown order used, for reference: delete workgroup then namespace `dataq-it-rs`; force-delete `dataq/it/athena-reader` (and `dataq/it/redshift-reader` if created); delete the IAM user's access key, inline policy, then the user; delete Glue database `dataq_athena_it`; empty `athena-results/` and `athena-data/`; revoke the 5439 rule on `sg-0c047e1aaf5c17416`.
+
+## 2026-09-29 — Azure SQL free-offer test DB re-created for #1602 (aggregate monitor, SQL Server lane)
+
+User-approved (#1602 SQL Server leg, "option a"). Same shape as the 2026-09-28 #2137 server, tagged `purpose=dataq-1602-it`.
+
+- **11:38:15Z — logical server `dataq-mssql-6600f6`** (`dataq-rg`, westus2), TLS 1.2 minimum. SQL admin `dataqadmin`; its password was generated straight into KV `mssql-test-sqladmin` and never printed.
+- **Database `dataq_test`:** free offer (`useFreeLimit=true`, `AutoPause` on exhaustion), serverless GP_S_Gen5, local backup redundancy. It cannot bill.
+- **11:40Z — firewall rule `claude-maint-20260929`:** the maintainer's IP only.
+- **Expected state:** temporary, until the lane has run. **Teardown:** delete the server (removes the database and firewall rule); delete and purge KV `mssql-test-sqladmin` and `mssql-test-reader`.
