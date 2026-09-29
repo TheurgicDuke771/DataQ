@@ -872,8 +872,14 @@ def create_check(
     dimension: str | None = None,
     engine: str = GX_ENGINE,
     actor_id: uuid.UUID | None = None,
+    origin: str = "user",
+    machine_write: bool = False,
 ) -> Check:
-    """Create a check in a suite, recording its first version (#280)."""
+    """Create a check in a suite, recording its first version (#280).
+
+    ``machine_write`` (the coverage loop, ADR 0047) keeps the write out of the audit log, which
+    records deliberate acts by a principal only (ADR 0041 §2.1).
+    """
     suite = get_suite(session, suite_id)  # 404 if the suite is missing
     validate_kind(kind)
     validate_engine(engine, connection_type=_connection_type(session, suite))
@@ -954,17 +960,19 @@ def create_check(
         warn_threshold=warn_threshold,
         fail_threshold=fail_threshold,
         critical_threshold=critical_threshold,
+        origin=origin,
     )
     session.add(check)
     session.flush()  # assign check.id so the v1 snapshot can reference it
     record_check_version(session, check, actor_id=actor_id)
-    audit_service.record_entity_change(
-        session,
-        action="check.create",
-        entity_type="check",
-        entity=check,
-        actor=actor_id,
-    )
+    if not machine_write:
+        audit_service.record_entity_change(
+            session,
+            action="check.create",
+            entity_type="check",
+            entity=check,
+            actor=actor_id,
+        )
     session.commit()
     session.refresh(check)
     log.info("check_created", check_id=str(check.id), suite_id=str(suite_id))

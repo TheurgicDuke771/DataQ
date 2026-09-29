@@ -47,10 +47,12 @@ describe('initialConfigForType', () => {
   });
 
   it('still seeds the default auth_type for a type that has one', () => {
-    // Also carries `inventory_sync: true` — its toggle field's default (asset-first, 2026-09).
+    // Also carries the toggle fields' defaults: `inventory_sync: true` (asset-first, 2026-09) and
+    // `auto_coverage: false` (ADR 0047 — coverage is switched on deliberately, per connection).
     expect(initialConfigForType('snowflake')).toEqual({
       auth_type: 'password',
       inventory_sync: true,
+      auto_coverage: false,
     });
   });
 

@@ -209,7 +209,7 @@ def _reject_uncredentialed_redirect(
 
 # Config keys that change what DataQ does with a connection, not how it connects — a change
 # confined to them is saved without a connectivity test (#1927).
-_BEHAVIOUR_ONLY_CONFIG_KEYS = frozenset({"inventory_sync"})
+_BEHAVIOUR_ONLY_CONFIG_KEYS = frozenset({"inventory_sync", "auto_coverage"})
 
 
 def _connectivity_view(conn_type: str, config: Mapping[str, Any]) -> dict[str, Any]:

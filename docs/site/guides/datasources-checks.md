@@ -604,6 +604,46 @@ notes on the same table should never see two different verdicts.
 Checks with no dimension set are counted separately ("N checks have no dimension
 set") rather than filed under a dimension — otherwise "Not covered" would be wrong.
 
+### Automatic coverage: watch every table without writing checks
+
+Switch on **Automatic coverage** on a Snowflake, Unity Catalog or SQL-database connection
+(PostgreSQL, MySQL/MariaDB, Trino, SQL Server, Athena, Redshift) and every table its inventory
+lists gets watched, with no check written by hand. Only a workspace admin can switch it on, like
+any connection change.
+
+For each table, DataQ creates one suite marked **Automatic**, named `Auto: <table>`, holding
+checks that compare the table with its own history rather than asserting anything about the
+data:
+
+| Check | What it reports |
+|---|---|
+| Row count is normal | The row count against the same weekday in earlier weeks. |
+| Data is fresh | The age of the newest value in a load or event timestamp column, against its history. |
+| Schema is unchanged | Any added, removed or retyped column. |
+
+The first two are anomaly checks: they warn at 3 standard deviations from the table's history,
+fail at 4 and go critical at 6, and they skip until the table has four earlier runs on the same
+weekday, so a new suite starts scoring in its fifth week. The freshness check appears after the
+first run, once the schema check has recorded the columns: DataQ prefers a column such as
+`loaded_at` or `updated_at`, and if the table has no timestamp column it says so instead of
+guessing. A schema change fails.
+
+For example, with coverage on for a connection whose inventory lists `shop.public.orders`, the
+next daily pass creates *Auto: shop.public.orders* with the row-count and schema checks and a
+daily schedule. After its first run it adds *Data is fresh* on `ordered_at`.
+
+- **Your changes win.** You can edit, snooze or share these suites and checks like any other.
+  DataQ only ever adds a missing check. It never changes one you edited, and a check you delete
+  is not added back.
+- **Leaving a table out.** On the asset page, an admin can switch off *Include in automatic
+  coverage*. The table's suite is paused, not deleted, and its history stays. Switching coverage
+  off for the whole connection pauses all of its automatic suites the same way.
+- **Cost.** Each covered table runs a few warehouse queries once a day, at a time spread across
+  the day by table. A connection covers at most 500 tables (`AUTO_COVERAGE_MAX_ASSETS`); past
+  that, the first 500 by name are covered and the overflow is logged.
+- **Who can see them.** Automatic suites have no human owner. Workspace admins see all of them
+  and can share them; everyone sees the asset's health, which includes them.
+
 ### Flat files: formats and CSV delimiters
 
 Flat-file connections (ADLS Gen2 / S3) read `.csv`, `.parquet`/`.pq`, and JSON as

@@ -9,6 +9,8 @@ from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 from typing_extensions import Self
 
+from ..types import UNSET, Unset
+
 T = TypeVar("T", bound="AssetSummaryRead")
 
 
@@ -36,6 +38,7 @@ class AssetSummaryRead:
             owner_user_id (None | UUID):
             suite_count (int):
             worst_severity (None | str):
+            auto_coverage_excluded (bool | Unset):  Default: False.
     """
 
     checks_passed: int
@@ -55,6 +58,7 @@ class AssetSummaryRead:
     owner_user_id: None | UUID
     suite_count: int
     worst_severity: None | str
+    auto_coverage_excluded: bool | Unset = False
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -103,6 +107,8 @@ class AssetSummaryRead:
         worst_severity: None | str
         worst_severity = self.worst_severity
 
+        auto_coverage_excluded = self.auto_coverage_excluded
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -126,6 +132,8 @@ class AssetSummaryRead:
                 "worst_severity": worst_severity,
             }
         )
+        if auto_coverage_excluded is not UNSET:
+            field_dict["auto_coverage_excluded"] = auto_coverage_excluded
 
         return field_dict
 
@@ -207,6 +215,8 @@ class AssetSummaryRead:
 
         worst_severity = _parse_worst_severity(d.pop("worst_severity"))
 
+        auto_coverage_excluded = d.pop("auto_coverage_excluded", UNSET)
+
         asset_summary_read = cls(
             checks_passed=checks_passed,
             checks_total=checks_total,
@@ -225,6 +235,7 @@ class AssetSummaryRead:
             owner_user_id=owner_user_id,
             suite_count=suite_count,
             worst_severity=worst_severity,
+            auto_coverage_excluded=auto_coverage_excluded,
         )
 
         asset_summary_read.additional_properties = d

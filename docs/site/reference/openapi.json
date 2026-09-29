@@ -742,6 +742,17 @@
         "additionalProperties": false,
         "description": "Partial metadata update (workspace-Admin-only). Each field is optional; an\nexplicit `null` clears it, an omitted field leaves it unchanged \u2014 the two are\ndistinguished via `model_fields_set` at the route so `owner_user_id: null`\nmeans \"unassign\" rather than \"leave as is\".",
         "properties": {
+          "auto_coverage_excluded": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Coverage Excluded"
+          },
           "description": {
             "anyOf": [
               {
@@ -773,6 +784,11 @@
       "AssetSummaryRead": {
         "description": "List-row aggregation for one asset \u2014 **workspace-true** (ADR 0037): every\nfield is identical for every viewer, aggregated over ALL composing suites.\nCarries **two orthogonal health axes** (#803) the UI renders separately:",
         "properties": {
+          "auto_coverage_excluded": {
+            "default": false,
+            "title": "Auto Coverage Excluded",
+            "type": "boolean"
+          },
           "checks_passed": {
             "title": "Checks Passed",
             "type": "integer"
@@ -2227,6 +2243,11 @@
           },
           "name": {
             "title": "Name",
+            "type": "string"
+          },
+          "origin": {
+            "default": "user",
+            "title": "Origin",
             "type": "string"
           },
           "source_connection_id": {
@@ -8540,6 +8561,11 @@
           },
           "name": {
             "title": "Name",
+            "type": "string"
+          },
+          "origin": {
+            "default": "user",
+            "title": "Origin",
             "type": "string"
           },
           "target": {

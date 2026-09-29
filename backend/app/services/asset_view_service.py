@@ -116,6 +116,8 @@ class AssetSummary:
     has_cancelled_run: bool = False
     has_operational_error: bool = False
     has_skip: bool = False
+    #: Left out of its connection's automatic coverage (ADR 0047).
+    auto_coverage_excluded: bool = False
 
 
 @dataclass(frozen=True)
@@ -418,6 +420,7 @@ def _roll_up(asset: Asset, suite_outcomes: list[RunOutcome]) -> AssetSummary:
         description=asset.description,
         owner_user_id=asset.owner_user_id,
         last_seen=asset.last_seen,
+        auto_coverage_excluded=asset.auto_coverage_excluded,
         suite_count=len(suite_outcomes),
         worst_severity=worst_severity(statuses),
         checks_total=checks_total,
@@ -861,6 +864,7 @@ def update_asset_metadata(
     description: str | None = None,
     set_owner: bool = False,
     set_description: bool = False,
+    auto_coverage_excluded: bool | None = None,
     actor_id: uuid.UUID | None = None,
 ) -> Asset:
     """Set an asset's owner and/or description (workspace-Admin-only; gated at API)."""
@@ -876,6 +880,8 @@ def update_asset_metadata(
         asset.owner_user_id = owner_user_id
     if set_description:
         asset.description = description
+    if auto_coverage_excluded is not None:
+        asset.auto_coverage_excluded = auto_coverage_excluded
     # Metadata mutation only (ADR 0041 §2.5). The inventory-sync column family and
     # `first_seen`/`last_seen` are machine writes and never reach a payload.
     audit_service.record_entity_change(

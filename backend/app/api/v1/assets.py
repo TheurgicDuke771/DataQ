@@ -65,6 +65,8 @@ class AssetSummaryRead(ApiModel):
     env: str | None
     description: str | None
     owner_user_id: uuid.UUID | None
+    #: Left out of its connection's automatic coverage (ADR 0047).
+    auto_coverage_excluded: bool = False
     last_seen: datetime
     suite_count: int
     worst_severity: str | None
@@ -317,6 +319,8 @@ class AssetMetadataUpdate(ApiRequestModel):
     owner_user_id: uuid.UUID | None = None
     # Same cap as suite descriptions (SuiteCreate).
     description: str | None = Field(default=None, max_length=1024)
+    # Leave this table out of its connection's automatic coverage (ADR 0047).
+    auto_coverage_excluded: bool | None = None
 
 
 _LIST_LIMIT_DEFAULT = 200
@@ -379,6 +383,7 @@ def update_asset(
         description=payload.description,
         set_owner="owner_user_id" in fields,
         set_description="description" in fields,
+        auto_coverage_excluded=payload.auto_coverage_excluded,
         actor_id=admin.id,
     )
     # Return the refreshed workspace-true summary. Never 404s on an asset with no

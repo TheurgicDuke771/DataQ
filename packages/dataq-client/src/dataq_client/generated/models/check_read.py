@@ -34,6 +34,7 @@ class CheckRead:
         warn_threshold (float | None):
         alert_snoozed_until (datetime.datetime | None | Unset):
         dimension (None | str | Unset):
+        origin (str | Unset):  Default: 'user'.
         source_connection_id (None | Unset | UUID):
     """
 
@@ -49,6 +50,7 @@ class CheckRead:
     warn_threshold: float | None
     alert_snoozed_until: datetime.datetime | None | Unset = UNSET
     dimension: None | str | Unset = UNSET
+    origin: str | Unset = "user"
     source_connection_id: None | Unset | UUID = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
@@ -90,6 +92,8 @@ class CheckRead:
         else:
             dimension = self.dimension
 
+        origin = self.origin
+
         source_connection_id: None | str | Unset
         if isinstance(self.source_connection_id, Unset):
             source_connection_id = UNSET
@@ -118,6 +122,8 @@ class CheckRead:
             field_dict["alert_snoozed_until"] = alert_snoozed_until
         if dimension is not UNSET:
             field_dict["dimension"] = dimension
+        if origin is not UNSET:
+            field_dict["origin"] = origin
         if source_connection_id is not UNSET:
             field_dict["source_connection_id"] = source_connection_id
 
@@ -189,6 +195,8 @@ class CheckRead:
 
         dimension = _parse_dimension(d.pop("dimension", UNSET))
 
+        origin = d.pop("origin", UNSET)
+
         def _parse_source_connection_id(data: object) -> None | Unset | UUID:
             if data is None:
                 return data
@@ -219,6 +227,7 @@ class CheckRead:
             warn_threshold=warn_threshold,
             alert_snoozed_until=alert_snoozed_until,
             dimension=dimension,
+            origin=origin,
             source_connection_id=source_connection_id,
         )
 

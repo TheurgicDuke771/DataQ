@@ -65,6 +65,8 @@ class UnityCatalogConfig(BaseModel):
     warehouse_id: str
     # Warehouse inventory sync (#919, ADR 0040) — on by default; see SnowflakeConfig.
     inventory_sync: bool = True
+    # Automatic coverage (ADR 0047) — off unless switched on; read by coverage_service.
+    auto_coverage: bool = False
     # `catalog.schema.volume` for the throwaway checkpoints of stream-mode DQX checks.
     dqx_checkpoint_volume: str | None = None
 
