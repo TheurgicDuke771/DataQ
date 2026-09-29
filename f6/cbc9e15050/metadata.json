@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "f6cbc9e15050",
+  "strategy": "manual-commit",
+  "branch": "docs/adr-0047-automated-coverage",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/f6/cbc9e15050/0/metadata.json",
+      "transcript": "/f6/cbc9e15050/0/full.jsonl",
+      "compact_transcript": "/f6/cbc9e15050/0/transcript.jsonl",
+      "content_hash": "/f6/cbc9e15050/0/content_hash.txt",
+      "prompt": "/f6/cbc9e15050/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1822,
+    "cache_creation_tokens": 2344207,
+    "cache_read_tokens": 444709064,
+    "output_tokens": 627203,
+    "api_call_count": 913
+  }
+}
