@@ -162,6 +162,9 @@ EXEMPT: Final[dict[tuple[str, str], str]] = {
     ("POST", "/api/v1/runs/{run_id}/cancel"): (
         "stops a run — run lifecycle, not configuration (ADR 0041 §2.1)"
     ),
+    ("POST", "/api/v1/orchestration/gate"): (
+        "starts a pipeline gate's runs and reports them — run lifecycle, not configuration"
+    ),
     # 3.
     ("POST", "/api/v1/auth/otp/request"): (
         "session lifecycle — deferred out of phase 1 by ADR 0041 §2.5, not exempt forever"
