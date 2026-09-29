@@ -569,13 +569,13 @@ def test_a_validation_that_waits_too_long_is_refused_as_busy(
 
     monkeypatch.setenv("GX_CONTEXT_WAIT_SECONDS", "0.1")
     get_settings.cache_clear()
-    errors: list[BaseException] = []
+    errors: list[Exception] = []
 
     def _second() -> None:
         try:
             with ephemeral_gx_context():
                 pass
-        except BaseException as exc:
+        except Exception as exc:
             errors.append(exc)
 
     with ephemeral_gx_context():
@@ -592,9 +592,12 @@ def test_a_failed_validation_releases_gx_for_the_next_one() -> None:
 
     from backend.app.datasources.gx_runner import _GX_PROJECT_LOCK, ephemeral_gx_context
 
-    with pytest.raises(RuntimeError, match="boom"):
+    def _fail_mid_validation() -> None:
         with ephemeral_gx_context():
             raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError, match="boom"):
+        _fail_mid_validation()
 
     assert not _GX_PROJECT_LOCK.locked()
     assert getattr(project_manager, "_ProjectManager__project", None) is None
