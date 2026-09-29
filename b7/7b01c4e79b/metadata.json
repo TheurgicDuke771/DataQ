@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "b77b01c4e79b",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-2114-why-masked",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/b7/7b01c4e79b/0/metadata.json",
+      "transcript": "/b7/7b01c4e79b/0/full.jsonl",
+      "compact_transcript": "/b7/7b01c4e79b/0/transcript.jsonl",
+      "content_hash": "/b7/7b01c4e79b/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1654,
+    "cache_creation_tokens": 2228991,
+    "cache_read_tokens": 399345252,
+    "output_tokens": 559790,
+    "api_call_count": 829
+  }
+}
