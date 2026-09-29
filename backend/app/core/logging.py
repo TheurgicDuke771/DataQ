@@ -178,6 +178,25 @@ _dict_tracebacks_no_locals = structlog.processors.ExceptionRenderer(
 )
 
 
+#: Loggers the exporters' own HTTP transports write to. Every export upload logs through one of
+#: them, so a record from them must never re-enter the export bridge or it feeds itself (#852 on
+#: the Azure exporter's `azure.core`; #2033 on the OTLP exporter's `urllib3` / `requests`).
+_EXPORT_TRANSPORT_LOGGERS: tuple[str, ...] = (
+    "azure.core",
+    "urllib3",
+    "requests",
+    "httpcore",
+    "httpx",
+)
+
+
+def _is_export_transport(record: logging.LogRecord) -> bool:
+    name = record.name
+    return any(
+        name == prefix or name.startswith(prefix + ".") for prefix in _EXPORT_TRANSPORT_LOGGERS
+    )
+
+
 def _configure_otel_log_export(
     root: logging.Logger,
     level: int,
@@ -237,9 +256,9 @@ def _configure_otel_log_export(
         # Same redacting ProcessorFormatter as stdout, so exported records pass
         # through `_redact_pii` (#494).
         handler.setFormatter(formatter)
-        # Break the exporter's feedback loop AT THE BRIDGE (#852): azure.core logs every SDK HTTP
-        # call — including the exporter's own uploads (~10/sec in prod).
-        handler.addFilter(lambda record: not record.name.startswith("azure.core"))
+        # Break the exporters' feedback loop AT THE BRIDGE: their transports log every upload
+        # (~10/sec in prod). These records still reach stdout.
+        handler.addFilter(lambda record: not _is_export_transport(record))
         root.addHandler(handler)
 
         # Break the feedback loop: the SDK/exporter's own "failed to export" warnings must not re-
