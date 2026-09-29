@@ -20,8 +20,8 @@ from backend.app.alerting.base import (
     CheckReport,
     ConnectionHealthReport,
     IncidentCard,
-    PollStalenessReport,
     RunReport,
+    WorkspaceSignalReport,
 )
 from backend.app.alerting.routing import route_for
 from backend.app.core.logging import get_logger
@@ -172,7 +172,7 @@ class WebhookPublisher:
     Unlike Teams/Slack/email, a generic webhook has no workspace-level
     fallback — there is no single "the" destination for an arbitrary vendor
     receiver, only per-suite-linked channels. `publish_health` /
-    `publish_poll_staleness` (workspace-wide signals) are therefore honest
+    `publish_workspace_signal` (workspace-wide signals) are therefore honest
     no-ops here: they quietly report nothing delivered rather than pretending
     a channel type with no workspace concept could ever carry them.
     """
@@ -251,5 +251,5 @@ class WebhookPublisher:
     def publish_health(self, session: Session, report: ConnectionHealthReport) -> bool:
         return False
 
-    def publish_poll_staleness(self, session: Session, report: PollStalenessReport) -> bool:
+    def publish_workspace_signal(self, session: Session, report: WorkspaceSignalReport) -> bool:
         return False

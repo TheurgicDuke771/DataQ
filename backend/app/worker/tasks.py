@@ -615,6 +615,18 @@ def poll_orchestration_runs(
     return _run_orchestration_poll(_POLL_LOOKBACK, provider=provider, resource_name=resource_name)
 
 
+@celery_app.task(name="check_pipeline_baselines")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
+def check_pipeline_baselines() -> dict[str, int]:
+    """Every 10 min: alert on a bound pipeline running unusually long, short, or overdue (#1653)."""
+    from backend.app.services import pipeline_baseline
+
+    session = get_session()
+    try:
+        return pipeline_baseline.run_pipeline_baseline_check(session)
+    finally:
+        session.close()
+
+
 @celery_app.task(name="recover_orchestration_gaps")  # type: ignore[untyped-decorator]  # celery task decorator is unannotated
 def recover_orchestration_gaps() -> dict[str, int]:
     """Gap recovery (B2), startup + every 30 min — the same pipeline over the wider

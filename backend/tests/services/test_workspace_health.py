@@ -63,7 +63,7 @@ class _CapturingPublisher:
         self.fail = fail
         self.undeliverable = undeliverable
 
-    def publish_poll_staleness(self, session: Any, report: PollStalenessReport) -> bool:
+    def publish_workspace_signal(self, session: Any, report: PollStalenessReport) -> bool:
         if self.fail:
             raise RuntimeError("every channel failed")
         if self.undeliverable:

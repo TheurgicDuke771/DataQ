@@ -14,6 +14,9 @@ not run the pipelines. Azure Data Factory, Apache Airflow, and dbt all sit behin
 4. **Answer a gate** — a pipeline stage can ask DataQ whether to continue, and stop its own
    downstream stages when the data fails ([Gate a pipeline on DataQ](#gate-a-pipeline-on-dataq)).
    DataQ still never pauses or fails a pipeline itself.
+5. **Watch its baseline** — a bound pipeline that runs far longer or shorter than usual, or is
+   overdue, sends a workspace alert
+   ([Pipeline duration and overdue alerts](notifications.md#pipeline-duration-and-overdue-alerts)).
 
 ## ADF
 

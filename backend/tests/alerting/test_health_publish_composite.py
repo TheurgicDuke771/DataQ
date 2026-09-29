@@ -48,7 +48,7 @@ class _Channel:
         self.health_reports.append(report)
         return True
 
-    def publish_poll_staleness(self, session: Any, report: Any) -> bool:
+    def publish_workspace_signal(self, session: Any, report: Any) -> bool:
         return True
 
 
@@ -174,7 +174,7 @@ class TestCompositeHealthContract:
 
     def test_noop_publisher_counts_as_delivered(self) -> None:
         """`NoopPublisher` is the explicit test double for "a channel that IS
-        configured and sends" — mirroring `publish_poll_staleness`'s convention —
+        configured and sends" — mirroring `publish_workspace_signal`'s convention —
         so a composite built from just it must never raise undeliverable.
         """
         from backend.app.alerting.noop import NoopPublisher

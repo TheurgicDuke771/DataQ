@@ -132,6 +132,8 @@ def test_format_duration() -> None:
     assert render.format_duration(None) is None
     assert render.format_duration(4.25) == "4.2s"
     assert render.format_duration(125) == "2m 5s"
+    assert render.format_duration(31 * 3600 + 5 * 60) == "1d 7h"
+    assert render.format_duration(3 * 3600 + 12 * 60 + 9) == "3h 12m"
 
 
 # ── run_metadata ──────────────────────────────────────────────────────────────

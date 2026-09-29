@@ -13,8 +13,8 @@ from backend.app.alerting.base import (
     CheckReport,
     ConnectionHealthReport,
     IncidentCard,
-    PollStalenessReport,
     RunReport,
+    WorkspaceSignalReport,
 )
 from backend.app.alerting.routing import route_for
 from backend.app.core.logging import get_logger
@@ -295,31 +295,31 @@ def render_health_html_body(report: ConnectionHealthReport) -> str:
     )
 
 
-def render_staleness_subject(report: PollStalenessReport) -> str:
+def render_signal_subject(report: WorkspaceSignalReport) -> str:
     """Subject line for the workspace poll-staleness edge (#1052)."""
-    return f"[DataQ] {render.staleness_headline(report).removeprefix('DataQ — ')}"
+    return f"[DataQ] {render.signal_headline(report).removeprefix('DataQ — ')}"
 
 
-def render_staleness_text_body(report: PollStalenessReport) -> str:
+def render_signal_text_body(report: WorkspaceSignalReport) -> str:
     """Plain-text body for the workspace poll-staleness edge."""
-    lines = [render.staleness_headline(report), ""]
-    lines.extend(f"{label}: {value}" for label, value in render.staleness_facts(report))
-    lines += ["", render.staleness_impact(report)]
+    lines = [render.signal_headline(report), ""]
+    lines.extend(f"{label}: {value}" for label, value in render.signal_facts(report))
+    lines += ["", render.signal_impact(report)]
     return "\n".join(lines)
 
 
-def render_staleness_html_body(report: PollStalenessReport) -> str:
+def render_signal_html_body(report: WorkspaceSignalReport) -> str:
     """Minimal HTML body for the workspace poll-staleness edge (same table style)."""
     colour = "#dc2626" if report.is_failing else "#16a34a"
     rows = "".join(
         f"<tr><td style='{_TD};font-weight:600;'>{_esc(label)}</td>"
         f"<td style='{_TD}'>{_esc(value)}</td></tr>"
-        for label, value in render.staleness_facts(report)
+        for label, value in render.signal_facts(report)
     )
     return (
         f"<div style='font-family:system-ui,Arial,sans-serif;'>"
-        f"<h2 style='color:{colour};margin:0 0 4px;'>{_esc(render.staleness_headline(report))}</h2>"
-        f"<p style='margin:0 0 12px;color:#4b5563;'>{_esc(render.staleness_impact(report))}</p>"
+        f"<h2 style='color:{colour};margin:0 0 4px;'>{_esc(render.signal_headline(report))}</h2>"
+        f"<p style='margin:0 0 12px;color:#4b5563;'>{_esc(render.signal_impact(report))}</p>"
         f"<table style='border-collapse:collapse;'>{rows}</table></div>"
     )
 
@@ -426,7 +426,7 @@ class EmailPublisher:
         )
         return True
 
-    def publish_poll_staleness(self, session: Session, report: PollStalenessReport) -> bool:
+    def publish_workspace_signal(self, session: Session, report: WorkspaceSignalReport) -> bool:
         """Email the workspace poll-staleness edge (#1052) to the workspace
         recipients — same transport gating as :meth:`publish_health`, but returning
         whether a message was actually sent (``False`` on any quiet-skip gate,
@@ -442,10 +442,10 @@ class EmailPublisher:
             log.warning("email_password_unresolved", secret_name=self._password_secret_name)
             return False
         message = self._message(
-            subject=render_staleness_subject(report),
+            subject=render_signal_subject(report),
             recipients=self._recipients,
-            text=render_staleness_text_body(report),
-            html=render_staleness_html_body(report),
+            text=render_signal_text_body(report),
+            html=render_signal_html_body(report),
         )
         self._send(message, password=password)
         log.info(

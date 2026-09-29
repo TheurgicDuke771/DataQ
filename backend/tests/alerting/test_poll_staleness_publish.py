@@ -1,4 +1,4 @@
-"""The `publish_poll_staleness` seam method (#1052) — composite semantics + renders."""
+"""The `publish_workspace_signal` seam method (#1052) — composite semantics + renders."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from backend.app.alerting.base import (
     HEALTH_RECOVERED,
     AlertUndeliverableError,
     PollStalenessReport,
+    WorkspaceSignalReport,
 )
 from backend.app.alerting.composite import CompositePublisher
 
@@ -31,14 +32,14 @@ class _Channel:
     def __init__(self, fail: bool = False, unconfigured: bool = False) -> None:
         self.fail = fail
         self.unconfigured = unconfigured
-        self.staleness_reports: list[PollStalenessReport] = []
+        self.staleness_reports: list[WorkspaceSignalReport] = []
 
     def publish(self, session: Any, report: Any) -> None: ...
 
     def publish_health(self, session: Any, report: Any) -> bool:
-        return True  # unused stub in this file — only publish_poll_staleness is exercised
+        return True  # unused stub in this file — only publish_workspace_signal is exercised
 
-    def publish_poll_staleness(self, session: Any, report: PollStalenessReport) -> bool:
+    def publish_workspace_signal(self, session: Any, report: WorkspaceSignalReport) -> bool:
         if self.fail:
             raise RuntimeError("channel down")
         if self.unconfigured:
@@ -50,12 +51,12 @@ class _Channel:
 class TestCompositeStalenessContract:
     def test_fans_out_to_every_channel(self) -> None:
         channels = [_Channel(), _Channel()]
-        CompositePublisher(channels).publish_poll_staleness(_SESSION, _report())
+        CompositePublisher(channels).publish_workspace_signal(_SESSION, _report())
         assert all(len(c.staleness_reports) == 1 for c in channels)
 
     def test_one_broken_channel_does_not_stop_the_others_or_raise(self) -> None:
         broken, alive = _Channel(fail=True), _Channel()
-        CompositePublisher([broken, alive]).publish_poll_staleness(_SESSION, _report())
+        CompositePublisher([broken, alive]).publish_workspace_signal(_SESSION, _report())
         assert len(alive.staleness_reports) == 1
 
     def test_every_channel_failing_raises_so_the_flag_is_never_falsely_recorded(self) -> None:
@@ -63,7 +64,7 @@ class TestCompositeStalenessContract:
         stamp `alerted_at` for an alert nobody received — and never retry.
         """
         with pytest.raises(RuntimeError):
-            CompositePublisher([_Channel(fail=True), _Channel(fail=True)]).publish_poll_staleness(
+            CompositePublisher([_Channel(fail=True), _Channel(fail=True)]).publish_workspace_signal(
                 _SESSION, _report()
             )
 
@@ -76,11 +77,11 @@ class TestCompositeStalenessContract:
         with pytest.raises(AlertUndeliverableError):
             CompositePublisher(
                 [_Channel(unconfigured=True), _Channel(unconfigured=True)]
-            ).publish_poll_staleness(_SESSION, _report())
+            ).publish_workspace_signal(_SESSION, _report())
 
     def test_one_configured_channel_is_enough(self) -> None:
         skipped, alive = _Channel(unconfigured=True), _Channel()
-        CompositePublisher([skipped, alive]).publish_poll_staleness(_SESSION, _report())
+        CompositePublisher([skipped, alive]).publish_workspace_signal(_SESSION, _report())
         assert len(alive.staleness_reports) == 1
 
     def test_unconfigured_real_channels_report_not_delivered(self) -> None:
@@ -111,9 +112,9 @@ class TestCompositeStalenessContract:
             sender=None,
             recipients=(),
         )
-        assert teams.publish_poll_staleness(_SESSION, _report()) is False
-        assert slack.publish_poll_staleness(_SESSION, _report()) is False
-        assert email.publish_poll_staleness(_SESSION, _report()) is False
+        assert teams.publish_workspace_signal(_SESSION, _report()) is False
+        assert slack.publish_workspace_signal(_SESSION, _report()) is False
+        assert email.publish_workspace_signal(_SESSION, _report()) is False
 
 
 class TestStalenessRenders:
@@ -133,18 +134,18 @@ class TestStalenessRenders:
         assert facts["Orchestration connections"] == "3"
 
     def test_teams_slack_email_payloads_build(self) -> None:
-        from backend.app.alerting.card import render_teams_staleness_message
+        from backend.app.alerting.card import render_teams_signal_message
         from backend.app.alerting.email import (
-            render_staleness_html_body,
-            render_staleness_subject,
-            render_staleness_text_body,
+            render_signal_html_body,
+            render_signal_subject,
+            render_signal_text_body,
         )
-        from backend.app.alerting.slack import render_slack_staleness_message
+        from backend.app.alerting.slack import render_slack_signal_message
 
         for state in (HEALTH_FAILING, HEALTH_RECOVERED):
             report = _report(state)
-            assert render_teams_staleness_message(report)["attachments"]
-            assert render_slack_staleness_message(report)["blocks"]
-            assert render_staleness_subject(report).startswith("[DataQ]")
-            assert "orchestration" in render_staleness_text_body(report).lower()
-            assert "<table" in render_staleness_html_body(report)
+            assert render_teams_signal_message(report)["attachments"]
+            assert render_slack_signal_message(report)["blocks"]
+            assert render_signal_subject(report).startswith("[DataQ]")
+            assert "orchestration" in render_signal_text_body(report).lower()
+            assert "<table" in render_signal_html_body(report)

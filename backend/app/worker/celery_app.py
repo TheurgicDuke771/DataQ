@@ -124,6 +124,11 @@ def create_celery_app() -> Celery:
                 "task": "poll_orchestration_runs",
                 "schedule": POLL_ORCHESTRATION_INTERVAL_S,  # 10 minutes
             },
+            # Bound-pipeline duration / overdue baselines (#1653), on the poll's cadence.
+            "check-pipeline-baselines": {
+                "task": "check_pipeline_baselines",
+                "schedule": POLL_ORCHESTRATION_INTERVAL_S,
+            },
             "recover-orchestration-gaps": {
                 "task": "recover_orchestration_gaps",
                 "schedule": 1800.0,  # 30 minutes

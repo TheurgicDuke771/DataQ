@@ -268,13 +268,13 @@ def test_publish_health_is_an_honest_noop(db_session: Any) -> None:
     assert _publisher({}).publish_health(db_session, report) is False
 
 
-def test_publish_poll_staleness_is_an_honest_noop(db_session: Any) -> None:
+def test_publish_workspace_signal_is_an_honest_noop(db_session: Any) -> None:
     from backend.app.alerting.base import HEALTH_FAILING, PollStalenessReport
 
     report = PollStalenessReport(
         state=HEALTH_FAILING, connection_count=2, most_recent_polled_at=None, threshold_seconds=600
     )
-    assert _publisher({}).publish_poll_staleness(db_session, report) is False
+    assert _publisher({}).publish_workspace_signal(db_session, report) is False
 
 
 def test_render_webhook_payload_includes_owner_and_incidents(db_session: Any) -> None:

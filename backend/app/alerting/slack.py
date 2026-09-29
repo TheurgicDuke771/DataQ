@@ -11,8 +11,8 @@ from backend.app.alerting import render
 from backend.app.alerting.base import (
     CheckReport,
     ConnectionHealthReport,
-    PollStalenessReport,
     RunReport,
+    WorkspaceSignalReport,
 )
 from backend.app.alerting.routing import CRITICAL, Route, route_for
 from backend.app.core.logging import get_logger
@@ -129,12 +129,12 @@ def render_slack_health_message(report: ConnectionHealthReport) -> dict[str, obj
     return {"text": headline, "blocks": blocks}
 
 
-def render_slack_staleness_message(report: PollStalenessReport) -> dict[str, object]:
+def render_slack_signal_message(report: WorkspaceSignalReport) -> dict[str, object]:
     """The Slack payload for the workspace poll-staleness edge (#1052). No action
     button — there is no single connection to link; the signal is that none of them
     are being polled.
     """
-    headline = render.staleness_headline(report)
+    headline = render.signal_headline(report)
     emoji = ":rotating_light:" if report.is_failing else ":white_check_mark:"
     blocks: list[dict[str, object]] = [
         {"type": "header", "text": {"type": "plain_text", "text": f"{emoji} {headline}"[:150]}},
@@ -142,10 +142,10 @@ def render_slack_staleness_message(report: PollStalenessReport) -> dict[str, obj
             "type": "section",
             "fields": [
                 {"type": "mrkdwn", "text": f"*{label}:*\n{value}"}
-                for label, value in render.staleness_facts(report)
+                for label, value in render.signal_facts(report)
             ],
         },
-        {"type": "section", "text": {"type": "mrkdwn", "text": render.staleness_impact(report)}},
+        {"type": "section", "text": {"type": "mrkdwn", "text": render.signal_impact(report)}},
     ]
     return {"text": headline, "blocks": blocks}
 
@@ -248,7 +248,7 @@ class SlackPublisher:
         )
         return True
 
-    def publish_poll_staleness(self, session: Session, report: PollStalenessReport) -> bool:
+    def publish_workspace_signal(self, session: Session, report: WorkspaceSignalReport) -> bool:
         """Post the workspace poll-staleness edge (#1052) to the workspace Slack
         webhook — same resolution as :meth:`publish_health`, but returning whether a
         message was actually posted (``False`` when unconfigured/ineligible — a quiet
@@ -265,13 +265,13 @@ class SlackPublisher:
             log.warning("slack_webhook_not_allowed", signal="poll_staleness")
             return False
         response = httpx.post(
-            webhook, json=render_slack_staleness_message(report), timeout=self._timeout
+            webhook, json=render_slack_signal_message(report), timeout=self._timeout
         )
         response.raise_for_status()
         log.info(
             "slack_staleness_alert_sent",
             state=report.state,
-            connection_count=report.connection_count,
+            signal=type(report).__name__,
         )
         return True
 

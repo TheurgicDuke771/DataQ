@@ -9,8 +9,8 @@ from backend.app.alerting.base import (
     FAILING_TIERS,
     CheckReport,
     ConnectionHealthReport,
-    PollStalenessReport,
     RunReport,
+    WorkspaceSignalReport,
 )
 from backend.app.alerting.routing import QUIET, Route
 
@@ -76,24 +76,24 @@ def render_teams_health_message(report: ConnectionHealthReport) -> dict[str, Any
     }
 
 
-def render_teams_staleness_message(report: PollStalenessReport) -> dict[str, Any]:
+def render_teams_signal_message(report: WorkspaceSignalReport) -> dict[str, Any]:
     """The Teams payload for the workspace poll-staleness edge (#1052) — the same
     small envelope as a health edge. No action button: there is no single connection
     to link, because the signal is precisely that NONE of them are being polled.
     """
     body: list[dict[str, Any]] = [
         _text(
-            render.staleness_headline(report),
+            render.signal_headline(report),
             size="Large",
             weight="Bolder",
             color=_DEFAULT_COLOR if report.is_failing else "good",
             wrap=True,
         ),
-        _text(render.staleness_impact(report), is_subtle=True, wrap=True),
+        _text(render.signal_impact(report), is_subtle=True, wrap=True),
         {
             "type": "FactSet",
             "facts": [
-                {"title": label, "value": value} for label, value in render.staleness_facts(report)
+                {"title": label, "value": value} for label, value in render.signal_facts(report)
             ],
         },
     ]
