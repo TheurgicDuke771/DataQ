@@ -214,3 +214,49 @@ def test_the_executor_learns_then_scores_a_real_table(
     assert outcome.observed_value is not None
     top = outcome.observed_value["deviations"][0]
     assert (top["column"], top["metric"], top["value"]) == ("email", NULL_PCT, 100.0)
+
+
+def test_reserved_and_spaced_column_names_are_quoted(
+    _db_engine: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`order` and `order id` must be quoted, and `user` must not compile to CURRENT_USER — which
+    would silently report 0% nulls."""
+    name = f"cp_{uuid.uuid4().hex[:8]}"
+    with _db_engine.begin() as conn:
+        conn.execute(
+            text(
+                f"CREATE TABLE public.{name} "
+                '("order" int, "user" text, "order id" text, "Mixed" int)'
+            )
+        )
+        conn.execute(
+            text(
+                f"INSERT INTO public.{name} VALUES (1, NULL, 'a', 1), (2, NULL, NULL, 2), "
+                "(3, 'u', 'b', NULL), (4, 'u', 'b', 4)"
+            )
+        )
+
+    @contextmanager
+    def real_open(connection: Connection, secret_store: Any) -> Iterator[Any]:
+        with _db_engine.connect() as c:
+            yield c
+
+    monkeypatch.setattr(anomaly, "_open_connection", real_open)
+    try:
+        profile = _measure(name)
+    finally:
+        with _db_engine.begin() as conn:
+            conn.execute(text(f"DROP TABLE IF EXISTS public.{name}"))
+    assert profile.distinct_available
+    assert profile.series[series_key("user", NULL_PCT)] == 50.0
+    assert profile.series[series_key("order id", NULL_PCT)] == 25.0
+    assert profile.series[series_key("order", DISTINCT)] == 4.0
+    assert profile.series[series_key("Mixed", NULL_PCT)] == 25.0
+
+
+def test_an_unqualified_target_lists_and_counts_the_same_schema(table: str) -> None:
+    profile = measure_column_profile(
+        _pg(), table=table, schema=None, catalog=None, secret_store=FakeSecretStore()
+    )
+    assert profile.row_count == 4
+    assert profile.series[series_key("email", NULL_PCT)] == 25.0

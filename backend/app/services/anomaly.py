@@ -147,7 +147,9 @@ def measure_column_profile(
                 conn.execute(build_columns_query(effective_schema, table, catalog, dialect)).keys()
             )
             columns = columns_all[:COLUMN_PROFILE_MAX_COLUMNS]
-            target = qualified_table(table=table, schema=schema, catalog=catalog, dialect=dialect)
+            target = qualified_table(
+                table=table, schema=effective_schema, catalog=catalog, dialect=dialect
+            )
             distinct = True
             try:
                 row = conn.execute(column_profile_statement(target, columns, distinct=True)).one()

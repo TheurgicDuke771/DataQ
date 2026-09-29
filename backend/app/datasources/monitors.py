@@ -408,14 +408,17 @@ def column_profile_statement(
     target: TableClause, columns: list[str], *, distinct: bool
 ) -> Select[Any]:
     """One row: ``COUNT(*)``, then per column ``COUNT(col)`` and (when ``distinct``) the distinct
-    count over the column cast to a string, so a JSON or variant column can still be counted."""
+    count over the column cast to a string, so a JSON or variant column can still be counted.
+    ``columns`` are the names the table itself reported."""
     from sqlalchemy import String, cast, func, select
     from sqlalchemy import column as sql_column
     from sqlalchemy import distinct as sql_distinct
 
     parts: list[Any] = [func.count()]
     for name in columns:
-        col: Any = sql_column(folding_identifier(name))
+        # Names come verbatim from the table, so the dialect decides quoting (reserved words,
+        # spaces, case) — `folding_identifier` would leave a lower-case `order` bare.
+        col: Any = sql_column(name)
         parts.append(func.count(col))
         if distinct:
             parts.append(func.count(sql_distinct(cast(col, String))))
