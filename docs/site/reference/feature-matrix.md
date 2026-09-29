@@ -39,8 +39,10 @@ runners, which stateful kinds never reach.
 result's metric, with nested two-sided warn / fail / critical bounds in its config. Median is
 exact wherever it is offered; MySQL/MariaDB, Trino and Athena have only an approximate
 percentile, so it is refused there at author time. Verified by executed runs, author → worker
-→ `metric_value` and the dry-run: live Snowflake and live Unity Catalog, PostgreSQL, MySQL 8,
-MariaDB 11, Trino, flat files on Azurite (CSV and Parquet) and Iceberg on a local SQL catalog.
+→ `metric_value` and the dry-run: live Snowflake, live Unity Catalog, live Amazon Athena and live
+Amazon Redshift Serverless, PostgreSQL, MySQL 8, MariaDB 11, Trino, flat files on Azurite
+(CSV and Parquet) and Iceberg on a local SQL catalog. SQL Server's dialect SQL is unit-tested
+only.
 
 ᵇ **Schema drift** (ADR 0012)
 diffs a live column-name/type snapshot against a stored baseline and flags
