@@ -340,28 +340,31 @@ class _ProbeWarehouse:
         return (0,)
 
 
-def test_probe_calls_a_system_dmf_on_a_bare_table_column_reading_zero_rows() -> None:
-    # #2112: an ad-hoc DMF only accepts a bare column of a table-like object; LIMIT 0 is the
-    # form that compiles (a WHERE clause is rejected as "Invalid argument types").
+def test_probe_explains_a_system_dmf_on_a_bare_table_column_and_runs_nothing() -> None:
+    # #2112: an ad-hoc DMF only accepts a bare column of a table-like object (a WHERE clause is
+    # "Invalid argument types"). #2233: a LIMIT inside the argument is ignored, so the probe is
+    # EXPLAINed — compiled and privilege-checked, never executed.
     wh = _ProbeWarehouse()
     assert probe_dmf_capability(wh) == {"available": True, "status": "available"}
     assert wh.executed[-1] == (
-        'SELECT SNOWFLAKE.CORE.NULL_COUNT(SELECT "ID" FROM "RETAIL"."ORDERS" LIMIT 0)'
+        'EXPLAIN USING TEXT SELECT SNOWFLAKE.CORE.NULL_COUNT(SELECT "ID" FROM "RETAIL"."ORDERS")'
     )
+    assert "LIMIT" not in wh.executed[-1]
     assert "CURRENT_TIMESTAMP" not in " ".join(wh.executed)
 
 
 def test_probe_falls_back_to_any_schema_when_the_configured_one_has_no_table() -> None:
     wh = _ProbeWarehouse(in_schema=None, anywhere=("OTHER", "T", "C"))
     assert probe_dmf_capability(wh)["available"] is True
-    assert wh.executed[-1].endswith('FROM "OTHER"."T" LIMIT 0)')
+    assert wh.executed[-1].endswith('FROM "OTHER"."T")')
 
 
 def test_probe_quotes_hostile_identifiers_from_the_catalog() -> None:
     wh = _ProbeWarehouse(in_schema=('s"x', 't"; DROP TABLE y; --', "c"))
     probe_dmf_capability(wh)
     assert wh.executed[-1] == (
-        'SELECT SNOWFLAKE.CORE.NULL_COUNT(SELECT "c" FROM "s""x"."t""; DROP TABLE y; --" LIMIT 0)'
+        "EXPLAIN USING TEXT SELECT SNOWFLAKE.CORE.NULL_COUNT"
+        '(SELECT "c" FROM "s""x"."t""; DROP TABLE y; --")'
     )
 
 
@@ -390,6 +393,17 @@ def test_probe_classifies_a_privilege_failure() -> None:
 def test_probe_classifies_an_unknown_function_as_no_privilege() -> None:
     result = probe_dmf_capability(
         _ProbeWarehouse(dmf_error="002141 (42601): Unknown function SNOWFLAKE.CORE.NULL_COUNT")
+    )
+    assert result["status"] == "no_privilege"
+
+
+def test_probe_classifies_explains_unknown_user_defined_function_as_no_privilege() -> None:
+    # The EXPLAIN form's wording, live 2026-09-29: "Unknown user-defined function …".
+    result = probe_dmf_capability(
+        _ProbeWarehouse(
+            dmf_error="002141 (42601): SQL compilation error: "
+            "Unknown user-defined function SNOWFLAKE.CORE.NULL_COUNT."
+        )
     )
     assert result["status"] == "no_privilege"
 
