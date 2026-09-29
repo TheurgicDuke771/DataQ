@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "28e73fb3a2ed",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1661-coverage-schema",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/28/e73fb3a2ed/0/metadata.json",
+      "transcript": "/28/e73fb3a2ed/0/full.jsonl",
+      "compact_transcript": "/28/e73fb3a2ed/0/transcript.jsonl",
+      "content_hash": "/28/e73fb3a2ed/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 40,
+    "cache_creation_tokens": 23383,
+    "cache_read_tokens": 12239888,
+    "output_tokens": 14962,
+    "api_call_count": 20
+  }
+}
