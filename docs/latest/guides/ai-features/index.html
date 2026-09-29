@@ -2505,7 +2505,17 @@ forwarded if you later change the provider or endpoint — you re-enter it on pu
 <tr>
 <td><strong>OpenAI-compatible</strong></td>
 <td>required</td>
-<td>Azure OpenAI (<code>…/openai/v1</code>), AWS Bedrock, vLLM, TGI, <strong>Ollama</strong> (<code>http://host:11434/v1</code>).</td>
+<td>Any server that speaks the OpenAI chat-completions API: vLLM, TGI, <strong>Ollama</strong> (<code>http://host:11434/v1</code>), and the hosted rows below.</td>
+</tr>
+<tr>
+<td><strong>Azure OpenAI</strong> (as OpenAI-compatible)</td>
+<td><code>https://&lt;resource&gt;.openai.azure.com/openai/v1</code></td>
+<td>The model name is your <strong>deployment name</strong>, and the API key is the resource's key. Works with either structured-output mode (tested with <code>gpt-4.1-mini</code>).</td>
+</tr>
+<tr>
+<td><strong>Amazon Bedrock</strong> (as OpenAI-compatible)</td>
+<td><code>https://bedrock-runtime.&lt;region&gt;.amazonaws.com/openai/v1</code></td>
+<td>The model name is the Bedrock model ID (for example <code>openai.gpt-oss-120b-1:0</code>), and the API key is a <strong>Bedrock API key</strong>. A short-term key lasts at most 12 hours, so use a long-term one for a saved provider. The gpt-oss models reason before they answer; use <em>Prompt-JSON fallback</em> with them, which returned valid JSON every time in testing where <em>Native</em> sometimes did not.</td>
 </tr>
 <tr>
 <td><strong>Databricks model serving</strong> (as OpenAI-compatible)</td>
