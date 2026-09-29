@@ -253,6 +253,29 @@ def test_skip_test_on_a_patch_saves_the_change_and_records_it(
     assert event.after is not None and event.after["connection_test"] == "skipped"
 
 
+def test_skip_test_on_a_connectivity_change_does_not_keep_the_old_health(
+    api: TestClient, probe: _Probe, db_session: Any
+) -> None:
+    # A new role can fail sign-in and changes what the DMF probe finds; nothing has tested it.
+    # (A destination change such as `account` already needs the secret re-supplied, #1401.)
+    cid = _saved(api, probe)
+    row = _row(db_session, cid)
+    assert row.last_auth_success_at is not None
+    row.engine_capabilities = {"dmf": {"available": True}}
+    db_session.commit()
+
+    resp = api.patch(
+        f"/api/v1/connections/{cid}",
+        json={"config": {**_SF_CONFIG, "role": "OTHER_ROLE"}, "skip_test": True},
+    )
+
+    assert resp.status_code == 200, resp.text
+    db_session.expire_all()
+    row = _row(db_session, cid)
+    assert row.last_auth_success_at is None
+    assert not row.engine_capabilities
+
+
 def test_a_patch_whose_stored_credential_is_gone_is_refused_not_crashed(
     api: TestClient, probe: _Probe, store: FakeSecretStore, db_session: Any
 ) -> None:

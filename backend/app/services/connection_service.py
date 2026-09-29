@@ -722,8 +722,17 @@ def update_connection(
         # The rotated credential has its own lifetime — including "none", which
         # must clear the previous date rather than leave a stale warning (#838).
         _refresh_credential_expiry(conn, secret)
+    untested_target_change = config_changed and not tested
+    if untested_target_change:
+        # What was probed describes the previous target.
+        conn.engine_capabilities = {}
     _apply_test_outcome(
-        conn, tested=tested, capabilities=capabilities, credential_changed=secret is not None
+        conn,
+        tested=tested,
+        capabilities=capabilities,
+        credential_changed=secret is not None
+        or catalog_secret is not None
+        or untested_target_change,
     )
 
     try:
