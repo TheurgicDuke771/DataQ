@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "ed7c7a190eec",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2233-dmf-probe-scans-nothing-v2",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/ed/7c7a190eec/0/metadata.json",
+      "transcript": "/ed/7c7a190eec/0/full.jsonl",
+      "compact_transcript": "/ed/7c7a190eec/0/transcript.jsonl",
+      "content_hash": "/ed/7c7a190eec/0/content_hash.txt",
+      "prompt": "/ed/7c7a190eec/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1000,
+    "cache_creation_tokens": 794995,
+    "cache_read_tokens": 225189198,
+    "output_tokens": 357900,
+    "api_call_count": 500
+  }
+}

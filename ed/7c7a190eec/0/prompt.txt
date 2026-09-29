@@ -1,0 +1,4 @@
+proceed with AWS [athena/redshift] unblock. 
+#2233 - probe against a construct that genuinely reads nothing but still exercises the
+DMF privilege 
+#717 - Skip V3 as of now. Will revisit at a later point.
