@@ -26,6 +26,7 @@ import {
 import { useIsWorkspaceAdmin } from '../auth/useMe';
 import { ColumnLineagePanel } from '../components/assets/ColumnLineagePanel';
 import { IncidentsPanel } from '../components/assets/IncidentsPanel';
+import { InheritedMaskingPanel } from '../components/assets/InheritedMaskingPanel';
 import { ScorecardPanel } from '../components/assets/ScorecardPanel';
 import { LineageGraph } from '../components/assets/LineageGraph';
 import { type Health, connectionHealth, runHealth, suiteHealth } from '../components/assets/health';
@@ -189,6 +190,11 @@ function AssetDetailBody({
         failingSources={asset.failing_lineage_sources}
         warehouseStatus={asset.warehouse_lineage_status}
         onOpenAsset={(id) => navigate(`/assets/${id}`)}
+      />
+
+      <InheritedMaskingPanel
+        entries={asset.inherited_classifications}
+        truncated={asset.inherited_classifications_truncated}
       />
 
       {/* Column-grain refinement of the direct edges (#901). */}

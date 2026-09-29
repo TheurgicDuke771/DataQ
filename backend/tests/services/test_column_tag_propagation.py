@@ -322,3 +322,55 @@ def test_snowflake_upper_folded_cells_match_lower_cased_tags(
     effective = ct.effective_column_tags(db_session, downstream)
     assert run_service._tag_sensitive("customer_id", effective)
     assert run_service._tag_sensitive("CUSTOMER_ID", effective)
+
+
+# ── why a column is masked: the asset detail names the inheritance (#2114) ─────────────────────
+
+
+def _detail(db_session: Session, asset: Asset) -> Any:
+    from backend.app.services import asset_view_service
+
+    owner = User(aad_object_id=uuid.uuid4().hex, email=f"{uuid.uuid4().hex[:8]}@x.io")
+    db_session.add(owner)
+    db_session.flush()
+    return asset_view_service.get_visible_asset(db_session, asset.id, user_id=owner.id)
+
+
+def test_asset_detail_names_each_inherited_column_and_its_sources(
+    db_session: Session, captured: Connection
+) -> None:
+    raw = _tag(db_session, "raw", "feedback", {"customer_id": ct.SENSITIVE, "email": ct.SENSITIVE})
+    silver = _tag(db_session, "silver", "feedback", {"customer_id": ct.NON_SENSITIVE})
+    detail = _detail(db_session, silver)
+    # customer_id has its own verdict, so it is not "masked because of lineage".
+    assert [
+        (ic.column, [(s.asset_id, s.asset_name, s.column) for s in ic.sources])
+        for ic in detail.inherited_classifications
+    ] == [("email", [(raw.id, raw.name, "email")])]
+    assert detail.inherited_classifications_truncated is False
+
+
+def test_asset_detail_reports_a_capped_walk(
+    db_session: Session, captured: Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        lineage_columns,
+        "upstream_column_sources",
+        lambda session, asset_id, **_: lineage_columns.UpstreamSources({}, truncated=True),
+    )
+    detail = _detail(db_session, _asset(db_session, "silver", "feedback"))
+    assert detail.inherited_classifications == []
+    assert detail.inherited_classifications_truncated is True
+
+
+def test_a_failed_lineage_read_is_unknown_not_none_inherited(
+    db_session: Session, captured: Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def boom(*_a: Any, **_kw: Any) -> Any:
+        raise RuntimeError("lineage read failed")
+
+    monkeypatch.setattr(lineage_columns, "upstream_column_sources", boom)
+    detail = _detail(db_session, _asset(db_session, "silver", "feedback"))
+    assert detail.inherited_classifications is None
+    # The failure is contained in a savepoint: the session still works.
+    assert db_session.get(Asset, detail.summary.id) is not None

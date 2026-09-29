@@ -12,6 +12,7 @@ from ..types import UNSET, Unset
 if TYPE_CHECKING:
     from ..models.asset_summary_read import AssetSummaryRead
     from ..models.composing_suite_read import ComposingSuiteRead
+    from ..models.inherited_classification_read import InheritedClassificationRead
     from ..models.lineage_edge_read import LineageEdgeRead
     from ..models.lineage_node_read import LineageNodeRead
     from ..models.lineage_source_health_read import LineageSourceHealthRead
@@ -38,6 +39,8 @@ class AssetDetailRead:
                 Carries **two orthogonal health axes** (#803) the UI renders separately:
             upstream (list[LineageNodeRead]):
             failing_lineage_sources (list[LineageSourceHealthRead] | Unset):
+            inherited_classifications (list[InheritedClassificationRead] | None | Unset):
+            inherited_classifications_truncated (bool | Unset):  Default: False.
             restricted_suite_count (int | Unset):  Default: 0.
             scorecard (None | ScorecardRead | Unset):
             warehouse_lineage_status (list[WarehouseLineageStatusRead] | Unset):
@@ -49,6 +52,8 @@ class AssetDetailRead:
     summary: AssetSummaryRead
     upstream: list[LineageNodeRead]
     failing_lineage_sources: list[LineageSourceHealthRead] | Unset = UNSET
+    inherited_classifications: list[InheritedClassificationRead] | None | Unset = UNSET
+    inherited_classifications_truncated: bool | Unset = False
     restricted_suite_count: int | Unset = 0
     scorecard: None | ScorecardRead | Unset = UNSET
     warehouse_lineage_status: list[WarehouseLineageStatusRead] | Unset = UNSET
@@ -86,6 +91,22 @@ class AssetDetailRead:
                 failing_lineage_sources_item = failing_lineage_sources_item_data.to_dict()
                 failing_lineage_sources.append(failing_lineage_sources_item)
 
+        inherited_classifications: list[dict[str, Any]] | None | Unset
+        if isinstance(self.inherited_classifications, Unset):
+            inherited_classifications = UNSET
+        elif isinstance(self.inherited_classifications, list):
+            inherited_classifications = []
+            for inherited_classifications_type_0_item_data in self.inherited_classifications:
+                inherited_classifications_type_0_item = (
+                    inherited_classifications_type_0_item_data.to_dict()
+                )
+                inherited_classifications.append(inherited_classifications_type_0_item)
+
+        else:
+            inherited_classifications = self.inherited_classifications
+
+        inherited_classifications_truncated = self.inherited_classifications_truncated
+
         restricted_suite_count = self.restricted_suite_count
 
         scorecard: dict[str, Any] | None | Unset
@@ -116,6 +137,10 @@ class AssetDetailRead:
         )
         if failing_lineage_sources is not UNSET:
             field_dict["failing_lineage_sources"] = failing_lineage_sources
+        if inherited_classifications is not UNSET:
+            field_dict["inherited_classifications"] = inherited_classifications
+        if inherited_classifications_truncated is not UNSET:
+            field_dict["inherited_classifications_truncated"] = inherited_classifications_truncated
         if restricted_suite_count is not UNSET:
             field_dict["restricted_suite_count"] = restricted_suite_count
         if scorecard is not UNSET:
@@ -129,6 +154,9 @@ class AssetDetailRead:
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.asset_summary_read import AssetSummaryRead
         from ..models.composing_suite_read import ComposingSuiteRead
+        from ..models.inherited_classification_read import (
+            InheritedClassificationRead,
+        )
         from ..models.lineage_edge_read import LineageEdgeRead
         from ..models.lineage_node_read import LineageNodeRead
         from ..models.lineage_source_health_read import LineageSourceHealthRead
@@ -179,6 +207,36 @@ class AssetDetailRead:
 
                 failing_lineage_sources.append(failing_lineage_sources_item)
 
+        def _parse_inherited_classifications(
+            data: object,
+        ) -> list[InheritedClassificationRead] | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, list):
+                    raise TypeError()
+                inherited_classifications_type_0 = []
+                _inherited_classifications_type_0 = data
+                for inherited_classifications_type_0_item_data in _inherited_classifications_type_0:
+                    inherited_classifications_type_0_item = InheritedClassificationRead.from_dict(
+                        inherited_classifications_type_0_item_data
+                    )
+
+                    inherited_classifications_type_0.append(inherited_classifications_type_0_item)
+
+                return inherited_classifications_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(list[InheritedClassificationRead] | None | Unset, data)
+
+        inherited_classifications = _parse_inherited_classifications(
+            d.pop("inherited_classifications", UNSET)
+        )
+
+        inherited_classifications_truncated = d.pop("inherited_classifications_truncated", UNSET)
+
         restricted_suite_count = d.pop("restricted_suite_count", UNSET)
 
         def _parse_scorecard(data: object) -> None | ScorecardRead | Unset:
@@ -216,6 +274,8 @@ class AssetDetailRead:
             summary=summary,
             upstream=upstream,
             failing_lineage_sources=failing_lineage_sources,
+            inherited_classifications=inherited_classifications,
+            inherited_classifications_truncated=inherited_classifications_truncated,
             restricted_suite_count=restricted_suite_count,
             scorecard=scorecard,
             warehouse_lineage_status=warehouse_lineage_status,

@@ -3538,6 +3538,15 @@ def get_asset(asset_id: str) -> dict[str, Any]:
     Only `recorded` supports a column-level claim. To follow ONE column across several hops
     ("where does customer_id come from?", "what breaks if this column changes?") use
     `trace_column_lineage` rather than chaining these pairs by hand.
+
+    `inherited_classifications` answers "why is this column masked when nobody tagged it?":
+    each entry is a column DataQ masks as sensitive only because recorded lineage traces it to
+    a sensitive upstream column, with those `sources`. If the lineage is wrong, the fix is to
+    tag the column `public` in the warehouse, which overrides the inheritance. Columns masked
+    for any other reason (their own tag, the suite's column policy, the value classifier) are
+    not listed here. `null` means it could not be determined (a lineage read failed), not that
+    nothing is inherited; `inherited_classifications_truncated` means the lineage walk hit its
+    depth cap, so a column further upstream was not considered.
     """
     aid = _parse_uuid(asset_id, field="asset_id")
     with _ctx() as (session, user), _service_errors():
@@ -3610,6 +3619,25 @@ def get_asset(asset_id: str) -> dict[str, Any]:
                 # prune-suspension (#1236), which risks extra edges rather than missing ones.
                 "qualified_by": qualifiers,
             },
+            "inherited_classifications": (
+                None
+                if detail.inherited_classifications is None
+                else [
+                    {
+                        "column": ic.column,
+                        "sources": [
+                            {
+                                "asset_id": str(src.asset_id),
+                                "asset_name": src.asset_name,
+                                "column": src.column,
+                            }
+                            for src in ic.sources
+                        ],
+                    }
+                    for ic in detail.inherited_classifications
+                ]
+            ),
+            "inherited_classifications_truncated": detail.inherited_classifications_truncated,
         }
 
 

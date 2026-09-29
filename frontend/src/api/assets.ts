@@ -169,6 +169,18 @@ export interface AssetDetail {
   /** Warehouse-native lineage sources that are degraded (coarser tier) or failing, so
    *  the graph can be qualified rather than shown as complete + current (#858). */
   warehouse_lineage_status: WarehouseLineageStatus[];
+  /**
+   * Columns masked as sensitive only because recorded lineage traces them to a sensitive upstream
+   * column (#2114). `null` = could not be determined; absent = a pre-#2114 API.
+   */
+  inherited_classifications?: InheritedClassification[] | null;
+  /** The lineage walk hit its depth cap, so columns further upstream were not considered. */
+  inherited_classifications_truncated?: boolean;
+}
+
+export interface InheritedClassification {
+  column: string;
+  sources: { asset_id: string; asset_name: string; column: string }[];
 }
 
 /** A warehouse-native lineage source (Snowflake / UC) that is degraded or failing. */
