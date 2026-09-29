@@ -10,7 +10,9 @@ Opt-in, never a CI required check:
     DATAQ_LLM_LIVE=1 DATAQ_LLM_LIVE_BASE_URL=http://localhost:11434/v1 \
         pytest backend/tests/e2e/test_llm_live.py --no-cov
 
-`DATAQ_LLM_LIVE_MODEL` overrides the model (default qwen2.5:3b). The two
+`DATAQ_LLM_LIVE_MODEL` overrides the model (default qwen2.5:3b), and
+`DATAQ_LLM_LIVE_API_KEY` supplies a key for a hosted OpenAI-compatible endpoint
+(Azure OpenAI's `/openai/v1`, Bedrock's `/openai/v1`). The two
 sqlgen end-to-end cases additionally need the local test Postgres
 (`docker-compose up postgres`) or they skip. The warehouse is NOT part of this
 lane's scope — column listing is stubbed; the LLM boundary is what is live.
@@ -42,6 +44,7 @@ requires_live_llm = pytest.mark.skipif(
 
 BASE_URL = os.environ.get("DATAQ_LLM_LIVE_BASE_URL", "")
 MODEL = os.environ.get("DATAQ_LLM_LIVE_MODEL", "qwen2.5:3b")
+API_KEY = os.environ.get("DATAQ_LLM_LIVE_API_KEY") or None
 
 _SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -55,12 +58,14 @@ _SCHEMA: dict[str, Any] = {
 
 
 def _provider(mode: str = "native", **kwargs: Any) -> OpenAICompatProvider:
-    return OpenAICompatProvider(base_url=BASE_URL, model=MODEL, structured_output=mode, **kwargs)
+    return OpenAICompatProvider(
+        base_url=BASE_URL, model=MODEL, api_key=API_KEY, structured_output=mode, **kwargs
+    )
 
 
 @requires_live_llm
 def test_plain_completion_returns_text_and_usage() -> None:
-    result = _provider().complete("Reply with the single word: ok", max_tokens=16)
+    result = _provider().complete("Reply with the single word: ok", max_tokens=512)
     assert result.text.strip()
     # Usage mapping is part of the wire contract — the invocation row is the
     # cost record, so a server that omits usage must be visible here.
@@ -95,7 +100,9 @@ def test_timeout_maps_to_unavailable() -> None:
 
 @requires_live_llm
 def test_unknown_model_maps_to_provider_error() -> None:
-    ghost = OpenAICompatProvider(base_url=BASE_URL, model=f"no-such-model-{uuid.uuid4().hex[:8]}")
+    ghost = OpenAICompatProvider(
+        base_url=BASE_URL, model=f"no-such-model-{uuid.uuid4().hex[:8]}", api_key=API_KEY
+    )
     with pytest.raises(LLMProviderError):
         ghost.complete("ping", timeout=30)
 
@@ -126,7 +133,7 @@ def test_sqlgen_end_to_end_through_the_real_worker_body(
             provider="openai_compatible",
             model=MODEL,
             base_url=BASE_URL,
-            api_key=None,  # credential-less local endpoint — the ADR 0042 shape
+            api_key=API_KEY,
             structured_output=mode,
         ),
         actor=admin,

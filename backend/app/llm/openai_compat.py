@@ -5,6 +5,7 @@ local server (Ollama / vLLM / TGI). Deliberately raw `httpx`, no vendor SDK
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import httpx
@@ -20,6 +21,14 @@ from backend.app.llm.base import (
 )
 
 _CONNECT_TIMEOUT_SECONDS = 10.0
+_INLINE_REASONING_RE = re.compile(r"\A\s*<reasoning>.*?</reasoning>", re.DOTALL)
+
+
+def _no_answer(finish_reason: Any) -> LLMOutputInvalidError:
+    # Reasoning with no answer is a bad OUTPUT, not a broken provider: retryable, and usually
+    # a token budget spent thinking.
+    cut = " — the token budget ran out while reasoning" if finish_reason == "length" else ""
+    return LLMOutputInvalidError(f"LLM response has no answer text{cut}")
 
 
 def _content_text(content: Any, *, finish_reason: Any = None) -> str:
@@ -27,10 +36,16 @@ def _content_text(content: Any, *, finish_reason: Any = None) -> str:
 
     Reasoning models (gpt-oss on Databricks model serving, and OpenAI's own newer formats)
     return ``[{"type": "reasoning", ...}, {"type": "text", "text": "..."}]``; only the ``text``
-    parts are the answer — the reasoning is never returned as if it were.
+    parts are the answer — the reasoning is never returned as if it were. Bedrock's gpt-oss
+    puts it inline instead, as ``<reasoning>...</reasoning>answer``.
     """
     if isinstance(content, str):
-        return content
+        if not content.lstrip().startswith("<reasoning>"):
+            return content
+        answer = _INLINE_REASONING_RE.sub("", content, count=1)
+        if answer == content or not answer.strip():
+            raise _no_answer(finish_reason)
+        return answer.lstrip()
     if isinstance(content, list):
         parts = [
             part["text"]
@@ -41,10 +56,7 @@ def _content_text(content: Any, *, finish_reason: Any = None) -> str:
         ]
         if parts:
             return "".join(parts)
-        # Reasoning with no answer is a bad OUTPUT, not a broken provider: retryable, and usually
-        # a token budget spent thinking.
-        cut = " — the token budget ran out while reasoning" if finish_reason == "length" else ""
-        raise LLMOutputInvalidError(f"LLM response has no answer text{cut}")
+        raise _no_answer(finish_reason)
     raise LLMProviderError("LLM response content is neither text nor a list of parts")
 
 

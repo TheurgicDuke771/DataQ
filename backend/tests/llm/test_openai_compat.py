@@ -221,3 +221,39 @@ def test_content_of_an_unknown_shape_is_a_provider_error(content: Any) -> None:
     provider = _provider(lambda _r: httpx.Response(200, json=_parts_response(content)))
     with pytest.raises(LLMProviderError):
         provider.complete("hi")
+
+
+# The exact shapes gpt-oss returns on Bedrock's /openai/v1 (captured live, 2026-09-29): the
+# reasoning is inline in the string, and it drafts the JSON before the real answer.
+_BEDROCK_PLAIN = '<reasoning>User says: "Reply with ok". Probably just respond "ok".</reasoning>ok'
+_BEDROCK_JSON = (
+    '<reasoning>We should produce:\n\n{\n  "sql": "SELECT 0"\n}\n\n'
+    'Just output that JSON.</reasoning>{"sql":"SELECT 1"}'
+)
+_BEDROCK_FENCED = '<reasoning>Answer with JSON.</reasoning>```{\n  "sql": "SELECT 1"\n}'
+
+
+def test_inline_reasoning_is_never_returned_as_the_answer() -> None:
+    result = _provider(
+        lambda _r: httpx.Response(200, json=_chat_response(_BEDROCK_PLAIN))
+    ).complete("hi")
+    assert result.text == "ok"
+
+
+@pytest.mark.parametrize("content", [_BEDROCK_JSON, _BEDROCK_FENCED])
+def test_structured_output_parses_the_answer_after_inline_reasoning(content: str) -> None:
+    result = _provider(
+        lambda _r: httpx.Response(200, json=_chat_response(content))
+    ).complete_structured("q", schema=SCHEMA)
+    assert result.parsed == {"sql": "SELECT 1"}
+
+
+@pytest.mark.parametrize(
+    "content", ["<reasoning>thinking, and cut off", "<reasoning>done thinking</reasoning>  "]
+)
+def test_inline_reasoning_with_no_answer_is_a_retryable_output_error(content: str) -> None:
+    body = _chat_response(content)
+    body["choices"][0]["finish_reason"] = "length"
+    provider = _provider(lambda _r: httpx.Response(200, json=body))
+    with pytest.raises(LLMOutputInvalidError, match="ran out while reasoning"):
+        provider.complete("hi")
