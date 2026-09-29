@@ -30,7 +30,7 @@ from backend.app.alerting.base import (
 from backend.app.alerting.registry import get_health_publisher
 from backend.app.core.config import get_settings
 from backend.app.core.logging import get_logger
-from backend.app.db.models import PipelineRun, TriggerBinding, WorkspaceHealth
+from backend.app.db.models import Connection, PipelineRun, TriggerBinding, WorkspaceHealth
 from backend.app.services.orchestration_service import compute_pipeline_cadence
 
 #: Prior successful runs a duration is scored against, and the fewest that make a baseline.
@@ -144,6 +144,36 @@ def evaluate_overdue(
     )
 
 
+#: A connection not polled within this long is not a reliable source of "no new runs".
+_INGEST_FRESH_S = 1800
+
+
+def ingestion_healthy(
+    session: Session, *, provider: str, pipeline_or_dag_id: str, env: str, now: datetime
+) -> bool:
+    """Whether the connection that records this pipeline's runs is being polled successfully.
+
+    If it isn't, a missing run proves nothing: the pipeline may be running fine upstream while
+    DataQ sees no new rows, and the poll-health alerts already name that cause.
+    """
+    connection_id = session.scalar(
+        select(PipelineRun.connection_id)
+        .where(
+            PipelineRun.provider == provider,
+            PipelineRun.pipeline_or_dag_id == pipeline_or_dag_id,
+            PipelineRun.env == env,
+        )
+        .order_by(PipelineRun.created_at.desc())
+        .limit(1)
+    )
+    connection = session.get(Connection, connection_id) if connection_id else None
+    if connection is None or connection.last_polled_at is None:
+        return False
+    return (connection.consecutive_poll_failures or 0) == 0 and (
+        now - connection.last_polled_at
+    ).total_seconds() <= _INGEST_FRESH_S
+
+
 def bound_pipelines(session: Session) -> list[tuple[str, str, str]]:
     """Every (provider, pipeline, env) at least one enabled binding points a suite at."""
     rows = session.execute(
@@ -169,15 +199,23 @@ def evaluate_pipeline(
     env: str,
     z_threshold: float,
     now: datetime | None = None,
-) -> PipelineBaselineReport:
+) -> PipelineBaselineReport | None:
     """The pipeline's current state: failing (overdue, or its latest successful run's duration
-    is ``z_threshold`` or more standard deviations out) or recovered."""
+    is ``z_threshold`` or more standard deviations out), recovered, or ``None`` = unknown: the
+    runs DataQ has are fine, but its polling of this pipeline is not, so it may be overdue."""
     moment = now or datetime.now(UTC)
     report = functools.partial(
         PipelineBaselineReport, provider=provider, pipeline_or_dag_id=pipeline_or_dag_id, env=env
     )
-    overdue = evaluate_overdue(
+    ingesting = ingestion_healthy(
         session, provider=provider, pipeline_or_dag_id=pipeline_or_dag_id, env=env, now=moment
+    )
+    overdue = (
+        evaluate_overdue(
+            session, provider=provider, pipeline_or_dag_id=pipeline_or_dag_id, env=env, now=moment
+        )
+        if ingesting
+        else None
     )
     if overdue is not None:
         return report(
@@ -206,7 +244,7 @@ def evaluate_pipeline(
             mean_duration_seconds=score.mean_seconds,
             z_score=score.z_score,
         )
-    return report(state=HEALTH_RECOVERED)
+    return report(state=HEALTH_RECOVERED) if ingesting else None
 
 
 def _payload(report: PipelineBaselineReport, alerted: bool) -> dict[str, Any]:
@@ -221,6 +259,24 @@ def _payload(report: PipelineBaselineReport, alerted: bool) -> dict[str, Any]:
     }
 
 
+def _clear_unwatched(session: Session, watched_keys: set[str]) -> int:
+    """Close outstanding alerts for pipelines no longer watched (binding disabled or removed, or
+    the check turned off). No recovery message: nothing says the pipeline is back to normal."""
+    query = select(WorkspaceHealth).where(
+        WorkspaceHealth.key.startswith(SIGNAL_KEY_PREFIX),
+        WorkspaceHealth.alerted_at.is_not(None),
+    )
+    if watched_keys:
+        query = query.where(WorkspaceHealth.key.not_in(watched_keys))
+    stale = session.scalars(query.with_for_update(skip_locked=True)).all()
+    for flag in stale:
+        flag.alerted_at = None
+        flag.payload = {**(flag.payload or {}), "alerted": False, "reason": "unwatched"}
+        log.info("pipeline_baseline_cleared_unwatched", key=flag.key)
+    session.commit()
+    return len(stale)
+
+
 def run_pipeline_baseline_check(session: Session, *, now: datetime | None = None) -> dict[str, int]:
     """One tick over every bound pipeline; returns outcome counts for logs and tests.
 
@@ -228,12 +284,14 @@ def run_pipeline_baseline_check(session: Session, *, now: datetime | None = None
     channel actually sent it, so an undeliverable alert is retried every tick, and the recovery
     edge is sent once when the pipeline is back within its baseline.
     """
-    counts = {"alerted": 0, "recovered": 0, "undeliverable": 0, "ok": 0}
+    counts = {"alerted": 0, "recovered": 0, "undeliverable": 0, "ok": 0, "unknown": 0}
     threshold = get_settings().pipeline_baseline_z_threshold
-    if threshold <= 0:
-        return counts
+    watched = [] if threshold <= 0 else bound_pipelines(session)
+    counts["cleared"] = _clear_unwatched(
+        session, {signal_key(p, pid, env) for p, pid, env in watched}
+    )
     moment = now or datetime.now(UTC)
-    for provider, pipeline_or_dag_id, env in bound_pipelines(session):
+    for provider, pipeline_or_dag_id, env in watched:
         key = signal_key(provider, pipeline_or_dag_id, env)
         session.execute(
             pg_insert(WorkspaceHealth)
@@ -256,6 +314,10 @@ def run_pipeline_baseline_check(session: Session, *, now: datetime | None = None
             z_threshold=threshold,
             now=moment,
         )
+        if report is None:
+            session.rollback()
+            counts["unknown"] += 1
+            continue
         outstanding = flag.alerted_at is not None
         if report.is_failing == outstanding:
             session.rollback()

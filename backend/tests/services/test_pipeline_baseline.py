@@ -54,6 +54,7 @@ def world(db_session: Any) -> dict[str, Any]:
         config={"base_url": "https://airflow.example.com"},
         secret_ref="kv-af",
         created_by=owner.id,
+        last_polled_at=NOW,
     )
     warehouse = Connection(
         name=f"pg-{uuid.uuid4().hex[:6]}",
@@ -178,6 +179,12 @@ def test_overdue_uses_the_cadence_threshold(db_session: Any, world: dict[str, An
     )
 
 
+def _polled(db_session: Any, world: dict[str, Any], at: datetime, failures: int = 0) -> None:
+    world["conn"].last_polled_at = at
+    world["conn"].consecutive_poll_failures = failures
+    db_session.commit()
+
+
 def _flag(db_session: Any) -> WorkspaceHealth | None:
     flag: WorkspaceHealth | None = db_session.scalar(
         select(WorkspaceHealth).where(
@@ -202,6 +209,7 @@ def test_a_slow_run_alerts_once_then_recovers(
 
     _run(db_session, world, started=NOW + timedelta(minutes=5), seconds=100)
     later = NOW + timedelta(hours=1)
+    _polled(db_session, world, later)
     assert pb.run_pipeline_baseline_check(db_session, now=later)["recovered"] == 1
     assert not publisher.reports[-1].is_failing
     flag = _flag(db_session)
@@ -233,12 +241,9 @@ def test_an_unbound_pipeline_is_not_watched(
         binding.enabled = False
     db_session.commit()
     _daily(db_session, world, [100] * 6, last=NOW - timedelta(days=3))
-    assert pb.run_pipeline_baseline_check(db_session, now=NOW) == {
-        "alerted": 0,
-        "recovered": 0,
-        "undeliverable": 0,
-        "ok": 0,
-    }
+    counts = pb.run_pipeline_baseline_check(db_session, now=NOW)
+    assert counts["alerted"] == 0 and counts["ok"] == 0
+    assert publisher.reports == []
 
 
 def test_zero_threshold_disables_the_check(
@@ -250,3 +255,37 @@ def test_zero_threshold_disables_the_check(
     _daily(db_session, world, [100] * 6, last=NOW - timedelta(days=3))
     assert pb.run_pipeline_baseline_check(db_session, now=NOW)["alerted"] == 0
     assert publisher.reports == []
+
+
+@pytest.mark.parametrize(
+    "failures, polled_ago", [(3, timedelta(minutes=5)), (0, timedelta(hours=2))]
+)
+def test_a_polling_outage_is_not_reported_as_an_overdue_pipeline(
+    db_session: Any,
+    world: dict[str, Any],
+    publisher: _Publisher,
+    failures: int,
+    polled_ago: timedelta,
+) -> None:
+    """No new rows while DataQ can't poll proves nothing; the poll-health alerts own that."""
+    _daily(db_session, world, [100] * 6, last=NOW - timedelta(days=3))
+    _polled(db_session, world, NOW - polled_ago, failures=failures)
+    counts = pb.run_pipeline_baseline_check(db_session, now=NOW)
+    assert counts["unknown"] == 1 and counts["alerted"] == 0
+    assert publisher.reports == []
+
+
+def test_an_outstanding_alert_is_cleared_quietly_once_the_pipeline_is_unwatched(
+    db_session: Any, world: dict[str, Any], publisher: _Publisher
+) -> None:
+    _daily(db_session, world, [100] * 6, last=NOW - timedelta(days=3))
+    assert pb.run_pipeline_baseline_check(db_session, now=NOW)["alerted"] == 1
+    for binding in db_session.scalars(select(TriggerBinding)):
+        binding.enabled = False
+    db_session.commit()
+
+    assert pb.run_pipeline_baseline_check(db_session, now=NOW)["cleared"] == 1
+    flag = _flag(db_session)
+    assert flag is not None and flag.alerted_at is None
+    assert flag.payload is not None and flag.payload["reason"] == "unwatched"
+    assert len(publisher.reports) == 1  # no "back to normal" was claimed

@@ -121,7 +121,8 @@ and compares it with that pipeline's own history in the same environment:
 - **Overdue.** No successful run within the pipeline's usual cadence, which is its largest gap
   between successful runs plus 25%, the same threshold DataQ suggests for a freshness check on a
   bound suite. The suites it triggers have not run, so their data is going stale before any
-  freshness check says so.
+  freshness check says so. While DataQ can't poll the pipeline's connection, a missing run
+  proves nothing, so no overdue alert is raised; the poll-health alerts above cover that case.
 
 For example, `load_orders` usually takes 12 to 14 minutes. Today's run took 41 minutes, so DataQ
 sends *pipeline ran much slower than usual: airflow load_orders (prod)* with the run's duration,
@@ -129,7 +130,8 @@ the usual duration and how far out it was. When the next run is back to normal, 
 message follows.
 
 Like poll-health alerts, these go to the **workspace** channel, fire once on the crossing, send
-recovery, and are retried until a channel actually delivers them. Tune with
+recovery, and are retried until a channel actually delivers them. Disabling the binding, or
+the check, closes an outstanding alert without claiming the pipeline recovered. Tune with
 `PIPELINE_BASELINE_Z_THRESHOLD` (default `3.0`; `0` turns the check off). The incident evidence
 card shows the same comparison for the pipeline run that triggered a failing suite.
 

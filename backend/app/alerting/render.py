@@ -500,15 +500,21 @@ def triggered_source(triggered_by: str | None) -> str:
 
 
 def format_duration(seconds: float | None) -> str | None:
-    """Human duration: ``"4.2s"`` under a minute, else ``"2m 3s"``. ``None`` in →
-    ``None`` out (the caller omits the field).
+    """Human duration: ``"4.2s"`` under a minute, ``"2m 3s"`` under an hour, ``"5h 12m"``
+    under a day, else ``"3d 4h"``. ``None`` in → ``None`` out (the caller omits the field).
     """
     if seconds is None:
         return None
     if seconds < 60:
         return f"{seconds:.1f}s"
     minutes, secs = divmod(int(seconds), 60)
-    return f"{minutes}m {secs}s"
+    if minutes < 60:
+        return f"{minutes}m {secs}s"
+    hours, minutes = divmod(minutes, 60)
+    if hours < 24:
+        return f"{hours}h {minutes}m"
+    days, hours = divmod(hours, 24)
+    return f"{days}d {hours}h"
 
 
 def _format_timestamp(when: datetime | None) -> str | None:
