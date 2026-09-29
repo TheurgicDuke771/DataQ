@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "6358ee575ba5",
+  "strategy": "manual-commit",
+  "branch": "test/llm-live-api-key",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/63/58ee575ba5/0/metadata.json",
+      "transcript": "/63/58ee575ba5/0/full.jsonl",
+      "compact_transcript": "/63/58ee575ba5/0/transcript.jsonl",
+      "content_hash": "/63/58ee575ba5/0/content_hash.txt",
+      "prompt": "/63/58ee575ba5/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1440,
+    "cache_creation_tokens": 2104428,
+    "cache_read_tokens": 353806967,
+    "output_tokens": 497081,
+    "api_call_count": 722
+  }
+}

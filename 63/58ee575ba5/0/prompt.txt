@@ -1,0 +1,10 @@
+merge is blocked for #2250
+
+---
+
+back to the first question which all open issues or planned features are still directly or indirectly dependent on AWS, Azure, Snowflake and Databricks? read the roadmap files also.
+
+---
+
+Let's start with the Indirect dependencies. For #1706 - let's go with seeded demo only. 
+LLM providers: test Azure OpenAI and AWS Bedrock while we still have the clouds
