@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "f6b05ece806f",
+  "strategy": "manual-commit",
+  "branch": "chore/ops-log-1602-azure-sql",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/f6/b05ece806f/0/metadata.json",
+      "transcript": "/f6/b05ece806f/0/full.jsonl",
+      "compact_transcript": "/f6/b05ece806f/0/transcript.jsonl",
+      "content_hash": "/f6/b05ece806f/0/content_hash.txt",
+      "prompt": "/f6/b05ece806f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1062,
+    "cache_creation_tokens": 1665692,
+    "cache_read_tokens": 250328453,
+    "output_tokens": 381694,
+    "api_call_count": 533
+  }
+}

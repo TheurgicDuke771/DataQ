@@ -1,0 +1,41 @@
+Why can't we test SQL Server part of #2239?
+
+---
+
+Let's go with option a
+
+---
+
+<task-notification>
+<task-id>afae5951462bd6694</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4c1f817b-4fd7-4aa0-8c19-edd245c026d7/tasks/afae5951462bd6694.output</output-file>
+<status>failed</status>
+<summary>Agent "Build #1927 test-before-save" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message · your session limit resets 6:50pm (Asia/Calcutta) (error type rate_limit, HTTP 429, request id REDACTED, model sent to the API: claude-opus-5-5)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Wait for the full run's remaining failures.</result>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-afae5951462bd6694</worktreePath><worktreeBranch>worktree-agent-afae5951462bd6694</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ad437691cff948c8b</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/4c1f817b-4fd7-4aa0-8c19-edd245c026d7/tasks/ad437691cff948c8b.output</output-file>
+<status>failed</status>
+<summary>Agent "Build #1677 JSON flat files" failed: Agent terminated early due to an API error: You've hit your monthly spend limit · raise it at claude.ai/settings/usage?from=cc_cli_limit_message · your session limit resets 6:50pm (Asia/Calcutta) (error type rate_limit, HTTP 429, request id REDACTED, model sent to the API: claude-opus-5-5)</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I'll wait for the rig notification.</result>
+<worktree><worktreePath>/Users/arijit/Coding/Python/DataQ/.claude/worktrees/agent-ad437691cff948c8b</worktreePath><worktreeBranch>worktree-agent-ad437691cff948c8b</worktreeBranch></worktree>
+</task-notification>
+
+---
+
+Continue
+For the document `Ask AI` feature when I'm opening with ChatGPT it says - 
+```
+One caveat: the exact .md URL you gave is not directly fetchable by my web reader, 
+```
+
+Also, I noticed there is no smaple example in any of our documentation page. Can we some example wherever applicable. [you can check the snowflake documentation for reference]
