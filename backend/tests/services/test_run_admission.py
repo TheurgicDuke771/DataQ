@@ -111,6 +111,36 @@ def test_a_flat_file_run_is_estimated_from_the_object_size(stub_flat_file: Any) 
     assert estimate.exclusive is False
 
 
+@pytest.mark.parametrize(
+    ("path", "factor"),
+    [
+        ("raw/orders.csv", 2.0),
+        ("raw/orders.parquet", 3.0),
+        ("raw/orders.pq", 3.0),
+        ("raw/orders.jsonl", 5.0),
+        ("raw/orders.ndjson", 5.0),
+        ("raw/orders.json", 5.0),
+        ("raw/orders.bin", 7.0),
+    ],
+)
+def test_each_format_is_priced_at_its_own_expansion(
+    monkeypatch: pytest.MonkeyPatch, stub_flat_file: Any, path: str, factor: float
+) -> None:
+    """Priced by the READER's format decision (#1677): a `.pq` file is read as Parquet and a
+    `.jsonl` one as JSON, so pricing them as the default under-reserves the JSON path.
+    """
+    for name, value in (("CSV", 2), ("PARQUET", 3), ("JSON", 5), ("DEFAULT", 7)):
+        monkeypatch.setenv(f"RUN_ADMISSION_EXPANSION_{name}", str(value))
+    get_settings.cache_clear()
+    stub_flat_file(1 * MiB)
+    run, session = _graph("s3", target={"path": path})
+
+    estimate = run_admission.estimate_run_memory(_sess(session), run)
+
+    assert estimate is not None and estimate.basis == "flat_file_size"
+    assert estimate.bytes == int(1 * MiB * factor)
+
+
 def test_a_sampled_run_is_estimated_from_the_sample_not_the_object(stub_flat_file: Any) -> None:
     """A `head` sample is flat at ~400-500 MiB regardless of object size — throttling it as a
     full read would serialise the very mode that exists to avoid the problem.

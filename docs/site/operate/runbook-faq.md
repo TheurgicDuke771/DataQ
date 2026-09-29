@@ -57,7 +57,8 @@ Manual checklist (the mutating tail):
   triggered, not continuous.
 - **Single tenant**, suite-level access sharing **plus a stored workspace role** — Admin / Member / Viewer (ADR 0033); connection management is Admin-only. `WORKSPACE_ADMIN_EMAILS` is a bootstrap seed and lockout break-glass, not the day-to-day mechanism.
 - Interactive **datasource browsing** (container browser, 3-level UC catalog picker) is
-  deferred — you specify targets explicitly. JSON flat files deferred (CSV/Parquet in v1).
+  deferred — you specify targets explicitly. JSON flat files (JSON Lines or an array of
+  flat objects) are read beside CSV/Parquet; nested JSON is refused.
 - Auth is one of **OIDC SSO (Azure AD or Cognito) or email OTP (ADR 0032, IdP-less)**,
   plus **PATs** (`dq_live_…`, ADR 0026) for headless/API/MCP clients — no
   username/password login, and no separate service-account principal yet (ADR 0026

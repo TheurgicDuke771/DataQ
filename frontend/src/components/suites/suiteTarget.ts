@@ -1,5 +1,6 @@
 import type { ConnectionType } from '../../api/connections';
 import {
+  type FileFormat,
   type RunTarget,
   SAMPLE_STRATEGIES,
   type SampleStrategy,
@@ -140,7 +141,7 @@ export interface TargetFormValues {
   target_catalog?: string;
   target_namespace?: string;
   target_path?: string;
-  target_format?: 'csv' | 'parquet';
+  target_format?: FileFormat;
   /**
    * Flat-file target mode (#1180): `single` is a literal `target_path`; `batch` selects a file at
    * run time via `target_prefix`/`target_pattern`/ `target_strategy`(/`target_batch`).
@@ -183,7 +184,7 @@ export function targetSampling(
  * Narrow an untyped stored `file_format` to the supported set, else `undefined` — the suite target
  * is an untyped JSONB bag, so a stray value (e.g.
  */
-export function asFileFormat(value: unknown): 'csv' | 'parquet' | undefined {
+export function asFileFormat(value: unknown): FileFormat | undefined {
   return asOneOf(value, FILE_FORMATS);
 }
 
@@ -195,7 +196,7 @@ export function asBatchStrategy(value: unknown): 'latest' | 'specific' | undefin
   return asOneOf(value, BATCH_STRATEGIES);
 }
 
-const FILE_FORMATS = ['csv', 'parquet'] as const;
+const FILE_FORMATS: readonly FileFormat[] = ['csv', 'parquet', 'json'];
 const BATCH_STRATEGIES = ['latest', 'specific'] as const;
 
 export interface AssembledTarget {

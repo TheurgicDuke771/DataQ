@@ -69,7 +69,7 @@ class SuiteTarget(ApiRequestModel):
     # Iceberg addresses a table by ``namespace.table``; run_target folds it in.
     namespace: str | None = Field(default=None, max_length=255)
     path: str | None = Field(default=None, max_length=1024)
-    file_format: Literal["csv", "parquet"] | None = None
+    file_format: Literal["csv", "parquet", "json"] | None = None
     # Flat-file batch selection (A4); validated in run_target, not here.
     pattern: str | None = Field(default=None, max_length=1024)
     strategy: Literal["latest", "specific"] | None = None
@@ -448,7 +448,7 @@ class ColumnProfileRequest(ApiRequestModel):
     namespace: str | None = Field(default=None, max_length=255, description="Iceberg namespace")
     # Flat-file datasources (ADLS Gen2 / S3): the target is a file path.
     path: str | None = Field(default=None, max_length=1024, description="Flat-file path to profile")
-    file_format: Literal["csv", "parquet"] | None = None
+    file_format: Literal["csv", "parquet", "json"] | None = None
 
 
 class TopValue(ApiModel):
@@ -638,7 +638,7 @@ def list_columns(
     catalog: Annotated[str | None, Query(max_length=255)] = None,
     namespace: Annotated[str | None, Query(max_length=255)] = None,
     path: Annotated[str | None, Query(max_length=1024)] = None,
-    file_format: Annotated[Literal["csv", "parquet"] | None, Query()] = None,
+    file_format: Annotated[Literal["csv", "parquet", "json"] | None, Query()] = None,
 ) -> ColumnsRead:
     # sync def → threadpool; the datasource connect/introspect is blocking.
     # Authoring aid → 'edit', same gate as the profiler/dry-run.
@@ -770,7 +770,7 @@ class ColumnPolicySuggestRequest(ApiRequestModel):
     catalog: str | None = Field(default=None, max_length=255)
     namespace: str | None = Field(default=None, max_length=255)
     path: str | None = Field(default=None, max_length=1024)
-    file_format: Literal["csv", "parquet"] | None = None
+    file_format: Literal["csv", "parquet", "json"] | None = None
 
 
 @router.get(

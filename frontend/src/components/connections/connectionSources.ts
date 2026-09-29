@@ -51,7 +51,7 @@ export const SOURCE_CATEGORY_NOTE: Record<SourceCategory, string> = {
   Warehouses: 'Run checks directly against tables in a cloud data warehouse.',
   Lakehouses: 'Validate lakehouse tables governed by Unity Catalog.',
   Databases: 'Run checks directly against tables in an operational (OLTP) database.',
-  'Cloud Storage': 'Run checks on flat files (CSV / Parquet) in object storage.',
+  'Cloud Storage': 'Run checks on flat files (CSV / Parquet / JSON) in object storage.',
   Orchestration:
     'Optional — connect Azure Data Factory, Airflow or dbt to watch their pipeline / job runs and trigger suites on completion.',
 };

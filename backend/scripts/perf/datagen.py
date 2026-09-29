@@ -207,6 +207,10 @@ def _write(frame: Any, path: Path, fmt: str) -> None:
     tmp = path.with_suffix(f"{path.suffix}.{os.getpid()}.partial")
     if fmt == "csv":
         frame.to_csv(tmp, index=False)
+    elif fmt == "jsonl":
+        frame.to_json(tmp, orient="records", lines=True, date_format="iso")
+    elif fmt == "json":
+        frame.to_json(tmp, orient="records", date_format="iso")
     else:
         frame.to_parquet(tmp, index=False)
     os.replace(tmp, path)

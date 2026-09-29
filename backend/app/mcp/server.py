@@ -3203,9 +3203,12 @@ def update_suite(
     shape depends on the connection's type: ``{"table": ..., "schema": ...}`` for
     a SQL warehouse, ``{"catalog": ..., "schema": ..., "table": ...}`` for Unity
     Catalog, ``{"namespace": ..., "table": ...}`` for Iceberg, or
-    ``{"path": ..., "file_format": "csv"|"parquet"}`` for a flat file. A flat-file
-    target can instead select a rolling **batch** with ``pattern`` +
-    ``strategy``. An invalid shape for the connection type is rejected.
+    ``{"path": ..., "file_format": "csv"|"parquet"|"json"}`` for a flat file. A
+    flat-file target can instead select a rolling **batch** with ``pattern`` +
+    ``strategy``. An invalid shape for the connection type is rejected. ``json``
+    means JSON Lines (one object per line) or a top-level array of **flat**
+    objects; a file with nested objects or arrays in a column is refused at run
+    time, so do not promise that one will run.
 
     Only what you pass changes; omitted arguments are left alone, and ``target``
     is **replaced wholesale** rather than merged — send the complete target, not
@@ -4155,7 +4158,9 @@ def list_columns(
 
     Returns names only — no types, no data, no statistics. It cannot tell you
     whether a column is nullable or what it contains; use ``profile_column`` for
-    that.
+    that. For a **JSON** file the names come from its first 1 MiB of objects: a
+    field that first appears later in the file is not listed, so an absent name
+    is not proof the file never holds it.
 
     Requires **edit** access to the suite, not view: this opens a live connection
     to the datasource using the stored credential, the same gate the profiler and
@@ -4226,7 +4231,7 @@ def _parse_suite_target(target: dict[str, Any] | None) -> dict[str, Any] | None:
 
     Worth routing through rather than trusting the service: `suite_service`
     validates the target's *field combination* per connection type, but
-    `SuiteTarget` is what validates `file_format` against `csv|parquet`, caps
+    `SuiteTarget` is what validates `file_format` against `csv|parquet|json`, caps
     every string, and rejects unknown keys.
     """
     if target is None:
@@ -4317,7 +4322,8 @@ def profile_column(
     explicit ``table``/``path`` is given, so it only needs passing alongside
     your own ``table``. **Snowflake, Unity Catalog, PostgreSQL, MySQL, Trino, SQL
     Server, Athena and Redshift are profiled in full; ADLS, S3 and Iceberg targets are profiled
-    over a sample of at most 100,000 rows.** On Athena every statistic is a billed
+    over a sample of at most 100,000 rows** (for an ADLS or S3 file, its first 100,000
+    rows — not a random draw). On Athena every statistic is a billed
     query. When
     ``sampled`` is true, ``row_count`` is the number of rows **sampled** — not
     the size of the file or table — and every statistic describes only that

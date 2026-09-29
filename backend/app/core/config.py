@@ -270,6 +270,10 @@ class Settings(BaseSettings):
     # Measured store-bytes -> worker-RSS expansion (docs/site/architecture/perf-baseline.md).
     run_admission_expansion_csv: float = Field(default=8.0, gt=0)
     run_admission_expansion_parquet: float = Field(default=9.0, gt=0)
+    # JSON (#1677): the worst measured JSON/CSV ratio (JSON Lines on the 2 GiB rig, 0.76)
+    # x the CSV factor, rounded up. JSON text is ~2.4x a CSV of the same rows, so it
+    # expands LESS per byte even though it costs more per row.
+    run_admission_expansion_json: float = Field(default=6.5, gt=0)
     run_admission_expansion_default: float = Field(default=9.0, gt=0)
     # Row-shaped estimates (a sampled flat-file read, comparison sides). UC and Iceberg price rows
     # by type instead.

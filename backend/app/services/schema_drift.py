@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.base import CheckOutcome
-from backend.app.datasources.flatfile import RangeReader, read_csv_head
+from backend.app.datasources.flatfile import RangeReader, json_schema, read_csv_head
 from backend.app.datasources.iceberg import (
     IcebergConfig,
     iceberg_credentials,
@@ -25,7 +25,7 @@ from backend.app.datasources.monitors import (
 )
 from backend.app.datasources.sql_engines import GENERIC_SQL_TYPES, SQL_ENGINES
 from backend.app.db.models import Check, Connection
-from backend.app.services.failure_classifier import classify_failure_reason
+from backend.app.services.failure_classifier import safe_failure_reason
 from backend.app.services.monitor_baseline import get_baseline, insert_baseline_if_absent
 from backend.app.services.profile_service import (
     _open_connection,
@@ -151,8 +151,9 @@ def _file_columns(
     file_format: str | None,
     secret_store: SecretStore,
 ) -> list[ColumnSpec]:
-    """Column names+types of a flat file: the Parquet footer schema (exact) or a
-    bounded CSV sample (pandas dtype inference).
+    """Column names+types of a flat file: the Parquet footer schema (exact), a
+    bounded CSV sample (pandas dtype inference), or a JSON file's first block (the
+    types a sampled read gives it — strings as text).
     """
     fmt = infer_file_format(path, file_format)
     secret = secret_store.get(connection.secret_ref or "")
@@ -166,6 +167,8 @@ def _file_columns(
         # A head range, not the object: enough for the header plus the type sample.
         df = read_csv_head(**reader_args, rows=_CSV_TYPE_SAMPLE_ROWS)
         return [{"name": str(col), "type": str(dtype)} for col, dtype in df.dtypes.items()]
+    if fmt == "json":
+        return [{"name": f.name, "type": str(f.type)} for f in json_schema(**reader_args)]
     import pyarrow.parquet as pq
 
     with RangeReader(**reader_args) as reader:
@@ -215,7 +218,7 @@ def introspect_columns(
             error_type=type(exc).__name__,
         )
         raise SchemaIntrospectionError(
-            f"could not introspect columns: {classify_failure_reason(exc)}"
+            f"could not introspect columns: {safe_failure_reason(exc)}"
         ) from exc
     raise SchemaIntrospectionError(
         f"schema_drift is not supported on {connection.type!r} connections"

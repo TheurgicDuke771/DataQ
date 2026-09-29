@@ -123,13 +123,20 @@ def _run_flatfile(*, fmt: str, rows: int, checks: int, mode: str) -> list[Metric
 
 
 def _register_run_scaling() -> None:
-    for fmt in ("csv", "parquet"):
+    # `jsonl` is JSON Lines, `json` a top-level array (#1677). Neither is in the CI
+    # budget: they measure the admission expansion factor, a platform-dependent size.
+    for fmt in ("csv", "parquet", "jsonl", "json"):
         for tier, rows in ROW_TIERS.items():
             for checks in (5, 25):
                 for mode in ("full", "head", "random"):
                     case_id = f"flatfile.{fmt}.{tier}.{checks}checks.{mode}"
                     tags: tuple[str, ...] = ("full",)
-                    if tier == "100k" and checks == 5 and mode in ("full", "head"):
+                    if (
+                        fmt in ("csv", "parquet")
+                        and tier == "100k"
+                        and checks == 5
+                        and mode in ("full", "head")
+                    ):
                         tags = ("full", "ci")
                     register(
                         Case(
