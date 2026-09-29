@@ -166,7 +166,19 @@ function LlmForm({ config, onChanged }: { config: LlmConfig; onChanged: () => vo
       setApiKey('');
       onChanged();
     } catch (err) {
-      if (!handleConfigError(err)) message.error(`Save failed: ${errorMessage(err)}`);
+      const api = apiFieldError(err);
+      if (api?.code === 'llm_test_failed_on_save') {
+        // The server tested the enabled config first (#1927) and saved nothing.
+        const { error_code: code, error: reason } = api.detail;
+        setTestState('failed');
+        setTestResult({
+          ok: false,
+          error_code: typeof code === 'string' ? (code as LlmTestResult['error_code']) : undefined,
+          error: `${typeof reason === 'string' ? reason : api.message} — not saved`,
+        });
+      } else if (!handleConfigError(err)) {
+        message.error(`Save failed: ${errorMessage(err)}`);
+      }
     } finally {
       setSaving(false);
     }
@@ -315,6 +327,11 @@ function LlmForm({ config, onChanged }: { config: LlmConfig; onChanged: () => vo
         <Switch checked={enabled} onChange={setEnabled} aria-label="Enable LLM" />
         <Typography.Text>Enable outbound LLM calls</Typography.Text>
       </Flex>
+      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        Saving with outbound calls enabled tests the provider first and saves nothing if the test
+        fails. With them disabled the settings are saved as they are, so a broken provider can
+        always be switched off.
+      </Typography.Text>
 
       <Flex align="center" gap={8} wrap>
         <Button type="primary" loading={saving} onClick={onSave}>

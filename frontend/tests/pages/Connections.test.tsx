@@ -349,7 +349,7 @@ describe('Connections', () => {
     await user.click(screen.getByRole('button', { name: 'Rotate credential' }));
 
     // The stale verdict is dropped — badge + link gone until re-tested.
-    await waitFor(() => expect(mockReauth).toHaveBeenCalledWith('c1', 'fresh-secret'));
+    await waitFor(() => expect(mockReauth).toHaveBeenCalledWith('c1', 'fresh-secret', false));
     await waitFor(() => expect(screen.queryByText('unreachable')).not.toBeInTheDocument());
   });
 
