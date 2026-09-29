@@ -4301,6 +4301,25 @@ pass — a baseline that hasn't seen enough runs has no opinion. The per-check
 see what "normal" currently means. SQL datasources only: the anomaly executor takes
 its own measurement over a live SQL connection, which the natively-computed Iceberg
 and flat-file monitor paths don't expose.</p>
+<p><strong>Column profile</strong> is a third target metric that watches every column at once. One
+query per run measures each column's <strong>null percentage</strong> and <strong>distinct count</strong>, and
+each of those gets its own history. The result names the columns that moved, largest
+deviation first, and its metric (the z-score the thresholds read) is the largest one.</p>
+<ul>
+<li>A null rate is flagged whichever way it moves. A distinct count is flagged only when
+  it <strong>falls</strong>: a growing table's distinct counts rise every day, but a column that
+  collapses from 50 values to 1 is a problem.</li>
+<li>A column that has never had a null is not flagged for one stray null: the spread a
+  null rate is measured against is never taken as less than 1 percentage point, and a
+  distinct count's never as less than 10% of its mean.</li>
+<li>It measures the first 100 columns in table order and reports how many there are in
+  total. If a column's type can't be counted distinct, it keeps the null rates and says
+  <code>distinct_available: false</code> rather than failing.</li>
+</ul>
+<p>For example, with <code>{"target_metric": "column_profile", "window": 8, "min_points": 3}</code> on
+<code>orders</code>, three runs build the history. When a load then leaves <code>customer_email</code> empty,
+the next run reports <code>customer_email</code> · <code>null_pct</code> · value <code>100</code> against a mean of about
+<code>2</code>, and fails.</p>
 <h3 id="comparison-check-all-datasources-adr-0015">Comparison check (all datasources — ADR 0015)<a class="headerlink" href="#comparison-check-all-datasources-adr-0015" title="Permanent link">¶</a></h3>
 <p><em>Does this dataset reconcile against that one?</em> A comparison check diffs the suite's
 dataset (the <strong>target under test</strong>) against a <strong>baseline</strong> on any other datasource
