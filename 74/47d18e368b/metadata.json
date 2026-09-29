@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "7447d18e368b",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1660-suggestion-queue",
+  "checkpoints_count": 2,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/74/47d18e368b/0/metadata.json",
+      "transcript": "/74/47d18e368b/0/full.jsonl",
+      "compact_transcript": "/74/47d18e368b/0/transcript.jsonl",
+      "content_hash": "/74/47d18e368b/0/content_hash.txt",
+      "prompt": "/74/47d18e368b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2340,
+    "cache_creation_tokens": 2633105,
+    "cache_read_tokens": 639751821,
+    "output_tokens": 801440,
+    "api_call_count": 1172
+  }
+}
