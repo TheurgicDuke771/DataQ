@@ -1,0 +1,7 @@
+#2215, dbt connection test - OK to go ahead.
+
+Once we done with the teardown let's keep two paths - 
+* First one is for development the local dev authless version let's keep it as is of current state 
+* Second one is the otp auth version let's make it as close as possible to the production ones like implementing the rate limit and HTTPS using a local dummy certificate to validate the TLS/SSL among other features.  
+
+No change in how the two paths getting accessed. The first one is for contributor only. Deliberately hidden in documentation. Second path is the default one. The end-user supposed to exercise that one.
