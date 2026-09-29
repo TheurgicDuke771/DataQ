@@ -1,0 +1,8 @@
+{
+  "tool_use_id": "toolu_01R4hyWsTUf5UPznptVwX5si",
+  "agent_id": "ae653636be8e354ff",
+  "subagent_type": "general-purpose",
+  "task_description": "#1680 OneLake service-principal auth",
+  "started_at": "2026-09-27T16:39:45.857865+05:30",
+  "completed_at": "2026-09-28T02:40:54.960887+05:30"
+}
