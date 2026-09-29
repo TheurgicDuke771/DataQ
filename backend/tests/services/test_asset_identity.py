@@ -207,9 +207,6 @@ def test_adls_account_from_url(account_url: str) -> None:
         ("https://acct.blob.core.chinacloudapi.cn:443", "acct.dfs.core.chinacloudapi.cn"),
         # Public cloud stays byte-stable with every namespace persisted before #1680.
         ("https://MyLake.blob.core.windows.net", "MyLake.dfs.core.windows.net"),
-        # Not `<account>.blob|dfs.<suffix>` at all (an emulator): the legacy shape.
-        # identifier-ok: an emulator loopback address, not a storage account
-        ("http://127.0.0.1:10000/devstoreaccount1", "127.dfs.core.windows.net"),
     ],
 )
 def test_adls_namespace_follows_an_adls_compatible_endpoint(
@@ -222,6 +219,53 @@ def test_adls_namespace_follows_an_adls_compatible_endpoint(
     )
     assert identity.namespace == f"abfss://ws@{authority}"
     assert identity.name == "lh.Lakehouse/Files/orders.csv"
+
+
+@pytest.mark.parametrize(
+    "account_url,namespace",
+    [
+        # identifier-ok: Azurite's documented loopback endpoint, not a real storage account
+        ("http://127.0.0.1:10000/devstoreaccount1", "abfss://ws@127.0.0.1:10000/devstoreaccount1"),
+        ("http://localhost:10000/devstoreaccount1/", "abfss://ws@localhost:10000/devstoreaccount1"),
+        # A compose / k8s service name is a single label too.
+        ("http://azurite:10000/devstoreaccount1", "abfss://ws@azurite:10000/devstoreaccount1"),
+        ("http://[::1]:10000/devstoreaccount1", "abfss://ws@[::1]:10000/devstoreaccount1"),
+        # identifier-ok: a documentation-range address (RFC 5737), not a real endpoint
+        ("https://192.0.2.10/lake", "abfss://ws@192.0.2.10/lake"),
+    ],
+)
+def test_a_path_style_emulator_is_named_after_its_endpoint_and_path_account(
+    account_url: str, namespace: str
+) -> None:
+    # The account is the first PATH segment, and the endpoint is not the public cloud (#2199).
+    identity = resolve_asset_identity(
+        "adls_gen2", {"account_url": account_url, "container": "ws"}, {"path": "a.csv"}
+    )
+    assert identity.namespace == namespace
+    assert identity.name == "a.csv"
+
+
+def test_emulator_accounts_and_endpoints_do_not_collide() -> None:
+    namespaces = {
+        resolve_asset_identity(
+            "adls_gen2", {"account_url": url, "container": "raw"}, {"path": "a.csv"}
+        ).namespace
+        for url in (
+            "http://localhost:10000/devstoreaccount1",
+            "http://localhost:10000/otheraccount",
+            "http://localhost:10001/devstoreaccount1",
+        )
+    }
+    assert len(namespaces) == 3
+
+
+def test_a_path_style_url_without_an_account_raises() -> None:
+    with pytest.raises(ValueError, match="account in its path"):
+        resolve_asset_identity(
+            "adls_gen2",
+            {"account_url": "http://localhost:10000", "container": "raw"},
+            {"path": "a.csv"},
+        )
 
 
 def test_adls_path_strips_single_leading_slash() -> None:
