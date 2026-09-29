@@ -20,12 +20,25 @@ from backend.app.db.models import (
     Suite,
     User,
 )
-from backend.app.services import check_service
+from backend.app.services import check_service, suggestion_service
 from backend.app.services import coverage_service as cov
 from backend.app.services.asset_identity import resolve_asset_identity
 
 NOW = datetime(2026, 9, 30, 6, 0, tzinfo=UTC)
 _CONFIG = {"host": "wh.example.com", "database": "shop", "user": "reader", "auto_coverage": True}
+
+
+@pytest.fixture(autouse=True)
+def no_profiling(monkeypatch: pytest.MonkeyPatch) -> list[uuid.UUID]:
+    """The review-queue refresh profiles a live warehouse; its own tests cover it."""
+    calls: list[uuid.UUID] = []
+
+    def fake(session: Any, suite: Suite, *, secret_store: Any) -> int:
+        calls.append(suite.id)
+        return 0
+
+    monkeypatch.setattr(suggestion_service, "refresh_from_profile", fake)
+    return calls
 
 
 @pytest.fixture
@@ -305,3 +318,33 @@ def test_one_failing_table_does_not_stop_the_rest(
         cov.SCHEMA_CHECK,
         cov.VOLUME_CHECK,
     }
+
+
+def test_a_covered_table_is_profiled_for_suggestions_at_most_weekly(
+    db_session: Any, conn: Connection, no_profiling: list[uuid.UUID]
+) -> None:
+    orders = _asset(db_session, conn, "orders")
+    cov.reconcile_connection(db_session, conn, now=NOW)
+    assert no_profiling == [_auto(db_session, orders).id]
+
+    suite = _auto(db_session, orders)
+    suite.auto_state = {**(suite.auto_state or {}), "profiled_at": NOW.isoformat()}
+    db_session.commit()
+    for days, expected in ((6, 1), (8, 2)):
+        orders.last_seen = NOW + timedelta(days=days)  # still listed by the inventory
+        db_session.commit()
+        cov.reconcile_connection(db_session, conn, now=NOW + timedelta(days=days))
+        assert len(no_profiling) == expected
+
+
+def test_a_profiling_failure_does_not_skip_the_table(
+    db_session: Any, conn: Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def boom(*_a: Any, **_kw: Any) -> int:
+        raise RuntimeError("warehouse unreachable")
+
+    monkeypatch.setattr(suggestion_service, "refresh_from_profile", boom)
+    orders = _asset(db_session, conn, "orders")
+    report = cov.reconcile_connection(db_session, conn, now=NOW)
+    assert report.skipped_assets == [] and report.checks_created == 2
+    assert _checks(db_session, _auto(db_session, orders))

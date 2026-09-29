@@ -57,6 +57,7 @@ import { ImportSuiteDrawer } from '../components/suites/ImportSuiteDrawer';
 import { NotificationsPanel } from '../components/suites/NotificationsPanel';
 import { SamplePolicyPanel } from '../components/suites/SamplePolicyPanel';
 import { SchedulesPanel } from '../components/suites/SchedulesPanel';
+import { SuggestionsPanel } from '../components/suites/SuggestionsPanel';
 import { SharePanel } from '../components/suites/SharePanel';
 import { isBatchTarget, summarizeTarget } from '../components/suites/suiteTarget';
 import { TriggersPanel } from '../components/suites/TriggersPanel';
@@ -523,6 +524,7 @@ function SuiteDetail({
         onEdit={(check) => navigate(`/suites/${suite.id}/checks/${check.id}/edit`)}
         onChanged={reload}
       />
+      <SuggestionsPanel suiteId={suite.id} canDecide={canRun} onAccepted={reload} />
       {/* Triggers + schedules are edit-gated (same as runs): a pipeline/DAG bound
           here runs the suite on its success; a schedule runs it on a cron cadence.
           canRun is exactly the edit-level capability. */}
