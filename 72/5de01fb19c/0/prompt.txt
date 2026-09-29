@@ -1,0 +1,63 @@
+Hey, this is from last session -  
+
+<pasted_content id="bfde">
+All platform-retirement build work from this session is merged and its issues are closed. Local `main` is at `6191d9d7` with a clean tree. I've updated memory with the retirement state and two lessons: run CI's exact commands, and only commit when the tests pass.
+
+---
+
+## Handoff message for the next session
+
+**Project:** DataQ (`~/Coding/Python/DataQ`), a data-quality platform built on FastAPI, Celery and Great Expectations, with a React frontend. Trunk-based: squash-merge PRs to `main`, run `/code-review --comment` on every PR, one piece of work per commit, and every finding is either fixed or filed as an issue.
+
+### Problem statement
+On 2026-09-28 the user decided to **retire all four hosted platforms (Azure, AWS, Snowflake, Databricks)**. The end state is **local/BYO only**. The agreed approach: build and live-verify every issue that depends on a platform before tearing it down, then remove every test resource, with **user confirmation before any infrastructure change**.
+
+### Progress (main `6191d9d7`, 2026-09-29)
+All four build waves are done. Every test resource created for them is torn down and recorded in `docs/ops-log.md`.
+
+- **Databricks:** #2149, #2151, #2155, #2158, #1819.
+- **Snowflake:** #2106, #2084, #2099, #1655 (Cortex LLM provider).
+- **AWS:**
+  - Amazon Athena adapter (#2131), live-verified.
+  - Amazon Redshift adapter (#1682, PR #2195), live-verified on Redshift Serverless.
+  - Python client and CLI (#1829), shipped as GitHub Release assets instead of PyPI (#2194).
+  - API compatibility policy (#1705).
+  - RDS recovered from the KMS lock.
+- **Azure:**
+  - #2088: live Iceberg performance tier.
+  - #2127: Entra token cache; token requests per run dropped from 6 to 2.
+  - #2128: dbt reads its artifacts as a service principal, with an account-URL override.
+  - #2129: sovereign-cloud ADLS accounts get their own asset names.
+  - #2140: the check editor hides the checks Fabric refuses.
+  - #2141: false pool ERROR logs on the ODBC lane went from 4 to 0 (GX's global project kept each run's context alive).
+  - #2137: mixed-case schemas on case-sensitive catalogs (a custom exact-schema GX asset); SQL Server's "Invalid object name" is now classified as a config error.
+  - #2138: SQL Server's rules for comparison queries (`ORDER BY`, unnamed columns, leading `WITH`).
+  - #2119: Celery result backend disabled, and only the scheduler (beat) retries publishes for ~35 s.
+  - #2126 closed as not planned, since the ODBC lane is verified on Fabric and Azure SQL.
+  - #1690 re-scoped to drop Purview.
+- **Local:**
+  - #2148: pandas 3.0.6 and numpy 2.5.3 pinned.
+  - #2177: sub-day numpy timestamps render exactly as pandas does; day-and-coarser units stay dates.
+- **Filed during the session:**
+  - #2199: an Azurite/emulator storage account gets the wrong asset name.
+  - #2204: GX's global project is shared across concurrent API runs.
+
+There are 90 open issues and 11 open PRs, all Dependabot.
+
+### Pending actions, by urgency
+1. **#2145 (UC frame admission sizing from the width probe).** It needs Databricks, and the **QA token lapses 2026-09-30**, so do it first or the live check is lost.
+2. **Local-only:** #2146 (Iceberg admission priced by Arrow schema), #2199, #2204. For #2204, choose between a process lock around GX runs, moving API dry-runs to the worker, or a context that doesn't touch GX's global.
+3. **11 Dependabot PRs (#2180–#2190).** Review and merge them. #2181 (SQLAlchemy 2.0 → 2.1) and #2182 (anthropic 1.3 → 1.8) are the risky ones. Rebase the npm PRs one at a time, because lockfile merges conflict.
+4. **Retire the live deployments.** This is the user's call, and each step needs confirmation. Azure (hosting prod) goes last. Close #1384 and #1385 as won't-fix when AWS is torn down.
+   - Credential expiry: Databricks retail 2026-10-09, Snowflake PATs 2026-10-11.
+5. Refresh the `docs/progress.md` snapshot after each batch, recounting live.
+
+### Working notes
+- **Tools:**
+  - Python: `PY=$(conda run -n dataq which python)`.
+  - The ODBC lane needs `PYTHONPATH=/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/636954bf-9316-4764-b6a2-2c4b520126ab/scratchpad/pyodbc_lane`, plus the Homebrew `msodbcsql18` driver.
+- **Secrets:** read inline from Key Vault `dataq-app-kv-aw6laj` or AWS Secrets Manager, and never print or write them to disk.
+- **Before pushing:** run CI's exact commands (`mypy backend/`, `bandit -c pyproject.toml -r backend/app`, the full `pytest backend/tests`, `mkdocs build --strict`), and commit only when the tests pass.
+- **Ops log:** any live infrastructure change gets an ops-log entry with UTC timestamps. The repo is public, so write "maintainer's IP" instead of real IP addresses.
+- **Live test lanes:** live batteries are opt-in through environment variables (`DATAQ_MSSQL_LIVE_*`, `REDSHIFT_TEST_*`, `ATHENA_TEST_*`, `PERF_*`). After a bug fix, mutation-check the regression test, and do it live wherever a value crosses a driver.
+</pasted_content id="bfde">
