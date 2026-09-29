@@ -339,6 +339,46 @@ def test_file_introspection_parquet_types_from_footer(monkeypatch: pytest.Monkey
     assert by_name == {"id": "int64", "name": "string"}
 
 
+def test_file_introspection_json_types_keep_iso_strings_as_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#1677: a JSON timestamp is text — pyarrow's whole-second guess would flip the
+    column between `timestamp[s]` and `string` on data alone, a spurious drift alert.
+    """
+    _patch_object(
+        monkeypatch,
+        b'{"id": 1, "at": "2026-01-01T00:00:00Z", "amt": 1.5, "ok": true}\n'
+        b'{"id": 2, "at": "2026-01-02T00:00:00Z", "amt": 2, "ok": false}\n',
+    )
+    cols = introspect_columns(
+        _file_connection(),
+        table="landing/orders.jsonl",
+        schema=None,
+        catalog=None,
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
+    )
+    assert cols == [
+        {"name": "id", "type": "int64"},
+        {"name": "at", "type": "string"},
+        {"name": "amt", "type": "double"},
+        {"name": "ok", "type": "bool"},
+    ]
+
+
+def test_file_introspection_json_nested_is_a_classified_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_object(monkeypatch, b'{"id": 1, "addr": {"city": "x"}}\n')
+    with pytest.raises(SchemaIntrospectionError, match="'addr' hold nested"):
+        introspect_columns(
+            _file_connection(),
+            table="landing/orders.jsonl",
+            schema=None,
+            catalog=None,
+            secret_store=FakeSecretStore(default="secret", raise_on_write=True),
+        )
+
+
 def test_iceberg_introspection_reads_schema_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
     """The #859 drift leg: the snapshot comes from table METADATA (schema
     fields), never a data read.

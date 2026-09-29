@@ -25,8 +25,10 @@ from backend.app.datasources.flatfile import (
     STREAM_CHUNK,
     RangeReader,
     format_from_path,
+    json_schema,
     read_csv_head,
     read_csv_projected_sample,
+    read_json_head,
 )
 from backend.app.datasources.generic_sql import ColumnCaps, SqlEngineSpec
 from backend.app.datasources.iceberg import (
@@ -35,6 +37,7 @@ from backend.app.datasources.iceberg import (
     load_iceberg_table,
     read_iceberg_dataframe,
 )
+from backend.app.datasources.jsonfile import JsonFileError
 from backend.app.datasources.snowflake import (
     SnowflakeConfig,
     build_connect_args,
@@ -54,7 +57,7 @@ from backend.app.services.column_classification import ColumnClass, classify_col
 log = get_logger(__name__)
 
 # Formats the profiler can actually parse.
-_SUPPORTED_FORMATS = {"csv", "parquet"}
+_SUPPORTED_FORMATS = {"csv", "parquet", "json"}
 # Flat-file profiling reads at most this many rows — stats are over the sample.
 _SAMPLE_ROWS = 100_000
 #: Public alias — the MCP layer RETURNS this value (`profile_column`'s `sample_row_limit`).
@@ -852,6 +855,18 @@ def _read_dataframe(
             columns=columns,
         )
 
+    if file_format == "json":
+        frame = read_json_head(
+            conn_type=connection.type,
+            config=connection.config,
+            path=path,
+            secret=secret,
+            rows=_SAMPLE_ROWS,
+        )
+        # Projected after the parse: a JSON line names its own fields, so there is no
+        # header to project against the way the CSV reader does.
+        return frame[[c for c in columns if c in frame.columns]]
+
     wanted = set(columns)
     return read_csv_projected_sample(
         conn_type=connection.type,
@@ -922,7 +937,7 @@ def profile_file(
             "column_profile_failed", connection_type=connection.type, error_type=type(exc).__name__
         )
         raise ProfileFailedError(
-            "column profile could not read the file", detail={"path": path}
+            _file_failure("column profile could not read the file", exc), detail={"path": path}
         ) from exc
 
     return profile_dataframe(df, columns=columns, top_n=top_n, path=path, file_format=fmt)
@@ -1185,6 +1200,8 @@ def list_file_columns(
         }
         if fmt == "csv":
             return [str(c) for c in read_csv_head(**reader_args, rows=0).columns]
+        if fmt == "json":
+            return [str(name) for name in json_schema(**reader_args).names]
         import pyarrow.parquet as pq
 
         with RangeReader(**reader_args) as reader:
@@ -1194,8 +1211,17 @@ def list_file_columns(
             "column_list_failed", connection_type=connection.type, error_type=type(exc).__name__
         )
         raise ProfileFailedError(
-            "columns could not be read from the file", detail={"path": path}
+            _file_failure("columns could not be read from the file", exc), detail={"path": path}
         ) from exc
+
+
+def _file_failure(generic: str, exc: Exception) -> str:
+    """``generic``, or the reader's own DataQ-authored refusal when it gave one — "nested
+    JSON columns", not "could not read the file", is what tells the author what to fix.
+    """
+    if isinstance(exc, JsonFileError):
+        return f"{generic}: {exc}"
+    return generic
 
 
 def list_columns(

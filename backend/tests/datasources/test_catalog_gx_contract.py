@@ -295,9 +295,10 @@ def test_no_backend_mapping_is_missing_from_the_catalog() -> None:
 def test_every_dqx_type_has_exactly_the_config_its_rule_builder_takes() -> None:
     """ADR 0036 §6: the editor's fields for each dqx:* type ARE the rule builder's keys, so the
     form can never submit a config the backend's closed vocabulary refuses."""
-    from backend.app.datasources.databricks_dqx import DQX_TYPES
+    from backend.app.datasources.databricks_dqx import DQX_MODE_KEY, DQX_TYPES
 
     entries = {e["type"]: e for e in _catalog() if e["type"] in DQX_EXPECTATION_TYPES}
     assert set(entries) == set(DQX_EXPECTATION_TYPES)
     for expectation_type, (_function, keys) in DQX_TYPES.items():
-        assert set(entries[expectation_type]["fields"]) == set(keys), expectation_type
+        # `mode` (snapshot | stream, #2227) is the one optional key every dqx type takes.
+        assert set(entries[expectation_type]["fields"]) == {*keys, DQX_MODE_KEY}, expectation_type

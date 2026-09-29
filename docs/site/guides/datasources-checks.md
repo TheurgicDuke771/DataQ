@@ -49,7 +49,7 @@ reported as a configuration or permission problem instead.
 ### OneLake (Fabric lakehouse files)
 
 Microsoft Fabric OneLake serves the same Blob API, so an **ADLS Gen2** connection reads a
-lakehouse's `Files/` area — CSV and Parquet, with every flat-file check, freshness (including
+lakehouse's `Files/` area — CSV, Parquet and JSON, with every flat-file check, freshness (including
 arrival-time), volume, the profiler, browsing and batch targets. There is no separate
 connection type:
 
@@ -582,7 +582,10 @@ set") rather than filed under a dimension — otherwise "Not covered" would be w
 
 ### Flat files: formats and CSV delimiters
 
-Flat-file connections (ADLS Gen2 / S3) read `.csv` and `.parquet`/`.pq`. **The CSV
+Flat-file connections (ADLS Gen2 / S3) read `.csv`, `.parquet`/`.pq`, and JSON as
+`.jsonl`/`.ndjson`/`.json` (see [JSON files](#json-files) below). The run reads the
+format from the file's **extension**; a target's *File format* choice is used by the
+profiler and column listing. **The CSV
 delimiter is detected per file, not per connection** — a connection is a whole
 bucket/container and the files under it need not agree, so DataQ sniffs each file's
 header. Comma, semicolon, tab, and pipe are recognised; anything it can't decide
@@ -591,6 +594,46 @@ header. Comma, semicolon, tab, and pipe are recognised; anything it can't decide
 If a file uses some other separator, DataQ will parse the whole header as one
 column — the symptom is a **column dropdown offering a single long name** like
 `id;email;amount`. Convert the file to one of the four separators, or to Parquet.
+
+#### JSON files
+
+DataQ reads two JSON shapes, told apart by the file's first character, whatever the
+extension:
+
+- **JSON Lines** (NDJSON) — one object per line. The usual shape for event and log
+  exports, and the one to prefer: it streams, so sampling and counting never hold the
+  file.
+- **A top-level array of objects** — `[{...}, {...}]`, compact or pretty-printed.
+
+Each object is one row and each key a column. What is refused, with a message naming
+the problem rather than a generic read failure:
+
+- **Nested values.** A column holding an object or an array (`"address": {...}`,
+  `"tags": [...]`) has no single scalar type for a check to run against, so the file is
+  refused and the columns named. Flatten upstream — `address_city`, not
+  `address.city`. Counting rows (a volume monitor) still works on such a file; every
+  path that reads columns refuses it.
+- **A column whose type changes** — a number in one row and a string in another.
+  `null` is fine anywhere, and whole numbers mixed with decimals read as decimals.
+- An array whose elements are not all objects, a repeated key in one object, a
+  pretty-printed object in a `.jsonl` file (JSON Lines means one per line), or text
+  that is not UTF-8.
+
+**Types.** Numbers read as `int64` or `double` (an integer column with a `null` stays
+an integer), `true`/`false` as `bool`, and **every string as a string** — including
+ISO timestamps and dates. JSON has no date type, and the reader underneath would
+otherwise guess `timestamp` for `2026-01-01T10:00:00` but not for
+`2026-01-01T10:00:00.5`, so a column's type would change with its data. Freshness
+parses a timestamp string, exactly as it does for CSV. A number too large for 64
+bits reads as a `double` and loses precision — send identifiers that large as strings.
+
+**Sampling a JSON file** (see below) types it from its **first 1 MiB**. The full read
+types every row, so the two can only disagree when the early rows are not
+representative — a field that first appears later, a column that is `null` early and
+holds values later, or whole numbers early and decimals later. A sampled run refuses
+such a file rather than silently retyping it mid-stream; turn sampling off, or make the
+first rows representative. Column listing, the profiler and schema drift read the same
+first block, so a field that first appears deep in a file is not listed there.
 
 ### Very large targets: sampling and the scan cap
 
@@ -874,6 +917,37 @@ with a classified reason. Your GX checks are unaffected.
 expression, so DataQ builds every rule itself: columns must be plain identifiers, list values
 are sent as quoted literals, and limits must be numbers or ISO dates.
 
+**Stream mode.** Each DQX check has a **Read** setting. **Snapshot** (the default) evaluates
+the whole table every run. **Stream** evaluates only the rows appended since the check's last
+successful run, which is what you want on a Lakeflow streaming table or any Delta table that
+grows by appends. It runs in the same one job per run, on your existing schedule. The job reads
+the table as a Delta stream (`readStream` with an `availableNow` trigger), counts failing rows
+per rule, and stops once it has caught up.
+
+- **Where the stream resumes.** DataQ records the Delta version the stream reached with each
+  result, and the next run starts from there. A run whose result was never saved, for example
+  because it was cancelled, is re-read next time instead of skipped. The first run of a stream
+  check reads the whole table.
+- **What the result says.** The failing-row count and the row count cover only the new rows.
+  The result also records the version range it read. A run with no new rows is recorded as
+  `skip`, not `pass`.
+- **Setup.** Set the connection's **DQX checkpoint volume** (`catalog.schema.volume`). Spark
+  needs somewhere to keep a stream checkpoint while the job runs, and serverless compute
+  refuses both temporary and DBFS locations. DataQ uses a fresh folder in that volume for each
+  run and deletes it afterwards. The token needs `READ VOLUME` and `WRITE VOLUME` on it. A
+  stream check on a connection without a volume errors on its own; your other checks still
+  run.
+- **Limits.**
+  - Only appended rows are evaluated. A commit that rewrites existing rows (`UPDATE`,
+    `DELETE`, `MERGE`, an overwrite) is skipped, including any rows it inserted. The result
+    counts the skipped commits in `change_commits_skipped`. Use snapshot mode on a table that
+    is not append-only.
+  - If the table was replaced, or its history no longer reaches the recorded version, the
+    stream restarts from the whole table and the result says why (`restarted`).
+  - Run a stream check more often than the table's `VACUUM` retention (7 days by default).
+    Otherwise the files it needs to resume from can be gone and the job fails. To restart a
+    stream check from the whole table, run it once in snapshot mode.
+
 ### Freshness monitor (all datasources — ADR 0012/0030)
 
 *How stale is the target?* Point it at the load/updated **timestamp column**; the check
@@ -936,7 +1010,7 @@ accuracy, validity or consistency depending on why you wrote it. Under zero-samp
 then each run diffs the live snapshot against it and flags any add / drop /
 type-change. Introspection is per-datasource, never a `CheckRunner`/GX pass or a
 data scan: `information_schema` for Snowflake/Unity Catalog/PostgreSQL/MySQL/Trino, the Parquet footer (or
-a bounded CSV header sample) for ADLS Gen2/S3 flat files, and the loaded table's own
+a bounded CSV header sample, or a JSON file's first 1 MiB) for ADLS Gen2/S3 flat files, and the loaded table's own
 metadata for Iceberg. Re-baseline explicitly once you've reviewed a drift and want
 it as the new normal — it is never re-baselined for you.
 
@@ -1038,7 +1112,7 @@ the type your warehouse/catalog shows you:
   - String columns on **Unity Catalog and CSV** reads are plain pandas `object` dtype
     (these reads are *not* Arrow-backed). Both `type_: object` (exact dtype match) and
     `type_: str` (row-wise value-type match) pass — pick either.
-  - **Parquet and Iceberg** reads *are* Arrow-backed and can report Arrow-flavored
+  - **Parquet, JSON and Iceberg** reads *are* Arrow-backed and can report Arrow-flavored
     dtype names — calibrate from a dry-run rather than assuming the CSV/UC names.
   - **`DATE` columns** on Unity Catalog, Parquet and Iceberg stay dates: use
     `type_: date`, and write date bounds and value sets as dates (`2026-01-02`).
@@ -1057,9 +1131,10 @@ the type your warehouse/catalog shows you:
 | Unity Catalog | pandas DataFrame (not Arrow-backed) | `int64` for non-nullable `BIGINT` (**`float64` if the column contains NULLs**); `object` or `str` for `STRING`; `date` for `DATE` |
 | ADLS Gen2 / S3 (CSV) | pandas DataFrame (not Arrow-backed) | `int64`/`float64`/`bool` for numerics (**NULLs upcast integers to `float64`**); `object` or `str` for strings |
 | ADLS Gen2 / S3 (Parquet) / Iceberg | pandas DataFrame (Arrow-backed) | Arrow-flavored dtype names — confirm via a dry-run's `observed_value` |
+| ADLS Gen2 / S3 (JSON) | pandas DataFrame (Arrow-backed) | Python value type names — `int`, `float`, `str`, `bool` (an integer column with NULLs stays `int`); `int64` / `object` do **not** pass |
 
 **Calibration tip:** don't guess — **dry-run first**, but know where the trail runs
-out. On **Snowflake, PostgreSQL, Trino and the Arrow-backed sources** (Parquet/Iceberg), a failing
+out. On **Snowflake, PostgreSQL, Trino and the Arrow-backed sources** (Parquet/JSON/Iceberg), a failing
 result's `observed_value` carries the *exact* string GX expected — copy it into
 `type_` and re-run to confirm green. On **Unity Catalog / CSV**, a wrong value-type
 guess (e.g. `int64` against a string column) falls to GX's row-wise compare, which

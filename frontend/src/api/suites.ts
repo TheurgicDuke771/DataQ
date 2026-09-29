@@ -40,6 +40,9 @@ export function canRunSuite(suite: Suite): boolean {
  * The datasource-shaped identity carried in `Suite.target` (#215): SQL targets fill
  * `table`/`schema`/`catalog`, Iceberg fills `namespace`/`table`, flat-file targets fill
  */
+/** Flat-file formats a run target can name (#1677 added `json`). */
+export type FileFormat = 'csv' | 'parquet' | 'json';
+
 export interface RunTarget {
   table?: string;
   schema?: string;
@@ -47,7 +50,7 @@ export interface RunTarget {
   /** Iceberg namespace (folded to `namespace.table` by the backend resolver). */
   namespace?: string;
   path?: string;
-  file_format?: 'csv' | 'parquet';
+  file_format?: FileFormat;
   /**
    * Flat-file *batch* selector (a literal `path` and `pattern` are mutually exclusive): `pattern`
    * is a regex whose first capture group is the batch key.
@@ -404,7 +407,7 @@ export interface ColumnProfileRequest {
   /** Iceberg: the table's optional namespace (addressed as `namespace.table`). */
   namespace?: string | null;
   path?: string | null;
-  file_format?: 'csv' | 'parquet' | null;
+  file_format?: FileFormat | null;
 }
 
 /** Mirrors the backend `TopValue` — a value and how often it occurs. */

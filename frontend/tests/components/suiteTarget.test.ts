@@ -96,6 +96,9 @@ describe('assembleTarget', () => {
     expect(
       assembleTarget('flatfile', { target_path: 'c/d.parquet', target_format: 'parquet' }).target,
     ).toEqual({ path: 'c/d.parquet', file_format: 'parquet' });
+    expect(
+      assembleTarget('flatfile', { target_path: 'c/e.jsonl', target_format: 'json' }).target,
+    ).toEqual({ path: 'c/e.jsonl', file_format: 'json' });
   });
 
   it('flags a flat-file section started (format only) without a path', () => {
@@ -311,15 +314,17 @@ describe('summarizeTarget (#1180)', () => {
 });
 
 describe('asFileFormat', () => {
-  it('passes the two supported formats through unchanged', () => {
+  it('passes the three supported formats through unchanged', () => {
     expect(asFileFormat('csv')).toBe('csv');
     expect(asFileFormat('parquet')).toBe('parquet');
+    expect(asFileFormat('json')).toBe('json');
   });
 
   it('narrows anything unsupported or absent to undefined', () => {
     // The guard exists so a stray stored value can't prefill the format Select
     // with a non-existent option — case-sensitive, exact match only.
-    expect(asFileFormat('json')).toBeUndefined();
+    expect(asFileFormat('jsonl')).toBeUndefined();
+    expect(asFileFormat('xlsx')).toBeUndefined();
     expect(asFileFormat('CSV')).toBeUndefined();
     expect(asFileFormat('')).toBeUndefined();
     expect(asFileFormat(undefined)).toBeUndefined();

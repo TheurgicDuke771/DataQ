@@ -55,11 +55,17 @@ class MemoryEstimate:
 
 
 def _settings_expansion(path: str) -> float:
+    from backend.app.datasources.flatfile import format_from_path
+
     settings = get_settings()
-    lowered = path.lower()
-    if lowered.endswith(".parquet"):
+    # The reader's own format decision, so a path the runner reads as Parquet (`.pq`) or
+    # JSON (`.jsonl`) is priced as what it will actually become in memory.
+    fmt = format_from_path(path)
+    if fmt == "parquet":
         return settings.run_admission_expansion_parquet
-    if lowered.endswith((".csv", ".tsv", ".txt")):
+    if fmt == "json":
+        return settings.run_admission_expansion_json
+    if fmt == "csv" or path.lower().endswith((".tsv", ".txt")):
         return settings.run_admission_expansion_csv
     return settings.run_admission_expansion_default
 

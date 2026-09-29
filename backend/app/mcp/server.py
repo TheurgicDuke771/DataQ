@@ -671,7 +671,15 @@ def get_suite_results(suite_id: str) -> dict[str, Any]:
     ``dmf:custom`` check it is whatever the customer's own function returns, shown
     unmasked, and DataQ cannot see what that function measures; a ``dqx`` result's
     ``metric_value`` is its failing-row count, and it never carries sample rows,
-    so a null sample there is not "no failing rows"), its pass/warn/fail/critical (or
+    so a null sample there is not "no failing rows"; a ``dqx`` result whose
+    ``observed_value`` has a ``stream`` block counted only the rows appended since
+    the check's previous run — ``rows`` is that increment, not the table size, and
+    a ``skip`` there means no new rows, not a healthy table; a null
+    ``stream.from_version`` (a first stream run) or a non-null ``stream.restarted``
+    means the run re-read the whole table, so it is a fresh baseline, not an
+    increment; and ``stream.change_commits_skipped`` counts update/delete/merge/
+    overwrite commits whose rows were never evaluated, so a clean stream result
+    means nothing appended failed, not that nothing changed), its pass/warn/fail/critical (or
     skip/error) status, the observed vs expected value (**redacted on the same
     column-aware policy as the samples** for a GX result — a masked observed value
     is not the measured one; a ``dmf`` / ``dqx`` metric is never masked), how much
@@ -1279,7 +1287,11 @@ def get_run_results(run_id: str) -> dict[str, Any]:
     expectation output, and the two have different semantics — for a
     ``dmf:custom`` check it is whatever the customer's own function returns,
     shown unmasked; a ``dqx`` result's
-    metric value is its failing-row count, with no sample rows), its
+    metric value is its failing-row count, with no sample rows; one with a
+    ``stream`` block in its observed value covers only the rows appended since the
+    check's previous run, unless ``stream.from_version`` is null or
+    ``stream.restarted`` is set, which mean a whole-table read; see
+    ``get_suite_results`` for ``change_commits_skipped``), its
     pass/warn/fail/critical (or skip/error) status, the observed vs expected
     value, how much of the dataset the check saw, and any sample failing rows
     (PII-redacted; see ``get_suite_results`` for what a null sample's
@@ -2149,7 +2161,12 @@ def create_check(
     offer — ``dmf`` on Snowflake (its own metric types, e.g. ``dmf:null_count``)
     and ``dqx`` on Unity Catalog (Databricks DQX row rules, e.g.
     ``dqx:is_not_null``, run as a serverless job in the user's own workspace,
-    about a minute per run) — rather than a GX expectation. Passing a
+    about a minute per run; its config also takes an optional ``mode`` —
+    ``snapshot``, the default, reads the whole table, and ``stream`` counts only
+    rows appended since the check's last run and needs the connection's DQX
+    checkpoint volume; its first run reads the whole table, and it never
+    evaluates rows changed by update/delete/merge/overwrite, so a table whose bad
+    data arrives that way wants ``snapshot``) — rather than a GX expectation. Passing a
     ``gx``-shaped ``expectation_type``/``config`` with ``engine="dmf"``, or
     vice versa, is refused with a 422 naming the mismatch — it is not
     auto-detected from the type string. A connection that doesn't offer the
@@ -3205,9 +3222,12 @@ def update_suite(
     shape depends on the connection's type: ``{"table": ..., "schema": ...}`` for
     a SQL warehouse, ``{"catalog": ..., "schema": ..., "table": ...}`` for Unity
     Catalog, ``{"namespace": ..., "table": ...}`` for Iceberg, or
-    ``{"path": ..., "file_format": "csv"|"parquet"}`` for a flat file. A flat-file
-    target can instead select a rolling **batch** with ``pattern`` +
-    ``strategy``. An invalid shape for the connection type is rejected.
+    ``{"path": ..., "file_format": "csv"|"parquet"|"json"}`` for a flat file. A
+    flat-file target can instead select a rolling **batch** with ``pattern`` +
+    ``strategy``. An invalid shape for the connection type is rejected. ``json``
+    means JSON Lines (one object per line) or a top-level array of **flat**
+    objects; a file with nested objects or arrays in a column is refused at run
+    time, so do not promise that one will run.
 
     Only what you pass changes; omitted arguments are left alone, and ``target``
     is **replaced wholesale** rather than merged — send the complete target, not
@@ -4160,7 +4180,9 @@ def list_columns(
 
     Returns names only — no types, no data, no statistics. It cannot tell you
     whether a column is nullable or what it contains; use ``profile_column`` for
-    that.
+    that. For a **JSON** file the names come from its first 1 MiB of objects: a
+    field that first appears later in the file is not listed, so an absent name
+    is not proof the file never holds it.
 
     Requires **edit** access to the suite, not view: this opens a live connection
     to the datasource using the stored credential, the same gate the profiler and
@@ -4231,7 +4253,7 @@ def _parse_suite_target(target: dict[str, Any] | None) -> dict[str, Any] | None:
 
     Worth routing through rather than trusting the service: `suite_service`
     validates the target's *field combination* per connection type, but
-    `SuiteTarget` is what validates `file_format` against `csv|parquet`, caps
+    `SuiteTarget` is what validates `file_format` against `csv|parquet|json`, caps
     every string, and rejects unknown keys.
     """
     if target is None:
@@ -4322,7 +4344,8 @@ def profile_column(
     explicit ``table``/``path`` is given, so it only needs passing alongside
     your own ``table``. **Snowflake, Unity Catalog, PostgreSQL, MySQL, Trino, SQL
     Server, Athena and Redshift are profiled in full; ADLS, S3 and Iceberg targets are profiled
-    over a sample of at most 100,000 rows.** On Athena every statistic is a billed
+    over a sample of at most 100,000 rows** (for an ADLS or S3 file, its first 100,000
+    rows — not a random draw). On Athena every statistic is a billed
     query. When
     ``sampled`` is true, ``row_count`` is the number of rows **sampled** — not
     the size of the file or table — and every statistic describes only that

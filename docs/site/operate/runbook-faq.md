@@ -51,11 +51,14 @@ Manual checklist (the mutating tail):
 
 - **GX by default**, with platform-native engines connection-anchored per ADR 0036 — a
   Snowflake connection additionally offers the **DMF** engine (seven system metrics, your own
-  custom DMFs, and freshness), and a Unity Catalog connection the **DQX** engine; Dataplex is
-  trigger-gated and not yet built. Batch-oriented (not streaming).
+  custom DMFs, and freshness), and a Unity Catalog connection offers **Databricks DQX** (eight
+  row rules, run as a serverless job in your own workspace; a stream mode evaluates only newly
+  appended rows). Dataplex is trigger-gated and not yet built. Runs are scheduled or
+  triggered, not continuous.
 - **Single tenant**, suite-level access sharing **plus a stored workspace role** — Admin / Member / Viewer (ADR 0033); connection management is Admin-only. `WORKSPACE_ADMIN_EMAILS` is a bootstrap seed and lockout break-glass, not the day-to-day mechanism.
 - Interactive **datasource browsing** (container browser, 3-level UC catalog picker) is
-  deferred — you specify targets explicitly. JSON flat files deferred (CSV/Parquet in v1).
+  deferred — you specify targets explicitly. JSON flat files (JSON Lines or an array of
+  flat objects) are read beside CSV/Parquet; nested JSON is refused.
 - Auth is one of **OIDC SSO (Azure AD or Cognito) or email OTP (ADR 0032, IdP-less)**,
   plus **PATs** (`dq_live_…`, ADR 0026) for headless/API/MCP clients — no
   username/password login, and no separate service-account principal yet (ADR 0026

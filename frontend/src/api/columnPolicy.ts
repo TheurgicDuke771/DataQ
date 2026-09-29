@@ -1,4 +1,5 @@
 import { api } from './client';
+import type { FileFormat } from './suites';
 
 /**
  * Per-suite failing-sample redaction policy (#415): the shown `identifier_column` (a non-PII row
@@ -18,7 +19,7 @@ export interface ColumnPolicySuggestTarget {
   /** Iceberg namespace (folded to `namespace.table` by the backend resolver). */
   namespace?: string;
   path?: string;
-  file_format?: 'csv' | 'parquet';
+  file_format?: FileFormat;
 }
 
 export async function getColumnPolicy(suiteId: string): Promise<ColumnPolicy> {

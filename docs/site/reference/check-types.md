@@ -130,14 +130,14 @@ Databricks Labs DQX row rules, evaluated by a serverless job in your own workspa
 
 | Check | Type | What it checks | Dimension | Parameters | Thresholds | Runs on |
 |---|---|---|---|---|---|---|
-| **Not null (DQX)** | `dqx:is_not_null` | Rows where the column is NULL. | Completeness | `column` | warn / fail / critical | All datasources |
-| **Not empty (DQX)** | `dqx:is_not_empty` | Rows where the column is an empty string. | Completeness | `column` | warn / fail / critical | All datasources |
-| **Not null or empty (DQX)** | `dqx:is_not_null_and_not_empty` | Rows where the column is NULL or an empty string. | Completeness | `column` | warn / fail / critical | All datasources |
-| **In list (DQX)** | `dqx:is_in_list` | Rows whose value is not one of the allowed values. | Validity | `column`, `allowed` | warn / fail / critical | All datasources |
-| **In range (DQX)** | `dqx:is_in_range` | Rows whose value falls outside the inclusive range. | Validity | `column`, `min_limit`, `max_limit` | warn / fail / critical | All datasources |
-| **Matches regex (DQX)** | `dqx:regex_match` | Rows whose value does not match the regular expression. | Validity | `column`, `regex` | warn / fail / critical | All datasources |
-| **Not less than (DQX)** | `dqx:is_not_less_than` | Rows whose value is below the limit. | Validity | `column`, `limit` | warn / fail / critical | All datasources |
-| **Not greater than (DQX)** | `dqx:is_not_greater_than` | Rows whose value is above the limit. | Validity | `column`, `limit` | warn / fail / critical | All datasources |
+| **Not null (DQX)** | `dqx:is_not_null` | Rows where the column is NULL. | Completeness | `column`, `mode` *(optional)* | warn / fail / critical | All datasources |
+| **Not empty (DQX)** | `dqx:is_not_empty` | Rows where the column is an empty string. | Completeness | `column`, `mode` *(optional)* | warn / fail / critical | All datasources |
+| **Not null or empty (DQX)** | `dqx:is_not_null_and_not_empty` | Rows where the column is NULL or an empty string. | Completeness | `column`, `mode` *(optional)* | warn / fail / critical | All datasources |
+| **In list (DQX)** | `dqx:is_in_list` | Rows whose value is not one of the allowed values. | Validity | `column`, `allowed`, `mode` *(optional)* | warn / fail / critical | All datasources |
+| **In range (DQX)** | `dqx:is_in_range` | Rows whose value falls outside the inclusive range. | Validity | `column`, `min_limit`, `max_limit`, `mode` *(optional)* | warn / fail / critical | All datasources |
+| **Matches regex (DQX)** | `dqx:regex_match` | Rows whose value does not match the regular expression. | Validity | `column`, `regex`, `mode` *(optional)* | warn / fail / critical | All datasources |
+| **Not less than (DQX)** | `dqx:is_not_less_than` | Rows whose value is below the limit. | Validity | `column`, `limit`, `mode` *(optional)* | warn / fail / critical | All datasources |
+| **Not greater than (DQX)** | `dqx:is_not_greater_than` | Rows whose value is above the limit. | Validity | `column`, `limit`, `mode` *(optional)* | warn / fail / critical | All datasources |
 
 ## Authorable outside the editor
 

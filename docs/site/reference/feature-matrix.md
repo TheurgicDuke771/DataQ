@@ -47,9 +47,10 @@ Trino, flat files on Azurite (CSV and Parquet) and Iceberg on a local SQL catalo
 diffs a live column-name/type snapshot against a stored baseline and flags
 add/drop/type-change. Unlike custom SQL it never goes through a `CheckRunner`/GX at
 all, so it isn't gated to SQL datasources: introspection is per-datasource —
-`information_schema` for Snowflake/Unity Catalog, the Parquet footer or a bounded
-CSV header sample for ADLS/S3 flat files, and the loaded table's own metadata for
-Iceberg (no data scan on any of them except the CSV sample). Re-baseline explicitly
+`information_schema` for Snowflake/Unity Catalog, the Parquet footer, a bounded
+CSV header sample or a JSON file's first 1 MiB for ADLS/S3 flat files, and the loaded
+table's own metadata for Iceberg (no data scan on any of them except the CSV and JSON
+samples). Re-baseline explicitly
 once a drift is expected and reviewed.
 
 ᶜ **Unity Catalog custom SQL is supported since v1.1.** It runs against a GX
@@ -74,15 +75,19 @@ the editor to suggest. Engine is selected per
 check, on a Snowflake connection only; `kind` stays `expectation` either way. Testing or
 re-authenticating a Snowflake connection also probes DMF availability (Enterprise Edition +
 grant) and stores the result on the connection — surfaced on the connection list and, as a caveat
-rather than a hard gate, in the check editor's engine picker. The probe reads zero rows of one
-table the connection's role can already see; if the role can see none, or the probe fails for a
-reason unrelated to DMFs, the connection shows "couldn't determine" rather than "unavailable".
+rather than a hard gate, in the check editor's engine picker. The probe `EXPLAIN`s a system
+DMF call over one table the connection's role can already see: Snowflake compiles it and checks
+the function and the role's privileges, but executes nothing and reads no rows. If the role can
+see no table, or the probe fails for a reason unrelated to DMFs, the connection shows "couldn't
+determine" rather than "unavailable".
 
 ʲ **Databricks DQX** (ADR [0036](../adr/0036-connection-anchored-check-engines.md)) is the
 second platform-native engine: eight row rules evaluated by Databricks Labs DQX in a
 serverless job in the connection's own workspace, one job per run. DataQ never ships DQX,
 whose licence permits use only with Databricks services. The job returns failing-row counts
-only. See [Databricks DQX](../guides/datasources-checks.md#databricks-dqx-adr-0036).
+only. A check in **stream** mode evaluates only the rows appended since its last run, so it
+works on Lakeflow streaming tables and append-only Delta tables. See
+[Databricks DQX](../guides/datasources-checks.md#databricks-dqx-adr-0036).
 
 ᵖ **PostgreSQL** — any server, self-hosted or managed; everything runs by pushdown
 on read-only sessions. Every row was verified by an **executed** run against a real
@@ -165,7 +170,8 @@ Iceberg (computed natively via `pyiceberg` scans, not SQL; ADR 0012/0030), and A
 S3 flat files (over the resolved batch). On a flat file, a freshness monitor with **no
 timestamp column** measures the object's arrival time instead — catching a producer that
 stopped sending files, which a timestamp inside the data cannot see. Flat-file suites target a file or a batch pattern (e.g.
-`orders_*.csv`) in CSV or Parquet; Iceberg suites target a `namespace.table`. Dry-run
+`orders_*.csv`) in CSV, Parquet or JSON (JSON Lines / an array of flat objects; nested JSON is
+refused); Iceberg suites target a `namespace.table`. Dry-run
 preview works on every datasource with a runner — Snowflake, Unity Catalog, flat files,
 and Iceberg.
 

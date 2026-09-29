@@ -18,6 +18,7 @@ from backend.app.core.errors import SafeMonitorError
 from backend.app.core.logging import get_logger
 from backend.app.core.s3_endpoint import addressing_config_kwargs
 from backend.app.core.secrets import SecretStore
+from backend.app.datasources import jsonfile
 from backend.app.datasources.adls import AdlsConfig, blob_service_client
 from backend.app.datasources.base import (
     SAMPLE_HEAD,
@@ -90,6 +91,8 @@ def format_from_path(path: str) -> str | None:
         return "csv"
     if lower.endswith((".parquet", ".pq")):
         return "parquet"
+    if lower.endswith((".jsonl", ".ndjson", ".json")):
+        return "json"
     return None
 
 
@@ -480,6 +483,84 @@ def csv_row_count(
             return sum(batch.num_rows for batch in batches)
 
 
+def _stream_reader(reader: RangeReader) -> jsonfile.RawOpener:
+    """An opener that rewinds ONE `RangeReader` — re-reading the first block after the
+    schema peek hits the reader's window instead of issuing another range request.
+    """
+
+    def rewind() -> Any:
+        reader.seek(0)
+        return reader
+
+    return rewind
+
+
+def json_row_count(
+    *,
+    conn_type: str,
+    config: dict[str, Any],
+    path: str,
+    secret: str,
+    session: StoreSession | None = None,
+) -> int:
+    """Objects in a JSON file, streamed — never a full DataFrame (#1677)."""
+    reader = RangeReader(
+        conn_type=conn_type,
+        config=config,
+        path=path,
+        secret=secret,
+        chunk=STREAM_CHUNK,
+        session=session,
+    )
+    with closing(reader):
+        return jsonfile.count_rows(_stream_reader(reader))
+
+
+def read_json_head(
+    *,
+    conn_type: str,
+    config: dict[str, Any],
+    path: str,
+    secret: str,
+    rows: int,
+    session: StoreSession | None = None,
+) -> Any:
+    """The first ``rows`` objects of a JSON file as a frame, from a streamed read (#1677)."""
+    batches, schema, arrow_backed, close = _open_batch_stream(
+        _reader_args(conn_type=conn_type, config=config, path=path, secret=secret, session=session),
+        "json",
+    )
+    try:
+        taken = take_head(batches, limit=rows)
+    finally:
+        close()
+    return batches_to_frame(taken, schema=schema, arrow_backed=arrow_backed)
+
+
+def json_schema(
+    *,
+    conn_type: str,
+    config: dict[str, Any],
+    path: str,
+    secret: str,
+    session: StoreSession | None = None,
+) -> Any:
+    """A JSON file's columns and types as a streamed read types them — from its first
+    block, strings kept as text, nested columns refused (#1677). Reads about one parse
+    block, not a streaming window: the schema is all it wants.
+    """
+    reader = RangeReader(
+        conn_type=conn_type,
+        config=config,
+        path=path,
+        secret=secret,
+        chunk=jsonfile.BLOCK_BYTES,
+        session=session,
+    )
+    with closing(reader):
+        return jsonfile.stream_schema(_stream_reader(reader))
+
+
 def _extend_window(reader_args: dict[str, Any], buffered: bytearray, *, span: int) -> bool:
     """Grow ``buffered`` to ``span`` bytes, fetching only the delta (#1329), and
     report whether the store returned less than asked — i.e. EOF.
@@ -627,11 +708,11 @@ def row_count(
     secret: str,
     session: StoreSession | None = None,
 ) -> int:
-    """Rows in a flat file by the cheapest route: Parquet footer or CSV stream (#942)."""
+    """Rows in a flat file by the cheapest route: Parquet footer, CSV or JSON stream (#942)."""
     fmt = format_from_path(path)
     if fmt is None:
         raise ValueError(f"unsupported flat-file format for path {path!r}")
-    counter = csv_row_count if fmt == "csv" else parquet_row_count
+    counter = {"csv": csv_row_count, "json": json_row_count}.get(fmt, parquet_row_count)
     return counter(conn_type=conn_type, config=config, path=path, secret=secret, session=session)
 
 
@@ -647,7 +728,19 @@ def read_dataframe(*, conn_type: str, config: dict[str, Any], path: str, secret:
     raw = io.BytesIO(download_bytes(conn_type=conn_type, config=config, path=path, secret=secret))
     if fmt == "csv":
         return read_csv_bytes(raw)
+    if fmt == "json":
+        return jsonfile.to_frame(jsonfile.read_table(_rewinder(raw)))
     return pd.read_parquet(raw, dtype_backend="pyarrow")
+
+
+def _rewinder(raw: io.BytesIO) -> jsonfile.RawOpener:
+    """An opener over one in-memory download — every open rewinds it, none copies it."""
+
+    def rewind() -> Any:
+        raw.seek(0)
+        return raw
+
+    return rewind
 
 
 #: Rows per Arrow batch while streaming a sampled read — keeps peak memory small.
@@ -672,6 +765,14 @@ def _open_batch_stream(
     if fmt == "csv":
         stream = open_csv_stream(reader)
         return stream, stream.schema, False, _closer(stream.close)
+
+    if fmt == "json":
+        try:
+            batches, schema, close = jsonfile.open_batches(_stream_reader(reader))
+        except BaseException:
+            reader.close()
+            raise
+        return batches, schema, True, _closer(close)
 
     import pyarrow.parquet as pq
 
@@ -914,10 +1015,10 @@ def _sampled_frame(
         )
 
     want_head = sample.strategy == SAMPLE_HEAD
-    # A CSV has no cheap count, so counting it first meant walking the object
-    # twice for one sample; the reservoir draws and counts in the same pass
+    # A CSV or JSON file has no cheap count, so counting it first meant walking the
+    # object twice for one sample; the reservoir draws and counts in the same pass
     # (#1329). Parquet keeps the count — its footer read is not a pass.
-    single_pass = not want_head and fmt == "csv"
+    single_pass = not want_head and fmt in ("csv", "json")
     total: int | None = None
     indices: list[int] | None = None
     if not want_head and not single_pass:

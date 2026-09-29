@@ -823,3 +823,24 @@ This teardown was part of the approved re-provisioning plan. It ran after all th
 - **Verified:**
   - `az sql server list -g dataq-rg` is empty;
   - no `mssql-test*` secret remains, active or soft-deleted.
+
+## 2026-09-29 — Athena and Redshift live-test resources re-created for #1602 (us-east-2)
+
+User-approved (#1602 "option a": recreate briefly, verify the aggregate monitor's Athena and Redshift lanes, tear down). Run as `dataq-deploy` in account `251783195294`, same shape as the 2026-09-28 #2131/#1682 entries, tagged `purpose=dataq-1602-it`.
+
+- **2026-09-29T09:33:26Z — Athena:** IAM user `dataq-athena-it-reader` with inline policy `athena-read` (Athena query + Glue read, S3 read on `dataq-landing-251783195294/athena-data/*`, write on `…/athena-results/reader/*`). One access key minted straight into Secrets Manager as `dataq/it/athena-reader`, never printed or written to disk. Glue database `dataq_athena_it` (empty).
+- **2026-09-29T09:33:48Z — Redshift Serverless:** namespace `dataq-it-rs` (database `dev`, admin `dqadmin`, password managed by Redshift in `redshift!dataq-it-rs-dqadmin-…`) and workgroup `dataq-it-rs` (base 8 RPUs, publicly accessible). Inbound TCP 5439 from the maintainer's IP (/32) on the default VPC security group `sg-0c047e1aaf5c17416`.
+- **Paused, then resumed:** the next step (waiting for the workgroup) was blocked by the auto-mode classifier as security-weakening; the maintainer approved continuing. **2026-09-29T10:25:58Z:** database user `dq_reader` created, password generated straight into Secrets Manager as `dataq/it/redshift-reader`.
+- **Live lanes (PR #2239 branch):** Athena 21 passed, Redshift 20 passed, including the aggregate-monitor tests.
+- **2026-09-29T10:37:51Z–10:40:54Z — torn down, verified:** workgroup then namespace `dataq-it-rs` deleted (removing the managed admin secret and all database objects); `dataq/it/redshift-reader` and `dataq/it/athena-reader` force-deleted; the IAM user's access key, inline policy `athena-read`, then the user deleted; Glue database `dataq_athena_it` deleted; `athena-results/` and `athena-data/` emptied (0 objects); the 5439 rule on `sg-0c047e1aaf5c17416` revoked (0 rules on 5439). **Expected state: none of these resources exist.** Teardown order used, for reference: delete workgroup then namespace `dataq-it-rs`; force-delete `dataq/it/athena-reader` (and `dataq/it/redshift-reader` if created); delete the IAM user's access key, inline policy, then the user; delete Glue database `dataq_athena_it`; empty `athena-results/` and `athena-data/`; revoke the 5439 rule on `sg-0c047e1aaf5c17416`.
+
+## 2026-09-29 — Azure SQL free-offer test DB re-created for #1602 (aggregate monitor, SQL Server lane)
+
+User-approved (#1602 SQL Server leg, "option a"). Same shape as the 2026-09-28 #2137 server, tagged `purpose=dataq-1602-it`.
+
+- **11:38:15Z — logical server `dataq-mssql-6600f6`** (`dataq-rg`, westus2), TLS 1.2 minimum. SQL admin `dataqadmin`; its password was generated straight into KV `mssql-test-sqladmin` and never printed.
+- **Database `dataq_test`:** free offer (`useFreeLimit=true`, `AutoPause` on exhaustion), serverless GP_S_Gen5, local backup redundancy. It cannot bill.
+- **11:40Z — firewall rule `claude-maint-20260929`:** the maintainer's IP only.
+- **Inside `dataq_test`:** contained SQL user `dataq_reader` (`db_datareader`), password generated straight into KV `mssql-test-reader`; seed `dbo.Orders` (the lane's 4 rows) plus `dbo.Amounts` / `dbo.AmountsEmpty` for the aggregate tests. Seeded through DataQ's own TDS hostname validator (`mssql_tds.install()`), since pytds's built-in check fails on the current pyOpenSSL.
+- **Live lane (PR #2239 branch):** `test_mssql_live.py` 16 passed, 7 skipped (service-principal / Fabric / ODBC variants, no resources), including the two new aggregate tests.
+- **14:59:53Z–15:00:46Z — torn down, verified:** server `dataq-mssql-6600f6` deleted (removing `dataq_test` and firewall rule `claude-maint-20260929`); KV `mssql-test-sqladmin` and `mssql-test-reader` deleted and purged. `az sql server list -g dataq-rg` is empty; no `mssql-test*` secret, active or soft-deleted. **Expected state: none of these resources exist.**

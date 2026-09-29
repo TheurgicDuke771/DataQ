@@ -578,6 +578,10 @@ def test_assemble_sanitizes_binary_min_max_and_top_values() -> None:
         ("x.pq", None, "parquet"),
         ("data/blob", "csv", "csv"),
         ("data/orders.csv", "parquet", "parquet"),  # explicit overrides extension
+        ("x.jsonl", None, "json"),
+        ("x.ndjson", None, "json"),
+        ("x.json", None, "json"),
+        ("data/blob", "json", "json"),
     ],
 )
 def test_infer_file_format(path: str, explicit: str | None, expected: str) -> None:
@@ -766,6 +770,68 @@ def test_read_dataframe_csv_does_not_download_the_whole_object(
     assert seam.bytes_read < len(content) * 0.7, "bounded read must not approach the full object"
 
 
+def test_read_dataframe_json_projects_from_a_bounded_head_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#1677: the profiler's JSON read is the first `_SAMPLE_ROWS` objects off a stream —
+    never the whole-object download — projected to the requested columns.
+    """
+    from backend.app.services import profile_service as svc
+
+    body = "".join(
+        json.dumps({"a": i, "b": f"x{i}", "c": "2026-01-01T00:00:00Z"}) + "\n"
+        for i in range(svc._SAMPLE_ROWS + 50_000)
+    )
+    content = body.encode()
+    seam = _patch_object(monkeypatch, content)
+    df = svc._read_dataframe(
+        _flatfile_conn(),
+        path="x.jsonl",
+        file_format="json",
+        columns=["c", "a", "missing"],
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
+    )
+    assert list(df.columns) == ["c", "a"]
+    assert len(df) == svc._SAMPLE_ROWS
+    assert str(df["c"].dtype) == "string[pyarrow]"  # text, not pyarrow's timestamp guess
+    assert not seam.download_calls, "must stream, never fetch the whole object"
+
+
+def test_profile_file_json_reports_the_nested_reason(monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.app.services.profile_service import ProfileFailedError, profile_file
+
+    _patch_object(monkeypatch, b'[{"id": 1, "meta": {"k": "v"}}]')
+    with pytest.raises(ProfileFailedError) as info:
+        profile_file(
+            _flatfile_conn(),
+            path="x.json",
+            file_format=None,
+            columns=["id"],
+            top_n=5,
+            secret_store=FakeSecretStore(default="secret", raise_on_write=True),
+        )
+    assert "'meta' hold nested" in info.value.message
+
+
+def test_profile_file_json_profiles_a_real_array(monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.app.services.profile_service import profile_file
+
+    rows = [{"id": i, "city": "x" if i % 2 else None} for i in range(10)]
+    _patch_object(monkeypatch, json.dumps(rows, indent=2).encode())
+    result = profile_file(
+        _flatfile_conn(),
+        path="x.json",
+        file_format=None,
+        columns=["id", "city"],
+        top_n=5,
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
+    )
+    by_name = {c.column: c for c in result.columns}
+    assert result.row_count == 10 and result.file_format == "json"
+    assert by_name["id"].min_value == 0 and by_name["id"].max_value == 9
+    assert by_name["city"].null_count == 5
+
+
 def test_read_dataframe_parquet_projects_only_requested_columns(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -933,6 +999,22 @@ def test_list_file_columns_csv_sniffs_a_semicolon_delimiter(
         secret_store=FakeSecretStore(default="secret", raise_on_write=True),
     )
     assert cols == ["a", "b", "c"]
+
+
+def test_list_file_columns_json_reads_the_first_block_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    body = "".join(json.dumps({"b": i, "a": "t" * 90}) + "\n" for i in range(100_000)).encode()
+    seam = _patch_object(monkeypatch, body)
+    cols = list_file_columns(
+        _flatfile_conn(),
+        path="x.ndjson",
+        file_format=None,
+        secret_store=FakeSecretStore(default="secret", raise_on_write=True),
+    )
+    assert cols == ["b", "a"]  # file order
+    assert not seam.download_calls
+    assert seam.bytes_read < len(body) / 3  # about one parse block, not the object
 
 
 def test_list_file_columns_parquet_reads_schema_names(monkeypatch: pytest.MonkeyPatch) -> None:

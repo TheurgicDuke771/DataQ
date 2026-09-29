@@ -21,6 +21,7 @@ import {
   targetString,
 } from '../../api/suites';
 import { formatScalar } from '../results/resultsFormat';
+import { asFileFormat } from '../suites/suiteTarget';
 import { errorMessage } from '../../utils/errors';
 
 /**
@@ -164,7 +165,7 @@ function extractProfileTarget(
     // Iceberg addresses `namespace.table`; the namespace rides alongside table.
     namespace: targetString(target, 'namespace'),
     path,
-    file_format: targetString(target, 'file_format') as 'csv' | 'parquet' | undefined,
+    file_format: asFileFormat(target?.file_format),
   };
 }
 

@@ -237,6 +237,23 @@ const AGGREGATE_OPTIONS = [
  *  (Trino, Athena) or none (MySQL). */
 const NO_EXACT_MEDIAN: ConnectionType[] = ['mysql', 'trino', 'athena'];
 
+/** Every DQX check: read the whole table, or only the rows appended since the last run. */
+const DQX_MODE: ConfigField = {
+  name: 'mode',
+  label: 'Read',
+  type: 'select',
+  optional: true,
+  defaultValue: 'snapshot',
+  help:
+    'Snapshot reads the whole table every run. Stream reads the table as a Delta stream and ' +
+    'counts only rows appended since the last successful run (needs the connection’s DQX ' +
+    'checkpoint volume).',
+  options: [
+    { value: 'snapshot', label: 'Snapshot (whole table)' },
+    { value: 'stream', label: 'Stream (new rows since the last run)' },
+  ],
+};
+
 /** GX's row-wise tolerance kwarg — a fraction, not a percentage. */
 export const MOSTLY_FIELD_NAME = 'mostly';
 
@@ -306,7 +323,7 @@ const MSSQL_TYPE_HINT =
   'Use the type name without its size — e.g. `DECIMAL` for decimal(12,2) (not `DECIMAL(12, 2)`), `INTEGER` for int (not `INT`), `NVARCHAR`, `DATETIME2`, `DATETIMEOFFSET`, `BIT`. Run a dry-run: the result’s observed_value shows the exact name GX reads.';
 
 const DATAFRAME_ENGINE_TYPE_HINT =
-  'Compares pandas dtypes or Python value type names — numerics report `int64`/`float64` (integer columns containing NULLs report `float64`); string columns on Unity Catalog and CSV reads are `object` dtype, so `object` or `str` both pass, while Parquet/Iceberg reads are Arrow-backed and can report different names. Dry-run to calibrate: a failing result’s observed_value shows the expected dtype — but if Observed shows “—”, your guess fell to GX’s row-wise compare; use `object` or a Python value type name (full cheat-sheet in the check-authoring docs).';
+  'Compares pandas dtypes or Python value type names — numerics report `int64`/`float64` (integer columns containing NULLs report `float64`); string columns on Unity Catalog and CSV reads are `object` dtype, so `object` or `str` both pass, while Parquet/Iceberg/JSON reads are Arrow-backed and can report different names. Dry-run to calibrate: a failing result’s observed_value shows the expected dtype — but if Observed shows “—”, your guess fell to GX’s row-wise compare; use `object` or a Python value type name (full cheat-sheet in the check-authoring docs).';
 
 /** `type_list` config-field name — `to_be_of_type`'s sibling, same type vocabulary (#1509). */
 export const TYPE_LIST_FIELD_NAME = 'type_list';
@@ -1038,7 +1055,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     label: 'Not null (DQX)',
     description: 'Rows where the column is NULL.',
     category: 'Databricks DQX',
-    fields: [COLUMN],
+    fields: [COLUMN, DQX_MODE],
     thresholds: {
       help: 'Rows failing the rule, counted by Databricks DQX in a serverless job in your own workspace (about a minute to start). Thresholds band the failing-row count; leave them blank to fail on any failing row.',
     },
@@ -1050,7 +1067,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     label: 'Not empty (DQX)',
     description: 'Rows where the column is an empty string.',
     category: 'Databricks DQX',
-    fields: [COLUMN],
+    fields: [COLUMN, DQX_MODE],
     thresholds: {
       help: 'Rows failing the rule, counted by Databricks DQX in a serverless job in your own workspace (about a minute to start). Thresholds band the failing-row count; leave them blank to fail on any failing row.',
     },
@@ -1062,7 +1079,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     label: 'Not null or empty (DQX)',
     description: 'Rows where the column is NULL or an empty string.',
     category: 'Databricks DQX',
-    fields: [COLUMN],
+    fields: [COLUMN, DQX_MODE],
     thresholds: {
       help: 'Rows failing the rule, counted by Databricks DQX in a serverless job in your own workspace (about a minute to start). Thresholds band the failing-row count; leave them blank to fail on any failing row.',
     },
@@ -1074,7 +1091,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     label: 'In list (DQX)',
     description: 'Rows whose value is not one of the allowed values.',
     category: 'Databricks DQX',
-    fields: [COLUMN, { name: 'allowed', label: 'Allowed values', type: 'list' }],
+    fields: [COLUMN, { name: 'allowed', label: 'Allowed values', type: 'list' }, DQX_MODE],
     thresholds: {
       help: 'Rows failing the rule, counted by Databricks DQX in a serverless job in your own workspace (about a minute to start). Thresholds band the failing-row count; leave them blank to fail on any failing row.',
     },
@@ -1090,6 +1107,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
       COLUMN,
       { name: 'min_limit', label: 'Minimum', type: 'number' },
       { name: 'max_limit', label: 'Maximum', type: 'number' },
+      DQX_MODE,
     ],
     thresholds: {
       help: 'Rows failing the rule, counted by Databricks DQX in a serverless job in your own workspace (about a minute to start). Thresholds band the failing-row count; leave them blank to fail on any failing row.',
@@ -1102,7 +1120,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     label: 'Matches regex (DQX)',
     description: 'Rows whose value does not match the regular expression.',
     category: 'Databricks DQX',
-    fields: [COLUMN, { name: 'regex', label: 'Regex', type: 'string' }],
+    fields: [COLUMN, { name: 'regex', label: 'Regex', type: 'string' }, DQX_MODE],
     thresholds: {
       help: 'Rows failing the rule, counted by Databricks DQX in a serverless job in your own workspace (about a minute to start). Thresholds band the failing-row count; leave them blank to fail on any failing row.',
     },
@@ -1114,7 +1132,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     label: 'Not less than (DQX)',
     description: 'Rows whose value is below the limit.',
     category: 'Databricks DQX',
-    fields: [COLUMN, { name: 'limit', label: 'Limit', type: 'number' }],
+    fields: [COLUMN, { name: 'limit', label: 'Limit', type: 'number' }, DQX_MODE],
     thresholds: {
       help: 'Rows failing the rule, counted by Databricks DQX in a serverless job in your own workspace (about a minute to start). Thresholds band the failing-row count; leave them blank to fail on any failing row.',
     },
@@ -1126,7 +1144,7 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
     label: 'Not greater than (DQX)',
     description: 'Rows whose value is above the limit.',
     category: 'Databricks DQX',
-    fields: [COLUMN, { name: 'limit', label: 'Limit', type: 'number' }],
+    fields: [COLUMN, { name: 'limit', label: 'Limit', type: 'number' }, DQX_MODE],
     thresholds: {
       help: 'Rows failing the rule, counted by Databricks DQX in a serverless job in your own workspace (about a minute to start). Thresholds band the failing-row count; leave them blank to fail on any failing row.',
     },

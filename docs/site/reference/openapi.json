@@ -2715,7 +2715,8 @@
               {
                 "enum": [
                   "csv",
-                  "parquet"
+                  "parquet",
+                  "json"
                 ],
                 "type": "string"
               },
@@ -2914,7 +2915,8 @@
               {
                 "enum": [
                   "csv",
-                  "parquet"
+                  "parquet",
+                  "json"
                 ],
                 "type": "string"
               },
@@ -8533,7 +8535,8 @@
               {
                 "enum": [
                   "csv",
-                  "parquet"
+                  "parquet",
+                  "json"
                 ],
                 "type": "string"
               },
@@ -14712,7 +14715,8 @@
                 {
                   "enum": [
                     "csv",
-                    "parquet"
+                    "parquet",
+                    "json"
                   ],
                   "type": "string"
                 },
