@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "ae5575076133",
+  "strategy": "manual-commit",
+  "branch": "docs/progress-snapshot-azurite-batch",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/ae/5575076133/0/metadata.json",
+      "transcript": "/ae/5575076133/0/full.jsonl",
+      "compact_transcript": "/ae/5575076133/0/transcript.jsonl",
+      "content_hash": "/ae/5575076133/0/content_hash.txt",
+      "prompt": "/ae/5575076133/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 516,
+    "cache_creation_tokens": 428760,
+    "cache_read_tokens": 73329696,
+    "output_tokens": 164746,
+    "api_call_count": 258
+  }
+}
