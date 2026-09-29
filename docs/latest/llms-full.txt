@@ -6962,6 +6962,7 @@ erDiagram
         string description "workspace-Admin-set (ADR 0034 §4)"
         jsonb column_tags "warehouse governance classifications, cached per read"
         timestamptz column_tags_refreshed_at "'never looked' vs 'looked, found none'"
+        bool auto_coverage_excluded "left out of its connection's automatic coverage (ADR 0047)"
         timestamptz first_seen
         timestamptz last_seen
     }
@@ -6983,6 +6984,8 @@ erDiagram
         uuid asset_id FK "resolved target asset (SET NULL, fail-soft)"
         jsonb target "table / path / UC name the checks run against"
         jsonb column_policy "failing-sample redaction policy"
+        string origin "user / auto — auto = owned by the coverage loop, one per asset (ADR 0047)"
+        jsonb auto_state "coverage-loop bookkeeping: deleted checks, recorded gaps"
         uuid created_by FK
     }
     checks {
@@ -6991,6 +6994,7 @@ erDiagram
         string name
         string kind "expectation / freshness / volume / schema_drift / anomaly / comparison (ADR 0012/0015)"
         string expectation_type
+        string origin "user / auto / suggestion (ADR 0047)"
         string dimension "DQ dimension (ADR 0038) — nullable; NULL = unclassified"
         uuid source_connection_id FK "comparison baseline datasource (ADR 0015; RESTRICT) — set iff kind='comparison'"
         numeric warn_threshold
@@ -7181,6 +7185,7 @@ erDiagram
         uuid suite_id FK "CASCADE — authz + routing"
         string status "open / acknowledged / resolved"
         string resolved_by "user / auto (NULL until resolved)"
+        string resolution "fixed / expected_change / false_positive (ADR 0047) — nullable"
         int occurrence_count "repeat failures attach, not duplicate"
         timestamptz last_seen_at
         timestamptz acknowledged_at "+ acknowledge_note — lifecycle transition record"
