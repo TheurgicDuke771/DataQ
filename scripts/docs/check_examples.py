@@ -10,6 +10,7 @@ longer matches, so the published results cannot drift from what the product does
 from __future__ import annotations
 
 import json
+import math
 import sys
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -570,7 +571,7 @@ def evaluate() -> dict[str, dict[str, Any]]:
         samples = check.sample_failures or {}
         values = samples.get("partial_unexpected_list")
         if values is not None:
-            values = [None if v != v else v for v in values]  # NaN is a NULL, and not JSON
+            values = [None if isinstance(v, float) and math.isnan(v) else v for v in values]
         results[t] = {
             "status": status,
             "metric_value": None if metric is None else round(float(metric), 2),
