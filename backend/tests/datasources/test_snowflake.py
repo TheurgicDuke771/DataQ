@@ -179,7 +179,7 @@ def _patch_gx_context(monkeypatch: pytest.MonkeyPatch) -> _FakeDataSources:
     fake_sources = _FakeDataSources()
     fake_context = SimpleNamespace(data_sources=fake_sources)
     monkeypatch.setattr(
-        "backend.app.datasources.snowflake.gx.get_context", lambda mode: fake_context
+        "backend.app.datasources.gx_runner.gx.get_context", lambda mode: fake_context
     )
     return fake_sources
 
@@ -866,7 +866,7 @@ def test_run_checks_passes_index_columns_unfolded(monkeypatch: pytest.MonkeyPatc
 
     monkeypatch.setattr("backend.app.datasources.snowflake.run_expectations", fake_run_expectations)
     monkeypatch.setattr(
-        "backend.app.datasources.snowflake.gx",
+        "backend.app.datasources.gx_runner.gx",
         SimpleNamespace(
             get_context=lambda mode: SimpleNamespace(
                 data_sources=SimpleNamespace(
@@ -922,8 +922,10 @@ def _sqlite_as_snowflake(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None
     conn.commit()
     conn.close()
 
+    real_get_context = gx.get_context
+
     def get_context(mode: str) -> Any:
-        real = gx.get_context(mode=mode)
+        real = real_get_context(mode=mode)
 
         def add_snowflake(**kw: Any) -> Any:
             return real.data_sources.add_sqlite(
@@ -936,9 +938,7 @@ def _sqlite_as_snowflake(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None
             validation_definitions=real.validation_definitions,
         )
 
-    monkeypatch.setattr(
-        "backend.app.datasources.snowflake.gx", SimpleNamespace(get_context=get_context)
-    )
+    monkeypatch.setattr("backend.app.datasources.gx_runner.gx.get_context", get_context)
 
 
 def test_compound_unique_expected_value_reports_the_authored_casing(

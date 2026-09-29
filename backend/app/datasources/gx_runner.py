@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import numbers
+import threading
 import time
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import replace
 from decimal import Decimal
 from typing import Any
@@ -13,6 +15,8 @@ from typing import Any
 import great_expectations as gx
 import great_expectations.expectations as gxe
 
+from backend.app.core.config import get_settings
+from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.datasources import gx_metrics  # noqa: F401  (registers the GX overrides)
 from backend.app.datasources.base import (
@@ -28,6 +32,50 @@ from backend.app.datasources.base import (
 from backend.app.services.column_classification import value_signal_summary
 
 log = get_logger(__name__)
+
+
+#: `gx.get_context` installs its context as GX's process-global "project", which GX reads back
+#: during validation, so two runs in one process must not overlap (#2204). Only the API's
+#: threadpool contends (dry-runs); a prefork worker child runs one task at a time.
+_GX_PROJECT_LOCK = threading.Lock()
+
+
+class GxContextBusyError(DataQError):
+    status_code = 503
+    code = "validation_busy"
+
+
+@contextmanager
+def ephemeral_gx_context() -> Iterator[Any]:
+    """An ephemeral GX context, held exclusively until the block exits."""
+    wait = get_settings().gx_context_wait_seconds
+    if not _GX_PROJECT_LOCK.acquire(timeout=wait):
+        log.warning("gx_context_busy", waited_seconds=wait)
+        raise GxContextBusyError(
+            "Another check is being validated on this server. Try again in a few seconds.",
+            detail={"waited_seconds": wait},
+        )
+    try:
+        context = gx.get_context(mode="ephemeral")
+        try:
+            yield context
+        finally:
+            release_gx_project(context)
+    finally:
+        _GX_PROJECT_LOCK.release()
+
+
+def release_gx_project(context: Any) -> None:
+    """Drop GX's process-global reference to this run's context, if it is still the current one.
+
+    Otherwise the context, and the engines holding its connections, outlive the run and are
+    collected during a later one, after those connections were closed (#2141).
+    """
+    from great_expectations.data_context.data_context.context_factory import project_manager
+
+    if getattr(project_manager, "_ProjectManager__project", None) is context:
+        project_manager.set_project(None)
+
 
 # Failing-row keys copied into CheckOutcome.sample_failures. May contain real
 # data — they reach logs / the read API only via the redactor (#415).

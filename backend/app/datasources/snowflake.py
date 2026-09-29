@@ -8,7 +8,6 @@ from collections.abc import Callable
 from typing import Any, ClassVar, Literal
 from urllib.parse import quote_plus
 
-import great_expectations as gx
 from cryptography.hazmat.primitives import serialization
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -27,6 +26,7 @@ from backend.app.datasources.gx_runner import (
     UnknownExpectationError,
     _expectation_class_name,
     _to_gx_expectation,
+    ephemeral_gx_context,
     run_expectations,
     to_suite_outcome,
 )
@@ -202,44 +202,46 @@ class SnowflakeCheckRunner:
         index_columns: list[str] | None = None,
         value_signal_gate: ValueSignalGate | None = None,
     ) -> SuiteOutcome:
-        context = gx.get_context(mode="ephemeral")
-        if self._config.auth_type == "key_pair":
-            # GX 1.17's supported key-pair form (KeyPairConnectionDetails): the connection as
-            # keyword args with a base64-DER private_key.
-            datasource = context.data_sources.add_snowflake(
-                name=f"sf-{table}",
-                account=self._config.account,
-                user=self._config.user,
-                database=self._config.database,
-                schema=self._config.schema_,
-                warehouse=self._config.warehouse,
-                role=self._config.role,
-                private_key=base64.standard_b64encode(self._connect_args["private_key"]).decode(),
+        with ephemeral_gx_context() as context:
+            if self._config.auth_type == "key_pair":
+                # GX 1.17's supported key-pair form (KeyPairConnectionDetails): the connection as
+                # keyword args with a base64-DER private_key.
+                datasource = context.data_sources.add_snowflake(
+                    name=f"sf-{table}",
+                    account=self._config.account,
+                    user=self._config.user,
+                    database=self._config.database,
+                    schema=self._config.schema_,
+                    warehouse=self._config.warehouse,
+                    role=self._config.role,
+                    private_key=base64.standard_b64encode(
+                        self._connect_args["private_key"]
+                    ).decode(),
+                )
+            else:
+                datasource = context.data_sources.add_snowflake(
+                    name=f"sf-{table}",
+                    connection_string=self._connection_string,
+                )
+            asset = datasource.add_table_asset(
+                name=table,
+                table_name=table,
+                schema_name=schema or self._config.schema_,
             )
-        else:
-            datasource = context.data_sources.add_snowflake(
-                name=f"sf-{table}",
-                connection_string=self._connection_string,
+            # The table asset resolves its own batch, so no batch_parameters; the
+            # ephemeral context makes the fixed suite/vd names safe across runs.
+            batch_definition = asset.add_batch_definition_whole_table(name="whole_table")
+            return run_expectations(
+                context,
+                batch_definition=batch_definition,
+                checks=_fold_reflection_keyed_columns(checks),
+                name=f"suite-{table}",
+                # index_columns deliberately NOT folded: live-verified 2026-08-28 that GX's
+                # unexpected_index_column_names path accepts the authored (upper) casing and keys
+                # the locators by it — folding would lowercase the locator keys users see.
+                index_columns=index_columns,
+                value_signal_gate=value_signal_gate,
             )
-        asset = datasource.add_table_asset(
-            name=table,
-            table_name=table,
-            schema_name=schema or self._config.schema_,
-        )
-        # The table asset resolves its own batch, so no batch_parameters; the
-        # ephemeral context makes the fixed suite/vd names safe across runs.
-        batch_definition = asset.add_batch_definition_whole_table(name="whole_table")
-        return run_expectations(
-            context,
-            batch_definition=batch_definition,
-            checks=_fold_reflection_keyed_columns(checks),
-            name=f"suite-{table}",
-            # index_columns deliberately NOT folded: live-verified 2026-08-28 that GX's
-            # unexpected_index_column_names path accepts the authored (upper) casing and keys
-            # the locators by it — folding would lowercase the locator keys users see.
-            index_columns=index_columns,
-            value_signal_gate=value_signal_gate,
-        )
 
     def run_native_check(
         self,

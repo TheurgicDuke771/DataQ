@@ -530,7 +530,7 @@ def test_a_run_releases_gx_s_global_project_only_while_it_is_still_its_own() -> 
     import great_expectations as gx
     from great_expectations.data_context.data_context.context_factory import project_manager
 
-    from backend.app.datasources.generic_sql import _release_gx_project
+    from backend.app.datasources.gx_runner import release_gx_project as _release_gx_project
 
     def current() -> Any:
         return getattr(project_manager, "_ProjectManager__project", None)

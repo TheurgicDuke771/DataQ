@@ -2216,6 +2216,18 @@ def test_dryrun_runner_failure_returns_502(
     assert resp.json()["error"]["code"] == "dry_run_failed"
 
 
+def test_dryrun_blocked_by_another_validation_returns_503_not_a_datasource_failure(
+    client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.app.datasources.gx_runner import GxContextBusyError
+
+    sid = _suite_id(client, db_session, target=_SF_TARGET)
+    _patch_runner(monkeypatch, _FakeRunner(raises=GxContextBusyError("busy")))
+    resp = client.post(f"/api/v1/suites/{sid}/checks/dryrun", json=_dryrun_body())
+    assert resp.status_code == 503
+    assert resp.json()["error"]["code"] == "validation_busy"
+
+
 def test_dryrun_runner_build_failure_returns_502(
     client: TestClient, db_session: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

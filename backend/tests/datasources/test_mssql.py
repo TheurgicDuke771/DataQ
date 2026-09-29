@@ -744,3 +744,14 @@ def test_the_catalog_never_offers_system_schemas() -> None:
     for sql in (MSSQL.catalog.schemas_sql, MSSQL.catalog.tables_sql):
         assert "'sys', 'INFORMATION_SCHEMA', 'queryinsights'" in sql
         assert "HAS_PERMS_BY_NAME" in sql
+
+
+def test_a_busy_validation_is_not_relabelled_as_a_fabric_driver_limitation() -> None:
+    # On Fabric + python-tds the engine explains EVERY failure as the driver limitation (#2204).
+    from backend.app.datasources.gx_runner import GxContextBusyError
+    from backend.app.datasources.sql_engines import SQL_ENGINES
+
+    busy = GxContextBusyError("busy")
+    config = _config(host=_FABRIC_HOST)
+
+    assert generic_sql.explained(SQL_ENGINES["mssql"], config, busy) is busy
