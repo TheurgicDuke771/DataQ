@@ -1,0 +1,223 @@
+{
+  "expect_column_distinct_values_to_be_in_set": {
+    "metric_value": null,
+    "observed_value": null,
+    "status": "fail",
+    "unexpected_count": 1,
+    "unexpected_values": [
+      "USA"
+    ]
+  },
+  "expect_column_distinct_values_to_contain_set": {
+    "metric_value": null,
+    "observed_value": null,
+    "status": "fail",
+    "unexpected_count": null,
+    "unexpected_values": null
+  },
+  "expect_column_pair_values_a_to_be_greater_than_b": {
+    "metric_value": 20.0,
+    "observed_value": null,
+    "status": "fail",
+    "unexpected_count": 2,
+    "unexpected_values": [
+      [
+        "2026-09-27 06:00:00",
+        "2026-09-27 08:00:00"
+      ],
+      [
+        "2026-09-28 18:00:00",
+        "2026/09/28 06:00"
+      ]
+    ]
+  },
+  "expect_column_pair_values_to_be_equal": {
+    "metric_value": 10.0,
+    "observed_value": null,
+    "status": "fail",
+    "unexpected_count": 1,
+    "unexpected_values": [
+      [
+        100.0,
+        105.0
+      ]
+    ]
+  },
+  "expect_column_value_lengths_to_be_between": {
+    "metric_value": 10.0,
+    "observed_value": null,
+    "status": "fail",
+    "unexpected_count": 1,
+    "unexpected_values": [
+      "sku_8"
+    ]
+  },
+  "expect_column_value_lengths_to_equal": {
+    "metric_value": 10.0,
+    "observed_value": null,
+    "status": "fail",
+    "unexpected_count": 1,
+    "unexpected_values": [
+      "USA"
+    ]
+  },
+  "expect_column_values_to_be_between": {
+    "metric_value": 10.0,
+    "observed_value": null,
+    "status": "fail",
+    "unexpected_count": 1,
+    "unexpected_values": [
+      -5.0
+    ]
+  },
+  "expect_column_values_to_be_in_set": {
+    "metric_value": 11.11,
+    "observed_value": null,
+    "status": "fail",
+    "unexpected_count": 1,
+    "unexpected_values": [
+      "refunded"
+    ]
+  },
+  "expect_column_values_to_be_in_type_list": {
+    "metric_value": null,
+    "observed_value": "int64",
+    "status": "pass",
+    "unexpected_count": null,
+    "unexpected_values": null
+  },
+  "expect_column_values_to_be_json_parseable": {
+    "metric_value": 10.0,
+    "observed_value": null,
+    "status": "fail",
+    "unexpected_count": 1,
+    "unexpected_values": [
+      "{bad json"
+    ]
+  },
+  "expect_column_values_to_be_null": {
+    "metric_value": 0.0,
+    "observed_value": null,
+    "status": "pass",
+    "unexpected_count": 0,
+    "unexpected_values": []
+  },
+  "expect_column_values_to_be_of_type": {
+    "metric_value": null,
+    "observed_value": "float64",
+    "status": "pass",
+    "unexpected_count": null,
+    "unexpected_values": null
+  },
+  "expect_column_values_to_be_unique": {
+    "metric_value": 20.0,
+    "observed_value": null,
+    "status": "fail",
+    "unexpected_count": 2,
+    "unexpected_values": [
+      7,
+      7
+    ]
+  },
+  "expect_column_values_to_match_regex": {
+    "metric_value": 10.0,
+    "observed_value": null,
+    "status": "fail",
+    "unexpected_count": 1,
+    "unexpected_values": [
+      "sku_8"
+    ]
+  },
+  "expect_column_values_to_match_regex_list": {
+    "metric_value": 10.0,
+    "observed_value": null,
+    "status": "fail",
+    "unexpected_count": 1,
+    "unexpected_values": [
+      "sku_8"
+    ]
+  },
+  "expect_column_values_to_match_strftime_format": {
+    "metric_value": 10.0,
+    "observed_value": null,
+    "status": "fail",
+    "unexpected_count": 1,
+    "unexpected_values": [
+      "2026/09/28 06:00"
+    ]
+  },
+  "expect_column_values_to_not_be_in_set": {
+    "metric_value": 11.11,
+    "observed_value": null,
+    "status": "fail",
+    "unexpected_count": 1,
+    "unexpected_values": [
+      "refunded"
+    ]
+  },
+  "expect_column_values_to_not_be_null": {
+    "metric_value": 10.0,
+    "observed_value": null,
+    "status": "fail",
+    "unexpected_count": 1,
+    "unexpected_values": [
+      null
+    ]
+  },
+  "expect_column_values_to_not_match_regex": {
+    "metric_value": 11.11,
+    "observed_value": null,
+    "status": "fail",
+    "unexpected_count": 1,
+    "unexpected_values": [
+      "not-an-email"
+    ]
+  },
+  "expect_column_values_to_not_match_regex_list": {
+    "metric_value": 11.11,
+    "observed_value": null,
+    "status": "fail",
+    "unexpected_count": 1,
+    "unexpected_values": [
+      "not-an-email"
+    ]
+  },
+  "expect_compound_columns_to_be_unique": {
+    "metric_value": 0.0,
+    "observed_value": null,
+    "status": "pass",
+    "unexpected_count": 0,
+    "unexpected_values": []
+  },
+  "expect_multicolumn_sum_to_equal": {
+    "metric_value": 10.0,
+    "observed_value": null,
+    "status": "fail",
+    "unexpected_count": 1,
+    "unexpected_values": [
+      {
+        "subtotal": 40.0,
+        "tax": 50.0
+      }
+    ]
+  },
+  "expect_select_column_values_to_be_unique_within_record": {
+    "metric_value": 10.0,
+    "observed_value": null,
+    "status": "fail",
+    "unexpected_count": 1,
+    "unexpected_values": [
+      {
+        "subtotal": 50.0,
+        "tax": 50.0
+      }
+    ]
+  },
+  "expect_table_row_count_to_be_between": {
+    "metric_value": null,
+    "observed_value": 10,
+    "status": "pass",
+    "unexpected_count": null,
+    "unexpected_values": null
+  }
+}
