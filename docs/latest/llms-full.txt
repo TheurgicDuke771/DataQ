@@ -3075,7 +3075,7 @@ Stores you write checks **against** (see [Datasources & checks](datasources-chec
   array of flat objects).
 - **Apache Iceberg** — native `pyiceberg` read straight from object storage, no query
   engine in front: `namespace.table` addressing, REST / SQL / Glue / Hive catalogs,
-  credential-less catalogs supported, also reads Delta UniForm tables (ADR 0030).
+  credential-less catalogs supported, also reads Delta UniForm tables (ADR 0030) through Unity Catalog's Iceberg REST catalog (`/api/2.1/unity-catalog/iceberg-rest`). Reading the data files needs Unity Catalog to vend storage credentials: the metastore must allow external data access, and the principal needs `EXTERNAL USE SCHEMA` on the schema. Databricks Free Edition's default storage supports neither, so there only the table metadata loads.
 
 ## Checks & authoring
 

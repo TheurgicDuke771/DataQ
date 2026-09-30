@@ -2660,7 +2660,7 @@ and reacts to your pipelines — all behind SSO, with an AI-assistant surface.</
   array of flat objects).</li>
 <li><strong>Apache Iceberg</strong> — native <code>pyiceberg</code> read straight from object storage, no query
   engine in front: <code>namespace.table</code> addressing, REST / SQL / Glue / Hive catalogs,
-  credential-less catalogs supported, also reads Delta UniForm tables (ADR 0030).</li>
+  credential-less catalogs supported, also reads Delta UniForm tables (ADR 0030) through Unity Catalog's Iceberg REST catalog (<code>/api/2.1/unity-catalog/iceberg-rest</code>). Reading the data files needs Unity Catalog to vend storage credentials: the metastore must allow external data access, and the principal needs <code>EXTERNAL USE SCHEMA</code> on the schema. Databricks Free Edition's default storage supports neither, so there only the table metadata loads.</li>
 </ul>
 <h2 id="checks-authoring">Checks &amp; authoring<a class="headerlink" href="#checks-authoring" title="Permanent link">¶</a></h2>
 <p>A check is one data-quality rule, authored in the UI. Seven kinds ship (<code>check.kind</code>): GX
