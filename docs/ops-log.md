@@ -955,3 +955,16 @@ Written by Claude, user-approved step by step. Goal: deploy `9f5475b7` to Azure 
 - 09:51:39Z: **Credential copy, user-approved: Snowflake `DATAQ_READER_PAT` to its missed fourth copy.** AWS `Retail Snowflake DEV` (`02d99a91`) was reauthed via `POST /connections/{id}/reauth` (admin PAT) with the value read inline from Azure KV `conn-snowflake-retail-dev-6729c4f9`, never printed. The reauth tested before rotating: `{"ok":true,"tested":true}`. It wrote AWS SM `dataq/conn-snowflake-retail-dev-02d99a91` (LastChangedDate 09:51:53Z). Same PAT, so it expires **2026-10-11 22:22Z**.
   - **The reader-PAT copy set is back to 3×Azure KV + 1×AWS SM, all current.**
   - Runs after: `Orders DQ — Snowflake (Priya)` 2/4 and `AWS Snowflake — Orders Header` 2/6, both `succeeded`. Every failure is stale-harness freshness or a deliberate FAIL.
+- 09:53:44–09:58:23Z: **ADF pipeline gate (ADR 0046) against the DEPLOYED Azure app, user-approved.** The same route as the 2026-09-29 tunnelled check, now hitting prod.
+  - **Created:**
+    - Scratch suites `walkthrough 2026-09-30 gate pass` (`e8379d6a`, `order_number` not null) and `… gate fail` (`2e35c068`, `status` in an impossible set), both on `Snowflake — Orders`.
+    - Bindings `adf` / `dataq_gate_pass` and `dataq_gate_fail`, env `dev`.
+    - A 1-day scratch PAT (`1e689a4a`), minted as the admin and piped straight into KV `dataq-gate-pat` (tag `purpose=walkthrough-2026-09-30`), never printed.
+    - `Key Vault Secrets User` for `dataq-harness-adf`'s identity, scoped to that one secret.
+    - Pipelines `dataq_gate_pass` / `dataq_gate_fail` from `integrations/adf/dataq_gate_pipeline.json`, with `dataqUrl` set to the deployed frontend.
+  - **Results:**
+    - The pass run `f2a5cd62` **Succeeded**. The fail run `f53aff52` **Failed** at "DataQ gate stopped the pipeline".
+    - Exactly one DataQ run each, marked `adf:dataq_gate_pass:f2a5cd62…` (1/1) and `adf:dataq_gate_fail:f53aff52…` (0/1).
+    - **0 `dq_live_` occurrences in either run's activity history** (#2269's fix holds on prod).
+  - **Torn down, verified:** both pipelines deleted (0 `dataq_gate*` left); role assignment deleted (0 on the scope); PAT revoked (204); bindings and scratch suites deleted (204 ×4); KV secret deleted and purged. The harness triggers `tr_orders_landed` / `tr_customers_daily` were untouched and are still `Stopped`.
+  - **Expected state: none of the scratch resources exist.**
