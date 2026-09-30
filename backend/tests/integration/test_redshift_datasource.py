@@ -442,6 +442,26 @@ def test_the_anomaly_monitor_measures_row_count_and_freshness_age(
     assert age is not None and 1.9 < age < 2.5
 
 
+def test_the_column_profile_measures_every_column_in_one_query(redshift: RedshiftTarget) -> None:
+    """`column_profile` (ADR 0047). Redshift refuses to cast GEOMETRY or BOOLEAN to a string and
+    casts a SUPER object to NULL; each loses only its own distinct count."""
+    from backend.app.services.anomaly import DISTINCT, NULL_PCT, measure_column_profile, series_key
+
+    profile = measure_column_profile(
+        _connection(redshift),
+        table="orders",
+        schema=redshift.schema,
+        catalog=None,
+        secret_store=redshift.store,
+    )
+    assert profile.row_count == 6 and profile.columns_measured == profile.columns_total == 12
+    assert set(profile.distinct_unavailable) == {"shape", "is_gift", "payload"}
+    assert profile.series[series_key("status", NULL_PCT)] == pytest.approx(100 / 6)
+    assert profile.series[series_key("shape", NULL_PCT)] == pytest.approx(200 / 6)
+    assert profile.series[series_key("status", DISTINCT)] == 4.0
+    assert profile.series[series_key("order_id", DISTINCT)] == 6.0
+
+
 # ───────────────────────────── introspection ─────────────────────────────
 
 

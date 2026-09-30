@@ -429,6 +429,25 @@ def test_the_anomaly_monitor_measures_row_count_and_freshness_age(athena: Athena
     assert age is not None and 1.9 < age < 2.5
 
 
+def test_the_column_profile_measures_every_column_in_one_query(athena: AthenaTarget) -> None:
+    """`column_profile` (ADR 0047): Athena compiles the string cast its own way."""
+    from backend.app.services.anomaly import DISTINCT, NULL_PCT, measure_column_profile, series_key
+
+    profile = measure_column_profile(
+        _connection(athena),
+        table="orders",
+        schema=athena.schema,
+        catalog=None,
+        secret_store=athena.store,
+    )
+    assert profile.row_count == 6 and profile.columns_measured == profile.columns_total == 10
+    assert profile.distinct_unavailable == ()
+    assert profile.series[series_key("status", NULL_PCT)] == pytest.approx(100 / 6)
+    assert profile.series[series_key("status", DISTINCT)] == 4.0  # new, shipped, cancelled, bogus
+    assert profile.series[series_key("payload", DISTINCT)] == 5.0  # JSON text, NULL excluded
+    assert profile.series[series_key("order_id", DISTINCT)] == 6.0
+
+
 # ───────────────────────────── introspection ─────────────────────────────
 
 

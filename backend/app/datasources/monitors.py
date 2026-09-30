@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
 from decimal import Decimal
@@ -405,10 +405,11 @@ def anomaly_params(config: dict[str, Any]) -> AnomalyParams:
 
 
 def column_profile_statement(
-    target: TableClause, columns: list[str], *, distinct: bool
+    target: TableClause, columns: list[str], *, distinct: Collection[str]
 ) -> Select[Any]:
-    """One row: ``COUNT(*)``, then per column ``COUNT(col)`` and (when ``distinct``) the distinct
-    count over the column cast to a string, so a JSON or variant column can still be counted.
+    """One row: ``COUNT(*)``, then per column ``COUNT(col)`` and, for the ``distinct`` columns,
+    ``COUNT`` and ``COUNT(DISTINCT)`` over the column cast to a string, so a JSON or variant
+    column can still be counted. The cast's own count shows whether it kept every value.
     ``columns`` are the names the table itself reported."""
     from sqlalchemy import String, cast, func, select
     from sqlalchemy import column as sql_column
@@ -420,9 +421,20 @@ def column_profile_statement(
         # spaces, case) — `folding_identifier` would leave a lower-case `order` bare.
         col: Any = sql_column(name)
         parts.append(func.count(col))
-        if distinct:
+        if name in distinct:
+            parts.append(func.count(cast(col, String)))
             parts.append(func.count(sql_distinct(cast(col, String))))
     return select(*parts).select_from(target)
+
+
+def column_distinct_probe(target: TableClause, name: str) -> Select[Any]:
+    """A zero-row distinct count of one column, to find a type the engine refuses to cast."""
+    from sqlalchemy import String, cast, false, func, select
+    from sqlalchemy import column as sql_column
+    from sqlalchemy import distinct as sql_distinct
+
+    counted = func.count(sql_distinct(cast(sql_column(name), String)))
+    return select(counted).select_from(target).where(false())
 
 
 def _validate_anomaly(config: dict[str, Any]) -> None:
