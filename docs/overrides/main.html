@@ -4,13 +4,17 @@
   Header action row on every page: View as Markdown · Copy as Markdown · Ask AI ▾.
   The Markdown lives at <page url>index.md (docs/hooks/llm_export.py). "Ask AI" opens the
   page in the reader's OWN assistant with a prefilled prompt — nothing is proxied by us.
-  The prompt leads with the HTML page: ChatGPT's web reader declines a raw text/markdown file,
-  while every assistant reads the HTML. The Markdown copy is offered as the cleaner source.
+  Every prompt leads with the HTML page. Claude and Copilot are also given the Markdown copy;
+  ChatGPT is not, because its reader rejects text/markdown (the only type GitHub Pages serves a
+  .md file as) and then reports that failure instead of reading the HTML.
 #}
 {% block content %}
   {% if page.file and page.file.src_uri != "404.md" %}
     {% set md_url = page.canonical_url ~ "index.md" %}
-    {% set prompt = "Read the DataQ documentation page \"" ~ page.title ~ "\" at " ~ page.canonical_url ~ " (a plain Markdown copy is at " ~ md_url ~ ") and help me with questions about it." %}
+    {% set page_ref = "Read the DataQ documentation page \"" ~ page.title ~ "\" at " ~ page.canonical_url %}
+    {% set ask = " and help me with questions about it." %}
+    {% set prompt = page_ref ~ " (a plain Markdown copy is at " ~ md_url ~ ")" ~ ask %}
+    {% set html_prompt = page_ref ~ ask %}
     <div class="dq-actions">
       <a class="dq-action" href="index.md" target="_blank" rel="noopener" title="Open this page as raw Markdown">
         {% include ".icons/material/language-markdown-outline.svg" %} Markdown
@@ -24,7 +28,7 @@
         </button>
         <div class="dq-ask__menu" role="menu" hidden>
           <a href="https://claude.ai/new?q={{ prompt | urlencode }}" target="_blank" rel="noopener">Claude</a>
-          <a href="https://chatgpt.com/?q={{ prompt | urlencode }}" target="_blank" rel="noopener">ChatGPT</a>
+          <a href="https://chatgpt.com/?q={{ html_prompt | urlencode }}" target="_blank" rel="noopener">ChatGPT</a>
           <a href="https://github.com/copilot?prompt={{ prompt | urlencode }}" target="_blank" rel="noopener">GitHub Copilot</a>
           <a href="{{ base_url }}/guides/mcp-setup/" title="Cursor, Claude Desktop and others read these pages over MCP">Connect your assistant (MCP)</a>
         </div>
