@@ -1007,3 +1007,33 @@ def test_compound_unique_expected_value_reports_the_authored_casing(
     assert lower.expected_value is not None
     assert lower.expected_value["column_list"] == ["order_number", "customer_id"]
     assert lower.success is False
+
+
+# ───────────────────────── credential expiry (#2315) ─────────────────────────
+
+
+class TestCredentialExpiry:
+    """A Snowflake PAT is a JWT sent as the password; its ``exp`` is the credential's lifetime."""
+
+    @staticmethod
+    def _token(**claims: Any) -> str:
+        import jwt
+
+        return jwt.encode(claims, "k" * 32, algorithm="HS256")
+
+    def test_a_programmatic_access_token_states_its_expiry(self) -> None:
+        from datetime import UTC, datetime
+
+        from backend.app.datasources import registry
+
+        exp = datetime(2026, 10, 11, 22, 22, tzinfo=UTC)
+        token = self._token(exp=int(exp.timestamp()), iss="x", p="y")
+        assert registry.credential_expiry("snowflake", _CONFIG, token) == exp
+
+    def test_a_plain_password_or_key_pair_states_no_lifetime(self) -> None:
+        from backend.app.datasources import registry
+
+        assert registry.credential_expiry("snowflake", _CONFIG, "a password") is None
+        key_pair = {**_CONFIG, "auth_type": "key_pair"}
+        token = self._token(exp=2_000_000_000)
+        assert registry.credential_expiry("snowflake", key_pair, token) is None

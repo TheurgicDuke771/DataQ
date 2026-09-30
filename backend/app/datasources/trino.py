@@ -24,12 +24,13 @@ import os
 import re
 import ssl
 import tempfile
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Any, ClassVar, Literal
 
 from pydantic import Field, field_validator, model_validator
 
+from backend.app.core.credential_expiry import jwt_expiry
 from backend.app.datasources.generic_sql import (
     ColumnCaps,
     GenericSqlConfig,
@@ -197,13 +198,9 @@ def _auth_connect_args(config: TrinoConfig, secret: str | None) -> dict[str, Any
 
 def _credential_expiry(config: TrinoConfig, secret: str | None) -> datetime | None:
     """A JWT's ``exp`` — read, never verified (the cluster verifies it). ``None`` otherwise."""
-    if config.auth_type != "jwt" or not secret:
+    if config.auth_type != "jwt":
         return None
-    import jwt
-
-    claims = jwt.decode(secret, options={"verify_signature": False})
-    exp = claims.get("exp")
-    return datetime.fromtimestamp(exp, tz=UTC) if isinstance(exp, int | float) else None
+    return jwt_expiry(secret)
 
 
 def _add_gx_datasource(

@@ -74,3 +74,33 @@ def test_an_unreadable_ske_does_not_discard_the_readable_se() -> None:
     # Partial garbage must degrade to the expiry we CAN read, not to silence.
     sas = "sv=2022-11-02&se=2026-07-29T00:00:00Z&ske=garbage&sig=notarealsignature%3D"
     assert azure_sas_expiry(sas) == datetime(2026, 7, 29, tzinfo=UTC)
+
+
+# ── JWT expiry (#2315) ───────────────────────────────────────────────────────
+
+
+def _jwt(**claims: object) -> str:
+    import jwt
+
+    return jwt.encode(claims, "k" * 32, algorithm="HS256")
+
+
+def test_a_jwt_states_its_expiry() -> None:
+    from datetime import UTC, datetime
+
+    from backend.app.core.credential_expiry import jwt_expiry
+
+    exp = datetime(2026, 10, 11, 22, 22, tzinfo=UTC)
+    assert jwt_expiry(_jwt(exp=int(exp.timestamp()), iss="x", p="y")) == exp
+
+
+def test_anything_that_is_not_a_jwt_with_a_numeric_exp_has_no_readable_lifetime() -> None:
+    from backend.app.core.credential_expiry import jwt_expiry
+
+    assert jwt_expiry(None) is None
+    assert jwt_expiry("") is None
+    assert jwt_expiry("a plain password") is None
+    assert jwt_expiry("has.two.dots-but-is-not-base64") is None
+    assert jwt_expiry(_jwt(sub="no-exp")) is None
+    assert jwt_expiry(_jwt(exp=True)) is None
+    assert jwt_expiry(_jwt(exp=1e20)) is None

@@ -5,12 +5,14 @@ from __future__ import annotations
 import base64
 import json
 from collections.abc import Callable
+from datetime import datetime
 from typing import Any, ClassVar, Literal
 from urllib.parse import quote_plus
 
 from cryptography.hazmat.primitives import serialization
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from backend.app.core.credential_expiry import jwt_expiry
 from backend.app.core.secrets import SecretStore
 from backend.app.datasources.base import (
     CheckOutcome,
@@ -310,6 +312,13 @@ class SnowflakeConnectionAdapter:
 
     def validate_config(self, raw: dict[str, Any]) -> SnowflakeConfig:
         return SnowflakeConfig.model_validate(raw)
+
+    def credential_expiry(self, raw: dict[str, Any], secret: str, **_: Any) -> datetime | None:
+        """A programmatic access token's own expiry (#2315): Snowflake issues PATs as JWTs and
+        DataQ sends one as the password. A real password or an RSA key states no lifetime."""
+        if self.validate_config(raw).auth_type != "password":
+            return None
+        return jwt_expiry(secret)
 
     def test(
         self,
