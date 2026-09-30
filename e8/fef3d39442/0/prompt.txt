@@ -1,0 +1,15 @@
+CI failed for 2268
+
+---
+
+Let's update the handover note as per the latest progress. 
+Also add a line item to deploy the latest changes to both the cloud, and live verify every feature. 
+And one more item to create a detailed plan for tear down all four of them AWS, Azure, Snowflake and Databricks.
+
+---
+
+<task-notification>
+<task-id>beskmeml3</task-id>
+<summary>Monitor event: "Wait for #2271 to merge"</summary>
+<event>[Monitor expired after 5m with no events delivered. Re-arm it if you still need the watch — and widen the filter if silence was unexpected.]</event>
+</task-notification>
