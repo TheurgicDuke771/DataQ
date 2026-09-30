@@ -206,15 +206,16 @@ def _blind_spots(evidence: dict[str, Any], *, history_unavailable: bool) -> list
         )
     if evidence.get("upstream_pipeline_run") is None:
         trigger = evidence.get("pipeline_trigger")
-        if isinstance(trigger, dict) and trigger.get("pipeline_run") == "not_recorded":
+        if isinstance(trigger, dict) and trigger.get("triggered") is False:
+            spots.append("this run wasn't pipeline-triggered (a manual or scheduled run)")
+        elif isinstance(trigger, dict) and trigger.get("triggered") is True:
+            state = {
+                "not_recorded": "isn't recorded yet",
+                "ambiguous": "matches more than one recorded pipeline run",
+            }.get(str(trigger.get("pipeline_run")), "couldn't be loaded")
             spots.append(
                 f"this run was triggered by a pipeline ({trigger.get('provider')}), but that "
-                "pipeline run isn't recorded yet, so its status and timing are unknown"
-            )
-        elif isinstance(trigger, dict) and trigger.get("pipeline_run") == "ambiguous":
-            spots.append(
-                f"this run was triggered by a pipeline ({trigger.get('provider')}), but its marker "
-                "matches more than one recorded pipeline run, so none is shown"
+                f"pipeline run {state}, so its status and timing are unknown"
             )
         else:
             spots.append(

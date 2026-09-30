@@ -83,12 +83,15 @@ export interface EvidenceUpstreamPipelineRun {
   delay_seconds_vs_history: number | null;
 }
 
-/** Which orchestration provider triggered the run, from the run's own marker. */
-export interface EvidencePipelineTrigger {
-  provider: string;
-  marker: string;
-  pipeline_run: 'recorded' | 'not_recorded' | 'ambiguous';
-}
+/** Whether an orchestration pipeline triggered the run, from the run's own marker. */
+export type EvidencePipelineTrigger =
+  | { triggered: false }
+  | {
+      triggered: true;
+      provider: string;
+      marker: string;
+      pipeline_run: 'recorded' | 'not_recorded' | 'ambiguous';
+    };
 
 /**
  * The `downstream_blast_radius` layer since #1990. An incident synced BEFORE that fix stored a
@@ -112,7 +115,7 @@ export interface IncidentEvidence {
   metric_trend: EvidenceTrendPoint[] | null;
   sibling_checks: EvidenceSiblingCheck[] | null;
   upstream_pipeline_run: EvidenceUpstreamPipelineRun | null;
-  /** Absent on incidents captured before it existed; null = not pipeline-triggered. */
+  /** Absent on incidents captured before it existed; null = the layer couldn't be built. */
   pipeline_trigger?: EvidencePipelineTrigger | null;
   /** `EvidenceAssetLayer[]` is the legacy (pre-#1990) shape — see `EvidenceBlastRadius`. */
   downstream_blast_radius: EvidenceBlastRadius | EvidenceAssetLayer[] | null;

@@ -330,6 +330,7 @@ def test_upstream_pipeline_layer_with_delay(db_session: Any, world: dict[str, An
     assert up["pipeline_or_dag_id"] == "load_orders"
     assert up["duration_seconds"] == pytest.approx(600, abs=1)
     assert card["pipeline_trigger"] == {
+        "triggered": True,
         "provider": "airflow",
         "marker": "airflow:load_orders:run-2",
         "pipeline_run": "recorded",
@@ -446,7 +447,7 @@ def test_upstream_pipeline_none_for_manual_run(db_session: Any, world: dict[str,
         db_session, run=run, result=result, check=world["check"], asset=world["asset"]
     )
     assert card["upstream_pipeline_run"] is None
-    assert card["pipeline_trigger"] is None
+    assert card["pipeline_trigger"] == {"triggered": False}
 
 
 def test_a_pipeline_triggered_run_is_named_before_its_pipeline_run_is_recorded(
@@ -463,6 +464,7 @@ def test_a_pipeline_triggered_run_is_named_before_its_pipeline_run_is_recorded(
     )
     assert card["upstream_pipeline_run"] is None
     assert card["pipeline_trigger"] == {
+        "triggered": True,
         "provider": "adf",
         "marker": "adf:dataq_gate_fail:f53aff52",
         "pipeline_run": "not_recorded",
@@ -477,7 +479,7 @@ def test_a_scheduled_run_has_no_pipeline_trigger(db_session: Any, world: dict[st
     card = build_evidence(
         db_session, run=run, result=result, check=world["check"], asset=world["asset"]
     )
-    assert card["pipeline_trigger"] is None
+    assert card["pipeline_trigger"] == {"triggered": False}
 
 
 def test_card_degrades_with_none_check_and_asset(db_session: Any, world: dict[str, Any]) -> None:

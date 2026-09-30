@@ -250,7 +250,8 @@ function SiblingChecksSection({ siblings }: { siblings: EvidenceSiblingCheck[] |
   );
 }
 
-const UNRECORDED_PIPELINE_RUN = {
+const UNLINKED_PIPELINE_RUN = {
+  recorded: "recorded, but it couldn't be loaded",
   not_recorded: "not recorded in DataQ yet, so its status isn't known",
   ambiguous: 'matches more than one recorded pipeline run, so none is shown',
 } as const;
@@ -262,10 +263,6 @@ function UpstreamPipelineSection({
   pipeline: EvidenceUpstreamPipelineRun | null;
   trigger?: EvidencePipelineTrigger | null;
 }) {
-  const unrecordedReason =
-    !pipeline && trigger && trigger.pipeline_run !== 'recorded'
-      ? UNRECORDED_PIPELINE_RUN[trigger.pipeline_run]
-      : undefined;
   return (
     <Section title="Upstream pipeline run">
       {pipeline ? (
@@ -295,13 +292,15 @@ function UpstreamPipelineSection({
             )}
           </Descriptions.Item>
         </EvidenceDescriptions>
-      ) : trigger && unrecordedReason ? (
+      ) : trigger?.triggered ? (
         <EvidenceDescriptions>
           <Descriptions.Item label="Provider">{trigger.provider}</Descriptions.Item>
           <Descriptions.Item label="Trigger">{trigger.marker}</Descriptions.Item>
-          <Descriptions.Item label="Pipeline run">{unrecordedReason}</Descriptions.Item>
+          <Descriptions.Item label="Pipeline run">
+            {UNLINKED_PIPELINE_RUN[trigger.pipeline_run]}
+          </Descriptions.Item>
         </EvidenceDescriptions>
-      ) : trigger === null ? (
+      ) : trigger?.triggered === false ? (
         <NotAvailable reason="not triggered by a pipeline (a manual or scheduled run)" />
       ) : (
         <NotAvailable reason="not triggered by a monitored pipeline, or the pipeline run couldn't be resolved" />

@@ -3993,11 +3993,12 @@ def get_incident(incident_id: str) -> dict[str, Any]:
     - `upstream_pipeline_run` is null for every manually-triggered or scheduled
       run — most runs — and ALSO for a pipeline-triggered run whose pipeline run
       isn't recorded yet or is ambiguous. Read `pipeline_trigger` to tell them
-      apart: null there means no orchestration pipeline triggered the run (normal,
-      not a failure); otherwise it names the `provider` and says whether the
-      `pipeline_run` is `recorded`, `not_recorded` or `ambiguous`. An incident
-      captured before this layer existed has no `pipeline_trigger` key at all,
-      so for it a null `upstream_pipeline_run` can mean either.
+      apart: `{"triggered": false}` means no orchestration pipeline triggered the
+      run (normal, not a failure); `"triggered": true` names the `provider` and
+      says whether the `pipeline_run` is `recorded`, `not_recorded` or
+      `ambiguous`. A null `pipeline_trigger` means that layer couldn't be built,
+      and an incident captured before it existed has no key at all; in both, a
+      null `upstream_pipeline_run` can mean either.
     - `kind_detail` null is benign for an `expectation`/`comparison` check, but
       NOT for a `freshness`/`volume`/`aggregate`/`schema_drift`/`anomaly` one — every card
       is captured from a genuinely warned/failed/critical occurrence of its

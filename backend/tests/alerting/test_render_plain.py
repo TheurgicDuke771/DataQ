@@ -122,6 +122,7 @@ def test_error_and_skip_say_the_data_was_not_verified() -> None:
 def test_incident_facts_are_labelled_and_name_downstream_tables() -> None:
     evidence = {
         "upstream_pipeline_run": None,
+        "pipeline_trigger": {"triggered": False},
         "sibling_checks": [{"status": "fail"}] + [{"status": "pass"}] * 6,
         "downstream_blast_radius": {
             "assets": [{"name": n} for n in ("orders_daily", "revenue", "churn", "ltv")],
@@ -224,6 +225,7 @@ def test_an_unrecorded_pipeline_trigger_is_not_called_a_manual_run() -> None:
     evidence: dict[str, Any] = {
         "upstream_pipeline_run": None,
         "pipeline_trigger": {
+            "triggered": True,
             "provider": "adf",
             "marker": "adf:dataq_gate_fail:f53aff52",
             "pipeline_run": "not_recorded",
@@ -242,12 +244,55 @@ def test_an_unrecorded_pipeline_trigger_is_not_called_a_manual_run() -> None:
 def test_an_ambiguous_pipeline_trigger_says_so() -> None:
     evidence: dict[str, Any] = {
         "upstream_pipeline_run": None,
-        "pipeline_trigger": {"provider": "dbt", "marker": "dbt:a:b:c", "pipeline_run": "ambiguous"},
+        "pipeline_trigger": {
+            "triggered": True,
+            "provider": "dbt",
+            "marker": "dbt:a:b:c",
+            "pipeline_run": "ambiguous",
+        },
         "sibling_checks": [],
     }
     assert dict(render.incident_facts(_card(evidence)))["Triggered by"] == (
         "The dbt pipeline (its run matches more than one recorded pipeline run)."
     )
+
+
+def test_a_recorded_pipeline_run_that_failed_to_load_is_still_a_pipeline_trigger() -> None:
+    """#2294 review: the two layers are separate reads, and a failed upstream layer is null too."""
+    evidence: dict[str, Any] = {
+        "upstream_pipeline_run": None,
+        "pipeline_trigger": {
+            "triggered": True,
+            "provider": "airflow",
+            "marker": "airflow:etl:r1",
+            "pipeline_run": "recorded",
+        },
+        "sibling_checks": [],
+    }
+    assert dict(render.incident_facts(_card(evidence)))["Triggered by"] == (
+        "The Airflow pipeline (its run couldn't be loaded)."
+    )
+
+
+def test_only_an_explicit_not_triggered_layer_reads_as_manual() -> None:
+    manual: dict[str, Any] = {
+        "upstream_pipeline_run": None,
+        "pipeline_trigger": {"triggered": False},
+        "sibling_checks": [],
+    }
+    assert dict(render.incident_facts(_card(manual)))["Triggered by"] == (
+        "A manual or scheduled run (no upstream pipeline)."
+    )
+    unknown: dict[str, Any] = {
+        "upstream_pipeline_run": None,
+        "pipeline_trigger": None,
+        "sibling_checks": [],
+    }
+    assert (
+        "or a pipeline run DataQ couldn't match"
+        in dict(render.incident_facts(_card(unknown)))["Triggered by"]
+    )
+    assert "manual or scheduled run" not in render.evidence_summary_clause(unknown)
 
 
 def test_evidence_layers_that_failed_to_build_are_stated_not_dropped() -> None:

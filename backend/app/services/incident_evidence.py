@@ -433,13 +433,13 @@ def _pipeline_trigger_layer(session: Session, *, run: Run) -> dict[str, Any] | N
     ambiguous, so it alone cannot tell that apart from a manual or scheduled run. This layer can.
     """
     marker = run.triggered_by
-    if not marker:
-        return None
-    provider, sep, _rest = marker.partition(":")
-    if not sep or provider not in ORCHESTRATION_PROVIDERS:
-        return None
+    provider, sep, _rest = (marker or "").partition(":")
+    if not marker or not sep or provider not in ORCHESTRATION_PROVIDERS:
+        # Explicit, so a null layer only ever means "couldn't be built" (#2294 review).
+        return {"triggered": False}
     matches = len(markers.pipeline_runs_for_marker(session, marker))
     return {
+        "triggered": True,
         "provider": provider,
         "marker": marker,
         "pipeline_run": "recorded" if matches == 1 else "ambiguous" if matches else "not_recorded",

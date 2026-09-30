@@ -776,6 +776,7 @@ def test_blind_spots_name_the_pipeline_whose_run_is_not_recorded() -> None:
         "check": {"kind": "expectation"},
         "upstream_pipeline_run": None,
         "pipeline_trigger": {
+            "triggered": True,
             "provider": "adf",
             "marker": "adf:dataq_gate_fail:f53aff52",
             "pipeline_run": "not_recorded",
