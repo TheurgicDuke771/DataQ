@@ -932,3 +932,10 @@ Written by Claude, user-approved step by step. Goal: deploy `9f5475b7` to Azure 
   - AWS: Unity Catalog ×2 2/3, S3 ×2 2/3.
   - Every failure is either freshness on data the stopped harness last wrote in July/August (true positives), or one of the deliberate failure cases the all-paths suites include.
   - Kinds exercised: Azure has expectation, freshness, volume, schema_drift, anomaly and comparison (all GX); AWS has expectation and freshness only.
+- 09:25:42Z: **Automatic coverage (ADR 0047), user-approved as part of the walkthrough.** `auto_coverage: true` set on AWS `Retail Unity Catalog DEV` (`dd5ca985`) and Azure `Snowflake — Payments` (`f53de47d`) via `PATCH /connections/{id}` (a behaviour-only key, so no connectivity test).
+  - AWS: `reconcile_auto_coverage` queued at 09:26Z through a one-off `dataq-app-migrate:27` RunTask (`celery_app.send_task`, since the migrate task has `REDIS_URL`). At 09:31:50Z the worker reported **55 suites, 165 checks, 94 suggestions created**, not truncated.
+  - 37 `auto_coverage_profile_failed` warnings, all `TABLE_OR_VIEW_NOT_FOUND`: `workspace.perf_2087.*`, `dq_2158.*`, `dq_2171.*`, `dataq_test_2221_*` and `dataq_test_2227_*` were dropped within the inventory's 3-day freshness window. By design, and verified benign: those suites pause once the tables age out.
+  - Review queue on `Auto: samples.tpch.part`: accept → a check was created; reject → `rejected`; a second accept → 409 `suggestion_already_decided`.
+  - A run of that suite `succeeded`: schema drift passed (baseline captured). Row count and column profile correctly reported `skip` / `insufficient_history` on a first run; the accepted rule passed.
+  - Azure is left for the nightly beat (03:47Z on 2026-10-01): the Azure migrate job has no Redis secret to queue it with. This also verifies the beat schedule.
+- 09:34:13Z: AWS `auto_coverage` switched back **off** on `dd5ca985`. **Expected:** the 2026-10-01 03:47Z reconcile pauses its 55 automatic suites (never deletes them). Azure `f53de47d` stays on until its beat-created suites are verified, then it is switched off.
