@@ -102,7 +102,8 @@ locals {
     { name = "ADF_WEBHOOK_SECRET_NAME", value = "adf-webhook-secret" },
     { name = "AIRFLOW_WEBHOOK_SECRET_NAME", value = "airflow-webhook-secret" },
     { name = "DBT_WEBHOOK_SECRET_NAME", value = "dbt-webhook-secret" },
-    { name = "SLACK_WEBHOOK_SECRET_NAME", value = "channel-slack-webhook" },
+    # Empty leaves the Slack channel off; set it only once that secret exists (#2292).
+    { name = "SLACK_WEBHOOK_SECRET_NAME", value = var.slack_webhook_secret_name },
     # Spans + OTel logs → the ADOT sidecar on task-local loopback (#1369, adot.tf) → X-Ray /
     # CloudWatch.
     { name = "OTEL_EXPORTER_OTLP_ENDPOINT", value = "http://localhost:4318" },
