@@ -939,3 +939,16 @@ Written by Claude, user-approved step by step. Goal: deploy `9f5475b7` to Azure 
   - A run of that suite `succeeded`: schema drift passed (baseline captured). Row count and column profile correctly reported `skip` / `insufficient_history` on a first run; the accepted rule passed.
   - Azure is left for the nightly beat (03:47Z on 2026-10-01): the Azure migrate job has no Redis secret to queue it with. This also verifies the beat schedule.
 - 09:34:13Z: AWS `auto_coverage` switched back **off** on `dd5ca985`. **Expected:** the 2026-10-01 03:47Z reconcile pauses its 55 automatic suites (never deletes them). Azure `f53de47d` stays on until its beat-created suites are verified, then it is switched off.
+- ~09:35–09:50Z: **Feature walkthrough, continued (admin PAT, both clouds):**
+  - **Alerts:** AWS SES `email_alert_sent` ×3; Azure `alert_deduped` ×4 on repeat failures. Found #2292: the AWS stack names a Slack secret it never creates, so every alert logs `workspace_webhook_unresolved`. Found #2293: the alert builder's `session.get(User, None)` for an ownerless automatic suite raises an `SAWarning`.
+  - **Incidents:** Azure 11 open, AWS 10 open. `get_incident` returns the full evidence.
+  - **Lineage:** 58 assets with edges on each cloud. `column-lineage` on `MART_ORDER_REVENUE.ORDER_DATE` reports `upstream_status: incomplete` with the `none_recorded` gaps named (table edges, no column mapping).
+  - **Engines, Azure, dry run** (nothing persisted):
+    - DMF `null_count` (order_number) and `accepted_values` (status) both pass.
+    - Aggregate: Snowflake mean `order_total` = 1014.93, Unity Catalog median `rating` = 3.0, both pass.
+    - **Found #2291:** a `column_profile` anomaly preview returns 502 `invalid freshness column identifier: None` on both engines. The run path is unaffected.
+  - **DQX, Azure** (it has no preview, so a real run): walkthrough check `aed36bde` added to `Unity Catalog — Feedback (all paths)`. Run `b55d0848` `succeeded` 9/10, the DQX result `pass` (195 rows, 0 failing) from a serverless job in the Databricks workspace. **Check deleted afterwards (204).**
+  - **LLM:** not configured on either deployed app (`/admin/llm` `configured: false`). It was live-verified earlier against Azure OpenAI and Bedrock from the local stack.
+  - **Edge:** AWS CloudFront `E19W6CPQ40J7EH` carries WAF web ACL `dataq-app`.
+  - **MCP tool calls:** `list_suites`, `list_incidents`, `get_health_score`, `get_doc` and `list_assets` all answer on both clouds.
+  - #2291, #2292 and #2293 are filed as sub-issues of epic #2224.
