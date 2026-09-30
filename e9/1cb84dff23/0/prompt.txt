@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bq11gznhd</task-id>
+<tool-use-id>toolu_01TRpWhRD6minJkbUdW88i7W</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/5ffbb754-c47f-4bef-b45f-a36850170a48/tasks/bq11gznhd.output</output-file>
+<status>completed</status>
+<summary>Background command "Fix ruff import sort, run full backend suite" completed (exit code 0)</summary>
+</task-notification>
