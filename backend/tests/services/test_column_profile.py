@@ -311,3 +311,24 @@ def test_an_unqualified_target_lists_and_counts_the_same_schema(table: str) -> N
     )
     assert profile.row_count == 4
     assert profile.series[series_key("email", NULL_PCT)] == 25.0
+
+
+def test_a_column_profile_dry_run_previews_the_real_profile(table: str) -> None:
+    """#2291: the preview fell into the freshness branch and 502'd "invalid freshness column
+    identifier: None" — it must take the run path's measurement and report the cold start."""
+    from backend.app.services import dryrun_service
+
+    outcome = dryrun_service._dry_run_anomaly(
+        _pg(),
+        config={"target_metric": "column_profile", "window": 8, "min_points": 3},
+        target={"table": table, "schema": "public"},
+        secret_store=FakeSecretStore(),
+    )
+
+    assert outcome.status == "skip"
+    observed = outcome.observed_value or {}
+    assert observed["target_metric"] == "column_profile"
+    assert observed["insufficient_history"] is True
+    assert observed["dry_run"] is True
+    assert observed["row_count"] == 4
+    assert observed["columns_total"] == 3
