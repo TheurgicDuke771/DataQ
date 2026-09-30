@@ -121,16 +121,16 @@ variable "oidc_allowed_domains" {
   default     = ""
 }
 
-# Replaces the earlier email_username/email_from/email_to trio (#1368): the stack now ships SES
-# natively (ses.tf), so one address drives the whole channel — it becomes the SES identity, the
-# From:, and (sandbox) the sole recipient; the SMTP login + password are derived resources, not
-# inputs.
 variable "slack_webhook_secret_name" {
   description = "Secrets Manager key (under AWS_SECRETS_MANAGER_PREFIX) holding the workspace Slack webhook URL. Empty = Slack channel off. The stack does not create this secret: create it first, or every alert logs workspace_webhook_unresolved."
   type        = string
   default     = ""
 }
 
+# Replaces the earlier email_username/email_from/email_to trio (#1368): the stack now ships SES
+# natively (ses.tf), so one address drives the whole channel — it becomes the SES identity, the
+# From:, and (sandbox) the sole recipient; the SMTP login + password are derived resources, not
+# inputs.
 variable "alert_email" {
   description = "Verified SES identity for email alerts: the sender (From:), and the default recipient when alert_email_to is unset. Empty = email channel off. Requires the one-time SES verification click."
   type        = string

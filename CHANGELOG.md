@@ -15,6 +15,11 @@ would act on. The step lives in the release checklist in
 
 ### Changed
 
+- **AWS stack — Slack alerts are off unless `slack_webhook_secret_name` is set (#2292).** The
+  stack used to hardcode `SLACK_WEBHOOK_SECRET_NAME=channel-slack-webhook` without creating that
+  secret. An AWS deployment that created `<prefix>/channel-slack-webhook` itself must set
+  `slack_webhook_secret_name = "channel-slack-webhook"` before its next task-definition replace,
+  or Slack alerts stop without a log line.
 - **Breaking — connections are tested before they are saved (#1927).** `POST /connections`,
   a `PATCH` that changes config or a credential, and `POST /connections/{id}/reauth` refuse a
   config that fails its test with `422 connection_test_failed_on_save` and write nothing (a
