@@ -652,6 +652,9 @@ def _summary_int(summary: Any, key: str) -> int | None:
 
 
 _DELETE_TOTAL_KEYS = ("total-delete-files", "total-position-deletes", "total-equality-deletes")
+#: Prefix of the one `_row_delete_guard` reason that PROVES deletes exist (the others only fail to
+#: prove there are none).
+ROW_DELETES_PRESENT = "row-level deletes present"
 
 
 def _row_delete_guard(summary: Any) -> str | None:
@@ -666,8 +669,18 @@ def _row_delete_guard(summary: Any) -> str | None:
         if count is None:
             return f"unparseable snapshot summary field {key}"
         if count > 0:
-            return f"row-level deletes present ({key}={count})"
+            return f"{ROW_DELETES_PRESENT} ({key}={count})"
     return None
+
+
+def row_delete_reason(table: Any) -> str | None:
+    """Why the current snapshot may carry row-level deletes, or ``None`` when its summary proves
+    it carries none (or there is no snapshot).
+    """
+    snapshot = table.current_snapshot()
+    if snapshot is None:
+        return None
+    return _row_delete_guard(getattr(snapshot, "summary", None))
 
 
 def summary_scan_fallback_reason(table: Any) -> str | None:

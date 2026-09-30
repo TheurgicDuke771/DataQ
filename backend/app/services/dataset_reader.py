@@ -16,11 +16,13 @@ from backend.app.core.secrets import SecretStore
 from backend.app.datasources.flatfile import file_stat
 from backend.app.datasources.flatfile import read_dataframe as read_flatfile_dataframe
 from backend.app.datasources.iceberg import (
+    ROW_DELETES_PRESENT,
     IcebergConfig,
     iceberg_credentials,
     load_iceberg_table,
     planned_row_count,
     read_iceberg_dataframe,
+    row_delete_reason,
 )
 from backend.app.datasources.sampling import enforce_byte_cap
 from backend.app.datasources.sql_engines import GENERIC_SQL_TYPES, authenticates_without_secret
@@ -223,6 +225,36 @@ def _flatfile_read(
 # ───────────────────────── iceberg (native pyiceberg) ───────────────
 
 
+def _iceberg_planned_too_large(
+    table: Any, count: int, max_rows: int, identifier: str
+) -> DatasetTooLargeError:
+    """The planned count counts rows a row-level delete has removed (#2018), so a refusal on a
+    delete-bearing snapshot must not state it as the table's live size.
+    """
+    try:
+        reason = row_delete_reason(table)
+    except Exception as exc:  # the refusal itself must not fail on a metadata oddity
+        reason = f"snapshot metadata unreadable ({type(exc).__name__})"
+    if reason is None:
+        return _too_large(count, max_rows, side_hint=f"iceberg table {identifier!r}")
+    if reason.startswith(ROW_DELETES_PRESENT):
+        why = (
+            f"That count includes rows removed by row-level deletes not yet compacted ({reason}), "
+            "which the worker still reads — compact the table (rewrite its data files), "
+        )
+    else:
+        why = (
+            f"That count may include rows removed by row-level deletes ({reason}); if the table "
+            "has them, compacting it (rewriting its data files) lowers the count. Otherwise "
+        )
+    return DatasetTooLargeError(
+        f"iceberg table {identifier!r} reads {count} rows from its data files, over the "
+        f"comparison cap of {max_rows}. {why}raise config.max_rows deliberately, or narrow "
+        "the dataset",
+        detail={"rows": count, "max_rows": max_rows, "count": "planned", "row_deletes": reason},
+    )
+
+
 def _iceberg_read(
     connection: Connection, spec: DatasetSpec, max_rows: int, secret_store: SecretStore
 ) -> Any:
@@ -240,7 +272,7 @@ def _iceberg_read(
     # deletes are applied after the files are read.
     count = planned_row_count(table)
     if count > max_rows:
-        raise _too_large(count, max_rows, side_hint=f"iceberg table {spec.table!r}")
+        raise _iceberg_planned_too_large(table, count, max_rows, spec.table)
     df = read_iceberg_dataframe(
         cfg, secret, spec.table, limit=max_rows + 1, table=table, catalog_secret=catalog_secret
     )
