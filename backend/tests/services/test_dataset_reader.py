@@ -396,6 +396,7 @@ def test_an_iceberg_refusal_with_row_deletes_does_not_state_the_planned_count_as
 
     assert "has 15 rows" not in err.message
     assert "reads 15 rows from its data files" in err.message
+    assert "That count includes rows removed by row-level deletes" in err.message
     assert "compact the table" in err.message
     assert err.detail["count"] == "planned"
     assert err.detail["row_deletes"] == "row-level deletes present (total-position-deletes=6)"
@@ -407,6 +408,8 @@ def test_an_iceberg_refusal_that_cannot_prove_no_deletes_says_so(
     err = _refuse_iceberg(monkeypatch, FakeIcebergTable(15, {}))
 
     assert "has 15 rows" not in err.message
+    assert "may include rows removed by row-level deletes" in err.message
+    assert "That count includes" not in err.message
     assert "cannot prove no row-level deletes" in err.detail["row_deletes"]
 
 
@@ -420,6 +423,7 @@ def test_an_iceberg_refusal_survives_unreadable_snapshot_metadata(
     err = _refuse_iceberg(monkeypatch, _Broken(15))
 
     assert err.detail["row_deletes"] == "snapshot metadata unreadable (OSError)"
+    assert "may include rows removed" in err.message
 
 
 def test_a_real_delete_free_iceberg_table_is_refused_with_its_exact_count(
