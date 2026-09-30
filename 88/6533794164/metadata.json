@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "886533794164",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2018-iceberg-planned-count-message",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/datasources/iceberg.py",
+    "backend/app/services/dataset_reader.py",
+    "backend/tests/services/test_dataset_reader.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/88/6533794164/0/metadata.json",
+      "transcript": "/88/6533794164/0/full.jsonl",
+      "compact_transcript": "/88/6533794164/0/transcript.jsonl",
+      "content_hash": "/88/6533794164/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 10,
+    "cache_creation_tokens": 5746,
+    "cache_read_tokens": 1056859,
+    "output_tokens": 4486,
+    "api_call_count": 5
+  }
+}
