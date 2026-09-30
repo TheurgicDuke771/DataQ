@@ -291,3 +291,27 @@ def test_resolve_status_custom_sql_zero_rows_without_thresholds_is_plain_pass() 
     assert resolve_status(
         outcome, warn_threshold=None, fail_threshold=None, critical_threshold=None
     ) == ("pass", Decimal("0"))
+
+
+@pytest.mark.parametrize(
+    ("kind", "etype", "expected"),
+    [
+        ("expectation", "expect_column_values_to_be_unique", "percent of rows failing"),
+        ("expectation", "unexpected_rows_expectation", "rows the failing-rows query returned"),
+        ("expectation", "dqx:is_not_null", "rows failing the rule"),
+        ("expectation", "dmf:null_count", "NULL_COUNT"),
+        ("freshness", "monitor:freshness", "in hours"),
+        ("anomaly", "monitor:anomaly", "z-score"),
+        ("comparison", "comparison:columns", "don't match"),
+        ("something_new", "monitor:new", None),
+        (None, None, None),
+        ("expectation", "dmf:custom", "customer-defined"),
+    ],
+)
+def test_metric_meaning_names_what_each_kind_measures(
+    kind: str | None, etype: str | None, expected: str | None
+) -> None:
+    from backend.app.services.severity import metric_meaning
+
+    meaning = metric_meaning(kind, etype)
+    assert meaning is None if expected is None else expected in (meaning or "")

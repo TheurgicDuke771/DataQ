@@ -34,6 +34,7 @@ from backend.app.llm.base import LLMOutputInvalidError, LLMRequestInvalidError
 from backend.app.services import check_service, incident_service, llm_service
 from backend.app.services.check_service import CheckNotFoundError
 from backend.app.services.incident_evidence import MONITOR_KINDS, blast_radius_assets_and_qualifiers
+from backend.app.services.severity import metric_meaning
 
 log = get_logger(__name__)
 
@@ -293,10 +294,20 @@ def _render_evidence(evidence: dict[str, Any], history: list[Any], blind_spots: 
     check = evidence.get("check") or {}
     asset = evidence.get("asset") or {}
     failing = evidence.get("failing_result") or {}
+    meaning = metric_meaning(check.get("kind"), check.get("expectation_type"))
+    # Stated, not left to guess: a bare 99.42 read as a pass rate inverted the narrative (#2296).
+    measures = (
+        f"metric_value measures: {meaning}"
+        if meaning
+        else (
+            "metric_value's meaning isn't known for this check: don't infer whether higher is worse"
+        )
+    )
     lines = [
         f"Check: {check.get('name', '(unknown)')} — kind={check.get('kind')}, "
         f"expectation_type={check.get('expectation_type')}",
         f"Asset: {asset.get('namespace', '')}.{asset.get('name', '')}",
+        measures,
         f"Latest breaching occurrence: status={failing.get('status')}, "
         f"metric_value={failing.get('metric_value')}",
     ]

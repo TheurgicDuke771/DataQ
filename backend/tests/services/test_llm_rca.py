@@ -770,6 +770,29 @@ def test_latest_narrative_for_alert_refuses_when_the_card_has_cross_suite_siblin
     assert llm_rca.latest_narrative_for_incident(db_session, incident.id) is not None
 
 
+def test_the_prompt_states_what_metric_value_measures() -> None:
+    """#2296: a bare `metric_value=99.42` on a uniqueness check was narrated as "0.58%
+    duplicated" — the prompt must say it is the failing percentage."""
+    evidence = {
+        "check": {
+            "name": "order_id unique",
+            "kind": "expectation",
+            "expectation_type": "expect_column_values_to_be_unique",
+        },
+        "failing_result": {"status": "fail", "metric_value": 99.42},
+    }
+    prompt = llm_rca._render_evidence(evidence, [], [])
+    assert "metric_value measures: percent of rows failing the expectation" in prompt
+
+
+def test_the_prompt_says_when_metric_value_has_no_known_meaning() -> None:
+    evidence = {
+        "check": {"name": "x", "kind": "future_kind", "expectation_type": "monitor:future"},
+        "failing_result": {"status": "fail", "metric_value": 3},
+    }
+    assert "don't infer whether higher is worse" in llm_rca._render_evidence(evidence, [], [])
+
+
 def test_blind_spots_name_the_pipeline_whose_run_is_not_recorded() -> None:
     """#2294: a null upstream layer on a pipeline-triggered run is not "maybe manual"."""
     evidence = {
