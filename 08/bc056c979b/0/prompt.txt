@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bgw4zvdd1</task-id>
+<tool-use-id>toolu_018Eze15ynERGbnz4pJR9CRm</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/5ffbb754-c47f-4bef-b45f-a36850170a48/tasks/bgw4zvdd1.output</output-file>
+<status>completed</status>
+<summary>Background command "Full gates for #2294 in the worktree" completed (exit code 0)</summary>
+</task-notification>
