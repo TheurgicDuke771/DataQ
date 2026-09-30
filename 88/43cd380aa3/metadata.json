@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "8843cd380aa3",
+  "strategy": "manual-commit",
+  "branch": "docs/uniform-rest-prerequisites",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/site/guides/features.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/88/43cd380aa3/0/metadata.json",
+      "transcript": "/88/43cd380aa3/0/full.jsonl",
+      "compact_transcript": "/88/43cd380aa3/0/transcript.jsonl",
+      "content_hash": "/88/43cd380aa3/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2,
+    "cache_creation_tokens": 1459,
+    "cache_read_tokens": 933960,
+    "output_tokens": 1767,
+    "api_call_count": 1
+  }
+}
