@@ -4330,8 +4330,10 @@ deviation first, and its metric (the z-score the thresholds read) is the largest
   null rate is measured against is never taken as less than 1 percentage point, and a
   distinct count's never as less than 10% of its mean.</li>
 <li>It measures the first 100 columns in table order and reports how many there are in
-  total. If a column's type can't be counted distinct, it keeps the null rates and says
-  <code>distinct_available: false</code> rather than failing.</li>
+  total. A column whose type the engine can't cast to a string (Redshift <code>GEOMETRY</code> or <code>BOOLEAN</code>), or
+  whose cast drops values (Redshift <code>SUPER</code> objects), keeps its null rate but gets no
+  distinct count, and is listed under <code>distinct_unavailable</code>. Every other column is still
+  counted.</li>
 </ul>
 <p>For example, with <code>{"target_metric": "column_profile", "window": 8, "min_points": 3}</code> on
 <code>orders</code>, three runs build the history. When a load then leaves <code>customer_email</code> empty,
