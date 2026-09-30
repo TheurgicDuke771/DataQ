@@ -1,0 +1,53 @@
+So, how many open issues are now have dependency on aws, azure, snowflake and databricks?
+
+---
+
+let's fix and close out #2260 & #2275
+
+---
+
+<task-notification>
+<task-id>bstqbbbek</task-id>
+<tool-use-id>toolu_011VvVvT9BizeEV2vnXA5Lg3</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/5ffbb754-c47f-4bef-b45f-a36850170a48/tasks/bstqbbbek.output</output-file>
+<status>completed</status>
+<summary>Background command "Run full backend suites sequentially for #2293/#2295/#2296" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+check on #2304
+
+---
+
+<task-notification>
+<task-id>b3dpq6r1i</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/5ffbb754-c47f-4bef-b45f-a36850170a48/tasks/b3dpq6r1i.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch #2304 CI and merge; check issue states" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bizab0jk7</task-id>
+<tool-use-id>toolu_01Y3Vsh9w191q9SrJNXYXXUN</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/5ffbb754-c47f-4bef-b45f-a36850170a48/tasks/bizab0jk7.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for backend tests and merge of #2304" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+deploy the changes in both the cloud
+
+---
+
+<task-notification>
+<task-id>buoh0s7d0</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/5ffbb754-c47f-4bef-b45f-a36850170a48/tasks/buoh0s7d0.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for main CI, dispatch both deploys, watch them" completed (exit code 0)</summary>
+</task-notification>

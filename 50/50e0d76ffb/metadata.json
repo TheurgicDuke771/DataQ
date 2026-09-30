@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "5050e0d76ffb",
+  "strategy": "manual-commit",
+  "branch": "chore/ops-log-2026-09-30-redeploy-7257c0ff",
+  "checkpoints_count": 7,
+  "files_touched": [
+    "docs/ops-log.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/50/50e0d76ffb/0/metadata.json",
+      "transcript": "/50/50e0d76ffb/0/full.jsonl",
+      "compact_transcript": "/50/50e0d76ffb/0/transcript.jsonl",
+      "content_hash": "/50/50e0d76ffb/0/content_hash.txt",
+      "prompt": "/50/50e0d76ffb/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 74,
+    "cache_creation_tokens": 39824,
+    "cache_read_tokens": 24888702,
+    "output_tokens": 23924,
+    "api_call_count": 37
+  }
+}
