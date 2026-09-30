@@ -103,3 +103,4 @@ def test_anything_that_is_not_a_jwt_with_a_numeric_exp_has_no_readable_lifetime(
     assert jwt_expiry("has.two.dots-but-is-not-base64") is None
     assert jwt_expiry(_jwt(sub="no-exp")) is None
     assert jwt_expiry(_jwt(exp=True)) is None
+    assert jwt_expiry(_jwt(exp=1e20)) is None

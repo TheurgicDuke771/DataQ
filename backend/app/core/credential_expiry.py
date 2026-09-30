@@ -28,7 +28,10 @@ def jwt_expiry(token: str | None) -> datetime | None:
     exp = claims.get("exp")
     if isinstance(exp, bool) or not isinstance(exp, int | float):
         return None
-    return datetime.fromtimestamp(exp, tz=UTC)
+    try:
+        return datetime.fromtimestamp(exp, tz=UTC)
+    except (OverflowError, ValueError, OSError):
+        return None
 
 
 def azure_sas_expiry(secret: str) -> datetime | None:
