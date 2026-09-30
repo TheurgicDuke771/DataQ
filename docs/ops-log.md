@@ -904,3 +904,15 @@ User-approved route: the deployed image predates the gate endpoint, so a scratch
   - Tunnel, API and worker stopped.
   - `dataq_gate2230` dropped and Redis db 7 flushed.
   - **Expected state: none of these exist.** `cloudflared` remains installed on the maintainer machine (`brew uninstall cloudflared` removes it).
+
+## 2026-09-30 — both clouds brought to `main` ahead of the cloud teardown (#2224)
+
+Written by Claude, user-approved step by step. Goal: deploy `9f5475b7` to Azure and AWS, then live-verify every cloud feature before the teardown plan.
+
+- **Pre-deploy:** CI green on `9f5475b7`. No pending revision carries a `MANDATORY PRE-DEPLOY` step. Azure runs `517b407b` (6 migrations behind); AWS runs `aws-7a3244a4` (16 behind).
+- **`tofu plan`, both stacks, read-only.** `app_db_password` was read inline from each cloud's existing secret, so the database shows no diff.
+  - Azure: no infrastructure change (one output value only). No apply needed.
+  - AWS: the `dataq-app-beat` service (#1811) had never been created there, and the live worker still ran `worker -B`. The task definition ignores `container_definitions`, and `ecs_roll.sh` copies the family's latest revision, so a plain apply would have left `-B` in place permanently beside the new beat.
+- 08:29:28–08:29:37Z: **`tofu apply` on `deploy/terraform/aws/`** with `-replace=aws_ecs_task_definition.worker`, images held at the running `aws-7a3244a4`. 4 added (beat log group, task definition, service; worker task definition), 1 changed (GitHub deploy role policy now covers beat), 1 destroyed (the old worker revision).
+- 08:30:50Z: worker service updated to `dataq-app-worker:33` (`worker -Q celery,llm`, no `-B`). Stable at 08:33:15Z.
+  - **Expected state:** worker 1/1 on revision 33, beat 1/1 on `dataq-app-beat:1`, both on `aws-7a3244a4` until the deploy below. Exactly one Celery beat.
