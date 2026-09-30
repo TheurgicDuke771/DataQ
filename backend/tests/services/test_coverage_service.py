@@ -347,5 +347,5 @@ def test_a_profiling_failure_does_not_skip_the_table(
     monkeypatch.setattr(suggestion_service, "refresh_from_profile", boom)
     orders = _asset(db_session, conn, "orders")
     report = cov.reconcile_connection(db_session, conn, now=NOW)
-    assert report.skipped_assets == [] and report.checks_created == 2
+    assert report.skipped_assets == [] and report.checks_created == 3
     assert _checks(db_session, _auto(db_session, orders))
