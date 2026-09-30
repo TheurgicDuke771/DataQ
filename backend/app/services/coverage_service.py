@@ -2,10 +2,10 @@
 
 For every connection with ``auto_coverage`` switched on, each table its inventory lists (not
 excluded, still being seen) gets one suite with ``origin='auto'`` and no human owner, holding
-ordinary checks that report change against the table's own history: row count and freshness
-anomaly, and schema drift. The daily reconciler only ever ADDS what is missing: it never edits
-an existing check, never recreates one a person deleted, and pauses (never deletes) the suites
-of tables that stop being covered.
+ordinary checks that report change against the table's own history: row count, freshness and
+column-profile anomaly, and schema drift. The daily reconciler only ever ADDS what is missing:
+it never edits an existing check, never recreates one a person deleted, and pauses (never
+deletes) the suites of tables that stop being covered.
 """
 
 from __future__ import annotations
@@ -37,6 +37,7 @@ SUITE_NAME_PREFIX = "Auto: "
 VOLUME_CHECK = "Row count is normal"
 SCHEMA_CHECK = "Schema is unchanged"
 FRESHNESS_CHECK = "Data is fresh"
+PROFILE_CHECK = "Column profile is normal"
 
 #: Anomaly defaults (ADR 0047 §5): warn at 3 standard deviations, fail at 4, critical at 6.
 #: Same-weekday history, 4 points before scoring: a daily suite starts scoring in its fifth week.
@@ -211,6 +212,14 @@ def _ensure_checks(session: Session, suite: Suite) -> int:
             name=VOLUME_CHECK,
             kind="anomaly",
             config={"target_metric": "row_count", **_ANOMALY_WINDOW},
+            thresholds=_ANOMALY_THRESHOLDS,
+        )
+    if "profile" not in roles:
+        add(
+            "profile",
+            name=PROFILE_CHECK,
+            kind="anomaly",
+            config={"target_metric": "column_profile", **_ANOMALY_WINDOW},
             thresholds=_ANOMALY_THRESHOLDS,
         )
     if "freshness" not in roles:

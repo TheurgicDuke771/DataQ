@@ -102,11 +102,11 @@ def test_a_covered_table_gets_a_system_owned_suite_of_universal_baselines(
 
     report = cov.reconcile_connection(db_session, conn, now=NOW)
 
-    assert report.suites_created == 1 and report.checks_created == 2
+    assert report.suites_created == 1 and report.checks_created == 3
     suite = _auto(db_session, orders)
     assert suite.created_by is None and suite.target == {"schema": "public", "table": "orders"}
     checks = _checks(db_session, suite)
-    assert set(checks) == {cov.SCHEMA_CHECK, cov.VOLUME_CHECK}
+    assert set(checks) == {cov.SCHEMA_CHECK, cov.VOLUME_CHECK, cov.PROFILE_CHECK}
     assert {c.origin for c in checks.values()} == {"auto"}
     volume = checks[cov.VOLUME_CHECK]
     assert (volume.warn_threshold, volume.fail_threshold, volume.critical_threshold) == (
@@ -267,7 +267,7 @@ def test_a_renamed_check_is_not_added_again(db_session: Any, conn: Connection) -
     db_session.commit()
 
     assert cov.reconcile_connection(db_session, conn, now=NOW).checks_created == 0
-    assert set(_checks(db_session, suite)) == {"Orders volume", cov.SCHEMA_CHECK}
+    assert set(_checks(db_session, suite)) == {"Orders volume", cov.SCHEMA_CHECK, cov.PROFILE_CHECK}
 
 
 def test_a_schedule_a_person_paused_stays_paused(db_session: Any, conn: Connection) -> None:
@@ -317,6 +317,7 @@ def test_one_failing_table_does_not_stop_the_rest(
     assert set(_checks(db_session, _auto(db_session, healthy))) == {
         cov.SCHEMA_CHECK,
         cov.VOLUME_CHECK,
+        cov.PROFILE_CHECK,
     }
 
 
@@ -346,5 +347,5 @@ def test_a_profiling_failure_does_not_skip_the_table(
     monkeypatch.setattr(suggestion_service, "refresh_from_profile", boom)
     orders = _asset(db_session, conn, "orders")
     report = cov.reconcile_connection(db_session, conn, now=NOW)
-    assert report.skipped_assets == [] and report.checks_created == 2
+    assert report.skipped_assets == [] and report.checks_created == 3
     assert _checks(db_session, _auto(db_session, orders))
