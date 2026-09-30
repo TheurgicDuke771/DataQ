@@ -44,9 +44,14 @@ class BoundedUnexpectedRowsQueryTable(UnexpectedRowsQueryTable):  # type: ignore
     provider is redeclared here — the body is `QueryTable._sqlalchemy` with the bound added.
     """
 
+    # A staticmethod, not a method: GX looks the provider up with getattr(cls, ...), which returns
+    # the same plain function either way, and calls it as metric_fn(cls=<provider class>, ...) —
+    # so `cls` arrives by keyword and its name is load-bearing. Declared static so linters (and
+    # CodeQL py/not-named-self) don't read `cls` as a misnamed `self`.
+    @staticmethod
     @metric_value(engine=SqlAlchemyExecutionEngine)  # type: ignore[untyped-decorator]
     def _sqlalchemy(
-        cls,  # noqa: N805 — GX calls it as metric_fn(cls=<provider class>, ...), so the name is load-bearing
+        cls: Any,
         execution_engine: SqlAlchemyExecutionEngine,
         metric_domain_kwargs: dict[str, Any],
         metric_value_kwargs: dict[str, Any],
