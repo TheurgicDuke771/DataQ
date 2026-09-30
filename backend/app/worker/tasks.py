@@ -17,6 +17,7 @@ from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretStore, get_secret_store
 from backend.app.core.tamper_anchor import get_tamper_anchor
 from backend.app.datasources.flatfile import BatchNotFoundError
+from backend.app.datasources.iceberg import iceberg_catalog_scope
 from backend.app.datasources.monitors import STATEFUL_MONITOR_KINDS
 from backend.app.datasources.registry import build_check_runner, owned_runner
 from backend.app.db.models import (
@@ -245,25 +246,28 @@ def run_suite(
     rid = uuid.UUID(run_id)
     session = get_session()
     try:
-        decision = _admit_run(
-            self, session, run_id=rid, admission=admission, deadline=admission_deadline
-        )
-        if decision is not None:
-            return decision
-        # OpenLineage START/terminal brackets the run (ADR 0034, #758) — fail-open, dark by default.
-        lineage_dispatch.emit_run_lineage_start(session, run_id=rid)
-        try:
-            outcome = _run_suite(session, run_id=rid)
-        except BaseException:
+        # One catalog handle per Iceberg connection for the whole run (#2032).
+        with iceberg_catalog_scope():
+            decision = _admit_run(
+                self, session, run_id=rid, admission=admission, deadline=admission_deadline
+            )
+            if decision is not None:
+                return decision
+            # OpenLineage START/terminal brackets the run (ADR 0034, #758) — fail-open, dark by
+            # default.
+            lineage_dispatch.emit_run_lineage_start(session, run_id=rid)
+            try:
+                outcome = _run_suite(session, run_id=rid)
+            except BaseException:
+                lineage_dispatch.emit_run_lineage_terminal(session, run_id=rid)
+                raise
             lineage_dispatch.emit_run_lineage_terminal(session, run_id=rid)
-            raise
-        lineage_dispatch.emit_run_lineage_terminal(session, run_id=rid)
-        # Incident rollup BEFORE alert dispatch so the report can reference the
-        # open incident (#761); fail-soft like the hooks around it.
-        incident_service.sync_incidents_for_run(session, run_id=rid)
-        alert_dispatch.publish_run_outcome(session, run_id=rid)
-        _alert_datasource_health_for_run(session, run_id=rid)
-        return outcome
+            # Incident rollup BEFORE alert dispatch so the report can reference the
+            # open incident (#761); fail-soft like the hooks around it.
+            incident_service.sync_incidents_for_run(session, run_id=rid)
+            alert_dispatch.publish_run_outcome(session, run_id=rid)
+            _alert_datasource_health_for_run(session, run_id=rid)
+            return outcome
     finally:
         run_admission.release(rid)
         session.close()
