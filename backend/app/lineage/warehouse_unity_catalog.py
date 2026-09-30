@@ -40,7 +40,8 @@ _WATERMARK_SAFETY = timedelta(hours=6)
 _MAX_COLUMN_PAIRS_PER_EDGE = MAX_COLUMN_PAIRS_PER_EDGE
 
 
-#: `event_log_<pipeline id>`: the id is a UUID with underscores for hyphens (inlined in the query).
+#: `event_log_<pipeline id>`: the id is a UUID with underscores for hyphens. A module constant
+#: (never user input), interpolated into the enumeration query as a regex literal.
 _PIPELINE_EVENT_LOG = "^event_log_[0-9a-f]{8}(_[0-9a-f]{4}){3}_[0-9a-f]{12}$"
 
 
@@ -141,7 +142,7 @@ class UnityCatalogLineageProvider:
     ) -> list[tuple[str, str, str, str]]:
         """:meth:`table_rows` plus each relation's normalized :func:`sql.object_type`."""
         sql = (
-            "SELECT table_catalog, table_schema, table_name, table_type"
+            "SELECT table_catalog, table_schema, table_name, table_type"  # noqa: S608  # nosec B608
             " FROM system.information_schema.tables"
             " WHERE table_catalog IS NOT NULL AND table_schema IS NOT NULL"
             " AND table_name IS NOT NULL"
@@ -152,7 +153,7 @@ class UnityCatalogLineageProvider:
             # A materialized view or streaming table leaves its pipeline's backing table and event
             # log in the user's schema as MANAGED tables (#2171); a user's own `event_log_x` stays.
             " AND NOT startswith(table_name, '__materialization_mat_')"
-            " AND table_name NOT RLIKE '^event_log_[0-9a-f]{8}(_[0-9a-f]{4}){3}_[0-9a-f]{12}$'"
+            f" AND table_name NOT RLIKE '{_PIPELINE_EVENT_LOG}'"
         )
         params: dict[str, object] = {}
         if catalog is not None:

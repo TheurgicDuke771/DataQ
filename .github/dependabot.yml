@@ -16,6 +16,23 @@ updates:
       - dependency-name: redis
         update-types:
           - version-update:semver-major
+      # SQLAlchemy 2.1 drops the mypy plugin pyproject.toml loads, and snowflake-sqlalchemy 1.11.x
+      # fails to import under it (#2181). 2.0.x patches still flow; the migration is #2275 —
+      # delete this entry there.
+      - dependency-name: sqlalchemy
+        update-types:
+          - version-update:semver-minor
+          - version-update:semver-major
+    groups:
+      # The OTel SDK and its instrumentations pin each other exactly (sdk 1.N needs
+      # semantic-conventions 0.Nb0, which instrumentation 0.Nb0 also pins), so a lone bump is
+      # ResolutionImpossible (#2184). One PR moves them together. The Azure exporter must ride
+      # along: 1.0.0b57 requires opentelemetry-sdk~=1.44.0, so the SDK can only move once an
+      # exporter release accepts the new minor — until then the grouped PR fails CI, not prod.
+      opentelemetry:
+        patterns:
+          - opentelemetry-*
+          - azure-monitor-opentelemetry-exporter
 
   - package-ecosystem: npm
     directory: /frontend
