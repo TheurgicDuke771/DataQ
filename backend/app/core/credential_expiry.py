@@ -14,6 +14,23 @@ _SAS_REQUIRED = ("sig", "se")
 _SAS_EXPIRY_FIELDS = ("se", "ske")
 
 
+def jwt_expiry(token: str | None) -> datetime | None:
+    """A JWT's ``exp`` — read, never verified (the service it is sent to verifies it). ``None`` for
+    anything that is not a JWT carrying a numeric ``exp``, such as a plain password (#2315)."""
+    if not token or token.count(".") != 2:
+        return None
+    import jwt
+
+    try:
+        claims = jwt.decode(token, options={"verify_signature": False})
+    except jwt.PyJWTError:
+        return None
+    exp = claims.get("exp")
+    if isinstance(exp, bool) or not isinstance(exp, int | float):
+        return None
+    return datetime.fromtimestamp(exp, tz=UTC)
+
+
 def azure_sas_expiry(secret: str) -> datetime | None:
     """The moment an Azure storage SAS stops working, or ``None``."""
     if not secret:
