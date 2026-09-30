@@ -1033,3 +1033,24 @@ User-approved ("everything in the list"), batch by batch. Every scratch object i
   - `ORDERS_HEADER` and `CUSTOMERS` correctly refused: non-unique keys in the mock data.
   - `ANALYTICS.MART_CUSTOMER_ORDERS` keyed on `customer_id`: `pass`, 200/200 matched per column.
   - Temporary suites and checks deleted.
+
+**Batch 2 — Databricks / Unity Catalog** (workspace token from KV, never printed):
+- 13:32Z **`PERF_UC_*` tiers** on `samples.tpch.part` (1,000,000 rows):
+  - Pushdown: 5/5, 17 statements, 0 rows materialised, 373 MiB. This matches the baseline.
+  - Frame lane: 5/5, 1,000,000 rows materialised, **1 statement (the baseline has 9)**, 786 MiB. Fewer statements, not more, so not a regression; the baseline wants a refresh.
+- **Run admission:** `uc_frame_width` granted a run today; `comparison_sides` and `iceberg_schema_width` deferrals clear on their own.
+- **Lineage:** today's refresh recorded 26 edges with column pairs. `column-lineage` on `gold.feedback_sentiment` traces `channel` / `rating` / `customer_id` two hops to `raw`, and `sentiment` to its source column `comment`.
+- **Inventory sync:** 15 tables on each Unity Catalog connection at 03:17Z.
+- 13:34–13:38Z **Tag PII:**
+  - `sentiment` was already masked by DataQ's own classification, so it proved nothing.
+  - On Azure, `channel` tagged `dataq_classification='sensitive'` was *not* masked, because a run 2 minutes earlier had filled the 15-minute tag cache (`column_tags.REFRESH_TTL`, by design).
+  - On AWS, with a cold cache: `redacted_columns: [channel]`, `<redacted>` samples.
+  - Tags unset (`information_schema.column_tags` is empty); temporary checks deleted.
+- 13:38–13:42Z **DQX stream mode:**
+  - Scratch table `dataq_retail.default.dqx_stream_walkthrough` and volume `…dqx_walkthrough_ckpt`; `dqx_checkpoint_volume` set on connection `ae7b09b7`.
+  - Run 1: `rows: 4`, 1 failing, `next_version: 2`. After 3 rows were appended, run 2 had `from_version: 2`, `rows: 3`, 2 failing.
+  - Suite deleted, the connection config restored exactly, and the table and volume dropped.
+- 13:43Z **Delta UniForm through Unity Catalog's Iceberg REST catalog:**
+  - `/api/2.1/unity-catalog/iceberg-rest` loads the table's Iceberg metadata and snapshot through pyiceberg. The legacy `/iceberg` path returns "deprecated".
+  - **The data read is denied** (S3 `ACCESS_DENIED`) even with `X-Iceberg-Access-Delegation: vended-credentials`. This Free Edition metastore has `external_access_enabled: false`, and its default storage can't take `EXTERNAL USE SCHEMA`. So it is **partly verified**; the full read needs a metastore with external data access.
+  - Scratch table dropped. `dataq_retail.default` is empty.
