@@ -24,6 +24,70 @@ _CONNECT_TIMEOUT_SECONDS = 10.0
 _INLINE_REASONING_RE = re.compile(r"\A\s*<reasoning>.*?</reasoning>", re.DOTALL)
 
 
+#: What an untyped array item (`{}`) may be under strict mode, which requires a `type` everywhere.
+_ANY_SCALAR = ["string", "number", "integer", "boolean"]
+_PROVIDER_ERROR_MAX_CHARS = 300
+
+
+def strict_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """`schema` rewritten for OpenAI strict structured output (#2295): every object lists all of
+    its properties in `required`, the originally optional ones become nullable, and every array
+    item has a `type`. `drop_strict_nulls` undoes the nullability on the way back.
+    """
+    out = dict(schema)
+    if out.get("type") == "object" and isinstance(out.get("properties"), dict):
+        required = set(out.get("required", []))
+        props: dict[str, Any] = {}
+        for key, sub in out["properties"].items():
+            converted = strict_schema(sub)
+            props[key] = converted if key in required else _nullable(converted)
+        out["properties"] = props
+        out["required"] = list(props)
+        out["additionalProperties"] = False
+    if out.get("type") == "array":
+        items = out.get("items")
+        out["items"] = strict_schema(items) if items else {"type": _ANY_SCALAR}
+    return out
+
+
+def _nullable(schema: dict[str, Any]) -> dict[str, Any]:
+    out = dict(schema)
+    kind = out.get("type")
+    if isinstance(kind, list):
+        out["type"] = [*kind, "null"] if "null" not in kind else kind
+    elif kind is not None:
+        out["type"] = [kind, "null"]
+    if "enum" in out and None not in out["enum"]:
+        out["enum"] = [*out["enum"], None]
+    return out
+
+
+def drop_strict_nulls(value: Any, schema: dict[str, Any]) -> Any:
+    """Remove the nulls strict mode made the model emit for fields `schema` leaves optional."""
+    if isinstance(value, dict) and schema.get("type") == "object":
+        props = schema.get("properties") or {}
+        required = set(schema.get("required", []))
+        return {
+            k: drop_strict_nulls(v, props.get(k, {}))
+            for k, v in value.items()
+            if not (v is None and k not in required)
+        }
+    if isinstance(value, list) and schema.get("type") == "array":
+        return [drop_strict_nulls(v, schema.get("items") or {}) for v in value]
+    return value
+
+
+def _provider_error(response: httpx.Response) -> str:
+    """The provider's own reason for a 4xx: it describes our request (e.g. a schema it rejects),
+    and a bare status code made #2295 diagnosable only outside DataQ."""
+    try:
+        detail = response.json().get("error", {}).get("message")
+    except (ValueError, AttributeError):
+        detail = None
+    suffix = f": {str(detail)[:_PROVIDER_ERROR_MAX_CHARS]}" if detail else ""
+    return f"LLM endpoint refused the request ({response.status_code}){suffix}"
+
+
 def _no_answer(finish_reason: Any) -> LLMOutputInvalidError:
     # Reasoning with no answer is a bad OUTPUT, not a broken provider: retryable, and usually
     # a token budget spent thinking.
@@ -103,7 +167,7 @@ class OpenAICompatProvider:
         if response.status_code >= 500:
             raise LLMUnavailableError(f"LLM endpoint returned {response.status_code}")
         if response.status_code >= 400:
-            raise LLMProviderError(f"LLM endpoint refused the request ({response.status_code})")
+            raise LLMProviderError(_provider_error(response))
         try:
             data = response.json()
         except ValueError as exc:
@@ -166,11 +230,15 @@ class OpenAICompatProvider:
                 "messages": self._messages(prompt, system),
                 "response_format": {
                     "type": "json_schema",
-                    "json_schema": {"name": "result", "schema": schema, "strict": True},
+                    "json_schema": {
+                        "name": "result",
+                        "schema": strict_schema(schema),
+                        "strict": True,
+                    },
                 },
             }
             result = self._result(self._post(payload, timeout))
-            parsed = base.extract_json_object(result.text)
+            parsed = drop_strict_nulls(base.extract_json_object(result.text), schema)
             base.validate_against_schema(parsed, schema)
             return LLMResult(
                 text=result.text,
