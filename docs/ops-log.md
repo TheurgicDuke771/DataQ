@@ -996,3 +996,40 @@ Written by Claude, user-approved step by step. Goal: deploy `9f5475b7` to Azure 
   - Checked per service: Azure api, worker, beat and frontend on `7257c0ff`, all `Running`; migrate `dataq-app-migrate-dp77nba` `Succeeded`. AWS api, worker, beat and frontend on `aws-7257c0ff`, each 1/1 with one deployment; the worker is still without `-B`.
   - Smoke plus the authenticated probe (incl. the `PATCH /me` write, MCP 52 tools): 16/16 on both.
   - **#2291 live-verified:** the `column_profile` anomaly preview now returns 200 `skip` / `insufficient_history` with the real profile. Azure Snowflake 34,680 rows / 11 columns, Azure Unity Catalog 195 / 7, AWS Snowflake 34,680 / 11. This morning it was a 502.
+
+## 2026-09-30 (afternoon) — the remaining cloud-only lanes, run before the teardown (#2224)
+
+User-approved ("everything in the list"), batch by batch. Every scratch object is created and removed in the same step. Identifiers and timestamps only.
+
+**Batch 1 — Snowflake** (reader PAT from KV, `ACCOUNTADMIN` PAT sourced inline from the harness `secrets.sh`, nothing printed):
+- 13:06Z **`PERF_SF_*` tiers** against the TPC-H share, run locally with `perf_baseline run --tag warehouse`:
+  - 1M rows (SF1 `LINEITEM`, 6,001,215 rows): 5/5 checks, 13 statements, 28 result rows, 376 MiB, 19.6 s.
+  - 50M rows (SF10, 59,986,052 rows): 5/5, 13 statements, 28 rows, 378 MiB, 26.4 s.
+  - Wide profiler: 16 columns in 2 statements, 389 MiB.
+  - Statement and row counts match the committed baseline; wall time includes a cold warehouse.
+- **Inventory sync:** today's 03:17Z run found 18 tables on each Azure Snowflake connection. AWS `02d99a91` had been failing on the expired PAT; re-run at 13:09Z, it now finds 18.
+  - **Found #2314:** Snowflake's expired-PAT error (394401) was reported as "a reason DataQ could not classify".
+- **Column lineage:**
+  - The 02:37Z refresh ran on the pre-deploy image, which predates #2106, so it recorded 0 column pairs.
+  - Re-run on the new image (AWS, 13:14Z): the `GET_LINEAGE` column domain gave 53 seeds, 0 failed calls, 8/8 edges with column pairs. `column-lineage` traces `ORDER_NUMBER` / `ORDER_TS` / `CHANNEL` one hop to `STG_ORDERS` and two hops to the marts.
+  - The `ACCESS_HISTORY` column grain had 0 edges to refine: the loads come from stages, not tables.
+  - The `OBJECT_DEPENDENCIES` edition fallback is **not verifiable on this Enterprise account**.
+- 13:20Z **Cortex LLM provider** (AWS app, connection `02d99a91`):
+  - `mistral-large2` is legacy and `snowflake-llama-3.3-70b` is deprecated. Both are refused with clear messages.
+  - `llama3.3-70b`: SQL generation and check suggestions `succeeded`. Its RCA output failed schema validation (an empty `evidence_refs`), which DataQ refused rather than stored.
+  - `openai-gpt-4.1` on Cortex: RCA `succeeded` and correctly read the 100% failure.
+  - LLM disabled again.
+- 13:22–13:24Z **Key-pair auth:**
+  - An RSA key was generated in memory; its public key was set on the connection user's **slot 2** (checked empty first).
+  - Draft Test Connection is ok with both the plain PEM and the passphrase JSON.
+  - A temporary key-pair connection (`3c32efc6`) ran a real suite 2/2 through GX.
+  - Suite and connection deleted, the KV secret `conn-snowflake-walkthrough-2026-09-30-key-pair-dev-3c32efc6` purged, and slot 2 **unset** (verified `null`).
+- 13:25–13:26Z **Tag-based PII:**
+  - As `ACCOUNTADMIN` (steward), created tag `DATAQ_DB.RETAIL.DATAQ_CLASSIFICATION` and set `CHANNEL='sensitive'` on `ORDERS_HEADER`.
+  - The AWS suite run then showed `redaction: full`, `redacted_columns: [CHANNEL]` and `<redacted>` samples. Before the tag the samples were plain.
+  - Tag unset and the tag object **dropped**; `SHOW TAGS IN SCHEMA RETAIL` is empty.
+- **Browse, column listing, profiler:** Azure Snowflake `ORDERS_HEADER`: 11 columns, profile of 34,680 rows. Unity Catalog `feedback_sentiment`: 7 columns, 195 rows.
+- **Comparison with Snowflake on both sides:**
+  - `ORDERS_HEADER` and `CUSTOMERS` correctly refused: non-unique keys in the mock data.
+  - `ANALYTICS.MART_CUSTOMER_ORDERS` keyed on `customer_id`: `pass`, 200/200 matched per column.
+  - Temporary suites and checks deleted.
