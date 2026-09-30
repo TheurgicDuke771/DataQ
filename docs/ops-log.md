@@ -992,3 +992,7 @@ Written by Claude, user-approved step by step. Goal: deploy `9f5475b7` to Azure 
   - #2295: all four feature schemas (SQL generation, check suggestions ± freshness, RCA) returned valid output in `native` strict mode.
   - #2296: three RCA narratives for a 99.42% uniqueness failure all said 99.42% of rows are not unique (before, the model inverted it).
   - Deployment deleted (0 left) and **`key1` regenerated at 10:59:24Z**. **Expected state:** no deployment; LLM disabled on both apps.
+- 12:22:43Z: **Both clouds redeployed on `7257c0ff`, user-approved.** It carries the walkthrough fixes #2291–#2296 (PRs #2297, #2299, #2300, #2302, #2303, #2304). No migrations, no backfills, no `tofu apply`: #2292's AWS `slack_webhook_secret_name` only takes effect on a task-definition replace, which the ignored `container_definitions` block. AWS run 36714325050 and Azure run 36714329299, both green.
+  - Checked per service: Azure api, worker, beat and frontend on `7257c0ff`, all `Running`; migrate `dataq-app-migrate-dp77nba` `Succeeded`. AWS api, worker, beat and frontend on `aws-7257c0ff`, each 1/1 with one deployment; the worker is still without `-B`.
+  - Smoke plus the authenticated probe (incl. the `PATCH /me` write, MCP 52 tools): 16/16 on both.
+  - **#2291 live-verified:** the `column_profile` anomaly preview now returns 200 `skip` / `insufficient_history` with the real profile. Azure Snowflake 34,680 rows / 11 columns, Azure Unity Catalog 195 / 7, AWS Snowflake 34,680 / 11. This morning it was a 502.
