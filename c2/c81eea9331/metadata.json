@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "c2c81eea9331",
+  "strategy": "manual-commit",
+  "branch": "docs/issue-2289-mcp-tool-count",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/tests/mcp/test_published_tool_count.py",
+    "docs/site/guides/features.md",
+    "docs/site/operate/deployment-parity.md",
+    "docs/site/operate/runbook-faq.md",
+    "docs/site/security/compliance/sub-processors.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/c2/c81eea9331/0/metadata.json",
+      "transcript": "/c2/c81eea9331/0/full.jsonl",
+      "compact_transcript": "/c2/c81eea9331/0/transcript.jsonl",
+      "content_hash": "/c2/c81eea9331/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 22,
+    "cache_creation_tokens": 12878,
+    "cache_read_tokens": 2704132,
+    "output_tokens": 6774,
+    "api_call_count": 11
+  }
+}
