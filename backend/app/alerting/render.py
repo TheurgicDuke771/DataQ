@@ -128,13 +128,36 @@ def check_detail(check: CheckReport) -> str:
     return " · ".join(parts)
 
 
-def _upstream_pipeline_clause(pipeline: Any) -> str:
+def _unlinked_pipeline_trigger(trigger: Any) -> str:
+    """What to say when `upstream_pipeline_run` is null (#2294): `trigger` is the evidence's
+    `pipeline_trigger` layer, which says whether a pipeline triggered the run at all."""
+    if isinstance(trigger, dict) and trigger.get("triggered") is False:
+        return "manual"
+    if not isinstance(trigger, dict) or trigger.get("triggered") is not True:
+        # No layer (captured before it existed) or one that failed to build: don't guess.
+        return "unknown"
+    provider = str(trigger.get("provider", "pipeline"))
+    label = _TRIGGER_LABELS.get(provider, provider)
+    state = trigger.get("pipeline_run")
+    if state == "ambiguous":
+        return f"{label} pipeline (its run matches more than one recorded pipeline run)"
+    if state == "not_recorded":
+        return f"{label} pipeline (its run isn't recorded in DataQ yet, so its status isn't known)"
+    return f"{label} pipeline (its run couldn't be loaded)"
+
+
+def _upstream_pipeline_clause(pipeline: Any, trigger: Any = None) -> str:
     """Not "unknown": a manually-triggered or scheduled run has no upstream
     pipeline by design (the majority of runs) — that is a normal, understood
     state, not a gap. Only a layer that failed to build is genuinely unknown.
     """
     if pipeline is None:
-        return "not pipeline-triggered (manual or scheduled run)"
+        unlinked = _unlinked_pipeline_trigger(trigger)
+        if unlinked == "manual":
+            return "not pipeline-triggered (manual or scheduled run)"
+        if unlinked == "unknown":
+            return "no upstream pipeline run linked (not pipeline-triggered, or not matched)"
+        return f"triggered by the {unlinked}"
     if not isinstance(pipeline, dict):
         return "upstream pipeline: unavailable"
     provider = pipeline.get("provider", "?")
@@ -203,7 +226,9 @@ def evidence_summary_clause(evidence: dict[str, Any] | None) -> str:
     if not isinstance(evidence, dict):
         return "evidence: unavailable"
     parts = [
-        _upstream_pipeline_clause(evidence.get("upstream_pipeline_run")),
+        _upstream_pipeline_clause(
+            evidence.get("upstream_pipeline_run"), evidence.get("pipeline_trigger")
+        ),
         _sibling_failures_clause(evidence.get("sibling_checks")),
         _blast_radius_clause(evidence.get("downstream_blast_radius")),
     ]
@@ -438,8 +463,19 @@ def incident_facts(card: IncidentCard) -> list[tuple[str, str]]:
         facts.append(("Context", "Not available for this incident."))
     else:
         pipeline = evidence.get("upstream_pipeline_run")
-        if pipeline is None:
+        unlinked = _unlinked_pipeline_trigger(evidence.get("pipeline_trigger"))
+        if pipeline is None and unlinked == "manual":
             facts.append(("Triggered by", "A manual or scheduled run (no upstream pipeline)."))
+        elif pipeline is None and unlinked == "unknown":
+            facts.append(
+                (
+                    "Triggered by",
+                    "No upstream pipeline run is linked: a manual or scheduled run, or a "
+                    "pipeline run DataQ couldn't match.",
+                )
+            )
+        elif pipeline is None:
+            facts.append(("Triggered by", f"The {unlinked}."))
         elif not isinstance(pipeline, dict):
             facts.append(("Triggered by", "Not available."))
         else:

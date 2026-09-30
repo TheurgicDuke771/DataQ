@@ -768,3 +768,20 @@ def test_latest_narrative_for_alert_refuses_when_the_card_has_cross_suite_siblin
     assert llm_rca.latest_narrative_for_alert(db_session, incident) is None
     # The unfiltered lookup still finds it — proving the gate, not the query, withheld it.
     assert llm_rca.latest_narrative_for_incident(db_session, incident.id) is not None
+
+
+def test_blind_spots_name_the_pipeline_whose_run_is_not_recorded() -> None:
+    """#2294: a null upstream layer on a pipeline-triggered run is not "maybe manual"."""
+    evidence = {
+        "check": {"kind": "expectation"},
+        "upstream_pipeline_run": None,
+        "pipeline_trigger": {
+            "triggered": True,
+            "provider": "adf",
+            "marker": "adf:dataq_gate_fail:f53aff52",
+            "pipeline_run": "not_recorded",
+        },
+    }
+    spots = llm_rca._blind_spots(evidence, history_unavailable=False)
+    assert any("triggered by a pipeline (adf)" in s and "isn't recorded" in s for s in spots)
+    assert not any("wasn't pipeline-triggered" in s for s in spots)

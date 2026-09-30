@@ -18,7 +18,16 @@ def test_upstream_clause_none_reads_as_normal_not_unknown() -> None:
     design — the majority of runs. That must not read as "we don't know".
     """
     assert (
-        render._upstream_pipeline_clause(None) == "not pipeline-triggered (manual or scheduled run)"
+        render._upstream_pipeline_clause(None, {"triggered": False})
+        == "not pipeline-triggered (manual or scheduled run)"
+    )
+
+
+def test_upstream_clause_without_a_trigger_layer_does_not_claim_a_manual_run() -> None:
+    """#2294: evidence captured before `pipeline_trigger` existed can't tell a manual run from an
+    unmatched pipeline run, so it must not assert either."""
+    assert render._upstream_pipeline_clause(None) == (
+        "no upstream pipeline run linked (not pipeline-triggered, or not matched)"
     )
 
 

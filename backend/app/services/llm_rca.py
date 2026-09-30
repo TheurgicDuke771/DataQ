@@ -67,6 +67,7 @@ _EVIDENCE_REFS = frozenset(
         "sibling_checks",
         "same_asset_siblings",
         "upstream_pipeline_run",
+        "pipeline_trigger",
         "downstream_blast_radius",
     }
 )
@@ -204,10 +205,23 @@ def _blind_spots(evidence: dict[str, Any], *, history_unavailable: bool) -> list
             "(no view grant on their suite)"
         )
     if evidence.get("upstream_pipeline_run") is None:
-        spots.append(
-            "no upstream orchestration pipeline run is linked — either this run wasn't "
-            "pipeline-triggered, or none could be matched"
-        )
+        trigger = evidence.get("pipeline_trigger")
+        if isinstance(trigger, dict) and trigger.get("triggered") is False:
+            spots.append("this run wasn't pipeline-triggered (a manual or scheduled run)")
+        elif isinstance(trigger, dict) and trigger.get("triggered") is True:
+            state = {
+                "not_recorded": "isn't recorded yet",
+                "ambiguous": "matches more than one recorded pipeline run",
+            }.get(str(trigger.get("pipeline_run")), "couldn't be loaded")
+            spots.append(
+                f"this run was triggered by a pipeline ({trigger.get('provider')}), but that "
+                f"pipeline run {state}, so its status and timing are unknown"
+            )
+        else:
+            spots.append(
+                "no upstream orchestration pipeline run is linked — either this run wasn't "
+                "pipeline-triggered, or none could be matched"
+            )
     blast_assets, blast_qualifiers = blast_radius_assets_and_qualifiers(
         evidence.get("downstream_blast_radius")
     )
@@ -330,6 +344,9 @@ def _render_evidence(evidence: dict[str, Any], history: list[Any], blind_spots: 
     pipeline = evidence.get("upstream_pipeline_run")
     if pipeline is not None:
         lines.append(f"upstream_pipeline_run: {_json(pipeline)}")
+    trigger = evidence.get("pipeline_trigger")
+    if trigger is not None:
+        lines.append(f"pipeline_trigger: {_json(trigger)}")
 
     blast_assets, blast_qualifiers = blast_radius_assets_and_qualifiers(
         evidence.get("downstream_blast_radius")
