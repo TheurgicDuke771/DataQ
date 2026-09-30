@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>boh31bqp6</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/5ffbb754-c47f-4bef-b45f-a36850170a48/tasks/boh31bqp6.output</output-file>
+<status>completed</status>
+<summary>Background command "Run all reachable suites on both clouds and summarize" completed (exit code 0)</summary>
+</task-notification>
