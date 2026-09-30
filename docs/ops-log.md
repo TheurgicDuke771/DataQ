@@ -1078,3 +1078,23 @@ User-approved ("everything in the list"), batch by batch. Every scratch object i
   - Skipped: Fabric (no workspace), the case-sensitive-catalog database (the CLI can't set the catalog collation, and T-SQL creation would bypass the free offer), and the per-driver tests.
   - Torn down at 14:18Z: server deleted (0 left), both KV secrets purged, scratch `pyodbc` removed.
 - Not verifiable here: Fabric SQL endpoints, OneLake, and Cosmos via a Fabric mirror (no Fabric capacity).
+
+**Batch 4 — AWS:**
+- **Cognito JWT on REST and `/mcp`:**
+  - The admin demo user's **ID token** is accepted: `/me` 200, and 5 MCP tools answer.
+  - An access token from a direct SRP sign-in is 401: it carries no `aud` and no OAuth scopes. The hosted-UI browser flow was verified separately (see above).
+  - One slip: a token was briefly written to a scratch file, deleted in the next command; every later token stayed inline.
+- **Edge:** the ALB, hit directly, gets no response (network-denied; only CloudFront reaches it). Through CloudFront, `healthz` is 200, a 12 KB body is **403 from the WAF**, and a small body reaches the app (405).
+- **X-Ray span↔log join:** worker trace `run/dispatch_due_schedules` has matching OTel log records carrying the same `trace_id` in CloudWatch `/dataq-app/otel`.
+- **Real S3 without `endpoint_url`:** the `Retail S3 Landing` config has only `bucket`, `region` and `access_key_id`, and its suites ran green today.
+- 14:23–14:28Z **dbt artifacts on real S3:**
+  - The harness's real `manifest.json` / `run_results.json` were copied from ADLS `raw/dbt/latest` to `s3://dataq-landing-…/dbt-walkthrough/`. The draft test is ok, using the S3 connection's read-only key, read inline from Secrets Manager.
+  - The first poll correctly **skipped** the July run (older than the poll window). With `generated_at` set to now in the scratch copy, the poll **ingested it as `succeeded`**.
+  - Scratch prefix removed (0 objects); both temporary connections deleted.
+- 14:29–14:31Z **Iceberg Glue catalog:**
+  - Glue database `dataq_glue_walkthrough` and an Iceberg `orders` table (5 rows) on `s3://…/iceberg-glue-walkthrough/`, written with pyiceberg as `dataq-deploy`.
+  - IAM user `dataq-glue-walkthrough` with a read-only Glue + prefix-S3 policy. Its access key was created in-process and handed straight to DataQ.
+  - A temporary Iceberg connection (`catalog_type: glue`, `client.*` properties) passed the draft test. The suite ran `succeeded` 2/3: `email not null` correctly failed at 40%.
+  - Torn down: suite and connection, access key, policy, user, Glue table and database, and the S3 prefix (all verified gone).
+- The three scratch connections' Secrets Manager secrets (two held a copy of the live S3 reader key) were **force-deleted without recovery**; none remain, including planned deletions.
+- Not done: WAF rate-limit load testing (it would throttle the app); only the body cap was checked.
