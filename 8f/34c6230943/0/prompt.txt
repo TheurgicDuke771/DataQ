@@ -1,0 +1,21 @@
+there seems to be some discrepencies in the alert email, check the trigger by section in the attached screenshot.
+
+---
+
+<task-notification>
+<task-id>blf37n20w</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/5ffbb754-c47f-4bef-b45f-a36850170a48/tasks/blf37n20w.output</output-file>
+<status>completed</status>
+<summary>Background command "Trigger flow_b_medallion DAG, wait, restore pause" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b25ueg4lx</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/5ffbb754-c47f-4bef-b45f-a36850170a48/tasks/b25ueg4lx.output</output-file>
+<status>failed</status>
+<summary>Background command "Trigger flow_a_uc_reference and wait" failed with exit code 1</summary>
+</task-notification>
