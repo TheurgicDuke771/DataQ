@@ -46,6 +46,8 @@ _MARKERS: tuple[tuple[FailureCategory, tuple[str, ...]], ...] = (
             "authenticat",  # authentication / authenticate / failed to authenticate
             "invalid credential",
             "incorrect username or password",
+            # Snowflake programmatic access tokens (394401 and siblings, #2314).
+            "programmatic access token",
             "insufficient privile",
             "insufficient permission",
             "grant",
@@ -271,6 +273,10 @@ _AUTH_MARKERS: tuple[str, ...] = (
     "390195",
     "incorrect username or password",
     "authentication token has expired",
+    # Snowflake programmatic access tokens: 394401 "…is expired" and its "…is invalid" sibling.
+    # The whole phrase, not the code alone, so another 394xxx cannot read as a dead credential.
+    "programmatic access token is expired",
+    "programmatic access token is invalid",
     "jwt token is invalid",
     "invalid oauth access token",
     # Databricks / Unity Catalog: an invalid or revoked PAT.
