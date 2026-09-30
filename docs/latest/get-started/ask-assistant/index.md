@@ -36,5 +36,5 @@ can call them is the [MCP tools reference](../reference/mcp-tools.md).
 
 !!! tip "Ask about the docs, too"
     Every page on this site has **Ask AI** at the top: it opens your own assistant with a link to
-    the page (and to its plain Markdown copy), and the same pages are available to assistants
-    through the `get_doc` tool.
+    the page (and, for Claude and GitHub Copilot, to its plain Markdown copy), and the same
+    pages are available to assistants through the `get_doc` tool.
