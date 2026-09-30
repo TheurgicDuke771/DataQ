@@ -291,9 +291,22 @@ def test_flatfile_requires_secret_and_path() -> None:
 # ───────────────────────── iceberg path ─────────────────────────────
 
 
+_NO_DELETES = {
+    "total-delete-files": "0",
+    "total-position-deletes": "0",
+    "total-equality-deletes": "0",
+}
+
+
 class FakeIcebergTable:
-    def __init__(self, count: int) -> None:
+    def __init__(self, count: int, summary: dict[str, str] | None = None) -> None:
         self._count = count
+        self._summary = _NO_DELETES if summary is None else summary
+
+    def current_snapshot(self) -> Any:
+        from types import SimpleNamespace
+
+        return SimpleNamespace(summary=self._summary)
 
     def scan(self) -> Any:
         count = self._count
@@ -355,6 +368,78 @@ def test_iceberg_over_cap_fails_before_materializing(
             max_rows=10,
             secret_store=FakeSecretStore(default="s3cret"),
         )
+
+
+def _refuse_iceberg(monkeypatch: pytest.MonkeyPatch, table: Any) -> DatasetTooLargeError:
+    monkeypatch.setattr(
+        dataset_reader, "load_iceberg_table", lambda cfg, secret, ident, catalog_secret=None: table
+    )
+    with pytest.raises(DatasetTooLargeError) as info:
+        read_dataset(
+            _conn("iceberg", secret_ref=None, **_ICEBERG_CONFIG),
+            DatasetSpec(table="retail.orders"),
+            max_rows=10,
+            secret_store=FakeSecretStore(default="s3cret"),
+        )
+    return info.value
+
+
+def test_an_iceberg_refusal_with_row_deletes_does_not_state_the_planned_count_as_live(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#2018: the planned count includes rows a row-level delete removed, so "has 15 rows" would
+    misstate a table whose live count may be under the cap.
+    """
+    err = _refuse_iceberg(
+        monkeypatch, FakeIcebergTable(15, {**_NO_DELETES, "total-position-deletes": "6"})
+    )
+
+    assert "has 15 rows" not in err.message
+    assert "reads 15 rows from its data files" in err.message
+    assert "compact the table" in err.message
+    assert err.detail["count"] == "planned"
+    assert err.detail["row_deletes"] == "row-level deletes present (total-position-deletes=6)"
+
+
+def test_an_iceberg_refusal_that_cannot_prove_no_deletes_says_so(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    err = _refuse_iceberg(monkeypatch, FakeIcebergTable(15, {}))
+
+    assert "has 15 rows" not in err.message
+    assert "cannot prove no row-level deletes" in err.detail["row_deletes"]
+
+
+def test_an_iceberg_refusal_survives_unreadable_snapshot_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Broken(FakeIcebergTable):
+        def current_snapshot(self) -> Any:
+            raise OSError("metadata file vanished")
+
+    err = _refuse_iceberg(monkeypatch, _Broken(15))
+
+    assert err.detail["row_deletes"] == "snapshot metadata unreadable (OSError)"
+
+
+def test_a_real_delete_free_iceberg_table_is_refused_with_its_exact_count(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Without row-level deletes the planned count IS the live count, so the plain message
+    stands — on a real pyiceberg snapshot summary, not a hand-built one.
+    """
+    import pyarrow as pa
+    from pyiceberg.catalog.sql import SqlCatalog
+
+    catalog = SqlCatalog("t", uri=f"sqlite:///{tmp_path}/c.db", warehouse=f"file://{tmp_path}/wh")
+    catalog.create_namespace("retail")
+    data = pa.table({"id": pa.array(range(15), pa.int64())})
+    catalog.create_table("retail.orders", schema=data.schema).append(data)
+
+    err = _refuse_iceberg(monkeypatch, catalog.load_table("retail.orders"))
+
+    assert "has 15 rows" in err.message
+    assert "row_deletes" not in err.detail
 
 
 def test_iceberg_requires_identifier() -> None:

@@ -626,6 +626,16 @@ def _row_delete_guard(summary: Any) -> str | None:
     return None
 
 
+def row_delete_reason(table: Any) -> str | None:
+    """Why the current snapshot may carry row-level deletes, or ``None`` when its summary proves
+    it carries none (or there is no snapshot).
+    """
+    snapshot = table.current_snapshot()
+    if snapshot is None:
+        return None
+    return _row_delete_guard(getattr(snapshot, "summary", None))
+
+
 def summary_scan_fallback_reason(table: Any) -> str | None:
     """Why a volume/freshness monitor would have to scan rather than answer from snapshot
     metadata, or ``None`` when the metadata answers (or there is no snapshot to read).
