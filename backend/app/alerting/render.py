@@ -128,12 +128,27 @@ def check_detail(check: CheckReport) -> str:
     return " · ".join(parts)
 
 
-def _upstream_pipeline_clause(pipeline: Any) -> str:
+def _unrecorded_pipeline_trigger(trigger: Any) -> str | None:
+    """A pipeline-triggered run whose pipeline run DataQ can't show (#2294), or ``None`` when the
+    evidence doesn't say the run was pipeline-triggered."""
+    if not isinstance(trigger, dict) or trigger.get("pipeline_run") == "recorded":
+        return None
+    provider = str(trigger.get("provider", "pipeline"))
+    label = _TRIGGER_LABELS.get(provider, provider)
+    if trigger.get("pipeline_run") == "ambiguous":
+        return f"{label} pipeline (its run matches more than one recorded pipeline run)"
+    return f"{label} pipeline (its run isn't recorded in DataQ yet, so its status isn't known)"
+
+
+def _upstream_pipeline_clause(pipeline: Any, trigger: Any = None) -> str:
     """Not "unknown": a manually-triggered or scheduled run has no upstream
     pipeline by design (the majority of runs) — that is a normal, understood
     state, not a gap. Only a layer that failed to build is genuinely unknown.
     """
     if pipeline is None:
+        unrecorded = _unrecorded_pipeline_trigger(trigger)
+        if unrecorded:
+            return f"triggered by the {unrecorded}"
         return "not pipeline-triggered (manual or scheduled run)"
     if not isinstance(pipeline, dict):
         return "upstream pipeline: unavailable"
@@ -203,7 +218,9 @@ def evidence_summary_clause(evidence: dict[str, Any] | None) -> str:
     if not isinstance(evidence, dict):
         return "evidence: unavailable"
     parts = [
-        _upstream_pipeline_clause(evidence.get("upstream_pipeline_run")),
+        _upstream_pipeline_clause(
+            evidence.get("upstream_pipeline_run"), evidence.get("pipeline_trigger")
+        ),
         _sibling_failures_clause(evidence.get("sibling_checks")),
         _blast_radius_clause(evidence.get("downstream_blast_radius")),
     ]
@@ -438,7 +455,10 @@ def incident_facts(card: IncidentCard) -> list[tuple[str, str]]:
         facts.append(("Context", "Not available for this incident."))
     else:
         pipeline = evidence.get("upstream_pipeline_run")
-        if pipeline is None:
+        unrecorded = _unrecorded_pipeline_trigger(evidence.get("pipeline_trigger"))
+        if pipeline is None and unrecorded:
+            facts.append(("Triggered by", f"The {unrecorded}."))
+        elif pipeline is None:
             facts.append(("Triggered by", "A manual or scheduled run (no upstream pipeline)."))
         elif not isinstance(pipeline, dict):
             facts.append(("Triggered by", "Not available."))

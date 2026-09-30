@@ -219,6 +219,37 @@ def test_a_coarse_source_is_not_described_as_a_failed_refresh() -> None:
     assert "refreshed" not in downstream
 
 
+def test_an_unrecorded_pipeline_trigger_is_not_called_a_manual_run() -> None:
+    """#2294: the email said "A manual or scheduled run" for an ADF-gate-triggered run."""
+    evidence: dict[str, Any] = {
+        "upstream_pipeline_run": None,
+        "pipeline_trigger": {
+            "provider": "adf",
+            "marker": "adf:dataq_gate_fail:f53aff52",
+            "pipeline_run": "not_recorded",
+        },
+        "sibling_checks": [],
+    }
+    facts = dict(render.incident_facts(_card(evidence)))
+    assert facts["Triggered by"] == (
+        "The ADF pipeline (its run isn't recorded in DataQ yet, so its status isn't known)."
+    )
+    clause = render.evidence_summary_clause(evidence)
+    assert "manual or scheduled" not in clause
+    assert "triggered by the ADF pipeline" in clause
+
+
+def test_an_ambiguous_pipeline_trigger_says_so() -> None:
+    evidence: dict[str, Any] = {
+        "upstream_pipeline_run": None,
+        "pipeline_trigger": {"provider": "dbt", "marker": "dbt:a:b:c", "pipeline_run": "ambiguous"},
+        "sibling_checks": [],
+    }
+    assert dict(render.incident_facts(_card(evidence)))["Triggered by"] == (
+        "The dbt pipeline (its run matches more than one recorded pipeline run)."
+    )
+
+
 def test_evidence_layers_that_failed_to_build_are_stated_not_dropped() -> None:
     evidence = {"upstream_pipeline_run": "broken", "sibling_checks": None}
     facts = dict(render.incident_facts(_card(evidence)))

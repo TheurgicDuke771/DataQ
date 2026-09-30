@@ -125,6 +125,9 @@ def build_evidence(
         "upstream_pipeline_run": _layer(
             "upstream_pipeline_run", lambda: _upstream_pipeline_layer(session, run=run)
         ),
+        "pipeline_trigger": _layer(
+            "pipeline_trigger", lambda: _pipeline_trigger_layer(session, run=run)
+        ),
         "downstream_blast_radius": _layer(
             "downstream_blast_radius", lambda: _blast_radius_layer(session, asset=asset)
         ),
@@ -419,6 +422,27 @@ def _upstream_pipeline_layer(session: Session, *, run: Run) -> dict[str, Any] | 
         "started_at": _iso(pipeline_run.started_at),
         "finished_at": _iso(pipeline_run.finished_at),
         **_duration_layer(session, pipeline_run),
+    }
+
+
+def _pipeline_trigger_layer(session: Session, *, run: Run) -> dict[str, Any] | None:
+    """Which orchestration provider triggered this run, read from the run's own marker (#2294).
+
+    ``upstream_pipeline_run`` is also null for a pipeline-triggered run whose pipeline run is not
+    recorded yet (the gate and callback paths start the suite before the poller records it) or is
+    ambiguous, so it alone cannot tell that apart from a manual or scheduled run. This layer can.
+    """
+    marker = run.triggered_by
+    if not marker:
+        return None
+    provider, sep, _rest = marker.partition(":")
+    if not sep or provider not in ORCHESTRATION_PROVIDERS:
+        return None
+    matches = len(markers.pipeline_runs_for_marker(session, marker))
+    return {
+        "provider": provider,
+        "marker": marker,
+        "pipeline_run": "recorded" if matches == 1 else "ambiguous" if matches else "not_recorded",
     }
 
 

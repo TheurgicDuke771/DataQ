@@ -225,6 +225,38 @@ describe('IncidentEvidenceDrawer', () => {
     ).toBeInTheDocument();
   });
 
+  it('names the pipeline that triggered the run when its pipeline run is not recorded', async () => {
+    mockGetIncident.mockResolvedValue(
+      detail({
+        ...fullEvidence(),
+        upstream_pipeline_run: null,
+        pipeline_trigger: {
+          provider: 'adf',
+          marker: 'adf:dataq_gate_fail:f53aff52',
+          pipeline_run: 'not_recorded',
+        },
+      }),
+    );
+    renderDrawer('inc-1');
+
+    expect(await screen.findByText('adf:dataq_gate_fail:f53aff52')).toBeInTheDocument();
+    expect(screen.getByText(/not recorded in DataQ yet/)).toBeInTheDocument();
+    expect(screen.queryByText(/not triggered by a/)).not.toBeInTheDocument();
+  });
+
+  it('says a run with no pipeline trigger was manual or scheduled', async () => {
+    mockGetIncident.mockResolvedValue(
+      detail({ ...fullEvidence(), upstream_pipeline_run: null, pipeline_trigger: null }),
+    );
+    renderDrawer('inc-1');
+
+    expect(
+      await screen.findByText(
+        /Not available — not triggered by a pipeline \(a manual or scheduled run\)/,
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('shows an empty-card state when the incident has no evidence recorded at all', async () => {
     mockGetIncident.mockResolvedValue(detail(null));
     renderDrawer('inc-1');
