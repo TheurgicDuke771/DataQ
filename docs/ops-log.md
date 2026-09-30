@@ -974,3 +974,13 @@ Written by Claude, user-approved step by step. Goal: deploy `9f5475b7` to Azure 
   - **Trigger on success:** the waking scheduler ran catch-up `flow_a_snowflake_load` runs (`scheduled__2026-09-06T01:30`, `scheduled__2026-09-29T01:30`). Both `succeeded`, and through the existing binding (env `qa`) each **triggered one DataQ run** of `Snowflake — Orders (all paths)`: `85676d92` and `85a0bd8e`, both `succeeded` 6/8, marked `airflow:flow_a_snowflake_load:<run id>`. The 10-minute poll ingested every catch-up run.
   - A temporary binding `airflow/flow_a_uc_reference/qa` (`de63b1db`) was created at 10:16:32Z as a fallback and **deleted (204)** unused; its DAG's catch-up runs failed on the harness side.
 - 10:21:29–10:21:44Z: **Harness Airflow stopped again** (trigger → worker → airflow → redis, ARM `…/stop`). **Expected state: all five harness apps `Stopped`, ADF triggers `Stopped`** (both verified at 10:21:44Z).
+- 10:22:58–10:29:12Z: **LLM features on the deployed apps, user-approved ("configure and verify, then remove").**
+  - Azure OpenAI deployment `dataq-llm-test` (`gpt-4.1-mini` 2025-04-14, GlobalStandard, capacity 10) re-created on `royarijit04-9527-resource`. Azure DataQ set to `openai_compatible` at `…openai.azure.com/openai/v1`, the key read inline.
+  - AWS DataQ set to Bedrock `openai.gpt-oss-120b-1:0` at `bedrock-runtime.us-east-2…/openai/v1`, with a 1-hour SigV4-presigned `CallWithBearerToken` key generated inline from `dataq-deploy`, never printed.
+  - **Results:**
+    - The settings test is ok on both.
+    - SQL generation, check suggestions and the RCA narrative all `succeeded` on both, with `prompt_json`.
+    - **Found #2295:** in `native` mode Azure OpenAI 400s check suggestions and RCA, because `CHECKSUGGEST_SCHEMA` / `RCA_SCHEMA` aren't strict-mode valid. Reproduced directly against the endpoint.
+    - **Found #2296:** the Azure RCA narrative inverted "99.42% duplicated" to "0.58% duplicated", because the prompt passes a bare `metric_value`.
+  - **Removed:** LLM `enabled: false` on both apps. `dataq-llm-test` deleted (0 deployments). **AI Services `key1` regenerated at 10:29:12Z**, so the copy the Azure app stored is dead. The Bedrock key expires within the hour.
+  - **Expected state:** LLM disabled on both apps; no Azure OpenAI deployment.
