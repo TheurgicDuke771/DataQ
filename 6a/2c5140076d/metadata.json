@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "6a2c5140076d",
+  "strategy": "manual-commit",
+  "branch": "docs/teardown-prep-stale-text",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "docs/progress.md",
+    "docs/site/adr/0036-connection-anchored-check-engines.md",
+    "docs/site/adr/0039-openbao-self-hosted-secret-backend.md",
+    "docs/site/reference/feature-matrix.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/6a/2c5140076d/0/metadata.json",
+      "transcript": "/6a/2c5140076d/0/full.jsonl",
+      "compact_transcript": "/6a/2c5140076d/0/transcript.jsonl",
+      "content_hash": "/6a/2c5140076d/0/content_hash.txt",
+      "prompt": "/6a/2c5140076d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 34,
+    "cache_creation_tokens": 52509,
+    "cache_read_tokens": 12223032,
+    "output_tokens": 20845,
+    "api_call_count": 17,
+    "subagent_tokens": {
+      "input_tokens": 260,
+      "cache_creation_tokens": 806112,
+      "cache_read_tokens": 21229644,
+      "output_tokens": 2100,
+      "api_call_count": 130
+    }
+  }
+}
