@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "e6c4a0f43776",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2314-snowflake-pat-expired",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/services/failure_classifier.py",
+    "backend/tests/services/test_credential_health.py",
+    "backend/tests/services/test_failure_classifier.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/e6/c4a0f43776/0/metadata.json",
+      "transcript": "/e6/c4a0f43776/0/full.jsonl",
+      "compact_transcript": "/e6/c4a0f43776/0/transcript.jsonl",
+      "content_hash": "/e6/c4a0f43776/0/content_hash.txt",
+      "prompt": "/e6/c4a0f43776/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 26,
+    "cache_creation_tokens": 935457,
+    "cache_read_tokens": 11436320,
+    "output_tokens": 8168,
+    "api_call_count": 13
+  }
+}
