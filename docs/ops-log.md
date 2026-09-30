@@ -952,3 +952,6 @@ Written by Claude, user-approved step by step. Goal: deploy `9f5475b7` to Azure 
   - **Edge:** AWS CloudFront `E19W6CPQ40J7EH` carries WAF web ACL `dataq-app`.
   - **MCP tool calls:** `list_suites`, `list_incidents`, `get_health_score`, `get_doc` and `list_assets` all answer on both clouds.
   - #2291, #2292 and #2293 are filed as sub-issues of epic #2224.
+- 09:51:39Z: **Credential copy, user-approved: Snowflake `DATAQ_READER_PAT` to its missed fourth copy.** AWS `Retail Snowflake DEV` (`02d99a91`) was reauthed via `POST /connections/{id}/reauth` (admin PAT) with the value read inline from Azure KV `conn-snowflake-retail-dev-6729c4f9`, never printed. The reauth tested before rotating: `{"ok":true,"tested":true}`. It wrote AWS SM `dataq/conn-snowflake-retail-dev-02d99a91` (LastChangedDate 09:51:53Z). Same PAT, so it expires **2026-10-11 22:22Z**.
+  - **The reader-PAT copy set is back to 3×Azure KV + 1×AWS SM, all current.**
+  - Runs after: `Orders DQ — Snowflake (Priya)` 2/4 and `AWS Snowflake — Orders Header` 2/6, both `succeeded`. Every failure is stale-harness freshness or a deliberate FAIL.
