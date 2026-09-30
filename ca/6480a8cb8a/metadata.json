@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "ca6480a8cb8a",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2315-snowflake-pat-expiry",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/core/credential_expiry.py",
+    "backend/tests/core/test_credential_expiry.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ca/6480a8cb8a/0/metadata.json",
+      "transcript": "/ca/6480a8cb8a/0/full.jsonl",
+      "compact_transcript": "/ca/6480a8cb8a/0/transcript.jsonl",
+      "content_hash": "/ca/6480a8cb8a/0/content_hash.txt",
+      "prompt": "/ca/6480a8cb8a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 10,
+    "cache_creation_tokens": 3563,
+    "cache_read_tokens": 613537,
+    "output_tokens": 1951,
+    "api_call_count": 5
+  }
+}
