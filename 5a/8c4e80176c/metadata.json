@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "5a8c4e80176c",
+  "strategy": "manual-commit",
+  "branch": "chore/ops-log-2026-09-30-llm-fix-verification",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/ops-log.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/5a/8c4e80176c/0/metadata.json",
+      "transcript": "/5a/8c4e80176c/0/full.jsonl",
+      "compact_transcript": "/5a/8c4e80176c/0/transcript.jsonl",
+      "content_hash": "/5a/8c4e80176c/0/content_hash.txt",
+      "prompt": "/5a/8c4e80176c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 104,
+    "cache_creation_tokens": 73164,
+    "cache_read_tokens": 31779672,
+    "output_tokens": 37182,
+    "api_call_count": 52
+  }
+}
