@@ -492,6 +492,7 @@ def _dry_run_anomaly(
     """
     from backend.app.datasources.monitors import (
         ANOMALY,
+        COLUMN_PROFILE_METRIC,
         MonitorConfigError,
         anomaly_params,
         monitor_outcome,
@@ -505,15 +506,28 @@ def _dry_run_anomaly(
     resolved = run_target.resolve_target(connection.type, target)
     now = datetime.now(UTC)
     try:
-        value = anomaly_service.measure_metric(
-            connection,
-            table=resolved.table,
-            schema=resolved.schema,
-            catalog=resolved.catalog,
-            params=params,
-            secret_store=secret_store,
-            now=now,
-        )
+        if params.target_metric == COLUMN_PROFILE_METRIC:
+            # Its own measurement, like the run path's (#2291): `measure_metric` only knows
+            # the single-scalar targets.
+            profile = anomaly_service.measure_column_profile(
+                connection,
+                table=resolved.table,
+                schema=resolved.schema,
+                catalog=resolved.catalog,
+                secret_store=secret_store,
+            )
+            payload = anomaly_service.score_column_profile(profile, [], now=now, params=params)
+        else:
+            value = anomaly_service.measure_metric(
+                connection,
+                table=resolved.table,
+                schema=resolved.schema,
+                catalog=resolved.catalog,
+                params=params,
+                secret_store=secret_store,
+                now=now,
+            )
+            payload = anomaly_service.build_score_payload(value, [], params)
     except MonitorConfigError as exc:
         # DataQ-authored and safe to echo (a bad column, a non-SQL datasource, an
         # empty table) — the actionable half of a failed preview.
@@ -526,7 +540,6 @@ def _dry_run_anomaly(
             "dry run could not measure the anomaly target metric",
             detail={"table": resolved.table, "reason": safe_failure_reason(exc)},
         ) from exc
-    payload = anomaly_service.build_score_payload(value, [], params)
     payload["dry_run"] = True
     payload["preview"] = (
         "the baseline is learned from persisted runs; this check stays skipped until it "
