@@ -1,0 +1,15 @@
+<task-notification>
+<task-id>bf9zop32w</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/5ffbb754-c47f-4bef-b45f-a36850170a48/tasks/bf9zop32w.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for #2285 and #2286 to merge" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+The documents Ask AI - ChatGPT option still shows 
+
+The documentation page itself wasn't retrievable as Markdown by my web reader (the server returns an unsupported text/markdown content type), so I wouldn't attribute a specific reverse-proxy configuration to the DataQ docs without seeing that section.
+
+Can you check once?
