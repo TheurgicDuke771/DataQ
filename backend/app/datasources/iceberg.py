@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, ClassVar, Literal
@@ -135,13 +140,52 @@ class IcebergConfig(BaseModel):
         return props
 
 
+#: Catalog handles for the current `iceberg_catalog_scope`, or ``None`` outside one (#2032).
+_CATALOG_CACHE: ContextVar[dict[str, Any] | None] = ContextVar("iceberg_catalogs", default=None)
+
+
+@contextmanager
+def iceberg_catalog_scope() -> Iterator[None]:
+    """Reuse one catalog handle per connection for the enclosed work, then release them.
+
+    Keyed on the RESOLVED properties, so a rotated credential builds a new handle rather than
+    being served the old one.
+    """
+    cache: dict[str, Any] = {}
+    token = _CATALOG_CACHE.set(cache)
+    try:
+        yield
+    finally:
+        _CATALOG_CACHE.reset(token)
+        for catalog in cache.values():
+            engine = getattr(catalog, "engine", None)
+            if engine is None:
+                continue
+            try:
+                engine.dispose()
+            except Exception as exc:
+                log.warning("iceberg_catalog_dispose_failed", error_type=type(exc).__name__)
+
+
+def _catalog_key(name: str, props: dict[str, str]) -> str:
+    raw = json.dumps([name, sorted(props.items())], separators=(",", ":"))
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
 def load_iceberg_catalog(
     config: IcebergConfig, secret: str | None, catalog_secret: str | None = None
 ) -> Any:
     """The connection's pyiceberg catalog (the live seam)."""
     from pyiceberg.catalog import load_catalog
 
-    return load_catalog(config.catalog_name, **config.catalog_properties(secret, catalog_secret))
+    props = config.catalog_properties(secret, catalog_secret)
+    cache = _CATALOG_CACHE.get()
+    if cache is None:
+        return load_catalog(config.catalog_name, **props)
+    key = _catalog_key(config.catalog_name, props)
+    if key not in cache:
+        cache[key] = load_catalog(config.catalog_name, **props)
+    return cache[key]
 
 
 def load_iceberg_table(

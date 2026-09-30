@@ -1404,3 +1404,98 @@ def test_an_iceberg_aggregate_runs_and_previews_end_to_end(db_session: Any, tmp_
         target={"namespace": "sales", "table": "amounts"},
         column="amount",
     )
+
+
+# ───────────────────────── per-run catalog scope (#2032) ─────────────
+
+
+def _counting_load_catalog(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+    """Count real catalog constructions, recording the properties each received."""
+    from pyiceberg import catalog as pyiceberg_catalog
+
+    real = pyiceberg_catalog.load_catalog
+    built: list[dict[str, Any]] = []
+
+    def counting(name: str, **props: Any) -> Any:
+        built.append(props)
+        return real(name, **props)
+
+    monkeypatch.setattr("pyiceberg.catalog.load_catalog", counting)
+    return built
+
+
+def test_a_scope_builds_the_catalog_once_for_every_table_load(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config, _ = _sql_catalog_with_table(tmp_path)
+    cfg = IcebergConfig.model_validate(config)
+    built = _counting_load_catalog(monkeypatch)
+
+    with iceberg_mod.iceberg_catalog_scope():
+        for _ in range(5):
+            iceberg_mod.load_iceberg_table(cfg, None, "sales.orders")
+
+    assert len(built) == 1
+
+
+def test_outside_a_scope_every_load_builds_its_own_catalog(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config, _ = _sql_catalog_with_table(tmp_path)
+    cfg = IcebergConfig.model_validate(config)
+    built = _counting_load_catalog(monkeypatch)
+
+    with iceberg_mod.iceberg_catalog_scope():
+        iceberg_mod.load_iceberg_table(cfg, None, "sales.orders")
+    iceberg_mod.load_iceberg_table(cfg, None, "sales.orders")
+    iceberg_mod.load_iceberg_table(cfg, None, "sales.orders")
+
+    assert len(built) == 3
+
+
+def test_a_rotated_credential_is_never_served_the_cached_handle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    built: list[dict[str, Any]] = []
+
+    def fake_load_catalog(name: str, **props: Any) -> object:
+        built.append(props)
+        return object()
+
+    monkeypatch.setattr("pyiceberg.catalog.load_catalog", fake_load_catalog)
+    cfg = IcebergConfig.model_validate(_REST_CONFIG)
+
+    with iceberg_mod.iceberg_catalog_scope():
+        first = iceberg_mod.load_iceberg_catalog(cfg, "old-token")
+        assert iceberg_mod.load_iceberg_catalog(cfg, "old-token") is first
+        rotated = iceberg_mod.load_iceberg_catalog(cfg, "new-token")
+
+    assert rotated is not first
+    assert [p["token"] for p in built] == ["old-token", "new-token"]
+
+
+def test_leaving_the_scope_disposes_each_sql_catalog_engine(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config, _ = _sql_catalog_with_table(tmp_path)
+    cfg = IcebergConfig.model_validate(config)
+    disposed: list[bool] = []
+
+    with iceberg_mod.iceberg_catalog_scope():
+        catalog = iceberg_mod.load_iceberg_catalog(cfg, None)
+        monkeypatch.setattr(catalog.engine, "dispose", lambda: disposed.append(True))
+
+    assert disposed == [True]
+
+
+def test_a_failing_dispose_does_not_escape_the_scope(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Engine:
+        def dispose(self) -> None:
+            raise RuntimeError("pool already gone")
+
+    class _Catalog:
+        engine = _Engine()
+
+    monkeypatch.setattr("pyiceberg.catalog.load_catalog", lambda name, **props: _Catalog())
+    with iceberg_mod.iceberg_catalog_scope():
+        iceberg_mod.load_iceberg_catalog(IcebergConfig.model_validate(_REST_CONFIG), "tok")

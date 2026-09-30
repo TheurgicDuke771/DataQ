@@ -221,3 +221,45 @@ def test_a_carried_estimate_is_not_re_probed_on_a_retry(
     assert seen == [
         run_admission.MemoryEstimate(bytes=700 * MiB, basis="flat_file_size", exclusive=False)
     ]
+
+
+def test_the_admission_probe_and_the_run_share_one_iceberg_catalog(
+    monkeypatch: pytest.MonkeyPatch, stub_run_path: None
+) -> None:
+    """#2032: every table load in a run used to build its own catalog (a handshake, and on a
+    pre-0.12 SQL catalog a v0 WARNING, per load).
+    """
+    from backend.app.datasources import iceberg
+
+    cfg = iceberg.IcebergConfig.model_validate(
+        {"catalog_name": "c", "catalog_type": "rest", "catalog_uri": "https://cat.example"}
+    )
+    built: list[str] = []
+
+    def fake_load_catalog(name: str, **_props: Any) -> object:
+        built.append(name)
+        return object()
+
+    monkeypatch.setattr("pyiceberg.catalog.load_catalog", fake_load_catalog)
+
+    def probe(*_a: Any, **_k: Any) -> run_admission.MemoryEstimate:
+        iceberg.load_iceberg_catalog(cfg, None)
+        return run_admission.MemoryEstimate(bytes=10, basis="flat_file_size")
+
+    def body(*_a: Any, **_k: Any) -> str:
+        for _ in range(3):
+            iceberg.load_iceberg_catalog(cfg, None)
+        return "succeeded"
+
+    run = _queued_run()
+    _install(
+        monkeypatch,
+        run=run,
+        estimate=None,
+        decision=run_admission.AdmissionDecision(defer=False),
+    )
+    monkeypatch.setattr(run_admission, "estimate_run_memory", probe)
+    monkeypatch.setattr(tasks, "_run_suite", body)
+
+    assert tasks.run_suite(str(run.id)) == "succeeded"
+    assert built == ["c"]
