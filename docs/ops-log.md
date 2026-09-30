@@ -1054,3 +1054,27 @@ User-approved ("everything in the list"), batch by batch. Every scratch object i
   - `/api/2.1/unity-catalog/iceberg-rest` loads the table's Iceberg metadata and snapshot through pyiceberg. The legacy `/iceberg` path returns "deprecated".
   - **The data read is denied** (S3 `ACCESS_DENIED`) even with `X-Iceberg-Access-Delegation: vended-credentials`. This Free Edition metastore has `external_access_enabled: false`, and its default storage can't take `EXTERNAL USE SCHEMA`. So it is **partly verified**; the full read needs a metastore with external data access.
   - Scratch table dropped. `dataq_retail.default` is empty.
+
+**Batch 3 — Azure:**
+- **Entra JWT on `/mcp`:** an `az account get-access-token --resource api://<api app>` bearer is accepted on REST (`/me`, role `member`) and on `/mcp` (5 tools answer, scoped to that Member: 0 incidents, no health score).
+- **App Insights span↔log join:** a single `operation_Id` (`POST /api/v1/suites`) carries the API request (`dataq.request_id` matching its log lines), the Celery `apply_async` dependency, the worker's `run/auto_classify_columns` span and its logs. `user_id` shows as `<redacted>` in the logs.
+- **G1 audit on managed Postgres:**
+  - `/admin/audit-events` lists both config and access (`run_results.read`) events.
+  - `/admin/audit-events/verify`: `ok`, 170 chained, 47 legacy, no break. The `verify_audit_chain` and `anchor_audit_chain_head` tasks run daily.
+  - `purge_audit_events` succeeds daily **with 0 rows**: nothing is older than the 365-day retention, so the delete path itself has never run on a live stack.
+- **Credential expiry:** ADLS SAS (2027-06-28) and dbt SAS (2027-07-12) are read from KV. Snowflake and Databricks PATs have no readable expiry, filed as **#2315**.
+- 13:48Z **Orphan-secret sweep, report only:** KV scanned 26, AWS SM 5, 0 orphans, no error (plus the scheduled 01:57Z runs).
+- 13:51–13:53Z **ADLS on real Azure:**
+  - A temporary `Storage Blob Data Reader` on `dataqharness3erlgd` for the ADF service principal (assignment `dfad6a0b…`).
+  - Draft tests ok for a container SAS (1-hour, `rl`, generated inline), ADLS service principal, and dbt artifacts via the service principal.
+  - A real flat-file run through a temporary SP connection read 643 rows. Connection deleted, its KV secret purged, the role assignment **removed** (the SP keeps only its inherited Contributor).
+  - Account SAS is covered by the existing connections. **OneLake is not verifiable: no Fabric capacity.**
+- 13:53–13:56Z **ADF Azure Monitor alert → webhook:** `pl_dataq_smoke_fail` run `4e65195c…` failed at 13:53:34Z. Azure Monitor fired `dataq-adf-failed-pipeline-runs`, and `POST /orchestration/events/adf` (AlertPing) arrived at 13:56:41Z. The triggered poll recorded the run `failed` in the same second: **~3 min end to end**.
+- 13:58–14:19Z **SQL Server lane:**
+  - Created logical server `dataq-mssql-77d385` (westus2, TLS 1.2, the maintainer as Entra admin), free-offer database `dataq_test`, and a firewall rule for the maintainer's IP.
+  - Admin and reader passwords generated straight into KV `mssql-test-sqladmin` / `mssql-test-reader`.
+  - Seeded the lane's tables; `dataq_reader` and the ADF service principal are `db_datareader` contained users.
+  - **python-tds: 20 passed** (SQL login **and Entra service principal**). **ODBC Driver 18 lane: 19 passed** (`pyodbc` in a scratch directory, never in the env).
+  - Skipped: Fabric (no workspace), the case-sensitive-catalog database (the CLI can't set the catalog collation, and T-SQL creation would bypass the free offer), and the per-driver tests.
+  - Torn down at 14:18Z: server deleted (0 left), both KV secrets purged, scratch `pyodbc` removed.
+- Not verifiable here: Fabric SQL endpoints, OneLake, and Cosmos via a Fabric mirror (no Fabric capacity).
