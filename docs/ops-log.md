@@ -904,3 +904,87 @@ User-approved route: the deployed image predates the gate endpoint, so a scratch
   - Tunnel, API and worker stopped.
   - `dataq_gate2230` dropped and Redis db 7 flushed.
   - **Expected state: none of these exist.** `cloudflared` remains installed on the maintainer machine (`brew uninstall cloudflared` removes it).
+
+## 2026-09-30 — both clouds brought to `main` ahead of the cloud teardown (#2224)
+
+Written by Claude, user-approved step by step. Goal: deploy `9f5475b7` to Azure and AWS, then live-verify every cloud feature before the teardown plan.
+
+- **Pre-deploy:** CI green on `9f5475b7`. No pending revision carries a `MANDATORY PRE-DEPLOY` step. Azure runs `517b407b` (6 migrations behind); AWS runs `aws-7a3244a4` (16 behind).
+- **`tofu plan`, both stacks, read-only.** `app_db_password` was read inline from each cloud's existing secret, so the database shows no diff.
+  - Azure: no infrastructure change (one output value only). No apply needed.
+  - AWS: the `dataq-app-beat` service (#1811) had never been created there, and the live worker still ran `worker -B`. The task definition ignores `container_definitions`, and `ecs_roll.sh` copies the family's latest revision, so a plain apply would have left `-B` in place permanently beside the new beat.
+- 08:29:28–08:29:37Z: **`tofu apply` on `deploy/terraform/aws/`** with `-replace=aws_ecs_task_definition.worker`, images held at the running `aws-7a3244a4`. 4 added (beat log group, task definition, service; worker task definition), 1 changed (GitHub deploy role policy now covers beat), 1 destroyed (the old worker revision).
+- 08:30:50Z: worker service updated to `dataq-app-worker:33` (`worker -Q celery,llm`, no `-B`). Stable at 08:33:15Z.
+  - **Expected state:** worker 1/1 on revision 33, beat 1/1 on `dataq-app-beat:1`, both on `aws-7a3244a4` until the deploy below. Exactly one Celery beat.
+- 08:52:51Z: **Deploy workflows dispatched on `9f5475b7`**: AWS run 36692490923 and Azure run 36692494837. Both green, migrations included.
+- **Rolled, checked per service:** Azure api, worker, beat and frontend on `9f5475b7`, all `Running`; migrate execution `dataq-app-migrate-xfd2j6r` `Succeeded`. AWS api, worker, beat and frontend on `aws-9f5475b7`, each 1/1 with one deployment. The rolled AWS worker revision still runs `worker -Q celery,llm` without `-B`.
+- **`alembic_version` read back as `bf15e3a01a5f` (head) on both databases.** AWS via a one-off `dataq-app-migrate:27` RunTask with a command override (task `f6409017…`); Azure via a one-off `dataq-app-migrate` execution `dataq-app-migrate-i61c748`, read from Log Analytics. For Azure, `--command=python "--args=-c…"` with a hex-encoded body avoids az's dash-token and space-splitting of `--args`.
+- 09:07:32Z: **#2112 backfill on AWS (user-approved).** `clear_misprobed_dmf_capability`: the dry run would clear 1 connection (`02d99a91`, Retail Snowflake DEV); `--apply` **cleared 1**. Azure had already run it on 2026-09-27.
+- **Post-deploy smoke + authenticated probes, both clouds, 16/16 green.**
+  - Public: healthz, SPA and deep link 200; `/api/v1/me` and `/mcp/` (GET and POST) 401; `/api/v1/openapi.json` 404; `/docs` is the SPA shell; 6/6 security headers; no server version.
+  - Authenticated as admin (Azure KV `dataq-pat-w1-admin`, AWS SSM `/dataq/demo/admin-pat`): `/me` 200; **`PATCH /me` 200 (write probe)**; connections listed (Azure 14, AWS 3); MCP `initialize` 200 and `tools/list` **52**.
+- ~09:18Z: **Connection tests, every connection, both clouds** (admin PAT, `POST /connections/{id}/test`).
+  - Azure 11/14 ok: ADF ×2, ADLS ×2, dbt, Iceberg, Snowflake ×3, Unity Catalog ×2.
+  - Azure failures, all explained: Airflow ×2 (the harness Airflow is Stopped by design); `probe-snowflake-dev` (the Week-1 probe connection, which has never had a credential).
+  - AWS 2/3 ok: S3, Unity Catalog. `Retail Snowflake DEV` fails because its Secrets Manager copy (`dataq/conn-snowflake-retail-dev-02d99a91`, last changed 2026-09-08) was never updated in the 2026-09-26 reader-PAT rotation, when the AWS CLI credential was dead. **Pending the user's go-ahead to reauth it.**
+- ~09:20Z: **A run of every suite on a working connection**, 8 runs, all `succeeded` with every check producing a verdict (no error or skip).
+  - Azure: Snowflake Orders 6/8, Unity Catalog 8/9, Iceberg 3/7, flat-file ADLS 4/6.
+  - AWS: Unity Catalog ×2 2/3, S3 ×2 2/3.
+  - Every failure is either freshness on data the stopped harness last wrote in July/August (true positives), or one of the deliberate failure cases the all-paths suites include.
+  - Kinds exercised: Azure has expectation, freshness, volume, schema_drift, anomaly and comparison (all GX); AWS has expectation and freshness only.
+- 09:25:42Z: **Automatic coverage (ADR 0047), user-approved as part of the walkthrough.** `auto_coverage: true` set on AWS `Retail Unity Catalog DEV` (`dd5ca985`) and Azure `Snowflake — Payments` (`f53de47d`) via `PATCH /connections/{id}` (a behaviour-only key, so no connectivity test).
+  - AWS: `reconcile_auto_coverage` queued at 09:26Z through a one-off `dataq-app-migrate:27` RunTask (`celery_app.send_task`, since the migrate task has `REDIS_URL`). At 09:31:50Z the worker reported **55 suites, 165 checks, 94 suggestions created**, not truncated.
+  - 37 `auto_coverage_profile_failed` warnings, all `TABLE_OR_VIEW_NOT_FOUND`: `workspace.perf_2087.*`, `dq_2158.*`, `dq_2171.*`, `dataq_test_2221_*` and `dataq_test_2227_*` were dropped within the inventory's 3-day freshness window. By design, and verified benign: those suites pause once the tables age out.
+  - Review queue on `Auto: samples.tpch.part`: accept → a check was created; reject → `rejected`; a second accept → 409 `suggestion_already_decided`.
+  - A run of that suite `succeeded`: schema drift passed (baseline captured). Row count and column profile correctly reported `skip` / `insufficient_history` on a first run; the accepted rule passed.
+  - Azure is left for the nightly beat (03:47Z on 2026-10-01): the Azure migrate job has no Redis secret to queue it with. This also verifies the beat schedule.
+- 09:34:13Z: AWS `auto_coverage` switched back **off** on `dd5ca985`. **Expected:** the 2026-10-01 03:47Z reconcile pauses its 55 automatic suites (never deletes them). Azure `f53de47d` stays on until its beat-created suites are verified, then it is switched off.
+- ~09:35–09:50Z: **Feature walkthrough, continued (admin PAT, both clouds):**
+  - **Alerts:** AWS SES `email_alert_sent` ×3; Azure `alert_deduped` ×4 on repeat failures. Found #2292: the AWS stack names a Slack secret it never creates, so every alert logs `workspace_webhook_unresolved`. Found #2293: the alert builder's `session.get(User, None)` for an ownerless automatic suite raises an `SAWarning`.
+  - **Incidents:** Azure 11 open, AWS 10 open. `get_incident` returns the full evidence.
+  - **Lineage:** 58 assets with edges on each cloud. `column-lineage` on `MART_ORDER_REVENUE.ORDER_DATE` reports `upstream_status: incomplete` with the `none_recorded` gaps named (table edges, no column mapping).
+  - **Engines, Azure, dry run** (nothing persisted):
+    - DMF `null_count` (order_number) and `accepted_values` (status) both pass.
+    - Aggregate: Snowflake mean `order_total` = 1014.93, Unity Catalog median `rating` = 3.0, both pass.
+    - **Found #2291:** a `column_profile` anomaly preview returns 502 `invalid freshness column identifier: None` on both engines. The run path is unaffected.
+  - **DQX, Azure** (it has no preview, so a real run): walkthrough check `aed36bde` added to `Unity Catalog — Feedback (all paths)`. Run `b55d0848` `succeeded` 9/10, the DQX result `pass` (195 rows, 0 failing) from a serverless job in the Databricks workspace. **Check deleted afterwards (204).**
+  - **LLM:** not configured on either deployed app (`/admin/llm` `configured: false`). It was live-verified earlier against Azure OpenAI and Bedrock from the local stack.
+  - **Edge:** AWS CloudFront `E19W6CPQ40J7EH` carries WAF web ACL `dataq-app`.
+  - **MCP tool calls:** `list_suites`, `list_incidents`, `get_health_score`, `get_doc` and `list_assets` all answer on both clouds.
+  - #2291, #2292 and #2293 are filed as sub-issues of epic #2224.
+- 09:51:39Z: **Credential copy, user-approved: Snowflake `DATAQ_READER_PAT` to its missed fourth copy.** AWS `Retail Snowflake DEV` (`02d99a91`) was reauthed via `POST /connections/{id}/reauth` (admin PAT) with the value read inline from Azure KV `conn-snowflake-retail-dev-6729c4f9`, never printed. The reauth tested before rotating: `{"ok":true,"tested":true}`. It wrote AWS SM `dataq/conn-snowflake-retail-dev-02d99a91` (LastChangedDate 09:51:53Z). Same PAT, so it expires **2026-10-11 22:22Z**.
+  - **The reader-PAT copy set is back to 3×Azure KV + 1×AWS SM, all current.**
+  - Runs after: `Orders DQ — Snowflake (Priya)` 2/4 and `AWS Snowflake — Orders Header` 2/6, both `succeeded`. Every failure is stale-harness freshness or a deliberate FAIL.
+- 09:53:44–09:58:23Z: **ADF pipeline gate (ADR 0046) against the DEPLOYED Azure app, user-approved.** The same route as the 2026-09-29 tunnelled check, now hitting prod.
+  - **Created:**
+    - Scratch suites `walkthrough 2026-09-30 gate pass` (`e8379d6a`, `order_number` not null) and `… gate fail` (`2e35c068`, `status` in an impossible set), both on `Snowflake — Orders`.
+    - Bindings `adf` / `dataq_gate_pass` and `dataq_gate_fail`, env `dev`.
+    - A 1-day scratch PAT (`1e689a4a`), minted as the admin and piped straight into KV `dataq-gate-pat` (tag `purpose=walkthrough-2026-09-30`), never printed.
+    - `Key Vault Secrets User` for `dataq-harness-adf`'s identity, scoped to that one secret.
+    - Pipelines `dataq_gate_pass` / `dataq_gate_fail` from `integrations/adf/dataq_gate_pipeline.json`, with `dataqUrl` set to the deployed frontend.
+  - **Results:**
+    - The pass run `f2a5cd62` **Succeeded**. The fail run `f53aff52` **Failed** at "DataQ gate stopped the pipeline".
+    - Exactly one DataQ run each, marked `adf:dataq_gate_pass:f2a5cd62…` (1/1) and `adf:dataq_gate_fail:f53aff52…` (0/1).
+    - **0 `dq_live_` occurrences in either run's activity history** (#2269's fix holds on prod).
+  - **Torn down, verified:** both pipelines deleted (0 `dataq_gate*` left); role assignment deleted (0 on the scope); PAT revoked (204); bindings and scratch suites deleted (204 ×4); KV secret deleted and purged. The harness triggers `tr_orders_landed` / `tr_customers_daily` were untouched and are still `Stopped`.
+  - **Expected state: none of the scratch resources exist.**
+- 09:59:40Z: **Harness Airflow woken for the walkthrough (user-approved "ADF gate + Airflow window").** Started `dataq-harness-redis`, `-airflow`, `-airflow-worker` and `-airflow-trigger` directly through the ARM `…/containerApps/{app}/start` REST call (09:59:52–56Z; this az CLI has no `containerapp start`), all `Running`. NOT via `harness_window.sh start`, which would also start the ADF triggers. Marquez was left stopped; the ADF triggers were untouched (`Stopped`). **Expected: these four are stopped again at the end of this window.**
+  - All four Airflow apps `Running` by ~10:00Z. DataQ's `Apache Airflow` and `Apache Airflow — QA` connection tests went **502 → `{"ok":true}`**.
+  - **Detect failure:** a manual `flow_b_medallion` run (`manual__2026-09-30T10:04:35…`) failed in the harness's own `bronze_raw_load` task. It is a harness data-generator DAG, not DataQ, and the task log was unreachable through the webserver. DataQ recorded the pipeline run as `failed` (`task_failure`) and triggered no suite, which is correct.
+  - **Trigger on success:** the waking scheduler ran catch-up `flow_a_snowflake_load` runs (`scheduled__2026-09-06T01:30`, `scheduled__2026-09-29T01:30`). Both `succeeded`, and through the existing binding (env `qa`) each **triggered one DataQ run** of `Snowflake — Orders (all paths)`: `85676d92` and `85a0bd8e`, both `succeeded` 6/8, marked `airflow:flow_a_snowflake_load:<run id>`. The 10-minute poll ingested every catch-up run.
+  - A temporary binding `airflow/flow_a_uc_reference/qa` (`de63b1db`) was created at 10:16:32Z as a fallback and **deleted (204)** unused; its DAG's catch-up runs failed on the harness side.
+- 10:21:29–10:21:44Z: **Harness Airflow stopped again** (trigger → worker → airflow → redis, ARM `…/stop`). **Expected state: all five harness apps `Stopped`, ADF triggers `Stopped`** (both verified at 10:21:44Z).
+- 10:22:58–10:29:12Z: **LLM features on the deployed apps, user-approved ("configure and verify, then remove").**
+  - Azure OpenAI deployment `dataq-llm-test` (`gpt-4.1-mini` 2025-04-14, GlobalStandard, capacity 10) re-created on `royarijit04-9527-resource`. Azure DataQ set to `openai_compatible` at `…openai.azure.com/openai/v1`, the key read inline.
+  - AWS DataQ set to Bedrock `openai.gpt-oss-120b-1:0` at `bedrock-runtime.us-east-2…/openai/v1`, with a 1-hour SigV4-presigned `CallWithBearerToken` key generated inline from `dataq-deploy`, never printed.
+  - **Results:**
+    - The settings test is ok on both.
+    - SQL generation, check suggestions and the RCA narrative all `succeeded` on both, with `prompt_json`.
+    - **Found #2295:** in `native` mode Azure OpenAI 400s check suggestions and RCA, because `CHECKSUGGEST_SCHEMA` / `RCA_SCHEMA` aren't strict-mode valid. Reproduced directly against the endpoint.
+    - **Found #2296:** the Azure RCA narrative inverted "99.42% duplicated" to "0.58% duplicated", because the prompt passes a bare `metric_value`.
+  - **Removed:** LLM `enabled: false` on both apps. `dataq-llm-test` deleted (0 deployments). **AI Services `key1` regenerated at 10:29:12Z**, so the copy the Azure app stored is dead. The Bedrock key expires within the hour.
+  - **Expected state:** LLM disabled on both apps; no Azure OpenAI deployment.
+- 10:39:58Z: **Credential reset, user-approved: AWS Cognito admin demo user** `dq-admin-21e5d404@example.com` (pool `us-east-2_ET9Q8FMe1`). `admin_set_user_password --permanent` with a generated password, in-process via boto3, never printed. The only copy is written to SSM **`/dataq/demo/admin`** (SecureString, version 2, format `email=… password=…`, replacing the value that went stale on 2026-08-30). No expiry. The member and viewer passwords are unchanged and still stale.
+- **Azure Entra ID browser sign-in/out (Playwright, user typed the credentials):** the authorization-code + PKCE redirect landed on `/dashboard` as DataQ Admin, with no DataQ console errors. Sign-out went through Entra's OIDC logout (`post_logout_redirect_uri` = the app) and back to the DataQ sign-in page. `/dashboard` afterwards shows sign-in, so the session is gone.
+- ~10:41Z: **AWS Cognito browser sign-in/out (Playwright, user typed the credentials):** the hosted UI authorization-code + PKCE flow landed on `/dashboard` as Priya Sharma (admin, Admin menu visible). The dashboard rendered (10 runs in the last 7 days), with no DataQ console errors. Sign-out returned to the DataQ sign-in page, and a fresh Sign in then showed the Cognito login form rather than an automatic sign-in, so the hosted-UI session really ended (the `DATAQ_AUTH_LOGOUT_STYLE=cognito` path).
+- **Walkthrough status at ~10:45Z:** every lane above is verified on the deployed apps. Pending: Azure automatic coverage via the 2026-10-01 03:47Z beat (then switch `auto_coverage` off on `f53de47d`), and the fixes filed as sub-issues of #2224 (#2291–#2296; #2294 is in PR #2297).
