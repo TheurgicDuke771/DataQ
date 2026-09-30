@@ -996,3 +996,105 @@ Written by Claude, user-approved step by step. Goal: deploy `9f5475b7` to Azure 
   - Checked per service: Azure api, worker, beat and frontend on `7257c0ff`, all `Running`; migrate `dataq-app-migrate-dp77nba` `Succeeded`. AWS api, worker, beat and frontend on `aws-7257c0ff`, each 1/1 with one deployment; the worker is still without `-B`.
   - Smoke plus the authenticated probe (incl. the `PATCH /me` write, MCP 52 tools): 16/16 on both.
   - **#2291 live-verified:** the `column_profile` anomaly preview now returns 200 `skip` / `insufficient_history` with the real profile. Azure Snowflake 34,680 rows / 11 columns, Azure Unity Catalog 195 / 7, AWS Snowflake 34,680 / 11. This morning it was a 502.
+
+## 2026-09-30 (afternoon) — the remaining cloud-only lanes, run before the teardown (#2224)
+
+User-approved ("everything in the list"), batch by batch. Every scratch object is created and removed in the same step. Identifiers and timestamps only.
+
+**Batch 1 — Snowflake** (reader PAT from KV, `ACCOUNTADMIN` PAT sourced inline from the harness `secrets.sh`, nothing printed):
+- 13:06Z **`PERF_SF_*` tiers** against the TPC-H share, run locally with `perf_baseline run --tag warehouse`:
+  - 1M rows (SF1 `LINEITEM`, 6,001,215 rows): 5/5 checks, 13 statements, 28 result rows, 376 MiB, 19.6 s.
+  - 50M rows (SF10, 59,986,052 rows): 5/5, 13 statements, 28 rows, 378 MiB, 26.4 s.
+  - Wide profiler: 16 columns in 2 statements, 389 MiB.
+  - Statement and row counts match the committed baseline; wall time includes a cold warehouse.
+- **Inventory sync:** today's 03:17Z run found 18 tables on each Azure Snowflake connection. AWS `02d99a91` had been failing on the expired PAT; re-run at 13:09Z, it now finds 18.
+  - **Found #2314:** Snowflake's expired-PAT error (394401) was reported as "a reason DataQ could not classify".
+- **Column lineage:**
+  - The 02:37Z refresh ran on the pre-deploy image, which predates #2106, so it recorded 0 column pairs.
+  - Re-run on the new image (AWS, 13:14Z): the `GET_LINEAGE` column domain gave 53 seeds, 0 failed calls, 8/8 edges with column pairs. `column-lineage` traces `ORDER_NUMBER` / `ORDER_TS` / `CHANNEL` one hop to `STG_ORDERS` and two hops to the marts.
+  - The `ACCESS_HISTORY` column grain had 0 edges to refine: the loads come from stages, not tables.
+  - The `OBJECT_DEPENDENCIES` edition fallback is **not verifiable on this Enterprise account**.
+- 13:20Z **Cortex LLM provider** (AWS app, connection `02d99a91`):
+  - `mistral-large2` is legacy and `snowflake-llama-3.3-70b` is deprecated. Both are refused with clear messages.
+  - `llama3.3-70b`: SQL generation and check suggestions `succeeded`. Its RCA output failed schema validation (an empty `evidence_refs`), which DataQ refused rather than stored.
+  - `openai-gpt-4.1` on Cortex: RCA `succeeded` and correctly read the 100% failure.
+  - LLM disabled again.
+- 13:22–13:24Z **Key-pair auth:**
+  - An RSA key was generated in memory; its public key was set on the connection user's **slot 2** (checked empty first).
+  - Draft Test Connection is ok with both the plain PEM and the passphrase JSON.
+  - A temporary key-pair connection (`3c32efc6`) ran a real suite 2/2 through GX.
+  - Suite and connection deleted, the KV secret `conn-snowflake-walkthrough-2026-09-30-key-pair-dev-3c32efc6` purged, and slot 2 **unset** (verified `null`).
+- 13:25–13:26Z **Tag-based PII:**
+  - As `ACCOUNTADMIN` (steward), created tag `DATAQ_DB.RETAIL.DATAQ_CLASSIFICATION` and set `CHANNEL='sensitive'` on `ORDERS_HEADER`.
+  - The AWS suite run then showed `redaction: full`, `redacted_columns: [CHANNEL]` and `<redacted>` samples. Before the tag the samples were plain.
+  - Tag unset and the tag object **dropped**; `SHOW TAGS IN SCHEMA RETAIL` is empty.
+- **Browse, column listing, profiler:** Azure Snowflake `ORDERS_HEADER`: 11 columns, profile of 34,680 rows. Unity Catalog `feedback_sentiment`: 7 columns, 195 rows.
+- **Comparison with Snowflake on both sides:**
+  - `ORDERS_HEADER` and `CUSTOMERS` correctly refused: non-unique keys in the mock data.
+  - `ANALYTICS.MART_CUSTOMER_ORDERS` keyed on `customer_id`: `pass`, 200/200 matched per column.
+  - Temporary suites and checks deleted.
+
+**Batch 2 — Databricks / Unity Catalog** (workspace token from KV, never printed):
+- 13:32Z **`PERF_UC_*` tiers** on `samples.tpch.part` (1,000,000 rows):
+  - Pushdown: 5/5, 17 statements, 0 rows materialised, 373 MiB. This matches the baseline.
+  - Frame lane: 5/5, 1,000,000 rows materialised, **1 statement (the baseline has 9)**, 786 MiB. Fewer statements, not more, so not a regression; the baseline wants a refresh.
+- **Run admission:** `uc_frame_width` granted a run today; `comparison_sides` and `iceberg_schema_width` deferrals clear on their own.
+- **Lineage:** today's refresh recorded 26 edges with column pairs. `column-lineage` on `gold.feedback_sentiment` traces `channel` / `rating` / `customer_id` two hops to `raw`, and `sentiment` to its source column `comment`.
+- **Inventory sync:** 15 tables on each Unity Catalog connection at 03:17Z.
+- 13:34–13:38Z **Tag PII:**
+  - `sentiment` was already masked by DataQ's own classification, so it proved nothing.
+  - On Azure, `channel` tagged `dataq_classification='sensitive'` was *not* masked, because a run 2 minutes earlier had filled the 15-minute tag cache (`column_tags.REFRESH_TTL`, by design).
+  - On AWS, with a cold cache: `redacted_columns: [channel]`, `<redacted>` samples.
+  - Tags unset (`information_schema.column_tags` is empty); temporary checks deleted.
+- 13:38–13:42Z **DQX stream mode:**
+  - Scratch table `dataq_retail.default.dqx_stream_walkthrough` and volume `…dqx_walkthrough_ckpt`; `dqx_checkpoint_volume` set on connection `ae7b09b7`.
+  - Run 1: `rows: 4`, 1 failing, `next_version: 2`. After 3 rows were appended, run 2 had `from_version: 2`, `rows: 3`, 2 failing.
+  - Suite deleted, the connection config restored exactly, and the table and volume dropped.
+- 13:43Z **Delta UniForm through Unity Catalog's Iceberg REST catalog:**
+  - `/api/2.1/unity-catalog/iceberg-rest` loads the table's Iceberg metadata and snapshot through pyiceberg. The legacy `/iceberg` path returns "deprecated".
+  - **The data read is denied** (S3 `ACCESS_DENIED`) even with `X-Iceberg-Access-Delegation: vended-credentials`. This Free Edition metastore has `external_access_enabled: false`, and its default storage can't take `EXTERNAL USE SCHEMA`. So it is **partly verified**; the full read needs a metastore with external data access.
+  - Scratch table dropped. `dataq_retail.default` is empty.
+
+**Batch 3 — Azure:**
+- **Entra JWT on `/mcp`:** an `az account get-access-token --resource api://<api app>` bearer is accepted on REST (`/me`, role `member`) and on `/mcp` (5 tools answer, scoped to that Member: 0 incidents, no health score).
+- **App Insights span↔log join:** a single `operation_Id` (`POST /api/v1/suites`) carries the API request (`dataq.request_id` matching its log lines), the Celery `apply_async` dependency, the worker's `run/auto_classify_columns` span and its logs. `user_id` shows as `<redacted>` in the logs.
+- **G1 audit on managed Postgres:**
+  - `/admin/audit-events` lists both config and access (`run_results.read`) events.
+  - `/admin/audit-events/verify`: `ok`, 170 chained, 47 legacy, no break. The `verify_audit_chain` and `anchor_audit_chain_head` tasks run daily.
+  - `purge_audit_events` succeeds daily **with 0 rows**: nothing is older than the 365-day retention, so the delete path itself has never run on a live stack.
+- **Credential expiry:** ADLS SAS (2027-06-28) and dbt SAS (2027-07-12) are read from KV. Snowflake and Databricks PATs have no readable expiry, filed as **#2315**.
+- 13:48Z **Orphan-secret sweep, report only:** KV scanned 26, AWS SM 5, 0 orphans, no error (plus the scheduled 01:57Z runs).
+- 13:51–13:53Z **ADLS on real Azure:**
+  - A temporary `Storage Blob Data Reader` on `dataqharness3erlgd` for the ADF service principal (assignment `dfad6a0b…`).
+  - Draft tests ok for a container SAS (1-hour, `rl`, generated inline), ADLS service principal, and dbt artifacts via the service principal.
+  - A real flat-file run through a temporary SP connection read 643 rows. Connection deleted, its KV secret purged, the role assignment **removed** (the SP keeps only its inherited Contributor).
+  - Account SAS is covered by the existing connections. **OneLake is not verifiable: no Fabric capacity.**
+- 13:53–13:56Z **ADF Azure Monitor alert → webhook:** `pl_dataq_smoke_fail` run `4e65195c…` failed at 13:53:34Z. Azure Monitor fired `dataq-adf-failed-pipeline-runs`, and `POST /orchestration/events/adf` (AlertPing) arrived at 13:56:41Z. The triggered poll recorded the run `failed` in the same second: **~3 min end to end**.
+- 13:58–14:19Z **SQL Server lane:**
+  - Created logical server `dataq-mssql-77d385` (westus2, TLS 1.2, the maintainer as Entra admin), free-offer database `dataq_test`, and a firewall rule for the maintainer's IP.
+  - Admin and reader passwords generated straight into KV `mssql-test-sqladmin` / `mssql-test-reader`.
+  - Seeded the lane's tables; `dataq_reader` and the ADF service principal are `db_datareader` contained users.
+  - **python-tds: 20 passed** (SQL login **and Entra service principal**). **ODBC Driver 18 lane: 19 passed** (`pyodbc` in a scratch directory, never in the env).
+  - Skipped: Fabric (no workspace), the case-sensitive-catalog database (the CLI can't set the catalog collation, and T-SQL creation would bypass the free offer), and the per-driver tests.
+  - Torn down at 14:18Z: server deleted (0 left), both KV secrets purged, scratch `pyodbc` removed.
+- Not verifiable here: Fabric SQL endpoints, OneLake, and Cosmos via a Fabric mirror (no Fabric capacity).
+
+**Batch 4 — AWS:**
+- **Cognito JWT on REST and `/mcp`:**
+  - The admin demo user's **ID token** is accepted: `/me` 200, and 5 MCP tools answer.
+  - An access token from a direct SRP sign-in is 401: it carries no `aud` and no OAuth scopes. The hosted-UI browser flow was verified separately (see above).
+  - One slip: a token was briefly written to a scratch file, deleted in the next command; every later token stayed inline.
+- **Edge:** the ALB, hit directly, gets no response (network-denied; only CloudFront reaches it). Through CloudFront, `healthz` is 200, a 12 KB body is **403 from the WAF**, and a small body reaches the app (405).
+- **X-Ray span↔log join:** worker trace `run/dispatch_due_schedules` has matching OTel log records carrying the same `trace_id` in CloudWatch `/dataq-app/otel`.
+- **Real S3 without `endpoint_url`:** the `Retail S3 Landing` config has only `bucket`, `region` and `access_key_id`, and its suites ran green today.
+- 14:23–14:28Z **dbt artifacts on real S3:**
+  - The harness's real `manifest.json` / `run_results.json` were copied from ADLS `raw/dbt/latest` to `s3://dataq-landing-…/dbt-walkthrough/`. The draft test is ok, using the S3 connection's read-only key, read inline from Secrets Manager.
+  - The first poll correctly **skipped** the July run (older than the poll window). With `generated_at` set to now in the scratch copy, the poll **ingested it as `succeeded`**.
+  - Scratch prefix removed (0 objects); both temporary connections deleted.
+- 14:29–14:31Z **Iceberg Glue catalog:**
+  - Glue database `dataq_glue_walkthrough` and an Iceberg `orders` table (5 rows) on `s3://…/iceberg-glue-walkthrough/`, written with pyiceberg as `dataq-deploy`.
+  - IAM user `dataq-glue-walkthrough` with a read-only Glue + prefix-S3 policy. Its access key was created in-process and handed straight to DataQ.
+  - A temporary Iceberg connection (`catalog_type: glue`, `client.*` properties) passed the draft test. The suite ran `succeeded` 2/3: `email not null` correctly failed at 40%.
+  - Torn down: suite and connection, access key, policy, user, Glue table and database, and the S3 prefix (all verified gone).
+- The three scratch connections' Secrets Manager secrets (two held a copy of the live S3 reader key) were **force-deleted without recovery**; none remain, including planned deletions.
+- Not done: WAF rate-limit load testing (it would throttle the app); only the body cap was checked.
