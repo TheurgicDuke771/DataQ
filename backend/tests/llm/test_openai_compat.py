@@ -17,7 +17,7 @@ from backend.app.llm.base import (
     LLMUnavailableError,
     extract_json_object,
 )
-from backend.app.llm.openai_compat import OpenAICompatProvider
+from backend.app.llm.openai_compat import OpenAICompatProvider, strict_schema
 
 SCHEMA = {
     "type": "object",
@@ -103,7 +103,7 @@ def test_structured_native_sends_response_format_and_validates() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
         assert body["response_format"]["type"] == "json_schema"
-        assert body["response_format"]["json_schema"]["schema"] == SCHEMA
+        assert body["response_format"]["json_schema"]["schema"] == strict_schema(SCHEMA)
         return httpx.Response(200, json=_chat_response('{"sql": "SELECT 1"}'))
 
     result = _provider(handler).complete_structured("gen", schema=SCHEMA)
@@ -257,3 +257,74 @@ def test_inline_reasoning_with_no_answer_is_a_retryable_output_error(content: st
     provider = _provider(lambda _r: httpx.Response(200, json=body))
     with pytest.raises(LLMOutputInvalidError, match="ran out while reasoning"):
         provider.complete("hi")
+
+
+# ── strict structured output (#2295) ─────────────────────────────────────────
+
+
+def _strict_violations(schema: Any, where: str = "$") -> list[str]:
+    """OpenAI strict mode's structural rules: an object lists every property in `required` and
+    forbids extras; every array item, and every property, has a `type`."""
+    found: list[str] = []
+    if not isinstance(schema, dict):
+        return found
+    if "type" not in schema:
+        found.append(f"{where}: no type")
+    if schema.get("type") == "object" or "properties" in schema:
+        props = schema.get("properties") or {}
+        if set(schema.get("required", [])) != set(props):
+            found.append(f"{where}: required != properties")
+        if schema.get("additionalProperties") is not False:
+            found.append(f"{where}: additionalProperties not false")
+        for key, sub in props.items():
+            found += _strict_violations(sub, f"{where}.{key}")
+    if schema.get("type") == "array" or "items" in schema:
+        found += _strict_violations(schema.get("items"), f"{where}[]")
+    return found
+
+
+def _feature_schemas() -> dict[str, dict[str, Any]]:
+    from backend.app.services import llm_checksuggest, llm_rca, llm_sqlgen
+
+    return {
+        "sqlgen": llm_sqlgen.SQLGEN_SCHEMA,
+        "checksuggest": llm_checksuggest.CHECKSUGGEST_SCHEMA,
+        "checksuggest+freshness": llm_checksuggest._build_schema(include_freshness=True),
+        "rca": llm_rca.RCA_SCHEMA,
+    }
+
+
+@pytest.mark.parametrize("name", sorted(_feature_schemas()))
+def test_every_feature_schema_is_sent_strict_mode_valid(name: str) -> None:
+    """Azure OpenAI 400'd check suggestions and RCA in native mode: `value_set.items` had no
+    type, and RCA's `required` omitted `suggested_next_checks`."""
+    assert _strict_violations(strict_schema(_feature_schemas()[name])) == []
+
+
+def test_native_mode_sends_the_strict_schema_and_drops_the_nulls_it_forces() -> None:
+    schema = {
+        "type": "object",
+        "properties": {"summary": {"type": "string"}, "next": {"type": "array", "items": {}}},
+        "required": ["summary"],
+        "additionalProperties": False,
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent = json.loads(request.content)["response_format"]["json_schema"]["schema"]
+        assert sent == strict_schema(schema)
+        assert sent["required"] == ["summary", "next"]
+        assert sent["properties"]["next"]["type"] == ["array", "null"]
+        return httpx.Response(200, json=_chat_response('{"summary": "s", "next": null}'))
+
+    result = _provider(handler).complete_structured("rca", schema=schema)
+    assert result.parsed == {"summary": "s"}
+
+
+def test_a_provider_refusal_names_the_providers_reason() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400, json={"error": {"message": "Invalid schema for response_format 'result'"}}
+        )
+
+    with pytest.raises(LLMProviderError, match=r"\(400\): Invalid schema for response_format"):
+        _provider(handler).complete_structured("gen", schema=SCHEMA)
