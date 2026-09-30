@@ -47,6 +47,10 @@
 
 # aws_secrets_manager_prefix = "dataq"
 
+# Slack alert channel (off by default). Create the webhook secret first, then name it here:
+#   aws secretsmanager create-secret --name dataq/channel-slack-webhook --secret-string '<webhook URL>'
+# slack_webhook_secret_name = "channel-slack-webhook"
+
 # Email alerting via SES (#1368 — leave empty to keep the channel off). One
 # address: it becomes the SES identity, the From:, and (SES sandbox) the sole
 # recipient. SES emails a verification link to it on first apply — sends fail
