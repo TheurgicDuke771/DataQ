@@ -46,7 +46,7 @@ class BoundedUnexpectedRowsQueryTable(UnexpectedRowsQueryTable):  # type: ignore
 
     @metric_value(engine=SqlAlchemyExecutionEngine)  # type: ignore[untyped-decorator]
     def _sqlalchemy(
-        cls,  # noqa: N805 — GX's `metric_value` makes this a classmethod
+        cls,  # noqa: N805 — GX calls it as metric_fn(cls=<provider class>, ...), so the name is load-bearing
         execution_engine: SqlAlchemyExecutionEngine,
         metric_domain_kwargs: dict[str, Any],
         metric_value_kwargs: dict[str, Any],
