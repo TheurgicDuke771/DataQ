@@ -1,0 +1,279 @@
+<pasted_content id="9515">
+# DataQ — session handoff (updated 2026-09-30, end of session)
+
+## Problem statement / context
+DataQ is a single-tenant data-quality platform (FastAPI + Celery + GX + React; repo
+`TheurgicDuke771/DataQ`, local checkout `~/Coding/Python/DataQ`, conda env `dataq`,
+shell is fish/zsh via the Bash tool). It stays a **cloud-hosted product** (Azure/AWS
+reference deployments remain the preferred production path). We are retiring only
+**our own paid dev/test cloud estate** (AWS, Azure, Snowflake, Databricks) for cost.
+After that, development and testing run on the local stack; anything cloud-specific
+that can't be run live gets the `needs-cloud-verification` label and is tracked in
+**#2224**. **The clouds still exist right now**, so use them while they do: deploy,
+live-verify, then plan and execute the teardown (items 1–3 below).
+
+Standing rules (from the user and CLAUDE.md, still in force):
+- One functionality per commit. Tests for each change, and **prove a regression
+  test fails without its fix**. Run `/code-review --comment low` on every PR (the
+  review agent, never a self-review). Fix findings in the same PR, or file an issue.
+  Squash-merge.
+- **Migrations are additive and ship in their own PR, ahead of the code that uses
+  them.** Test up and down locally on a populated scratch DB. For CHECK constraints,
+  add them NOT VALID and VALIDATE in an autocommit block. Build indexes CONCURRENTLY.
+  Make the migration safe to re-run.
+- Never commit a credential. Read secrets inline only; never print them or write
+  them to files. Never `cat`/parse `secrets.sh`; only `source` it inline. No
+  `--no-verify`.
+- **Confirm before any cloud or infra change.** Log every infra change in
+  `docs/ops-log.md` with UTC timestamps; write "maintainer's IP", never the address.
+  Never touch the harness ADF triggers (`tr_orders_landed`, `tr_customers_daily`,
+  both `Stopped`).
+- Run the **whole** frontend suite (`pnpm test:coverage`) and the whole backend
+  suite (`pytest backend/tests`; no xdist, so no `-n`) before pushing. After any
+  backgrounded `git push`, confirm it landed with `git ls-remote --heads origin
+  <branch>` against `git rev-parse HEAD`.
+- Published docs (`docs/site/`) may not cite ticket numbers; a pre-commit hook
+  enforces this.
+
+## What this session shipped
+Earlier in the session, all merged:
+- Platform-retirement follow-ups #2211–#2250, including JSON flat files, DMF EXPLAIN
+  probe, the Athena/Redshift/Azure SQL aggregate lanes, the Ask-AI fix, and
+  check-type examples.
+- LLM providers live-verified: Azure OpenAI 8/8; Bedrock #2251 fixed in #2252.
+- Indirect dependencies: demo compose profile (#2254), masked-through-lineage
+  (#2256), pipeline duration/overdue baselines (#2257); CI pip-audit ignore (#2261,
+  tracked in #2260).
+- **ADR 0047 automated coverage (#1660/#1661):**
+  - the ADR (#2258);
+  - schema (#2259);
+  - reconciler (#2262);
+  - `column_profile` metric (#2263);
+  - `check_suggestions` table (#2264);
+  - **review queue (#2265, merged)**;
+  - **automatic suites get a "Column profile is normal" check (#2266, merged)**.
+
+Late in the session, while the clouds were still up (user-approved, all torn down
+afterwards, and logged):
+- **Column profile live-verified on every SQL engine.** Postgres, MySQL, Databricks,
+  Snowflake and Trino were done earlier. Athena, Redshift Serverless and Azure SQL
+  were recreated briefly: Athena + Redshift 41 passed, Azure SQL 17 passed.
+  - Redshift found **#2267**: one column the engine can't cast to a string
+    (GEOMETRY, BOOLEAN) dropped distinct counts for the *whole* table, and SUPER
+    objects cast to NULL, so they read 0 distinct.
+  - Fixed in **#2268**: a zero-row probe per column finds the uncastable columns, and
+    a distinct count is recorded only when the cast kept every value. The payload
+    field `distinct_available` became `distinct_unavailable: [columns]`.
+  - Re-verified live on all three; review had no findings.
+- **ADF pipeline gate (#2230) live-verified** on the harness factory against a
+  tunnelled local stack (cloudflared quick tunnel, PAT-only auth; prod predates the
+  endpoint). Pass, fail and status-only (`trigger:false`, `created_runs: 0`) all
+  behaved correctly.
+  - Found **#2269 (security)**: the snippet's `secureOutput`/`secureInput` sat
+    outside `policy`, so ADF ignored them and the PAT showed in run history.
+  - Fixed in **#2272** with a test pinning the placement; re-verified live (both
+    activities now show `**********`).
+  - The scratch PAT that was exposed was revoked at once.
+- `needs-cloud-verification` removed from #2230, #2263 and #2266; results posted on
+  each and on #2224.
+- **Main went red** at `7db37ac0`: #2265's new test expected 2 automatic checks, and
+  #2266 (merged after it) makes it 3. Filed **#2270**, fixed in **#2271**.
+- Ops-log entries for all of the above: **#2273**.
+
+## Open right now (all have auto-merge on)
+- **#2271** fixes red main. **Merge it first.** CI was running at close.
+- **#2268** (#2267 fix), **#2272** (#2269 fix) and **#2273** (ops log) were
+  blocked, because their CI inherited the red-main failure
+  (`test_a_profiling_failure_does_not_skip_the_table`).
+  → **First action next session:** once #2271 has merged, for each of these three
+  branches run `git checkout <branch> && git merge origin/main && git push` (a plain
+  push, never force). Confirm CI goes green and auto-merge fires, then check the
+  issues closed: `gh issue view 2267 2269 2270`.
+  Branches: `fix/issue-2267-column-profile-distinct`,
+  `fix/issue-2269-adf-gate-secure-policy`, `chore/ops-log-2266-2230-verification`.
+  If a CI job fails, read its log with
+  `gh api --allow-escape-sequences repos/TheurgicDuke771/DataQ/actions/jobs/<id>/logs`.
+- 11 Dependabot PRs (#2180–#2190) haven't been reviewed. #2181 is a SQLAlchemy
+  minor bump (2.0 → 2.1) and deserves care.
+
+## Pending action items (in order)
+1. **Deploy the latest `main` to both clouds and live-verify every feature.**
+   Do this once the four PRs above have merged.
+   - Deployed today: Azure `517b407b` (2026-09-28; 81 commits and **6 migrations**
+     behind); AWS `aws-7a3244a4` (2026-09-07; 177 commits and **16 migrations**
+     behind).
+   - Follow `deploy/README.md`:
+     - pre-deploy checklist;
+     - `tofu plan` then apply on `deploy/terraform/azure` and
+       `deploy/terraform/aws`, reviewing drift before applying;
+     - the `deploy.yml` / `deploy-aws.yml` `workflow_dispatch` runs; migrate must
+       exit 0;
+     - verify the image SHA on api, worker, frontend **and beat** separately;
+     - `alembic_version` read back on both databases;
+     - required post-deploy scripts (for example
+       `backend/scripts/redact_stale_incident_evidence.py`).
+   - Then the full post-deploy smoke **plus an authenticated WRITE probe** on each
+     cloud, and a feature-by-feature live walkthrough. The #2224 checklist is the
+     list to work through:
+     - sign-in and sign-out (Entra ID, Cognito, OTP), PATs over `/mcp/`;
+     - every datasource type's connection test and a suite run;
+     - monitors: freshness, volume, schema drift, anomaly incl. `column_profile`,
+       aggregate, comparison;
+     - automatic coverage: turn on `auto_coverage` on one connection, watch the
+       reconciler create a suite, check the review queue's accept/reject;
+     - the pipeline gate from ADF against the **deployed** app;
+     - alerts (Teams/Slack/email/SES), assets/lineage/incidents, the MCP tools,
+       LLM features, DMF, DQX, the security headers, CSP and WAF.
+   - Record the results in `docs/ops-log.md`. File any defect found (fixed or
+     filed), and remove `needs-cloud-verification` from each item verified.
+   - Confirm with the user before `tofu apply` and before each deploy.
+2. **Write a detailed teardown plan for all four: AWS, Azure, Snowflake and
+   Databricks.** Present it to the user for approval; execute nothing yet.
+   - Per platform: a full inventory, read live rather than from memory:
+     - resource groups and resources;
+     - ECS/RDS/ElastiCache/CloudFront/WAF/Cognito/Secrets Manager/SSM/ECR/S3/IAM
+       users, roles and GitHub OIDC;
+     - Container Apps, Postgres, Key Vault, ADF, AI Services, storage, Entra app
+       registrations;
+     - Snowflake warehouses, databases, roles, users, PATs and tags;
+     - Databricks workspace, SQL warehouse, catalogs and tokens.
+   - For each resource: its dependencies, the ordered deletion steps, a way to
+     verify it's gone, and its cost impact.
+   - **Backups first**: prod Postgres dumps, any data worth keeping, the
+     `docs/ops-log.md` identifiers, and exported Terraform state.
+   - **Credential retirement**: every KV / Secrets Manager secret, PATs, GitHub
+     secrets and variables, the `production` environment.
+   - What must **stay**: the published Terraform in `deploy/terraform/*` (#1384 and
+     #1385 stay open for it), GHCR images, docs.
+   - What breaks locally once each platform is gone: the harness, and #2224's
+     re-verification list.
+   - The Databricks token lapse (#2145), and the #588 (Snowflake harness leg) and
+     #590 (Azure estate) decision gates.
+   - Rollback / "recreate from IaC" notes.
+3. **Execute the teardown** only after the user approves the plan, step by step with
+   confirmation and an ops-log entry per step. Then epic **#2220** (two local
+   paths):
+   - keep the authless contributor stack as it is, hidden from user docs;
+   - make the OTP stack in `docker-compose.ghcr.yml` the production-like default,
+     with HTTPS via a local CA auto-installed into the OS trust store, rate
+     limiting, sole ingress and TLS everywhere.
+4. **ADR 0047 phase 3c:** queue the LLM check suggester's output with
+   `source='llm'` (`llm_checksuggest.py` → `suggestion_service.propose`).
+5. **ADR 0047 phase 4:**
+   - a coverage % figure (share of inventory assets watched by at least one suite
+     that ran in the last 7 days, automatic-only vs authored) and a false-positive
+     rate (incidents resolved `false_positive` among automatic-suite incidents), both
+     on the dashboard;
+   - a `resolution` choice in the incident resolve API and UI;
+   - MCP read tools for coverage and the queue (keep the MCP honesty rules; derive
+     the tool counts from `tests/support/mcp_gates.GATES`).
+6. **Docs examples**, the rest of the earlier request:
+   - Tier 1 item 2: one example connection config and target per datasource in
+     `docs/site/guides/datasources-checks.md`;
+   - Tier 1 item 3: a REST API curl walkthrough against the local stack;
+   - Tier 2: API/CLI snippets in the guides, config and a sample result per monitor
+     kind;
+   - Tier 3: MCP tool examples and a troubleshooting page.
+7. Follow-ups: #2253 (demo-profile walkthrough on the marketing page), #2255 (a
+   masking reason per `redacted_columns` entry; security-sensitive), #2260 (oauthlib
+   4), #2224 (whatever item 1 doesn't cover).
+8. Refresh the `docs/progress.md` snapshot (open PR/issue counts), and CLAUDE.md
+   §13 once the deploy and teardown change the headline.
+9. Housekeeping, ask before removing any of it:
+   - about 50 old `dataq_test_*`/`dataq_mig_*`/`dataq_perf*` scratch databases in
+     `dataq-postgres-1`;
+   - the `perf/issue-1645-one-connection` worktree;
+   - stopped harness containers;
+   - `cloudflared`, installed via Homebrew this session (`brew uninstall
+     cloudflared`).
+
+## Useful local facts
+- The local dev stack (compose project `dataq`: postgres, redis, openbao, mailpit)
+  holds a prod-mirror dataset. Never disturb it; use scratch DBs and a spare Redis
+  db index for live tests.
+- A scratch API + worker with PAT-only auth (safe to expose through a tunnel): OTP
+  mode with a dummy mailer. Set `AUTH_DEV_BYPASS=false` and `AUTH_EMAIL_SMTP_HOST`,
+  `AUTH_EMAIL_USERNAME`, `AUTH_EMAIL_FROM`, `AUTH_EMAIL_PASSWORD_SECRET_NAME`,
+  `AUTH_OTP_ALLOWED_EMAILS`. Mint the PAT with `api_key_service.create_key`.
+- Cloud live-lane recipes (Athena IAM user + Glue DB, Redshift Serverless
+  `dataq-it-rs`, Azure SQL free-offer DB, seeded with `mssql_tds.install()`) are in
+  the 2026-09-28/29 ops-log entries. The lane env names are `ATHENA_TEST_*`,
+  `REDSHIFT_TEST_*` (the admin secret is `redshift!dataq-it-rs-dqadmin`) and
+  `DATAQ_MSSQL_LIVE_*`.
+- The ADF gate snippet's run history on `dataq-harness-adf` from 2026-09-29 22:38Z
+  holds a revoked scratch PAT. It is dead, and the history can't be deleted.
+- The working tree is on `chore/ops-log-2266-2230-verification`. Check out `main`
+  and pull before starting.
+</pasted_content id="9515">
+
+---
+
+<task-notification>
+<task-id>bytl0l50e</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/5ffbb754-c47f-4bef-b45f-a36850170a48/tasks/bytl0l50e.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for CI on the three PRs, then report merge state" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b0vy1omb2</task-id>
+<tool-use-id>toolu_01VdRmYLQaaL4NtXAtuERFX5</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/5ffbb754-c47f-4bef-b45f-a36850170a48/tasks/b0vy1omb2.output</output-file>
+<status>completed</status>
+<summary>Background command "Poll until backend tests finish, then report merge state" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bp4ftxh6j</task-id>
+<tool-use-id>toolu_01F6XKCLuoHgLgNE5RbrSCMW</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/5ffbb754-c47f-4bef-b45f-a36850170a48/tasks/bp4ftxh6j.output</output-file>
+<status>completed</status>
+<summary>Background command "Check main CI after the merges" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+there are 6 issues with no milestone can you add appropiate milestone against them
+
+---
+
+Also, let's close 2 remaining issues from week 6 and close that milestone.
+
+---
+
+<task-notification>
+<task-id>buvosjo35</task-id>
+<tool-use-id>toolu_01GZTJCQ36thQ6kQ7ZFMMrsE</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/5ffbb754-c47f-4bef-b45f-a36850170a48/tasks/buvosjo35.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch main CI run to completion" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+And let's convert #2224 to an epic [only if that makes sence, otherwise leave as is]
+
+---
+
+<task-notification>
+<task-id>b1spz539e</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/5ffbb754-c47f-4bef-b45f-a36850170a48/tasks/b1spz539e.output</output-file>
+<status>completed</status>
+<summary>Background command "Run full backend test suite" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bmq9w0tkw</task-id>
+<tool-use-id>toolu_01Sw7P4BpE1TahgJHQy4TeT7</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/5ffbb754-c47f-4bef-b45f-a36850170a48/tasks/bmq9w0tkw.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for healthy services, rerun full backend suite" completed (exit code 0)</summary>
+</task-notification>
