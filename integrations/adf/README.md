@@ -15,8 +15,11 @@ How it works: an **Until** loop POSTs to `/api/v1/orchestration/gate` with the p
 and `RunId`. The first request starts the bound suites' runs for this pipeline run, and every
 later request is the same idempotent call, so DataQ runs them once. When the gate answers
 `passed`, `failed` or `error`, the loop ends, and anything but `passed` hits a **Fail** activity,
-so the downstream stages never run. The Web activities use secure input and output, so the
-token never lands in the run history. The loop gives up after 30 minutes.
+so the downstream stages never run. The Web activities set secure input and output under their
+`policy` (ADF ignores the flags anywhere else), so the token never lands in the run history. If
+you deployed an earlier copy with the flags outside `policy`, redeploy and rotate the PAT:
+earlier runs keep it in their history until retention expires. The loop gives up after 30
+minutes.
 
 To gate a *downstream* pipeline on an upstream one's run instead, send `"trigger": false` and
 the upstream run's pipeline name and run id; the gate then only reports on the runs that the
