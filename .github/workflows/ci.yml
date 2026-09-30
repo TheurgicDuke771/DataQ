@@ -467,10 +467,16 @@ jobs:
         run: |
           pnpm exec playwright install chromium
           sudo rm -f /etc/apt/sources.list.d/*microsoft* /etc/apt/sources.list.d/*azure* || true
+          echo 'Acquire::http::Timeout "30";' | sudo tee /etc/apt/apt.conf.d/99ci-timeout >/dev/null
           for attempt in 1 2 3; do
             # #1484: a stalled apt mirror hangs rather than exits non-zero, which the retry loop
             # below can't detect on its own.
             if timeout 300 pnpm exec playwright install-deps chromium; then ok=1; break; fi
+            # #2320: the signal stops at sudo's `sh -c`, so apt-get survives it and
+            # the orphan holds the dpkg lock against every retry.
+            sudo pkill -x apt-get || true
+            timeout 60 bash -c 'while sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do sleep 2; done' || true
+            sudo dpkg --configure -a || true
             echo "playwright install-deps attempt $attempt failed; retrying in 5s…"; sleep 5
           done
           [ -n "${ok:-}" ] || { echo "playwright install-deps failed after 3 attempts"; exit 1; }
