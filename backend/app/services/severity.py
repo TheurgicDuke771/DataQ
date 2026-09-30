@@ -43,6 +43,34 @@ def extract_metric(outcome: CheckOutcome) -> Decimal | None:
     return metric if metric.is_finite() else None
 
 
+#: What a kind's own `metric_value` measures (the monitors set it themselves, see `extract_metric`).
+_KIND_METRIC_MEANINGS = {
+    "freshness": "age of the newest record, in hours",
+    "volume": "percent the row count falls outside the allowed range (0 = in range)",
+    "schema_drift": "number of columns that changed",
+    "anomaly": "z-score against the check's own baseline (how many standard deviations off)",
+    "aggregate": "the aggregate's computed value",
+    "comparison": "percent of compared rows that don't match",
+}
+
+
+def metric_meaning(kind: str | None, expectation_type: str | None) -> str | None:
+    """What a result's `metric_value` measures, so a reader with no UI (an LLM, #2296) doesn't
+    have to guess its direction; ``None`` when this module doesn't know."""
+    if kind in _KIND_METRIC_MEANINGS:
+        return _KIND_METRIC_MEANINGS[kind]
+    etype = expectation_type or ""
+    if etype.startswith("dqx:"):
+        return "number of rows failing the rule"
+    if etype.startswith("dmf:"):
+        return f"the Snowflake data metric {etype.removeprefix('dmf:').upper()}"
+    if etype == CUSTOM_SQL_EXPECTATION_TYPE:
+        return "number of rows the failing-rows query returned"
+    if kind in (None, "expectation"):
+        return "percent of rows failing the expectation (higher is worse)"
+    return None
+
+
 def resolve_status(
     outcome: CheckOutcome,
     *,
