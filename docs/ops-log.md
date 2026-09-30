@@ -923,3 +923,12 @@ Written by Claude, user-approved step by step. Goal: deploy `9f5475b7` to Azure 
 - **Post-deploy smoke + authenticated probes, both clouds, 16/16 green.**
   - Public: healthz, SPA and deep link 200; `/api/v1/me` and `/mcp/` (GET and POST) 401; `/api/v1/openapi.json` 404; `/docs` is the SPA shell; 6/6 security headers; no server version.
   - Authenticated as admin (Azure KV `dataq-pat-w1-admin`, AWS SSM `/dataq/demo/admin-pat`): `/me` 200; **`PATCH /me` 200 (write probe)**; connections listed (Azure 14, AWS 3); MCP `initialize` 200 and `tools/list` **52**.
+- ~09:18Z: **Connection tests, every connection, both clouds** (admin PAT, `POST /connections/{id}/test`).
+  - Azure 11/14 ok: ADF ×2, ADLS ×2, dbt, Iceberg, Snowflake ×3, Unity Catalog ×2.
+  - Azure failures, all explained: Airflow ×2 (the harness Airflow is Stopped by design); `probe-snowflake-dev` (the Week-1 probe connection, which has never had a credential).
+  - AWS 2/3 ok: S3, Unity Catalog. `Retail Snowflake DEV` fails because its Secrets Manager copy (`dataq/conn-snowflake-retail-dev-02d99a91`, last changed 2026-09-08) was never updated in the 2026-09-26 reader-PAT rotation, when the AWS CLI credential was dead. **Pending the user's go-ahead to reauth it.**
+- ~09:20Z: **A run of every suite on a working connection**, 8 runs, all `succeeded` with every check producing a verdict (no error or skip).
+  - Azure: Snowflake Orders 6/8, Unity Catalog 8/9, Iceberg 3/7, flat-file ADLS 4/6.
+  - AWS: Unity Catalog ×2 2/3, S3 ×2 2/3.
+  - Every failure is either freshness on data the stopped harness last wrote in July/August (true positives), or one of the deliberate failure cases the all-paths suites include.
+  - Kinds exercised: Azure has expectation, freshness, volume, schema_drift, anomaly and comparison (all GX); AWS has expectation and freshness only.
