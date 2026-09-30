@@ -62,11 +62,14 @@ def metric_meaning(kind: str | None, expectation_type: str | None) -> str | None
     etype = expectation_type or ""
     if etype.startswith("dqx:"):
         return "number of rows failing the rule"
+    if etype == "dmf:custom":
+        return "the value returned by the customer-defined Snowflake data metric function"
     if etype.startswith("dmf:"):
-        return f"the Snowflake data metric {etype.removeprefix('dmf:').upper()}"
+        return f"the Snowflake system data metric {etype.removeprefix('dmf:').upper()}"
     if etype == CUSTOM_SQL_EXPECTATION_TYPE:
         return "number of rows the failing-rows query returned"
-    if kind in (None, "expectation"):
+    # Only a known expectation: a missing check (kind None) must not be told "percent failing".
+    if kind == "expectation" or (kind is None and etype.startswith("expect_")):
         return "percent of rows failing the expectation (higher is worse)"
     return None
 

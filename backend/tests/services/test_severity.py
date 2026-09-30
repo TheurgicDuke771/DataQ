@@ -304,10 +304,12 @@ def test_resolve_status_custom_sql_zero_rows_without_thresholds_is_plain_pass() 
         ("anomaly", "monitor:anomaly", "z-score"),
         ("comparison", "comparison:columns", "don't match"),
         ("something_new", "monitor:new", None),
+        (None, None, None),
+        ("expectation", "dmf:custom", "customer-defined"),
     ],
 )
 def test_metric_meaning_names_what_each_kind_measures(
-    kind: str, etype: str, expected: str | None
+    kind: str | None, etype: str | None, expected: str | None
 ) -> None:
     from backend.app.services.severity import metric_meaning
 
