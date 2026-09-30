@@ -53,6 +53,14 @@ AUTH_ERRORS = [
         RuntimeError("390100 (08004): Incorrect username or password was specified."),
     ),
     (
+        # #2314: the message the AWS deployment's expired reader PAT produced, 2026-09-30.
+        "snowflake_394401_pat_expired",
+        RuntimeError(
+            "394401 (08001): None: Failed to connect to DB: acct.snowflakecomputing.com:443. "
+            "Programmatic access token is expired. [4aaa1095-075e-4448-815b-e7692952af59]"
+        ),
+    ),
+    (
         "snowflake_390114",
         RuntimeError(
             "390114 (08001): Authentication token has expired. The user must authenticate again."

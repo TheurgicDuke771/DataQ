@@ -375,3 +375,15 @@ class TestSecretStoreClassification:
     def test_every_category_has_a_secret_store_message(self) -> None:
         for category in FailureCategory:
             assert category in _SECRET_STORE_MESSAGES
+
+
+def test_an_expired_snowflake_pat_is_a_credential_failure_not_unclassified() -> None:
+    """#2314: the AWS deployment's expired reader PAT read "a reason DataQ could not classify"."""
+    exc = RuntimeError(
+        "(snowflake.connector.errors.DatabaseError) 394401 (08001): None: Failed to connect to "
+        "DB: acct.snowflakecomputing.com:443. Programmatic access token is expired. "
+        "[4aaa1095-075e-4448-815b-e7692952af59]"
+    )
+    assert classify_failure_category(exc) == FailureCategory.PERMISSION
+    reason = classify_inventory_sync_error(exc, "snowflake", during_enumeration=False)
+    assert "could not classify" not in reason
