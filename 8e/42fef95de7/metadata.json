@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "8e42fef95de7",
+  "strategy": "manual-commit",
+  "branch": "chore/ops-log-2026-09-30-cloud-lanes",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/ops-log.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/8e/42fef95de7/0/metadata.json",
+      "transcript": "/8e/42fef95de7/0/full.jsonl",
+      "compact_transcript": "/8e/42fef95de7/0/transcript.jsonl",
+      "content_hash": "/8e/42fef95de7/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 50,
+    "cache_creation_tokens": 29062,
+    "cache_read_tokens": 22984017,
+    "output_tokens": 23346,
+    "api_call_count": 25
+  }
+}
