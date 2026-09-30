@@ -791,3 +791,20 @@ def test_the_prompt_says_when_metric_value_has_no_known_meaning() -> None:
         "failing_result": {"status": "fail", "metric_value": 3},
     }
     assert "don't infer whether higher is worse" in llm_rca._render_evidence(evidence, [], [])
+
+
+def test_blind_spots_name_the_pipeline_whose_run_is_not_recorded() -> None:
+    """#2294: a null upstream layer on a pipeline-triggered run is not "maybe manual"."""
+    evidence = {
+        "check": {"kind": "expectation"},
+        "upstream_pipeline_run": None,
+        "pipeline_trigger": {
+            "triggered": True,
+            "provider": "adf",
+            "marker": "adf:dataq_gate_fail:f53aff52",
+            "pipeline_run": "not_recorded",
+        },
+    }
+    spots = llm_rca._blind_spots(evidence, history_unavailable=False)
+    assert any("triggered by a pipeline (adf)" in s and "isn't recorded" in s for s in spots)
+    assert not any("wasn't pipeline-triggered" in s for s in spots)

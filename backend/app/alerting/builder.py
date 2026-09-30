@@ -78,7 +78,10 @@ def _resolve_owner(session: Session, asset: Asset | None, suite: Suite | None) -
     """
     if asset is not None and asset.owner_user_id is not None:
         return session.get(User, asset.owner_user_id)
-    return session.get(User, suite.created_by) if suite is not None else None
+    # An automatic-coverage suite has no human creator (#2293).
+    if suite is None or suite.created_by is None:
+        return None
+    return session.get(User, suite.created_by)
 
 
 def _target_label(suite: Suite | None) -> str:

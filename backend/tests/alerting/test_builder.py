@@ -419,3 +419,43 @@ def test_check_report_is_frozen() -> None:
     except AttributeError:
         return
     raise AssertionError("CheckReport should be immutable")
+
+
+def test_build_report_for_an_ownerless_automatic_suite_has_no_owner(db_session: Any) -> None:
+    """#2293: an automatic-coverage suite has no human creator, and `session.get(User, None)`
+    emits an SAWarning SQLAlchemy says a future release will raise."""
+    import warnings
+
+    from sqlalchemy.exc import SAWarning
+
+    creator = User(aad_object_id=uuid.uuid4().hex, email="conn-owner@x.io")
+    db_session.add(creator)
+    db_session.flush()
+    conn = Connection(
+        name=f"c-{uuid.uuid4().hex[:8]}",
+        type="snowflake",
+        env="dev",
+        config={"account": "a"},
+        secret_ref="kv",
+        created_by=creator.id,
+    )
+    db_session.add(conn)
+    db_session.flush()
+    suite = Suite(
+        name="Auto: RETAIL.T",
+        connection_id=conn.id,
+        created_by=None,
+        origin="auto",
+        target={"table": "T"},
+    )
+    db_session.add(suite)
+    db_session.flush()
+    run = Run(suite_id=suite.id, status="succeeded", finished_at=datetime.now(UTC))
+    db_session.add(run)
+    db_session.commit()
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", SAWarning)
+        report = builder.build_run_report(db_session, run)
+
+    assert report.owner is None
