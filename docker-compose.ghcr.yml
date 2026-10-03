@@ -18,14 +18,21 @@
 
 x-backend-image: &backend-image "ghcr.io/theurgicduke771/dataq-backend:${DATAQ_BACKEND_TAG:-latest}"
 
+# Every backend container mounts the local CA's public certificate to verify the stack's own
+# servers (Postgres, Redis, SMTP).
+x-app-volumes: &app-volumes
+  - ghcr_local_ca:/certs:ro
+
 # Shared app env for api/worker/migrate.
 x-app-env: &app-env
   # prod: /docs is not served and the contributor bypass is refused. Contributors using the
   # bypass on this file set DATAQ_ENVIRONMENT=dev (CONTRIBUTING.md).
   ENVIRONMENT: ${DATAQ_ENVIRONMENT:-prod}
   RATE_LIMIT_ENABLED: "true"
-  DATABASE_URL: "postgresql+psycopg2://dataq@postgres:5432/dataq"
-  REDIS_URL: "redis://redis:6379/0"
+  # TLS to the stack's own datastores, verified against the local CA: the same client code
+  # paths a managed Postgres or Redis exercises in production.
+  DATABASE_URL: "postgresql+psycopg2://dataq@postgres:5432/dataq?sslmode=verify-full&sslrootcert=/certs/ca.pem"
+  REDIS_URL: "rediss://redis:6379/0?ssl_cert_reqs=required&ssl_ca_certs=/certs/ca.pem"
   SECRET_STORE: "openbao"
   OPENBAO_ADDR: "http://openbao:8200"
   OPENBAO_TOKEN: ${OPENBAO_TOKEN:?required — see the header of this file (ADR 0039)}
@@ -34,8 +41,10 @@ x-app-env: &app-env
   # Email OTP sign-in against the bundled catcher.
   AUTH_EMAIL_SMTP_HOST: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_SMTP_HOST:-mailpit}}
   AUTH_EMAIL_SMTP_PORT: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_SMTP_PORT:-1025}}
-  # A local catcher speaks no TLS — the case `none` exists for (#1146), warned on every send.
-  AUTH_EMAIL_TLS_MODE: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_TLS_MODE:-none}}
+  # STARTTLS to the bundled catcher, verified against the local CA. Pointing at a real relay:
+  # set AUTH_EMAIL_CA_BUNDLE to empty so its public certificate is checked the usual way.
+  AUTH_EMAIL_TLS_MODE: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_TLS_MODE:-starttls}}
+  AUTH_EMAIL_CA_BUNDLE: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_CA_BUNDLE-/certs/ca.pem}}
   # A SecretStore lookup NAME, never a value — the password is generated into the vault by the `otp-
   # mail-secret` one-shot and read back by name.
   AUTH_EMAIL_PASSWORD_SECRET_NAME: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_PASSWORD_SECRET_NAME:-dataq-local-smtp}}
@@ -58,7 +67,12 @@ services:
       POSTGRES_HOST_AUTH_METHOD: trust
       POSTGRES_USER: dataq
       POSTGRES_DB: dataq
+    command: postgres -c ssl=on -c ssl_cert_file=/tls/cert.pem -c ssl_key_file=/tls/key.pem
+    depends_on:
+      local-ca:
+        condition: service_completed_successfully
     volumes:
+      - ghcr_tls_postgres:/tls:ro
       # Distinct from docker-compose.yml's volume: this stack runs trust-auth, so it must never
       # reuse a password-initialized data dir (auth config is fixed at init time).
       - ghcr_postgres_data:/var/lib/postgresql/data
@@ -71,8 +85,19 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    # TLS only: the plain port is off.
+    command: >-
+      redis-server --port 0 --tls-port 6379
+      --tls-cert-file /tls/cert.pem --tls-key-file /tls/key.pem
+      --tls-ca-cert-file /certs/ca.pem --tls-auth-clients no
+    depends_on:
+      local-ca:
+        condition: service_completed_successfully
+    volumes:
+      - ghcr_tls_redis:/tls:ro
+      - ghcr_local_ca:/certs:ro
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "--tls", "--cacert", "/certs/ca.pem", "-h", "redis", "ping"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -100,15 +125,22 @@ services:
     image: axllent/mailpit:v1.30.6
     restart: unless-stopped
     environment:
-      # Both are required: without ACCEPT_ANY the server advertises no AUTH at all and smtplib's
-      # `login()` raises SMTPNotSupportedError.
+      # Without ACCEPT_ANY the server advertises no AUTH at all and smtplib's `login()` raises
+      # SMTPNotSupportedError. AUTH is only offered after STARTTLS.
       MP_SMTP_AUTH_ACCEPT_ANY: "true"
-      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+      MP_SMTP_TLS_CERT: /tls/cert.pem
+      MP_SMTP_TLS_KEY: /tls/key.pem
+      MP_SMTP_REQUIRE_STARTTLS: "true"
       MP_MAX_MESSAGES: "500"
     ports:
       # Loopback ONLY, and more strictly than the rest of this file: this inbox holds LIVE sign-in
       # codes for every allow-listed address, behind no authentication at all.
       - "127.0.0.1:8025:8025"   # web inbox — open this to read your code
+    depends_on:
+      local-ca:
+        condition: service_completed_successfully
+    volumes:
+      - ghcr_tls_mailpit:/tls:ro
 
   # One-shot: a local certificate authority and a `localhost` certificate, generated on first
   # start into a volume and kept across restarts. root only so it can write the fresh volumes.
@@ -117,10 +149,20 @@ services:
     image: *backend-image
     restart: "no"
     user: "0:0"
-    command: python -m backend.scripts.local_ca /certs /ca-key
+    # NAME:DIR:UID — a certificate for that hostname, its key owned by the user the service
+    # runs as (postgres 70, redis 999, mailpit root).
+    command: >-
+      python -m backend.scripts.local_ca /certs /ca-key --localhost-dir /tls/frontend
+      --service postgres:/tls/postgres:70
+      --service redis:/tls/redis:999
+      --service mailpit:/tls/mailpit:0
     volumes:
       - ghcr_local_ca:/certs
       - ghcr_local_ca_key:/ca-key
+      - ghcr_tls_frontend:/tls/frontend
+      - ghcr_tls_postgres:/tls/postgres
+      - ghcr_tls_redis:/tls/redis
+      - ghcr_tls_mailpit:/tls/mailpit
 
   # One-shot: puts a generated SMTP password in the vault under the name the api looks it up by,
   # then exits 0.
@@ -129,9 +171,13 @@ services:
     restart: "no"
     command: python -m backend.scripts.seed_local_smtp_secret
     environment: *app-env
+    volumes: *app-volumes
     depends_on:
       openbao:
         condition: service_healthy
+      # Settings refuses to load while AUTH_EMAIL_CA_BUNDLE names a file that is not there yet.
+      local-ca:
+        condition: service_completed_successfully
 
   # One-shot: migrate to head THEN seed the dev user + probe fixtures + demo data (seed_dev is
   # idempotent, safe to re-run on every `up`). api/worker gate on its successful completion so the
@@ -141,6 +187,7 @@ services:
     restart: "no"
     command: sh -c "cd backend && alembic upgrade head && cd .. && python -m backend.scripts.seed_dev"
     environment: *app-env
+    volumes: *app-volumes
     depends_on:
       postgres:
         condition: service_healthy
@@ -154,6 +201,7 @@ services:
     restart: unless-stopped
     command: uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
     environment: *app-env
+    volumes: *app-volumes
     depends_on:
       postgres:
         condition: service_healthy
@@ -174,6 +222,7 @@ services:
     # scheduler down with it (the #405 class).
     command: celery -A backend.app.worker.celery_app worker -Q celery,llm --loglevel=INFO
     environment: *app-env
+    volumes: *app-volumes
     depends_on:
       postgres:
         condition: service_healthy
@@ -193,6 +242,7 @@ services:
     restart: unless-stopped
     command: celery -A backend.app.worker.celery_app beat --loglevel=INFO
     environment: *app-env
+    volumes: *app-volumes
     depends_on:
       postgres:
         condition: service_healthy
@@ -232,6 +282,7 @@ services:
     restart: "no"
     command: python -m backend.scripts.seed_demo
     environment: *app-env
+    volumes: *app-volumes
     depends_on:
       demo-warehouse:
         condition: service_healthy
@@ -251,14 +302,16 @@ services:
       # infer this one, and vice versa.
       DATAQ_AUTH_MODE: ${DATAQ_AUTH_MODE:-otp}
       # TLS ends here, as it does at a production edge.
-      DATAQ_TLS_CERT: /certs/localhost.pem
-      DATAQ_TLS_KEY: /certs/localhost.key
+      DATAQ_TLS_CERT: /tls/localhost.pem
+      DATAQ_TLS_KEY: /tls/localhost.key
       # Off: HSTS binds the host `localhost`, not this port, and would force HTTPS on the
       # inbox (:8025) and anything else you run locally.
       DATAQ_HSTS: ""
     ports:
       - "127.0.0.1:3000:8080"
     volumes:
+      - ghcr_tls_frontend:/tls:ro
+      # The CA's public certificate only, so `docker compose cp frontend:/certs/ca.pem .` works.
       - ghcr_local_ca:/certs:ro
     depends_on:
       api:
@@ -270,4 +323,8 @@ volumes:
   ghcr_postgres_data:
   ghcr_local_ca:
   ghcr_local_ca_key:
+  ghcr_tls_frontend:
+  ghcr_tls_postgres:
+  ghcr_tls_redis:
+  ghcr_tls_mailpit:
   ghcr_demo_warehouse_data:

@@ -1,22 +1,29 @@
-"""Generate the local stack's certificate authority and its `localhost` certificate.
+"""Generate the local stack's certificate authority and the certificates it signs.
 
-Run by the `local-ca` one-shot of `docker-compose.ghcr.yml`, writing into a named volume:
+Run by the `local-ca` one-shot of `docker-compose.ghcr.yml`, writing into named volumes:
 
-    python -m backend.scripts.local_ca /certs /ca-key
+    python -m backend.scripts.local_ca /certs /ca-key --service postgres:/tls/postgres:70
 
-Idempotent: an existing CA is kept (so a trusted CA stays trusted across restarts), and the
-leaf is re-issued only when it is missing, close to expiry or signed by a different CA. The CA
+`/certs` gets the CA certificate, which is public and every client mounts. The `localhost`
+certificate the UI serves goes to `--localhost-dir` (default: beside the CA). Each
+`--service NAME:DIR:UID` gets a certificate for the hostname NAME in DIR, its key owned by
+UID (the user that service runs as), so one service cannot read another's key.
+
+Idempotent: an existing CA is kept (so a trusted CA stays trusted across restarts), and a
+leaf is re-issued only when it is missing, close to expiry, for other names, or signed by a
+different CA. The CA
 private key goes to its own directory, so a service that mounts the certificates to serve TLS
 is never handed the key that could mint more of them.
 """
 
 from __future__ import annotations
 
+import argparse
 import ipaddress
 import os
-import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import NamedTuple
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
@@ -31,6 +38,14 @@ LEAF_RENEW_WITHIN = timedelta(days=30)
 
 _DNS_NAMES = ("localhost",)
 _IP_ADDRESSES = ("127.0.0.1", "::1")
+
+
+class Service(NamedTuple):
+    """A server inside the stack: reached by `name`, running as `uid`."""
+
+    name: str
+    directory: Path
+    uid: int
 
 
 def _write(path: Path, data: bytes, mode: int) -> None:
@@ -86,14 +101,18 @@ def _new_ca(now: datetime) -> tuple[x509.Certificate, ec.EllipticCurvePrivateKey
 
 
 def _new_leaf(
-    ca: x509.Certificate, ca_key: ec.EllipticCurvePrivateKey, now: datetime
+    ca: x509.Certificate,
+    ca_key: ec.EllipticCurvePrivateKey,
+    now: datetime,
+    dns_names: tuple[str, ...],
+    ip_addresses: tuple[str, ...] = (),
 ) -> tuple[x509.Certificate, ec.EllipticCurvePrivateKey]:
     key = ec.generate_private_key(ec.SECP256R1())
-    sans: list[x509.GeneralName] = [x509.DNSName(name) for name in _DNS_NAMES]
-    sans += [x509.IPAddress(ipaddress.ip_address(ip)) for ip in _IP_ADDRESSES]
+    sans: list[x509.GeneralName] = [x509.DNSName(name) for name in dns_names]
+    sans += [x509.IPAddress(ipaddress.ip_address(ip)) for ip in ip_addresses]
     cert = (
         x509.CertificateBuilder()
-        .subject_name(_name("localhost"))
+        .subject_name(_name(dns_names[0]))
         .issuer_name(ca.subject)
         .public_key(key.public_key())
         .serial_number(x509.random_serial_number())
@@ -111,26 +130,67 @@ def _new_leaf(
     return cert, key
 
 
-def _leaf_is_current(leaf_path: Path, key_path: Path, ca: x509.Certificate, now: datetime) -> bool:
+def _leaf_is_current(
+    leaf_path: Path,
+    key_path: Path,
+    ca: x509.Certificate,
+    now: datetime,
+    dns_names: tuple[str, ...],
+) -> bool:
     if not (leaf_path.is_file() and key_path.is_file()):
         return False
     try:
         leaf = x509.load_pem_x509_certificate(leaf_path.read_bytes())
         leaf.verify_directly_issued_by(ca)
+        sans = leaf.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
     except Exception:
+        return False
+    if tuple(sans.get_values_for_type(x509.DNSName)) != dns_names:
         return False
     return leaf.not_valid_after_utc - now > LEAF_RENEW_WITHIN
 
 
-def ensure(directory: Path, ca_key_dir: Path, *, now: datetime | None = None) -> dict[str, str]:
+def _ensure_leaf(
+    cert_path: Path,
+    key_path: Path,
+    ca: x509.Certificate,
+    ca_key: ec.EllipticCurvePrivateKey,
+    now: datetime,
+    dns_names: tuple[str, ...],
+    ip_addresses: tuple[str, ...] = (),
+) -> str:
+    if _leaf_is_current(cert_path, key_path, ca, now, dns_names):
+        return "kept"
+    leaf, leaf_key = _new_leaf(ca, ca_key, now, dns_names, ip_addresses)
+    _write(key_path, _key_pem(leaf_key), 0o600)
+    _write(cert_path, leaf.public_bytes(serialization.Encoding.PEM), 0o644)
+    return "issued"
+
+
+def ensure(
+    directory: Path,
+    ca_key_dir: Path,
+    *,
+    localhost_dir: Path | None = None,
+    services: tuple[Service, ...] = (),
+    now: datetime | None = None,
+) -> dict[str, str]:
     """Make `directory` hold the CA certificate and a current `localhost` leaf, with the CA
-    private key in `ca_key_dir`. Returns what was done.
+    private key in `ca_key_dir`, and give each of `services` its own certificate. Returns
+    what was done, keyed `ca`, `leaf` and each service name.
     """
     now = now or datetime.now(UTC)
     directory.mkdir(parents=True, exist_ok=True)
     ca_key_dir.mkdir(parents=True, exist_ok=True)
     ca_path, ca_key_path = directory / "ca.pem", ca_key_dir / "ca.key"
-    leaf_path, leaf_key_path = directory / "localhost.pem", directory / "localhost.key"
+    ui_dir = localhost_dir or directory
+    ui_dir.mkdir(parents=True, exist_ok=True)
+    leaf_path, leaf_key_path = ui_dir / "localhost.pem", ui_dir / "localhost.key"
+    if ui_dir != directory:
+        # An earlier layout kept the UI's pair beside the CA; a key must not linger where
+        # every client now mounts.
+        for stale in (directory / "localhost.pem", directory / "localhost.key"):
+            stale.unlink(missing_ok=True)
 
     if ca_path.is_file() and ca_key_path.is_file():
         ca = x509.load_pem_x509_certificate(ca_path.read_bytes())
@@ -144,18 +204,36 @@ def ensure(directory: Path, ca_key_dir: Path, *, now: datetime | None = None) ->
         _write(ca_path, ca.public_bytes(serialization.Encoding.PEM), 0o644)
         ca_action = "created"
 
-    if _leaf_is_current(leaf_path, leaf_key_path, ca, now):
-        leaf_action = "kept"
-    else:
-        leaf, leaf_key = _new_leaf(ca, ca_key, now)
-        _write(leaf_key_path, _key_pem(leaf_key), 0o600)
-        _write(leaf_path, leaf.public_bytes(serialization.Encoding.PEM), 0o644)
-        leaf_action = "issued"
-    return {"ca": ca_action, "leaf": leaf_action}
+    result = {
+        "ca": ca_action,
+        "leaf": _ensure_leaf(leaf_path, leaf_key_path, ca, ca_key, now, _DNS_NAMES, _IP_ADDRESSES),
+    }
+    for service in services:
+        service.directory.mkdir(parents=True, exist_ok=True)
+        cert_path, key_path = service.directory / "cert.pem", service.directory / "key.pem"
+        result[service.name] = _ensure_leaf(cert_path, key_path, ca, ca_key, now, (service.name,))
+        # Every run, not only on issue: the key must end up readable by that service alone.
+        if os.geteuid() == 0:
+            os.chown(key_path, service.uid, -1)
+    return result
+
+
+def _service(spec: str) -> Service:
+    name, directory, uid = spec.split(":")
+    return Service(name, Path(directory), int(uid))
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        raise SystemExit("usage: python -m backend.scripts.local_ca <cert-dir> <ca-key-dir>")
-    result = ensure(Path(sys.argv[1]), Path(sys.argv[2]))
-    print(f"Local CA: ca={result['ca']} leaf={result['leaf']} ({CA_NAME})")
+    parser = argparse.ArgumentParser(prog="python -m backend.scripts.local_ca")
+    parser.add_argument("cert_dir", type=Path)
+    parser.add_argument("ca_key_dir", type=Path)
+    parser.add_argument("--localhost-dir", type=Path, default=None)
+    parser.add_argument("--service", action="append", default=[], type=_service)
+    args = parser.parse_args()
+    done = ensure(
+        args.cert_dir,
+        args.ca_key_dir,
+        localhost_dir=args.localhost_dir,
+        services=tuple(args.service),
+    )
+    print(f"Local CA ({CA_NAME}): " + " ".join(f"{k}={v}" for k, v in done.items()))

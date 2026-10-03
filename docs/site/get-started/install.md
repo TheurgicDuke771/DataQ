@@ -50,11 +50,19 @@ code in the bundled inbox at **`http://localhost:8025`**.
 
   The CA's private key stays in a volume that only the generator mounts, and the CA
   survives restarts; `down -v` removes it. The `localhost` certificate lasts a year and
-  is renewed when the stack is started within 30 days of its expiry; a UI container
-  that was already running keeps the old one until
-  `docker compose -f docker-compose.ghcr.yml restart frontend`. Plain
+  is renewed when the stack is started within 30 days of its expiry; the same goes for
+  the certificates Postgres, Redis and the mail catcher hold. Containers that were
+  already running keep the old ones, so after a renewal restart the stack
+  (`docker compose -f docker-compose.ghcr.yml restart`). Plain
   `http://localhost:3000` redirects to
   HTTPS. The inbox on `:8025` stays plain HTTP on loopback.
+- **TLS inside the stack too.** The API, worker and scheduler reach Postgres with
+  `sslmode=verify-full`, Redis over `rediss://` (its plain port is off), and the mail
+  catcher over STARTTLS, each verified against the same local CA, and each server holds
+  a certificate for its own hostname only, with a key no other container can read. These
+  are the client code paths a managed database, cache and mail relay use in production.
+  Still plain inside the compose network: the API to the bundled vault, and the UI's
+  proxy to the API.
 - **One way in, as in production:** the UI on `:3000` is the only published surface. The
   API has no host port; it is reached through the UI at `https://localhost:3000/api`, and
   MCP clients connect to `https://localhost:3000/mcp/`. The database, Redis and the vault
@@ -123,10 +131,11 @@ The default, and the rung for teams that have email but no IdP.
 **Locally there is nothing to configure but your address.** Both compose stacks run a
 [Mailpit](https://mailpit.axllent.org) container (MIT) as the mailbox: DataQ performs a
 real SMTP submission against it — the same `connect → AUTH → send` path a production
-relay gets — and the message appears in a web inbox at `http://localhost:8025`. The
-mailer runs with `AUTH_EMAIL_TLS_MODE=none` there, which is the plaintext downgrade
-`none` exists for and is logged loudly on every send: it is correct against a container
-you started on your own machine and wrong against anything else.
+relay gets — and the message appears in a web inbox at `http://localhost:8025`. On the
+prebuilt-image stack the mailer uses STARTTLS and verifies the catcher against the
+stack's local CA. On the from-source stack it runs with `AUTH_EMAIL_TLS_MODE=none`,
+the plaintext downgrade `none` exists for, logged loudly on every send: it is correct
+against a container you started on your own machine and wrong against anything else.
 
 **In production you still bring your own relay** — bundling an outbound mailer is a
 deliberate non-goal (direct-to-MX from an arbitrary self-hosted IP gets sign-in codes
@@ -246,8 +255,15 @@ keep `DATAQ_SIGNIN_EMAIL` set and override the same key names in the **root `.en
 ```
 DATAQ_SIGNIN_EMAIL=you@example.com
 AUTH_EMAIL_SMTP_HOST=smtp.example.com
-AUTH_EMAIL_TLS_MODE=starttls          # the bundled catcher's default is `none` — plaintext
+AUTH_EMAIL_TLS_MODE=starttls          # the from-source stack's catcher default is `none`
+AUTH_EMAIL_CA_BUNDLE=                 # prebuilt-image stack only: see below
 ```
+
+On the **prebuilt-image stack** the catcher is reached over STARTTLS and verified against
+the stack's local CA (`AUTH_EMAIL_CA_BUNDLE=/certs/ca.pem`), and that bundle is used
+*instead of* the usual certificate authorities. A public relay's certificate is not
+signed by the local CA, so set `AUTH_EMAIL_CA_BUNDLE=` (empty) alongside the host, or
+every sign-in mail fails certificate verification.
 
 `.env.app` is still the file for **host-side dev** (uvicorn on your own machine, which
 reads it directly) — point `AUTH_EMAIL_SMTP_HOST` at `localhost` if you want the catcher
