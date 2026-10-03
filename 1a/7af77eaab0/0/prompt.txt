@@ -1,0 +1,5 @@
+use `/Users/arijit/Coding/Python/DataQ-harness/smtp_cred.txt` to verify the SMTP relay
+
+---
+
+yes received one sign-in code and two alert emails
