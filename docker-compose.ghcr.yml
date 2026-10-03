@@ -111,7 +111,8 @@ services:
     image: *backend-image
     restart: "no"
     user: "0:0"
-    command: python -m backend.scripts.local_vault prepare /vault
+    # 100:1000 is the `openbao` user of the image below, which must be able to read the key.
+    command: python -m backend.scripts.local_vault prepare /vault 100:1000
     volumes:
       - ${DATAQ_DATA_DIR:-./dataq-data}/openbao:/vault
 

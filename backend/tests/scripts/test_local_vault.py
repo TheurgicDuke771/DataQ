@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import stat
 from pathlib import Path
 from typing import Any
@@ -41,6 +42,32 @@ def test_prepare_refuses_to_mint_a_key_over_existing_data(tmp_path: Path) -> Non
     with pytest.raises(SystemExit, match="cannot be unsealed"):
         local_vault.prepare(tmp_path)
     assert not (tmp_path / local_vault.SEAL_KEY).exists()
+
+
+def test_prepare_hands_the_key_to_the_server_user_on_every_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The server's image only takes ownership of a directory that is not already its own, so a
+    key written later (the directory emptied, then re-prepared) must be chowned here.
+    """
+    chowned: list[tuple[str, int, int]] = []
+    monkeypatch.setattr(os, "geteuid", lambda: 0)
+    monkeypatch.setattr(
+        os, "chown", lambda path, uid, gid: chowned.append((Path(path).name, uid, gid))
+    )
+
+    local_vault.prepare(tmp_path, (100, 1000))
+    local_vault.prepare(tmp_path, (100, 1000))  # the "kept" run chowns too
+
+    assert (
+        chowned
+        == [
+            (tmp_path.name, 100, 1000),
+            ("raft", 100, 1000),
+            (local_vault.SEAL_KEY, 100, 1000),
+        ]
+        * 2
+    )
 
 
 # ── init: against a fake vault ───────────────────────────────────────────────

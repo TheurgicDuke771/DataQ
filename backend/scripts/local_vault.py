@@ -3,7 +3,8 @@
 `docker-compose.ghcr.yml` runs OpenBao on integrated storage in the stack's data directory,
 auto-unsealed by a key file beside it. Two one-shots run this module:
 
-    python -m backend.scripts.local_vault prepare /vault   # before the server: the seal key
+    python -m backend.scripts.local_vault prepare /vault 100:1000   # before the server: the
+                                                    # seal key, owned by the server's user
     python -m backend.scripts.local_vault init /vault      # after it: initialize, mount, token
 
 `init` is idempotent. It initializes a fresh vault, mounts the KV v2 engine the app uses, and
@@ -44,7 +45,7 @@ def _save(path: Path, state: dict[str, str]) -> None:
     _write_private(path, json.dumps(state).encode())
 
 
-def prepare(directory: Path) -> str:
+def prepare(directory: Path, owner: tuple[int, int] | None = None) -> str:
     """Create the auto-unseal key once, and the directory the server stores its data in (it
     does not create that itself). Losing the key makes the stored data unreadable.
     """
@@ -57,10 +58,16 @@ def prepare(directory: Path) -> str:
             "Restore the key, or remove the directory to start an empty vault."
         )
     data.mkdir(exist_ok=True)
-    if has_key:
-        return "kept"
-    _write_private(key, secrets.token_bytes(32))
-    return "created"
+    action = "kept"
+    if not has_key:
+        _write_private(key, secrets.token_bytes(32))
+        action = "created"
+    # Every run, and explicitly: the server reads the key as its own unprivileged user, and
+    # its image only takes ownership of the directory when the directory itself is foreign.
+    if owner is not None and os.geteuid() == 0:
+        for path in (directory, data, key):
+            os.chown(path, *owner)
+    return action
 
 
 def _policy(mount: str) -> str:
@@ -164,11 +171,16 @@ def init(
 
 
 def main(argv: list[str]) -> None:
-    if len(argv) != 3 or argv[1] not in ("prepare", "init"):
-        raise SystemExit("usage: python -m backend.scripts.local_vault prepare|init <directory>")
+    usage = "usage: python -m backend.scripts.local_vault prepare <dir> [uid:gid] | init <dir>"
+    if len(argv) < 3 or argv[1] not in ("prepare", "init"):
+        raise SystemExit(usage)
     directory = Path(argv[2])
     if argv[1] == "prepare":
-        print(f"Local vault: seal key {prepare(directory)}")
+        owner = None
+        if len(argv) == 4:
+            uid, gid = argv[3].split(":")
+            owner = (int(uid), int(gid))
+        print(f"Local vault: seal key {prepare(directory, owner)}")
         return
     token = os.environ.get("OPENBAO_TOKEN", "").strip()
     if not token:

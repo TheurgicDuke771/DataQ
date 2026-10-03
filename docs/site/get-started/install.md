@@ -121,7 +121,8 @@ code in the bundled inbox at **`http://localhost:8025`**.
   uses a managed secret store instead.
 - **Reset:** `docker compose -f docker-compose.ghcr.yml --profile demo down -v`, then
   delete the data directory (`rm -rf dataq-data`). `down -v` alone removes only the
-  certificates.
+  certificates. On Linux the files belong to the containers' users, so deleting,
+  copying or moving the directory needs `sudo`.
 - Omitting `DATAQ_SIGNIN_EMAIL` stops the stack and says so — there is no no-sign-in
   default to fall into.
 
