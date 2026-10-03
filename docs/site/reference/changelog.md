@@ -43,6 +43,14 @@ the per-PR history lives in the repo's commit log and pull requests.
   volume is not migrated; the stack starts fresh in the new directory. To reset, run
   `down -v` and delete the directory.
 
+- **A check's severity thresholds can be cleared.** Emptying a warn, fail or critical
+  threshold in the check editor and saving used to leave the old value in place. `PATCH
+  /suites/{id}/checks/{id}` now treats an explicit `null` for `warn_threshold`,
+  `fail_threshold` or `critical_threshold` as *clear it*; leaving the key out still keeps
+  the stored value. **A client that sent `null` for these to mean "unchanged" must omit
+  the key instead.** A check that needs a fail or critical threshold (freshness, anomaly) still
+  refuses to lose its last one. Over MCP, `update_check` gains `clear_thresholds`.
+
 ### Added
 
 - **Real mailboxes from the prebuilt-image stack.** Point the sign-in mailer at your own

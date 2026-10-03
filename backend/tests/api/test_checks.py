@@ -3261,3 +3261,85 @@ def test_dryrun_aggregate_applies_the_author_gate(client: TestClient, db_session
     body = {k: payload[k] for k in ("kind", "expectation_type", "config", "fail_threshold")}
     resp = client.post(f"/api/v1/suites/{sid}/checks/dryrun", json=body)
     assert resp.status_code == 422
+
+
+# ── Clearing a threshold (#1930) ─────────────────────────────────────────────
+
+
+def test_an_explicit_null_clears_a_threshold_and_omission_keeps_the_others(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_id(client, db_session)
+    cid = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_payload(warn_threshold=1, fail_threshold=5, critical_threshold=20),
+    ).json()["id"]
+
+    resp = client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"warn_threshold": None})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["warn_threshold"] is None
+    assert (float(body["fail_threshold"]), float(body["critical_threshold"])) == (5.0, 20.0)
+    stored = client.get(f"/api/v1/suites/{sid}/checks/{cid}").json()
+    assert stored["warn_threshold"] is None
+
+
+def test_a_patch_that_omits_the_thresholds_leaves_all_three(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_id(client, db_session)
+    cid = client.post(
+        f"/api/v1/suites/{sid}/checks",
+        json=_payload(warn_threshold=1, fail_threshold=5, critical_threshold=20),
+    ).json()["id"]
+
+    body = client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"name": "renamed"}).json()
+
+    assert [float(body[f"{t}_threshold"]) for t in ("warn", "fail", "critical")] == [1.0, 5.0, 20.0]
+
+
+def test_all_three_thresholds_can_be_cleared_at_once(client: TestClient, db_session: Any) -> None:
+    sid = _suite_id(client, db_session)
+    cid = client.post(
+        f"/api/v1/suites/{sid}/checks", json=_payload(warn_threshold=1, fail_threshold=5)
+    ).json()["id"]
+
+    body = client.patch(
+        f"/api/v1/suites/{sid}/checks/{cid}",
+        json={"warn_threshold": None, "fail_threshold": None, "critical_threshold": None},
+    ).json()
+
+    assert (body["warn_threshold"], body["fail_threshold"], body["critical_threshold"]) == (
+        None,
+        None,
+        None,
+    )
+
+
+def test_clearing_the_threshold_a_monitor_needs_is_refused_and_changes_nothing(
+    client: TestClient, db_session: Any
+) -> None:
+    """A freshness monitor with no fail or critical threshold could never fail."""
+    sid = _suite_id(client, db_session)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_freshness_payload()).json()["id"]
+
+    resp = client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"fail_threshold": None})
+
+    assert resp.status_code == 422
+    assert float(client.get(f"/api/v1/suites/{sid}/checks/{cid}").json()["fail_threshold"]) == 48.0
+
+
+def test_a_cleared_threshold_is_recorded_in_the_check_version(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_id(client, db_session)
+    cid = client.post(
+        f"/api/v1/suites/{sid}/checks", json=_payload(warn_threshold=1, fail_threshold=5)
+    ).json()["id"]
+    client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"warn_threshold": None})
+
+    versions = client.get(f"/api/v1/suites/{sid}/checks/{cid}/versions").json()
+
+    assert versions[0]["warn_threshold"] is None
+    assert float(versions[1]["warn_threshold"]) == 1.0
