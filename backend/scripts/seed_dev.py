@@ -34,7 +34,6 @@ from backend.app.core.auth import (
     DEV_BYPASS_AAD_OID,
     DEV_BYPASS_DISPLAY_NAME,
     DEV_BYPASS_EMAIL,
-    _upsert_user,
 )
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.secrets import get_secret_store
@@ -42,7 +41,7 @@ from backend.app.db.models import ApiKey, Suite, User
 from backend.app.db.session import get_session
 from backend.app.services import api_key_service, otp_service, share_service
 from backend.app.services.probe import ensure_probe_fixtures
-from backend.scripts.demo_data import seed_demo_data
+from backend.scripts.demo_data import ensure_seed_user, seed_demo_data
 
 
 def _otp_operator_emails(settings: Settings) -> list[str]:
@@ -136,6 +135,15 @@ _ROLE_FIXTURES = (
     ("member", "role-member@dataq.local", "Mia Member"),
     ("viewer", "role-viewer@dataq.local", "Vic Viewer"),
 )
+
+
+def _e2e_fixtures_wanted() -> bool:
+    """Whether to seed the Playwright fixtures: only from a source checkout (where
+    `frontend/e2e` exists to receive the tokens) or when a destination is named. The
+    published image has neither, and an evaluator's stack should not carry test users
+    holding live tokens.
+    """
+    return bool(os.environ.get("DATAQ_ROLE_TOKENS_PATH")) or ROLE_TOKENS_PATH.parent.is_dir()
 
 
 def _seed_role_fixtures(session: Session, *, owner: User) -> int:
@@ -241,7 +249,7 @@ def seed() -> None:
     settings = get_settings()
     session = get_session()
     try:
-        user = _upsert_user(
+        user = ensure_seed_user(
             session,
             aad_object_id=DEV_BYPASS_AAD_OID,
             email=DEV_BYPASS_EMAIL,
@@ -252,8 +260,10 @@ def seed() -> None:
         # with varied checks, a cross-user share) for the UI / E2E smoke.
         summary = seed_demo_data(session, owner=user, secret_store=get_secret_store())
         operator_shares = _share_with_otp_operators(session, owner=user, settings=settings)
-        _seed_role_fixtures(session, owner=user)
-        offboard_target = _seed_offboard_target(session)
+        offboard_target = None
+        if _e2e_fixtures_wanted():
+            _seed_role_fixtures(session, owner=user)
+            offboard_target = _seed_offboard_target(session)
         print(
             "Seeded dev data: "
             f"user={user.email} probe_connection={connection.name} "
