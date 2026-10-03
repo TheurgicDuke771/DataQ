@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "6784809f4743",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-2327-eval-stack-https",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "README.md",
+    "docs/site/get-started/install.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/67/84809f4743/0/metadata.json",
+      "transcript": "/67/84809f4743/0/full.jsonl",
+      "compact_transcript": "/67/84809f4743/0/transcript.jsonl",
+      "content_hash": "/67/84809f4743/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 6,
+    "cache_creation_tokens": 3505,
+    "cache_read_tokens": 928441,
+    "output_tokens": 2408,
+    "api_call_count": 3
+  }
+}
