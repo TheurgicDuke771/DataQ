@@ -2261,7 +2261,9 @@ def update_check(
     tiers to clear, e.g. ``["warn"]`` for 'drop the warning threshold'. Passing
     ``0`` for a threshold does not remove it — it sets the threshold to zero.
     Naming a tier in ``clear_thresholds`` and giving it a value in the same call
-    is refused. The result still has to be a valid check: a kind that needs a
+    is refused; an empty list changes nothing. The returned ``warn_threshold`` /
+    ``fail_threshold`` / ``critical_threshold`` show the new state, and a cleared
+    tier comes back ``null``. The result still has to be a valid check: a kind that needs a
     fail or critical threshold refuses to lose its last one, and nothing changes.
 
     For every other argument omission means "leave alone" and there is **no way
@@ -2346,8 +2348,9 @@ def restore_check_version(
     Unlike ``update_check``, this applies the whole snapshot, including fields
     that were empty at that version: restoring a version that had no warn
     threshold clears the warn threshold, rather than leaving today's value in
-    place. That is the point of a restore, and it is why this is not the same as
-    patching the fields back by hand.
+    place. That is the point of a restore. To remove just a severity threshold
+    and keep everything else as it is now, use ``update_check`` with
+    ``clear_thresholds`` instead; other empty fields only a restore brings back.
 
     **Nothing is lost and nothing is renumbered.** History is additive: the
     restore is recorded as a new version on top, so the state you are replacing
