@@ -59,7 +59,7 @@ code in the bundled inbox at **`http://localhost:8025`**.
   file, and run it beside it) smokes the running stack the way a deployment is smoked
   after a roll: the certificate verifies against the stack's CA, plain HTTP redirects,
   the API and MCP refuse an anonymous caller, only the UI and the inbox have a host
-  port, a real sign-in, read and write work with a `Secure` cookie, Postgres and Redis
+  port, a real sign-in, read and sign-out work with a `Secure` cookie, Postgres and Redis
   are on TLS, and a burst is rate-limited. It exits non-zero if any check fails.
 - **One way in, as in production:** the UI on `:3000` is the only published surface. The
   API has no host port; it is reached through the UI at `https://localhost:3000/api`, and

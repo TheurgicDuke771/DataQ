@@ -9,9 +9,9 @@
 # Run it beside docker-compose.ghcr.yml (or set DATAQ_COMPOSE_FILE). It signs in as --email
 # (default: the first address in DATAQ_SIGNIN_EMAIL), which must be allowed to sign in. Each
 # run sends one sign-in mail (counted against that address's code quota, so a handful of
-# runs in ten minutes stops the mail), re-saves your display name unchanged (or sets it to
-# 'Local smoke' if you have none), and bursts up to 300 requests at the API, so the rate
-# limiter may refuse your requests for the next minute.
+# runs in ten minutes stops the mail), signs in and out again changing nothing else, and
+# bursts up to 300 anonymous requests at the API, so the rate limiter may refuse requests
+# from this machine for the next minute.
 # Exit status: 0 when every check passes, 1 otherwise.
 
 set -uo pipefail
@@ -107,7 +107,10 @@ for _ in $(seq 1 20); do
   message="$(curl -s --max-time 20 "${INBOX_URL}/api/v1/message/latest")"
   latest="$(echo "${message}" | sed -n 's/.*"ID":"\([^"]*\)".*/\1/p')"
   if [ -n "${latest}" ] && [ "${latest}" != "${before}" ]; then
-    otp="$(echo "${message}" | grep -o '[^0-9][0-9]\{6\}[^0-9]' | head -n1 | tr -cd '0-9')"
+    # From the plain-text body, where the code has a line to itself — not from the message
+    # JSON, whose address fields can contain six digits of their own.
+    otp="$(curl -s --max-time 20 "${INBOX_URL}/view/latest.txt" \
+      | grep -E '^[[:space:]]*[0-9]{6}[[:space:]]*$' | head -n1 | tr -cd '0-9')"
     [ -n "${otp}" ] && break
   fi
   sleep 1
@@ -120,10 +123,10 @@ cookie="$(grep -i '^set-cookie:' "${workdir}/signin-headers" 2>/dev/null | tr '[
 check "the session cookie is Secure and HttpOnly" \
   "$(echo "${cookie}" | grep -c 'secure')/$(echo "${cookie}" | grep -c 'httponly')" "1/1"
 check "an authenticated read works" "$(code --cacert "${ca}" -b "${jar}" "${BASE_URL}/api/v1/me")" "200"
-name="$(curl -s --cacert "${ca}" -b "${jar}" --max-time 20 "${BASE_URL}/api/v1/me" | sed -n 's/.*"display_name":"\([^"]*\)".*/\1/p')"
-write_body="$(json '{"display_name":"%s"}' "${name:-Local smoke}")"
-check "an authenticated write works" \
-  "$(code --cacert "${ca}" -b "${jar}" -X PATCH "${BASE_URL}/api/v1/me" -H 'content-type: application/json' -d "${write_body}")" "200"
+# The write: signing out revokes the session server-side, and changes nothing else.
+check "an authenticated write works (sign-out)" \
+  "$(code --cacert "${ca}" -b "${jar}" -X POST "${BASE_URL}/api/v1/auth/logout")" "204"
+check "the signed-out session is refused" "$(code --cacert "${ca}" -b "${jar}" "${BASE_URL}/api/v1/me")" "401"
 
 # ── TLS between the stack's own services ──────────────────────────────────────
 echo "Inside the stack"
@@ -134,15 +137,14 @@ check "Redis refuses a plaintext client" \
 check "Redis answers over verified TLS" \
   "$(compose exec -T redis redis-cli --tls --cacert /certs/ca.pem -h redis ping 2>/dev/null | tr -d '[:space:]')" "PONG"
 
-# ── The rate limiter (last: it throttles this session) ────────────────────────
+# ── The rate limiter (last: it throttles this machine for a minute) ───────────
 echo "Rate limit"
 limited=0
 for _ in $(seq 1 300); do
-  if [ "$(code --cacert "${ca}" -b "${jar}" "${BASE_URL}/api/v1/me")" = "429" ]; then limited=1; break; fi
+  if [ "$(code --cacert "${ca}" "${BASE_URL}/api/v1/me")" = "429" ]; then limited=1; break; fi
 done
 check "a burst is answered with 429" "${limited}" "1"
 
-code --cacert "${ca}" -b "${jar}" -X POST "${BASE_URL}/api/v1/auth/logout" >/dev/null 2>&1
 
 echo ""
 if [ "${failures}" -eq 0 ]; then
