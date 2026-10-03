@@ -34,16 +34,28 @@ Exits non-zero on a store failure — the api service gates on
 `service_completed_successfully`, so a vault that cannot be written stops the stack
 with this script's error instead of surfacing three steps later as a 503 the first
 time somebody tries to sign in.
+
+## A real relay
+
+Point the mailer at your own relay and hand its password over once, in the one-shot's
+environment, as `DATAQ_SMTP_PASSWORD`: it is written to the vault under the configured name
+(replacing what is there) and never reaches the api's environment. With no password supplied
+and none stored, a random one is generated **only for the bundled catcher**; for any other
+host this says what is missing instead of storing a password the relay would reject.
+`DATAQ_ALERT_SMTP_PASSWORD` does the same for the alert mailer's
+`EMAIL_PASSWORD_SECRET_NAME`.
 """
 
 from __future__ import annotations
 
+import os
 import secrets
 import sys
 
 from backend.app.core.config import get_settings
 from backend.app.core.secrets import (
     SecretNotFoundError,
+    SecretStore,
     SecretStoreUnavailableError,
     SecretWriteError,
     get_secret_store,
@@ -53,8 +65,21 @@ from backend.app.core.secrets import (
 #: type it — it goes vault → api process → SMTP AUTH and nowhere else.
 _PASSWORD_BYTES = 32
 
+#: Hosts that are the bundled mail catcher, which accepts any password.
+_CATCHER_HOSTS = frozenset({"mailpit", "localhost", "127.0.0.1"})
 
-def main() -> int:
+
+def _store_supplied(store: SecretStore, name: str, supplied: str, what: str) -> int:
+    try:
+        store.set(name, supplied)
+    except (SecretWriteError, SecretStoreUnavailableError) as exc:
+        print(f"could not write the {what} SMTP password: {exc}", file=sys.stderr)
+        return 1
+    print(f"the supplied {what} SMTP password is stored.")
+    return 0
+
+
+def _signin(store: SecretStore) -> int:
     settings = get_settings()
     name = (settings.auth_email_password_secret_name or "").strip()
     if not name:
@@ -62,17 +87,15 @@ def main() -> int:
         # service runs unconditionally so the same compose file serves both modes.
         print("AUTH_EMAIL_PASSWORD_SECRET_NAME is unset — email OTP sign-in is off; nothing to do.")
         return 0
+    supplied = os.environ.get("DATAQ_SMTP_PASSWORD", "")
+    if supplied:
+        return _store_supplied(store, name, supplied, "sign-in")
 
     # NOTE: the lines below name the ENV VAR, never `name` itself. The value is
     # only a lookup key, not a credential — but echoing your secret keyspace into
-    # container logs buys nothing (the operator configured the key and can read it
-    # back from their own env) and it is what makes a bootstrap script's output
-    # worth grepping to an attacker who already has the logs. It also keeps CodeQL
-    # honest: a value that flows out of `auth_email_password_secret_name` is
-    # `py/clear-text-logging-sensitive-data` by taint, and suppressing that alert
-    # rather than removing the flow would be the wrong way round. The store's own
-    # log lines still carry the key where a diagnosis needs it.
-    store = get_secret_store()
+    # container logs buys nothing, and a value that flows out of
+    # `auth_email_password_secret_name` is `py/clear-text-logging-sensitive-data`
+    # by taint. The store's own log lines still carry the key where a diagnosis needs it.
     try:
         store.get(name)
     except SecretNotFoundError:
@@ -89,6 +112,16 @@ def main() -> int:
         )
         return 0
 
+    host = (settings.auth_email_smtp_host or "").strip().lower()
+    if host not in _CATCHER_HOSTS:
+        # A made-up password would be rejected by a real relay, and would then look "set".
+        print(
+            "AUTH_EMAIL_SMTP_HOST is not the bundled mail catcher and no SMTP password is "
+            "stored: sign-in mail cannot be sent. Start once with DATAQ_SMTP_PASSWORD set to "
+            "the relay's password.",
+            file=sys.stderr,
+        )
+        return 0
     try:
         store.set(name, secrets.token_urlsafe(_PASSWORD_BYTES))
     except (SecretWriteError, SecretStoreUnavailableError) as exc:
@@ -96,6 +129,26 @@ def main() -> int:
         return 1
     print("SMTP secret provisioned for the bundled mail catcher.")
     return 0
+
+
+def _alerts(store: SecretStore) -> int:
+    name = (get_settings().email_password_secret_name or "").strip()
+    supplied = os.environ.get("DATAQ_ALERT_SMTP_PASSWORD", "")
+    if not supplied:
+        return 0
+    if not name:
+        print(
+            "DATAQ_ALERT_SMTP_PASSWORD is set but EMAIL_PASSWORD_SECRET_NAME is not, so there is "
+            "nowhere to store it (set EMAIL_USERNAME to turn alert email on).",
+            file=sys.stderr,
+        )
+        return 1
+    return _store_supplied(store, name, supplied, "alert")
+
+
+def main() -> int:
+    store = get_secret_store()
+    return _signin(store) or _alerts(store)
 
 
 if __name__ == "__main__":

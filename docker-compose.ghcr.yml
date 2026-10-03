@@ -52,6 +52,14 @@ x-app-env: &app-env
   # only that the api's real SMTP AUTH exchange happens.
   AUTH_EMAIL_USERNAME: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_USERNAME:-dataq-local}}
   AUTH_EMAIL_FROM: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_FROM:-dataq@dataq.local}}
+  # Alert emails: a separate mailer from sign-in, off until EMAIL_USERNAME and EMAIL_TO are
+  # set. It verifies the relay against the public certificate authorities.
+  EMAIL_SMTP_HOST: ${EMAIL_SMTP_HOST:-smtp.gmail.com}
+  EMAIL_SMTP_PORT: ${EMAIL_SMTP_PORT:-587}
+  EMAIL_USERNAME: ${EMAIL_USERNAME:-}
+  EMAIL_FROM: ${EMAIL_FROM:-}
+  EMAIL_TO: ${EMAIL_TO:-}
+  EMAIL_PASSWORD_SECRET_NAME: ${EMAIL_USERNAME:+${EMAIL_PASSWORD_SECRET_NAME:-dataq-alert-smtp}}
   # Mandatory signup allowlist — there is no open registration (ADR 0032 decision 5).
   AUTH_OTP_ALLOWED_EMAILS: ${DATAQ_SIGNIN_EMAIL?set DATAQ_SIGNIN_EMAIL=you@example.com to sign in with an emailed code (read it at http://localhost:8025). it must be set}
   # Whoever booted the stack administers it; the dev-bypass identity is listed only when opted in.
@@ -170,7 +178,12 @@ services:
     image: *backend-image
     restart: "no"
     command: python -m backend.scripts.seed_local_smtp_secret
-    environment: *app-env
+    environment:
+      <<: *app-env
+      # A real relay's password, handed over here and nowhere else: this one-shot writes it
+      # to the vault, where it persists. Not needed for the bundled catcher.
+      DATAQ_SMTP_PASSWORD: ${DATAQ_SMTP_PASSWORD:-}
+      DATAQ_ALERT_SMTP_PASSWORD: ${DATAQ_ALERT_SMTP_PASSWORD:-}
     volumes: *app-volumes
     depends_on:
       openbao:
