@@ -1,0 +1,382 @@
+<browser_instruction># Claude in Chrome browser automation
+
+You have access to browser automation tools (mcp__claude-in-chrome__*) for interacting with web pages in Chrome. Follow these guidelines for effective browser automation.
+
+## Loading deferred tools
+
+If the mcp__claude-in-chrome__* tools are deferred (must be loaded via ToolSearch before use), load every tool you expect to need in ONE ToolSearch call — the select query accepts a comma-separated list — never one call per tool. Start with the core set:
+
+ToolSearch with query "select:mcp__claude-in-chrome__tabs_context_mcp,mcp__claude-in-chrome__navigate,mcp__claude-in-chrome__computer,mcp__claude-in-chrome__read_page,mcp__claude-in-chrome__tabs_create_mcp,mcp__claude-in-chrome__tabs_close_mcp"
+
+Add task-specific tools to the same call when the task obviously needs them: read_console_messages / read_network_requests for debugging, form_input for forms, gif_creator for recordings, javascript_tool for page scripting.
+
+## GIF recording
+
+When performing multi-step browser interactions that the user may want to review or share, use mcp__claude-in-chrome__gif_creator to record them.
+
+You must ALWAYS:
+* Capture extra frames before and after taking actions to ensure smooth playback
+* Name the file meaningfully to help the user identify it later (e.g., "login_process.gif")
+
+## Console log debugging
+
+You can use mcp__claude-in-chrome__read_console_messages to read console output. Console output may be verbose. If you are looking for specific log entries, use the 'pattern' parameter with a regex-compatible pattern. This filters results efficiently and avoids overwhelming output. For example, use pattern: "[MyApp]" to filter for application-specific logs rather than reading all console output.
+
+## Alerts and dialogs
+
+IMPORTANT: Do not trigger JavaScript alerts, confirms, prompts, or browser modal dialogs through your actions. These browser dialogs block all further browser events and will prevent the extension from receiving any subsequent commands. Instead, when possible, use console.log for debugging and then use the mcp__claude-in-chrome__read_console_messages tool to read those log messages. If a page has dialog-triggering elements:
+1. Avoid clicking buttons or links that may trigger alerts (e.g., "Delete" buttons with confirmation dialogs)
+2. If you must interact with such elements, warn the user first that this may interrupt the session
+3. Use mcp__claude-in-chrome__javascript_tool to check for and dismiss any existing dialogs before proceeding
+
+If you accidentally trigger a dialog and lose responsiveness, inform the user they need to manually dismiss it in the browser.
+
+## Avoid rabbit holes and loops
+
+When using browser automation tools, stay focused on the specific task. If you encounter any of the following, stop and ask the user for guidance:
+- Unexpected complexity or tangential browser exploration
+- Browser tool calls failing or returning errors after 2-3 attempts
+- No response from the browser extension
+- Page elements not responding to clicks or input
+- Pages not loading or timing out
+- Unable to complete the browser task despite multiple approaches
+
+Explain what you attempted, what went wrong, and ask how the user would like to proceed. Do not keep retrying the same failing browser action or explore unrelated pages without checking in first.
+
+## Tab context and session startup
+
+IMPORTANT: At the start of each browser automation session, call mcp__claude-in-chrome__tabs_context_mcp first to get information about the user's current browser tabs. Use this context to understand what the user might want to work with before creating new tabs.
+
+Never reuse tab IDs from a previous/other session. Follow these guidelines:
+1. Only reuse an existing tab if the user explicitly asks to work with it
+2. Otherwise, create a new tab with mcp__claude-in-chrome__tabs_create_mcp
+3. If a tool returns an error indicating the tab doesn't exist or is invalid, call tabs_context_mcp to get fresh tab IDs
+4. When a tab is closed by the user or a navigation error occurs, call tabs_context_mcp to see what tabs are available</browser_instruction>
+
+
+<pasted_content id="560a">
+Everything this session is either merged or waiting on CI with auto-merge on. Nothing was torn down, and the teardown plan hasn't been written yet. I also saved the session state to memory. Here is the handoff:
+
+---
+
+**Written for:** the next Claude session picking up this work.
+
+# DataQ: handoff (2026-09-30)
+
+## Problem statement
+DataQ is retiring **our own** AWS, Azure, Snowflake and Databricks dev/test estate (the harness, the reference deployments and their credentials). The **product keeps its cloud support** and cloud hosting stays the preferred production option; only our infrastructure goes. The planned order:
+1. Deploy and live-verify both clouds. **Done.**
+2. Write a detailed teardown plan and execute nothing. **Next.**
+3. Execute the teardown step by step, only after the user approves.
+4. Then:
+   - epic #2220 (two local paths after the teardown);
+   - ADR 0047 automatic-coverage phases 3c and 4;
+   - docs examples;
+   - follow-ups;
+   - a refresh of `docs/progress.md` and CLAUDE.md §13;
+   - housekeeping.
+
+## Standing rules (from the user; mandatory)
+- **Credentials:**
+  - Never commit a credential.
+  - Read secrets inline only (command substitution straight into the command that uses them); never print them or write them to files.
+  - Never `cat` or parse `secrets.sh`; only `source` it inline.
+- **Infrastructure:**
+  - **Confirm before any cloud or infrastructure change.**
+  - Log every infrastructure change in `docs/ops-log.md` with UTC timestamps. Write "maintainer's IP", never the address.
+  - Never touch the harness ADF triggers (`tr_orders_landed`, `tr_customers_daily`); both are `Stopped`.
+- **Before every push:**
+  - Run the **whole** frontend suite (`pnpm test:coverage`) and the whole backend suite (`pytest backend/tests`; no `-n`).
+  - Never run two test suites at once; they share one database and corrupt each other.
+  - Confirm each push with `git ls-remote`.
+  - No `--no-verify`, no force-push. Revise an open PR with `fixup:` commits.
+- **Workflow:**
+  - One functionality per commit.
+  - Prove each regression test fails without its fix.
+  - Run `/code-review --comment low` on every PR.
+  - Fix each finding in the PR or file an issue.
+  - Squash-merge with auto-merge.
+  - Every issue and PR gets a milestone.
+- Published docs (`docs/site/`) may not cite ticket numbers.
+- The local shell is fish.
+
+## Done this session
+- **Deploys:** both clouds run `7257c0ff`. Automatic coverage is off on both (Azure `f53de47d`, AWS `dd5ca985`). The Cognito admin password was reset.
+- **Pre-teardown verification:** every batch of cloud-only checks passed (Snowflake, Unity Catalog, Azure, AWS). Every scratch resource was removed and logged. Ops-log PRs: #2298, #2301, #2305, #2316. The #2224 checklist is updated.
+- **Can't be verified on this estate** (recorded in #2224):
+  - Fabric, OneLake, and Cosmos through a Fabric mirror;
+  - the `OBJECT_DEPENDENCIES` lineage fallback;
+  - reading UniForm data;
+  - the audit-purge delete path;
+  - the secret-sweep purge mode;
+  - the WAF rate limit under load;
+  - the `PERF_ICEBERG` memory tier.
+- **#2314 (PR #2318): merged, issue closed.** An expired or invalid Snowflake programmatic access token (PAT) is now classified as a credential problem.
+- **#2315 (PR #2319, auto-merge):** Snowflake connections that use a PAT now show its expiry date, via a shared `core.credential_expiry.jwt_expiry` that Trino also uses. A token whose expiry is out of range reads as "no expiry" instead of crashing. Databricks stays "no readable lifetime": its tokens are opaque and its token-list API can't identify a connection's token. That determination is on the issue. Full suite: 8160 passed.
+- **#2320 (PR #2321, auto-merge):**
+  - **Bug:** when `playwright install-deps` timed out, the `apt-get` it started (under `sudo -- sh -c`) survived and held the dpkg lock, so both retries failed.
+  - **Fix:** after a failed attempt, kill the leftover `apt-get`, wait up to 60 s for the lock, run `dpkg --configure -a`, and set apt's HTTP timeout to 30 s.
+  - **Proof:** the orphan was reproduced in an `ubuntu:24.04` container.
+  - **Seen on:** #2317 and on main after #2318 merged; the failed main job was re-run.
+- **#2317 (UniForm docs):** CI green on re-run, auto-merge on.
+
+## Check first in the next session
+1. PRs #2317, #2319 and #2321 are merged; issues #2315 and #2320 are closed. If the E2E job fails on #2320 again before #2321 lands, re-run it.
+2. Main CI is green, including the re-run E2E job of run `36755732077`.
+3. Update `docs/progress.md` for this session's PRs (#2317, #2318, #2319, #2321) and refresh its Snapshot counts.
+
+## Next: write the teardown plan (execute nothing without approval)
+The plan must settle **state disposition first**, then set the destroy order. For each item it should give the exact commands, verification, rollback, and the ops-log entry.
+
+| Issue | Scope | Key concern |
+|---|---|---|
+| **#2308** | Harness OpenTofu state | Plaintext and the **only copy**. Decide whether to archive (encrypted) or discard it **before** any destroy. A blanket harness apply arms the ADF triggers, so use `-target` and check they are still stopped. |
+| **#2306** | AWS stack | OpenTofu state, the GitHub deploy role, IAM users, repo config (secrets and variables such as `AWS_FRONTEND_URL`, `deploy-aws.yml`). Includes Cognito, Secrets Manager, SES identities, the demo tokens in SSM `/dataq/demo/*`, and the S3 buckets. |
+| **#2307** | Databricks | Workspace objects and tokens. The token expires around 2026-09-30, and the Free Edition workspace needs no other action. |
+| **#588** | Harness Snowflake leg | Retire cleanly: the loader and DataQ roles, warehouses, the `RETAIL`/`ANALYTICS` databases, the dbt lineage job, and the matching connection secrets in Key Vault. **Run it before the Azure destroy.** |
+| **#590** | Azure | The reference deployment (Container Apps env, apps, Key Vault, App Insights, the Entra app registrations), the shared Postgres, the harness (ADF, Airflow apps, ADLS, the dbt job), and GitHub OIDC config. Last in the order. |
+
+Also open for the platform lanes: #2224 (epic for re-verifying once a cloud test instance exists), #1384/#1385 (AWS security issues that the destroy makes moot; close them with that reason), and #2260/#2275 (in Backlog by the user's choice).
+
+## After the teardown
+- Epic #2220: two local paths, the authless contributor stack plus a production-like OTP stack.
+- ADR 0047 phases 3c and 4.
+- Docs examples.
+- The Week 7 burn-down (#2070, #1987, #1979, #1931, #1930, #1929, #1735, #1734, #1688, #1686, #1669, #1667, #1664, #1558, #1557, #1556, #1516).
+- Week 8 (#1668, #1660, #1334, cycle epic #1518, due 2026-10-15).
+- Refresh `docs/progress.md` and CLAUDE.md §13 to say our cloud estate is retired and the product still supports the clouds.
+
+---
+
+The same state is in memory under `project_teardown_handoff_2026-09-30.md`.
+</pasted_content id="560a">
+
+---
+
+<task-notification>
+<task-id>b3m9g9fxs</task-id>
+<tool-use-id>toolu_01K23D8uhwvf2zKBx1wwrSNR</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/f220bea8-6daa-4830-9143-a1eec4cc36dd/tasks/b3m9g9fxs.output</output-file>
+<status>completed</status>
+<summary>Background command "Run the whole frontend suite, then the whole backend suite, sequentially" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+No need to git track any of these activity as this is related to hardness. And test / dev environment not related to data queue as an application. So this is just our internal log. No need to broadcast it. Secondly, we are going to destroy everything. It doesn't matter if it is related to dataq or not. All the resources of the Azure, AWS, Snowflake and Databricks account has to be destroyed by the end of this exercise. if you wanted to take some backup you just has to be the sole purpose of verify that everything get deleted not to be restored from that we are not planning that way. the end goal is retire everything and close these four accounts.
+
+---
+
+<task-notification>
+<task-id>bwx8ajyxp</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/f220bea8-6daa-4830-9143-a1eec4cc36dd/tasks/bwx8ajyxp.output</output-file>
+<status>completed</status>
+<summary>Background command "Re-run the whole backend suite with local services up" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bbz8ovuuy</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/f220bea8-6daa-4830-9143-a1eec4cc36dd/tasks/bbz8ovuuy.output</output-file>
+<status>completed</status>
+<summary>Background command "Save the read-only before-inventory for Azure and all AWS regions to the harness folder" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+the plan is "Go" from my end, let's start destroying
+
+---
+
+permission granted to delete all resources
+
+---
+
+<pasted_content id="560a">
+┬─[arijit@Arijits-MBP:~]─[10:28:43]
+╰─>$ bash ~/Coding/Python/DataQ-harness/teardown_phase2_databricks.sh                                                    (base) 
+- 2026-10-03T04:58:47Z Inventory saved earlier (teardown-inventory-before/dbx-*.txt).
+- 2026-10-03T04:58:53Z DELETE catalog dataq_retail (force) -> HTTP 200
+- 2026-10-03T04:58:54Z DELETE catalog dbacademy (force) -> HTTP 200
+- 2026-10-03T04:58:58Z workspace delete DbAcademy (recursive) -> HTTP 200
+- 2026-10-03T04:59:01Z workspace delete dataq_dqx_runner (recursive) -> HTTP 200
+- 2026-10-03T04:59:02Z workspace delete dataq_dqx_spike (recursive) -> HTTP 200
+- 2026-10-03T04:59:04Z workspace delete .dataq (recursive) -> HTTP 200
+Catalogs now:      workspace samples system
+User folder now:   .db_internal
+- 2026-10-03T04:59:10Z Catalogs after: workspace samples system
+- 2026-10-03T04:59:14Z token/delete eacce62531fd… -> HTTP 200
+- 2026-10-03T04:59:16Z token/delete 54a98eafabe2… -> HTTP 200
+- 2026-10-03T04:59:17Z token/list with the revoked token -> HTTP 200 (expect 401 or 403)
+Phase 2 done. See TEARDOWN_LOG.md.
+┬─[arijit@Arijits-MBP:~]─[10:29:17]
+</pasted_content id="560a">
+
+---
+
+<task-notification>
+<task-id>b0f8i6x7v</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/f220bea8-6daa-4830-9143-a1eec4cc36dd/tasks/b0f8i6x7v.output</output-file>
+<status>completed</status>
+<summary>Background command "Phase 4: apply the reviewed AWS destroy plan (72 resources) and log it" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bsr5e0rvy</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/f220bea8-6daa-4830-9143-a1eec4cc36dd/tasks/bsr5e0rvy.output</output-file>
+<status>completed</status>
+<summary>Background command "Clean AWS leftovers (pending secrets, stray security group, task definitions) and list remaining items with labels" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b60xi8xqu</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/f220bea8-6daa-4830-9143-a1eec4cc36dd/tasks/b60xi8xqu.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for the last Azure resource group to finish deleting, then verify the subscription is empty" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+SF is not a trial account, it is billing one
+
+---
+
+I'm not getting the account setting in databricks
+
+---
+
+draft me the email body. 
+Also draft the sf ticket content
+
+---
+
+I also want to close the outlook account < royarijit04@outlook.com>. 
+Do I need to wait?
+
+---
+
+I got these 2 emails - 
+
+```
+
+<pasted_content id="560a">
+Save your data before it’s deleted
+
+We’re sorry to see you go. Since you cancelled your subscription, we’ve disabled your services. If you have data stored in this subscription, we’ll keep it safe before permanently deleting it on January 2, 2027. Please log in and save any important data you may have stored in this subscription before then.
+Save your data >
+Your subscription is not incurring any new charges. If there is any outstanding balance from when your subscription was active, you can pay it here at end of your billing cycle.
+Learn about our data retention policy or submit a support ticket if you need more help.
+Account information
+
+Subscription ID: 37e710fd-b956-4a2e-94f2-b132bb26b3d6
+
+Subscription name: Azure subscription 1
+</pasted_content id="560a">
+
+```
+
+and 
+
+```
+
+<pasted_content id="560a">
+Greetings from Amazon Web Services,
+
+This e-mail confirms that your Amazon Web Services account has been closed.
+
+If your AWS account was closed after the first day of any month you may still receive another bill. Please see the Billing & Cost Management Console for details about any remaining charges applicable to the services you have used. You may also download any past billing statement or tax documents in the Billing & Cost Management Console.
+
+If you self-closed your account, it will permanently close in 90 days. Once that period has passed, the account cannot be reopened, and AWS will delete any remaining content in the account.
+
+If AWS closed your account, the account will be permanently closed after 60 days. Once that period has passed, the account cannot be reopened, and AWS will delete any remaining content in the account.
+
+To reopen your account before it is permanently closed, (1) you must contact AWS Support as soon as possible, and (2) we must receive full payment of any outstanding balance, including providing required information as specified on the invoice, 30 days before your account will be permanently closed.
+
+Note that if your account was associated with GovCloud, there are different account closure processes. Refer to additional instructions at AWS GovCloud Account Closure page.
+
+If you wish to download any past statements or tax invoices you can do so here (select the month and expand the summary section to download the payment invoices and/or tax documents), you will not be able to do this after your account is permanently closed.
+
+For more details, please see the Amazon Web Services Account Closure page.
+</pasted_content id="560a">
+
+```
+
+---
+
+And just now got these 2 - 
+
+```
+
+<pasted_content id="560a">
+Hi Arijit Roy,
+
+Thank you for contacting Snowflake Support & Services.
+
+Your request (01483457) has been received and is being reviewed by our support staff.
+
+Your request summary is:
+
+Subject: [Close account PVQSOEQ-ZGB34383 and cancel billing]
+Severity: [Severity 2 - High: Error with a high impact on key portions of the Service or degrades material features of the Service]
+Snowflake Locator: [IWB83668]
+Snowflake Account Alias: [ZGB34383]
+
+You can review the status of your request and add additional comments by accessing�https://app.snowflake.com/support/case/01483457
+
+To add additional comments, reply to this email or post a response.
+
+We will get back to you shortly.
+
+Regards,
+Snowflake Support & Services
+ref:!00Di00hZh2.!500jB04eCjL:ref
+</pasted_content id="560a">
+
+```
+
+and 
+
+```
+
+<pasted_content id="560a">
+Hi ,
+
+Please note that we have received your request after 6 pm PDT on a Friday, and Databricks Support is closed for the weekend. We will respond to your message during normal business hours in your local time zone (Europe and North America only).
+
+If you have a Production Support subscription with Databricks, you may open a ticket at help.databricks.com with High or Urgent severity and an on-call resource will reach out to you within the hour to discuss the next steps.
+
+Your request (01033799) has been received and is being reviewed by our support staff.
+
+Ticket Details:
+Subject: Request to delete my Databricks Free Edition account
+Status: New
+Priority: Normal
+Unique TicketId: [ ref:!00D610JGc4.!500Vp01BjLSr:ref ]
+Ticket URL: https://help.databricks.com/s/case/500Vp00001BjLSr
+
+
+To add additional comments, reply to this email.
+
+Regards,
+Databricks Support Team
+</pasted_content id="560a">
+
+```
+
+---
+
+change the clude.md and docs/progress.md, leave the remaining as is.
+
+---
+
+okay, create a PR and merge it, also make sure all the teardown related issues are now closed.
