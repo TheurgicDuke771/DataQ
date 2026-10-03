@@ -287,12 +287,42 @@ describe('CheckNew — "Generate from a description" shortcut card (#1845 follow
     expect(within(customSqlCard as HTMLElement).getByText('1 expectation')).toBeInTheDocument();
   });
 
+  it('the Custom SQL card itself opens the form WITHOUT the generate panel (#1929)', async () => {
+    const user = userEvent.setup();
+    mockGetSuite.mockResolvedValue(suite);
+    mockGetConnection.mockResolvedValue(snowflakeConnection);
+    renderPage();
+
+    await user.click(await screen.findByText('Custom SQL'));
+    await user.click(await screen.findByText(/A SQL query that should return no rows/));
+
+    expect(await screen.findByLabelText('Name')).toBeInTheDocument();
+    expect(screen.queryByTestId('sql-generate-panel')).not.toBeInTheDocument();
+  });
+
+  it('going back from the generate form and choosing Custom SQL drops the panel (#1929)', async () => {
+    const user = userEvent.setup();
+    mockGetSuite.mockResolvedValue(suite);
+    mockGetConnection.mockResolvedValue(snowflakeConnection);
+    renderPage();
+
+    await user.click(await screen.findByText('Custom SQL'));
+    await user.click(await screen.findByText('Generate from a description'));
+    expect(await screen.findByTestId('sql-generate-panel')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+    await user.click(await screen.findByText(/A SQL query that should return no rows/));
+
+    expect(await screen.findByLabelText('Name')).toBeInTheDocument();
+    expect(screen.queryByTestId('sql-generate-panel')).not.toBeInTheDocument();
+  });
+
   it('is absent from the Custom SQL step when Custom SQL is not offered (no SQL connection)', () => {
     renderPage();
     expect(screen.queryByText('Custom SQL')).not.toBeInTheDocument();
   });
 
-  it('sits beside the real Custom SQL card and lands on the identical config form', async () => {
+  it('sits beside the real Custom SQL card and opens the form with the generate panel', async () => {
     const user = userEvent.setup();
     mockGetSuite.mockResolvedValue(suite);
     mockGetConnection.mockResolvedValue(snowflakeConnection);
@@ -305,8 +335,7 @@ describe('CheckNew — "Generate from a description" shortcut card (#1845 follow
 
     await user.click(screen.getByText('Generate from a description'));
 
-    // Identical destination to clicking the real Custom SQL card: the same config form, with
-    // the generate panel visible (it always is, regardless of which card was clicked).
+    // The same check type as the real Custom SQL card, with the generate panel on top.
     expect(await screen.findByTestId('sql-generate-panel')).toBeInTheDocument();
     expect(screen.getByLabelText('Name')).toBeInTheDocument();
 

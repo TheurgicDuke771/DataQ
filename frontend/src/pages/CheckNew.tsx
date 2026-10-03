@@ -40,6 +40,9 @@ export function CheckNew() {
   const { message } = App.useApp();
   const [category, setCategory] = useState<ExpectationCategory>();
   const [expectationType, setExpectationType] = useState<string>();
+  // Whether the form was entered through the "Generate from a description" card. Both
+  // Custom SQL cards open the same check type; only that one shows the generate panel.
+  const [fromDescription, setFromDescription] = useState(false);
   const [form] = Form.useForm();
   const column = Form.useWatch(['config', 'column'], form) as string | undefined;
   // Drives which conditional fields render (anomaly's `column`, #593 — ConfigField.showWhen) — the
@@ -138,7 +141,7 @@ export function CheckNew() {
             <Input placeholder="e.g. order_id not null" />
           </Form.Item>
           {showEngineChoice && <EngineField dmfCapability={dmfCapability} />}
-          {suiteId && isCustomSql(expectationType) && (
+          {suiteId && fromDescription && isCustomSql(expectationType) && (
             <Form.Item>
               <SqlGeneratePanel suiteId={suiteId} form={form} />
             </Form.Item>
@@ -196,9 +199,9 @@ export function CheckNew() {
   // Step 2 — pick an expectation within the chosen category. Custom SQL's real catalog entry
   // (`group.specs`) has exactly one item — the check it describes IS the one GX expectation,
   // and that count must stay accurate. "Generate from a description" beside it is a picker-only
-  // shortcut, not a second expectation type: it sets the SAME expectationType (below), so the
-  // resulting config form is identical either way — the choice here is only about how you'd
-  // rather start, hand-writing or describing the rule for the model to translate.
+  // shortcut, not a second expectation type: it sets the SAME expectationType (below). The
+  // config form differs in one thing only: the generate panel is shown when you came in
+  // through this card, and not when you chose to hand-write the SQL.
   if (category) {
     const group = categories.find((g) => g.category === category);
     return (
@@ -215,7 +218,10 @@ export function CheckNew() {
               hoverable
               size="small"
               style={{ width: 320 }}
-              onClick={() => setExpectationType(e.type)}
+              onClick={() => {
+                setFromDescription(false);
+                setExpectationType(e.type);
+              }}
             >
               <Typography.Text strong>{e.label}</Typography.Text>
               <Typography.Paragraph type="secondary" style={{ margin: 0, fontSize: 12 }}>
@@ -228,7 +234,10 @@ export function CheckNew() {
               hoverable
               size="small"
               style={{ width: 320 }}
-              onClick={() => setExpectationType(CUSTOM_SQL_EXPECTATION_TYPE)}
+              onClick={() => {
+                setFromDescription(true);
+                setExpectationType(CUSTOM_SQL_EXPECTATION_TYPE);
+              }}
             >
               <Typography.Text strong>Generate from a description</Typography.Text>
               <Typography.Paragraph type="secondary" style={{ margin: 0, fontSize: 12 }}>

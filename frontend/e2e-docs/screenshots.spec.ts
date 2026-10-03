@@ -190,7 +190,7 @@ test('check editor — SQL generated from a description', async ({ page }) => {
   await heading(page, 'Retail orders (reader)', 4);
   await page.getByRole('button', { name: 'Add check' }).click();
   await page.getByText('Custom SQL', { exact: true }).click();
-  await page.getByText(/A SQL query that should return no rows/).click();
+  await page.getByText('Generate from a description').click();
   await page
     .getByLabel('Rule description')
     .fill('Every order must have a positive total amount, and no order may be dated in the future');

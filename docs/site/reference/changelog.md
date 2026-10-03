@@ -79,6 +79,10 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Fixed
 
+- **The Custom SQL card opens the plain SQL editor.** Both cards in the Custom SQL step used
+  to open a form with the **Generate from a description** box. It now appears only when you
+  start from the **Generate from a description** card.
+
 - **A completed run with no results no longer says it did not complete.** A check's results
   are removed when the check is deleted, so a finished run can be left with none (as can a
   run of a suite that had no checks). The run

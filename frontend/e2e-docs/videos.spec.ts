@@ -127,7 +127,7 @@ test('generate-sql', async ({ page }) => {
   await beat(800);
   await page.getByText('Custom SQL', { exact: true }).click();
   await beat(600);
-  await page.getByText(/A SQL query that should return no rows/).click();
+  await page.getByText('Generate from a description').click();
   await beat(1000);
   await page
     .getByLabel('Rule description')
