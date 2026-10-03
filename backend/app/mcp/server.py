@@ -2242,6 +2242,7 @@ def update_check(
     critical_threshold: float | None = None,
     dimension: str | None = None,
     engine: str | None = None,
+    clear_thresholds: list[Literal["warn", "fail", "critical"]] | None = None,
 ) -> dict[str, Any]:
     """Change an existing check's definition — a partial update.
 
@@ -2256,13 +2257,21 @@ def update_check(
     between-check by sending ``{"max_value": 100}`` deletes its ``min_value``, and
     because the result is still a valid check it saves and reports success.
 
-    Because omission means "leave alone", there is **no way to clear a field back
-    to empty** through this tool. Say so rather than passing 0 or an empty string,
-    which would set that value, not clear it. If an earlier version of the check
-    had the field empty, ``restore_check_version`` will clear it — that is the
-    one path that applies emptiness rather than skipping it; otherwise the check
-    must be recreated. ``kind`` cannot be changed at all; recreate the check as
-    the other kind.
+    **Severity thresholds can be removed** with ``clear_thresholds``: name the
+    tiers to clear, e.g. ``["warn"]`` for 'drop the warning threshold'. Passing
+    ``0`` for a threshold does not remove it — it sets the threshold to zero.
+    Naming a tier in ``clear_thresholds`` and giving it a value in the same call
+    is refused; an empty list changes nothing. The returned ``warn_threshold`` /
+    ``fail_threshold`` / ``critical_threshold`` show the new state, and a cleared
+    tier comes back ``null``. The result still has to be a valid check: a kind that needs a
+    fail or critical threshold refuses to lose its last one, and nothing changes.
+
+    For every other argument omission means "leave alone" and there is **no way
+    to clear it back to empty** through this tool. Say so rather than passing an
+    empty string, which would set that value, not clear it. If an earlier version
+    of the check had the field empty, ``restore_check_version`` will clear it;
+    otherwise the check must be recreated. ``kind`` cannot be changed at all;
+    recreate the check as the other kind.
 
     Changing ``expectation_type`` is held to the same vetted set ``create_check``
     describes, so a type outside it is refused here too and the check keeps its
@@ -2290,6 +2299,21 @@ def update_check(
         config=config or {},
         dimension=dimension or "",
     )
+    supplied = {"warn": warn_threshold, "fail": fail_threshold, "critical": critical_threshold}
+    cleared = set(clear_thresholds or ())
+    both = sorted(tier for tier in cleared if supplied[tier] is not None)
+    if both:
+        raise ToolError(
+            f"{', '.join(both)}: a threshold cannot be both set and cleared in one call. "
+            "Pass a value OR name the tier in clear_thresholds."
+        )
+
+    def threshold(tier: Literal["warn", "fail", "critical"]) -> Decimal | Any | None:
+        if tier in cleared:
+            return None
+        value = supplied[tier]
+        return check_service.KEEP if value is None else _dec(value)
+
     with _ctx() as (session, user), _service_errors():
         require_permission(session, sid, user.id, minimum="edit")
         check = check_service.update_check(
@@ -2299,9 +2323,9 @@ def update_check(
             name=name,
             expectation_type=expectation_type,
             config=config,
-            warn_threshold=_dec(warn_threshold),
-            fail_threshold=_dec(fail_threshold),
-            critical_threshold=_dec(critical_threshold),
+            warn_threshold=threshold("warn"),
+            fail_threshold=threshold("fail"),
+            critical_threshold=threshold("critical"),
             dimension=dimension,
             engine=engine,
             actor_id=user.id,
@@ -2324,8 +2348,9 @@ def restore_check_version(
     Unlike ``update_check``, this applies the whole snapshot, including fields
     that were empty at that version: restoring a version that had no warn
     threshold clears the warn threshold, rather than leaving today's value in
-    place. That is the point of a restore, and it is why this is not the same as
-    patching the fields back by hand.
+    place. That is the point of a restore. To remove just a severity threshold
+    and keep everything else as it is now, use ``update_check`` with
+    ``clear_thresholds`` instead; other empty fields only a restore brings back.
 
     **Nothing is lost and nothing is renumbered.** History is additive: the
     restore is recorded as a new version on top, so the state you are replacing
