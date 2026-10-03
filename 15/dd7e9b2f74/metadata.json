@@ -1,0 +1,34 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "15dd7e9b2f74",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-2336-real-mailbox",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".gitignore",
+    "README.md",
+    "backend/scripts/local_vault.py",
+    "backend/tests/core/test_eval_stack_ingress.py",
+    "backend/tests/scripts/test_local_vault.py",
+    "docker-compose.ghcr.yml",
+    "docs/site/adr/0039-openbao-self-hosted-secret-backend.md",
+    "docs/site/get-started/install.md",
+    "docs/site/reference/changelog.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/15/dd7e9b2f74/0/metadata.json",
+      "transcript": "/15/dd7e9b2f74/0/full.jsonl",
+      "compact_transcript": "/15/dd7e9b2f74/0/transcript.jsonl",
+      "content_hash": "/15/dd7e9b2f74/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 6,
+    "cache_creation_tokens": 1861,
+    "cache_read_tokens": 1618684,
+    "output_tokens": 1204,
+    "api_call_count": 3
+  }
+}
