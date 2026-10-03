@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "f7003c3c327c",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-2336-real-mailbox",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/site/get-started/install.md",
+    "docs/site/reference/changelog.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f7/003c3c327c/0/metadata.json",
+      "transcript": "/f7/003c3c327c/0/full.jsonl",
+      "compact_transcript": "/f7/003c3c327c/0/transcript.jsonl",
+      "content_hash": "/f7/003c3c327c/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12,
+    "cache_creation_tokens": 7628,
+    "cache_read_tokens": 3263865,
+    "output_tokens": 6417,
+    "api_call_count": 6
+  }
+}
