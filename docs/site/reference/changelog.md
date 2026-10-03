@@ -43,6 +43,14 @@ the per-PR history lives in the repo's commit log and pull requests.
   volume is not migrated; the stack starts fresh in the new directory. To reset, run
   `down -v` and delete the directory.
 
+- **A check's severity thresholds can be cleared.** Emptying a warn, fail or critical
+  threshold in the check editor and saving used to leave the old value in place. `PATCH
+  /suites/{id}/checks/{id}` now treats an explicit `null` for `warn_threshold`,
+  `fail_threshold` or `critical_threshold` as *clear it*; leaving the key out still keeps
+  the stored value. **A client that sent `null` for these to mean "unchanged" must omit
+  the key instead.** A check that needs a fail or critical threshold (freshness, anomaly) still
+  refuses to lose its last one. Over MCP, `update_check` gains `clear_thresholds`.
+
 ### Added
 
 - **Real mailboxes from the prebuilt-image stack.** Point the sign-in mailer at your own
@@ -74,6 +82,12 @@ the per-PR history lives in the repo's commit log and pull requests.
 - **The Custom SQL card opens the plain SQL editor.** Both cards in the Custom SQL step used
   to open a form with the **Generate from a description** box. It now appears only when you
   start from the **Generate from a description** card.
+
+- **A completed run with no results no longer says it did not complete.** A check's results
+  are removed when the check is deleted, so a finished run can be left with none (as can a
+  run of a suite that had no checks). The run
+  page and the printed report now say that, keep "did not complete" for runs that failed
+  or were cancelled, and say a queued or running run has not finished yet.
 
 - **A batch-target preview no longer comes back empty just because signing in was slow.** The
   preview's time budget now starts when the store returns its first object, not before the

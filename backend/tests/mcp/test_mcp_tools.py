@@ -5130,3 +5130,52 @@ def test_browse_connection_says_unsupported_before_complaining_about_prefix(
 
     with pytest.raises(ToolError, match="not supported for 'airflow'"):
         server.browse_connection(str(connection.id), prefix="raw/")
+
+
+# ── update_check: clearing a threshold (#1930) ───────────────────────────────
+
+
+def test_update_check_clears_the_named_thresholds_only(db_session: Any, monkeypatch: Any) -> None:
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    check = _check(
+        db_session, suite, warn_threshold=Decimal("0.01"), fail_threshold=Decimal("0.05")
+    )
+    _as(monkeypatch, db_session, user)
+
+    out = server.update_check(str(suite.id), str(check.id), clear_thresholds=["warn"])
+
+    assert out["warn_threshold"] is None
+    assert out["fail_threshold"] == 0.05
+    db_session.refresh(check)
+    assert check.warn_threshold is None
+
+
+def test_update_check_refuses_to_set_and_clear_one_threshold(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """Whichever won, the caller would be told the opposite of half of what it asked for."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    check = _check(db_session, suite, warn_threshold=Decimal("0.01"))
+    _as(monkeypatch, db_session, user)
+
+    with pytest.raises(ToolError, match="both set and cleared"):
+        server.update_check(
+            str(suite.id), str(check.id), warn_threshold=0.02, clear_thresholds=["warn"]
+        )
+    db_session.refresh(check)
+    assert check.warn_threshold == Decimal("0.01")
+
+
+def test_update_check_zero_sets_a_threshold_it_does_not_clear_it(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    check = _check(db_session, suite, warn_threshold=Decimal("0.01"))
+    _as(monkeypatch, db_session, user)
+
+    out = server.update_check(str(suite.id), str(check.id), warn_threshold=0)
+
+    assert out["warn_threshold"] == 0

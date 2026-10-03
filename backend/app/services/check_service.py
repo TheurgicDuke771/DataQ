@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import enum
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Any
+from typing import Any, Final
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -1115,6 +1116,17 @@ def _record_version_and_commit(
     return check
 
 
+class _Keep(enum.Enum):
+    """The one value of the "leave this field as it is" marker."""
+
+    KEEP = enum.auto()
+
+
+#: Passed for a threshold the update does not touch. `None` is a real value there (no
+#: threshold at that tier), so it cannot also mean "not provided".
+KEEP: Final = _Keep.KEEP
+
+
 def update_check(
     session: Session,
     suite_id: uuid.UUID,
@@ -1123,15 +1135,20 @@ def update_check(
     name: str | None = None,
     expectation_type: str | None = None,
     config: dict[str, Any] | None = None,
-    warn_threshold: Decimal | None = None,
-    fail_threshold: Decimal | None = None,
-    critical_threshold: Decimal | None = None,
+    warn_threshold: Decimal | _Keep | None = KEEP,
+    fail_threshold: Decimal | _Keep | None = KEEP,
+    critical_threshold: Decimal | _Keep | None = KEEP,
     source_connection_id: uuid.UUID | None = None,
     dimension: str | None = None,
     engine: str | None = None,
     actor_id: uuid.UUID | None = None,
 ) -> Check:
-    """Partial update, snapshotting the post-update state as a new version (#280)."""
+    """Partial update, snapshotting the post-update state as a new version (#280).
+
+    For the other fields `None` means "not provided". The three thresholds are different:
+    `KEEP` leaves one as it is and `None` clears it, because "no threshold" is a state a
+    check must be able to return to.
+    """
     check = get_check(session, suite_id, check_id)
     # Before any field below is mutated.
     audit_before = audit_service.snapshot("check", check)
@@ -1153,11 +1170,9 @@ def update_check(
         expectation_type if expectation_type is not None else check.expectation_type
     )
     new_config = config if config is not None else check.config
-    new_warn = warn_threshold if warn_threshold is not None else check.warn_threshold
-    new_fail = fail_threshold if fail_threshold is not None else check.fail_threshold
-    new_critical = (
-        critical_threshold if critical_threshold is not None else check.critical_threshold
-    )
+    new_warn = check.warn_threshold if warn_threshold is KEEP else warn_threshold
+    new_fail = check.fail_threshold if fail_threshold is KEEP else fail_threshold
+    new_critical = check.critical_threshold if critical_threshold is KEEP else critical_threshold
     # #568: validate the EFFECTIVE post-patch thresholds, not just the ones this PATCH touches —
     # same merge-then-validate shape as the monitor guard below.
     validate_threshold_ordering(
@@ -1208,12 +1223,9 @@ def update_check(
         check.config = config
     if source_connection_id is not None:
         check.source_connection_id = source_connection_id
-    if warn_threshold is not None:
-        check.warn_threshold = warn_threshold
-    if fail_threshold is not None:
-        check.fail_threshold = fail_threshold
-    if critical_threshold is not None:
-        check.critical_threshold = critical_threshold
+    check.warn_threshold = new_warn
+    check.fail_threshold = new_fail
+    check.critical_threshold = new_critical
     if dimension is not None:
         check.dimension = dimension
     if engine is not None:

@@ -62,9 +62,18 @@ class CheckUpdate(ApiRequestModel):
     # Repoint a comparison check's source (never clearable — the kind requires
     # it); 422 on any other kind.
     source_connection_id: uuid.UUID | None = None
+    # Unlike the fields above, an explicit `null` here CLEARS the threshold; leaving the
+    # key out keeps it. "No threshold at this tier" is a state a check can go back to.
     warn_threshold: Decimal | None = None
     fail_threshold: Decimal | None = None
     critical_threshold: Decimal | None = None
+
+    def threshold(self, name: str) -> Decimal | svc._Keep | None:
+        """What to hand the service: the value the client sent, or KEEP when it sent none."""
+        if name not in self.model_fields_set:
+            return svc.KEEP
+        value: Decimal | None = getattr(self, name)
+        return value
 
 
 class CheckRead(ApiModel):
@@ -172,9 +181,9 @@ def update_check(
         name=payload.name,
         expectation_type=payload.expectation_type,
         config=payload.config,
-        warn_threshold=payload.warn_threshold,
-        fail_threshold=payload.fail_threshold,
-        critical_threshold=payload.critical_threshold,
+        warn_threshold=payload.threshold("warn_threshold"),
+        fail_threshold=payload.threshold("fail_threshold"),
+        critical_threshold=payload.threshold("critical_threshold"),
         source_connection_id=payload.source_connection_id,
         dimension=payload.dimension,
         engine=payload.engine,

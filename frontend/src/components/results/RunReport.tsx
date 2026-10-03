@@ -1,4 +1,5 @@
 import type { RunDetail as RunDetailType } from '../../api/runs';
+import { checkLabel, noResultsMessage } from './runResultLabels';
 import type { Check } from '../../api/suites';
 import { engineShortLabel } from '../checks/checkBadges';
 import { isSnoozed } from '../checks/snooze';
@@ -13,13 +14,16 @@ export function RunReport({
   run,
   suiteName,
   checks,
+  checksKnown,
 }: {
   run: RunDetailType;
   suiteName: string | null;
   checks: Check[];
+  /** False when the suite's check list could not be loaded. */
+  checksKnown: boolean;
 }) {
   const checksById = new Map(checks.map((c) => [c.id, c]));
-  const checkName = (id: string) => checksById.get(id)?.name ?? id;
+  const checkName = (id: string) => checkLabel(checksById.get(id)?.name, id, checksKnown);
   const expectationOrKind = (id: string) => {
     const check = checksById.get(id);
     return check?.expectation_type || check?.kind || '—';
@@ -84,7 +88,7 @@ export function RunReport({
       )}
 
       {run.results.length === 0 ? (
-        <p>No check results — the run did not complete.</p>
+        <p>{noResultsMessage(run.status)}</p>
       ) : (
         <table className="rd-report-table" aria-label="Per-check results">
           <thead>
