@@ -61,7 +61,7 @@ Everything open at the v1.1 close, re-homed by name into the weekly milestones b
 carried is lost). The two **decision gates** are the user's call, not the assistant's:
 [#590](https://github.com/TheurgicDuke771/DataQ/issues/590) (Azure estate fate) and
 [#588](https://github.com/TheurgicDuke771/DataQ/issues/588) (Snowflake leg retirement) —
-W1 schedules the *decision*, never presumes the outcome. One item sits in `v1.2 Backlog`
+W1 schedules the *decision*, never presumes the outcome (both decided and closed 2026-10-03: the estate is retired). One item sits in `v1.2 Backlog`
 rather than a week: [#1384](https://github.com/TheurgicDuke771/DataQ/issues/1384)
 (CloudFront→ALB cleartext hop — blocked on buying a custom domain + ACM, not on
 engineering).
@@ -89,15 +89,15 @@ engineering).
 
 ### v1.2 W1 — Decision gates + MCP honesty burn-down (due 2026-08-28)
 
-⚡ **#590/#588 are the user's decision gates** (~2026-08-25 revisit): keep or tear down the
+⚡ **#590/#588 were the user's decision gates — decided and closed 2026-10-03 (estate retired)** (originally a ~2026-08-25 revisit): keep or tear down the
 Azure estate and the harness Snowflake leg. Everything else in the week is independent of
 the outcome, but #1392/#1257 are cheapest while the decision is fresh — and #895 (W5)
 needs the Snowflake half decided.
 
 | Status | Task | Theme |
 |---|---|---|
-| ⬜ | [#590](https://github.com/TheurgicDuke771/DataQ/issues/590) Azure estate: user decision + (if teardown) G-i + `tofu destroy` + credential retirement | ops / decision gate |
-| ⬜ | [#588](https://github.com/TheurgicDuke771/DataQ/issues/588) Snowflake harness leg: user decision + clean retirement procedure (rehearsed 2026-07-04) | ops / decision gate |
+| ✅ | [#590](https://github.com/TheurgicDuke771/DataQ/issues/590) (closed 2026-10-03, estate retired) Azure estate: user decision + (if teardown) G-i + `tofu destroy` + credential retirement | ops / decision gate |
+| ✅ | [#588](https://github.com/TheurgicDuke771/DataQ/issues/588) (closed 2026-10-03, estate retired) Snowflake harness leg: user decision + clean retirement procedure (rehearsed 2026-07-04) | ops / decision gate |
 | ✅ | [#1392](https://github.com/TheurgicDuke771/DataQ/issues/1392) Verify the demo environment is actually disposable (`tofu destroy` never run) — [PR #1875](https://github.com/TheurgicDuke771/DataQ/pull/1875): rehearsed a `tofu destroy -target` against the harness's disposable pieces, found and fixed one finding (recorded in `docs/ops-log.md`) | ops |
 | ✅ | [#1257](https://github.com/TheurgicDuke771/DataQ/issues/1257) Narrow `DATAQ_LOADER`'s account-wide MANAGE GRANTS to the dbt hook's need — investigated read-only first (`SHOW GRANTS TO ROLE DATAQ_LOADER`): schema `OWNERSHIP` on `ANALYTICS`/`ANALYTICS_STG` predated `MANAGE GRANTS` by ~11h, suggesting the account-wide grant was redundant; the live `REVOKE` + re-run of the `on-run-end` hook's six grant statements needed explicit user sign-off, so findings were posted as an issue comment rather than executed unilaterally. User ran `REVOKE MANAGE GRANTS ON ACCOUNT FROM ROLE DATAQ_LOADER` + re-ran all six statements as `DATAQ_LOADER` — all succeeded; a fresh `SHOW GRANTS` confirmed `MANAGE GRANTS` gone and schema ownership intact. Closed | ops / least-priv |
 | ✅ | [#1442](https://github.com/TheurgicDuke771/DataQ/issues/1442) MCP: time filter on `list_runs`/`list_incidents` ("what failed today?") | MCP honesty |
@@ -286,7 +286,7 @@ batches land measured against the new baseline.
 | ⬜ | [#682](https://github.com/TheurgicDuke771/DataQ/issues/682) Webhook-auth metadata onto the `OrchestrationProvider` seam | refactor |
 | ⬜ | [#1314](https://github.com/TheurgicDuke771/DataQ/issues/1314) Alerting: already-logged-traceback downgrade leaks through log filtering | reliability |
 | ⬜ | [#1274](https://github.com/TheurgicDuke771/DataQ/issues/1274) Iceberg over S3-compatible storage: pyarrow ACCESS_DENIED + Test Connection blind | bug |
-| ⬜ | [#1385](https://github.com/TheurgicDuke771/DataQ/issues/1385) AWS: ElastiCache at-rest encryption + restrict subnet egress | security |
+| 🔵 | [#1385](https://github.com/TheurgicDuke771/DataQ/issues/1385) (closed not planned 2026-10-03, our AWS stack is retired) AWS: ElastiCache at-rest encryption + restrict subnet egress | security |
 
 | ⬜ | [#1667](https://github.com/TheurgicDuke771/DataQ/issues/1667) Global search / command palette (⌘K) | ux |
 | ⬜ | [#1669](https://github.com/TheurgicDuke771/DataQ/issues/1669) Bulk operations on checks (multi-select enable/disable/severity/snooze) | ux |
