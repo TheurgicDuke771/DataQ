@@ -35,7 +35,7 @@ export DATAQ_SIGNIN_EMAIL=you@example.com      # the address allowed to sign in
 docker compose -f docker-compose.ghcr.yml up
 ```
 
-Open **<http://localhost:3000>**, enter that address, and read the 6-digit code at **<http://localhost:8025>** (bundled Mailpit — nothing leaves your machine). The stack starts migrated with demo data; API docs at `http://localhost:8000/docs`. Images are multi-arch (amd64/arm64) and bind to `127.0.0.1`. Credentials live in a bundled OpenBao vault in dev mode, so re-enter them after a restart. Pin a release with `DATAQ_BACKEND_TAG=vX.Y.Z DATAQ_FRONTEND_TAG=vX.Y.Z`.
+Open **<http://localhost:3000>**, enter that address, and read the 6-digit code at **<http://localhost:8025>** (bundled Mailpit — nothing leaves your machine). The stack starts migrated with demo data; The UI is the only published surface, as in production: the API is at `http://localhost:3000/api`. Images are multi-arch (amd64/arm64) and bind to `127.0.0.1`. Credentials live in a bundled OpenBao vault in dev mode, so re-enter them after a restart. Pin a release with `DATAQ_BACKEND_TAG=vX.Y.Z DATAQ_FRONTEND_TAG=vX.Y.Z`.
 
 For **SSO**, run the same frontend image with `DATAQ_AUTH_MODE=oidc` and `DATAQ_AUTH_AUTHORITY` / `DATAQ_AUTH_CLIENT_ID` / `DATAQ_AUTH_API_SCOPE` — any standards-compliant OIDC provider works (Azure AD and AWS Cognito are validated). See [Getting started](https://theurgicduke771.github.io/DataQ/docs/latest/get-started/install/).
 

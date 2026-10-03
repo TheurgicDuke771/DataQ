@@ -281,7 +281,7 @@ a real sign-in mode or outside `ENVIRONMENT=dev`.
 DATAQ_SIGNIN_EMAIL=
 DATAQ_DEV_BYPASS=true
 # prebuilt-image stack — the frontend needs the matching mode too
-DATAQ_SIGNIN_EMAIL= DATAQ_DEV_BYPASS=true DATAQ_AUTH_MODE=bypass docker compose -f docker-compose.ghcr.yml up
+DATAQ_SIGNIN_EMAIL= DATAQ_DEV_BYPASS=true DATAQ_AUTH_MODE=bypass DATAQ_ENVIRONMENT=dev docker compose -f docker-compose.ghcr.yml up
 # host-side uvicorn — .env.app
 AUTH_DEV_BYPASS=true
 ```

@@ -22,6 +22,14 @@ the per-PR history lives in the repo's commit log and pull requests.
   [A connection is tested before it is saved](../guides/datasources-checks.md#a-connection-is-tested-before-it-is-saved)
   and [API compatibility](api-compatibility.md#recorded-exceptions).
 
+- **The prebuilt-image stack publishes only the UI.** `docker-compose.ghcr.yml` now runs the
+  way a production deployment does: the UI on `:3000` is the only way in, and the API is
+  reached through it at `http://localhost:3000/api` (MCP at `http://localhost:3000/mcp/`).
+  The API (`:8000`), Postgres (`:5432`), Redis (`:6379`), the vault (`:8200`) and the mail
+  catcher's SMTP port (`:1025`) no longer have host ports, and the interactive API page at
+  `/docs` is off. Point scripts that called `localhost:8000` at `localhost:3000`. The inbox
+  stays at `http://localhost:8025`. The from-source stack (`docker-compose.yml`) is unchanged.
+
 ### Added
 
 - **Python client and CLI (`dataq-client`).** Install the wheel attached to the release (or the

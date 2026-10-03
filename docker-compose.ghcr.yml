@@ -8,11 +8,19 @@
 #
 # Signs you in with an emailed one-time code (ADR 0032); read the code at the
 # bundled inbox http://localhost:8025. Omitting DATAQ_SIGNIN_EMAIL stops the stack.
+#
+# Production-like on purpose: the UI (:3000) is the only way in, as in a real deployment
+# (ADR 0028 §5). The api, database, Redis and vault publish no host port; the api is reached
+# through the UI's /api, /mcp and /healthz proxy. The inbox (:8025) is the one other port.
 
 x-backend-image: &backend-image "ghcr.io/theurgicduke771/dataq-backend:${DATAQ_BACKEND_TAG:-latest}"
 
 # Shared app env for api/worker/migrate.
 x-app-env: &app-env
+  # prod: /docs is not served and the contributor bypass is refused. Contributors using the
+  # bypass on this file set DATAQ_ENVIRONMENT=dev (CONTRIBUTING.md).
+  ENVIRONMENT: ${DATAQ_ENVIRONMENT:-prod}
+  RATE_LIMIT_ENABLED: "true"
   DATABASE_URL: "postgresql+psycopg2://dataq@postgres:5432/dataq"
   REDIS_URL: "redis://redis:6379/0"
   SECRET_STORE: "openbao"
@@ -47,8 +55,6 @@ services:
       POSTGRES_HOST_AUTH_METHOD: trust
       POSTGRES_USER: dataq
       POSTGRES_DB: dataq
-    ports:
-      - "127.0.0.1:5432:5432"
     volumes:
       # Distinct from docker-compose.yml's volume: this stack runs trust-auth, so it must never
       # reuse a password-initialized data dir (auth config is fixed at init time).
@@ -62,8 +68,6 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -78,8 +82,6 @@ services:
       # No default: a credential must never ship in a tracked file (CLAUDE.md §11).
       BAO_DEV_ROOT_TOKEN_ID: ${OPENBAO_TOKEN:?required — see the header of this file (ADR 0039)}
       BAO_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
-    ports:
-      - "127.0.0.1:8200:8200"
     cap_add:
       - IPC_LOCK           # lock memory so secrets cannot be swapped to disk
     healthcheck:
@@ -104,7 +106,6 @@ services:
       # Loopback ONLY, and more strictly than the rest of this file: this inbox holds LIVE sign-in
       # codes for every allow-listed address, behind no authentication at all.
       - "127.0.0.1:8025:8025"   # web inbox — open this to read your code
-      - "127.0.0.1:1025:1025"   # SMTP
 
   # One-shot: puts a generated SMTP password in the vault under the name the api looks it up by,
   # then exits 0.
@@ -137,8 +138,6 @@ services:
     image: *backend-image
     restart: unless-stopped
     command: uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
-    ports:
-      - "127.0.0.1:8000:8000"
     environment: *app-env
     depends_on:
       postgres:
@@ -228,7 +227,7 @@ services:
       openbao:
         condition: service_healthy
 
-  # The UI image (nginx).
+  # The UI image (nginx), and the stack's only public surface.
   frontend:
     image: "ghcr.io/theurgicduke771/dataq-frontend:${DATAQ_FRONTEND_TAG:-latest}"
     restart: unless-stopped
