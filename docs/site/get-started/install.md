@@ -290,8 +290,10 @@ keep `DATAQ_SIGNIN_EMAIL` set and override the same key names in the **root `.en
 ```
 DATAQ_SIGNIN_EMAIL=you@example.com
 AUTH_EMAIL_SMTP_HOST=smtp.example.com
-AUTH_EMAIL_TLS_MODE=starttls          # the from-source stack's catcher default is `none`
-AUTH_EMAIL_CA_BUNDLE=                 # prebuilt-image stack only: see below
+# the from-source stack's catcher default is `none`
+AUTH_EMAIL_TLS_MODE=starttls
+# prebuilt-image stack only (see below); nothing may follow the `=`, not even a comment
+AUTH_EMAIL_CA_BUNDLE=
 ```
 
 On the **prebuilt-image stack** the catcher is reached over STARTTLS and verified against
@@ -299,6 +301,51 @@ the stack's local CA (`AUTH_EMAIL_CA_BUNDLE=/certs/ca.pem`), and that bundle is 
 *instead of* the usual certificate authorities. A public relay's certificate is not
 signed by the local CA, so set `AUTH_EMAIL_CA_BUNDLE=` (empty) alongside the host, or
 every sign-in mail fails certificate verification.
+
+#### Sending to real mailboxes from the prebuilt-image stack
+
+To have sign-in codes arrive in Gmail, Outlook or any other real mailbox, point the
+stack at an SMTP relay you have an account on. Put this in a `.env` file beside the
+compose file (or export the variables) and start the stack:
+
+```
+DATAQ_SIGNIN_EMAIL=you@example.com
+# Microsoft 365 / Outlook: smtp.office365.com
+AUTH_EMAIL_SMTP_HOST=smtp.gmail.com
+AUTH_EMAIL_SMTP_PORT=587
+AUTH_EMAIL_USERNAME=you@example.com
+AUTH_EMAIL_FROM=you@example.com
+# empty, so the relay is checked against the public CAs. Nothing may follow the `=`:
+# a comment on this line would become the value.
+AUTH_EMAIL_CA_BUNDLE=
+# needed on the first start only
+DATAQ_SMTP_PASSWORD=<the relay password>
+```
+
+- **The password is handed over once.** `DATAQ_SMTP_PASSWORD` is read by a start-up
+  step that writes it to the stack's vault and by nothing else; the API never has it in
+  its environment. The vault keeps it across restarts, so remove the line after the
+  first start. Supply it again only to change it.
+- **Gmail** needs an app password (an account with 2-step verification, then *App
+  passwords*), not your sign-in password. **Microsoft 365 / Outlook** works where SMTP
+  AUTH is enabled for the mailbox; many organisations turn it off.
+- The relay will only send **from** an address the account owns, so `AUTH_EMAIL_FROM`
+  is normally the same as the username.
+- With a real relay configured the bundled inbox on `:8025` receives nothing.
+- If the code does not arrive, an Admin can use **Admin → Settings → Send test email**,
+  which reports the relay's answer. With no password stored the start-up step
+  says so in its log (`docker compose logs otp-mail-secret`) rather than inventing one.
+
+**Alert emails** use a separate mailer. Turn it on the same way:
+
+```
+EMAIL_SMTP_HOST=smtp.gmail.com
+EMAIL_USERNAME=you@example.com
+# comma-separated recipients
+EMAIL_TO=team@example.com
+# first start only
+DATAQ_ALERT_SMTP_PASSWORD=<the relay password>
+```
 
 `.env.app` is still the file for **host-side dev** (uvicorn on your own machine, which
 reads it directly) — point `AUTH_EMAIL_SMTP_HOST` at `localhost` if you want the catcher

@@ -45,6 +45,13 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Added
 
+- **Real mailboxes from the prebuilt-image stack.** Point the sign-in mailer at your own
+  relay and supply its password once as `DATAQ_SMTP_PASSWORD`: a start-up step stores it in
+  the stack's vault, where it persists, and the API never holds it. The alert mailer's
+  `EMAIL_*` settings are now passed through as well, with `DATAQ_ALERT_SMTP_PASSWORD`. With
+  a relay configured and no password stored, the start-up step says so instead of storing a
+  random one. See Getting started.
+
 - **Python client and CLI (`dataq-client`).** Install the wheel attached to the release (or the
   latest from `main`), then
   `dataq run <suite> --wait` gates a CI step on a suite's result with a documented exit code

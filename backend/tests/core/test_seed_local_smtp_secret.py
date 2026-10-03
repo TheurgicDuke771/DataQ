@@ -113,3 +113,118 @@ def test_the_generated_password_is_never_printed(
     assert store.writes[0] not in output.err
     assert "dataq-local-smtp" not in output.out
     assert "dataq-local-smtp" not in output.err
+
+
+# ── A real relay: the operator hands the password over once (#2336) ──────────
+
+#: Stand-in for a relay password supplied in the one-shot's environment.
+_SUPPLIED = "value-supplied-by-the-operator"
+
+
+def _install_relay(
+    monkeypatch: pytest.MonkeyPatch, store: FakeSecretStore, *, alert_name: str | None = None
+) -> None:
+    settings = Settings(
+        auth_email_smtp_host="smtp.example.com",
+        auth_email_username="dataq@example.com",
+        auth_email_from="dataq@example.com",
+        auth_email_password_secret_name="dataq-local-smtp",
+        auth_otp_allowed_emails="operator@example.com",
+        email_username="alerts@example.com" if alert_name else None,
+        email_password_secret_name=alert_name,
+    )
+    monkeypatch.setattr(script, "get_settings", lambda: settings)
+    monkeypatch.setattr(script, "get_secret_store", lambda: store)
+    monkeypatch.delenv("DATAQ_SMTP_PASSWORD", raising=False)
+    monkeypatch.delenv("DATAQ_ALERT_SMTP_PASSWORD", raising=False)
+
+
+def test_a_supplied_password_is_stored_and_replaces_what_was_there(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = FakeSecretStore(initial={"dataq-local-smtp": "an-older-value"})
+    _install_relay(monkeypatch, store)
+    monkeypatch.setenv("DATAQ_SMTP_PASSWORD", _SUPPLIED)
+
+    assert script.main() == 0
+    assert store.get("dataq-local-smtp") == _SUPPLIED
+
+
+def test_no_password_is_invented_for_a_real_relay(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A random password would be rejected by the relay and would then read as "set", hiding
+    the real cause from the next start.
+    """
+    store = FakeSecretStore()
+    _install_relay(monkeypatch, store)
+
+    assert script.main() == 0
+    assert store.writes == []
+    assert "DATAQ_SMTP_PASSWORD" in capsys.readouterr().err
+
+
+def test_a_stored_relay_password_is_left_alone_when_none_is_supplied(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = FakeSecretStore(initial={"dataq-local-smtp": _OPERATORS_EXISTING_VALUE})
+    _install_relay(monkeypatch, store)
+
+    assert script.main() == 0
+    assert store.writes == []
+
+
+def test_a_supplied_alert_password_goes_under_the_alert_mailers_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = FakeSecretStore(initial={"dataq-local-smtp": _OPERATORS_EXISTING_VALUE})
+    _install_relay(monkeypatch, store, alert_name="dataq-alert-smtp")
+    monkeypatch.setenv("DATAQ_ALERT_SMTP_PASSWORD", _SUPPLIED)
+
+    assert script.main() == 0
+    assert store.get("dataq-alert-smtp") == _SUPPLIED
+    assert store.get("dataq-local-smtp") == _OPERATORS_EXISTING_VALUE
+
+
+def test_an_alert_password_with_nowhere_to_go_is_an_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    store = FakeSecretStore(initial={"dataq-local-smtp": _OPERATORS_EXISTING_VALUE})
+    _install_relay(monkeypatch, store)
+    monkeypatch.setenv("DATAQ_ALERT_SMTP_PASSWORD", _SUPPLIED)
+
+    assert script.main() == 1
+    assert store.writes == []
+    assert "EMAIL_PASSWORD_SECRET_NAME" in capsys.readouterr().err
+
+
+def test_a_password_generated_for_the_catcher_is_not_mistaken_for_the_relays(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The vault persists: start once on the catcher, then point at a real relay. The value
+    left behind is this script's own invention, so "already set" would hide the real cause.
+    """
+    store = FakeSecretStore()
+    _install(monkeypatch, store, secret_name="dataq-local-smtp")
+    monkeypatch.delenv("DATAQ_SMTP_PASSWORD", raising=False)
+    assert script.main() == 0  # the catcher start: a generated value is stored
+    generated = store.get("dataq-local-smtp")
+    capsys.readouterr()
+
+    _install_relay(monkeypatch, store)
+    assert script.main() == 0
+
+    captured = capsys.readouterr()
+    assert "already set" not in captured.out
+    assert "DATAQ_SMTP_PASSWORD" in captured.err
+    assert store.get("dataq-local-smtp") == generated  # reported, not overwritten
+
+
+def test_a_generated_password_stays_valid_for_the_catcher(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = FakeSecretStore()
+    _install(monkeypatch, store, secret_name="dataq-local-smtp")
+    monkeypatch.delenv("DATAQ_SMTP_PASSWORD", raising=False)
+    script.main()
+
+    assert script.main() == 0
+    assert len(store.writes) == 1  # second run left it alone

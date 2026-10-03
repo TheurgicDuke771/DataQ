@@ -68,6 +68,12 @@ def _block(service: str) -> str:
     return match.group(1)
 
 
+def _takes_app_env(service: str) -> bool:
+    """Whether the service runs the backend with the shared app env (whole, or merged)."""
+    block = _block(service)
+    return "environment: *app-env" in block or "<<: *app-env" in block
+
+
 def test_the_ui_terminates_tls_and_sends_no_hsts() -> None:
     frontend = _block("frontend")
     assert "DATAQ_TLS_CERT: /tls/localhost.pem" in frontend
@@ -125,7 +131,7 @@ def test_each_private_key_volume_reaches_only_its_own_service() -> None:
 
 def test_every_backend_container_mounts_the_ca_it_is_told_to_verify_with() -> None:
     names = re.findall(r"^  ([\w-]+):\n", _COMPOSE.split("\nservices:\n", 1)[1], re.MULTILINE)
-    backend = [n for n in names if "environment: *app-env" in _block(n)]
+    backend = [n for n in names if _takes_app_env(n)]
     assert len(backend) == 6
     for name in backend:
         assert "volumes: *app-volumes" in _block(name), name
@@ -152,6 +158,24 @@ def test_the_vault_is_not_in_dev_mode() -> None:
 
 def test_app_containers_wait_for_a_usable_vault_not_just_a_listening_one() -> None:
     names = re.findall(r"^  ([\w-]+):\n", _COMPOSE.split("\nservices:\n", 1)[1], re.MULTILINE)
-    for name in (n for n in names if "environment: *app-env" in _block(n)):
+    for name in (n for n in names if _takes_app_env(n)):
         block = _block(name)
         assert "vault-init:\n        condition: service_completed_successfully" in block, name
+
+
+# ── Real mailboxes (#2336) ───────────────────────────────────────────────────
+
+
+def test_a_relay_password_reaches_only_the_one_shot_that_stores_it() -> None:
+    names = re.findall(r"^  ([\w-]+):\n", _COMPOSE.split("\nservices:\n", 1)[1], re.MULTILINE)
+    for variable in ("DATAQ_SMTP_PASSWORD", "DATAQ_ALERT_SMTP_PASSWORD"):
+        holders = [n for n in names if f"{variable}:" in _block(n)]
+        assert holders == ["otp-mail-secret"], f"{variable} is passed to {holders}"
+    shared_env = _COMPOSE.split("x-app-env: &app-env\n", 1)[1].split("\nservices:\n", 1)[0]
+    assert "SMTP_PASSWORD" not in shared_env
+
+
+def test_the_alert_mailer_is_off_until_a_username_is_given() -> None:
+    secret_name = "${EMAIL_USERNAME:+${EMAIL_PASSWORD_SECRET_NAME:-dataq-alert-smtp}}"
+    assert f"EMAIL_PASSWORD_SECRET_NAME: {secret_name}" in _COMPOSE
+    assert "EMAIL_TO: ${EMAIL_TO:-}" in _COMPOSE
