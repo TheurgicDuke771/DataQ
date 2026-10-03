@@ -71,6 +71,10 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Fixed
 
+- **The Custom SQL card opens the plain SQL editor.** Both cards in the Custom SQL step used
+  to open a form with the **Generate from a description** box. It now appears only when you
+  start from the **Generate from a description** card.
+
 - **A batch-target preview no longer comes back empty just because signing in was slow.** The
   preview's time budget now starts when the store returns its first object, not before the
   client authenticates; a service principal's token request alone could use the whole budget.

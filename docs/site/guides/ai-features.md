@@ -124,7 +124,8 @@ Custom-SQL checks are the most flexible check type and the slowest to author. On
 whose target is a table on a SQL datasource (Snowflake or Unity Catalog), start a check,
 pick **Custom SQL**, and describe the rule instead of writing it. **Generate from a
 description** sits beside the hand-written Custom SQL card — same check type underneath,
-just a different starting point:
+just a different starting point. The description box appears only when you start from that
+card; the Custom SQL card opens the plain SQL editor:
 
 ![The Custom SQL category with two cards: "Custom SQL" for hand-written queries and "Generate from a description" for the model to translate](../assets/screenshots/check-editor-custom-sql-picker.png){ .screenshot }
 
