@@ -63,7 +63,8 @@ code in the bundled inbox at **`http://localhost:8025`**.
   The CA's private key stays in a volume that only the generator mounts, and the CA
   survives restarts; `down -v` removes it. The `localhost` certificate lasts a year and
   is renewed when the stack is started within 30 days of its expiry; the same goes for
-  the certificates Postgres, Redis and the mail catcher hold. Containers that were
+  the certificates Postgres, Redis, the mail catcher, the vault and the API hold.
+  Containers that were
   already running keep the old ones, so after a renewal restart the stack
   (`docker compose -f docker-compose.ghcr.yml restart`). Plain
   `http://localhost:3000` redirects to
@@ -71,17 +72,19 @@ code in the bundled inbox at **`http://localhost:8025`**.
 - **TLS inside the stack too.** The API, worker and scheduler reach Postgres with
   `sslmode=verify-full`, Redis over `rediss://` (its plain port is off), and the mail
   catcher over STARTTLS, each verified against the same local CA, and each server holds
-  a certificate for its own hostname only, with a key no other container can read. These
-  are the client code paths a managed database, cache and mail relay use in production.
-  Still plain inside the compose network: the API to the bundled vault, and the UI's
-  proxy to the API.
+  a certificate for its own hostname only, with a key no other container can read.
+  The vault is reached over HTTPS and the UI's proxy talks to the API over TLS, both
+  verified the same way, and Postgres refuses a network client that is not on TLS.
+  These are the client code paths a managed database, cache, vault and mail relay use
+  in production. Two things stay plain by design: the inbox page on `:8025`, and the
+  demo profile's sample warehouse, which stands in for a warehouse of your own (the
+  connection's TLS setting is the control there).
 - **Check it yourself.** `scripts/local-smoke.sh` (fetch it the same way as the compose
   file, and run it beside it) smokes the running stack the way a deployment is smoked
   after a roll: the certificate verifies against the stack's CA, plain HTTP redirects,
   the API and MCP refuse an anonymous caller, only the UI and the inbox have a host
   port, a real sign-in, read and sign-out work with a `Secure` cookie, Postgres and Redis
   are on TLS, and a burst is rate-limited. It exits non-zero if any check fails.
-||||||| 441b6099
 - **One way in, as in production:** the UI on `:3000` is the only published surface. The
   API has no host port; it is reached through the UI at `https://localhost:3000/api`, and
   MCP clients connect to `https://localhost:3000/mcp/`. The database, Redis and the vault

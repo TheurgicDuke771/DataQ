@@ -34,7 +34,8 @@ x-app-env: &app-env
   DATABASE_URL: "postgresql+psycopg2://dataq@postgres:5432/dataq?sslmode=verify-full&sslrootcert=/certs/ca.pem"
   REDIS_URL: "rediss://redis:6379/0?ssl_cert_reqs=required&ssl_ca_certs=/certs/ca.pem"
   SECRET_STORE: "openbao"
-  OPENBAO_ADDR: "http://openbao:8200"
+  OPENBAO_ADDR: "https://openbao:8200"
+  OPENBAO_CA_BUNDLE: /certs/ca.pem
   OPENBAO_TOKEN: ${OPENBAO_TOKEN:?required — see the header of this file (ADR 0039)}
   # Contributors only (CONTRIBUTING.md "Developer bypass"); the api refuses it beside a real mode.
   AUTH_DEV_BYPASS: ${DATAQ_DEV_BYPASS:-false}
@@ -75,7 +76,15 @@ services:
       POSTGRES_HOST_AUTH_METHOD: trust
       POSTGRES_USER: dataq
       POSTGRES_DB: dataq
-    command: postgres -c ssl=on -c ssl_cert_file=/tls/cert.pem -c ssl_key_file=/tls/key.pem
+    # `hostssl` only: a network client that is not on TLS is refused, not merely discouraged.
+    # The local socket line is what the healthcheck and the image's own init use.
+    command:
+      - sh
+      - -c
+      - |
+        printf 'local all all trust\nhostssl all all all trust\n' > /tmp/pg_hba.conf
+        exec docker-entrypoint.sh postgres -c hba_file=/tmp/pg_hba.conf -c ssl=on \
+          -c ssl_cert_file=/tls/cert.pem -c ssl_key_file=/tls/key.pem
     depends_on:
       local-ca:
         condition: service_completed_successfully
@@ -134,19 +143,23 @@ services:
     environment:
       BAO_LOCAL_CONFIG: >-
         {"storage": {"raft": {"path": "/openbao/file/raft", "node_id": "local"}},
-        "listener": [{"tcp": {"address": "0.0.0.0:8200", "tls_disable": true}}],
+        "listener": [{"tcp": {"address": "0.0.0.0:8200", "tls_cert_file": "/tls/cert.pem", "tls_key_file": "/tls/key.pem"}}],
         "seal": [{"static": {"current_key_id": "local-1", "current_key": "file:///openbao/file/seal.key"}}],
-        "api_addr": "http://openbao:8200", "cluster_addr": "http://openbao:8201",
+        "api_addr": "https://openbao:8200", "cluster_addr": "https://openbao:8201",
         "disable_mlock": true}
     volumes:
       - ${DATAQ_DATA_DIR:-./dataq-data}/openbao:/openbao/file
+      - ghcr_tls_openbao:/tls:ro
+      - ghcr_local_ca:/certs:ro
     depends_on:
       vault-prepare:
+        condition: service_completed_successfully
+      local-ca:
         condition: service_completed_successfully
     healthcheck:
       # `bao status` exits 0 unsealed, 2 sealed (a brand-new vault, until vault-init runs), 1 on
       # error. Healthy means the server answers; vault-init makes it usable.
-      test: ["CMD-SHELL", "bao status -address=http://127.0.0.1:8200 >/dev/null 2>&1; [ $$? -ne 1 ]"]
+      test: ["CMD-SHELL", "bao status -address=https://openbao:8200 -ca-cert=/certs/ca.pem >/dev/null 2>&1; [ $$? -ne 1 ]"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -159,10 +172,12 @@ services:
     user: "0:0"
     command: python -m backend.scripts.local_vault init /vault
     environment:
-      OPENBAO_ADDR: "http://openbao:8200"
+      OPENBAO_ADDR: "https://openbao:8200"
+      OPENBAO_CA_BUNDLE: /certs/ca.pem
       OPENBAO_TOKEN: ${OPENBAO_TOKEN:?required — see the header of this file (ADR 0039)}
     volumes:
       - ${DATAQ_DATA_DIR:-./dataq-data}/openbao:/vault
+      - ghcr_local_ca:/certs:ro
     depends_on:
       openbao:
         condition: service_healthy
@@ -199,12 +214,14 @@ services:
     restart: "no"
     user: "0:0"
     # NAME:DIR:UID — a certificate for that hostname, its key owned by the user the service
-    # runs as (postgres 70, redis 999, mailpit root).
+    # runs as (postgres 70, redis 999, mailpit root, openbao 100, the api 10001).
     command: >-
       python -m backend.scripts.local_ca /certs /ca-key --localhost-dir /tls/frontend
       --service postgres:/tls/postgres:70
       --service redis:/tls/redis:999
       --service mailpit:/tls/mailpit:0
+      --service openbao:/tls/openbao:100
+      --service api:/tls/api:10001
     volumes:
       - ghcr_local_ca:/certs
       - ghcr_local_ca_key:/ca-key
@@ -212,6 +229,8 @@ services:
       - ghcr_tls_postgres:/tls/postgres
       - ghcr_tls_redis:/tls/redis
       - ghcr_tls_mailpit:/tls/mailpit
+      - ghcr_tls_openbao:/tls/openbao
+      - ghcr_tls_api:/tls/api
 
   # One-shot: puts a generated SMTP password in the vault under the name the api looks it up by,
   # then exits 0.
@@ -253,9 +272,14 @@ services:
   api:
     image: *backend-image
     restart: unless-stopped
-    command: uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
+    # TLS on the hop from the UI's proxy, verified there against the local CA.
+    command: >-
+      uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
+      --ssl-certfile /tls/cert.pem --ssl-keyfile /tls/key.pem
     environment: *app-env
-    volumes: *app-volumes
+    volumes:
+      - ghcr_local_ca:/certs:ro
+      - ghcr_tls_api:/tls:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -355,6 +379,8 @@ services:
       # The SECOND of the two coordinated mode selectors (ADR 0032 decision 2) — the backend cannot
       # infer this one, and vice versa.
       DATAQ_AUTH_MODE: ${DATAQ_AUTH_MODE:-otp}
+      DATAQ_API_UPSTREAM: https://api:8000
+      DATAQ_API_UPSTREAM_CA: /certs/ca.pem
       # TLS ends here, as it does at a production edge.
       DATAQ_TLS_CERT: /tls/localhost.pem
       DATAQ_TLS_KEY: /tls/localhost.key
@@ -380,3 +406,5 @@ volumes:
   ghcr_tls_postgres:
   ghcr_tls_redis:
   ghcr_tls_mailpit:
+  ghcr_tls_openbao:
+  ghcr_tls_api:

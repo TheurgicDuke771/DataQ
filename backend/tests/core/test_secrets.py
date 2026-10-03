@@ -655,6 +655,7 @@ def _settings(**overrides: object) -> object:
         "openbao_mount": "secret",
         "openbao_role_id": None,
         "openbao_secret_id": None,
+        "openbao_ca_bundle": None,
     }
     base.update(overrides)
     return SimpleNamespace(**base)

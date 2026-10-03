@@ -117,6 +117,12 @@ Browser ──HTTPS──► CloudFront (public surface, origin secret verified 
   serves HTTPS on the same port, redirecting plain HTTP. Setting only one, or naming a
   file it cannot read, stops the container at start with the reason. The local
   prebuilt-image stack runs this way.
+- **Verifying an HTTPS API upstream (optional).** With `DATAQ_API_UPSTREAM` set to an
+  `https://` address, the frontend's proxy encrypts but does not verify the upstream
+  certificate unless `DATAQ_API_UPSTREAM_CA` names a PEM file to verify it against.
+- **A vault behind a private CA.** `OPENBAO_CA_BUNDLE` is the PEM file an `https://`
+  `OPENBAO_ADDR` is verified against, used instead of the system trust store. A path
+  that names no file stops the API at start.
 - **Observability:** the app's vendor-neutral OTLP export feeds an **ADOT collector sidecar**
   → X-Ray traces + OpenTelemetry logs in CloudWatch with matching trace ids.
 - **Deploy:** a parallel **Deploy (AWS)** workflow (`deploy-aws.yml`) — GitHub OIDC role

@@ -124,7 +124,7 @@ def test_sign_in_mail_goes_over_verified_starttls() -> None:
 
 def test_each_private_key_volume_reaches_only_its_own_service() -> None:
     names = re.findall(r"^  ([\w-]+):\n", _COMPOSE.split("\nservices:\n", 1)[1], re.MULTILINE)
-    for owner in ("frontend", "postgres", "redis", "mailpit"):
+    for owner in ("frontend", "postgres", "redis", "mailpit", "openbao", "api"):
         holders = sorted(n for n in names if f"ghcr_tls_{owner}:" in _block(n))
         assert holders == sorted({"local-ca", owner}), f"{owner}'s key is mounted by {holders}"
 
@@ -134,7 +134,9 @@ def test_every_backend_container_mounts_the_ca_it_is_told_to_verify_with() -> No
     backend = [n for n in names if _takes_app_env(n)]
     assert len(backend) == 6
     for name in backend:
-        assert "volumes: *app-volumes" in _block(name), name
+        block = _block(name)
+        mounts_ca = "volumes: *app-volumes" in block or "- ghcr_local_ca:/certs:ro" in block
+        assert mounts_ca, name
 
 
 # ── Data on disk (#2342) ─────────────────────────────────────────────────────
@@ -179,3 +181,30 @@ def test_the_alert_mailer_is_off_until_a_username_is_given() -> None:
     secret_name = "${EMAIL_USERNAME:+${EMAIL_PASSWORD_SECRET_NAME:-dataq-alert-smtp}}"
     assert f"EMAIL_PASSWORD_SECRET_NAME: {secret_name}" in _COMPOSE
     assert "EMAIL_TO: ${EMAIL_TO:-}" in _COMPOSE
+
+
+# ── No plaintext hop left inside the stack (#2338) ───────────────────────────
+
+
+def test_the_vault_is_reached_over_https_verified_against_the_local_ca() -> None:
+    assert _COMPOSE.count('OPENBAO_ADDR: "https://openbao:8200"') == 2  # the app env and vault-init
+    assert _COMPOSE.count("OPENBAO_CA_BUNDLE: /certs/ca.pem") == 2
+    openbao = _block("openbao")
+    assert '"tls_cert_file": "/tls/cert.pem"' in openbao
+    assert "tls_disable" not in openbao
+    assert "http://openbao" not in _COMPOSE
+
+
+def test_the_proxy_verifies_the_api_and_the_api_serves_tls() -> None:
+    frontend = _block("frontend")
+    assert "DATAQ_API_UPSTREAM: https://api:8000" in frontend
+    assert "DATAQ_API_UPSTREAM_CA: /certs/ca.pem" in frontend
+    assert "--ssl-certfile /tls/cert.pem --ssl-keyfile /tls/key.pem" in _block("api")
+
+
+def test_postgres_admits_network_clients_over_tls_only() -> None:
+    postgres = _block("postgres")
+    assert "hostssl all all all trust" in postgres
+    # A plain `host` line would admit a client that skipped TLS.
+    assert not re.search(r"\\nhost\s", postgres)
+    assert "hba_file=/tmp/pg_hba.conf" in postgres

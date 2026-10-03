@@ -1,3 +1,4 @@
+import ssl
 from functools import lru_cache
 from pathlib import Path
 from typing import Final, Literal
@@ -336,6 +337,9 @@ class Settings(BaseSettings):
     # AppRole auth (ADR 0039 phase 2, #1054).
     openbao_role_id: str | None = None
     openbao_secret_id: str | None = None
+    # PEM CA bundle for an `https://` OPENBAO_ADDR whose certificate chains to a private CA.
+    # Used instead of the system trust store; unset verifies against the system store.
+    openbao_ca_bundle: str | None = None
 
     # SecretStore KEY names for the webhook secrets (ADR 0006/0007/0029) — never the secret values.
     adf_webhook_secret_name: str = "adf-webhook-secret"  # noqa: S105 — KV key name, not a secret
@@ -698,6 +702,29 @@ class Settings(BaseSettings):
             )
         if problems:
             raise ValueError("; ".join(problems))
+        return self
+
+    @model_validator(mode="after")
+    def _validate_openbao_tls(self) -> "Settings":
+        """Fail at boot, not on the first secret read, on an OPENBAO_CA_BUNDLE naming no file."""
+        bundle = (self.openbao_ca_bundle or "").strip()
+        if not bundle:
+            return self
+        if not Path(bundle).is_file():
+            raise ValueError(
+                f"OPENBAO_CA_BUNDLE={bundle!r} does not name an existing file. Set it to the "
+                "PEM path your vault's certificate chains to, or clear it to use the system "
+                "trust store."
+            )
+        try:
+            # Loaded here so a file that is unreadable or not PEM stops the boot, instead of
+            # raising from inside the first secret read.
+            ssl.create_default_context(cafile=bundle)
+        except (ssl.SSLError, OSError) as exc:
+            raise ValueError(
+                f"OPENBAO_CA_BUNDLE={bundle!r} cannot be used as a CA bundle ({exc}). It must "
+                "be a readable PEM file of CA certificates."
+            ) from exc
         return self
 
     @model_validator(mode="after")

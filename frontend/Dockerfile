@@ -45,5 +45,6 @@ ENV DATAQ_API_UPSTREAM=http://api:8000 \
     DATAQ_CSP_CONNECT_SRC="https:" \
     DATAQ_HSTS="max-age=31536000; includeSubDomains" \
     DATAQ_TLS_CERT="" \
-    DATAQ_TLS_KEY=""
+    DATAQ_TLS_KEY="" \
+    DATAQ_API_UPSTREAM_CA=""
 EXPOSE 8080

@@ -173,3 +173,26 @@ describe('nginx listen + HSTS are runtime-configured', () => {
     expect(headers).toMatch(/add_header Strict-Transport-Security \$dataq_hsts always;/);
   });
 });
+
+/** An https upstream can be verified against a private CA, and is not by default. */
+describe('nginx upstream TLS verification is opt-in', () => {
+  const script = readFileSync(
+    resolve(process.cwd(), 'docker-entrypoint.d/19-dataq-listen.sh'),
+    'utf8',
+  );
+
+  it('every proxy block includes the generated upstream TLS file', () => {
+    const includes = directives.match(/include\s+\/etc\/nginx\/dataq-upstream-tls\.conf;/g) ?? [];
+    // /api, /healthz and /mcp: a block left out would proxy unverified while the others verify.
+    expect(includes).toHaveLength(3);
+  });
+
+  it('the file is empty unless a CA is configured, so existing deployments are unchanged', () => {
+    expect(script).toMatch(/if \[ -z "\$upstream_ca" \]; then\n\s+: > "\$upstream_out"/);
+  });
+
+  it('with a CA it turns verification on against that file', () => {
+    expect(script).toMatch(/proxy_ssl_verify on;/);
+    expect(script).toMatch(/proxy_ssl_trusted_certificate \$upstream_ca;/);
+  });
+});

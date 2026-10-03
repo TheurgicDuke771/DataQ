@@ -1,9 +1,30 @@
 #!/bin/sh
-# Writes the server's `listen` directives before nginx starts.
+# Writes the server's `listen` directives, and the upstream TLS verification, before nginx
+# starts.
 #
 # Unset (the default): plain HTTP on 8080, for a deployment whose edge terminates TLS.
 # DATAQ_TLS_CERT + DATAQ_TLS_KEY set: this container terminates TLS itself on the same port.
+#
+# DATAQ_API_UPSTREAM_CA set: an https:// DATAQ_API_UPSTREAM is verified against that CA file.
+# Unset: the upstream certificate is not verified (nginx's default), which is what a
+# deployment with a plain-HTTP or platform-terminated upstream wants.
 set -eu
+
+upstream_out=/etc/nginx/dataq-upstream-tls.conf
+upstream_ca="${DATAQ_API_UPSTREAM_CA:-}"
+if [ -z "$upstream_ca" ]; then
+    : > "$upstream_out"
+else
+    if [ ! -r "$upstream_ca" ]; then
+        echo "dataq: upstream CA file $upstream_ca is missing or unreadable" >&2
+        exit 1
+    fi
+    cat > "$upstream_out" <<CONF
+proxy_ssl_verify on;
+proxy_ssl_verify_depth 2;
+proxy_ssl_trusted_certificate $upstream_ca;
+CONF
+fi
 
 out=/etc/nginx/dataq-listen.conf
 cert="${DATAQ_TLS_CERT:-}"

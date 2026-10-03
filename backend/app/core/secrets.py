@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import os
+import ssl
 import threading
 import time
 from dataclasses import dataclass
@@ -396,8 +397,11 @@ class OpenBaoSecretStore:
         mount: str = "secret",
         timeout: float = _HTTP_TIMEOUT_SECONDS,
         client: httpx.Client | None = None,
+        ca_bundle: str | None = None,
     ) -> None:
         self._addr = addr.rstrip("/")
+        # A private CA for an https vault; used INSTEAD of the system trust store.
+        self._ca_bundle = (ca_bundle or "").strip() or None
         # Phase-1 static token (ADR 0039 decision 4); kept for dev and
         # non-AppRole deployments.
         self._static_token = token
@@ -428,7 +432,12 @@ class OpenBaoSecretStore:
             return self._client
         with self._lock:
             if self._client is None:
-                self._client = httpx.Client(base_url=self._addr, timeout=self._timeout)
+                verify: ssl.SSLContext | bool = True
+                if self._ca_bundle:
+                    verify = ssl.create_default_context(cafile=self._ca_bundle)
+                self._client = httpx.Client(
+                    base_url=self._addr, timeout=self._timeout, verify=verify
+                )
             return self._client
 
     def list_secrets(self) -> list[SecretInfo]:
@@ -751,6 +760,7 @@ def _build_store(settings: Settings) -> SecretStore:
             role_id=settings.openbao_role_id,
             secret_id=settings.openbao_secret_id,
             mount=settings.openbao_mount,
+            ca_bundle=settings.openbao_ca_bundle,
         )
     if settings.secret_store == _REDIS_MODE:
         # Backstop for hand-built settings that skipped the Settings validator;
