@@ -184,6 +184,43 @@ describe('RunDetail page', () => {
     expect(region.queryByText('DMF')).not.toBeInTheDocument();
   });
 
+  it('names a result whose check was deleted as a deleted check, not a raw id (#1931)', async () => {
+    mockGetRun.mockResolvedValue({
+      ...runDetail,
+      results: [{ ...runDetail.results[0], check_id: 'chk-gone-0001' }],
+    });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([check]);
+    renderAt('r1');
+    const region = screenRegion();
+
+    expect(await region.findByText('Deleted check (chk-gone)')).toBeInTheDocument();
+  });
+
+  it('does not call checks deleted when the check list failed to load (#1931)', async () => {
+    mockGetRun.mockResolvedValue(runDetail);
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockRejectedValue(new Error('forbidden'));
+    renderAt('r1');
+    const region = screenRegion();
+
+    await waitFor(() => expect(region.getByText('warn')).toBeInTheDocument());
+    expect(region.queryByText(/Deleted check/)).not.toBeInTheDocument();
+  });
+
+  it('says a completed run with no results lost them to deleted checks (#1931)', async () => {
+    mockGetRun.mockResolvedValue({ ...runDetail, status: 'succeeded', results: [] });
+    mockGetSuite.mockResolvedValue(suite);
+    mockListChecks.mockResolvedValue([]);
+    renderAt('r1');
+    const region = screenRegion();
+
+    expect(
+      await region.findByText(/This run completed, but none of its check results/),
+    ).toBeInTheDocument();
+    expect(region.queryByText(/did not complete/)).not.toBeInTheDocument();
+  });
+
   it('surfaces an Asset link that navigates to the asset (#773)', async () => {
     mockGetRun.mockResolvedValue({ ...runDetail, asset_id: 'asset-9' });
     mockGetSuite.mockResolvedValue(suite);
@@ -268,7 +305,7 @@ describe('RunDetail page', () => {
 
     await region.findByText('Orders quality');
     // The row still shows (by id) and is still expandable via sample_failures.
-    expect(region.getByText('chk-gone'.slice(0, 8))).toBeInTheDocument();
+    expect(region.getByText('Deleted check (chk-gone)')).toBeInTheDocument();
     await user.click(region.getByRole('button', { name: /expand row/i }));
 
     expect(await region.findByText(/Failing rows/)).toBeInTheDocument();

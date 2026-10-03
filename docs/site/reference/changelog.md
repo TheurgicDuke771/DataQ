@@ -71,6 +71,11 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Fixed
 
+- **A completed run with no results no longer says it did not complete.** A check's results
+  are removed when the check is deleted, so a finished run can be left with none. The run
+  page and the printed report now say that, keep "did not complete" for runs that failed
+  or were cancelled, and say a queued or running run has not finished yet.
+
 - **A batch-target preview no longer comes back empty just because signing in was slow.** The
   preview's time budget now starts when the store returns its first object, not before the
   client authenticates; a service principal's token request alone could use the whole budget.
