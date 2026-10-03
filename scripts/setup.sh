@@ -205,6 +205,17 @@ step "Seeding dev data"
 conda run -n dataq python -m backend.scripts.seed_dev
 ok "Dev data seeded"
 
+# ── Local HTTPS certificate ─────────────────────────────────────────────────── The
+# prebuilt-image stack (docker-compose.ghcr.yml) serves https://localhost:3000 from a CA it
+# generates on this machine. Trust it now so that stack opens without a browser warning.
+# Never fatal; DATAQ_TRUST_LOCAL_CA=0 skips it, and so does a run without a terminal (sudo
+# could not ask).
+if [ "${DATAQ_TRUST_LOCAL_CA:-1}" != "0" ] && [ -t 0 ]; then
+  ./scripts/local-ca.sh install || true
+else
+  echo "  Skipped trusting the local HTTPS certificate — run scripts/local-ca.sh install later."
+fi
+
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"

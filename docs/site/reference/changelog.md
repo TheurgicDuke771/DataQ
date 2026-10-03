@@ -25,7 +25,8 @@ the per-PR history lives in the repo's commit log and pull requests.
 - **The prebuilt-image stack publishes only the UI, over HTTPS.** `docker-compose.ghcr.yml`
   now runs the way a production deployment does: the UI on `:3000` is the only way in, it
   serves HTTPS with a certificate from a CA the stack generates on first start (your browser
-  warns until you trust it; plain HTTP redirects), and the API is reached through it at
+  warns until you trust it — `scripts/local-ca.sh install` does that, and `uninstall`
+  reverses it; plain HTTP redirects), and the API is reached through it at
   `https://localhost:3000/api` (MCP at `https://localhost:3000/mcp/`).
   The API (`:8000`), Postgres (`:5432`), Redis (`:6379`), the vault (`:8200`) and the mail
   catcher's SMTP port (`:1025`) no longer have host ports, and the interactive API page at

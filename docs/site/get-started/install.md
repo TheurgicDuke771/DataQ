@@ -39,9 +39,21 @@ code in the bundled inbox at **`http://localhost:8025`**.
 - **HTTPS with a local certificate.** On first start the stack generates its own
   certificate authority (*DataQ Local Dev CA*) and a certificate for `localhost`, and the
   UI serves HTTPS with it, so the session cookie is `Secure` as it is in production.
-  Your browser does not know this CA, so it warns once; accept the warning to continue.
-  For `curl`, the CLI or an MCP client, copy the CA certificate out and point the client
-  at it:
+  Your browser does not know this CA, so it warns once; accept the warning to continue,
+  or trust the CA on this machine and the warning goes away:
+
+    ```bash
+    curl -O https://raw.githubusercontent.com/TheurgicDuke771/DataQ/main/scripts/local-ca.sh
+    bash local-ca.sh install      # asks for sudo; `uninstall` reverses it, `status` reports
+    ```
+
+  It adds the CA to the macOS System keychain, or to the system CA store on Debian/Ubuntu
+  and Fedora/RHEL, and to Firefox's own store when the NSS `certutil` tool is installed
+  (otherwise it prints the manual step; on Windows it prints the `certutil` command). It
+  trusts only a certificate named *DataQ Local Dev CA*, and if you decline `sudo` the
+  stack keeps working with the warning. Run `uninstall` before `down -v`, or the old CA
+  stays trusted after its stack is gone. To point a single client at the CA instead
+  (`curl`, the CLI, an MCP client), copy the certificate out:
 
     ```bash
     docker compose -f docker-compose.ghcr.yml cp frontend:/certs/ca.pem dataq-local-ca.pem
@@ -229,6 +241,9 @@ conda activate dataq
 docker-compose up      # Postgres + Redis + FastAPI (:8000) + React (:3000) + Celery
                        #   + Mailpit (:8025), the local inbox for sign-in codes
 ```
+
+`setup.sh` also offers to trust the local HTTPS certificate the prebuilt-image stack uses
+(it asks for `sudo`; `DATAQ_TRUST_LOCAL_CA=0` skips it, and declining is harmless).
 
 `setup.sh` asks **which address may sign in** and writes the answer to your gitignored
 `.env` as `DATAQ_SIGNIN_EMAIL`. That address is allow-listed *and* made a workspace
