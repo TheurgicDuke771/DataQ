@@ -28,8 +28,7 @@ docker compose -f docker-compose.ghcr.yml up
 This pulls the published images from GHCR and brings up Postgres + Redis + the API +
 Celery worker + the UI + a local mail catcher, runs migrations, and seeds demo data.
 Open **`http://localhost:3000`**, type the address you exported, and read the 6-digit
-code in the bundled inbox at **`http://localhost:8025`**. API + Swagger at
-`http://localhost:8000/docs`.
+code in the bundled inbox at **`http://localhost:8025`**.
 
 - **Sign-in works with no SMTP relay.** The stack bundles its own mailbox
   ([Mailpit](https://mailpit.axllent.org), MIT), so DataQ's real mailer runs its real
@@ -37,10 +36,17 @@ code in the bundled inbox at **`http://localhost:8025`**. API + Swagger at
   internet. No mailbox has to exist; nothing leaves the host.
 - **Multi-arch:** the images are `linux/amd64` + `linux/arm64`, so Apple Silicon runs
   native (not emulated).
-- **Loopback-only:** every port binds to `127.0.0.1` — the stack is reachable from your
-  own machine but never the LAN. That matters more than usual for `:8025`, which serves
-  live sign-in codes to anyone who can reach it. **Not for production** — a real deploy
-  uses the OpenTofu stack (`deploy/terraform/azure`, ADR 0024).
+- **One way in, as in production:** the UI on `:3000` is the only published surface. The
+  API has no host port; it is reached through the UI at `http://localhost:3000/api`, and
+  MCP clients connect to `http://localhost:3000/mcp/`. The database, Redis and the vault
+  are reachable only inside the compose network. The interactive API page is off, as it
+  is on a production deployment; the [API reference](../reference/rest-api.md) is published
+  with these docs.
+- **Loopback-only:** both published ports (`:3000` and the inbox on `:8025`) bind to
+  `127.0.0.1` — the stack is reachable from your own machine but never the LAN. That
+  matters more than usual for `:8025`, which serves live sign-in codes to anyone who can
+  reach it. **Not for production** — a real deploy uses the OpenTofu stack
+  (`deploy/terraform/azure`, ADR 0024).
 - **Try it on real data:** add `--profile demo` to the `up` command. It also starts a
   sample warehouse (PostgreSQL) holding a small shop dataset with deliberate defects, and
   connects DataQ to it: a connection named *Demo warehouse (PostgreSQL)*, two suites
