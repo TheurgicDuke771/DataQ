@@ -1,0 +1,162 @@
+<browser_instruction># Claude in Chrome browser automation
+
+You have access to browser automation tools (mcp__claude-in-chrome__*) for interacting with web pages in Chrome. Follow these guidelines for effective browser automation.
+
+## Loading deferred tools
+
+If the mcp__claude-in-chrome__* tools are deferred (must be loaded via ToolSearch before use), load every tool you expect to need in ONE ToolSearch call — the select query accepts a comma-separated list — never one call per tool. Start with the core set:
+
+ToolSearch with query "select:mcp__claude-in-chrome__tabs_context_mcp,mcp__claude-in-chrome__navigate,mcp__claude-in-chrome__computer,mcp__claude-in-chrome__read_page,mcp__claude-in-chrome__tabs_create_mcp,mcp__claude-in-chrome__tabs_close_mcp"
+
+Add task-specific tools to the same call when the task obviously needs them: read_console_messages / read_network_requests for debugging, form_input for forms, gif_creator for recordings, javascript_tool for page scripting.
+
+## GIF recording
+
+When performing multi-step browser interactions that the user may want to review or share, use mcp__claude-in-chrome__gif_creator to record them.
+
+You must ALWAYS:
+* Capture extra frames before and after taking actions to ensure smooth playback
+* Name the file meaningfully to help the user identify it later (e.g., "login_process.gif")
+
+## Console log debugging
+
+You can use mcp__claude-in-chrome__read_console_messages to read console output. Console output may be verbose. If you are looking for specific log entries, use the 'pattern' parameter with a regex-compatible pattern. This filters results efficiently and avoids overwhelming output. For example, use pattern: "[MyApp]" to filter for application-specific logs rather than reading all console output.
+
+## Alerts and dialogs
+
+IMPORTANT: Do not trigger JavaScript alerts, confirms, prompts, or browser modal dialogs through your actions. These browser dialogs block all further browser events and will prevent the extension from receiving any subsequent commands. Instead, when possible, use console.log for debugging and then use the mcp__claude-in-chrome__read_console_messages tool to read those log messages. If a page has dialog-triggering elements:
+1. Avoid clicking buttons or links that may trigger alerts (e.g., "Delete" buttons with confirmation dialogs)
+2. If you must interact with such elements, warn the user first that this may interrupt the session
+3. Use mcp__claude-in-chrome__javascript_tool to check for and dismiss any existing dialogs before proceeding
+
+If you accidentally trigger a dialog and lose responsiveness, inform the user they need to manually dismiss it in the browser.
+
+## Avoid rabbit holes and loops
+
+When using browser automation tools, stay focused on the specific task. If you encounter any of the following, stop and ask the user for guidance:
+- Unexpected complexity or tangential browser exploration
+- Browser tool calls failing or returning errors after 2-3 attempts
+- No response from the browser extension
+- Page elements not responding to clicks or input
+- Pages not loading or timing out
+- Unable to complete the browser task despite multiple approaches
+
+Explain what you attempted, what went wrong, and ask how the user would like to proceed. Do not keep retrying the same failing browser action or explore unrelated pages without checking in first.
+
+## Tab context and session startup
+
+IMPORTANT: At the start of each browser automation session, call mcp__claude-in-chrome__tabs_context_mcp first to get information about the user's current browser tabs. Use this context to understand what the user might want to work with before creating new tabs.
+
+Never reuse tab IDs from a previous/other session. Follow these guidelines:
+1. Only reuse an existing tab if the user explicitly asks to work with it
+2. Otherwise, create a new tab with mcp__claude-in-chrome__tabs_create_mcp
+3. If a tool returns an error indicating the tab doesn't exist or is invalid, call tabs_context_mcp to get fresh tab IDs
+4. When a tab is closed by the user or a navigation error occurs, call tabs_context_mcp to see what tabs are available</browser_instruction>
+
+
+<pasted_content id="560a">
+Everything this session is either merged or waiting on CI with auto-merge on. Nothing was torn down, and the teardown plan hasn't been written yet. I also saved the session state to memory. Here is the handoff:
+
+---
+
+**Written for:** the next Claude session picking up this work.
+
+# DataQ: handoff (2026-09-30)
+
+## Problem statement
+DataQ is retiring **our own** AWS, Azure, Snowflake and Databricks dev/test estate (the harness, the reference deployments and their credentials). The **product keeps its cloud support** and cloud hosting stays the preferred production option; only our infrastructure goes. The planned order:
+1. Deploy and live-verify both clouds. **Done.**
+2. Write a detailed teardown plan and execute nothing. **Next.**
+3. Execute the teardown step by step, only after the user approves.
+4. Then:
+   - epic #2220 (two local paths after the teardown);
+   - ADR 0047 automatic-coverage phases 3c and 4;
+   - docs examples;
+   - follow-ups;
+   - a refresh of `docs/progress.md` and CLAUDE.md §13;
+   - housekeeping.
+
+## Standing rules (from the user; mandatory)
+- **Credentials:**
+  - Never commit a credential.
+  - Read secrets inline only (command substitution straight into the command that uses them); never print them or write them to files.
+  - Never `cat` or parse `secrets.sh`; only `source` it inline.
+- **Infrastructure:**
+  - **Confirm before any cloud or infrastructure change.**
+  - Log every infrastructure change in `docs/ops-log.md` with UTC timestamps. Write "maintainer's IP", never the address.
+  - Never touch the harness ADF triggers (`tr_orders_landed`, `tr_customers_daily`); both are `Stopped`.
+- **Before every push:**
+  - Run the **whole** frontend suite (`pnpm test:coverage`) and the whole backend suite (`pytest backend/tests`; no `-n`).
+  - Never run two test suites at once; they share one database and corrupt each other.
+  - Confirm each push with `git ls-remote`.
+  - No `--no-verify`, no force-push. Revise an open PR with `fixup:` commits.
+- **Workflow:**
+  - One functionality per commit.
+  - Prove each regression test fails without its fix.
+  - Run `/code-review --comment low` on every PR.
+  - Fix each finding in the PR or file an issue.
+  - Squash-merge with auto-merge.
+  - Every issue and PR gets a milestone.
+- Published docs (`docs/site/`) may not cite ticket numbers.
+- The local shell is fish.
+
+## Done this session
+- **Deploys:** both clouds run `7257c0ff`. Automatic coverage is off on both (Azure `f53de47d`, AWS `dd5ca985`). The Cognito admin password was reset.
+- **Pre-teardown verification:** every batch of cloud-only checks passed (Snowflake, Unity Catalog, Azure, AWS). Every scratch resource was removed and logged. Ops-log PRs: #2298, #2301, #2305, #2316. The #2224 checklist is updated.
+- **Can't be verified on this estate** (recorded in #2224):
+  - Fabric, OneLake, and Cosmos through a Fabric mirror;
+  - the `OBJECT_DEPENDENCIES` lineage fallback;
+  - reading UniForm data;
+  - the audit-purge delete path;
+  - the secret-sweep purge mode;
+  - the WAF rate limit under load;
+  - the `PERF_ICEBERG` memory tier.
+- **#2314 (PR #2318): merged, issue closed.** An expired or invalid Snowflake programmatic access token (PAT) is now classified as a credential problem.
+- **#2315 (PR #2319, auto-merge):** Snowflake connections that use a PAT now show its expiry date, via a shared `core.credential_expiry.jwt_expiry` that Trino also uses. A token whose expiry is out of range reads as "no expiry" instead of crashing. Databricks stays "no readable lifetime": its tokens are opaque and its token-list API can't identify a connection's token. That determination is on the issue. Full suite: 8160 passed.
+- **#2320 (PR #2321, auto-merge):**
+  - **Bug:** when `playwright install-deps` timed out, the `apt-get` it started (under `sudo -- sh -c`) survived and held the dpkg lock, so both retries failed.
+  - **Fix:** after a failed attempt, kill the leftover `apt-get`, wait up to 60 s for the lock, run `dpkg --configure -a`, and set apt's HTTP timeout to 30 s.
+  - **Proof:** the orphan was reproduced in an `ubuntu:24.04` container.
+  - **Seen on:** #2317 and on main after #2318 merged; the failed main job was re-run.
+- **#2317 (UniForm docs):** CI green on re-run, auto-merge on.
+
+## Check first in the next session
+1. PRs #2317, #2319 and #2321 are merged; issues #2315 and #2320 are closed. If the E2E job fails on #2320 again before #2321 lands, re-run it.
+2. Main CI is green, including the re-run E2E job of run `36755732077`.
+3. Update `docs/progress.md` for this session's PRs (#2317, #2318, #2319, #2321) and refresh its Snapshot counts.
+
+## Next: write the teardown plan (execute nothing without approval)
+The plan must settle **state disposition first**, then set the destroy order. For each item it should give the exact commands, verification, rollback, and the ops-log entry.
+
+| Issue | Scope | Key concern |
+|---|---|---|
+| **#2308** | Harness OpenTofu state | Plaintext and the **only copy**. Decide whether to archive (encrypted) or discard it **before** any destroy. A blanket harness apply arms the ADF triggers, so use `-target` and check they are still stopped. |
+| **#2306** | AWS stack | OpenTofu state, the GitHub deploy role, IAM users, repo config (secrets and variables such as `AWS_FRONTEND_URL`, `deploy-aws.yml`). Includes Cognito, Secrets Manager, SES identities, the demo tokens in SSM `/dataq/demo/*`, and the S3 buckets. |
+| **#2307** | Databricks | Workspace objects and tokens. The token expires around 2026-09-30, and the Free Edition workspace needs no other action. |
+| **#588** | Harness Snowflake leg | Retire cleanly: the loader and DataQ roles, warehouses, the `RETAIL`/`ANALYTICS` databases, the dbt lineage job, and the matching connection secrets in Key Vault. **Run it before the Azure destroy.** |
+| **#590** | Azure | The reference deployment (Container Apps env, apps, Key Vault, App Insights, the Entra app registrations), the shared Postgres, the harness (ADF, Airflow apps, ADLS, the dbt job), and GitHub OIDC config. Last in the order. |
+
+Also open for the platform lanes: #2224 (epic for re-verifying once a cloud test instance exists), #1384/#1385 (AWS security issues that the destroy makes moot; close them with that reason), and #2260/#2275 (in Backlog by the user's choice).
+
+## After the teardown
+- Epic #2220: two local paths, the authless contributor stack plus a production-like OTP stack.
+- ADR 0047 phases 3c and 4.
+- Docs examples.
+- The Week 7 burn-down (#2070, #1987, #1979, #1931, #1930, #1929, #1735, #1734, #1688, #1686, #1669, #1667, #1664, #1558, #1557, #1556, #1516).
+- Week 8 (#1668, #1660, #1334, cycle epic #1518, due 2026-10-15).
+- Refresh `docs/progress.md` and CLAUDE.md §13 to say our cloud estate is retired and the product still supports the clouds.
+
+---
+
+The same state is in memory under `project_teardown_handoff_2026-09-30.md`.
+</pasted_content id="560a">
+
+---
+
+<task-notification>
+<task-id>b3m9g9fxs</task-id>
+<tool-use-id>toolu_01K23D8uhwvf2zKBx1wwrSNR</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/f220bea8-6daa-4830-9143-a1eec4cc36dd/tasks/b3m9g9fxs.output</output-file>
+<status>completed</status>
+<summary>Background command "Run the whole frontend suite, then the whole backend suite, sequentially" completed (exit code 0)</summary>
+</task-notification>
