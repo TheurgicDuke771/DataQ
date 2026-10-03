@@ -65,6 +65,11 @@ from backend.app.core.secrets import (
 #: type it — it goes vault → api process → SMTP AUTH and nowhere else.
 _PASSWORD_BYTES = 32
 
+#: Marks a password this script generated for the catcher. The vault now outlives a
+#: restart, so a generated value can still be there after the operator points the mailer
+#: at a real relay; unmarked, it would read as "already set" while every send failed.
+_GENERATED_PREFIX = "local-catcher-"
+
 #: Hosts that are the bundled mail catcher, which accepts any password.
 _CATCHER_HOSTS = frozenset({"mailpit", "localhost", "127.0.0.1"})
 
@@ -96,34 +101,35 @@ def _signin(store: SecretStore) -> int:
     # container logs buys nothing, and a value that flows out of
     # `auth_email_password_secret_name` is `py/clear-text-logging-sensitive-data`
     # by taint. The store's own log lines still carry the key where a diagnosis needs it.
+    host = (settings.auth_email_smtp_host or "").strip().lower()
     try:
-        store.get(name)
+        stored = store.get(name)
     except SecretNotFoundError:
-        pass
+        stored = None
     except SecretStoreUnavailableError as exc:
         # An outage must never be reportable as "not set" (ADR 0039 decision 6) —
         # writing on top of an unreadable store could clobber a real credential.
         print(f"secret store unavailable while reading the SMTP secret: {exc}", file=sys.stderr)
         return 1
-    else:
+    generated = stored is not None and stored.startswith(_GENERATED_PREFIX)
+    if stored is not None and (host in _CATCHER_HOSTS or not generated):
         print(
             "the secret named by AUTH_EMAIL_PASSWORD_SECRET_NAME is already set "
             "— left untouched."
         )
         return 0
 
-    host = (settings.auth_email_smtp_host or "").strip().lower()
     if host not in _CATCHER_HOSTS:
         # A made-up password would be rejected by a real relay, and would then look "set".
         print(
-            "AUTH_EMAIL_SMTP_HOST is not the bundled mail catcher and no SMTP password is "
+            "AUTH_EMAIL_SMTP_HOST is not the bundled mail catcher and no password for it is "
             "stored: sign-in mail cannot be sent. Start once with DATAQ_SMTP_PASSWORD set to "
             "the relay's password.",
             file=sys.stderr,
         )
         return 0
     try:
-        store.set(name, secrets.token_urlsafe(_PASSWORD_BYTES))
+        store.set(name, _GENERATED_PREFIX + secrets.token_urlsafe(_PASSWORD_BYTES))
     except (SecretWriteError, SecretStoreUnavailableError) as exc:
         print(f"could not write the SMTP secret: {exc}", file=sys.stderr)
         return 1

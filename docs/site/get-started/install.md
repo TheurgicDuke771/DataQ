@@ -290,8 +290,10 @@ keep `DATAQ_SIGNIN_EMAIL` set and override the same key names in the **root `.en
 ```
 DATAQ_SIGNIN_EMAIL=you@example.com
 AUTH_EMAIL_SMTP_HOST=smtp.example.com
-AUTH_EMAIL_TLS_MODE=starttls          # the from-source stack's catcher default is `none`
-AUTH_EMAIL_CA_BUNDLE=                 # prebuilt-image stack only: see below
+# the from-source stack's catcher default is `none`
+AUTH_EMAIL_TLS_MODE=starttls
+# prebuilt-image stack only (see below); nothing may follow the `=`, not even a comment
+AUTH_EMAIL_CA_BUNDLE=
 ```
 
 On the **prebuilt-image stack** the catcher is reached over STARTTLS and verified against
@@ -308,12 +310,16 @@ compose file (or export the variables) and start the stack:
 
 ```
 DATAQ_SIGNIN_EMAIL=you@example.com
-AUTH_EMAIL_SMTP_HOST=smtp.gmail.com     # Microsoft 365 / Outlook: smtp.office365.com
+# Microsoft 365 / Outlook: smtp.office365.com
+AUTH_EMAIL_SMTP_HOST=smtp.gmail.com
 AUTH_EMAIL_SMTP_PORT=587
 AUTH_EMAIL_USERNAME=you@example.com
 AUTH_EMAIL_FROM=you@example.com
-AUTH_EMAIL_CA_BUNDLE=                   # empty: check the relay against the public CAs
-DATAQ_SMTP_PASSWORD=<the relay password> # needed on the first start only
+# empty, so the relay is checked against the public CAs. Nothing may follow the `=`:
+# a comment on this line would become the value.
+AUTH_EMAIL_CA_BUNDLE=
+# needed on the first start only
+DATAQ_SMTP_PASSWORD=<the relay password>
 ```
 
 - **The password is handed over once.** `DATAQ_SMTP_PASSWORD` is read by a start-up
@@ -335,8 +341,10 @@ DATAQ_SMTP_PASSWORD=<the relay password> # needed on the first start only
 ```
 EMAIL_SMTP_HOST=smtp.gmail.com
 EMAIL_USERNAME=you@example.com
-EMAIL_TO=team@example.com                # comma-separated recipients
-DATAQ_ALERT_SMTP_PASSWORD=<the relay password>   # first start only
+# comma-separated recipients
+EMAIL_TO=team@example.com
+# first start only
+DATAQ_ALERT_SMTP_PASSWORD=<the relay password>
 ```
 
 `.env.app` is still the file for **host-side dev** (uvicorn on your own machine, which
