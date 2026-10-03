@@ -55,6 +55,12 @@ code in the bundled inbox at **`http://localhost:8025`**.
   `docker compose -f docker-compose.ghcr.yml restart frontend`. Plain
   `http://localhost:3000` redirects to
   HTTPS. The inbox on `:8025` stays plain HTTP on loopback.
+- **Check it yourself.** `scripts/local-smoke.sh` (fetch it the same way as the compose
+  file, and run it beside it) smokes the running stack the way a deployment is smoked
+  after a roll: the certificate verifies against the stack's CA, plain HTTP redirects,
+  the API and MCP refuse an anonymous caller, only the UI and the inbox have a host
+  port, a real sign-in, read and write work with a `Secure` cookie, Postgres and Redis
+  are on TLS, and a burst is rate-limited. It exits non-zero if any check fails.
 - **One way in, as in production:** the UI on `:3000` is the only published surface. The
   API has no host port; it is reached through the UI at `https://localhost:3000/api`, and
   MCP clients connect to `https://localhost:3000/mcp/`. The database, Redis and the vault
