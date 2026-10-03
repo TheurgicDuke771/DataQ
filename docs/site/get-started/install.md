@@ -72,9 +72,12 @@ code in the bundled inbox at **`http://localhost:8025`**.
   `sslmode=verify-full`, Redis over `rediss://` (its plain port is off), and the mail
   catcher over STARTTLS, each verified against the same local CA, and each server holds
   a certificate for its own hostname only, with a key no other container can read. These
-  are the client code paths a managed database, cache and mail relay use in production.
-  Still plain inside the compose network: the API to the bundled vault, and the UI's
-  proxy to the API.
+  The vault is reached over HTTPS and the UI's proxy talks to the API over TLS, both
+  verified the same way, and Postgres refuses a network client that is not on TLS.
+  These are the client code paths a managed database, cache, vault and mail relay use
+  in production. Two things stay plain by design: the inbox page on `:8025`, and the
+  demo profile's sample warehouse, which stands in for a warehouse of your own (the
+  connection's TLS setting is the control there).
 - **Check it yourself.** `scripts/local-smoke.sh` (fetch it the same way as the compose
   file, and run it beside it) smokes the running stack the way a deployment is smoked
   after a roll: the certificate verifies against the stack's CA, plain HTTP redirects,

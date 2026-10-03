@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import os
 import secrets
+import ssl
 import sys
 import time
 from pathlib import Path
@@ -79,8 +80,13 @@ def _policy(mount: str) -> str:
 
 
 class _Vault:
-    def __init__(self, addr: str, client: httpx.Client | None = None) -> None:
-        self._client = client or httpx.Client(base_url=addr, timeout=10.0)
+    def __init__(
+        self, addr: str, client: httpx.Client | None = None, ca_bundle: str | None = None
+    ) -> None:
+        verify: ssl.SSLContext | bool = True
+        if ca_bundle:
+            verify = ssl.create_default_context(cafile=ca_bundle)
+        self._client = client or httpx.Client(base_url=addr, timeout=10.0, verify=verify)
         self.root: str | None = None
 
     def call(
@@ -116,7 +122,7 @@ def init(
     directory: Path, *, addr: str, mount: str, app_token: str, vault: _Vault | None = None
 ) -> dict[str, str]:
     """Make the running vault usable by the app. Returns what was done."""
-    vault = vault or _Vault(addr)
+    vault = vault or _Vault(addr, ca_bundle=os.environ.get("OPENBAO_CA_BUNDLE") or None)
     root_file = directory / ROOT_FILE
     done = {"vault": "kept", "mount": "kept", "access": "kept"}
 

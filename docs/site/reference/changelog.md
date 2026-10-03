@@ -32,8 +32,8 @@ the per-PR history lives in the repo's commit log and pull requests.
   catcher's SMTP port (`:1025`) no longer have host ports, and the interactive API page at
   `/docs` is off. Point scripts that called `http://localhost:8000` at
   `https://localhost:3000` and give them the CA certificate (see Getting started). Inside
-  the stack, Postgres, Redis and the mail catcher are now reached over TLS verified
-  against the same CA. The inbox
+  the stack, Postgres, Redis, the mail catcher, the vault and the API are all reached
+  over TLS verified against the same CA, and Postgres refuses a client without it. The inbox
   stays at `http://localhost:8025`. The from-source stack (`docker-compose.yml`) is unchanged.
 
 - **The prebuilt-image stack keeps its data in a directory.** `docker-compose.ghcr.yml`
