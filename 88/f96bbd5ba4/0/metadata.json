@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "88f96bbd5ba4",
+  "session_id": "74829028-9017-4495-b6d8-8af5ee63f84a",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-03T07:32:46.982629Z",
+  "branch": "feature/issue-2326-eval-stack-sole-ingress",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/core/test_eval_stack_ingress.py"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-fable-5-1",
+  "turn_id": "8aed57f3ebbe",
+  "checkpoint_transcript_start": 155,
+  "transcript_lines_at_start": 155,
+  "compact_transcript_start": 25,
+  "token_usage": {
+    "input_tokens": 56,
+    "cache_creation_tokens": 60414,
+    "cache_read_tokens": 5831516,
+    "output_tokens": 21413,
+    "api_call_count": 28
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-03T07:32:46.950463Z",
+    "agent_lines": 54,
+    "agent_removed": 0,
+    "human_added": 31,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 85,
+    "total_lines_changed": 103,
+    "agent_percentage": 52.42718446601942,
+    "metric_version": 2
+  }
+}
