@@ -11,6 +11,7 @@ from backend.app.core.auth import DEV_BYPASS_AAD_OID, DEV_BYPASS_EMAIL, _upsert_
 from backend.app.core.config import Settings
 from backend.app.db.models import User
 from backend.app.services.membership_service import MembershipDeniedError
+from backend.scripts import seed_dev
 from backend.scripts.demo_data import ensure_seed_user
 
 # The prebuilt-image stack's default: email codes for one address, the bypass off.
@@ -58,3 +59,19 @@ def test_seeding_the_owner_twice_keeps_one_row(db_session: Any) -> None:
         select(func.count()).select_from(User).where(func.lower(User.email) == DEV_BYPASS_EMAIL)
     )
     assert count == 1
+
+
+def test_e2e_fixtures_are_seeded_only_where_their_tokens_can_land(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("DATAQ_ROLE_TOKENS_PATH", raising=False)
+    # The published image: no frontend/e2e directory.
+    monkeypatch.setattr(seed_dev, "ROLE_TOKENS_PATH", tmp_path / "absent" / ".role-tokens.json")
+    assert seed_dev._e2e_fixtures_wanted() is False
+    # A source checkout.
+    monkeypatch.setattr(seed_dev, "ROLE_TOKENS_PATH", tmp_path / ".role-tokens.json")
+    assert seed_dev._e2e_fixtures_wanted() is True
+    # A named destination (the docs capture stack).
+    monkeypatch.setattr(seed_dev, "ROLE_TOKENS_PATH", tmp_path / "absent" / ".role-tokens.json")
+    monkeypatch.setenv("DATAQ_ROLE_TOKENS_PATH", str(tmp_path / "absent" / "t.json"))
+    assert seed_dev._e2e_fixtures_wanted() is True

@@ -137,6 +137,15 @@ _ROLE_FIXTURES = (
 )
 
 
+def _e2e_fixtures_wanted() -> bool:
+    """Whether to seed the Playwright fixtures: only from a source checkout (where
+    `frontend/e2e` exists to receive the tokens) or when a destination is named. The
+    published image has neither, and an evaluator's stack should not carry test users
+    holding live tokens.
+    """
+    return bool(os.environ.get("DATAQ_ROLE_TOKENS_PATH")) or ROLE_TOKENS_PATH.parent.is_dir()
+
+
 def _seed_role_fixtures(session: Session, *, owner: User) -> int:
     """Provision a member + a viewer, share a suite with each, and mint a PAT.
 
@@ -251,8 +260,10 @@ def seed() -> None:
         # with varied checks, a cross-user share) for the UI / E2E smoke.
         summary = seed_demo_data(session, owner=user, secret_store=get_secret_store())
         operator_shares = _share_with_otp_operators(session, owner=user, settings=settings)
-        _seed_role_fixtures(session, owner=user)
-        offboard_target = _seed_offboard_target(session)
+        offboard_target = None
+        if _e2e_fixtures_wanted():
+            _seed_role_fixtures(session, owner=user)
+            offboard_target = _seed_offboard_target(session)
         print(
             "Seeded dev data: "
             f"user={user.email} probe_connection={connection.name} "
