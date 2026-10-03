@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "a0a7db8e115f",
+  "strategy": "manual-commit",
+  "branch": "feature/local-data-dir",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/scripts/local_vault.py",
+    "backend/tests/scripts/test_local_vault.py",
+    "docker-compose.ghcr.yml",
+    "docs/site/get-started/install.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/a0/a7db8e115f/0/metadata.json",
+      "transcript": "/a0/a7db8e115f/0/full.jsonl",
+      "compact_transcript": "/a0/a7db8e115f/0/transcript.jsonl",
+      "content_hash": "/a0/a7db8e115f/0/content_hash.txt",
+      "prompt": "/a0/a7db8e115f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 20,
+    "cache_creation_tokens": 12340,
+    "cache_read_tokens": 5142063,
+    "output_tokens": 8349,
+    "api_call_count": 10
+  }
+}
