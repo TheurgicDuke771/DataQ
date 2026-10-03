@@ -72,7 +72,8 @@ the per-PR history lives in the repo's commit log and pull requests.
 ### Fixed
 
 - **A completed run with no results no longer says it did not complete.** A check's results
-  are removed when the check is deleted, so a finished run can be left with none. The run
+  are removed when the check is deleted, so a finished run can be left with none (as can a
+  run of a suite that had no checks). The run
   page and the printed report now say that, keep "did not complete" for runs that failed
   or were cancelled, and say a queued or running run has not finished yet.
 

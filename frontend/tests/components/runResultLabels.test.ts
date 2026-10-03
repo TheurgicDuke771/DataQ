@@ -1,13 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
-import { checkLabel, noResultsMessage } from '../../src/components/results/runResultLabels';
+import {
+  checkExportName,
+  checkLabel,
+  noResultsMessage,
+} from '../../src/components/results/runResultLabels';
 
 describe('noResultsMessage', () => {
   it('does not call a run that completed incomplete', () => {
     // A check's results are deleted with the check, so a finished run can have none left.
     const message = noResultsMessage('succeeded');
     expect(message).toMatch(/This run completed/);
-    expect(message).toMatch(/removed when the check is deleted/);
+    // Both possible causes: the run cannot tell a deletion from a suite that had no checks.
+    expect(message).toMatch(/had no checks when it ran/);
+    expect(message).toMatch(/have been deleted since/);
     expect(message).not.toMatch(/did not complete/);
   });
 
@@ -34,5 +40,15 @@ describe('checkLabel', () => {
   it('claims nothing when the check list could not be loaded', () => {
     // Every check is "missing" then; calling them all deleted would be false.
     expect(checkLabel(undefined, 'abcdef0123456789', false)).toBe('abcdef01');
+  });
+});
+
+describe('checkExportName', () => {
+  it('keeps the full id in an export, so the row can still be joined to a check', () => {
+    expect(checkExportName(undefined, 'abcdef0123456789', true)).toBe(
+      'Deleted check (abcdef0123456789)',
+    );
+    expect(checkExportName(undefined, 'abcdef0123456789', false)).toBe('abcdef0123456789');
+    expect(checkExportName('Orders not null', 'abcdef0123456789', true)).toBe('Orders not null');
   });
 });

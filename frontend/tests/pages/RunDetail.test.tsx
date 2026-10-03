@@ -216,7 +216,7 @@ describe('RunDetail page', () => {
     const region = screenRegion();
 
     expect(
-      await region.findByText(/This run completed, but none of its check results/),
+      await region.findByText(/This run completed and has no check results/),
     ).toBeInTheDocument();
     expect(region.queryByText(/did not complete/)).not.toBeInTheDocument();
   });

@@ -24,7 +24,11 @@ import { IncidentEvidenceDrawer } from '../components/assets/IncidentEvidenceDra
 import { EngineTag } from '../components/checks/checkBadges';
 import { CheckTrend } from '../components/checks/CheckTrend';
 import { ComparisonResultDetail } from '../components/results/ComparisonResultDetail';
-import { checkLabel, noResultsMessage } from '../components/results/runResultLabels';
+import {
+  checkExportName,
+  checkLabel,
+  noResultsMessage,
+} from '../components/results/runResultLabels';
 import { SnoozedTag } from '../components/checks/snooze';
 import {
   anomalyColdStartHint,
@@ -302,7 +306,7 @@ function DownloadMenu({
   checksKnown: boolean;
 }) {
   const stem = `${toFilenameStem(suiteName ?? 'run')}_run_${run.id.slice(0, 8)}`;
-  const checkName = (id: string) => checkLabel(checks.get(id)?.name, id, checksKnown);
+  const checkName = (id: string) => checkExportName(checks.get(id)?.name, id, checksKnown);
   const expectation = (id: string) => checks.get(id)?.expectation_type ?? '';
 
   const exportCsv = () => {
