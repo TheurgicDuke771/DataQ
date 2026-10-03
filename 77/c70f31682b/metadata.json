@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "77c70f31682b",
+  "strategy": "manual-commit",
+  "branch": "feature/local-data-dir",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/scripts/local_vault.py",
+    "backend/tests/scripts/test_local_vault.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/77/c70f31682b/0/metadata.json",
+      "transcript": "/77/c70f31682b/0/full.jsonl",
+      "compact_transcript": "/77/c70f31682b/0/transcript.jsonl",
+      "content_hash": "/77/c70f31682b/0/content_hash.txt",
+      "prompt": "/77/c70f31682b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 90,
+    "cache_creation_tokens": 481091,
+    "cache_read_tokens": 20860433,
+    "output_tokens": 42427,
+    "api_call_count": 45
+  }
+}
