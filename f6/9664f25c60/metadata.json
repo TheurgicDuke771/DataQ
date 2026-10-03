@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "f69664f25c60",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-2336-real-mailbox",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/scripts/seed_local_smtp_secret.py",
+    "backend/tests/core/test_seed_local_smtp_secret.py",
+    "docs/site/get-started/install.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f6/9664f25c60/0/metadata.json",
+      "transcript": "/f6/9664f25c60/0/full.jsonl",
+      "compact_transcript": "/f6/9664f25c60/0/transcript.jsonl",
+      "content_hash": "/f6/9664f25c60/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 6,
+    "cache_creation_tokens": 5208,
+    "cache_read_tokens": 1647488,
+    "output_tokens": 4690,
+    "api_call_count": 3
+  }
+}
