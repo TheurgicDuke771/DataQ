@@ -109,7 +109,19 @@ code in the bundled inbox at **`http://localhost:8025`**.
   Take the compose file from the same release (replace `main` with `vX.Y.Z` in the
   download URL) and pin both images: the file and the images change together, and a
   newer file with older images does not start.
-- **Reset:** `docker compose -f docker-compose.ghcr.yml --profile demo down -v` (drops the seeded DB and the sample warehouse).
+- **Your data lives in a directory.** The database, the sample warehouse and the vault
+  write to `./dataq-data` beside the compose file; set `DATAQ_DATA_DIR` to an absolute
+  path to keep it elsewhere. Connections, suites, results and the credentials you enter
+  survive a restart, `down -v` and a Docker reset, and the directory can be backed up or
+  moved while the stack is stopped. The vault unseals itself from a key file in that
+  directory, so there is no unseal step, and `OPENBAO_TOKEN` may change between starts:
+  the new token replaces the old one. **That convenience has a cost:** the key, the
+  vault's root token and the data sit together, so anyone who can read the directory can
+  read every stored credential. Treat it like a password file; a production deployment
+  uses a managed secret store instead.
+- **Reset:** `docker compose -f docker-compose.ghcr.yml --profile demo down -v`, then
+  delete the data directory (`rm -rf dataq-data`). `down -v` alone removes only the
+  certificates.
 - Omitting `DATAQ_SIGNIN_EMAIL` stops the stack and says so — there is no no-sign-in
   default to fall into.
 
