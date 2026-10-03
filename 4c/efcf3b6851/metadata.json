@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "4cefcf3b6851",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1929-sql-generate-panel",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/site/guides/ai-features.md",
+    "docs/site/reference/changelog.md",
+    "frontend/src/pages/CheckNew.tsx",
+    "frontend/tests/pages/CheckNew.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/4c/efcf3b6851/0/metadata.json",
+      "transcript": "/4c/efcf3b6851/0/full.jsonl",
+      "compact_transcript": "/4c/efcf3b6851/0/transcript.jsonl",
+      "content_hash": "/4c/efcf3b6851/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 16,
+    "cache_creation_tokens": 10177,
+    "cache_read_tokens": 5731575,
+    "output_tokens": 5816,
+    "api_call_count": 8
+  }
+}
