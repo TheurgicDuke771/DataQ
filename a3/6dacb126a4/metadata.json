@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "a36dacb126a4",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1930-clear-thresholds",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/checks.py",
+    "backend/app/mcp/server.py",
+    "backend/app/services/check_service.py",
+    "backend/tests/api/test_checks.py",
+    "backend/tests/mcp/test_mcp_tools.py",
+    "docs/site/reference/api-compatibility.md",
+    "docs/site/reference/changelog.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/a3/6dacb126a4/0/metadata.json",
+      "transcript": "/a3/6dacb126a4/0/full.jsonl",
+      "compact_transcript": "/a3/6dacb126a4/0/transcript.jsonl",
+      "content_hash": "/a3/6dacb126a4/0/content_hash.txt",
+      "prompt": "/a3/6dacb126a4/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 64,
+    "cache_creation_tokens": 646303,
+    "cache_read_tokens": 19766520,
+    "output_tokens": 24065,
+    "api_call_count": 32
+  }
+}
