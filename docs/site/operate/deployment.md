@@ -109,6 +109,14 @@ Browser ──HTTPS──► CloudFront (public surface, origin secret verified 
   CSP's `connect-src` to your identity provider's origins with `DATAQ_CSP_CONNECT_SRC` — for
   Cognito that is **two** hosts (the issuer for discovery/JWKS, the hosted-UI domain for the
   token exchange); the permissive `https:` default keeps sign-in working if you don't.
+  `DATAQ_HSTS` holds the `Strict-Transport-Security` value (default one year with
+  subdomains); set it empty to omit the header.
+- **TLS at the frontend container (optional).** Both reference deployments end TLS at the
+  cloud edge, so the image listens on plain HTTP by default. Where nothing sits in front,
+  set `DATAQ_TLS_CERT` and `DATAQ_TLS_KEY` to PEM files mounted into the container and it
+  serves HTTPS on the same port, redirecting plain HTTP. Setting only one, or naming a
+  file it cannot read, stops the container at start with the reason. The local
+  prebuilt-image stack runs this way.
 - **Observability:** the app's vendor-neutral OTLP export feeds an **ADOT collector sidecar**
   → X-Ray traces + OpenTelemetry logs in CloudWatch with matching trace ids.
 - **Deploy:** a parallel **Deploy (AWS)** workflow (`deploy-aws.yml`) — GitHub OIDC role

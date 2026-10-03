@@ -25,6 +25,9 @@ COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 # Security headers (#1387), `include`d from the template above.
 COPY nginx-security-headers.conf /etc/nginx/nginx-security-headers.conf
+# Writes the `listen` directives (plain, or TLS when a certificate is configured) before the
+# image's own 20-envsubst step.
+COPY docker-entrypoint.d/19-dataq-listen.sh /docker-entrypoint.d/19-dataq-listen.sh
 # Opt into the nginx image's built-in resolver detection: its 15-local-resolvers.envsh only exports
 # ${NGINX_LOCAL_RESOLVERS} (the /etc/resolv.conf nameservers, used by the proxy `resolver`
 # directive) when this flag is set.
@@ -39,5 +42,8 @@ ENV DATAQ_API_UPSTREAM=http://api:8000 \
     DATAQ_AUTH_SCOPE="" \
     DATAQ_AUTH_LOGOUT_STYLE="" \
     DATAQ_ORIGIN_SECRET="" \
-    DATAQ_CSP_CONNECT_SRC="https:"
+    DATAQ_CSP_CONNECT_SRC="https:" \
+    DATAQ_HSTS="max-age=31536000; includeSubDomains" \
+    DATAQ_TLS_CERT="" \
+    DATAQ_TLS_KEY=""
 EXPOSE 8080

@@ -1,9 +1,10 @@
 # Serve the built SPA AND reverse-proxy the API + MCP to the backend.
 
 # The client-facing scheme, forwarded upstream (#1138). Prefer the edge's
-# X-Forwarded-Proto (this hop never terminates TLS, so $scheme is always `http`
-# and would strip cookie-`Secure` on live HTTPS — ADR 0032); fall back to
-# $scheme only on a direct connection (compose / docker run).
+# X-Forwarded-Proto (behind an edge this hop does not terminate TLS, so $scheme is
+# `http` and would strip cookie-`Secure` on live HTTPS — ADR 0032); fall back to
+# $scheme on a direct connection, where it is `https` when this container holds the
+# certificate.
 
 # The origin-secret guard's static "<secret>:<secret>" map key is 81 bytes with the
 # 40-char terraform secret — over the 64-byte default bucket size, which ABORTS nginx
@@ -28,6 +29,13 @@ map $host $dataq_csp {
     default "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self' blob:; connect-src 'self' ${DATAQ_CSP_CONNECT_SRC}";
 }
 
+# ── HSTS ──────────────────────────────────────────────────────────────────────
+# Runtime, because HSTS binds a HOST, not a port: on `localhost` it would force HTTPS on
+# every other local port for the max-age. Empty turns the header off.
+map $host $dataq_hsts {
+    default "${DATAQ_HSTS}";
+}
+
 # ── Origin-secret guard (#1355) ───────────────────────────────────────────────
 # When DATAQ_ORIGIN_SECRET is set, every request must carry the matching
 # X-DataQ-Origin-Secret header or be 403'd. Two-level map encoding: with the
@@ -49,7 +57,9 @@ map "$dataq_origin_bad:$uri" $dataq_origin_reject {
 }
 
 server {
-    listen 8080;
+    # `listen` (and TLS, when DATAQ_TLS_CERT/KEY are set) — written at startup by
+    # docker-entrypoint.d/19-dataq-listen.sh.
+    include /etc/nginx/dataq-listen.conf;
     server_name _;
     root /usr/share/nginx/html;
     index index.html;

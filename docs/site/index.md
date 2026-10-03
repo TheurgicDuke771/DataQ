@@ -70,7 +70,7 @@ export DATAQ_SIGNIN_EMAIL=you@example.com        # the address allowed to sign i
 docker compose -f docker-compose.ghcr.yml up
 ```
 
-Open `http://localhost:3000`, type the address you exported, and read the six-digit code in the
+Open `https://localhost:3000` (accept the warning for the locally generated certificate), type the address you exported, and read the six-digit code in the
 bundled inbox at `http://localhost:8025`. The stack comes up migrated and seeded with demo
 data; nothing leaves your machine. Full flow, other sign-in modes and the from-source path:
 [Install](get-started/install.md).
