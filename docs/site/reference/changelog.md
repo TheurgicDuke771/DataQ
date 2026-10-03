@@ -36,6 +36,13 @@ the per-PR history lives in the repo's commit log and pull requests.
   against the same CA. The inbox
   stays at `http://localhost:8025`. The from-source stack (`docker-compose.yml`) is unchanged.
 
+- **The prebuilt-image stack keeps its data in a directory.** `docker-compose.ghcr.yml`
+  stores the database, the sample warehouse and the vault under `./dataq-data`
+  (`DATAQ_DATA_DIR` moves it) instead of Docker volumes, and the vault is no longer
+  in-memory: stored credentials survive a restart. Data in the previous `ghcr_postgres_data`
+  volume is not migrated; the stack starts fresh in the new directory. To reset, run
+  `down -v` and delete the directory.
+
 ### Added
 
 - **Python client and CLI (`dataq-client`).** Install the wheel attached to the release (or the

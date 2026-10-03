@@ -195,3 +195,6 @@ frontend/reports/mutation/
 # that too and silently swallows any new file added under it.
 /site/
 frontend/e2e/.role-tokens.json
+
+# The prebuilt-image stack's data directory (docker-compose.ghcr.yml, DATAQ_DATA_DIR default).
+dataq-data/

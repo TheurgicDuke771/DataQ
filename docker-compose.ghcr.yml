@@ -1,6 +1,6 @@
 # DataQ — run from prebuilt GHCR images, NO source checkout required (#472).
 #
-#   export OPENBAO_TOKEN=$(openssl rand -hex 16)     # one-off (secret store)
+#   export OPENBAO_TOKEN=$(openssl rand -hex 16)     # the app's vault token (may change per start)
 #   export DATAQ_SIGNIN_EMAIL=you@example.com        # who may sign in (#1150)
 #   docker compose -f docker-compose.ghcr.yml up
 #
@@ -81,9 +81,10 @@ services:
         condition: service_completed_successfully
     volumes:
       - ghcr_tls_postgres:/tls:ro
-      # Distinct from docker-compose.yml's volume: this stack runs trust-auth, so it must never
-      # reuse a password-initialized data dir (auth config is fixed at init time).
-      - ghcr_postgres_data:/var/lib/postgresql/data
+      # A directory on the host, beside this file unless DATAQ_DATA_DIR says otherwise: the data
+      # is visible, can be backed up or moved, and outlives `down -v`. Never point it at the
+      # from-source stack's data: this stack runs trust-auth, and auth is fixed at init time.
+      - ${DATAQ_DATA_DIR:-./dataq-data}/postgres:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U dataq"]
       interval: 5s
@@ -110,21 +111,61 @@ services:
       timeout: 3s
       retries: 10
 
-  # Credential store (ADR 0039).
+  # Credential store (ADR 0039). OpenBao on integrated storage in the data directory, unsealed
+  # by a key file beside it, so stored credentials survive a restart with no operator step.
+  # A convenience for a stack on your own machine: the key and the data share a directory, so
+  # whoever can read it can read every stored credential.
+  vault-prepare:
+    image: *backend-image
+    restart: "no"
+    user: "0:0"
+    # 100:1000 is the `openbao` user of the image below, which must be able to read the key.
+    command: python -m backend.scripts.local_vault prepare /vault 100:1000
+    volumes:
+      - ${DATAQ_DATA_DIR:-./dataq-data}/openbao:/vault
+
   openbao:
     image: openbao/openbao:2.6.1
     restart: unless-stopped
+    # Starts as root so the image's entrypoint can take ownership of the data directory; it
+    # then drops to the unprivileged `openbao` user.
+    user: "0:0"
+    command: server
     environment:
-      # No default: a credential must never ship in a tracked file (CLAUDE.md §11).
-      BAO_DEV_ROOT_TOKEN_ID: ${OPENBAO_TOKEN:?required — see the header of this file (ADR 0039)}
-      BAO_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
-    cap_add:
-      - IPC_LOCK           # lock memory so secrets cannot be swapped to disk
+      BAO_LOCAL_CONFIG: >-
+        {"storage": {"raft": {"path": "/openbao/file/raft", "node_id": "local"}},
+        "listener": [{"tcp": {"address": "0.0.0.0:8200", "tls_disable": true}}],
+        "seal": [{"static": {"current_key_id": "local-1", "current_key": "file:///openbao/file/seal.key"}}],
+        "api_addr": "http://openbao:8200", "cluster_addr": "http://openbao:8201",
+        "disable_mlock": true}
+    volumes:
+      - ${DATAQ_DATA_DIR:-./dataq-data}/openbao:/openbao/file
+    depends_on:
+      vault-prepare:
+        condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "bao", "status", "-address=http://127.0.0.1:8200"]
+      # `bao status` exits 0 unsealed, 2 sealed (a brand-new vault, until vault-init runs), 1 on
+      # error. Healthy means the server answers; vault-init makes it usable.
+      test: ["CMD-SHELL", "bao status -address=http://127.0.0.1:8200 >/dev/null 2>&1; [ $$? -ne 1 ]"]
       interval: 5s
       timeout: 3s
       retries: 10
+
+  # One-shot: initializes a fresh vault, mounts the KV engine, and makes OPENBAO_TOKEN a token
+  # that can use that mount and nothing else. Idempotent.
+  vault-init:
+    image: *backend-image
+    restart: "no"
+    user: "0:0"
+    command: python -m backend.scripts.local_vault init /vault
+    environment:
+      OPENBAO_ADDR: "http://openbao:8200"
+      OPENBAO_TOKEN: ${OPENBAO_TOKEN:?required — see the header of this file (ADR 0039)}
+    volumes:
+      - ${DATAQ_DATA_DIR:-./dataq-data}/openbao:/vault
+    depends_on:
+      openbao:
+        condition: service_healthy
 
   # ── Bundled mail catcher — the local mailbox for OTP sign-in (#1150) ─────────
   # Mailpit (MIT — rule 40 / ADR 0031 clear) catches every message DataQ sends and
@@ -186,8 +227,8 @@ services:
       DATAQ_ALERT_SMTP_PASSWORD: ${DATAQ_ALERT_SMTP_PASSWORD:-}
     volumes: *app-volumes
     depends_on:
-      openbao:
-        condition: service_healthy
+      vault-init:
+        condition: service_completed_successfully
       # Settings refuses to load while AUTH_EMAIL_CA_BUNDLE names a file that is not there yet.
       local-ca:
         condition: service_completed_successfully
@@ -206,8 +247,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      openbao:
-        condition: service_healthy
+      vault-init:
+        condition: service_completed_successfully
 
   api:
     image: *backend-image
@@ -220,8 +261,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      openbao:
-        condition: service_healthy
+      vault-init:
+        condition: service_completed_successfully
       migrate:
         condition: service_completed_successfully
       otp-mail-secret:
@@ -241,8 +282,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      openbao:
-        condition: service_healthy
+      vault-init:
+        condition: service_completed_successfully
       migrate:
         condition: service_completed_successfully
       otp-mail-secret:
@@ -261,8 +302,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      openbao:
-        condition: service_healthy
+      vault-init:
+        condition: service_completed_successfully
       migrate:
         condition: service_completed_successfully
       otp-mail-secret:
@@ -282,7 +323,7 @@ services:
       POSTGRES_USER: demo
       POSTGRES_DB: shop
     volumes:
-      - ghcr_demo_warehouse_data:/var/lib/postgresql/data
+      - ${DATAQ_DATA_DIR:-./dataq-data}/demo-warehouse:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U demo -d shop"]
       interval: 5s
@@ -303,8 +344,8 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
-      openbao:
-        condition: service_healthy
+      vault-init:
+        condition: service_completed_successfully
 
   # The UI image (nginx), and the stack's only public surface.
   frontend:
@@ -333,11 +374,9 @@ services:
         condition: service_completed_successfully
 
 volumes:
-  ghcr_postgres_data:
   ghcr_local_ca:
   ghcr_local_ca_key:
   ghcr_tls_frontend:
   ghcr_tls_postgres:
   ghcr_tls_redis:
   ghcr_tls_mailpit:
-  ghcr_demo_warehouse_data:

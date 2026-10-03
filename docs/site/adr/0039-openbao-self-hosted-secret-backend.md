@@ -6,6 +6,17 @@
 
 Extends the `SecretStore` seam of ADR [0010](0010-provider-agnostic-infrastructure-seams.md) with a fourth backend; amends nothing — the production Azure Key Vault choice of ADR [0024](0024-app-deployment-infrastructure.md) stands.
 
+> **Amendment (2026-10-03): the prebuilt-image stack's vault is persistent.** The
+> consequence below, "dev-mode OpenBao is in-memory", still describes the from-source
+> stack. `docker-compose.ghcr.yml` now runs OpenBao on integrated (raft) storage in the
+> stack's data directory, auto-unsealed by a **static seal** key file, which removes the
+> objection recorded there (a persistent vault needing a manual unseal on every boot). A
+> one-shot initializes a fresh vault, mounts KV v2, and makes `OPENBAO_TOKEN` an orphan
+> token bound to a policy for that mount only, so the app no longer holds a root token
+> there. The trade is stated to the user: the seal key and the root token sit beside the
+> data, so the directory is as sensitive as the credentials in it. The contract of
+> decision 1 is unchanged: the app still speaks the KV v2 API with a token.
+
 ## Context
 
 `SecretStore` ([`backend/app/core/secrets.py`](https://github.com/TheurgicDuke771/DataQ/blob/main/backend/app/core/secrets.py)) has carried three implementations since Week 2:

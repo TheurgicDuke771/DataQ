@@ -137,6 +137,32 @@ def test_every_backend_container_mounts_the_ca_it_is_told_to_verify_with() -> No
         assert "volumes: *app-volumes" in _block(name), name
 
 
+# ── Data on disk (#2342) ─────────────────────────────────────────────────────
+
+_DATA_DIR = "${DATAQ_DATA_DIR:-./dataq-data}"
+
+
+def test_the_databases_and_the_vault_keep_their_data_in_the_data_directory() -> None:
+    assert f"- {_DATA_DIR}/postgres:/var/lib/postgresql/data" in _block("postgres")
+    assert f"- {_DATA_DIR}/demo-warehouse:/var/lib/postgresql/data" in _block("demo-warehouse")
+    assert f"- {_DATA_DIR}/openbao:/openbao/file" in _block("openbao")
+
+
+def test_the_vault_is_not_in_dev_mode() -> None:
+    """Dev mode is in-memory: every stored credential would be lost on restart."""
+    assert "BAO_DEV_" not in _COMPOSE
+    openbao = _block("openbao")
+    assert '"raft"' in openbao
+    assert '"static"' in openbao
+
+
+def test_app_containers_wait_for_a_usable_vault_not_just_a_listening_one() -> None:
+    names = re.findall(r"^  ([\w-]+):\n", _COMPOSE.split("\nservices:\n", 1)[1], re.MULTILINE)
+    for name in (n for n in names if _takes_app_env(n)):
+        block = _block(name)
+        assert "vault-init:\n        condition: service_completed_successfully" in block, name
+
+
 # ── Real mailboxes (#2336) ───────────────────────────────────────────────────
 
 
