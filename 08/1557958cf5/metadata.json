@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "081557958cf5",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-2328-eval-stack-internal-tls",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/scripts/local_ca.py",
+    "backend/tests/core/test_eval_stack_ingress.py",
+    "backend/tests/scripts/test_local_ca.py",
+    "docker-compose.ghcr.yml",
+    "docs/site/get-started/install.md",
+    "docs/site/reference/changelog.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/08/1557958cf5/0/metadata.json",
+      "transcript": "/08/1557958cf5/0/full.jsonl",
+      "compact_transcript": "/08/1557958cf5/0/transcript.jsonl",
+      "content_hash": "/08/1557958cf5/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 26,
+    "cache_creation_tokens": 33002,
+    "cache_read_tokens": 4740720,
+    "output_tokens": 26656,
+    "api_call_count": 13
+  }
+}
