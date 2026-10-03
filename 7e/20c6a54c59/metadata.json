@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "7e20c6a54c59",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1929-sql-generate-panel",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "frontend/e2e-docs/screenshots.spec.ts",
+    "frontend/e2e-docs/videos.spec.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/7e/20c6a54c59/0/metadata.json",
+      "transcript": "/7e/20c6a54c59/0/full.jsonl",
+      "compact_transcript": "/7e/20c6a54c59/0/transcript.jsonl",
+      "content_hash": "/7e/20c6a54c59/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 6,
+    "cache_creation_tokens": 2797,
+    "cache_read_tokens": 2170072,
+    "output_tokens": 1332,
+    "api_call_count": 3
+  }
+}
