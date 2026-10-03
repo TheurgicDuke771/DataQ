@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "d0a6e668adf5",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-2330-local-smoke",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/scripts/local_ca.py",
+    "backend/tests/core/test_eval_stack_ingress.py",
+    "backend/tests/scripts/test_local_ca.py",
+    "docker-compose.ghcr.yml",
+    "docs/site/get-started/install.md",
+    "docs/site/reference/changelog.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/d0/a6e668adf5/0/metadata.json",
+      "transcript": "/d0/a6e668adf5/0/full.jsonl",
+      "compact_transcript": "/d0/a6e668adf5/0/transcript.jsonl",
+      "content_hash": "/d0/a6e668adf5/0/content_hash.txt",
+      "prompt": "/d0/a6e668adf5/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 6,
+    "cache_creation_tokens": 2121,
+    "cache_read_tokens": 1267851,
+    "output_tokens": 1038,
+    "api_call_count": 3
+  }
+}
