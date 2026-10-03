@@ -49,7 +49,11 @@ code in the bundled inbox at **`http://localhost:8025`**.
     ```
 
   The CA's private key stays in a volume that only the generator mounts, and the CA
-  survives restarts; `down -v` removes it. Plain `http://localhost:3000` redirects to
+  survives restarts; `down -v` removes it. The `localhost` certificate lasts a year and
+  is renewed when the stack is started within 30 days of its expiry; a UI container
+  that was already running keeps the old one until
+  `docker compose -f docker-compose.ghcr.yml restart frontend`. Plain
+  `http://localhost:3000` redirects to
   HTTPS. The inbox on `:8025` stays plain HTTP on loopback.
 - **One way in, as in production:** the UI on `:3000` is the only published surface. The
   API has no host port; it is reached through the UI at `https://localhost:3000/api`, and
@@ -75,6 +79,9 @@ code in the bundled inbox at **`http://localhost:8025`**.
   port and is reachable only inside the compose network.
 - **Pin a release** instead of the moving stable tags:
   `DATAQ_BACKEND_TAG=vX.Y.Z DATAQ_FRONTEND_TAG=vX.Y.Z docker compose -f docker-compose.ghcr.yml up`.
+  Take the compose file from the same release (replace `main` with `vX.Y.Z` in the
+  download URL) and pin both images: the file and the images change together, and a
+  newer file with older images does not start.
 - **Reset:** `docker compose -f docker-compose.ghcr.yml --profile demo down -v` (drops the seeded DB and the sample warehouse).
 - Omitting `DATAQ_SIGNIN_EMAIL` stops the stack and says so — there is no no-sign-in
   default to fall into.
