@@ -52,3 +52,9 @@ def test_the_stack_runs_prod_settings_by_default() -> None:
 
 def test_no_service_runs_a_reloader() -> None:
     assert "--reload" not in _COMPOSE
+
+
+def test_every_ports_key_is_in_the_form_the_guard_reads() -> None:
+    """`_published_ports` reads block-style lists only; an inline list would slip past it."""
+    lines = re.findall(r"^[ \t]*ports:.*$", _COMPOSE, re.MULTILINE)
+    assert lines == ["    ports:"] * len(_published_ports())
