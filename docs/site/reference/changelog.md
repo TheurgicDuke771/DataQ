@@ -30,7 +30,9 @@ the per-PR history lives in the repo's commit log and pull requests.
   The API (`:8000`), Postgres (`:5432`), Redis (`:6379`), the vault (`:8200`) and the mail
   catcher's SMTP port (`:1025`) no longer have host ports, and the interactive API page at
   `/docs` is off. Point scripts that called `http://localhost:8000` at
-  `https://localhost:3000` and give them the CA certificate (see Getting started). The inbox
+  `https://localhost:3000` and give them the CA certificate (see Getting started). Inside
+  the stack, Postgres, Redis and the mail catcher are now reached over TLS verified
+  against the same CA. The inbox
   stays at `http://localhost:8025`. The from-source stack (`docker-compose.yml`) is unchanged.
 
 ### Added

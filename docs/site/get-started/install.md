@@ -55,6 +55,13 @@ code in the bundled inbox at **`http://localhost:8025`**.
   `docker compose -f docker-compose.ghcr.yml restart frontend`. Plain
   `http://localhost:3000` redirects to
   HTTPS. The inbox on `:8025` stays plain HTTP on loopback.
+- **TLS inside the stack too.** The API, worker and scheduler reach Postgres with
+  `sslmode=verify-full`, Redis over `rediss://` (its plain port is off), and the mail
+  catcher over STARTTLS, each verified against the same local CA, and each server holds
+  a certificate for its own hostname only, with a key no other container can read. These
+  are the client code paths a managed database, cache and mail relay use in production.
+  Still plain inside the compose network: the API to the bundled vault, and the UI's
+  proxy to the API.
 - **One way in, as in production:** the UI on `:3000` is the only published surface. The
   API has no host port; it is reached through the UI at `https://localhost:3000/api`, and
   MCP clients connect to `https://localhost:3000/mcp/`. The database, Redis and the vault
