@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "177e284f7cbb",
+  "session_id": "74829028-9017-4495-b6d8-8af5ee63f84a",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-03T07:25:12.270146Z",
+  "branch": "docs/adr-0032-uniform-response-kept",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/site/adr/0032-email-otp-signin.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-fable-5-1",
+  "turn_id": "8aed57f3ebbe",
+  "checkpoint_transcript_start": 140,
+  "transcript_lines_at_start": 140,
+  "compact_transcript_start": 23,
+  "token_usage": {
+    "input_tokens": 4,
+    "cache_creation_tokens": 1827,
+    "cache_read_tokens": 343529,
+    "output_tokens": 1646,
+    "api_call_count": 2
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-03T07:25:12.250364Z",
+    "agent_lines": 15,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 15,
+    "total_lines_changed": 15,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
