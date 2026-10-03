@@ -27,7 +27,7 @@ docker compose -f docker-compose.ghcr.yml up
 
 This pulls the published images from GHCR and brings up Postgres + Redis + the API +
 Celery worker + the UI + a local mail catcher, runs migrations, and seeds demo data.
-Open **`http://localhost:3000`**, type the address you exported, and read the 6-digit
+Open **`https://localhost:3000`**, type the address you exported, and read the 6-digit
 code in the bundled inbox at **`http://localhost:8025`**.
 
 - **Sign-in works with no SMTP relay.** The stack bundles its own mailbox
@@ -36,9 +36,24 @@ code in the bundled inbox at **`http://localhost:8025`**.
   internet. No mailbox has to exist; nothing leaves the host.
 - **Multi-arch:** the images are `linux/amd64` + `linux/arm64`, so Apple Silicon runs
   native (not emulated).
+- **HTTPS with a local certificate.** On first start the stack generates its own
+  certificate authority (*DataQ Local Dev CA*) and a certificate for `localhost`, and the
+  UI serves HTTPS with it, so the session cookie is `Secure` as it is in production.
+  Your browser does not know this CA, so it warns once; accept the warning to continue.
+  For `curl`, the CLI or an MCP client, copy the CA certificate out and point the client
+  at it:
+
+    ```bash
+    docker compose -f docker-compose.ghcr.yml cp frontend:/certs/ca.pem dataq-local-ca.pem
+    curl --cacert dataq-local-ca.pem https://localhost:3000/healthz
+    ```
+
+  The CA's private key stays in a volume that only the generator mounts, and the CA
+  survives restarts; `down -v` removes it. Plain `http://localhost:3000` redirects to
+  HTTPS. The inbox on `:8025` stays plain HTTP on loopback.
 - **One way in, as in production:** the UI on `:3000` is the only published surface. The
-  API has no host port; it is reached through the UI at `http://localhost:3000/api`, and
-  MCP clients connect to `http://localhost:3000/mcp/`. The database, Redis and the vault
+  API has no host port; it is reached through the UI at `https://localhost:3000/api`, and
+  MCP clients connect to `https://localhost:3000/mcp/`. The database, Redis and the vault
   are reachable only inside the compose network. The interactive API page is off, as it
   is on a production deployment; the [API reference](../reference/rest-api.md) is published
   with these docs.

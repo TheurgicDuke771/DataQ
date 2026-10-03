@@ -58,3 +58,30 @@ def test_every_ports_key_is_in_the_form_the_guard_reads() -> None:
     """`_published_ports` reads block-style lists only; an inline list would slip past it."""
     lines = re.findall(r"^[ \t]*ports:.*$", _COMPOSE, re.MULTILINE)
     assert lines == ["    ports:"] * len(_published_ports())
+
+
+def _block(service: str) -> str:
+    match = re.search(
+        rf"^  {re.escape(service)}:\n((?:    .*\n|\n| *#.*\n)*)", _COMPOSE, re.MULTILINE
+    )
+    assert match, service
+    return match.group(1)
+
+
+def test_the_ui_terminates_tls_and_sends_no_hsts() -> None:
+    frontend = _block("frontend")
+    assert "DATAQ_TLS_CERT: /certs/localhost.pem" in frontend
+    assert "DATAQ_TLS_KEY: /certs/localhost.key" in frontend
+    # HSTS binds the host `localhost`, not the port: it would force HTTPS on the inbox too.
+    assert 'DATAQ_HSTS: ""' in frontend
+
+
+def test_only_the_generator_mounts_the_ca_private_key() -> None:
+    holders = [
+        name
+        for name in re.findall(
+            r"^  ([\w-]+):\n", _COMPOSE.split("\nservices:\n", 1)[1], re.MULTILINE
+        )
+        if "ghcr_local_ca_key:" in _block(name)
+    ]
+    assert holders == ["local-ca"]

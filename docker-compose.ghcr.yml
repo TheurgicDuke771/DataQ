@@ -6,6 +6,9 @@
 #
 # Add `--profile demo` for a sample warehouse that is already connected, with suites that run.
 #
+# Open https://localhost:3000. The certificate comes from a CA generated on first start, so
+# the browser warns until you trust it (see the install guide).
+#
 # Signs you in with an emailed one-time code (ADR 0032); read the code at the
 # bundled inbox http://localhost:8025. Omitting DATAQ_SIGNIN_EMAIL stops the stack.
 #
@@ -106,6 +109,18 @@ services:
       # Loopback ONLY, and more strictly than the rest of this file: this inbox holds LIVE sign-in
       # codes for every allow-listed address, behind no authentication at all.
       - "127.0.0.1:8025:8025"   # web inbox — open this to read your code
+
+  # One-shot: a local certificate authority and a `localhost` certificate, generated on first
+  # start into a volume and kept across restarts. root only so it can write the fresh volumes.
+  # The CA private key has a volume of its own that no other service mounts.
+  local-ca:
+    image: *backend-image
+    restart: "no"
+    user: "0:0"
+    command: python -m backend.scripts.local_ca /certs /ca-key
+    volumes:
+      - ghcr_local_ca:/certs
+      - ghcr_local_ca_key:/ca-key
 
   # One-shot: puts a generated SMTP password in the vault under the name the api looks it up by,
   # then exits 0.
@@ -235,11 +250,24 @@ services:
       # The SECOND of the two coordinated mode selectors (ADR 0032 decision 2) — the backend cannot
       # infer this one, and vice versa.
       DATAQ_AUTH_MODE: ${DATAQ_AUTH_MODE:-otp}
+      # TLS ends here, as it does at a production edge.
+      DATAQ_TLS_CERT: /certs/localhost.pem
+      DATAQ_TLS_KEY: /certs/localhost.key
+      # Off: HSTS binds the host `localhost`, not this port, and would force HTTPS on the
+      # inbox (:8025) and anything else you run locally.
+      DATAQ_HSTS: ""
     ports:
       - "127.0.0.1:3000:8080"
+    volumes:
+      - ghcr_local_ca:/certs:ro
     depends_on:
-      - api
+      api:
+        condition: service_started
+      local-ca:
+        condition: service_completed_successfully
 
 volumes:
   ghcr_postgres_data:
+  ghcr_local_ca:
+  ghcr_local_ca_key:
   ghcr_demo_warehouse_data:

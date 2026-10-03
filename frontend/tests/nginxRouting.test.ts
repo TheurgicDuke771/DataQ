@@ -145,3 +145,31 @@ describe('nginx security headers (#1387 add_header inheritance)', () => {
     expect(directives).toMatch(/server_tokens\s+off;/);
   });
 });
+
+/** TLS at this container is optional and decided at startup, never baked into the template. */
+describe('nginx listen + HSTS are runtime-configured', () => {
+  it('takes its listen directives from the file the entrypoint script writes', () => {
+    expect(directives).toMatch(/include\s+\/etc\/nginx\/dataq-listen\.conf;/);
+    expect(directives, 'a hardcoded listen would double-bind the port').not.toMatch(
+      /^\s*listen\s/m,
+    );
+  });
+
+  it('the entrypoint script serves plain HTTP unless a certificate is configured', () => {
+    const script = readFileSync(
+      resolve(process.cwd(), 'docker-entrypoint.d/19-dataq-listen.sh'),
+      'utf8',
+    );
+    expect(script).toMatch(/printf 'listen 8080;\\n'/);
+    expect(script).toMatch(/listen 8080 ssl;/);
+    // A plain-HTTP request to the TLS port is redirected, keeping the host's published port.
+    expect(script).toMatch(/error_page 497 =308 https:\/\/\\\$http_host\\\$request_uri;/);
+  });
+
+  it('HSTS is a runtime value, so a localhost stack can turn it off', () => {
+    // HSTS binds a host, not a port: hardcoded, it would force HTTPS on every localhost port.
+    expect(directives).toMatch(/map \$host \$dataq_hsts \{\s*default "\$\{DATAQ_HSTS\}";/);
+    const headers = readFileSync(resolve(process.cwd(), 'nginx-security-headers.conf'), 'utf8');
+    expect(headers).toMatch(/add_header Strict-Transport-Security \$dataq_hsts always;/);
+  });
+});
