@@ -17,13 +17,18 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { type Incident, listIncidents } from '../api/incidents';
-import { getRun, type Result, type ResultStatus } from '../api/runs';
+import { getRun, type Result, type ResultStatus, type RunStatus } from '../api/runs';
 import { type Check, getSuite, listChecks } from '../api/suites';
 import { AssetLink } from '../components/assets/AssetLink';
 import { IncidentEvidenceDrawer } from '../components/assets/IncidentEvidenceDrawer';
 import { EngineTag } from '../components/checks/checkBadges';
 import { CheckTrend } from '../components/checks/CheckTrend';
 import { ComparisonResultDetail } from '../components/results/ComparisonResultDetail';
+import {
+  checkExportName,
+  checkLabel,
+  noResultsMessage,
+} from '../components/results/runResultLabels';
 import { SnoozedTag } from '../components/checks/snooze';
 import {
   anomalyColdStartHint,
@@ -72,7 +77,12 @@ export function RunDetail() {
     // rather than failing the whole page.
     const [suite, checks, incidents] = await Promise.all([
       getSuite(run.suite_id).catch(() => null),
-      listChecks(run.suite_id).catch(() => [] as Check[]),
+      // `known: false` when the list could not be read: a check missing from it is then not
+      // known to be deleted.
+      listChecks(run.suite_id).then(
+        (list) => ({ list, known: true }),
+        () => ({ list: [] as Check[], known: false }),
+      ),
       // Incident linkage (#1634): reuses the existing `/incidents` list read — no new endpoint.
       // Null asset (targetless suite, or an older/operationally-failed run) has nothing to link;
       // likewise a run with no breaching (warn/fail/critical) result has nothing an incident tag
@@ -83,7 +93,13 @@ export function RunDetail() {
           )
         : Promise.resolve([] as Incident[]),
     ]);
-    return { run, suiteName: suite?.name ?? null, checks, incidents };
+    return {
+      run,
+      suiteName: suite?.name ?? null,
+      checks: checks.list,
+      checksKnown: checks.known,
+      incidents,
+    };
   });
 
   const back = () => navigate('/results');
@@ -132,6 +148,7 @@ export function RunDetail() {
               run={state.data.run}
               suiteName={state.data.suiteName}
               checks={state.data.checks}
+              checksKnown={state.data.checksKnown}
               incidents={state.data.incidents}
             />
           )}
@@ -142,6 +159,7 @@ export function RunDetail() {
           run={state.data.run}
           suiteName={state.data.suiteName}
           checks={state.data.checks}
+          checksKnown={state.data.checksKnown}
         />
       )}
     </>
@@ -152,11 +170,13 @@ function RunDetailBody({
   run,
   suiteName,
   checks,
+  checksKnown,
   incidents,
 }: {
   run: Awaited<ReturnType<typeof getRun>>;
   suiteName: string | null;
   checks: Check[];
+  checksKnown: boolean;
   incidents: Incident[];
 }) {
   const checksById = useMemo(() => {
@@ -191,7 +211,12 @@ function RunDetailBody({
           {/* Links back to the asset this run executed against (#773). */}
           <AssetLink assetId={run.asset_id} />
         </Flex>
-        <DownloadMenu run={run} suiteName={suiteName} checks={checksById} />
+        <DownloadMenu
+          run={run}
+          suiteName={suiteName}
+          checks={checksById}
+          checksKnown={checksKnown}
+        />
       </Flex>
 
       {/* Equal-width cards that fill the row so its right edge lines up with the
@@ -230,6 +255,8 @@ function RunDetailBody({
 
       <ResultsTable
         results={run.results}
+        runStatus={run.status}
+        checksKnown={checksKnown}
         checks={checksById}
         suiteId={run.suite_id}
         runId={run.id}
@@ -271,13 +298,15 @@ function DownloadMenu({
   run,
   suiteName,
   checks,
+  checksKnown,
 }: {
   run: RunWithResults;
   suiteName: string | null;
   checks: Map<string, Check>;
+  checksKnown: boolean;
 }) {
   const stem = `${toFilenameStem(suiteName ?? 'run')}_run_${run.id.slice(0, 8)}`;
-  const checkName = (id: string) => checks.get(id)?.name ?? id;
+  const checkName = (id: string) => checkExportName(checks.get(id)?.name, id, checksKnown);
   const expectation = (id: string) => checks.get(id)?.expectation_type ?? '';
 
   const exportCsv = () => {
@@ -462,6 +491,8 @@ function SampleFailures({
 
 function ResultsTable({
   results,
+  runStatus,
+  checksKnown,
   checks,
   suiteId,
   runId,
@@ -469,6 +500,8 @@ function ResultsTable({
   onViewIncident,
 }: {
   results: Result[];
+  runStatus: RunStatus;
+  checksKnown: boolean;
   checks: Map<string, Check>;
   suiteId: string;
   runId: string;
@@ -477,7 +510,7 @@ function ResultsTable({
   onViewIncident: (incidentId: string) => void;
 }) {
   if (results.length === 0) {
-    return <Empty description="No check results — the run did not complete." />;
+    return <Empty description={noResultsMessage(runStatus)} />;
   }
   const columns: ColumnsType<Result> = [
     {
@@ -490,7 +523,13 @@ function ResultsTable({
         // not.
         return (
           <Flex gap={8} align="center" wrap>
-            {check ? check.name : <Typography.Text code>{id.slice(0, 8)}</Typography.Text>}
+            {check ? (
+              check.name
+            ) : (
+              <Typography.Text type="secondary">
+                {checkLabel(undefined, id, checksKnown)}
+              </Typography.Text>
+            )}
             {/* Failure triage happens here — a muted check must say so, or the
                 operator wastes time asking why no alert arrived (#653). */}
             {check && <SnoozedTag check={check} />}
