@@ -21,10 +21,11 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.auth import _upsert_user
+from backend.app.core.config import get_settings
+from backend.app.core.roles import bootstrap_role
 from backend.app.core.secrets import SecretStore
 from backend.app.db.models import (
     Asset,
@@ -730,9 +731,34 @@ def _seed_incidents(session: Session, *, suite: Suite) -> int:
     )
 
 
+def ensure_seed_user(
+    session: Session, *, aad_object_id: str, email: str, display_name: str | None
+) -> User:
+    """Get or create a user a seed needs to own or share its rows.
+
+    Written directly rather than through `core.auth._upsert_user`: that is a sign-in
+    door, and it refuses a seed identity on any stack where that address may not sign in.
+    """
+    user = session.scalars(
+        select(User).where(
+            or_(User.aad_object_id == aad_object_id, func.lower(User.email) == email.lower())
+        )
+    ).first()
+    if user is None:
+        user = User(
+            aad_object_id=aad_object_id,
+            email=email,
+            display_name=display_name,
+            role=bootstrap_role(email, default=get_settings().auth_oidc_default_role),
+        )
+        session.add(user)
+        session.commit()
+    return user
+
+
 def seed_demo_data(session: Session, *, owner: User, secret_store: SecretStore) -> dict[str, int]:
     """Seed the representative dataset. Returns a count summary. Idempotent."""
-    analyst = _upsert_user(
+    analyst = ensure_seed_user(
         session, aad_object_id=ANALYST_OID, email=ANALYST_EMAIL, display_name=ANALYST_NAME
     )
 

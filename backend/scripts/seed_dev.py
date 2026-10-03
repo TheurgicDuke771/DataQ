@@ -34,7 +34,6 @@ from backend.app.core.auth import (
     DEV_BYPASS_AAD_OID,
     DEV_BYPASS_DISPLAY_NAME,
     DEV_BYPASS_EMAIL,
-    _upsert_user,
 )
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.secrets import get_secret_store
@@ -42,7 +41,7 @@ from backend.app.db.models import ApiKey, Suite, User
 from backend.app.db.session import get_session
 from backend.app.services import api_key_service, otp_service, share_service
 from backend.app.services.probe import ensure_probe_fixtures
-from backend.scripts.demo_data import seed_demo_data
+from backend.scripts.demo_data import ensure_seed_user, seed_demo_data
 
 
 def _otp_operator_emails(settings: Settings) -> list[str]:
@@ -241,7 +240,7 @@ def seed() -> None:
     settings = get_settings()
     session = get_session()
     try:
-        user = _upsert_user(
+        user = ensure_seed_user(
             session,
             aad_object_id=DEV_BYPASS_AAD_OID,
             email=DEV_BYPASS_EMAIL,
