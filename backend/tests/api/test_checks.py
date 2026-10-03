@@ -3327,7 +3327,8 @@ def test_clearing_the_threshold_a_monitor_needs_is_refused_and_changes_nothing(
     resp = client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"fail_threshold": None})
 
     assert resp.status_code == 422
-    assert float(client.get(f"/api/v1/suites/{sid}/checks/{cid}").json()["fail_threshold"]) == 48.0
+    unchanged = client.get(f"/api/v1/suites/{sid}/checks/{cid}")
+    assert float(unchanged.json()["fail_threshold"]) == 48.0
 
 
 def test_a_cleared_threshold_is_recorded_in_the_check_version(
