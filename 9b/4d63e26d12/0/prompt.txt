@@ -1,0 +1,9 @@
+Continue
+
+---
+
+Also is there a need to serve mailpit over https
+
+---
+
+Also is there a way to send emails actual mailboxes (like - gmail, outlook, etc.) from our localhosted solution?
