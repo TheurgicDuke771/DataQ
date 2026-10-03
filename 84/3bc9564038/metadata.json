@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "843bc9564038",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1930-clear-thresholds",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "backend/tests/api/test_checks.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/84/3bc9564038/0/metadata.json",
+      "transcript": "/84/3bc9564038/0/full.jsonl",
+      "compact_transcript": "/84/3bc9564038/0/transcript.jsonl",
+      "content_hash": "/84/3bc9564038/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 4,
+    "cache_creation_tokens": 2531,
+    "cache_read_tokens": 1420208,
+    "output_tokens": 1019,
+    "api_call_count": 2
+  }
+}
