@@ -278,20 +278,20 @@ batches land measured against the new baseline.
 | Status | Task | Theme |
 |---|---|---|
 | ⬜ | [#505](https://github.com/TheurgicDuke771/DataQ/issues/505) GCP deploy IaC (AWS shipped 2026-08-15 — GCP is the remainder) | deploy |
-| ⬜ | [#466](https://github.com/TheurgicDuke771/DataQ/issues/466) Interactive datasource browsing (ADLS/S3 container browser + UC catalog picker) | ux |
+| ✅ | [#466](https://github.com/TheurgicDuke771/DataQ/issues/466) Interactive datasource browsing (ADLS/S3 container browser + UC catalog picker) — [PR #2102](https://github.com/TheurgicDuke771/DataQ/pull/2102) | ux |
 | ⬜ | [#244](https://github.com/TheurgicDuke771/DataQ/issues/244) Suite-on-suite triggering | orchestration |
 | ⬜ | [#888](https://github.com/TheurgicDuke771/DataQ/issues/888) Tagging for suites/assets/connections/checks | platform |
 | ⬜ | [#1516](https://github.com/TheurgicDuke771/DataQ/issues/1516) Profile / Workspace-Settings IA pickup | ux |
 | ⬜ | [#685](https://github.com/TheurgicDuke771/DataQ/issues/685) Purge/redact path for connection version history | security |
-| ⬜ | [#682](https://github.com/TheurgicDuke771/DataQ/issues/682) Webhook-auth metadata onto the `OrchestrationProvider` seam | refactor |
+| ✅ | [#682](https://github.com/TheurgicDuke771/DataQ/issues/682) Webhook-auth metadata onto the `OrchestrationProvider` seam — [PR #1571](https://github.com/TheurgicDuke771/DataQ/pull/1571) | refactor |
 | ⬜ | [#1314](https://github.com/TheurgicDuke771/DataQ/issues/1314) Alerting: already-logged-traceback downgrade leaks through log filtering | reliability |
-| ⬜ | [#1274](https://github.com/TheurgicDuke771/DataQ/issues/1274) Iceberg over S3-compatible storage: pyarrow ACCESS_DENIED + Test Connection blind | bug |
+| ✅ | [#1274](https://github.com/TheurgicDuke771/DataQ/issues/1274) Iceberg over S3-compatible storage: pyarrow ACCESS_DENIED + Test Connection blind — [PR #2237](https://github.com/TheurgicDuke771/DataQ/pull/2237) | bug |
 | 🔵 | [#1385](https://github.com/TheurgicDuke771/DataQ/issues/1385) (closed not planned 2026-10-03, our AWS stack is retired) AWS: ElastiCache at-rest encryption + restrict subnet egress | security |
 
 | ⬜ | [#1667](https://github.com/TheurgicDuke771/DataQ/issues/1667) Global search / command palette (⌘K) | ux |
 | ⬜ | [#1669](https://github.com/TheurgicDuke771/DataQ/issues/1669) Bulk operations on checks (multi-select enable/disable/severity/snooze) | ux |
-| ⬜ | [#1671](https://github.com/TheurgicDuke771/DataQ/issues/1671) a11y: non-color severity cues + colorblind-safe palette | ux |
-| ⬜ | [#1677](https://github.com/TheurgicDuke771/DataQ/issues/1677) JSON flat-file support (csv/parquet + json) | datasource |
+| ✅ | [#1671](https://github.com/TheurgicDuke771/DataQ/issues/1671) a11y: non-color severity cues + colorblind-safe palette — [PR #2060](https://github.com/TheurgicDuke771/DataQ/pull/2060) | ux |
+| ✅ | [#1677](https://github.com/TheurgicDuke771/DataQ/issues/1677) JSON flat-file support (csv/parquet + json) — [PR #2246](https://github.com/TheurgicDuke771/DataQ/pull/2246) | datasource |
 | ✅ | [#1678](https://github.com/TheurgicDuke771/DataQ/issues/1678) Generic PostgreSQL adapter — the G-f cheap first win, dogfoodable — PR open (engine-generic SQL base, ADR 0045; live-verified vs PostgreSQL 16, CI dogfood battery) | datasource |
 | ✅ | [#1685](https://github.com/TheurgicDuke771/DataQ/issues/1685) Trino adapter — the G-f federation multiplier — PR open (third engine on the ADR 0045 base; live-verified vs Trino 483 incl. TLS + private CA, password/JWT, access control; Athena split to [#2131](https://github.com/TheurgicDuke771/DataQ/issues/2131)) | datasource |
 | ⬜ | [#1686](https://github.com/TheurgicDuke771/DataQ/issues/1686) Run comparison — diff two runs of a suite | results |
@@ -299,6 +299,24 @@ batches land measured against the new baseline.
 | ⬜ | [#1664](https://github.com/TheurgicDuke771/DataQ/issues/1664) "Data Quality Control Plane" positioning copy (marketing + docs site) | docs |
 | ✅ | [#1694](https://github.com/TheurgicDuke771/DataQ/issues/1694) Admin control centre phase 1a: routed sub-pages IA restructure (epic #1702) — PR [#1891](https://github.com/TheurgicDuke771/DataQ/pull/1891): `/admin/{overview,members,suites,settings,compliance,integrations}` URL-backed tabs (the first routed-tab pattern in the app), `RequireRole` at the route level (also fixed a pre-existing gap: a failed `/me` spun forever on every gated route), the admin-gated `/settings` page folded in with a redirect, `docs/site/guides/admin.md` started (#1888). `/code-review` found 3 (error branch, 8 stale doc references incl. 2 the reviewer missed, dead 404 tab) — all fixed pre-merge | admin |
 | ✅ | [#1695](https://github.com/TheurgicDuke771/DataQ/issues/1695) Admin control centre phase 1b: parity pass — PR [#1894](https://github.com/TheurgicDuke771/DataQ/pull/1894): audit-chain "Verify now" card (never on mount — the verify walks the whole hashed set), DSR export/erase with a typed-value gate and on-screen receipts (the endpoints take a `(column, value)` pair, not an email — built to the real contract), SMTP pre-flight result with request id, webhook auth mode. Playwright run against a scratch dev-bypass stack, 44/44 | admin |
+| ⬜ | [#2220](https://github.com/TheurgicDuke771/DataQ/issues/2220) **Prioritised 2026-10-03 (user direction).** Epic: two local paths — the authless contributor stack unchanged, and a production-like OTP stack on `docker-compose.ghcr.yml` (HTTPS with a local CA, rate limiting on, frontend as sole ingress, TLS end to end) | local |
+| ⬜ | [#2331](https://github.com/TheurgicDuke771/DataQ/issues/2331) The prebuilt-image quickstart fails to start: `seed_dev`'s owner is refused by workspace membership (P1, found verifying #2326) | bug |
+| ⬜ | [#2326](https://github.com/TheurgicDuke771/DataQ/issues/2326) local(1/5): eval stack publishes only the frontend and runs prod-like settings | local |
+| ⬜ | [#2327](https://github.com/TheurgicDuke771/DataQ/issues/2327) local(2/5): HTTPS at the frontend with a locally generated CA | local |
+| ⬜ | [#2328](https://github.com/TheurgicDuke771/DataQ/issues/2328) local(3/5): TLS between the eval stack's services, validated against the local CA | local |
+| ⬜ | [#2329](https://github.com/TheurgicDuke771/DataQ/issues/2329) local(4/5): install the local CA into the OS trust store, with an uninstall | local |
+| ⬜ | [#2330](https://github.com/TheurgicDuke771/DataQ/issues/2330) local(5/5): localhost smoke battery and the install guide for the production-like stack | local |
+| ⬜ | [#1929](https://github.com/TheurgicDuke771/DataQ/issues/1929) Check editor: the Custom SQL card renders 'Generate from a description' where it should not | bug |
+| ⬜ | [#1930](https://github.com/TheurgicDuke771/DataQ/issues/1930) Check editor: severity thresholds cannot be cleared once set | bug |
+| ⬜ | [#1931](https://github.com/TheurgicDuke771/DataQ/issues/1931) Run detail: a run whose checks were deleted says 'the run did not complete' | bug |
+| ⬜ | [#1735](https://github.com/TheurgicDuke771/DataQ/issues/1735) 'Triggered by' column renders the raw `manual:<user-uuid>` instead of a name/email | ux |
+| ⬜ | [#1734](https://github.com/TheurgicDuke771/DataQ/issues/1734) LLM check-suggestion prompt is unbounded by column count | llm |
+| ⬜ | [#1556](https://github.com/TheurgicDuke771/DataQ/issues/1556) Rolled-up per-asset health score | score |
+| ⬜ | [#1557](https://github.com/TheurgicDuke771/DataQ/issues/1557) Connection-level health score | score |
+| ⬜ | [#1558](https://github.com/TheurgicDuke771/DataQ/issues/1558) Cross-asset, per-dimension health rollup | score |
+| ⬜ | [#1979](https://github.com/TheurgicDuke771/DataQ/issues/1979) Partial/expression indexes stop applying under server-side parameter binding (psycopg3) | db |
+| ⬜ | [#1987](https://github.com/TheurgicDuke771/DataQ/issues/1987) Keyset/seek paging on `/runs`, `/pipeline_runs` and `/incidents` | perf |
+| ⬜ | [#2070](https://github.com/TheurgicDuke771/DataQ/issues/2070) Vitest 5 migration (blocked on jest-dom's matcher types; #2036 closed as its duplicate) | deps |
 **Exit gate:** each closed or rolled by name with a rationale comment.
 
 ### v1.2 W8 — Spikes, decisions & cycle close (due 2026-10-16)
@@ -307,10 +325,10 @@ batches land measured against the new baseline.
 |---|---|---|
 | ⬜ | [#717](https://github.com/TheurgicDuke771/DataQ/issues/717) Iceberg v3 revisit (deletion vectors, row lineage) behind a capability gate | spike |
 | ⬜ | [#732](https://github.com/TheurgicDuke771/DataQ/issues/732) Marketplace-listing readiness checklist | docs |
-| ⬜ | [#1239](https://github.com/TheurgicDuke771/DataQ/issues/1239) OTP uniform-response anti-enumeration tradeoff — decide | decision |
-| ⬜ | [#980](https://github.com/TheurgicDuke771/DataQ/issues/980) Redis 8 gate: Vector Sets module stays unloaded | watch |
-| ⬜ | [#970](https://github.com/TheurgicDuke771/DataQ/issues/970) OTel stack → 1.44 when the Azure exporter supports it | watch |
-| ⬜ | [#1327](https://github.com/TheurgicDuke771/DataQ/issues/1327) Profiler: `sqlalchemy.values()` for the rank driver — consider | spike |
+| ✅ | [#1239](https://github.com/TheurgicDuke771/DataQ/issues/1239) OTP uniform-response anti-enumeration tradeoff — decide — **user decision 2026-10-03: option 3, keep the uniform response**; reasoning recorded in ADR 0032 | decision |
+| ✅ | [#980](https://github.com/TheurgicDuke771/DataQ/issues/980) Redis 8 gate: Vector Sets module stays unloaded — [PR #2231](https://github.com/TheurgicDuke771/DataQ/pull/2231) | watch |
+| ✅ | [#970](https://github.com/TheurgicDuke771/DataQ/issues/970) OTel stack → 1.44 when the Azure exporter supports it — [PR #2034](https://github.com/TheurgicDuke771/DataQ/pull/2034) (the OpenTelemetry family moved to 1.44 / 0.65b0) | watch |
+| 🔵 | [#1327](https://github.com/TheurgicDuke771/DataQ/issues/1327) Profiler: `sqlalchemy.values()` for the rank driver — consider — closed not planned 2026-09-28 | spike |
 | ⬜ | [#1334](https://github.com/TheurgicDuke771/DataQ/issues/1334) Check ordinal (same-transaction inserts tie on `created_at`) | quality |
 | ⬜ | [#1660](https://github.com/TheurgicDuke771/DataQ/issues/1660) **Spike/ADR:** automated coverage loop — fleet-wide monitor bootstrap design (the G-a remainder) | spike |
 | ✅ | [#1680](https://github.com/TheurgicDuke771/DataQ/issues/1680) **Spike:** OneLake flat-file — ADLS adapter + endpoint override + Entra auth — **built**: ADLS `service_principal` auth, live-verified on a Fabric trial workspace (PR open; follow-ups #2127/#2128/#2129) | spike |

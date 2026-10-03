@@ -28,7 +28,6 @@ from backend.app.core.auth import (
     DEV_BYPASS_AAD_OID,
     DEV_BYPASS_DISPLAY_NAME,
     DEV_BYPASS_EMAIL,
-    _upsert_user,
 )
 from backend.app.core.config import get_settings
 from backend.app.core.secrets import get_secret_store
@@ -42,6 +41,7 @@ from backend.app.services import (
     suite_service,
 )
 from backend.app.worker.tasks import _auto_classify_columns
+from backend.scripts.demo_data import ensure_seed_user
 from backend.scripts.seed_dev import _share_with_otp_operators
 
 CONNECTION_NAME = "Demo warehouse (PostgreSQL)"
@@ -359,7 +359,7 @@ def seed() -> None:
     created, password = prepare_warehouse(wh)
     session = get_session()
     try:
-        owner = _upsert_user(
+        owner = ensure_seed_user(
             session,
             aad_object_id=DEV_BYPASS_AAD_OID,
             email=DEV_BYPASS_EMAIL,
