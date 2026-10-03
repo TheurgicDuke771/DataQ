@@ -1,0 +1,8 @@
+{
+  "tool_use_id": "toolu_01YUCpABh5WTBqYb7ZwAmVpu",
+  "agent_id": "a23033d01549d5b2b",
+  "subagent_type": "general-purpose",
+  "task_description": "Audit ADRs for cloud-gated items",
+  "started_at": "2026-09-30T18:13:41.080843+05:30",
+  "completed_at": "2026-10-01T00:05:21.243796+05:30"
+}
