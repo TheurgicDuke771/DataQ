@@ -70,8 +70,8 @@ def _block(service: str) -> str:
 
 def test_the_ui_terminates_tls_and_sends_no_hsts() -> None:
     frontend = _block("frontend")
-    assert "DATAQ_TLS_CERT: /certs/localhost.pem" in frontend
-    assert "DATAQ_TLS_KEY: /certs/localhost.key" in frontend
+    assert "DATAQ_TLS_CERT: /tls/localhost.pem" in frontend
+    assert "DATAQ_TLS_KEY: /tls/localhost.key" in frontend
     # HSTS binds the host `localhost`, not the port: it would force HTTPS on the inbox too.
     assert 'DATAQ_HSTS: ""' in frontend
 
@@ -85,3 +85,47 @@ def test_only_the_generator_mounts_the_ca_private_key() -> None:
         if "ghcr_local_ca_key:" in _block(name)
     ]
     assert holders == ["local-ca"]
+
+
+# ── TLS between the stack's own services (#2328) ─────────────────────────────
+
+
+def test_the_app_verifies_its_datastores_against_the_local_ca() -> None:
+    assert "sslmode=verify-full&sslrootcert=/certs/ca.pem" in _COMPOSE
+    assert "rediss://redis:6379/0?ssl_cert_reqs=required&ssl_ca_certs=/certs/ca.pem" in _COMPOSE
+    assert "redis://" not in _COMPOSE.replace("rediss://", "")
+
+
+def test_redis_serves_tls_only() -> None:
+    redis = _block("redis")
+    assert "--port 0 --tls-port 6379" in redis
+    assert '"--tls"' in redis  # the healthcheck must speak TLS too, or it reports a dead server
+
+
+def test_sign_in_mail_goes_over_verified_starttls() -> None:
+    assert (
+        "AUTH_EMAIL_TLS_MODE: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_TLS_MODE:-starttls}}" in _COMPOSE
+    )
+    # `-`, not `:-`: an operator pointing at a public relay sets it EMPTY to use the usual CAs.
+    assert (
+        "AUTH_EMAIL_CA_BUNDLE: ${DATAQ_SIGNIN_EMAIL:+${AUTH_EMAIL_CA_BUNDLE-/certs/ca.pem}}"
+        in _COMPOSE
+    )
+    mailpit = _block("mailpit")
+    assert 'MP_SMTP_REQUIRE_STARTTLS: "true"' in mailpit
+    assert "MP_SMTP_AUTH_ALLOW_INSECURE" not in mailpit
+
+
+def test_each_private_key_volume_reaches_only_its_own_service() -> None:
+    names = re.findall(r"^  ([\w-]+):\n", _COMPOSE.split("\nservices:\n", 1)[1], re.MULTILINE)
+    for owner in ("frontend", "postgres", "redis", "mailpit"):
+        holders = sorted(n for n in names if f"ghcr_tls_{owner}:" in _block(n))
+        assert holders == sorted({"local-ca", owner}), f"{owner}'s key is mounted by {holders}"
+
+
+def test_every_backend_container_mounts_the_ca_it_is_told_to_verify_with() -> None:
+    names = re.findall(r"^  ([\w-]+):\n", _COMPOSE.split("\nservices:\n", 1)[1], re.MULTILINE)
+    backend = [n for n in names if "environment: *app-env" in _block(n)]
+    assert len(backend) == 6
+    for name in backend:
+        assert "volumes: *app-volumes" in _block(name), name
