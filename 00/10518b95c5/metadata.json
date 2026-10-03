@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "0010518b95c5",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-2338-plaintext-hops",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".env.app.example",
+    "backend/app/core/config.py",
+    "backend/app/core/secrets.py",
+    "backend/scripts/local_vault.py",
+    "backend/tests/core/test_eval_stack_ingress.py",
+    "backend/tests/core/test_openbao_tls.py",
+    "backend/tests/core/test_secrets.py",
+    "docker-compose.ghcr.yml",
+    "docs/site/get-started/install.md",
+    "docs/site/operate/deployment.md",
+    "docs/site/reference/changelog.md",
+    "frontend/Dockerfile",
+    "frontend/docker-entrypoint.d/19-dataq-listen.sh",
+    "frontend/nginx.conf.template",
+    "frontend/tests/nginxRouting.test.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/00/10518b95c5/0/metadata.json",
+      "transcript": "/00/10518b95c5/0/full.jsonl",
+      "compact_transcript": "/00/10518b95c5/0/transcript.jsonl",
+      "content_hash": "/00/10518b95c5/0/content_hash.txt",
+      "prompt": "/00/10518b95c5/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 30,
+    "cache_creation_tokens": 22610,
+    "cache_read_tokens": 8541719,
+    "output_tokens": 19573,
+    "api_call_count": 15
+  }
+}
