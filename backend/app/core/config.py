@@ -1,3 +1,4 @@
+import ssl
 from functools import lru_cache
 from pathlib import Path
 from typing import Final, Literal
@@ -707,12 +708,23 @@ class Settings(BaseSettings):
     def _validate_openbao_tls(self) -> "Settings":
         """Fail at boot, not on the first secret read, on an OPENBAO_CA_BUNDLE naming no file."""
         bundle = (self.openbao_ca_bundle or "").strip()
-        if bundle and not Path(bundle).is_file():
+        if not bundle:
+            return self
+        if not Path(bundle).is_file():
             raise ValueError(
                 f"OPENBAO_CA_BUNDLE={bundle!r} does not name an existing file. Set it to the "
                 "PEM path your vault's certificate chains to, or clear it to use the system "
                 "trust store."
             )
+        try:
+            # Loaded here so a file that is unreadable or not PEM stops the boot, instead of
+            # raising from inside the first secret read.
+            ssl.create_default_context(cafile=bundle)
+        except (ssl.SSLError, OSError) as exc:
+            raise ValueError(
+                f"OPENBAO_CA_BUNDLE={bundle!r} cannot be used as a CA bundle ({exc}). It must "
+                "be a readable PEM file of CA certificates."
+            ) from exc
         return self
 
     @model_validator(mode="after")

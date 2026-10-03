@@ -84,3 +84,12 @@ def test_a_bundle_from_another_ca_is_refused(https_vault: tuple[str, Path], tmp_
 def test_a_bundle_that_names_no_file_fails_at_boot(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="OPENBAO_CA_BUNDLE"):
         Settings(openbao_ca_bundle=str(tmp_path / "missing.pem"), _env_file=None)
+
+
+def test_a_bundle_that_is_not_a_certificate_fails_at_boot(tmp_path: Path) -> None:
+    """Otherwise the first secret read raises a raw SSL error, on every call."""
+    junk = tmp_path / "not-a-cert.pem"
+    junk.write_text("this is not PEM")
+
+    with pytest.raises(ValueError, match="cannot be used as a CA bundle"):
+        Settings(openbao_ca_bundle=str(junk), _env_file=None)
