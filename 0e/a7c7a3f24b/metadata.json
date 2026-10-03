@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "0ea7c7a3f24b",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-2330-local-smoke",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/site/get-started/install.md",
+    "scripts/local-smoke.sh"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0e/a7c7a3f24b/0/metadata.json",
+      "transcript": "/0e/a7c7a3f24b/0/full.jsonl",
+      "compact_transcript": "/0e/a7c7a3f24b/0/transcript.jsonl",
+      "content_hash": "/0e/a7c7a3f24b/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 10,
+    "cache_creation_tokens": 6928,
+    "cache_read_tokens": 2081345,
+    "output_tokens": 5095,
+    "api_call_count": 5
+  }
+}
