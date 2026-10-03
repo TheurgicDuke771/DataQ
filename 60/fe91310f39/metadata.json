@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "60fe91310f39",
+  "strategy": "manual-commit",
+  "branch": "docs/estate-retired",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CLAUDE.md",
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/60/fe91310f39/0/metadata.json",
+      "transcript": "/60/fe91310f39/0/full.jsonl",
+      "compact_transcript": "/60/fe91310f39/0/transcript.jsonl",
+      "content_hash": "/60/fe91310f39/0/content_hash.txt",
+      "prompt": "/60/fe91310f39/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12,
+    "cache_creation_tokens": 5971,
+    "cache_read_tokens": 1645553,
+    "output_tokens": 2905,
+    "api_call_count": 6
+  }
+}
