@@ -5,6 +5,7 @@
 #   scripts/local-ca.sh install      # generate the CA if needed, then trust it (default)
 #   scripts/local-ca.sh uninstall    # remove it from the trust stores again
 #   scripts/local-ca.sh status       # say whether this machine trusts it
+#   scripts/local-ca.sh check --ca F # say whether file F is this stack's CA; changes nothing
 #
 # Run it from the directory holding docker-compose.ghcr.yml (or set DATAQ_COMPOSE_FILE), or pass
 # --ca <file> to use a CA certificate you already copied out. It needs no source checkout.
@@ -25,13 +26,13 @@ step() { echo -e "${CYAN}▶ $1${NC}"; }
 ok()   { echo -e "${GREEN}✓ $1${NC}"; }
 warn() { echo -e "${YELLOW}! $1${NC}" >&2; }
 
-usage() { sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; }
 
 command="install"
 ca_file=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    install|uninstall|status) command="$1" ;;
+    install|uninstall|status|check) command="$1" ;;
     --ca) shift; ca_file="${1:-}"; [ -n "${ca_file}" ] || { usage; exit 2; } ;;
     -h|--help) usage; exit 0 ;;
     *) usage; exit 2 ;;
@@ -76,8 +77,10 @@ fetch_ca() {
   grep -q "BEGIN CERTIFICATE" "${workdir}/ca.pem" || { warn "That is not a PEM certificate"; return 1; }
   # Refuse anything that is not this stack's CA: this script must never trust an arbitrary file.
   local subject
-  subject="$(openssl x509 -in "${workdir}/ca.pem" -noout -subject -nameopt RFC2253 2>/dev/null || true)"
-  [ "${subject}" = "subject=CN=${CA_NAME}" ] || {
+  # Normalised: LibreSSL (macOS's own openssl) prints `subject= CN=…`, OpenSSL 3 `subject=CN=…`.
+  subject="$(openssl x509 -in "${workdir}/ca.pem" -noout -subject -nameopt RFC2253 2>/dev/null \
+    | sed 's/^subject= *//' || true)"
+  [ "${subject}" = "CN=${CA_NAME}" ] || {
     warn "The certificate is not '${CA_NAME}' (${subject:-unreadable}); refusing to trust it."
     return 1
   }
@@ -100,9 +103,16 @@ mac_remove_all() {
   done
 }
 
-mac_install() {
+# Present in the keychain AND trusted: a cancelled trust prompt leaves the certificate there
+# without trust settings, which must not read as done.
+mac_is_trusted() {
   local want; want="$(fingerprint "${workdir}/ca.pem")"
-  if mac_trusted_fingerprints | grep -qix "${want}"; then
+  mac_trusted_fingerprints | grep -qix "${want}" \
+    && security verify-cert -c "${workdir}/ca.pem" >/dev/null 2>&1
+}
+
+mac_install() {
+  if mac_is_trusted; then
     ok "Already trusted in the System keychain"
     return 0
   fi
@@ -123,7 +133,17 @@ mac_uninstall() {
 }
 
 mac_status() {
-  if [ -n "$(mac_trusted_fingerprints)" ]; then echo "System keychain: present"; else echo "System keychain: absent"; fi
+  if [ -z "$(mac_trusted_fingerprints)" ]; then
+    echo "System keychain: absent"
+  elif [ ! -s "${workdir}/ca.pem" ]; then
+    echo "System keychain: a '${CA_NAME}' is present (no stack CA here to compare it with)"
+  elif mac_is_trusted; then
+    echo "System keychain: trusted"
+  elif mac_trusted_fingerprints | grep -qix "$(fingerprint "${workdir}/ca.pem")"; then
+    echo "System keychain: present but not trusted — run install again"
+  else
+    echo "System keychain: holds an older '${CA_NAME}', not this stack's — run install"
+  fi
 }
 
 # ── Linux: the system CA bundle ───────────────────────────────────────────────
@@ -149,7 +169,8 @@ as_root() { if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo "$@"; fi; }
 linux_install() {
   local target; target="$(linux_target)"
   if [ -z "${target}" ]; then
-    warn "No update-ca-certificates or update-ca-trust here; add ${workdir}/ca.pem to your system's CA store by hand."
+    cp "${workdir}/ca.pem" "./${LINUX_FILE_STEM}.pem"
+    warn "No update-ca-certificates or update-ca-trust here; add ./${LINUX_FILE_STEM}.pem (written to this directory) to your system's CA store by hand."
     return 1
   fi
   if [ -f "${target}" ] && cmp -s "${target}" "${workdir}/ca.pem"; then
@@ -246,7 +267,14 @@ case "${command}" in
     esac
     nss_each uninstall
     ;;
+  check)
+    [ -n "${ca_file}" ] || { usage; exit 2; }
+    fetch_ca no || exit 1
+    ok "${ca_file} is '${CA_NAME}'"
+    ;;
   status)
+    # Best effort: with the stack's CA at hand, status can tell trusted from merely present.
+    fetch_ca no 2>/dev/null || true
     case "${os}" in
       Darwin) mac_status ;;
       Linux)  linux_status ;;
