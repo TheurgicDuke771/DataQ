@@ -187,7 +187,10 @@ Things to know:
   the old one is deleted and its history goes with it.
 - A check's `kind` cannot be changed. Give the new check a different name.
 - Names must be unique, in the file and among the suite's checks the file names.
-- Apply cannot un-classify a check: `dimension: null` is treated as "leave it".
+- `dimension: null` creates a new check unclassified, as import does. On a check that
+  already exists it is treated as "leave it": apply cannot un-classify a check.
+- Only the checks apply would create or change are validated. A check the file leaves as
+  it is stays, even if it is of a type that could no longer be created today.
 - It needs edit access to the suite and runs with your own permissions.
 
 ### From the command line

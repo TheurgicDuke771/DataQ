@@ -2961,3 +2961,110 @@ def test_apply_requires_edit_permission(client: TestClient, db_session: Any) -> 
     for dry_run in (True, False):
         resp = _apply(client, sid, [_doc_check("x")], dry_run=dry_run)
         assert resp.status_code == 403
+
+
+def test_apply_on_a_sampled_suite_refuses_a_row_count_check_before_writing_anything(
+    client: TestClient, db_session: Any
+) -> None:
+    """The rule create_check applies must also be in the up-front validation: otherwise
+    the rename and the first check are committed before the row-count check is refused."""
+    conn = _connection(db_session, conn_type="s3")
+    created = client.post(
+        "/api/v1/suites",
+        json={
+            "name": "sampled",
+            "connection_id": str(conn.id),
+            "target": {
+                "path": "raw/orders.csv",
+                "sampling": {"strategy": "random", "rows": 1000, "seed": 7},
+            },
+        },
+    )
+    assert created.status_code == 201, created.text
+    sid = created.json()["id"]
+    document = {
+        "name": "renamed by apply",
+        "checks": [
+            _doc_check("fine"),
+            {
+                "name": "row count",
+                "expectation_type": "expect_table_row_count_to_be_between",
+                "config": {"min_value": 1},
+            },
+        ],
+    }
+
+    dry = client.post(f"/api/v1/suites/{sid}/apply", json={"document": document, "dry_run": True})
+    real = client.post(f"/api/v1/suites/{sid}/apply", json={"document": document})
+
+    # The dry run and the real apply agree: both refuse.
+    assert (dry.status_code, real.status_code) == (422, 422)
+    suite = client.get(f"/api/v1/suites/{sid}").json()
+    assert suite["name"] == "sampled"
+    remaining = client.get(f"/api/v1/suites/{sid}/checks").json()
+    assert remaining == []
+
+
+def test_drift_of_a_suite_holding_a_legacy_check_type_is_not_refused(
+    client: TestClient, db_session: Any
+) -> None:
+    """A stored check of a type today's allowlist would not accept is not being written
+    by an apply that leaves it alone, so it must not fail validation."""
+    sid = _suite_with_checks(client, db_session)
+    db_session.add(
+        Check(
+            suite_id=uuid.UUID(sid),
+            name="legacy",
+            expectation_type="expect_something_no_longer_vetted",
+            config={"column": "id"},
+        )
+    )
+    db_session.commit()
+    exported = client.get(f"/api/v1/suites/{sid}/export").json()
+
+    resp = client.post(f"/api/v1/suites/{sid}/apply", json={"document": exported, "dry_run": True})
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["changed"] is False
+
+
+def test_prune_deletes_every_unmanaged_check_even_when_two_share_a_name(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_with_checks(client, db_session)
+    for column in ("a", "b"):
+        db_session.add(
+            Check(
+                suite_id=uuid.UUID(sid),
+                name="twin",
+                expectation_type="expect_column_values_to_not_be_null",
+                config={"column": column},
+            )
+        )
+    db_session.commit()
+
+    resp = _apply(client, sid, [_doc_check("notnull")], prune=True)
+
+    assert resp.status_code == 200, resp.text
+    deleted = sorted(c["name"] for c in resp.json()["checks"] if c["action"] == "delete")
+    assert deleted == ["rowcount", "twin", "twin"]
+    remaining = [c["name"] for c in client.get(f"/api/v1/suites/{sid}/checks").json()]
+    assert remaining == ["notnull"]
+
+
+def test_apply_creates_an_explicitly_unclassified_check_and_derives_an_omitted_one(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_with_checks(client, db_session)
+
+    resp = _apply(
+        client, sid, [_doc_check("left unclassified", dimension=None), _doc_check("derived")]
+    )
+
+    assert resp.status_code == 200, resp.text
+    stored = {
+        c.name: c.dimension
+        for c in db_session.scalars(select(Check).where(Check.suite_id == uuid.UUID(sid)))
+    }
+    assert stored["left unclassified"] is None
+    assert stored["derived"] == "completeness"

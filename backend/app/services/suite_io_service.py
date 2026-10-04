@@ -384,22 +384,6 @@ def apply_document(
     change then goes through the same service call a UI edit uses, so it gets its own
     version and audit event.
     """
-    problems = validate_document(
-        session, version=version, checks=checks, connection_id=suite.connection_id
-    )
-    if problems:
-        first = problems[0]
-        where = "document" if first.check_index is None else f"check {first.check_name!r}"
-        raise SuiteImportInvalidError(
-            f"the document is not valid for this suite — {where}: {first.message}",
-            detail={
-                "problem_count": len(problems),
-                "problems": [
-                    {"check_index": p.check_index, "check_name": p.check_name, "code": p.code}
-                    for p in problems[:20]
-                ],
-            },
-        )
     if repeated := _duplicates([c["name"] for c in checks]):
         raise SuiteImportInvalidError(
             "checks are matched by name, and the document names some more than once: "
@@ -417,14 +401,15 @@ def apply_document(
         )
     by_name = {c.name: c for c in existing}
 
-    planned: list[tuple[CheckChange, dict[str, Any] | None, uuid.UUID | None]] = []
+    # (change, document check, resolved comparison source, the suite's check)
+    planned: list[tuple[CheckChange, dict[str, Any] | None, uuid.UUID | None, Check | None]] = []
     for doc in checks:
         source_id = (
             _resolve_source_connection(session, doc) if doc["kind"] == COMPARISON_KIND else None
         )
         current = by_name.get(doc["name"])
         if current is None:
-            planned.append((CheckChange(doc["name"], "create", []), doc, source_id))
+            planned.append((CheckChange(doc["name"], "create", []), doc, source_id, None))
             continue
         if current.kind != doc["kind"]:
             raise SuiteImportInvalidError(
@@ -435,10 +420,39 @@ def apply_document(
             )
         fields = _check_diff(current, doc, source_id)
         action = "update" if fields else "unchanged"
-        planned.append((CheckChange(doc["name"], action, fields), doc, source_id))
-    unmanaged = sorted(c.name for c in existing if c.name not in wanted)
+        planned.append((CheckChange(doc["name"], action, fields), doc, source_id, current))
+    unmanaged = [c for c in existing if c.name not in wanted]
     if prune:
-        planned.extend((CheckChange(n, "delete", []), None, None) for n in unmanaged)
+        # By row, not by name: two unmanaged checks may share a name.
+        planned.extend((CheckChange(c.name, "delete", []), None, None, c) for c in unmanaged)
+
+    # Validate what WOULD BE WRITTEN, before writing any of it — and only that. A check
+    # the document leaves as it is was accepted when it was stored; holding it to today's
+    # rules would refuse a suite's own unmodified export (a pre-#1510 type, a pre-#651
+    # config).
+    to_write = [doc for change, doc, _s, _c in planned if doc and change.action != "unchanged"]
+    problems = validate_document(
+        session, version=version, checks=to_write, connection_id=suite.connection_id
+    )
+    for doc in to_write:
+        try:
+            # A gate create/update apply themselves; without it here a sampled suite's
+            # apply would fail part-way, after earlier changes were committed.
+            check_service.reject_row_count_on_sampled_suite(session, suite, doc["expectation_type"])
+        except DataQError as exc:
+            problems.append(
+                DocumentProblem(code=exc.code, message=exc.message, check_name=doc["name"])
+            )
+    if problems:
+        first = problems[0]
+        where = f"check {first.check_name!r}" if first.check_name else "document"
+        raise SuiteImportInvalidError(
+            f"the document is not valid for this suite — {where}: {first.message}",
+            detail={
+                "problem_count": len(problems),
+                "problems": [{"check_name": p.check_name, "code": p.code} for p in problems[:20]],
+            },
+        )
 
     suite_fields = [
         field
@@ -448,8 +462,8 @@ def apply_document(
     ]
     plan = ApplyPlan(
         suite_fields=suite_fields,
-        checks=[change for change, _doc, _source in planned],
-        unmanaged=[] if prune else unmanaged,
+        checks=[change for change, _doc, _source, _check in planned],
+        unmanaged=[] if prune else sorted(c.name for c in unmanaged),
     )
     if dry_run or not plan.changed:
         return plan
@@ -459,7 +473,7 @@ def apply_document(
         suite_service.update_suite(
             session, suite_id, name=name, description=description, actor_id=actor_id
         )
-    for change, body, source_id in planned:
+    for change, body, source_id, current in planned:
         if change.action == "create" and body is not None:
             check_service.create_check(
                 session,
@@ -473,14 +487,16 @@ def apply_document(
                 critical_threshold=body["critical_threshold"],
                 source_connection_id=source_id,
                 dimension=body.get("dimension"),
+                # An explicit `dimension: null` means unclassified, as on import (ADR 0038).
+                unclassified="dimension" in body and body["dimension"] is None,
                 engine=body.get("engine", GX_ENGINE),
                 actor_id=actor_id,
             )
-        elif change.action == "update" and body is not None:
+        elif change.action == "update" and body is not None and current is not None:
             check_service.update_check(
                 session,
                 suite_id,
-                by_name[change.name].id,
+                current.id,
                 expectation_type=body["expectation_type"],
                 config=body["config"],
                 # Explicit values, so a threshold the document dropped is cleared.
@@ -492,10 +508,8 @@ def apply_document(
                 engine=body.get("engine", GX_ENGINE),
                 actor_id=actor_id,
             )
-        elif change.action == "delete":
-            check_service.delete_check(
-                session, suite_id, by_name[change.name].id, actor_id=actor_id
-            )
+        elif change.action == "delete" and current is not None:
+            check_service.delete_check(session, suite_id, current.id, actor_id=actor_id)
     log.info(
         "suite_document_applied",
         suite_id=str(suite_id),

@@ -647,7 +647,7 @@ def _find_oversized_string(value: Any, path: str = "config") -> str | None:
     return None
 
 
-def _reject_row_count_on_sampled_suite(
+def reject_row_count_on_sampled_suite(
     session: Session, suite: Suite, expectation_type: str
 ) -> None:
     """422 for a row-count expectation on a suite whose target samples (#595 C6)."""
@@ -876,8 +876,13 @@ def create_check(
     actor_id: uuid.UUID | None = None,
     origin: str = "user",
     machine_write: bool = False,
+    unclassified: bool = False,
 ) -> Check:
     """Create a check in a suite, recording its first version (#280).
+
+    ``unclassified`` stores no dimension instead of deriving one — the caller has an
+    explicit "leave this unclassified" (a document's ``dimension: null``, ADR 0038), which
+    ``dimension=None`` cannot say because it already means "derive".
 
     ``machine_write`` (the coverage loop, ADR 0047) keeps the write out of the audit log, which
     records deliberate acts by a principal only (ADR 0041 §2.1).
@@ -935,7 +940,7 @@ def create_check(
         pass
     else:
         validate_expectation_check(expectation_type, config)
-        _reject_row_count_on_sampled_suite(session, suite, expectation_type)
+        reject_row_count_on_sampled_suite(session, suite, expectation_type)
         reject_dataframe_only_expectation(
             expectation_type,
             connection_type=_connection_type(session, suite),
@@ -954,8 +959,14 @@ def create_check(
         kind=kind,
         engine=engine,
         expectation_type=expectation_type,
-        dimension=resolve_dimension(
-            expectation_type=expectation_type, kind=kind, explicit=validate_dimension(dimension)
+        dimension=(
+            None
+            if unclassified
+            else resolve_dimension(
+                expectation_type=expectation_type,
+                kind=kind,
+                explicit=validate_dimension(dimension),
+            )
         ),
         source_connection_id=source_connection_id,
         config=config,
@@ -1062,7 +1073,7 @@ def _validate_kind_specific_config(
             expectation_type, config, permitted_stored_type=permitted_stored_type
         )
         suite = get_suite(session, suite_id)
-        _reject_row_count_on_sampled_suite(session, suite, expectation_type)
+        reject_row_count_on_sampled_suite(session, suite, expectation_type)
         reject_dataframe_only_expectation(
             expectation_type,
             connection_type=_connection_type(session, suite),
