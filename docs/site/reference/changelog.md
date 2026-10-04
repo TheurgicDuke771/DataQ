@@ -122,7 +122,8 @@ the per-PR history lives in the repo's commit log and pull requests.
   provider. In the API, `triggered_by` is unchanged and runs gain `triggered_by_label`.
 - **The Custom SQL card opens the plain SQL editor.** Both cards in the Custom SQL step used
   to open a form with the **Generate from a description** box. It now appears only when you
-  start from the **Generate from a description** card.
+  start from the **Generate from a description** card. Editing an existing custom SQL
+  check no longer shows it either.
 - **Check suggestions on a wide table stay within the model's limits.** The suggestion prompt
   grew with every column, so a table with hundreds of columns could cost far more or fail at
   the provider. Only the first 100 columns are now profiled and sent, long values are
