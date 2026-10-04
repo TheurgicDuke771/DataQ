@@ -189,14 +189,14 @@ column profile. Every candidate goes through the same validator `create_check` u
 suggestion naming a column the table doesn't have is refused the same way a human's typo
 would be — and one that fails is dropped and shown under a rejection warning, with the
 reason; if *all* fail, the whole generation fails rather than returning nothing.
-
-On a table with more than 100 columns, only the first 100 are profiled and sent. The drawer
-says how many were looked at; the others get no suggestions, which is not a finding that
-they need no checks.
 Suggestions are proposals: nothing is created until you click **Add** (or **Add all
 remaining**), so one you disagree with costs a glance. A separate warning surfaces any
 pipeline trigger binding that *nearly* matched this suite (right pipeline, wrong
 environment) — a coverage gap no column profile could reveal either way.
+
+On a table with more than 100 columns, only the first 100 are profiled and sent. The drawer
+says how many were looked at; the others get no suggestions, which is not a finding that
+they need no checks.
 
 **Placement and dedup from column lineage.** Where recorded column lineage reaches the suggested
 column, each suggestion also says where that column comes from. There are two recommendations,
