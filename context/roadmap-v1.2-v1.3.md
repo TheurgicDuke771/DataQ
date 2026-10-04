@@ -22,7 +22,7 @@ week's milestone.
 
 ---
 
-## v1.2 — DQ intelligence + operability (2026-08-22 → 2026-10-16, in flight)
+## v1.2 — DQ intelligence + operability (2026-08-22 → 2026-10-04, closed)
 
 Live schedule: [docs/progress.md](../docs/progress.md) §Cycle plan. Epic
 [#1518](https://github.com/TheurgicDuke771/DataQ/issues/1518). Shape as of 2026-08-29:
@@ -43,7 +43,13 @@ designing.
 
 ---
 
-## v1.3 — Automation + Evidence (proposed theme, ~2026-10-17 →)
+## v1.3 — Automation + Evidence (2026-10-05 → 2026-11-29)
+
+> **Confirmed 2026-10-05, with one constraint: no net-new features this cycle.** v1.2 closed
+> early (`v1.2.0`, 2026-10-04) and shipped most of the tracks below. v1.3 builds what is
+> already on this page or filed, then fixes, polishes and closes; the week plan is in
+> [docs/progress.md](../docs/progress.md). The text below is the original proposal, kept as
+> written.
 
 The two gaps that change what DataQ *is*, and the operational work a first
 external user forces. Planning input: the W8 #1660 spike + this page + whatever
