@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "a080d59b561e",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-2392-docs-publish-after-push",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".github/workflows/docs.yml",
+    "docs/site/operate/runbook-faq.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/a0/80d59b561e/0/metadata.json",
+      "transcript": "/a0/80d59b561e/0/full.jsonl",
+      "compact_transcript": "/a0/80d59b561e/0/transcript.jsonl",
+      "content_hash": "/a0/80d59b561e/0/content_hash.txt",
+      "prompt": "/a0/80d59b561e/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 58,
+    "cache_creation_tokens": 25364,
+    "cache_read_tokens": 13929279,
+    "output_tokens": 15167,
+    "api_call_count": 29
+  }
+}

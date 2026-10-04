@@ -1,0 +1,25 @@
+extra step from v1.1 is publishing the wheel file
+
+---
+
+<task-notification>
+<task-id>befj8bwqm</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/051a3ae7-f154-4852-b2b4-477a2e7d4418/tasks/befj8bwqm.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for the close-out PR to merge or fail" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Also we need to pin a 1.2 version on the github pages + the regular latest
+
+---
+
+<task-notification>
+<task-id>bx0pq02go</task-id>
+<tool-use-id>toolu_01L8Jm3tH28N8h5eYhVgHGWb</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/051a3ae7-f154-4852-b2b4-477a2e7d4418/tasks/bx0pq02go.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for CI and Docs on the close commit to finish" completed (exit code 0)</summary>
+</task-notification>
