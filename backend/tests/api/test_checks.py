@@ -3490,3 +3490,145 @@ def test_bulk_requires_edit_permission(client: TestClient, db_session: Any, acti
     unchanged = client.get(f"/api/v1/suites/{sid}/checks/{cid}")
     assert unchanged.status_code == 200
     assert unchanged.json()["alert_snoozed_until"] is None
+
+
+# ── bulk thresholds (#2370) ──────────────────────────────────────────────────
+
+
+def _thresholds(client: TestClient, sid: str, cid: str) -> tuple[Any, Any, Any]:
+    body = client.get(f"/api/v1/suites/{sid}/checks/{cid}").json()
+    return body["warn_threshold"], body["fail_threshold"], body["critical_threshold"]
+
+
+def test_bulk_thresholds_sets_the_named_tiers_and_keeps_or_clears_the_rest(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_id(client, db_session)
+    plain = _make_check(client, sid, name="plain")
+    banded = _make_check(client, sid, name="banded", warn_threshold=1, critical_threshold=50)
+    untouched = _make_check(client, sid, name="untouched", fail_threshold=3)
+
+    # fail is set, critical is cleared, warn is left out → each check keeps its own warn.
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks-bulk/thresholds",
+        json={"check_ids": [plain, banded], "fail_threshold": 10, "critical_threshold": None},
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["affected"] == 2
+    assert _thresholds(client, sid, plain) == (None, 10, None)
+    assert _thresholds(client, sid, banded) == (1, 10, None)
+    assert _thresholds(client, sid, untouched) == (None, 3, None)
+    # One new version and one audit event per changed check, like a single edit.
+    for cid in (plain, banded):
+        versions = client.get(f"/api/v1/suites/{sid}/checks/{cid}/versions").json()
+        assert len(versions) == 2
+    assert _audit_actions(db_session, [plain, banded, untouched]) == sorted(
+        (c, "check.update") for c in (plain, banded)
+    )
+
+
+def test_bulk_thresholds_refuses_everything_when_one_check_cannot_take_them(
+    client: TestClient, db_session: Any
+) -> None:
+    """One check already has a warn above the new fail; one type takes no thresholds at
+    all. Both are named, and the check that WOULD have been fine is left alone."""
+    sid = _suite_id(client, db_session)
+    fine = _make_check(client, sid, name="fine")
+    high_warn = _make_check(client, sid, name="high warn", warn_threshold=20)
+    unbanded = _make_check(client, sid, name="unbanded", **_UNBANDED)
+
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks-bulk/thresholds",
+        json={"check_ids": [fine, high_warn, unbanded], "fail_threshold": 5},
+    )
+
+    assert resp.status_code == 422
+    detail = resp.json()["error"]["detail"]
+    assert detail["problem_count"] == 2
+    assert {p["name"] for p in detail["problems"]} == {"high warn", "unbanded"}
+    assert _thresholds(client, sid, fine) == (None, None, None)
+    assert _thresholds(client, sid, high_warn) == (20, None, None)
+    assert _audit_actions(db_session, [fine, high_warn, unbanded]) == []
+    versions = client.get(f"/api/v1/suites/{sid}/checks/{fine}/versions").json()
+    assert len(versions) == 1
+
+
+def test_bulk_thresholds_refuses_a_selection_that_mixes_check_kinds(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_id(client, db_session)
+    percent = _make_check(client, sid, name="percent unexpected")
+    hours = _make_check(
+        client,
+        sid,
+        name="hours stale",
+        kind="freshness",
+        expectation_type="monitor:freshness",
+        config={"column": "updated_at"},
+        fail_threshold=48,
+    )
+
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks-bulk/thresholds",
+        json={"check_ids": [percent, hours], "fail_threshold": 5},
+    )
+
+    assert resp.status_code == 422
+    assert resp.json()["error"]["detail"]["kinds"] == ["expectation", "freshness"]
+    assert _thresholds(client, sid, hours) == (None, 48, None)
+    assert _thresholds(client, sid, percent) == (None, None, None)
+
+
+def test_bulk_thresholds_writes_no_version_for_a_check_already_at_the_values(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_id(client, db_session)
+    already = _make_check(client, sid, name="already", fail_threshold=5)
+    changes = _make_check(client, sid, name="changes")
+
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks-bulk/thresholds",
+        json={"check_ids": [already, changes], "fail_threshold": 5},
+    )
+
+    assert resp.status_code == 200
+    assert _audit_actions(db_session, [already, changes]) == [(changes, "check.update")]
+    versions = client.get(f"/api/v1/suites/{sid}/checks/{already}/versions").json()
+    assert len(versions) == 1
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {},  # no threshold named at all
+        {"fail_threshold": -1},
+        {"warn_threshold": 9, "fail_threshold": 2},
+        {"surprise": 1, "fail_threshold": 2},
+    ],
+)
+def test_bulk_thresholds_rejects_a_bad_request(
+    client: TestClient, db_session: Any, body: dict[str, Any]
+) -> None:
+    sid = _suite_id(client, db_session)
+    cid = _make_check(client, sid)
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks-bulk/thresholds", json={"check_ids": [cid], **body}
+    )
+    assert resp.status_code == 422
+    assert _thresholds(client, sid, cid) == (None, None, None)
+
+
+def test_bulk_thresholds_requires_edit_permission(client: TestClient, db_session: Any) -> None:
+    owner, b, _e, sid = _owner_b_e_suite(db_session)
+    _as(owner)
+    cid = _make_check(client, sid)
+    _grant(client, owner, sid, b, "view")
+    _as(b)
+
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks-bulk/thresholds",
+        json={"check_ids": [cid], "fail_threshold": 5},
+    )
+
+    assert resp.status_code == 403

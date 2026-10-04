@@ -31,6 +31,7 @@ from .browse_file_read import BrowseFileRead
 from .bulk_checks_request import BulkChecksRequest
 from .bulk_checks_result import BulkChecksResult
 from .bulk_snooze_request import BulkSnoozeRequest
+from .bulk_thresholds_request import BulkThresholdsRequest
 from .catalog_browse_read import CatalogBrowseRead
 from .catalog_browse_read_level import CatalogBrowseReadLevel
 from .catalog_entry_read import CatalogEntryRead
@@ -297,6 +298,7 @@ __all__ = (
     "BulkChecksRequest",
     "BulkChecksResult",
     "BulkSnoozeRequest",
+    "BulkThresholdsRequest",
     "CatalogBrowseRead",
     "CatalogBrowseReadLevel",
     "CatalogEntryRead",

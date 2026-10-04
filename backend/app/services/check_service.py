@@ -1414,6 +1414,119 @@ def bulk_delete_checks(
     return len(checks)
 
 
+#: How many refused checks a bulk error names; the count is always exact.
+_BULK_PROBLEMS_SHOWN = 20
+
+
+def bulk_set_thresholds(
+    session: Session,
+    suite_id: uuid.UUID,
+    check_ids: Sequence[uuid.UUID],
+    *,
+    warn_threshold: Decimal | _Keep | None = KEEP,
+    fail_threshold: Decimal | _Keep | None = KEEP,
+    critical_threshold: Decimal | _Keep | None = KEEP,
+    actor_id: uuid.UUID | None = None,
+) -> list[Check]:
+    """Set the same severity thresholds on many checks (#2370). Per threshold, `KEEP`
+    leaves each check's own value and `None` clears it, as in `update_check`.
+
+    Every check is validated against its EFFECTIVE post-change thresholds before any is
+    touched; if one would be refused, the request is refused and names it. Thresholds
+    mean different things on different kinds of check (percent unexpected, hours, rows),
+    so a selection that mixes kinds is refused too rather than given one number.
+    """
+    checks = _checks_for_bulk(session, suite_id, check_ids)
+    kinds = sorted({c.kind for c in checks})
+    if len(kinds) > 1:
+        raise CheckConfigInvalidError(
+            "the selected checks are of different kinds "
+            f"({', '.join(kinds)}), whose thresholds do not measure the same thing; "
+            "change one kind at a time. Nothing was changed",
+            detail={"kinds": kinds},
+        )
+    planned: list[tuple[Check, Decimal | None, Decimal | None, Decimal | None]] = []
+    problems: list[dict[str, str]] = []
+    for check in checks:
+        new_warn = check.warn_threshold if warn_threshold is KEEP else warn_threshold
+        new_fail = check.fail_threshold if fail_threshold is KEEP else fail_threshold
+        new_critical = (
+            check.critical_threshold if critical_threshold is KEEP else critical_threshold
+        )
+        try:
+            validate_threshold_ordering(
+                warn_threshold=new_warn, fail_threshold=new_fail, critical_threshold=new_critical
+            )
+            validate_engine_compatibility(
+                check.engine or GX_ENGINE,
+                kind=check.kind,
+                expectation_type=check.expectation_type,
+                config=check.config,
+                warn_threshold=new_warn,
+                fail_threshold=new_fail,
+                critical_threshold=new_critical,
+            )
+            _validate_kind_specific_config(
+                session,
+                suite_id,
+                check,
+                expectation_type=check.expectation_type,
+                config=check.config,
+                warn_threshold=new_warn,
+                fail_threshold=new_fail,
+                critical_threshold=new_critical,
+                engine=check.engine or GX_ENGINE,
+                source_connection_id=check.source_connection_id,
+                # Only the thresholds change, as in a threshold-only PATCH.
+                validate_expectation_config=False,
+                permitted_stored_type=check.expectation_type,
+            )
+        except CheckConfigInvalidError as exc:
+            problems.append({"check_id": str(check.id), "name": check.name, "reason": exc.message})
+            continue
+        planned.append((check, new_warn, new_fail, new_critical))
+    if problems:
+        raise CheckConfigInvalidError(
+            f"{len(problems)} of {len(checks)} checks cannot take these thresholds "
+            f"(first: {problems[0]['name']} — {problems[0]['reason']}). Nothing was changed",
+            detail={
+                "problem_count": len(problems),
+                "problems": problems[:_BULK_PROBLEMS_SHOWN],
+                "truncated": len(problems) > _BULK_PROBLEMS_SHOWN,
+            },
+        )
+    for check, new_warn, new_fail, new_critical in planned:
+        audit_before = audit_service.snapshot("check", check)
+        check.warn_threshold = new_warn
+        check.fail_threshold = new_fail
+        check.critical_threshold = new_critical
+        # A check already at these values is not a change: no version, no audit event.
+        if session.is_modified(check):
+            record_check_version(session, check, actor_id=actor_id)
+            audit_service.record_entity_change(
+                session,
+                action="check.update",
+                entity_type="check",
+                entity=check,
+                actor=actor_id,
+                before=audit_before,
+            )
+    try:
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        if _VERSION_UNIQUE_CONSTRAINT not in str(exc.orig):
+            raise
+        raise CheckEditConflictError(
+            "one of these checks was edited concurrently — reload and retry",
+            detail={"suite_id": str(suite_id)},
+        ) from exc
+    for check in checks:
+        session.refresh(check)
+    log.info("checks_bulk_thresholds_set", suite_id=str(suite_id), count=len(checks))
+    return checks
+
+
 def list_check_versions(
     session: Session, suite_id: uuid.UUID, check_id: uuid.UUID
 ) -> list[CheckVersion]:

@@ -1378,6 +1378,72 @@
         "title": "BulkSnoozeRequest",
         "type": "object"
       },
+      "BulkThresholdsRequest": {
+        "additionalProperties": false,
+        "description": "Like `CheckUpdate`: an explicit `null` clears that threshold on every check, and\nleaving the key out keeps each check's own value.",
+        "properties": {
+          "check_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Check Ids",
+            "type": "array"
+          },
+          "critical_threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Critical Threshold"
+          },
+          "fail_threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fail Threshold"
+          },
+          "warn_threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warn Threshold"
+          }
+        },
+        "required": [
+          "check_ids"
+        ],
+        "title": "BulkThresholdsRequest",
+        "type": "object"
+      },
       "CatalogBrowseRead": {
         "description": "One level of the catalog \u2192 schema \u2192 table tree (a generic SQL connection such as\nPostgreSQL or MySQL starts at `schema`: its database is fixed). `truncated` means more names\nexist than `limit` \u2014 the list is then a prefix, and the target can still be typed by hand.",
         "properties": {
@@ -14614,6 +14680,60 @@
           }
         },
         "summary": "Snooze the alerts of many checks",
+        "tags": [
+          "checks"
+        ]
+      }
+    },
+    "/api/v1/suites/{suite_id}/checks-bulk/thresholds": {
+      "post": {
+        "description": "All-or-nothing: if any id is not a check of this suite the request is refused with 404 and nothing is changed. Duplicate ids count once. Also refused whole, with 422 and the offending checks named, if the selection mixes check kinds or any check cannot take the resulting thresholds. A check already at these values gets no new version.",
+        "operationId": "bulk_set_thresholds",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suite_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Suite Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkThresholdsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkChecksResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set the same severity thresholds on many checks",
         "tags": [
           "checks"
         ]
