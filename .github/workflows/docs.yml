@@ -83,10 +83,19 @@ jobs:
 
       - name: Assemble the Pages artifact (gh-pages + marketing root)
         if: github.event_name != 'pull_request'
+        env:
+          MIKE_VERSION: ${{ steps.version.outputs.name }}
         run: |
           rm -rf site && mkdir site
-          git --work-tree=site checkout origin/gh-pages -- docs
+          # Fetch again: mike has just pushed, and `origin/gh-pages` still names the commit
+          # from before that push (#2392 — a release tag deployed without its own version).
+          git fetch origin gh-pages --depth=1
+          git --work-tree=site checkout FETCH_HEAD -- docs
           git reset -q # the checkout above stages the paths; leave the index clean
+          test -f "site/docs/$MIKE_VERSION/index.html" || {
+            echo "::error::docs/$MIKE_VERSION is not in the artifact about to be deployed"
+            exit 1
+          }
           cp -r marketing/. site/
 
       - uses: actions/upload-pages-artifact@v5
