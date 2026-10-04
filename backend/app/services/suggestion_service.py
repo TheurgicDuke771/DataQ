@@ -14,8 +14,6 @@ their values into the check.
 
 from __future__ import annotations
 
-import hashlib
-import json
 import re
 import uuid
 from collections.abc import Callable
@@ -37,7 +35,10 @@ from backend.app.services import (
     profile_service,
     run_target,
 )
+from backend.app.services.suggestion_claims import fingerprint
 from backend.app.services.suite_authz import require_permission
+
+__all__ = ["fingerprint"]
 
 log = get_logger(__name__)
 
@@ -57,13 +58,6 @@ class SuggestionNotFoundError(DataQError):
 class SuggestionDecidedError(DataQError):
     status_code = 409
     code = "suggestion_already_decided"
-
-
-def fingerprint(expectation_type: str, config: dict[str, Any]) -> str:
-    canonical = json.dumps(
-        {"type": expectation_type, "config": config}, sort_keys=True, default=str
-    )
-    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 def propose(
@@ -217,30 +211,6 @@ def refresh_from_profile(session: Session, suite: Suite, *, secret_store: Secret
     suite.auto_state = state
     session.commit()
     return created
-
-
-def claim_for_created_check(session: Session, check: Any, *, actor_id: uuid.UUID | None) -> bool:
-    """A check was just authored directly (the Suggest-checks drawer's Add, the editor,
-    the API) that is exactly a rule still pending in the suite's queue. Mark that rule
-    accepted and point it at the check, so accepting it later cannot create a duplicate.
-    Does not commit: it rides the caller's own commit, with the check.
-    """
-    suggestion = session.scalar(
-        select(CheckSuggestion)
-        .where(
-            CheckSuggestion.suite_id == check.suite_id,
-            CheckSuggestion.fingerprint == fingerprint(check.expectation_type, check.config),
-            CheckSuggestion.status == "pending",
-        )
-        .with_for_update()
-    )
-    if suggestion is None:
-        return False
-    suggestion.status = "accepted"
-    suggestion.check_id = check.id
-    suggestion.decided_by = actor_id
-    suggestion.decided_at = datetime.now(UTC)
-    return True
 
 
 def rejected_fingerprints(session: Session, suite: Suite) -> set[str]:
