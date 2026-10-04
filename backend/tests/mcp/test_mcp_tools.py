@@ -2132,8 +2132,9 @@ def test_get_suite_performance_advertises_no_window_argument() -> None:
 def test_export_suite_emits_definitions_in_stable_order(db_session: Any, monkeypatch: Any) -> None:
     user = _user(db_session)
     suite = _suite(db_session, user)
-    _check(db_session, suite, name="first")
-    _check(db_session, suite, name="second")
+    # Both rows share a `created_at` (one test transaction), so the ordinal is what orders them.
+    _check(db_session, suite, name="first", ordinal=1)
+    _check(db_session, suite, name="second", ordinal=2)
     _as(monkeypatch, db_session, user)
 
     doc = server.export_suite(str(suite.id))

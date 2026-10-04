@@ -138,6 +138,10 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Fixed
 
+- **An imported suite keeps its checks in the order of the file.** Checks created together (an
+  import, the demo data) were listed in an arbitrary, though stable, order. Checks now carry
+  their position, so lists, exports and run results follow the order they were written in.
+  Existing suites keep the order they show today. This release adds a database migration.
 - **Add check is no longer offered on a suite you can only view.** The button led to a form
   whose save was refused.
 - **"Triggered by" names who started a run.** The Dashboard, Results, the run page and the

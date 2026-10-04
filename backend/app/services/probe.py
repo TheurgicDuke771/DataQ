@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.config import Settings
 from backend.app.db.models import Check, Connection, Suite, User
 from backend.app.services import audit_service
+from backend.app.services.check_service import next_check_ordinal
 
 PROBE_CONNECTION_NAME = "probe-snowflake-dev"
 PROBE_SUITE_NAME = "probe-snowflake-suite"
@@ -87,8 +88,10 @@ def ensure_probe_fixtures(
                 name=name,
                 expectation_type=expectation_type,
                 config=dict(config),
+                ordinal=next_check_ordinal(session, suite.id),
             )
             session.add(check)
+            session.flush()  # the next one counts this
             checks.append(check)
             provisioned = True
 

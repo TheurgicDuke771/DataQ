@@ -15,6 +15,7 @@ from backend.app.datasources.databricks_dqx import DQX_ENGINE
 from backend.app.datasources.monitors import MONITOR_KINDS
 from backend.app.datasources.snowflake_dmf import DMF_ENGINE
 from backend.app.db.models import (
+    CHECK_ORDER,
     COMPARISON_KIND,
     GX_ENGINE,
     ORCHESTRATION_PROVIDERS,
@@ -59,7 +60,10 @@ class SuiteImportConnectionInvalidError(DataQError):
 
 def export_suite(session: Session, suite: Suite) -> dict[str, Any]:
     """Build a portable document from an already-loaded, authorised suite."""
-    checks = sorted(suite.checks, key=lambda c: c.created_at)
+    # The listing order (`CHECK_ORDER`), so an export reads like the checks list.
+    checks = list(
+        session.scalars(select(Check).where(Check.suite_id == suite.id).order_by(*CHECK_ORDER))
+    )
     docs: list[dict[str, Any]] = []
     for c in checks:
         doc: dict[str, Any] = {
@@ -287,8 +291,10 @@ def import_suite(
             warn_threshold=c["warn_threshold"],
             fail_threshold=c["fail_threshold"],
             critical_threshold=c["critical_threshold"],
+            # Document order: these rows share one `created_at`.
+            ordinal=position,
         )
-        for c, source_id in zip(checks, source_ids, strict=True)
+        for position, (c, source_id) in enumerate(zip(checks, source_ids, strict=True), start=1)
     ]
     session.add(suite)
     session.flush()  # assign check ids so each can carry a v1 snapshot (#280)
