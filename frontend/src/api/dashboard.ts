@@ -85,3 +85,17 @@ export async function getCoverageFigures(): Promise<CoverageFigures> {
   const { data } = await api.get<CoverageFigures>('/dashboard/coverage');
   return data;
 }
+
+/** Mirrors `OnboardingStatusRead` — workspace-wide, booleans only. */
+export interface OnboardingStatus {
+  has_datasource: boolean;
+  has_suite: boolean;
+  has_check: boolean;
+  has_run: boolean;
+  complete: boolean;
+}
+
+export async function getOnboardingStatus(): Promise<OnboardingStatus> {
+  const { data } = await api.get<OnboardingStatus>('/dashboard/onboarding');
+  return data;
+}

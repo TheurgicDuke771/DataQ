@@ -16,7 +16,7 @@ from backend.app.core.auth import get_current_user
 from backend.app.core.roles import is_workspace_admin
 from backend.app.db.models import User
 from backend.app.db.session import get_db
-from backend.app.services import asset_view_service, coverage_service
+from backend.app.services import asset_view_service, coverage_service, onboarding_service
 from backend.app.services import dashboard_service as svc
 
 router = APIRouter(tags=["dashboard"])
@@ -166,3 +166,34 @@ def get_coverage_figures(
     return coverage_service.coverage_figures(
         db, false_positive_window_days=false_positive_window_days
     )
+
+
+class OnboardingStatusRead(ApiModel):
+    """Which first-run steps the workspace has done.
+
+    Workspace-wide: true if ANY connection, suite, check or run exists, including ones the
+    caller cannot open, so every member sees the same answer. Booleans only. An
+    orchestration connection (ADF, Airflow, dbt) does not count as a data source, and
+    suites, checks and runs that automatic coverage made do not count: the steps are about
+    a person authoring them.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    has_datasource: bool
+    has_suite: bool
+    has_check: bool
+    has_run: bool
+    complete: bool
+
+
+@router.get(
+    "/dashboard/onboarding",
+    response_model=OnboardingStatusRead,
+    summary="Which first-run steps the workspace has done",
+)
+def get_onboarding_status(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> onboarding_service.OnboardingStatus:
+    return onboarding_service.onboarding_status(db)

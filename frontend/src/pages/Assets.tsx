@@ -5,7 +5,7 @@ import {
   GoldOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons';
-import { Alert, Empty, Flex, Segmented, Select, Table, Tag, Tooltip, Tree, Typography } from 'antd';
+import { Alert, Flex, Segmented, Select, Table, Tag, Tooltip, Tree, Typography } from 'antd';
 import type { ColumnsType, TablePaginationConfig } from 'antd/es/table';
 import type { DataNode } from 'antd/es/tree';
 import type { ReactNode, RefObject } from 'react';
@@ -13,6 +13,7 @@ import { useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { type AssetListPage, type AssetSort, type AssetSummary, listAssets } from '../api/assets';
+import { EmptyState } from '../components/shared/EmptyState';
 import { namespaceLabel } from '../components/assets/namespaceLabel';
 import { AssetHealthTag } from '../components/assets/AssetHealthTag';
 import {
@@ -68,7 +69,13 @@ export function Assets() {
   );
 }
 
-const EMPTY_DESCRIPTION = 'No assets yet — give a suite a run target and it will appear here.';
+const EMPTY = (
+  <EmptyState
+    title="No assets yet"
+    description="A table or file appears here once a suite targets it, or a connection's inventory sync finds it."
+    action={{ label: 'Open suites', to: '/suites' }}
+  />
+);
 
 /**
  * Hard cap on how many rows the tree view will walk pages for (#925) — a tree render over an
@@ -131,7 +138,7 @@ function AssetsTreeView({
     >
       {({ items, total }) =>
         items.length === 0 ? (
-          <Empty description={EMPTY_DESCRIPTION} />
+          EMPTY
         ) : (
           <Flex vertical gap={16} align="stretch">
             {/* Honest truncation (#925): never render a tree that silently
@@ -188,7 +195,7 @@ function AssetsTableView({ onOpen }: { onOpen: (id: string) => void }) {
     >
       {({ items, total }) =>
         total === 0 ? (
-          <Empty description={EMPTY_DESCRIPTION} />
+          EMPTY
         ) : (
           <Flex vertical gap={12}>
             <Flex align="center" gap={8}>

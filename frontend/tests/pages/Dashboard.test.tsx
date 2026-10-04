@@ -20,6 +20,7 @@ vi.mock('../../src/api/dashboard', async (importOriginal) => {
       .fn()
       .mockResolvedValue({ covered: [], uncovered: [], unclassified_checks: 0 }),
     getCoverageFigures: vi.fn().mockRejectedValue(new Error('not under test')),
+    getOnboardingStatus: vi.fn().mockRejectedValue(new Error('not under test')),
   };
 });
 
