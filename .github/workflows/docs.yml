@@ -44,6 +44,8 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.name }}
     steps:
       - uses: actions/checkout@v7
 
@@ -87,8 +89,8 @@ jobs:
           MIKE_VERSION: ${{ steps.version.outputs.name }}
         run: |
           rm -rf site && mkdir site
-          # Fetch again: mike has just pushed, and `origin/gh-pages` still names the commit
-          # from before that push (#2392 — a release tag deployed without its own version).
+          # Fetch again so the artifact is built from what mike just pushed, whatever the
+          # remote-tracking ref says.
           git fetch origin gh-pages --depth=1
           git --work-tree=site checkout FETCH_HEAD -- docs
           git reset -q # the checkout above stages the paths; leave the index clean
@@ -113,3 +115,21 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v5
+
+      # A deploy that reports success is not proof the version is being served (#2392: the
+      # v1.2.0 tag's run was green while /docs/v1.2.0/ returned 404).
+      - name: The published version is live
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          for attempt in $(seq 1 20); do
+            if curl -fsS "${PAGE_URL%/}/docs/versions.json?run=${GITHUB_RUN_ID}-${attempt}" \
+                | grep -q "\"version\": \"${VERSION}\""; then
+              echo "docs/${VERSION} is live"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::docs/${VERSION} is not in the live versions.json after 5 minutes"
+          exit 1
