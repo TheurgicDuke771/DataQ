@@ -1332,7 +1332,12 @@ def _checks_for_bulk(
     found = {
         c.id: c
         for c in session.scalars(
-            select(Check).where(Check.suite_id == suite_id, Check.id.in_(wanted)).with_for_update()
+            select(Check)
+            .where(Check.suite_id == suite_id, Check.id.in_(wanted))
+            # One lock order for every bulk request, so two overlapping ones queue
+            # instead of deadlocking.
+            .order_by(Check.id)
+            .with_for_update()
         )
     }
     missing = [str(i) for i in wanted if i not in found]

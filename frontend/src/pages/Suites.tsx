@@ -47,6 +47,7 @@ import {
 import { AssetLink } from '../components/assets/AssetLink';
 import { AutomaticTag } from '../components/suites/AutomaticTag';
 import { DimensionTag, EngineTag, formatThresholdsCompact } from '../components/checks/checkBadges';
+import { BULK_CHECKS_MAX, exceedsBulkLimit } from '../components/checks/bulkLimit';
 import { isSnoozed, SnoozedTag } from '../components/checks/snooze';
 import { ConnectionTypeAvatar } from '../components/connections/connectionVisuals';
 import { useCanAuthor, useWorkspaceRole } from '../auth/useMe';
@@ -617,8 +618,11 @@ function ChecksList({
       setSelected(new Set());
       onChanged();
     } catch (err) {
-      // All-or-nothing on the server: a failure changed no check.
-      message.error(`Nothing was changed: ${errorMessage(err)}`);
+      // Refetch: a selected check deleted elsewhere drops out of the selection, so a
+      // retry is not refused for the same reason again. The server applies a bulk action
+      // to all the checks or none, but a lost response does not say which.
+      message.error(`Bulk action failed: ${errorMessage(err)}. The list was refreshed.`);
+      onChanged();
       throw err;
     } finally {
       setBulkBusy(false);
@@ -682,6 +686,7 @@ function ChecksList({
   const checks = state.data;
   const selectedIds = checks.filter((c) => selected.has(c.id)).map((c) => c.id);
   const allSelected = checks.length > 0 && selectedIds.length === checks.length;
+  const overBulkLimit = exceedsBulkLimit(selectedIds.length);
 
   const onBulkDelete = () =>
     modal.confirm({
@@ -748,6 +753,11 @@ function ChecksList({
               {selectedIds.length > 0 && (
                 <>
                   <Typography.Text type="secondary">{selectedIds.length} selected</Typography.Text>
+                  {overBulkLimit && (
+                    <Typography.Text type="warning">
+                      At most {BULK_CHECKS_MAX} checks can be changed at once — clear some.
+                    </Typography.Text>
+                  )}
                   <Dropdown
                     menu={{
                       items: SNOOZE_PRESETS.map((p) => ({ key: p.key, label: p.label })),
@@ -761,15 +771,15 @@ function ChecksList({
                       },
                     }}
                     trigger={['click']}
-                    disabled={bulkBusy}
+                    disabled={bulkBusy || overBulkLimit}
                   >
-                    <Button size="small" loading={bulkBusy}>
+                    <Button size="small" loading={bulkBusy} disabled={overBulkLimit}>
                       Snooze selected
                     </Button>
                   </Dropdown>
                   <Button
                     size="small"
-                    disabled={bulkBusy}
+                    disabled={bulkBusy || overBulkLimit}
                     onClick={() =>
                       void runBulk(
                         () => bulkUnsnoozeChecks(suiteId, selectedIds),
@@ -779,7 +789,12 @@ function ChecksList({
                   >
                     Unsnooze selected
                   </Button>
-                  <Button size="small" danger disabled={bulkBusy} onClick={onBulkDelete}>
+                  <Button
+                    size="small"
+                    danger
+                    disabled={bulkBusy || overBulkLimit}
+                    onClick={onBulkDelete}
+                  >
                     Delete selected
                   </Button>
                 </>

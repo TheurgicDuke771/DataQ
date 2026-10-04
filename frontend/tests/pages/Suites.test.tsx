@@ -23,6 +23,7 @@ import {
   snoozeCheck,
   type Suite,
 } from '../../src/api/suites';
+import { BULK_CHECKS_MAX, exceedsBulkLimit } from '../../src/components/checks/bulkLimit';
 import { Suites } from '../../src/pages/Suites';
 
 vi.mock('../../src/api/connections', async (importOriginal) => {
@@ -394,15 +395,27 @@ describe('Suites', () => {
       await waitFor(() => expect(mockBulkDelete).toHaveBeenCalledWith('s1', ['b']));
     });
 
-    it('keeps the selection and says nothing changed when the server refuses', async () => {
+    it('refetches after a refusal, so a check deleted elsewhere leaves the selection', async () => {
       const user = await openWithChecks();
-      mockBulkUnsnooze.mockRejectedValue(new Error('1 of 1 checks were not found'));
+      mockBulkUnsnooze.mockRejectedValue(new Error('1 of 2 checks were not found'));
 
       await user.click(screen.getByRole('checkbox', { name: 'Select alpha' }));
+      await user.click(screen.getByRole('checkbox', { name: 'Select beta' }));
+      // Someone else deleted "beta" in the meantime: the refetch no longer returns it.
+      mockListChecks.mockResolvedValue(three.filter((c) => c.id !== 'b'));
       await user.click(screen.getByRole('button', { name: 'Unsnooze selected' }));
 
-      expect(await screen.findByText(/Nothing was changed/)).toBeInTheDocument();
+      expect(await screen.findByText(/Bulk action failed/)).toBeInTheDocument();
+      await waitFor(() => expect(screen.queryByText('beta')).not.toBeInTheDocument());
+      // The retry would now name only the check that still exists.
       expect(screen.getByText('1 selected')).toBeInTheDocument();
+    });
+
+    it('treats a selection over the request cap as blocked, and the cap itself as fine', () => {
+      // 501 rows are too slow to render in jsdom; the bar disables on this predicate.
+      expect(exceedsBulkLimit(BULK_CHECKS_MAX)).toBe(false);
+      expect(exceedsBulkLimit(BULK_CHECKS_MAX + 1)).toBe(true);
+      expect(BULK_CHECKS_MAX).toBe(500); // the backend's BULK_CHECKS_MAX
     });
 
     it('shows no selection controls to a view-only user', async () => {
