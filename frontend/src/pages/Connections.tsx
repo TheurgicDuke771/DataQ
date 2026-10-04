@@ -349,6 +349,13 @@ function ConnectionCard({
             ) : (
               <Badge status="warning" text="no credential" />
             )}
+            {/* What DataQ FOUND on this connection, beside whether it can reach it. Absent
+                when nothing evaluated — never a 0, which would read as "everything failed". */}
+            {connection.health_score != null && (
+              <Tooltip title="Data-quality score across every suite on this connection, including suites you cannot open. From each suite's latest completed run.">
+                <Tag style={{ marginInlineEnd: 0 }}>DQ score {connection.health_score}</Tag>
+              </Tooltip>
+            )}
             {/* A failing poll is a fact about the connection now, not a log line (#828).
                 Without this, an integration that has been dead for a week renders
                 identically to a healthy one — which is how prod lineage rotted for six

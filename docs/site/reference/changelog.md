@@ -53,6 +53,10 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Added
 
+- **A data-quality score per connection.** Each connection card shows a **DQ score** across
+  every suite on that connection, from each suite's latest completed run. It is the same
+  for every member, and absent when nothing has evaluated. In the API, connections gain
+  `health_score`.
 - **An asset health score.** The asset page's scorecard now leads with one 0–100 number
   for the whole asset, and **Assets → All assets** shows it in a **Score** column and can
   sort the whole workspace by it, lowest first. It counts every check that evaluated in

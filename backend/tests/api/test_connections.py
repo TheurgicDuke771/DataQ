@@ -14,7 +14,7 @@ from sqlalchemy import select
 from backend.app.core.auth import get_current_user
 from backend.app.core.secret_names import connection_secret_ref
 from backend.app.core.secrets import SecretWriteError
-from backend.app.db.models import Connection
+from backend.app.db.models import Check, Connection, Result, Run, Suite, User
 from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.app.services import connection_service as svc
@@ -1007,3 +1007,44 @@ def test_update_without_role_is_a_422_with_the_field_named(client: Any) -> None:
     resp = http.patch(f"/api/v1/connections/{created.json()['id']}", json={"config": _no_role()})
     assert resp.status_code == 422
     assert "role" in json.dumps(resp.json()["error"]["detail"]["errors"])
+
+
+# ── data-quality score (#1557) ───────────────────────────────────────────────
+
+
+def test_connections_carry_a_workspace_wide_health_score(
+    client: tuple[TestClient, FakeSecretStore], db_session: Any
+) -> None:
+    """The score counts a suite the caller neither owns nor was shared, and a connection
+    with nothing evaluated has none."""
+    owner = User(aad_object_id=uuid.uuid4().hex, email="score-owner@ex.com")
+    db_session.add(owner)
+    db_session.flush()
+    scored = Connection(
+        name="scored", type="snowflake", env="dev", config={}, secret_ref="kv", created_by=owner.id
+    )
+    unscored = Connection(
+        name="unscored", type="snowflake", env="qa", config={}, secret_ref="kv", created_by=owner.id
+    )
+    db_session.add_all([scored, unscored])
+    db_session.flush()
+    suite = Suite(name="s", connection_id=scored.id, created_by=owner.id)
+    db_session.add(suite)
+    db_session.flush()
+    run = Run(suite_id=suite.id, status="succeeded", triggered_by="manual")
+    db_session.add(run)
+    db_session.flush()
+    for status in ("pass", "fail"):
+        check = Check(suite_id=suite.id, name=status, expectation_type="e", config={})
+        db_session.add(check)
+        db_session.flush()
+        db_session.add(Result(run_id=run.id, check_id=check.id, status=status))
+    db_session.commit()
+
+    http, _store = client
+    listed = {c["name"]: c for c in http.get("/api/v1/connections").json()}
+    detail = http.get(f"/api/v1/connections/{scored.id}").json()
+
+    assert listed["scored"]["health_score"] == 75.0
+    assert listed["unscored"]["health_score"] is None
+    assert detail["health_score"] == 75.0
