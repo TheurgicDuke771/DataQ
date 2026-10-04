@@ -297,6 +297,9 @@ def test_connection_score_pools_every_suite_on_the_connection(db_session: Any) -
     assert scores == {conn.id: 87.5}
     # Nothing evaluated on `quiet`: absent, never 0 or 100.
     assert quiet.id not in scores
+    # Only skip/error is also "nothing evaluated".
+    _suite_run(db_session, quiet, owner, ["skip", "error"])
+    assert quiet.id not in connection_scores(db_session, [quiet.id], weights=_WEIGHTS)
 
 
 def test_connection_score_uses_only_each_suites_latest_complete_run(db_session: Any) -> None:

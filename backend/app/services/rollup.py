@@ -105,7 +105,7 @@ def status_histograms(
 
 def connection_scores(
     session: Session, connection_ids: Sequence[uuid.UUID], weights: Weights
-) -> dict[uuid.UUID, float | None]:
+) -> dict[uuid.UUID, float]:
     """``connection_id -> health score`` over every evaluated result of the latest
     complete run of each suite on that connection (#1557), in one grouped query.
     Workspace-true: every suite counts, whoever can open it. A connection with nothing
@@ -127,4 +127,5 @@ def connection_scores(
     counts: dict[uuid.UUID, dict[str, int]] = defaultdict(dict)
     for connection_id, status, n in rows:
         counts[connection_id][status] = n
-    return {cid: health_score(by_status, weights) for cid, by_status in counts.items()}
+    scores = {cid: health_score(by_status, weights) for cid, by_status in counts.items()}
+    return {cid: score for cid, score in scores.items() if score is not None}
