@@ -29,7 +29,7 @@
 | **v1.2 baseline** | `v1.2.0` — 2026-08-22 → 2026-10-04: 533 commits, 513 issues closed across eight weekly milestones plus 223 in the backlog, ADRs 0042–0047, datasources 5 → 11, MCP tools 46 → 54; ledger at [progress-v1.2.md](progress-v1.2.md), retro at [retro-v1.2.md](retro-v1.2.md) |
 | **Current cycle** | **v1.3 — 8 weeks, 2026-10-05 → 2026-11-29**, no net-new features: roadmap and filed features first (W1–W5), then bug fixes and security (W6), polish (W7), debt, decisions and the close (W8). Roadmap theme in [context/roadmap-v1.2-v1.3.md](../context/roadmap-v1.2-v1.3.md). |
 | **Environment** | No live cloud environment (estate retired 2026-10-03). Work is verified on the local stacks; live verification against Snowflake, Unity Catalog, Azure or AWS waits on [#2224](https://github.com/TheurgicDuke771/DataQ/issues/2224). |
-| **Open issues** | **76** open repo-wide (2026-10-05, live re-count), all in the eight v1.3 weekly milestones; `v1.3 Backlog` is empty and `v1.2 Backlog` is closed. |
+| **Open issues** | **77** open repo-wide (2026-10-05, live re-count), all in the eight v1.3 weekly milestones; `v1.3 Backlog` is empty and `v1.2 Backlog` is closed. |
 | **Open PRs** | **1 open** (2026-10-05): this plan. |
 
 ---
@@ -40,7 +40,7 @@ Named so nothing rolls silently (see the retro's "What rolls"):
 
 - **Security, filed and not fixed:** [#2348](https://github.com/TheurgicDuke771/DataQ/issues/2348) deleting a check rewrites run history · [#2383](https://github.com/TheurgicDuke771/DataQ/issues/2383) a suggested value set outlives a later PII classification · [#2240](https://github.com/TheurgicDuke771/DataQ/issues/2240) aggregate min/max on a sensitive column · [#2260](https://github.com/TheurgicDuke771/DataQ/issues/2260) oauthlib advisory (server-side only).
 - **Waiting on something outside the repo:** [#2224](https://github.com/TheurgicDuke771/DataQ/issues/2224) cloud live verification (a test instance) · [#717](https://github.com/TheurgicDuke771/DataQ/issues/717) Iceberg v3 (trigger-gated) · [#732](https://github.com/TheurgicDuke771/DataQ/issues/732) listing readiness (decisions, or a hosted offer).
-- **Process, from the retro:** changelog fragments (one file per PR) to end the serial merge conflicts, to do in Week 2; keep a weekly milestone to its planned rows.
+- **Process, from the retro:** changelog fragments (one file per PR) to end the serial merge conflicts ([#2395](https://github.com/TheurgicDuke771/DataQ/issues/2395), Week 2); keep a weekly milestone to its planned rows.
 - Everything else open at the close was re-homed into the weekly milestones below.
 
 ---
@@ -72,6 +72,7 @@ Named so nothing rolls silently (see the retro's "What rolls"):
 | ⬜ | [#2388](https://github.com/TheurgicDuke771/DataQ/issues/2388) Portable install artifact: a Helm chart (ADR 0013 Phase 2) |
 | ⬜ | [#2253](https://github.com/TheurgicDuke771/DataQ/issues/2253) docs(marketing): a walkthrough of the demo profile on the marketing page (video or annotated screenshots) |
 | ⬜ | [#1664](https://github.com/TheurgicDuke771/DataQ/issues/1664) docs(positioning): adopt the 'Data Quality Control Plane' framing on the marketing page + docs site |
+| ⬜ | [#2395](https://github.com/TheurgicDuke771/DataQ/issues/2395) Changelog fragments: one file per PR, assembled at release |
 
 ### v1.3 Week 3 — datasources, deploy targets & auth (due 2026-10-25)
 
