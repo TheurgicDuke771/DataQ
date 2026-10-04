@@ -7,6 +7,7 @@ from ... import errors
 from ...client import AuthenticatedClient, Client
 from ...models.asset_summary_read import AssetSummaryRead
 from ...models.http_validation_error import HTTPValidationError
+from ...models.list_assets_sort import ListAssetsSort
 from ...types import UNSET, Response, Unset
 
 
@@ -14,6 +15,7 @@ def _get_kwargs(
     *,
     limit: int | Unset = 200,
     offset: int | Unset = 0,
+    sort: ListAssetsSort | Unset = ListAssetsSort.NAME,
 ) -> dict[str, Any]:
 
     params: dict[str, Any] = {}
@@ -21,6 +23,12 @@ def _get_kwargs(
     params["limit"] = limit
 
     params["offset"] = offset
+
+    json_sort: str | Unset = UNSET
+    if not isinstance(sort, Unset):
+        json_sort = sort.value
+
+    params["sort"] = json_sort
 
     params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
@@ -73,12 +81,16 @@ def sync_detailed(
     client: AuthenticatedClient | Client,
     limit: int | Unset = 200,
     offset: int | Unset = 0,
+    sort: ListAssetsSort | Unset = ListAssetsSort.NAME,
 ) -> Response[HTTPValidationError | list[AssetSummaryRead]]:
     """List assets
 
     Args:
         limit (int | Unset):  Default: 200.
         offset (int | Unset):  Default: 0.
+        sort (ListAssetsSort | Unset): `name` orders by namespace then name. `health_score` orders
+            the whole population lowest score first, assets with no score last. Default:
+            ListAssetsSort.NAME.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -91,6 +103,7 @@ def sync_detailed(
     kwargs = _get_kwargs(
         limit=limit,
         offset=offset,
+        sort=sort,
     )
 
     response = client.get_httpx_client().request(
@@ -105,12 +118,16 @@ def sync(
     client: AuthenticatedClient | Client,
     limit: int | Unset = 200,
     offset: int | Unset = 0,
+    sort: ListAssetsSort | Unset = ListAssetsSort.NAME,
 ) -> HTTPValidationError | list[AssetSummaryRead] | None:
     """List assets
 
     Args:
         limit (int | Unset):  Default: 200.
         offset (int | Unset):  Default: 0.
+        sort (ListAssetsSort | Unset): `name` orders by namespace then name. `health_score` orders
+            the whole population lowest score first, assets with no score last. Default:
+            ListAssetsSort.NAME.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -124,6 +141,7 @@ def sync(
         client=client,
         limit=limit,
         offset=offset,
+        sort=sort,
     ).parsed
 
 
@@ -132,12 +150,16 @@ async def asyncio_detailed(
     client: AuthenticatedClient | Client,
     limit: int | Unset = 200,
     offset: int | Unset = 0,
+    sort: ListAssetsSort | Unset = ListAssetsSort.NAME,
 ) -> Response[HTTPValidationError | list[AssetSummaryRead]]:
     """List assets
 
     Args:
         limit (int | Unset):  Default: 200.
         offset (int | Unset):  Default: 0.
+        sort (ListAssetsSort | Unset): `name` orders by namespace then name. `health_score` orders
+            the whole population lowest score first, assets with no score last. Default:
+            ListAssetsSort.NAME.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -150,6 +172,7 @@ async def asyncio_detailed(
     kwargs = _get_kwargs(
         limit=limit,
         offset=offset,
+        sort=sort,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -162,12 +185,16 @@ async def asyncio(
     client: AuthenticatedClient | Client,
     limit: int | Unset = 200,
     offset: int | Unset = 0,
+    sort: ListAssetsSort | Unset = ListAssetsSort.NAME,
 ) -> HTTPValidationError | list[AssetSummaryRead] | None:
     """List assets
 
     Args:
         limit (int | Unset):  Default: 200.
         offset (int | Unset):  Default: 0.
+        sort (ListAssetsSort | Unset): `name` orders by namespace then name. `health_score` orders
+            the whole population lowest score first, assets with no score last. Default:
+            ListAssetsSort.NAME.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -182,5 +209,6 @@ async def asyncio(
             client=client,
             limit=limit,
             offset=offset,
+            sort=sort,
         )
     ).parsed

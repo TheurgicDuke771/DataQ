@@ -652,15 +652,15 @@ def check_outcome_counts(
     in a single grouped query (no N+1). ``worst_severity`` is the highest of
     warn/fail/critical present, else ``None`` (all passed / only operational).
     """
-    out: dict[uuid.UUID, tuple[int, int, str | None]] = {}
-    for run_id, by_status in status_histograms(
-        session, run_ids, complete_runs_only=complete_runs_only
-    ).items():
-        passed = by_status.get("pass", 0)
-        worst = worst_severity(by_status)
-        total = passed + sum(by_status.get(tier, 0) for tier in SEVERITY_RANK)
-        out[run_id] = (total, passed, worst)
-    return out
+    histograms = status_histograms(session, run_ids, complete_runs_only=complete_runs_only)
+    return {run_id: outcome_from_histogram(by_status) for run_id, by_status in histograms.items()}
+
+
+def outcome_from_histogram(by_status: Mapping[str, int]) -> tuple[int, int, str | None]:
+    """``(checks_total, checks_passed, worst_severity)`` from one run's status histogram."""
+    passed = by_status.get("pass", 0)
+    total = passed + sum(by_status.get(tier, 0) for tier in SEVERITY_RANK)
+    return total, passed, worst_severity(by_status)
 
 
 def operational_result_flags(

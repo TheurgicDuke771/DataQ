@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -365,14 +365,66 @@ describe('Assets page — table view (#925 server-side paging)', () => {
     await screen.findByText('ANALYTICS.PUBLIC.A0');
     // Each call also carries the abort signal (#1107 review) as its second
     // argument — the table view forwards it just like the tree walk does.
-    expect(mockList).toHaveBeenCalledWith({ limit: 50, offset: 0 }, expect.any(AbortSignal));
+    expect(mockList).toHaveBeenCalledWith(
+      { limit: 50, offset: 0, sort: 'name' },
+      expect.any(AbortSignal),
+    );
 
     // antd renders page-number items with title="2"; go to page 2.
     await userEvent.click(screen.getByTitle('2'));
 
     expect(await screen.findByText('ANALYTICS.PUBLIC.B0')).toBeInTheDocument();
     expect(screen.queryByText('ANALYTICS.PUBLIC.A0')).not.toBeInTheDocument();
-    expect(mockList).toHaveBeenCalledWith({ limit: 50, offset: 50 }, expect.any(AbortSignal));
+    expect(mockList).toHaveBeenCalledWith(
+      { limit: 50, offset: 50, sort: 'name' },
+      expect.any(AbortSignal),
+    );
+  });
+
+  it('shows the health score, and a dash when nothing evaluated', async () => {
+    mockList.mockResolvedValue(
+      page([
+        { ...ASSET, health_score: 87.5 },
+        { ...ASSET, id: 'a2', name: 'ANALYTICS.PUBLIC.NEVER_RUN', health_score: null },
+      ]),
+    );
+    renderPage();
+    await switchToTable();
+
+    const scored = (await screen.findByText('ANALYTICS.PUBLIC.ORDERS')).closest(
+      'tr',
+    ) as HTMLElement;
+    const unscored = screen.getByText('ANALYTICS.PUBLIC.NEVER_RUN').closest('tr') as HTMLElement;
+    expect(within(scored).getByText('87.5')).toBeInTheDocument();
+    // Not 0 — that would read as "everything failed".
+    expect(within(unscored).queryByText('0')).not.toBeInTheDocument();
+  });
+
+  it('asks the server for the order and returns to page 1 when the sort changes', async () => {
+    const rows = Array.from({ length: 50 }, (_, i) => ({ ...ASSET, id: `r-${i}`, name: `T${i}` }));
+    mockList.mockImplementation(async (params) =>
+      params?.limit === 200 ? { items: [], total: 0 } : { items: rows, total: 120 },
+    );
+    renderPage();
+    await switchToTable();
+    await screen.findByText('T0');
+    await userEvent.click(screen.getByTitle('2'));
+    await waitFor(() =>
+      expect(mockList).toHaveBeenCalledWith(
+        { limit: 50, offset: 50, sort: 'name' },
+        expect.any(AbortSignal),
+      ),
+    );
+
+    await userEvent.click(await screen.findByRole('combobox', { name: 'Sort by' }));
+    await userEvent.click(await screen.findByText('Health score, lowest first'));
+
+    await waitFor(() =>
+      expect(mockList).toHaveBeenCalledWith(
+        { limit: 50, offset: 0, sort: 'health_score' },
+        expect.any(AbortSignal),
+      ),
+    );
   });
 
   it('shows an empty state when there are no assets', async () => {

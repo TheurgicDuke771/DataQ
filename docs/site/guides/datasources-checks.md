@@ -597,6 +597,17 @@ The `3/5 passing` figure counts checks that passed in the latest run out of chec
 that exist, so the gap includes failing, skipped, errored **and** never-run checks;
 hover it to see how many were excluded from the score.
 
+Above the dimension rows, the **asset health score** is one number for the whole asset:
+0–100 over every check that evaluated in each suite's latest completed run, with the
+workspace's severity weights. Unlike the rows below it, it includes checks with no
+dimension, so a failing custom SQL check lowers it. An asset where nothing evaluated shows
+**No signal**, not 0. It is not the Dashboard's Data Integrity Score, which covers every
+run in a time window across all your suites.
+
+On **Assets → All assets**, the **Score** column shows the same number, and **Sort by →
+Health score, lowest first** orders every asset in the workspace by it, with unscored
+assets last.
+
 The numbers are **workspace-wide**: everyone who can see the asset sees the same
 score, whether or not they can open the suites behind it. Two people comparing
 notes on the same table should never see two different verdicts.

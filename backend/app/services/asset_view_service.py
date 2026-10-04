@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import uuid
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
-from sqlalchemy import ColumnElement, and_, func, or_, select
+from sqlalchemy import ColumnElement, Float, Numeric, and_, case, cast, func, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import get_settings
@@ -34,11 +35,14 @@ from backend.app.lineage.warehouse import (
 from backend.app.services import audit_service, column_tags, scoring_settings_service
 from backend.app.services.rollup import (
     AGGREGATABLE_RUN_STATUSES,
+    SEVERITY_STATUSES,
     evaluated_total,
     health_score,
     latest_runs_per_suite_stmt,
+    status_histograms,
 )
-from backend.app.services.run_service import check_outcome_counts, operational_result_flags
+from backend.app.services.run_service import operational_result_flags, outcome_from_histogram
+from backend.app.services.scoring_settings_service import Weights
 from backend.app.services.suite_authz import effective_permissions
 
 log = get_logger(__name__)
@@ -77,6 +81,8 @@ class RunOutcome:
     created_at: datetime | None = None
     has_error: bool = False
     has_skip: bool = False
+    #: The run's result-status histogram — empty unless the run's result set is complete.
+    counts: Mapping[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -109,6 +115,9 @@ class AssetSummary:
     checks_total: int
     checks_passed: int
     last_run_at: datetime | None
+    #: Health score over every evaluated result of the composing suites' latest complete
+    #: runs (#1556). `None` when nothing evaluated — never run, or only skip/error.
+    health_score: float | None = None
     # ── connection health (reachability / execution) ── `has_failed_run`: any latest run whose
     # *execution* `failed` (wrote no results).
     has_failed_run: bool = False
@@ -264,15 +273,16 @@ def _latest_run_per_suite(session: Session, suite_ids: list[uuid.UUID]) -> dict[
 
 def _run_outcome(
     run: Run | None,
-    outcome: tuple[int, int, str | None] | None,
+    counts: Mapping[str, int] | None,
     op_flags: tuple[bool, bool] | None = None,
 ) -> RunOutcome:
-    """Assemble a `RunOutcome` from a suite's latest run + its check-outcome tuple
+    """Assemble a `RunOutcome` from a suite's latest run + its status histogram
     + its operational (`error`/`skip`) flags.
     """
     if run is None:
         return RunOutcome()
-    total, passed, worst = outcome or (0, 0, None)
+    counts = counts or {}
+    total, passed, worst = outcome_from_histogram(counts)
     has_error, has_skip = op_flags or (False, False)
     return RunOutcome(
         run_id=run.id,
@@ -284,6 +294,7 @@ def _run_outcome(
         created_at=run.created_at,
         has_error=has_error,
         has_skip=has_skip,
+        counts=counts,
     )
 
 
@@ -315,20 +326,20 @@ def _composing_suites(
 def _latest_outcomes(session: Session, suites: list[Suite]) -> dict[uuid.UUID, RunOutcome]:
     """One ``RunOutcome`` per suite (empty for a never-run suite) — the single
     computation both the workspace-true rollup and the per-suite breakdown read.
-    Three grouped queries total (latest runs, check outcomes, operational flags).
+    Three grouped queries total (latest runs, status histograms, operational flags).
     """
     latest_runs = _latest_run_per_suite(session, [s.id for s in suites])
     run_ids = [r.id for r in latest_runs.values()]
     # An asset scorecard states how the ASSET is doing, so a partial or stranded result set must not
     # contribute (#318).
-    outcomes = check_outcome_counts(session, run_ids, complete_runs_only=True)
+    histograms = status_histograms(session, run_ids, complete_runs_only=True)
     op_flags = operational_result_flags(session, run_ids)
     by_suite: dict[uuid.UUID, RunOutcome] = {}
     for suite in suites:
         run = latest_runs.get(suite.id)
-        outcome = outcomes.get(run.id) if run is not None else None
+        counts = histograms.get(run.id) if run is not None else None
         flags = op_flags.get(run.id) if run is not None else None
-        by_suite[suite.id] = _run_outcome(run, outcome, flags)
+        by_suite[suite.id] = _run_outcome(run, counts, flags)
     return by_suite
 
 
@@ -380,7 +391,7 @@ def _scorecard(session: Session, suite_ids: list[uuid.UUID], run_ids: list[uuid.
     return Scorecard(covered=covered, uncovered=uncovered, unclassified_checks=unclassified)
 
 
-def _roll_up(asset: Asset, suite_outcomes: list[RunOutcome]) -> AssetSummary:
+def _roll_up(asset: Asset, suite_outcomes: list[RunOutcome], weights: Weights) -> AssetSummary:
     """Roll the latest-run outcomes of ALL composing suites up into the asset-level
     health summary. Workspace-true (ADR 0037): the input is never grant-filtered,
     so every viewer computes — and sees — the same verdict.
@@ -390,7 +401,10 @@ def _roll_up(asset: Asset, suite_outcomes: list[RunOutcome]) -> AssetSummary:
     last_run_at: datetime | None = None
     has_failed_run = has_active_run = has_cancelled_run = False
     has_operational_error = has_skip = False
+    counts: dict[str, int] = defaultdict(int)
     for run in suite_outcomes:
+        for status, n in run.counts.items():
+            counts[status] += n
         if run.worst_severity is not None:
             statuses.append(run.worst_severity)
         # Execution state, distinct from check severity (see AssetSummary): a `failed` run wrote no
@@ -426,6 +440,7 @@ def _roll_up(asset: Asset, suite_outcomes: list[RunOutcome]) -> AssetSummary:
         checks_total=checks_total,
         checks_passed=checks_passed,
         last_run_at=last_run_at,
+        health_score=health_score(counts, weights),
         has_failed_run=has_failed_run,
         has_active_run=has_active_run,
         has_cancelled_run=has_cancelled_run,
@@ -446,21 +461,55 @@ def count_assets(session: Session) -> int:
     return session.scalar(select(func.count()).select_from(Asset)) or 0
 
 
+def _asset_scores(weights: Weights) -> Any:
+    """``asset_id -> health score`` as a subquery, the same number `_roll_up` computes
+    in Python — so a page ordered by it agrees with the scores it displays.
+    """
+    latest = latest_runs_per_suite_stmt(
+        select(Suite.id).where(Suite.asset_id.is_not(None))
+    ).subquery()
+    penalty = case(
+        *((Result.status == s, weights.penalty(s)) for s in SEVERITY_STATUSES), else_=0.0
+    )
+    score = 100.0 * (1.0 - cast(func.sum(penalty), Float) / (func.count() * weights.critical))
+    return (
+        select(Suite.asset_id.label("asset_id"), func.round(cast(score, Numeric), 1).label("score"))
+        .select_from(Suite)
+        .join(latest, latest.c.suite_id == Suite.id)
+        .join(Result, Result.run_id == latest.c.id)
+        .where(
+            latest.c.status.in_(AGGREGATABLE_RUN_STATUSES),
+            Result.status.in_(SEVERITY_STATUSES),
+        )
+        .group_by(Suite.asset_id)
+        .subquery()
+    )
+
+
 def list_visible_assets(
     session: Session,
     *,
     limit: int = 200,
     offset: int = 0,
+    sort: str = "name",
 ) -> list[AssetSummary]:
-    """Every asset, fully identified, sorted by ``(namespace, name)`` and paginated
-    with ``limit``/``offset`` — identical output for every caller (ADR 0037), which
-    is why this takes no user: identity is workspace knowledge and the rollup is
-    workspace-true (aggregated over ALL composing suites, never grant-filtered).
+    """Every asset, fully identified, paginated with ``limit``/``offset`` — identical
+    output for every caller (ADR 0037), which is why this takes no user: identity is
+    workspace knowledge and the rollup is workspace-true (aggregated over ALL composing
+    suites, never grant-filtered).
+
+    Sorted by ``(namespace, name)``, or with ``sort="health_score"`` lowest score first
+    over the WHOLE population (not just the page), unscored assets last.
     """
-    assets = list(
-        session.scalars(
-            select(Asset).order_by(Asset.namespace, Asset.name).limit(limit).offset(offset)
+    weights = scoring_settings_service.weights(session)
+    stmt = select(Asset)
+    if sort == "health_score":
+        scores = _asset_scores(weights)
+        stmt = stmt.outerjoin(scores, scores.c.asset_id == Asset.id).order_by(
+            scores.c.score.asc().nulls_last()
         )
+    assets = list(
+        session.scalars(stmt.order_by(Asset.namespace, Asset.name).limit(limit).offset(offset))
     )
     if not assets:
         return []
@@ -471,7 +520,7 @@ def list_visible_assets(
     for suite in suites:
         assert suite.asset_id is not None  # filtered on asset_id above
         by_asset[suite.asset_id].append(outcome_by_suite[suite.id])
-    return [_roll_up(asset, by_asset.get(asset.id, [])) for asset in assets]
+    return [_roll_up(asset, by_asset.get(asset.id, []), weights) for asset in assets]
 
 
 def _inherited_classifications(
@@ -536,7 +585,11 @@ def get_visible_asset(
     outcome_by_suite = _latest_outcomes(session, all_suites)
     composing = _composing_suites(visible, levels, outcome_by_suite)
 
-    summary = _roll_up(asset, [outcome_by_suite[s.id] for s in all_suites])
+    summary = _roll_up(
+        asset,
+        [outcome_by_suite[s.id] for s in all_suites],
+        scoring_settings_service.weights(session),
+    )
     # Workspace-true, like the summary: ALL composing suites, never `visible`.
     scorecard = _scorecard(
         session,
@@ -711,7 +764,9 @@ def summarize_asset(session: Session, asset: Asset) -> AssetSummary:
     """
     suites = list(session.scalars(select(Suite).where(Suite.asset_id == asset.id)))
     outcome_by_suite = _latest_outcomes(session, suites)
-    return _roll_up(asset, [outcome_by_suite[s.id] for s in suites])
+    return _roll_up(
+        asset, [outcome_by_suite[s.id] for s in suites], scoring_settings_service.weights(session)
+    )
 
 
 def _monitored_ids(session: Session, ids: list[uuid.UUID]) -> set[uuid.UUID]:

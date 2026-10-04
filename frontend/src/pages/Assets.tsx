@@ -5,14 +5,14 @@ import {
   GoldOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons';
-import { Alert, Empty, Flex, Segmented, Table, Tag, Tooltip, Tree, Typography } from 'antd';
+import { Alert, Empty, Flex, Segmented, Select, Table, Tag, Tooltip, Tree, Typography } from 'antd';
 import type { ColumnsType, TablePaginationConfig } from 'antd/es/table';
 import type { DataNode } from 'antd/es/tree';
 import type { ReactNode, RefObject } from 'react';
 import { useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { type AssetListPage, type AssetSummary, listAssets } from '../api/assets';
+import { type AssetListPage, type AssetSort, type AssetSummary, listAssets } from '../api/assets';
 import { namespaceLabel } from '../components/assets/namespaceLabel';
 import { AssetHealthTag } from '../components/assets/AssetHealthTag';
 import {
@@ -159,15 +159,22 @@ const TABLE_PAGE_SIZE = 50;
 
 function AssetsTableView({ onOpen }: { onOpen: (id: string) => void }) {
   const [page, setPage] = useState(1);
+  const [sort, setSort] = useState<AssetSort>('name');
   // Forward the abort signal (#1107 review) so switching pages quickly — or toggling away from the
   // table entirely — cancels the superseded request at the network layer.
   const { state, reload } = useAsyncData((signal) =>
-    listAssets({ limit: TABLE_PAGE_SIZE, offset: (page - 1) * TABLE_PAGE_SIZE }, signal),
+    listAssets({ limit: TABLE_PAGE_SIZE, offset: (page - 1) * TABLE_PAGE_SIZE, sort }, signal),
   );
   // useAsyncData only re-fetches on `reload()` (its effect keys off a nonce, not the fetcher
   // identity — see its doc), so a page change must bump it explicitly.
   const onPageChange = (nextPage: number) => {
     setPage(nextPage);
+    reload();
+  };
+  // The server orders the whole population, so a new order starts again from its first page.
+  const onSortChange = (nextSort: AssetSort) => {
+    setSort(nextSort);
+    setPage(1);
     reload();
   };
 
@@ -183,17 +190,35 @@ function AssetsTableView({ onOpen }: { onOpen: (id: string) => void }) {
         total === 0 ? (
           <Empty description={EMPTY_DESCRIPTION} />
         ) : (
-          <AssetsTable
-            assets={items}
-            onOpen={onOpen}
-            pagination={{
-              current: page,
-              pageSize: TABLE_PAGE_SIZE,
-              total,
-              onChange: onPageChange,
-              showSizeChanger: false,
-            }}
-          />
+          <Flex vertical gap={12}>
+            <Flex align="center" gap={8}>
+              <Typography.Text type="secondary" id="assets-sort-label">
+                Sort by
+              </Typography.Text>
+              <Select<AssetSort>
+                aria-labelledby="assets-sort-label"
+                size="small"
+                style={{ width: 230 }}
+                value={sort}
+                onChange={onSortChange}
+                options={[
+                  { value: 'name', label: 'Name' },
+                  { value: 'health_score', label: 'Health score, lowest first' },
+                ]}
+              />
+            </Flex>
+            <AssetsTable
+              assets={items}
+              onOpen={onOpen}
+              pagination={{
+                current: page,
+                pageSize: TABLE_PAGE_SIZE,
+                total,
+                onChange: onPageChange,
+                showSizeChanger: false,
+              }}
+            />
+          </Flex>
         )
       }
     </AsyncBody>
@@ -328,6 +353,15 @@ function AssetsTable({
       key: 'health',
       width: 130,
       render: (_: unknown, asset) => <AssetHealthTag summary={asset} />,
+    },
+    {
+      title: 'Score',
+      dataIndex: 'health_score',
+      width: 90,
+      align: 'right',
+      // Null = nothing evaluated. A dash, never 0, which would read as "everything failed".
+      render: (score: number | null | undefined) =>
+        score == null ? <Typography.Text type="secondary">—</Typography.Text> : score,
     },
     {
       title: 'Last seen',

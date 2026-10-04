@@ -164,7 +164,7 @@ function AssetDetailBody({
       {/* Between the header verdict and the per-suite breakdown: the scorecard
           answers "what is and isn't watched here", which is the question a data
           CONSUMER has before they trust the table. */}
-      <ScorecardPanel scorecard={asset.scorecard} />
+      <ScorecardPanel scorecard={asset.scorecard} healthScore={asset.summary.health_score} />
 
       <SuitesSection
         suites={asset.suites}
