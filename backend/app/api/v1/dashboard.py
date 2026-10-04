@@ -10,10 +10,12 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import ApiModel
+from backend.app.api.v1.assets import ScorecardRead
 from backend.app.core.auth import get_current_user
 from backend.app.core.roles import is_workspace_admin
 from backend.app.db.models import User
 from backend.app.db.session import get_db
+from backend.app.services import asset_view_service
 from backend.app.services import dashboard_service as svc
 
 router = APIRouter(tags=["dashboard"])
@@ -93,3 +95,22 @@ def get_dashboard_summary(
             for s in summary.suite_performance
         ],
     )
+
+
+@router.get(
+    "/dashboard/dimensions",
+    response_model=ScorecardRead,
+    summary="Each DQ dimension across every suite in the workspace",
+)
+def get_workspace_dimensions(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> asset_view_service.Scorecard:
+    """One row per DQ dimension that has checks anywhere, scored from each suite's
+    latest completed run; `uncovered` lists the dimensions no suite has a check for.
+
+    **Workspace-wide, unlike `/dashboard/summary`**: it covers every suite, including
+    ones the caller cannot open, and is identical for every member. Checks with no
+    dimension are counted in `unclassified_checks` and are in no row.
+    """
+    return asset_view_service.workspace_scorecard(db)

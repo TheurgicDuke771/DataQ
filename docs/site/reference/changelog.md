@@ -53,6 +53,11 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Added
 
+- **Each quality dimension across the whole workspace.** The Dashboard has a new panel
+  with one row per dimension over every suite in the workspace, with the same coverage
+  rules as the asset scorecard: a dimension with no checks anywhere is listed as not
+  covered, and checks with no dimension are counted separately. In the API,
+  `GET /dashboard/dimensions`.
 - **Suites as YAML files, and a way to validate them.** A suite document can now be YAML as
   well as JSON: `POST /suites/import` accepts `document_yaml`, and
   `GET /suites/{id}/export?format=yaml` produces it. The new `POST /suites/validate`

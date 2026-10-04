@@ -12,7 +12,14 @@ import { Dashboard } from '../../src/pages/Dashboard';
 
 vi.mock('../../src/api/dashboard', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api/dashboard')>();
-  return { ...actual, getDashboardSummary: vi.fn() };
+  return {
+    ...actual,
+    getDashboardSummary: vi.fn(),
+    // The dimension panel fetches its own data; these tests are about the KPI row.
+    getWorkspaceDimensions: vi
+      .fn()
+      .mockResolvedValue({ covered: [], uncovered: [], unclassified_checks: 0 }),
+  };
 });
 
 // The Recent Runs widget fetches its own slice; stub it out here so these tests

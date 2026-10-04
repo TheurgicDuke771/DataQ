@@ -608,6 +608,11 @@ Beside it, the change **vs 7 days ago** compares the score with what the same ca
 gave a week earlier: each suite's latest completed run as of then. Nothing is shown when
 there is no earlier score to compare with, which is different from "no change".
 
+The **Dashboard** has the other cut: *Data quality by dimension, across the workspace*
+shows each dimension over every suite in the workspace, so one dimension slipping on many
+assets at once is visible in one place. Like the asset scorecard it is the same for
+everyone and counts suites you cannot open; the tiles below it cover only your suites.
+
 On **Assets → All assets**, the **Score** column shows the same number, and **Sort by →
 Health score, lowest first** orders every asset in the workspace by it, with unscored
 assets last.

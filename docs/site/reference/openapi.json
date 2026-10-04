@@ -11990,6 +11990,28 @@
         ]
       }
     },
+    "/api/v1/dashboard/dimensions": {
+      "get": {
+        "description": "One row per DQ dimension that has checks anywhere, scored from each suite's\nlatest completed run; `uncovered` lists the dimensions no suite has a check for.\n\n**Workspace-wide, unlike `/dashboard/summary`**: it covers every suite, including\nones the caller cannot open, and is identical for every member. Checks with no\ndimension are counted in `unclassified_checks` and are in no row.",
+        "operationId": "get_workspace_dimensions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScorecardRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Each DQ dimension across every suite in the workspace",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
     "/api/v1/dashboard/summary": {
       "get": {
         "operationId": "get_dashboard_summary",
