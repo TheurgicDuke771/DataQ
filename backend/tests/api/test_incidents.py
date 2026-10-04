@@ -276,6 +276,57 @@ def test_owner_can_ack_and_resolve(client: TestClient, world: dict[str, Any]) ->
     assert resolve.json()["resolved_by"] == "user"
 
 
+@pytest.mark.parametrize("resolution", ["fixed", "expected_change", "false_positive"])
+def test_resolve_records_what_the_incident_turned_out_to_be(
+    client: TestClient, world: dict[str, Any], resolution: str
+) -> None:
+    _as(world["owner"])
+    url = f"/api/v1/incidents/{world['incident'].id}"
+
+    resolved = client.post(f"{url}/resolve", json={"resolution": resolution})
+
+    assert resolved.status_code == 200, resolved.text
+    assert resolved.json()["resolution"] == resolution
+    listed = client.get(url).json()
+    assert listed["resolution"] == resolution
+
+
+def test_resolve_without_a_resolution_is_recorded_as_unstated(
+    client: TestClient, world: dict[str, Any]
+) -> None:
+    """NULL, not `fixed`: an unstated resolution must not be counted as a real problem,
+    or it would dilute the false-positive rate."""
+    _as(world["owner"])
+    url = f"/api/v1/incidents/{world['incident'].id}"
+    before = client.get(url).json()
+
+    resolved = client.post(f"{url}/resolve", json={"note": "done"})
+
+    assert before["resolution"] is None
+    assert resolved.json()["resolution"] is None
+
+
+def test_resolve_rejects_an_unknown_resolution_and_leaves_the_incident_open(
+    client: TestClient, world: dict[str, Any]
+) -> None:
+    _as(world["owner"])
+    url = f"/api/v1/incidents/{world['incident'].id}"
+
+    resp = client.post(f"{url}/resolve", json={"resolution": "wontfix"})
+
+    assert resp.status_code == 422
+    still = client.get(url).json()
+    assert still["status"] == "open"
+
+
+def test_ack_does_not_take_a_resolution(client: TestClient, world: dict[str, Any]) -> None:
+    _as(world["owner"])
+    resp = client.post(
+        f"/api/v1/incidents/{world['incident'].id}/ack", json={"resolution": "false_positive"}
+    )
+    assert resp.status_code == 422
+
+
 def test_edit_share_can_ack(client: TestClient, world: dict[str, Any]) -> None:
     editor = _user(client_db(client), "editor@example.com")
     _share(client_db(client), world["suite"], editor, "edit")

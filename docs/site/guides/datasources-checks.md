@@ -682,6 +682,11 @@ checks and a daily schedule. After its first run it adds *Data is fresh* on `ord
   watched this closely. Deleting the column-profile check from a suite stops it for that table for
   good. Once a week each covered table is also profiled for suggested rules. A connection covers at most 500 tables (`AUTO_COVERAGE_MAX_ASSETS`); past
   that, the first 500 by name are covered and the overflow is logged.
+- **Say what an incident turned out to be.** When you resolve an incident, the confirmation
+  asks *What was it?*: **Fixed**, **Expected change** or **False positive**. It is optional and
+  works on any incident, not only automatic ones. An unanswered one is recorded as not stated,
+  never guessed. Marking false positives is how you find out whether automatic checks are
+  crying wolf.
 - **Who can see them.** Automatic suites have no human owner. Workspace admins see all of them
   and can share them; everyone sees the asset's health, which includes them.
 

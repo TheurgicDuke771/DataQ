@@ -143,7 +143,7 @@ describe('IncidentsPanel', () => {
     );
     const confirms = screen.getAllByRole('button', { name: 'Resolve' });
     await userEvent.click(confirms[confirms.length - 1]);
-    await waitFor(() => expect(mockResolve).toHaveBeenCalledWith('inc-1'));
+    await waitFor(() => expect(mockResolve).toHaveBeenCalledWith('inc-1', undefined, null));
   }, 15000);
 
   it('surfaces a failed acknowledge, resets busy, and does not reload', async () => {
@@ -161,6 +161,23 @@ describe('IncidentsPanel', () => {
     expect(ackButton).toBeEnabled();
     expect(ackButton).not.toHaveClass('ant-btn-loading');
   }, 15000);
+
+  it('sends the chosen resolution, and none when the choice is left alone', async () => {
+    mockList.mockResolvedValue([incident()]);
+    mockResolve.mockResolvedValue(detail({ status: 'resolved' }));
+    renderPanel({ s1: 'owner' });
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: 'Resolve' }));
+    await user.click(await screen.findByRole('combobox', { name: 'What was it? (optional)' }));
+    await user.click(await screen.findByText('False positive — nothing was wrong'));
+    const confirms = screen.getAllByRole('button', { name: 'Resolve' });
+    await user.click(confirms[confirms.length - 1]);
+
+    await waitFor(() =>
+      expect(mockResolve).toHaveBeenCalledWith('inc-1', undefined, 'false_positive'),
+    );
+  });
 
   it('surfaces a failed resolve without reloading', async () => {
     mockList.mockResolvedValue([incident()]);

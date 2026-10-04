@@ -8,15 +8,15 @@ import httpx
 from ... import errors
 from ...client import AuthenticatedClient, Client
 from ...models.http_validation_error import HTTPValidationError
-from ...models.incident_action_request import IncidentActionRequest
 from ...models.incident_detail_read import IncidentDetailRead
+from ...models.incident_resolve_request import IncidentResolveRequest
 from ...types import Response
 
 
 def _get_kwargs(
     incident_id: UUID,
     *,
-    body: IncidentActionRequest,
+    body: IncidentResolveRequest,
 ) -> dict[str, Any]:
     headers: dict[str, Any] = {}
 
@@ -69,15 +69,13 @@ def sync_detailed(
     incident_id: UUID,
     *,
     client: AuthenticatedClient | Client,
-    body: IncidentActionRequest,
+    body: IncidentResolveRequest,
 ) -> Response[HTTPValidationError | IncidentDetailRead]:
     """Resolve an incident (requires edit on its suite)
 
     Args:
         incident_id (UUID):
-        body (IncidentActionRequest): Optional note on an ack / resolve. NUL bytes are rejected by
-            ``ApiModel``;
-            the length cap keeps a hostile note off the unbounded Text column.
+        body (IncidentResolveRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -103,15 +101,13 @@ def sync(
     incident_id: UUID,
     *,
     client: AuthenticatedClient | Client,
-    body: IncidentActionRequest,
+    body: IncidentResolveRequest,
 ) -> HTTPValidationError | IncidentDetailRead | None:
     """Resolve an incident (requires edit on its suite)
 
     Args:
         incident_id (UUID):
-        body (IncidentActionRequest): Optional note on an ack / resolve. NUL bytes are rejected by
-            ``ApiModel``;
-            the length cap keeps a hostile note off the unbounded Text column.
+        body (IncidentResolveRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -132,15 +128,13 @@ async def asyncio_detailed(
     incident_id: UUID,
     *,
     client: AuthenticatedClient | Client,
-    body: IncidentActionRequest,
+    body: IncidentResolveRequest,
 ) -> Response[HTTPValidationError | IncidentDetailRead]:
     """Resolve an incident (requires edit on its suite)
 
     Args:
         incident_id (UUID):
-        body (IncidentActionRequest): Optional note on an ack / resolve. NUL bytes are rejected by
-            ``ApiModel``;
-            the length cap keeps a hostile note off the unbounded Text column.
+        body (IncidentResolveRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -164,15 +158,13 @@ async def asyncio(
     incident_id: UUID,
     *,
     client: AuthenticatedClient | Client,
-    body: IncidentActionRequest,
+    body: IncidentResolveRequest,
 ) -> HTTPValidationError | IncidentDetailRead | None:
     """Resolve an incident (requires edit on its suite)
 
     Args:
         incident_id (UUID):
-        body (IncidentActionRequest): Optional note on an ack / resolve. NUL bytes are rejected by
-            ``ApiModel``;
-            the length cap keeps a hostile note off the unbounded Text column.
+        body (IncidentResolveRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.

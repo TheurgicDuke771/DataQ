@@ -507,3 +507,39 @@ def test_cli_export_writes_yaml_when_the_output_file_is_yaml(
     assert exit_code_ == 0
     assert server.requests[0].url.params["format"] == "yaml"
     assert out.read_text() == "name: orders\n"
+
+
+def test_resolve_incident_sends_a_stated_resolution_and_omits_an_unstated_one() -> None:
+    incident = {
+        "id": str(uuid.uuid4()),
+        "asset_id": str(uuid.uuid4()),
+        "check_id": str(uuid.uuid4()),
+        "suite_id": str(uuid.uuid4()),
+        "status": "resolved",
+        "resolved_by": "user",
+        "occurrence_count": 1,
+        "created_at": "2026-10-01T00:00:00Z",
+        "last_seen_at": "2026-10-01T00:00:00Z",
+        "acknowledged_at": None,
+        "resolved_at": "2026-10-02T00:00:00Z",
+        "check_name": None,
+        "asset_namespace": None,
+        "asset_name": None,
+        "latest_status": None,
+        "acknowledged_by": None,
+        "resolved_by_user_id": None,
+        "prior_incident_id": None,
+        "acknowledge_note": None,
+        "resolution_note": None,
+        "evidence": None,
+    }
+    server = _Server(_json(200, incident), _json(200, incident))
+    client = _client(server)
+
+    client.resolve_incident(incident["id"], resolution="false_positive")
+    client.resolve_incident(incident["id"], note="done")
+
+    stated, unstated = (json.loads(r.content) for r in server.requests)
+    assert stated == {"resolution": "false_positive"}
+    # Not stated is not sent, so the server records none — never a default.
+    assert unstated == {"note": "done"}

@@ -49,6 +49,19 @@ describe('incidents client', () => {
     const updated = { id: 'inc-1', status: 'resolved' };
     mockPost.mockResolvedValueOnce({ data: updated });
     await expect(resolveIncident('inc-1', 'fixed upstream')).resolves.toBe(updated);
-    expect(mockPost).toHaveBeenCalledWith('/incidents/inc-1/resolve', { note: 'fixed upstream' });
+    // No resolution stated: sent as null, which the server records as "not stated".
+    expect(mockPost).toHaveBeenCalledWith('/incidents/inc-1/resolve', {
+      note: 'fixed upstream',
+      resolution: null,
+    });
+  });
+
+  it('sends the resolution when one is stated', async () => {
+    mockPost.mockResolvedValueOnce({ data: { id: 'inc-1', status: 'resolved' } });
+    await resolveIncident('inc-1', undefined, 'false_positive');
+    expect(mockPost).toHaveBeenCalledWith('/incidents/inc-1/resolve', {
+      note: null,
+      resolution: 'false_positive',
+    });
   });
 });
