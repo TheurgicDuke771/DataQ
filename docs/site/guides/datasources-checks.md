@@ -682,6 +682,12 @@ checks and a daily schedule. After its first run it adds *Data is fresh* on `ord
   watched this closely. Deleting the column-profile check from a suite stops it for that table for
   good. Once a week each covered table is also profiled for suggested rules. A connection covers at most 500 tables (`AUTO_COVERAGE_MAX_ASSETS`); past
   that, the first 500 by name are covered and the overflow is logged.
+- **Is it working?** The Dashboard's **Coverage** panel shows two workspace-wide figures. *Assets
+  watched* is the share of assets in the inventory with at least one suite that completed a run
+  in the last 7 days, split into assets with authored checks and assets watched by automatic
+  coverage only. *False positives* is, of the automatic-suite incidents a person resolved in the
+  last 30 days **and said what they were**, the share marked false positive. Both show the counts
+  behind them. When nobody has stated a resolution the panel says "Not measured", not 0%.
 - **Who can see them.** Automatic suites have no human owner. Workspace admins see all of them
   and can share them; everyone sees the asset's health, which includes them.
 

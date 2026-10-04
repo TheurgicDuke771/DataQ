@@ -11,6 +11,7 @@ import { useState } from 'react';
 import { getDashboardSummary } from '../api/dashboard';
 import { Page } from '../components/layout/Page';
 import { AssetHealthLead } from '../components/dashboard/AssetHealthLead';
+import { CoveragePanel } from '../components/dashboard/CoveragePanel';
 import { WorkspaceDimensions } from '../components/dashboard/WorkspaceDimensions';
 import { MetricCard } from '../components/dashboard/MetricCard';
 import { formatDurationMs } from '../components/results/resultsFormat';
@@ -78,6 +79,7 @@ export function Dashboard() {
       {/* One dimension across every asset — workspace-wide like the lead above, and
           labelled as such because the tiles below cover only the viewer's suites. */}
       <WorkspaceDimensions />
+      <CoveragePanel />
 
       {/* Five tiles: stacked on phones, 2-up on small screens, 3+2 at xl+. */}
       <Row gutter={[16, 16]}>

@@ -16,17 +16,27 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import get_settings
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import get_secret_store
 from backend.app.datasources.sql import is_sql_identifier
-from backend.app.db.models import Asset, Check, Connection, MonitorBaseline, Schedule, Suite
+from backend.app.db.models import (
+    Asset,
+    Check,
+    Connection,
+    Incident,
+    MonitorBaseline,
+    Run,
+    Schedule,
+    Suite,
+)
 from backend.app.services import check_service, cron, suggestion_service, suite_service
 from backend.app.services.asset_identity import resolve_asset_identity
 from backend.app.services.inventory_service import INVENTORY_TYPES
+from backend.app.services.rollup import AGGREGATABLE_RUN_STATUSES
 
 log = get_logger(__name__)
 
@@ -418,3 +428,97 @@ def reconcile_all(session: Session, *, now: datetime | None = None) -> dict[str,
         totals["checks_created"] += report.checks_created
         totals["paused"] += report.suites_paused
     return totals
+
+
+# ── coverage and false-positive figures (ADR 0047 §8) ────────────────────────
+
+#: A suite "watches" an asset if it completed a run this recently.
+COVERAGE_WINDOW_DAYS = 7
+
+
+@dataclass(frozen=True)
+class CoverageFigures:
+    """Workspace-wide (ADR 0037): the same for every member, and counts only — no asset,
+    suite or incident is named.
+
+    ``false_positive_rate`` is ``false_positive / stated``: of the automatic-suite
+    incidents a person resolved AND classified in the window, the share marked
+    false positive. Incidents resolved without a stated resolution (``unstated``) and
+    auto-resolved ones are in neither number, so a low rate over few stated resolutions
+    says little — read it with ``stated`` beside it.
+    """
+
+    assets_total: int
+    assets_watched: int
+    #: Watched by a suite a person authored (whether or not an automatic one watches too).
+    assets_watched_authored: int
+    #: Watched by automatic suites only.
+    assets_watched_auto_only: int
+    coverage_pct: float | None
+    coverage_window_days: int
+    false_positive_window_days: int
+    #: Automatic-suite incidents a person resolved in the window.
+    resolved: int
+    stated: int
+    unstated: int
+    false_positive: int
+    false_positive_rate: float | None
+
+
+def coverage_figures(
+    session: Session, *, false_positive_window_days: int = 30, now: datetime | None = None
+) -> CoverageFigures:
+    now = now or datetime.now(UTC)
+    ran_since = now - timedelta(days=COVERAGE_WINDOW_DAYS)
+    assets_total = session.scalar(select(func.count()).select_from(Asset)) or 0
+    # An asset is watched by an origin if a suite of that origin targeting it completed a
+    # run in the window. `succeeded` only: a run that failed outright evaluated nothing.
+    watched_rows = session.execute(
+        select(Suite.asset_id, Suite.origin)
+        .join(Run, Run.suite_id == Suite.id)
+        .where(
+            Suite.asset_id.is_not(None),
+            Run.status.in_(AGGREGATABLE_RUN_STATUSES),
+            Run.created_at >= ran_since,
+        )
+        .distinct()
+    ).all()
+    origins: dict[uuid.UUID, set[str]] = {}
+    for asset_id, origin in watched_rows:
+        origins.setdefault(asset_id, set()).add(origin)
+    authored = sum(1 for o in origins.values() if "user" in o)
+    watched = len(origins)
+
+    since = now - timedelta(days=false_positive_window_days)
+    counts = dict(
+        session.execute(
+            select(Incident.resolution, func.count())
+            .join(Suite, Suite.id == Incident.suite_id)
+            .where(
+                Suite.origin == "auto",
+                Incident.status == "resolved",
+                Incident.resolved_by == "user",
+                Incident.resolved_at >= since,
+            )
+            .group_by(Incident.resolution)
+        )
+        .tuples()
+        .all()
+    )
+    unstated = counts.pop(None, 0)
+    stated = sum(counts.values())
+    false_positive = counts.get("false_positive", 0)
+    return CoverageFigures(
+        assets_total=assets_total,
+        assets_watched=watched,
+        assets_watched_authored=authored,
+        assets_watched_auto_only=watched - authored,
+        coverage_pct=round(100.0 * watched / assets_total, 1) if assets_total else None,
+        coverage_window_days=COVERAGE_WINDOW_DAYS,
+        false_positive_window_days=false_positive_window_days,
+        resolved=stated + unstated,
+        stated=stated,
+        unstated=unstated,
+        false_positive=false_positive,
+        false_positive_rate=round(100.0 * false_positive / stated, 1) if stated else None,
+    )

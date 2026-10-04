@@ -98,6 +98,7 @@ from .connection_update import ConnectionUpdate
 from .connection_update_config_type_0 import ConnectionUpdateConfigType0
 from .connection_version_read import ConnectionVersionRead
 from .connection_version_read_config import ConnectionVersionReadConfig
+from .coverage_figures_read import CoverageFiguresRead
 from .coverage_gap_read import CoverageGapRead
 from .credential_health_read import CredentialHealthRead
 from .credential_health_read_status import CredentialHealthReadStatus
@@ -367,6 +368,7 @@ __all__ = (
     "ConnectionUpdateConfigType0",
     "ConnectionVersionRead",
     "ConnectionVersionReadConfig",
+    "CoverageFiguresRead",
     "CoverageGapRead",
     "CredentialHealthRead",
     "CredentialHealthReadStatus",

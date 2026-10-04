@@ -151,3 +151,26 @@ def test_dimensions_are_workspace_wide_for_a_caller_with_no_suites(
     ]
     assert "completeness" not in body["uncovered"]
     assert len(body["uncovered"]) == 6
+
+
+# ── coverage and false-positive figures (ADR 0047 §8) ────────────────────────
+
+
+def test_coverage_is_workspace_wide_and_bounds_its_window(
+    client: TestClient, db_session: Any
+) -> None:
+    owner, outsider = _user(db_session), _user(db_session)
+    _suite_with_results(db_session, owner, ["pass"])
+    _as(outsider)
+
+    resp = client.get("/api/v1/dashboard/coverage", params={"false_positive_window_days": 14})
+    too_wide = client.get("/api/v1/dashboard/coverage", params={"false_positive_window_days": 0})
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["false_positive_window_days"] == 14
+    assert body["coverage_window_days"] == 7
+    # The seeded suite has no asset, so nothing is in the inventory to be watched.
+    assert (body["assets_total"], body["coverage_pct"]) == (0, None)
+    assert body["false_positive_rate"] is None
+    assert too_wide.status_code == 422
