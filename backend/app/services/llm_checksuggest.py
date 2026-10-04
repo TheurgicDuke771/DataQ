@@ -516,9 +516,6 @@ def _format_rejection_reasons(rejected: list[dict[str, Any]]) -> str:
     return f"{joined}{suffix}"
 
 
-_VALUE_SET_TYPE = "expect_column_values_to_be_in_set"
-
-
 def _queue_for_review(session: Session, suite: Suite, accepted: list[dict[str, Any]]) -> int | None:
     """Put an automatic suite's validated suggestions in its review queue as
     ``source='llm'``, beside the profile-derived ones, so they outlive the drawer and a
@@ -539,9 +536,10 @@ def _queue_for_review(session: Session, suite: Suite, accepted: list[dict[str, A
         config = suggestion["config"]
         if expectation_type == FRESHNESS_EXPECTATION_TYPE:
             continue
-        if expectation_type == _VALUE_SET_TYPE and sensitive(
-            str(config.get("column")), list(config.get("value_set") or [])
-        ):
+        # Any type that carries a value set, not only "in set": not-in-set and the
+        # distinct-values types store the values just the same.
+        value_set = config.get("value_set")
+        if isinstance(value_set, list) and sensitive(str(config.get("column")), value_set):
             continue
         queued += suggestion_service.propose(
             session,
@@ -580,6 +578,11 @@ def validate_output(
     accepted: list[dict[str, Any]] = []
     rejected: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
+    turned_down = (
+        suggestion_service.rejected_fingerprints(session, suite)
+        if suite.origin == "auto"
+        else set()
+    )
     for raw in raw_suggestions:
         if not isinstance(raw, dict):
             rejected.append({"expectation_type": None, "reason": "suggestion was not an object"})
@@ -613,6 +616,17 @@ def validate_output(
             )
             continue
         seen.add(identity)
+        if suggestion_service.fingerprint(ok["expectation_type"], ok["config"]) in turned_down:
+            # Rejected under Suggested rules; offering it again in the drawer would ask
+            # the same person the same question.
+            rejected.append(
+                {
+                    "expectation_type": ok["expectation_type"],
+                    "name": ok.get("name"),
+                    "reason": "rejected earlier under Suggested rules",
+                }
+            )
+            continue
         accepted.append(ok)
     if not accepted:
         # The full `rejected` list is about to go out of scope — raised below

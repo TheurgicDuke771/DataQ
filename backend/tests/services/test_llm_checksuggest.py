@@ -12,7 +12,7 @@ from sqlalchemy import select
 
 from backend.app.db.models import AuditEvent, CheckSuggestion, LlmInvocation, Suite, User
 from backend.app.llm.base import LLMOutputInvalidError, LLMRequestInvalidError, LLMResult
-from backend.app.services import llm_checksuggest, llm_service
+from backend.app.services import check_service, llm_checksuggest, llm_service, suggestion_service
 from backend.app.services import profile_service as profile_service_module
 from backend.app.services.profile_service import ColumnProfile, ProfileResult
 from backend.tests.support.fake_secret_store import FakeSecretStore
@@ -807,13 +807,80 @@ def test_a_rule_already_decided_is_not_queued_again(db_session: Any, admin: User
     row.status = "rejected"
     db_session.commit()
 
+    other = _suggestion(
+        expectation_type="expect_column_values_to_be_unique",
+        name="ids are unique",
+        config={"column": "ID"},
+    )
     again = llm_checksuggest.validate_output(
-        db_session, _invocation(db_session, suite, admin), {"suggestions": [_suggestion()]}
+        db_session,
+        _invocation(db_session, suite, admin),
+        {"suggestions": [_suggestion(), other]},
     )
 
-    assert (first["queued_for_review"], again["queued_for_review"]) == (1, 0)
-    (still,) = _queued(db_session, suite)
-    assert still.status == "rejected"  # a rejection is remembered, not reopened
+    assert (first["queued_for_review"], again["queued_for_review"]) == (1, 1)
+    # The rejected rule is not offered again in the drawer either, and says why.
+    assert [s["name"] for s in again["suggestions"]] == ["ids are unique"]
+    assert [r["reason"] for r in again["rejected"]] == ["rejected earlier under Suggested rules"]
+    statuses = {r.name: r.status for r in _queued(db_session, suite)}
+    assert statuses == {"no null emails": "rejected", "ids are unique": "pending"}
+
+
+def test_adding_a_queued_rule_directly_marks_it_accepted_so_it_cannot_be_added_twice(
+    db_session: Any, admin: User
+) -> None:
+    """The drawer's Add creates the check through the ordinary create path. The rule's
+    queued copy must stop being pending, or accepting it later makes a second check."""
+    suite = _auto_suite(db_session, admin)
+    llm_checksuggest.validate_output(
+        db_session, _invocation(db_session, suite, admin), {"suggestions": [_suggestion()]}
+    )
+    db_session.commit()
+
+    check = check_service.create_check(
+        db_session,
+        suite_id=suite.id,
+        name="no null emails",
+        kind="expectation",
+        expectation_type="expect_column_values_to_not_be_null",
+        config={"column": "EMAIL"},
+        warn_threshold=None,
+        fail_threshold=None,
+        critical_threshold=None,
+        actor_id=admin.id,
+    )
+
+    (row,) = _queued(db_session, suite)
+    assert (row.status, row.check_id, row.decided_by) == ("accepted", check.id, admin.id)
+    with pytest.raises(suggestion_service.SuggestionDecidedError):
+        suggestion_service.accept(db_session, row.id, user_id=admin.id)
+
+
+@pytest.mark.parametrize(
+    "expectation_type",
+    [
+        "expect_column_values_to_be_in_set",
+        "expect_column_values_to_not_be_in_set",
+        "expect_column_distinct_values_to_be_in_set",
+    ],
+)
+def test_no_value_set_type_over_a_sensitive_column_is_queued(
+    db_session: Any, admin: User, expectation_type: str
+) -> None:
+    suite = _auto_suite(db_session, admin, column_policy={"pii_columns": ["EMAIL"]})
+    suggestion = {
+        "expectation_type": expectation_type,
+        "name": "emails",
+        "rationale": "few distinct values",
+        "config": {"column": "EMAIL", "value_set": ["a@x.com", "b@x.com"]},
+    }
+
+    out = llm_checksuggest.validate_output(
+        db_session, _invocation(db_session, suite, admin), {"suggestions": [suggestion]}
+    )
+
+    assert out["queued_for_review"] == 0
+    assert _queued(db_session, suite) == []
 
 
 def test_a_value_set_over_a_sensitive_column_is_shown_but_not_queued(

@@ -64,10 +64,16 @@ const RESULT: CheckSuggestionsResponse = {
   ],
 };
 
-function renderDrawer(onAdded = vi.fn()) {
+function renderDrawer(onAdded = vi.fn(), onQueueChanged = vi.fn()) {
   return render(
     <AntApp>
-      <SuggestChecksDrawer suiteId="s1" open onClose={vi.fn()} onAdded={onAdded} />
+      <SuggestChecksDrawer
+        suiteId="s1"
+        open
+        onClose={vi.fn()}
+        onAdded={onAdded}
+        onQueueChanged={onQueueChanged}
+      />
     </AntApp>,
   );
 }
@@ -93,6 +99,20 @@ describe('SuggestChecksDrawer', () => {
     expect(
       screen.getByText(/load_orders runs in qa but the binding is for dev/),
     ).toBeInTheDocument();
+  });
+
+  it('tells the page its review queue changed when rules were saved, and not otherwise', async () => {
+    const saved = vi.fn();
+    mockRun.mockResolvedValue(row({ response: { ...RESULT, queued_for_review: 2 } }));
+    renderDrawer(vi.fn(), saved);
+    await screen.findByText('order_id not null');
+    expect(saved).toHaveBeenCalledTimes(1);
+
+    const nothingSaved = vi.fn();
+    mockRun.mockResolvedValue(row({ response: { ...RESULT, queued_for_review: null } }));
+    renderDrawer(vi.fn(), nothingSaved);
+    await waitFor(() => expect(mockRun).toHaveBeenCalledTimes(2));
+    expect(nothingSaved).not.toHaveBeenCalled();
   });
 
   it('says how many were saved to the review queue on an automatic suite', async () => {

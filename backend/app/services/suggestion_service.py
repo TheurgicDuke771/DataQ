@@ -219,6 +219,41 @@ def refresh_from_profile(session: Session, suite: Suite, *, secret_store: Secret
     return created
 
 
+def claim_for_created_check(session: Session, check: Any, *, actor_id: uuid.UUID | None) -> bool:
+    """A check was just authored directly (the Suggest-checks drawer's Add, the editor,
+    the API) that is exactly a rule still pending in the suite's queue. Mark that rule
+    accepted and point it at the check, so accepting it later cannot create a duplicate.
+    Does not commit: it rides the caller's own commit, with the check.
+    """
+    suggestion = session.scalar(
+        select(CheckSuggestion)
+        .where(
+            CheckSuggestion.suite_id == check.suite_id,
+            CheckSuggestion.fingerprint == fingerprint(check.expectation_type, check.config),
+            CheckSuggestion.status == "pending",
+        )
+        .with_for_update()
+    )
+    if suggestion is None:
+        return False
+    suggestion.status = "accepted"
+    suggestion.check_id = check.id
+    suggestion.decided_by = actor_id
+    suggestion.decided_at = datetime.now(UTC)
+    return True
+
+
+def rejected_fingerprints(session: Session, suite: Suite) -> set[str]:
+    """Rules a person has already turned down for this suite."""
+    return set(
+        session.scalars(
+            select(CheckSuggestion.fingerprint).where(
+                CheckSuggestion.suite_id == suite.id, CheckSuggestion.status == "rejected"
+            )
+        )
+    )
+
+
 def list_suggestions(
     session: Session, suite_id: uuid.UUID, *, user_id: uuid.UUID, status: str | None = "pending"
 ) -> list[CheckSuggestion]:

@@ -86,8 +86,8 @@ def sync_detailed(
     readable, in two forms: folded into `error` as one summary sentence, and
     as a structured `{rejected, rejected_count, truncated}` object under
     `response` (unlike a successful run, where `response` is `{suggestions,
-    rejected, coverage_warnings, column_coverage, queued_for_review}`) — a failed invocation's
-    `response`
+    rejected, coverage_warnings, column_coverage, queued_for_review}`) — a failed
+    invocation's `response`
     field carries only that narrower rejection detail, not the full success shape.
     `rejected` itself may be shorter than `rejected_count`; `truncated` is
     `true` when it is, so a caller reading only `response` (not `error`'s own
@@ -141,8 +141,8 @@ def sync(
     readable, in two forms: folded into `error` as one summary sentence, and
     as a structured `{rejected, rejected_count, truncated}` object under
     `response` (unlike a successful run, where `response` is `{suggestions,
-    rejected, coverage_warnings, column_coverage, queued_for_review}`) — a failed invocation's
-    `response`
+    rejected, coverage_warnings, column_coverage, queued_for_review}`) — a failed
+    invocation's `response`
     field carries only that narrower rejection detail, not the full success shape.
     `rejected` itself may be shorter than `rejected_count`; `truncated` is
     `true` when it is, so a caller reading only `response` (not `error`'s own
@@ -191,8 +191,8 @@ async def asyncio_detailed(
     readable, in two forms: folded into `error` as one summary sentence, and
     as a structured `{rejected, rejected_count, truncated}` object under
     `response` (unlike a successful run, where `response` is `{suggestions,
-    rejected, coverage_warnings, column_coverage, queued_for_review}`) — a failed invocation's
-    `response`
+    rejected, coverage_warnings, column_coverage, queued_for_review}`) — a failed
+    invocation's `response`
     field carries only that narrower rejection detail, not the full success shape.
     `rejected` itself may be shorter than `rejected_count`; `truncated` is
     `true` when it is, so a caller reading only `response` (not `error`'s own
@@ -244,8 +244,8 @@ async def asyncio(
     readable, in two forms: folded into `error` as one summary sentence, and
     as a structured `{rejected, rejected_count, truncated}` object under
     `response` (unlike a successful run, where `response` is `{suggestions,
-    rejected, coverage_warnings, column_coverage, queued_for_review}`) — a failed invocation's
-    `response`
+    rejected, coverage_warnings, column_coverage, queued_for_review}`) — a failed
+    invocation's `response`
     field carries only that narrower rejection detail, not the full success shape.
     `rejected` itself may be shorter than `rejected_count`; `truncated` is
     `true` when it is, so a caller reading only `response` (not `error`'s own

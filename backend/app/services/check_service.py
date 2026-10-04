@@ -978,6 +978,12 @@ def create_check(
     session.add(check)
     session.flush()  # assign check.id so the v1 snapshot can reference it
     record_check_version(session, check, actor_id=actor_id)
+    if origin == "user" and not machine_write:
+        # A rule waiting in the suite's review queue that a person has now authored directly
+        # is decided, not still pending (lazy import: suggestion_service imports this module).
+        from backend.app.services import suggestion_service
+
+        suggestion_service.claim_for_created_check(session, check, actor_id=actor_id)
     if not machine_write:
         audit_service.record_entity_change(
             session,

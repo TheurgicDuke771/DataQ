@@ -30,26 +30,46 @@ export function SuggestChecksDrawer({
   open,
   onClose,
   onAdded,
+  onQueueChanged,
 }: {
   suiteId: string;
   open: boolean;
   onClose: () => void;
   /** Called after each successful add so the checks list refetches. */
   onAdded: () => void;
+  /**
+   * The suite's "Suggested rules" queue changed: rules were saved to it, or one was added from
+   * here (which marks its queued copy accepted). The page refetches that panel.
+   */
+  onQueueChanged?: () => void;
 }) {
   return (
     <Drawer title="Suggested checks" open={open} onClose={onClose} size={640} destroyOnHidden>
-      {open && <SuggestBody suiteId={suiteId} onAdded={onAdded} />}
+      {open && <SuggestBody suiteId={suiteId} onAdded={onAdded} onQueueChanged={onQueueChanged} />}
     </Drawer>
   );
 }
 
-function SuggestBody({ suiteId, onAdded }: { suiteId: string; onAdded: () => void }) {
+function SuggestBody({
+  suiteId,
+  onAdded,
+  onQueueChanged,
+}: {
+  suiteId: string;
+  onAdded: () => void;
+  onQueueChanged?: () => void;
+}) {
   const { message } = App.useApp();
   const [state, setState] = useState<SuggestState>({ status: 'running' });
   const [added, setAdded] = useState<Set<number>>(new Set());
   const [adding, setAdding] = useState<Set<number>>(new Set());
   const abortRef = useRef<AbortController | null>(null);
+  // A ref, so the one-shot fetch effect below does not re-run when the parent re-renders
+  // with a new callback identity.
+  const queueChangedRef = useRef(onQueueChanged);
+  useEffect(() => {
+    queueChangedRef.current = onQueueChanged;
+  });
 
   useEffect(() => {
     const controller = new AbortController();
@@ -62,6 +82,7 @@ function SuggestBody({ suiteId, onAdded }: { suiteId: string; onAdded: () => voi
         if (controller.signal.aborted) return;
         if (row.status === 'succeeded' && row.response) {
           setState({ status: 'done', result: row.response });
+          if ((row.response.queued_for_review ?? 0) > 0) queueChangedRef.current?.();
         } else {
           setState({
             status: 'failed',
@@ -85,6 +106,8 @@ function SuggestBody({ suiteId, onAdded }: { suiteId: string; onAdded: () => voi
       setAdded((prev) => new Set(prev).add(index));
       message.success(`${s.name}: added`);
       onAdded();
+      // Adding a rule that was also queued marks its queued copy accepted.
+      queueChangedRef.current?.();
     } catch (err) {
       message.error(`Could not add “${s.name}”: ${errorMessage(err)}`);
     } finally {
