@@ -65,7 +65,8 @@ and a wrong claim is a false alert on every run.
 
    > **Amended 2026-10-04.** The reconciler proposes profile rules on its own. LLM
    > suggestions are made **on demand only**: a person runs *Suggest checks* on an automatic
-   > suite and the validated suggestions are saved to the same queue. The reconciler never
+   > suite and the validated suggestions the queue can hold are saved to it (freshness rules and
+   > value sets over a sensitive column are not). The reconciler never
    > calls the model.
 
 5. **Full severity.** Automatic checks warn, fail and go critical like authored ones and alert
