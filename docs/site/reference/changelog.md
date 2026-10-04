@@ -53,6 +53,10 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Added
 
+- **An upgrade guide and a support policy.** [Upgrading](../operate/upgrading.md) covers what to
+  back up, the steps for the prebuilt-image stack and a cloud deployment, and rolling back.
+  `SUPPORT.md` says where to ask for help. The security page now states outright that DataQ
+  sends nothing to its authors.
 - **Two MCP tools for automatic coverage.** `get_coverage` returns the share of the asset
   inventory watched in the last 7 days and the false-positive rate of automatic checks, with
   the counts behind each. `list_suggested_rules` lists a suite's review queue. Both are

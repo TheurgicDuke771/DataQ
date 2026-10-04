@@ -4,6 +4,8 @@
 
 **📖 Docs: <https://theurgicduke771.github.io/DataQ/docs/latest/>** · **Status:** `v1.1.0` released 2026-08-21; v1.2 in progress ([changelog](CHANGELOG.md) · [tracker](docs/progress.md)) · MIT licensed
 
+![The monitoring dashboard: asset health, integrity score, pass rate and per-suite performance](docs/site/assets/screenshots/dashboard.png)
+
 ## What it does
 
 - **Checks** — GX expectations (incl. **custom SQL**), **freshness / volume / schema-drift / anomaly** monitors and cross-dataset **comparison**; column profiler and dry-run everywhere. [Feature matrix →](https://theurgicduke771.github.io/DataQ/docs/latest/reference/feature-matrix/)
@@ -57,5 +59,7 @@ DataQ serves **54 curated MCP tools** at `https://<your-dataq-host>/mcp/` — 30
 FastAPI · Celery · Redis · PostgreSQL + Alembic · Great Expectations — React · Vite · Ant Design. Secrets in Azure Key Vault, AWS Secrets Manager or OpenBao. Reference deployments (IaC in [`deploy/terraform/`](deploy/terraform/)): **Azure Container Apps** and **AWS ECS Fargate**, behind provider-neutral seams — see [deployment parity](https://theurgicduke771.github.io/DataQ/docs/latest/operate/deployment-parity/) and the [deploy runbook](deploy/README.md).
 
 ## Contributing & reference
+
+**Support:** community, best effort — see [SUPPORT.md](.github/SUPPORT.md). **Privacy:** DataQ is self-hosted and sends nothing to its authors: no telemetry, no licence check, no update check ([what can leave a deployment](https://theurgicduke771.github.io/DataQ/docs/latest/security/overview/#what-can-move-data-out)). **Upgrading:** [guide](https://theurgicduke771.github.io/DataQ/docs/latest/operate/upgrading/).
 
 [CONTRIBUTING.md](CONTRIBUTING.md) (working agreements) · [Architecture](docs/site/architecture/overview.md) · [ADRs](docs/site/adr/) · [Env-var reference](.env.app.example) · [AI-assistant guide](CLAUDE.md) · [Security policy](.github/SECURITY.md) · [LICENSE](LICENSE) (MIT)
