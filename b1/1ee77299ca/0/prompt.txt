@@ -1,0 +1,14 @@
+yes, create the proposed 8 week milestone, and close out the v1.2 backlog milestone. 
+let's brainstrom the v1.3 roadmap, One thing - there will be no net new features this cycle, let target to implement the featues already on roadmap and clear the pilled up backlog.
+
+---
+
+ohh, let the dates start from 05-Oct
+
+---
+
+Uh, let's keep all the filed issue for the v1.3 cycle. And let's build the features first. And keep last two to three weeks for bug fix, security and polishment.
+
+---
+
+Also update the github project.
