@@ -101,6 +101,28 @@ resource "aws_wafv2_web_acl" "app" {
             }
           }
         }
+
+        # ... and NOT suite-document validation, which carries the same whole-suite
+        # document import does: a file that imports must not be blocked when validated.
+        statement {
+          not_statement {
+            statement {
+              byte_match_statement {
+                positional_constraint = "STARTS_WITH"
+                search_string         = "/api/v1/suites/validate"
+
+                field_to_match {
+                  uri_path {}
+                }
+
+                text_transformation {
+                  priority = 0
+                  type     = "NONE"
+                }
+              }
+            }
+          }
+        }
       }
     }
 

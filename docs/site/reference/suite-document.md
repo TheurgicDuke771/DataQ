@@ -92,7 +92,11 @@ Not supported, and refused with the line number:
 - anchors and aliases (`&name`, `*name`) and merge keys (`<<`)
 - explicit tags (`!!binary`, `!!timestamp`, …)
 - keys that are not text
+- nesting more than 32 levels deep
 - documents longer than 1,000,000 characters
+
+A YAML export quotes every text value another YAML tool might read as something else
+(`"no"`, `"2026-01-01"`, `"0x1F"`), so the file survives being loaded and rewritten elsewhere.
 
 ## Validate before you import
 

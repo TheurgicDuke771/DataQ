@@ -4,9 +4,11 @@ everything YAML can express that a JSON document cannot."""
 from __future__ import annotations
 
 import pytest
+import yaml
 
 from backend.app.services.suite_document_yaml import (
     MAX_YAML_CHARS,
+    MAX_YAML_DEPTH,
     SuiteDocumentYamlInvalidError,
     dump_suite_document_yaml,
     parse_suite_document_yaml,
@@ -110,6 +112,35 @@ def test_a_syntax_error_reports_its_position_and_no_content() -> None:
 def test_an_oversized_document_is_refused_unparsed() -> None:
     with pytest.raises(SuiteDocumentYamlInvalidError, match="longer than"):
         parse_suite_document_yaml("a: " + "x" * MAX_YAML_CHARS)
+
+
+def test_deep_nesting_is_refused_instead_of_exhausting_the_stack() -> None:
+    with pytest.raises(SuiteDocumentYamlInvalidError, match="levels deep") as excinfo:
+        parse_suite_document_yaml("a: " + "[" * 5000 + "]" * 5000)
+    assert excinfo.value.status_code == 422
+
+
+def test_nesting_a_real_document_needs_is_accepted() -> None:
+    nested = "a: " + "[" * (MAX_YAML_DEPTH - 1) + "]" * (MAX_YAML_DEPTH - 1)
+    assert "a" in parse_suite_document_yaml(nested)
+
+
+def test_an_integer_past_the_interpreter_digit_limit_is_refused() -> None:
+    with pytest.raises(SuiteDocumentYamlInvalidError, match="too large to read"):
+        parse_suite_document_yaml("version: " + "9" * 5000)
+
+
+def test_a_dumped_document_means_the_same_to_a_stock_yaml_1_1_reader() -> None:
+    """Another tool may load and rewrite the file. If `no` or `0x1F` were left bare it
+    would hand back `false` and `31`, and the re-import would store the changed value."""
+    document = {
+        "name": "no",
+        "checks": [{"config": {"value_set": ["no", "2026-01-01", "1:30", ".inf", "0x1F", "1_0"]}}],
+    }
+    dumped = dump_suite_document_yaml(document)
+
+    assert yaml.safe_load(dumped) == document
+    assert parse_suite_document_yaml(dumped) == document
 
 
 def test_dump_then_parse_is_the_identity_on_awkward_strings() -> None:
