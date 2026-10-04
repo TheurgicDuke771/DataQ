@@ -69,7 +69,8 @@ and never a silently ignored line.
   one, in the app or through the API.
 - **Schedules, triggers, sharing and notification settings.** These belong to the suite in
   the workspace, not to the document.
-- **Run history.** Importing always creates a new suite. It never updates an existing one.
+- **Run history.** Importing always creates a new suite. To change an existing suite from a
+  file, use [apply](#apply-a-file-onto-an-existing-suite).
 
 ## YAML rules
 
@@ -139,6 +140,94 @@ a `422` with the line and column.
 Validation is against a connection because some rules depend on its type: a native-engine
 check, a type that only runs on a dataframe, a comparison's source.
 
+## Apply a file onto an existing suite
+
+`POST /api/v1/suites/{id}/apply` brings a suite in line with a document. It is idempotent:
+applying the same file twice changes nothing the second time.
+
+Checks are matched by **name**:
+
+| The check is | What apply does |
+|---|---|
+| in the file, not in the suite | creates it |
+| in both, and differs | updates it |
+| in both, and the same | nothing |
+| in the suite, not in the file | leaves it alone, and lists it under `unmanaged`. With `prune: true`, deletes it together with its results and history. |
+
+The suite's name and description are updated from the file. Its connection, target,
+schedules, sharing and notification settings are never touched.
+
+Send `dry_run: true` to get the same plan without changing anything. That plan is the
+**drift** between the file and the workspace:
+
+```json
+{
+  "dry_run": true,
+  "changed": true,
+  "suite_fields": [],
+  "checks": [
+    { "name": "status is a known value", "action": "update", "fields": ["config", "fail_threshold"] },
+    { "name": "order id is never null", "action": "unchanged", "fields": [] }
+  ],
+  "unmanaged": ["a check someone added in the app"]
+}
+```
+
+`fields` names what differs and never shows a value, so a plan is safe in CI logs.
+`unmanaged` checks do not count as drift unless you ask for `prune`.
+
+Things to know:
+
+- The whole file is validated before anything is written, so a file that is refused changes
+  nothing. Each change is then made like an edit in the app, with its own version and audit
+  entry. If something fails part-way, the earlier changes stay; apply again to finish.
+- A threshold the file leaves out is **cleared** on the check, because the file is the
+  whole definition.
+- Renaming a check in the file reads as one new check and one unmanaged check. With `prune`
+  the old one is deleted and its history goes with it.
+- A check's `kind` cannot be changed. Give the new check a different name.
+- Names must be unique, in the file and among the suite's checks the file names.
+- Apply cannot un-classify a check: `dimension: null` is treated as "leave it".
+- It needs edit access to the suite and runs with your own permissions.
+
+### From the command line
+
+The [`dataq` command](../guides/python-client.md) wraps the three calls. A `.yaml` or `.yml`
+file is sent as YAML; anything else is read as JSON.
+
+```bash
+dataq validate orders.yaml --connection "$CONNECTION_ID"   # exit 2 if the file is invalid
+dataq drift    orders.yaml --suite "$SUITE_ID"             # exit 2 if the suite differs
+dataq apply    orders.yaml --suite "$SUITE_ID" [--prune]
+dataq export   "$SUITE_ID" -o orders.yaml                  # start from what exists
+```
+
+### In CI
+
+Validate and report drift on every pull request, apply on merge. With GitHub Actions:
+
+```yaml
+jobs:
+  suites:
+    runs-on: ubuntu-latest
+    env:
+      DATAQ_URL: ${{ vars.DATAQ_URL }}
+      DATAQ_PAT: ${{ secrets.DATAQ_PAT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install "git+https://github.com/TheurgicDuke771/DataQ.git@main#subdirectory=packages/dataq-client"
+      - run: dataq validate suites/orders.yaml --connection "${{ vars.DATAQ_CONNECTION_ID }}"
+      - if: github.event_name == 'pull_request'
+        run: dataq drift suites/orders.yaml --suite "${{ vars.ORDERS_SUITE_ID }}" || true
+      - if: github.ref == 'refs/heads/main'
+        run: dataq apply suites/orders.yaml --suite "${{ vars.ORDERS_SUITE_ID }}"
+```
+
+The token is a personal access token of a user with edit access to the suite.
+
 ## Import and export
 
 | To | Call |
@@ -147,6 +236,7 @@ check, a type that only runs on a dataframe, a comparison's source.
 | Export as YAML | `GET /api/v1/suites/{id}/export?format=yaml` |
 | Import JSON | `POST /api/v1/suites/import` with `{connection_id, document}` |
 | Import YAML | `POST /api/v1/suites/import` with `{connection_id, document_yaml}` — the YAML as one text value |
+| Apply or check drift | `POST /api/v1/suites/{id}/apply` with `{document}` or `{document_yaml}`, plus `prune` and `dry_run` |
 
 Send `document` or `document_yaml`, never both. Import and validate need the Member role or
 higher; export needs view access to the suite.

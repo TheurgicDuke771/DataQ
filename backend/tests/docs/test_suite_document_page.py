@@ -51,7 +51,7 @@ def connection_id(db_session: Any) -> str:
 
 
 def test_the_page_example_validates_and_imports(client: TestClient, connection_id: str) -> None:
-    (example,) = _blocks("yaml")
+    example = _blocks("yaml")[0]  # the page's first YAML block is the document
     body = {"connection_id": connection_id, "document_yaml": example}
 
     validated = client.post("/api/v1/suites/validate", json=body)
@@ -64,8 +64,8 @@ def test_the_page_example_validates_and_imports(client: TestClient, connection_i
 def test_the_page_problem_output_is_what_the_server_returns(
     client: TestClient, connection_id: str
 ) -> None:
-    (example,) = _blocks("yaml")
-    (shown,) = _blocks("json")
+    example = _blocks("yaml")[0]  # the page's first YAML block is the document
+    shown = _blocks("json")[0]  # the first JSON block is the validate output
     # The page's sample output is for the example with its second check's bands inverted.
     broken = example.replace(
         "warn_threshold: 0.5\n    fail_threshold: 2", "warn_threshold: 2\n    fail_threshold: 0.5"
@@ -77,3 +77,31 @@ def test_the_page_problem_output_is_what_the_server_returns(
     )
 
     assert resp.json() == json.loads(shown)
+
+
+def test_the_page_drift_example_has_the_shape_the_server_returns(
+    client: TestClient, connection_id: str
+) -> None:
+    """Import the page's document, change it, and compare the dry-run plan's SHAPE with
+    the plan the page prints (the names differ; the keys and action words must not)."""
+    example = _blocks("yaml")[0]
+    shown = json.loads(_blocks("json")[1])
+    imported = client.post(
+        "/api/v1/suites/import", json={"connection_id": connection_id, "document_yaml": example}
+    )
+    sid = imported.json()["id"]
+    drifted = example.replace("fail_threshold: 2", "fail_threshold: 3")
+    assert drifted != example
+
+    plan = client.post(
+        f"/api/v1/suites/{sid}/apply", json={"document_yaml": drifted, "dry_run": True}
+    ).json()
+
+    assert set(plan) == set(shown)
+    assert set(plan["checks"][0]) == set(shown["checks"][0])
+    assert {c["name"]: (c["action"], c["fields"]) for c in plan["checks"]} == {
+        "order id is never null": ("unchanged", []),
+        "status is a known value": ("update", ["fail_threshold"]),
+        "orders arrived today": ("unchanged", []),
+    }
+    assert plan["changed"] is True

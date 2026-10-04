@@ -22,7 +22,7 @@ from backend.app.db.models import (
     Connection,
     Suite,
 )
-from backend.app.services import audit_service
+from backend.app.services import audit_service, check_service, suite_service
 from backend.app.services.check_dimension import derive_dimension
 from backend.app.services.check_service import (
     record_check_version,
@@ -311,3 +311,196 @@ def import_suite(
         check_count=len(checks),
     )
     return suite
+
+
+# ── apply onto an existing suite (#1688 phase 2) ─────────────────────────────
+
+_THRESHOLDS = ("warn_threshold", "fail_threshold", "critical_threshold")
+
+
+@dataclass(frozen=True)
+class CheckChange:
+    """What applying the document does to one check. `fields` names what differs on an
+    update — names only, never values, so a plan is safe to print in CI logs.
+    """
+
+    name: str
+    action: str  # create | update | delete | unchanged
+    fields: list[str]
+
+
+@dataclass(frozen=True)
+class ApplyPlan:
+    suite_fields: list[str]
+    checks: list[CheckChange]
+    #: Checks the suite has that the document does not name. Deleted only with `prune`.
+    unmanaged: list[str]
+
+    @property
+    def changed(self) -> bool:
+        return bool(self.suite_fields) or any(c.action != "unchanged" for c in self.checks)
+
+
+def _duplicates(names: list[str]) -> list[str]:
+    seen: set[str] = set()
+    return sorted({n for n in names if n in seen or seen.add(n)})  # type: ignore[func-returns-value]
+
+
+def _check_diff(existing: Check, doc: dict[str, Any], source_id: uuid.UUID | None) -> list[str]:
+    fields = [
+        name
+        for name in ("expectation_type", "config", *_THRESHOLDS)
+        if getattr(existing, name) != doc[name]
+    ]
+    if (existing.engine or GX_ENGINE) != doc.get("engine", GX_ENGINE):
+        fields.append("engine")
+    # An absent `dimension` means "leave it"; so does an explicit null, because a check
+    # cannot be un-classified through an update.
+    if doc.get("dimension") is not None and existing.dimension != doc["dimension"]:
+        fields.append("dimension")
+    if existing.kind == COMPARISON_KIND and existing.source_connection_id != source_id:
+        fields.append("source_connection")
+    return fields
+
+
+def apply_document(
+    session: Session,
+    suite: Suite,
+    *,
+    version: int,
+    name: str,
+    description: str | None,
+    checks: list[dict[str, Any]],
+    prune: bool,
+    dry_run: bool,
+    actor_id: uuid.UUID,
+) -> ApplyPlan:
+    """Bring ``suite`` in line with a document: create the checks it lacks, update the
+    ones that differ, and with ``prune`` delete the ones the document does not name.
+    Checks are matched by NAME. ``dry_run`` returns the plan without writing — that plan
+    is the drift between the document and the workspace.
+
+    The whole document is validated first, so a refused document changes nothing. Each
+    change then goes through the same service call a UI edit uses, so it gets its own
+    version and audit event.
+    """
+    problems = validate_document(
+        session, version=version, checks=checks, connection_id=suite.connection_id
+    )
+    if problems:
+        first = problems[0]
+        where = "document" if first.check_index is None else f"check {first.check_name!r}"
+        raise SuiteImportInvalidError(
+            f"the document is not valid for this suite — {where}: {first.message}",
+            detail={
+                "problem_count": len(problems),
+                "problems": [
+                    {"check_index": p.check_index, "check_name": p.check_name, "code": p.code}
+                    for p in problems[:20]
+                ],
+            },
+        )
+    if repeated := _duplicates([c["name"] for c in checks]):
+        raise SuiteImportInvalidError(
+            "checks are matched by name, and the document names some more than once: "
+            + ", ".join(repr(n) for n in repeated[:10]),
+            detail={"duplicate_names": repeated[:20]},
+        )
+    existing = list(session.scalars(select(Check).where(Check.suite_id == suite.id)))
+    wanted = {c["name"] for c in checks}
+    if repeated := _duplicates([c.name for c in existing if c.name in wanted]):
+        raise SuiteImportInvalidError(
+            "checks are matched by name, and the suite has several checks named: "
+            + ", ".join(repr(n) for n in repeated[:10])
+            + " — rename them in the suite first",
+            detail={"duplicate_names": repeated[:20]},
+        )
+    by_name = {c.name: c for c in existing}
+
+    planned: list[tuple[CheckChange, dict[str, Any] | None, uuid.UUID | None]] = []
+    for doc in checks:
+        source_id = (
+            _resolve_source_connection(session, doc) if doc["kind"] == COMPARISON_KIND else None
+        )
+        current = by_name.get(doc["name"])
+        if current is None:
+            planned.append((CheckChange(doc["name"], "create", []), doc, source_id))
+            continue
+        if current.kind != doc["kind"]:
+            raise SuiteImportInvalidError(
+                f"check {doc['name']!r} is a {current.kind} check in the suite and a "
+                f"{doc['kind']} check in the document; a check's kind cannot be changed — "
+                "give the new check a different name",
+                detail={"check_name": doc["name"]},
+            )
+        fields = _check_diff(current, doc, source_id)
+        action = "update" if fields else "unchanged"
+        planned.append((CheckChange(doc["name"], action, fields), doc, source_id))
+    unmanaged = sorted(c.name for c in existing if c.name not in wanted)
+    if prune:
+        planned.extend((CheckChange(n, "delete", []), None, None) for n in unmanaged)
+
+    suite_fields = [
+        field
+        for field, value in (("name", name), ("description", description))
+        # An absent description leaves the suite's own, like any partial update.
+        if value is not None and getattr(suite, field) != value
+    ]
+    plan = ApplyPlan(
+        suite_fields=suite_fields,
+        checks=[change for change, _doc, _source in planned],
+        unmanaged=[] if prune else unmanaged,
+    )
+    if dry_run or not plan.changed:
+        return plan
+
+    suite_id = suite.id
+    if suite_fields:
+        suite_service.update_suite(
+            session, suite_id, name=name, description=description, actor_id=actor_id
+        )
+    for change, body, source_id in planned:
+        if change.action == "create" and body is not None:
+            check_service.create_check(
+                session,
+                suite_id=suite_id,
+                name=body["name"],
+                kind=body["kind"],
+                expectation_type=body["expectation_type"],
+                config=body["config"],
+                warn_threshold=body["warn_threshold"],
+                fail_threshold=body["fail_threshold"],
+                critical_threshold=body["critical_threshold"],
+                source_connection_id=source_id,
+                dimension=body.get("dimension"),
+                engine=body.get("engine", GX_ENGINE),
+                actor_id=actor_id,
+            )
+        elif change.action == "update" and body is not None:
+            check_service.update_check(
+                session,
+                suite_id,
+                by_name[change.name].id,
+                expectation_type=body["expectation_type"],
+                config=body["config"],
+                # Explicit values, so a threshold the document dropped is cleared.
+                warn_threshold=body["warn_threshold"],
+                fail_threshold=body["fail_threshold"],
+                critical_threshold=body["critical_threshold"],
+                source_connection_id=source_id,
+                dimension=body.get("dimension"),
+                engine=body.get("engine", GX_ENGINE),
+                actor_id=actor_id,
+            )
+        elif change.action == "delete":
+            check_service.delete_check(
+                session, suite_id, by_name[change.name].id, actor_id=actor_id
+            )
+    log.info(
+        "suite_document_applied",
+        suite_id=str(suite_id),
+        created=sum(c.action == "create" for c in plan.checks),
+        updated=sum(c.action == "update" for c in plan.checks),
+        deleted=sum(c.action == "delete" for c in plan.checks),
+    )
+    return plan

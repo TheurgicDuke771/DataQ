@@ -45,6 +45,8 @@ from .channel_update import ChannelUpdate
 from .channel_update_payload_template_type_0 import ChannelUpdatePayloadTemplateType0
 from .check_baseline_read import CheckBaselineRead
 from .check_baseline_read_baseline import CheckBaselineReadBaseline
+from .check_change_read import CheckChangeRead
+from .check_change_read_action import CheckChangeReadAction
 from .check_create import CheckCreate
 from .check_create_config import CheckCreateConfig
 from .check_document import CheckDocument
@@ -226,6 +228,8 @@ from .source_connection_ref_in import SourceConnectionRefIn
 from .sql_generation_request import SqlGenerationRequest
 from .suggestion_read import SuggestionRead
 from .suggestion_read_config import SuggestionReadConfig
+from .suite_apply_read import SuiteApplyRead
+from .suite_apply_request import SuiteApplyRequest
 from .suite_cadence_read import SuiteCadenceRead
 from .suite_create import SuiteCreate
 from .suite_deletion_impact_read import SuiteDeletionImpactRead
@@ -312,6 +316,8 @@ __all__ = (
     "ChannelUpdatePayloadTemplateType0",
     "CheckBaselineRead",
     "CheckBaselineReadBaseline",
+    "CheckChangeRead",
+    "CheckChangeReadAction",
     "CheckCreate",
     "CheckCreateConfig",
     "CheckDocument",
@@ -489,6 +495,8 @@ __all__ = (
     "SqlGenerationRequest",
     "SuggestionRead",
     "SuggestionReadConfig",
+    "SuiteApplyRead",
+    "SuiteApplyRequest",
     "SuiteCadenceRead",
     "SuiteCreate",
     "SuiteDeletionImpactRead",

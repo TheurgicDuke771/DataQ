@@ -53,6 +53,11 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Added
 
+- **Apply a suite file onto an existing suite, and see drift.** `POST /suites/{id}/apply`
+  creates, updates and (with `prune`) deletes checks to match a JSON or YAML document,
+  matching checks by name; it is idempotent. With `dry_run` it changes nothing and reports
+  how the suite differs from the file. The `dataq` command gains `validate`, `drift` and
+  `apply`, and reads and writes YAML. See [Suite document](suite-document.md).
 - **Bulk snooze, unsnooze and delete for checks.** The suite page's check list has a
   checkbox per check and **Select all**; the selected checks can be snoozed, unsnoozed or
   deleted in one action. It is all-or-nothing, and each check gets the same audit event a
