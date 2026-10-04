@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "b70ea749f4bb",
+  "strategy": "manual-commit",
+  "branch": "docs/issue-1660-llm-on-demand",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/site/adr/0047-automated-coverage-loop.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b7/0ea749f4bb/0/metadata.json",
+      "transcript": "/b7/0ea749f4bb/0/full.jsonl",
+      "compact_transcript": "/b7/0ea749f4bb/0/transcript.jsonl",
+      "content_hash": "/b7/0ea749f4bb/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 4,
+    "cache_creation_tokens": 1653,
+    "cache_read_tokens": 846935,
+    "output_tokens": 476,
+    "api_call_count": 2
+  }
+}
