@@ -17,6 +17,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Generator
 from contextlib import contextmanager
+from dataclasses import asdict
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Annotated, Any, Literal
@@ -71,6 +72,7 @@ from backend.app.services import (
     channel_service,
     check_service,
     connection_service,
+    coverage_service,
     credential_health,
     dashboard_service,
     dryrun_service,
@@ -85,6 +87,7 @@ from backend.app.services import (
     run_service,
     run_target,
     schedule_service,
+    suggestion_service,
     suite_io_service,
     suite_service,
     trigger_binding_service,
@@ -3880,7 +3883,7 @@ def list_incidents(
     unresolved incident, on every auto-resolved one, on any resolved before this
     was recorded, and on a manual resolve that did not say. Null means "not
     stated": do not count it as "not a false positive", and do not compute a
-    false-positive rate from this field alone.
+    false-positive rate from this field alone — ``get_coverage`` has the rate.
     """
     if status is not None and status not in INCIDENT_STATUSES:
         # A typo'd status would otherwise return `[]` — indistinguishable from
@@ -4053,7 +4056,7 @@ def get_incident(incident_id: str) -> dict[str, Any]:
     unresolved incident, on every auto-resolved one, on any resolved before this
     was recorded, and on a manual resolve that did not say. Null means "not
     stated": do not count it as "not a false positive", and do not compute a
-    false-positive rate from this field alone.
+    false-positive rate from this field alone — ``get_coverage`` has the rate.
     """
     iid = _parse_uuid(incident_id, field="incident_id")
     with _ctx() as (session, user), _service_errors():
@@ -4123,7 +4126,7 @@ def resolve_incident(
     problem, now corrected), ``expected_change`` (the data changed on purpose and
     the check was right to notice) or ``false_positive`` (nothing was wrong; the
     check should not have fired). Pass it only when the user has said which — it
-    feeds the false-positive rate the app shows (not readable over MCP), so a
+    feeds the false-positive rate (see ``get_coverage``), so a
     guess corrupts that number. Left out, the incident is recorded with no stated
     resolution, which is not the same as "not a false positive". Auto-resolved
     incidents never carry one.
@@ -4404,6 +4407,106 @@ def _profile_target_defaults(
     if connection.type in ("adls_gen2", "s3"):
         return None, schema, catalog, concrete, file_format or suite.target.get("file_format")
     return concrete, schema or resolved.schema, catalog or resolved.catalog, None, file_format
+
+
+@mcp.tool
+def get_coverage(
+    false_positive_window_days: Annotated[int, Field(ge=1, le=90)] = 30,
+) -> dict[str, Any]:
+    """Get how much of the asset inventory is watched, and how often automatic checks cry wolf.
+
+    Use this for 'how much of our data is monitored?' or 'are the automatic checks
+    noisy?'. Returns two workspace-wide figures with the counts behind them.
+
+    **Coverage.** ``coverage_pct`` (a percentage, 0 to 100) is ``assets_watched / assets_total``:
+    assets with at least one suite whose run **succeeded** — finished and
+    evaluated its checks, whatever they found — and started in the last
+    ``coverage_window_days`` (7). A run that errored or was cancelled does not
+    count. ``assets_watched_authored`` are watched by a suite a person wrote;
+    ``assets_watched_auto_only`` only by automatic coverage. An asset whose
+    suites exist but have no such run is NOT watched here — "not watched" does
+    not mean "no checks", and this is a stricter test than ``list_assets``'
+    ``monitored`` (any suite targets it), so the two counts differ; use
+    ``get_asset`` before telling someone a table has no checks.
+    ``assets_total`` is every asset in the inventory, including ones excluded
+    from automatic coverage and ones the inventory no longer sees, so the
+    percentage is not "share of what coverage is meant to reach", and it reads
+    low in the first week after coverage is switched on. ``coverage_pct`` is null
+    when the workspace has no assets.
+
+    **False positives.** Over incidents on *automatic* suites that a person
+    resolved in the last ``false_positive_window_days``: ``false_positive_rate``
+    (a percentage, 0 to 100) is ``false_positive / stated``. ``stated`` counts those resolved with a
+    stated resolution; ``unstated`` those resolved without one; ``resolved`` is
+    both. The rate is **null when nothing was stated — that is "not measured",
+    never "no false positives"**. Always quote ``stated`` beside the rate: 100%
+    over one incident is not a finding. Auto-resolved incidents and incidents on
+    suites a person authored are in none of these numbers.
+
+    These are workspace-wide counts, identical for every user, and include assets
+    and suites the caller cannot open. No asset, suite or incident is named.
+    """
+    with _ctx() as (session, _user), _service_errors():
+        return asdict(
+            coverage_service.coverage_figures(
+                session, false_positive_window_days=false_positive_window_days
+            )
+        )
+
+
+@mcp.tool
+def list_suggested_rules(
+    suite_id: str,
+    status: Literal["pending", "accepted", "rejected", "all"] = "pending",
+) -> dict[str, Any]:
+    """List the rules waiting for review on a suite — proposals, not checks.
+
+    Use this for 'what does DataQ suggest for the orders suite?' or 'which
+    suggestions were rejected?'. Returns ``suggestions``, each with ``name``,
+    ``expectation_type``, ``config``, ``rationale``, ``source`` and ``status``.
+
+    **A suggested rule is not a check and has never run.** Nothing here says the
+    data satisfies it today. ``rationale`` is why it was proposed: for
+    ``source: "profile"`` a fact measured from the table (e.g. "No nulls in
+    12,480 rows") at ``created_at`` and never re-measured while the suggestion
+    waits, so it can be months old — quote ``created_at`` beside it; for
+    ``source: "llm"`` the model's own wording, which is a claim, not a
+    measurement. ``check_id`` is the check created when one was accepted, and is
+    null while pending, when rejected, and once that check has been deleted.
+
+    Only suites that automatic coverage created get suggestions. An empty list on any
+    other suite means it has no review queue, not that it needs no checks; on a
+    covered suite it means nothing is waiting, not that the table was looked at
+    recently. This tool cannot accept or reject — that is done in the app.
+
+    ``status`` defaults to ``pending``; pass ``all`` for every decision.
+    Requires view access to the suite.
+    """
+    sid = _parse_uuid(suite_id, field="suite_id")
+    with _ctx() as (session, user), _service_errors():
+        rows = suggestion_service.list_suggestions(
+            session, sid, user_id=user.id, status=None if status == "all" else status
+        )
+        return {
+            "suite_id": str(sid),
+            "status_filter": status,
+            "count": len(rows),
+            "suggestions": [
+                {
+                    "id": str(r.id),
+                    "source": r.source,
+                    "status": r.status,
+                    "name": r.name,
+                    "expectation_type": r.expectation_type,
+                    "config": r.config,
+                    "rationale": r.rationale,
+                    "check_id": str(r.check_id) if r.check_id else None,
+                    "created_at": r.created_at.isoformat(),
+                    "decided_at": r.decided_at.isoformat() if r.decided_at else None,
+                }
+                for r in rows
+            ],
+        }
 
 
 @mcp.tool

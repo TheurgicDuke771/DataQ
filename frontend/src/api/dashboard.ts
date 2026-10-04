@@ -61,3 +61,27 @@ export async function getWorkspaceDimensions(): Promise<Scorecard> {
   const { data } = await api.get<Scorecard>('/dashboard/dimensions');
   return data;
 }
+
+/** Mirrors `CoverageFiguresRead` — workspace-wide, counts only. */
+export interface CoverageFigures {
+  assets_total: number;
+  assets_watched: number;
+  assets_watched_authored: number;
+  assets_watched_auto_only: number;
+  /** Null when the workspace has no assets. */
+  coverage_pct: number | null;
+  coverage_window_days: number;
+  false_positive_window_days: number;
+  /** Automatic-suite incidents a person resolved in the window. */
+  resolved: number;
+  stated: number;
+  unstated: number;
+  false_positive: number;
+  /** `false_positive / stated`. Null when nothing was stated: not measured, not zero. */
+  false_positive_rate: number | null;
+}
+
+export async function getCoverageFigures(): Promise<CoverageFigures> {
+  const { data } = await api.get<CoverageFigures>('/dashboard/coverage');
+  return data;
+}

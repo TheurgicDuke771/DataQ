@@ -702,6 +702,7 @@ def _viewer_probe_args(tool_name: str, suite: Suite) -> dict[str, Any]:
         "get_suite_results": {"suite_id": sid},
         "list_checks": {"suite_id": sid},
         "list_suite_channels": {"suite_id": sid},
+        "list_suggested_rules": {"suite_id": sid},
         # These two take a RUN id and gate on the run's OWN suite.
         "get_run_results": {"run_id": _REAL_RUN},
         "get_run_status": {"run_id": _REAL_RUN},

@@ -3966,6 +3966,89 @@
         "title": "ConnectionVersionRead",
         "type": "object"
       },
+      "CoverageFiguresRead": {
+        "description": "How much of the inventory is watched, and how often automatic checks cry wolf.\n\nWorkspace-wide, like the dimension rollup: identical for every member, counts only.\n\n`coverage_pct` is `assets_watched / assets_total`: assets with at least one suite\nthat completed a run in the last `coverage_window_days`. `assets_watched_authored`\nare watched by a suite a person authored; `assets_watched_auto_only` only by\nautomatic coverage. NULL when the workspace has no assets.\n\n`false_positive_rate` is `false_positive / stated`, over automatic-suite incidents a\nperson resolved in the last `false_positive_window_days`. `stated` counts those\nresolved WITH a stated resolution; `unstated` those without. NULL when nothing was\nstated \u2014 which is \"not measured\", not \"no false positives\". Auto-resolved incidents\nare in none of these numbers.",
+        "properties": {
+          "assets_total": {
+            "title": "Assets Total",
+            "type": "integer"
+          },
+          "assets_watched": {
+            "title": "Assets Watched",
+            "type": "integer"
+          },
+          "assets_watched_authored": {
+            "title": "Assets Watched Authored",
+            "type": "integer"
+          },
+          "assets_watched_auto_only": {
+            "title": "Assets Watched Auto Only",
+            "type": "integer"
+          },
+          "coverage_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage Pct"
+          },
+          "coverage_window_days": {
+            "title": "Coverage Window Days",
+            "type": "integer"
+          },
+          "false_positive": {
+            "title": "False Positive",
+            "type": "integer"
+          },
+          "false_positive_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "False Positive Rate"
+          },
+          "false_positive_window_days": {
+            "title": "False Positive Window Days",
+            "type": "integer"
+          },
+          "resolved": {
+            "title": "Resolved",
+            "type": "integer"
+          },
+          "stated": {
+            "title": "Stated",
+            "type": "integer"
+          },
+          "unstated": {
+            "title": "Unstated",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "assets_total",
+          "assets_watched",
+          "assets_watched_authored",
+          "assets_watched_auto_only",
+          "coverage_pct",
+          "coverage_window_days",
+          "false_positive_window_days",
+          "resolved",
+          "stated",
+          "unstated",
+          "false_positive",
+          "false_positive_rate"
+        ],
+        "title": "CoverageFiguresRead",
+        "type": "object"
+      },
       "CoverageGapRead": {
         "description": "A table edge on the walk that carries no column pairs \u2014 the column MAY cross it.",
         "properties": {
@@ -12307,6 +12390,51 @@
         "summary": "List a connection's version history (newest first)",
         "tags": [
           "connections"
+        ]
+      }
+    },
+    "/api/v1/dashboard/coverage": {
+      "get": {
+        "operationId": "get_coverage_figures",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "false_positive_window_days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 90,
+              "minimum": 1,
+              "title": "False Positive Window Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoverageFiguresRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Coverage of the asset inventory and the false-positive rate of automatic checks",
+        "tags": [
+          "dashboard"
         ]
       }
     },

@@ -19,6 +19,7 @@ vi.mock('../../src/api/dashboard', async (importOriginal) => {
     getWorkspaceDimensions: vi
       .fn()
       .mockResolvedValue({ covered: [], uncovered: [], unclassified_checks: 0 }),
+    getCoverageFigures: vi.fn().mockRejectedValue(new Error('not under test')),
   };
 });
 
