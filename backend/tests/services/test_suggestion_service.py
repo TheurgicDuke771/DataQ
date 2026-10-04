@@ -174,7 +174,7 @@ def test_a_sensitive_value_set_is_never_proposed(
     row.column_policy = policy
     db_session.commit()
     profile = ProfileResult(row_count=500, columns=[_col(column, nulls=1, distinct=2, top=values)])
-    rules = svc.rules_from_profile(profile, sensitive=svc._value_set_is_sensitive(db_session, row))
+    rules = svc.rules_from_profile(profile, sensitive=svc.value_set_is_sensitive(db_session, row))
     assert rules == []
 
 
@@ -183,5 +183,5 @@ def test_an_ordinary_value_set_is_proposed(db_session: Any, suite: tuple[Suite, 
     profile = ProfileResult(
         row_count=500, columns=[_col("tier", nulls=1, distinct=2, top=["gold", "silver"])]
     )
-    rules = svc.rules_from_profile(profile, sensitive=svc._value_set_is_sensitive(db_session, row))
+    rules = svc.rules_from_profile(profile, sensitive=svc.value_set_is_sensitive(db_session, row))
     assert [r["config"]["value_set"] for r in rules] == [["gold", "silver"]]
