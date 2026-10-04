@@ -111,6 +111,8 @@ class _Vault:
                 if status.get("initialized") and status.get("sealed") is sealed:
                     return
             except (httpx.HTTPError, SystemExit):
+                # Not up yet, or answering an error while it starts: that is what this
+                # loop waits out. Running out of attempts is reported below.
                 pass
             time.sleep(1)
         raise SystemExit(

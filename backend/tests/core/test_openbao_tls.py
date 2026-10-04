@@ -41,6 +41,7 @@ def https_vault(tmp_path: Path) -> Iterator[tuple[str, Path]]:
     local_ca.ensure(tmp_path / "certs", tmp_path / "ca-key")
     server = HTTPServer(("127.0.0.1", 0), _KvHandler)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(
         tmp_path / "certs" / "localhost.pem", tmp_path / "certs" / "localhost.key"
     )
