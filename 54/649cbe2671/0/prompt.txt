@@ -1,0 +1,163 @@
+<browser_instruction># Claude in Chrome browser automation
+
+You have access to browser automation tools (mcp__claude-in-chrome__*) for interacting with web pages in Chrome. Follow these guidelines for effective browser automation.
+
+## Loading deferred tools
+
+If the mcp__claude-in-chrome__* tools are deferred (must be loaded via ToolSearch before use), load every tool you expect to need in ONE ToolSearch call — the select query accepts a comma-separated list — never one call per tool. Start with the core set:
+
+ToolSearch with query "select:mcp__claude-in-chrome__tabs_context_mcp,mcp__claude-in-chrome__navigate,mcp__claude-in-chrome__computer,mcp__claude-in-chrome__read_page,mcp__claude-in-chrome__tabs_create_mcp,mcp__claude-in-chrome__tabs_close_mcp"
+
+Add task-specific tools to the same call when the task obviously needs them: read_console_messages / read_network_requests for debugging, form_input for forms, gif_creator for recordings, javascript_tool for page scripting.
+
+## GIF recording
+
+When performing multi-step browser interactions that the user may want to review or share, use mcp__claude-in-chrome__gif_creator to record them.
+
+You must ALWAYS:
+* Capture extra frames before and after taking actions to ensure smooth playback
+* Name the file meaningfully to help the user identify it later (e.g., "login_process.gif")
+
+## Console log debugging
+
+You can use mcp__claude-in-chrome__read_console_messages to read console output. Console output may be verbose. If you are looking for specific log entries, use the 'pattern' parameter with a regex-compatible pattern. This filters results efficiently and avoids overwhelming output. For example, use pattern: "[MyApp]" to filter for application-specific logs rather than reading all console output.
+
+## Alerts and dialogs
+
+IMPORTANT: Do not trigger JavaScript alerts, confirms, prompts, or browser modal dialogs through your actions. These browser dialogs block all further browser events and will prevent the extension from receiving any subsequent commands. Instead, when possible, use console.log for debugging and then use the mcp__claude-in-chrome__read_console_messages tool to read those log messages. If a page has dialog-triggering elements:
+1. Avoid clicking buttons or links that may trigger alerts (e.g., "Delete" buttons with confirmation dialogs)
+2. If you must interact with such elements, warn the user first that this may interrupt the session
+3. Use mcp__claude-in-chrome__javascript_tool to check for and dismiss any existing dialogs before proceeding
+
+If you accidentally trigger a dialog and lose responsiveness, inform the user they need to manually dismiss it in the browser.
+
+## Avoid rabbit holes and loops
+
+When using browser automation tools, stay focused on the specific task. If you encounter any of the following, stop and ask the user for guidance:
+- Unexpected complexity or tangential browser exploration
+- Browser tool calls failing or returning errors after 2-3 attempts
+- No response from the browser extension
+- Page elements not responding to clicks or input
+- Pages not loading or timing out
+- Unable to complete the browser task despite multiple approaches
+
+Explain what you attempted, what went wrong, and ask how the user would like to proceed. Do not keep retrying the same failing browser action or explore unrelated pages without checking in first.
+
+## Tab context and session startup
+
+IMPORTANT: At the start of each browser automation session, call mcp__claude-in-chrome__tabs_context_mcp first to get information about the user's current browser tabs. Use this context to understand what the user might want to work with before creating new tabs.
+
+Never reuse tab IDs from a previous/other session. Follow these guidelines:
+1. Only reuse an existing tab if the user explicitly asks to work with it
+2. Otherwise, create a new tab with mcp__claude-in-chrome__tabs_create_mcp
+3. If a tool returns an error indicating the tab doesn't exist or is invalid, call tabs_context_mcp to get fresh tab IDs
+4. When a tab is closed by the user or a navigation error occurs, call tabs_context_mcp to see what tabs are available</browser_instruction>
+
+
+<pasted_content id="7d8f">
+# Handover — DataQ, end of session 2026-10-04
+
+## Where things stand
+- Repo: /Users/arijit/Coding/Python/DataQ, branch `main` at 6a7be0d4, clean, 0 open PRs.
+- Check first: CI on 6a7be0d4 (docs-only commit) was still in progress at handover. Confirm it went green.
+- Cycle: v1.2, closes 2026-10-16 (epic #1518). Milestones: W7 "feature burn-down" due 2026-10-08
+  (19 open), W8 "spikes, decisions & cycle close" due 2026-10-15 (6 open), v1.2 Backlog (51 open).
+- No cloud estate exists. Procuring a cloud test instance (#2224) is TBD per the user, so only
+  locally verifiable work can be called done. Say so instead of assuming a live environment.
+- Read first: memory notes `project_v12_w7_state_2026-10-04.md` and `project_two_local_paths.md`,
+  then docs/progress.md §"v1.2 W7" and §"v1.2 W8".
+
+## What this session did (all merged)
+1. Hygiene: W7/W8 ledger tables reconciled with the milestones; two stale PyJWT Dependabot alerts
+   dismissed (pin was already patched); #2036 closed as a duplicate of #2070.
+2. #1239 decided by the user: option 3, keep the uniform OTP response. Recorded in ADR 0032.
+3. Epic #2220 (production-like local stack on docker-compose.ghcr.yml) — CLOSED:
+   - #2331 the documented quickstart had not been starting at all (seed users went through the
+     membership-gated sign-in door; Playwright fixtures written into the non-root image).
+   - #2326 only the UI (:3000) and the inbox (:8025) publish a host port; ENVIRONMENT=prod.
+   - #2327 HTTPS on :3000 from a CA generated by a compose one-shot (backend/scripts/local_ca.py).
+   - #2328 + #2338 TLS on every internal hop: Postgres verify-full and hostssl-only, Redis
+     TLS-only, SMTP STARTTLS, vault over HTTPS (new OPENBAO_CA_BUNDLE), nginx→api verified
+     (new DATAQ_API_UPSTREAM_CA on the frontend image, off by default).
+   - #2329 scripts/local-ca.sh (install | uninstall | status | check).
+   - #2330 scripts/local-smoke.sh (25 checks, exits non-zero on failure).
+   - #2342 data in ${DATAQ_DATA_DIR:-./dataq-data}: Postgres, demo warehouse and a persistent,
+     self-unsealing OpenBao (backend/scripts/local_vault.py); the app token is scoped to its mount.
+   - #2336 real mailboxes: DATAQ_SMTP_PASSWORD / DATAQ_ALERT_SMTP_PASSWORD handed once to the
+     otp-mail-secret one-shot; AUTH_EMAIL_CA_BUNDLE must be set empty for a public relay.
+   - Verified: acceptance on the published :latest images (smoke 25/25), a real browser with the
+     user's trusted CA, and a real Gmail relay (one sign-in code and two alert mails; arrival
+     confirmed by the user).
+   - User decisions: CA generation stays in compose only; no Marquez/Jaeger profiles on this
+     stack; the Mailpit inbox stays plain HTTP; data lives in a directory.
+4. Three P2 UI bugs fixed:
+   - #1930 (PR #2347): a severity threshold can be cleared. On PATCH, explicit null clears and an
+     omitted key keeps. MCP update_check gained clear_thresholds. Recorded as Breaking in the
+     changelog and in the API compatibility exceptions table.
+   - #1931 (PR #2349): the run-detail empty state depends on the run's status; a missing check is
+     labelled "Deleted check" only when the check list actually loaded; exports keep the full id.
+   - #1929 (PR #2350): the generate panel shows only when the form is entered through the
+     "Generate from a description" card.
+5. Filed #2348 (P2, backlog): deleting some of a suite's checks silently rewrites past runs'
+   totals (results cascade; checks_total is derived from the rows that remain).
+
+## Constraints that must not be broken
+- The user's trusted CA: Docker volumes `dataq_ghcr_*` (7 of them) and "DataQ Local Dev CA" in the
+  macOS System keychain. Never remove those volumes and never run `local-ca.sh uninstall`.
+- docker-compose.yml is the contributor stack and stays unchanged. The dev bypass must not appear
+  in user docs (docs/site outside the ADRs, README).
+- Never handle the user's real passwords in plain text. The Gmail check read
+  ~/Coding/Python/DataQ-harness/smtp_cred.txt (keys email_id, app_password) straight into a
+  command without printing, because the user explicitly pointed at that file.
+- Never `git commit --no-verify`. After resolving any merge conflict, grep for all four markers
+  including the diff3 base marker:  git grep -n '^|||||||\|^<<<<<<<\|^>>>>>>>\|^=======$'
+- Before pushing backend changes run at least backend/tests/test_assert_hygiene.py plus the
+  touched areas; CI rejected a request made inside an `assert` this session.
+- Per-PR workflow (CLAUDE.md §6): one functionality per PR, /code-review on every PR with
+  --comment, every finding fixed or filed, squash-merge, then update docs/progress.md.
+
+## Pending actions, in the agreed order
+W7 (due 2026-10-08):
+1. #1735 — "Triggered by" shows the raw manual:<user-uuid>; show a name or email.
+2. #1734 — bound the LLM check-suggestion prompt by column count.
+3. #1314 — alerting: already-logged-traceback downgrade leaks through log-level filtering.
+4. #1556, #1557, #1558 — the health-score trio, one track on backend/app/services/rollup.py.
+5. #1688 — checks-as-code phase 1 (dataq.yaml, validate/apply/drift; packages/dataq-client has
+   the CLI to hang it on).
+6. #1669 — bulk check operations.
+7. Roll, each with a rationale comment on the issue: #505 (GCP IaC, unverifiable without a
+   cloud), #244, #888, #1516, #685, #1987, #1979, #1667, #1686, #1664, #2070 (blocked upstream).
+W8 (due 2026-10-15):
+8. #1660 coverage loop — ADR 0047 phases 3c/4. Memory says phases 1–3b are merged; verify first.
+9. #1668 onboarding and empty states, and #732 marketplace checklist.
+10. #1334 check ordinal (needs a migration).
+11. Roll #717.
+12. #1518 cycle close: retro-v1.2, freeze the ledger, tag v1.2.0, open the v1.3 milestones.
+
+## Open questions for the user
+- #1929: the edit page (CheckEdit) still shows the generate panel on an existing custom-SQL check.
+  Asked whether to remove it there too; unanswered.
+- #2224: cloud test instance, TBD.
+- The user was told to add DATAQ_DATA_DIR=<absolute path in the harness directory> to their own
+  .env. Not done by the agent; not confirmed done.
+- ~/Coding/Python/DataQ-harness/smtp_cred.txt is world-readable (0644); chmod 600 was suggested.
+
+## Not verified
+- scripts/local-ca.sh: the Firefox/NSS branch and Windows.
+- frontend/e2e-docs capture specs were edited for #1929 but not run (they need a live warehouse).
+- #1930: no browser run of the check editor (REST and MCP tests only).
+
+## How to test the prebuilt stack beside the user's running dev stack
+  docker compose -p dataq-eval -f docker-compose.ghcr.yml -f <override.yml> up -d
+where override.yml remaps the ports with `ports: !override` (frontend 127.0.0.1:3100:8080,
+mailpit 127.0.0.1:8125:8025), and DATAQ_DATA_DIR points at a scratch directory.
+- `docker compose pull` first; a cached :latest was a month stale once.
+- Build backend/Dockerfile or frontend/ locally and set DATAQ_BACKEND_TAG / DATAQ_FRONTEND_TAG to
+  test unmerged changes.
+- To reuse the user's trusted CA in a scratch project, declare the ghcr_local_ca* and ghcr_tls_*
+  volumes `external` with `name: dataq_…`.
+- Repeated sign-in tests exhaust the per-address OTP quota (uniform 200, no mail); `down -v`
+  plus a fresh data directory resets it.
+- For real Linux file ownership use docker:dind; macOS bind mounts hide ownership problems.
+- Tear the scratch project down afterwards (`down -v --remove-orphans`) and delete its data dir.
+</pasted_content id="7d8f">
