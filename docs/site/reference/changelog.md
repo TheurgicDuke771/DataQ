@@ -53,6 +53,12 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Added
 
+- **Suites as YAML files, and a way to validate them.** A suite document can now be YAML as
+  well as JSON: `POST /suites/import` accepts `document_yaml`, and
+  `GET /suites/{id}/export?format=yaml` produces it. The new `POST /suites/validate`
+  reports every problem an import would be refused for and creates nothing. The format is
+  now documented field by field in [Suite document](suite-document.md). Plain YAML values
+  follow JSON's rules, so `NO` and `2026-01-01` stay text.
 - **An asset health score.** The asset page's scorecard now leads with one 0–100 number
   for the whole asset, and **Assets → All assets** shows it in a **Score** column and can
   sort the whole workspace by it, lowest first. It counts every check that evaluated in

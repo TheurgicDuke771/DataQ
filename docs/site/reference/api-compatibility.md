@@ -12,7 +12,7 @@ These are covered by this policy. A change to them follows the rules below.
 |---|---|
 | **REST API** (`/api/v1/...`) | Paths, HTTP methods, request fields and their meaning, response fields and their meaning, status codes, and the error envelope (`error.code`, `error.message`). The published [OpenAPI spec](rest-api.md) is the contract. |
 | **MCP tools** (`/mcp`) | Tool names, parameter names and meaning, and the documented fields of each tool's result. |
-| **Suite export document** | The JSON shape `export` produces and `import` accepts, versioned by its top-level `version` field. |
+| **Suite export document** | The shape `export` produces and `import` accepts, as JSON or YAML, versioned by its top-level `version` field. See [Suite document](suite-document.md). |
 | **Python client** (`dataq-client`) | The convenience layer (`DataQClient` and its methods, the typed run outcome) and the `dataq` command line: commands, flags and exit codes. |
 | **Personal access tokens** | The `Authorization: Bearer dq_live_...` scheme. |
 

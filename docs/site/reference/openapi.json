@@ -4249,6 +4249,41 @@
         "title": "DimensionScoreRead",
         "type": "object"
       },
+      "DocumentProblemRead": {
+        "description": "One reason the document would be refused. `location` is `document` for a problem\nwith the document as a whole, `checks[2]` for the third check, or a field path such\nas `checks[2].expectation_type` for a shape error.",
+        "properties": {
+          "check_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Check Name"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "location": {
+            "title": "Location",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "location",
+          "code",
+          "message"
+        ],
+        "title": "DocumentProblemRead",
+        "type": "object"
+      },
       "EventAck": {
         "properties": {
           "status": {
@@ -8497,6 +8532,7 @@
       },
       "SuiteImportRequest": {
         "additionalProperties": false,
+        "description": "The document as JSON (`document`) or as YAML text (`document_yaml`) \u2014 exactly one.",
         "properties": {
           "connection_id": {
             "format": "uuid",
@@ -8504,12 +8540,30 @@
             "type": "string"
           },
           "document": {
-            "$ref": "#/components/schemas/SuiteDocumentIn"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SuiteDocumentIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "document_yaml": {
+            "anyOf": [
+              {
+                "maxLength": 1000000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Yaml"
           }
         },
         "required": [
-          "connection_id",
-          "document"
+          "connection_id"
         ],
         "title": "SuiteImportRequest",
         "type": "object"
@@ -9043,6 +9097,73 @@
           }
         },
         "title": "SuiteUpdate",
+        "type": "object"
+      },
+      "SuiteValidateRequest": {
+        "additionalProperties": false,
+        "description": "Like `SuiteImportRequest`, but `document` is taken as a plain object so that a\ndocument of the wrong shape is REPORTED in the response instead of refusing the\nrequest.",
+        "properties": {
+          "connection_id": {
+            "format": "uuid",
+            "title": "Connection Id",
+            "type": "string"
+          },
+          "document": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document"
+          },
+          "document_yaml": {
+            "anyOf": [
+              {
+                "maxLength": 1000000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Yaml"
+          }
+        },
+        "required": [
+          "connection_id"
+        ],
+        "title": "SuiteValidateRequest",
+        "type": "object"
+      },
+      "SuiteValidationRead": {
+        "description": "`valid` is true exactly when `problems` is empty \u2014 importing this document onto\nthis connection would then be accepted. It says nothing about whether the checks\nwould PASS: no datasource is opened and no column is looked up.",
+        "properties": {
+          "check_count": {
+            "title": "Check Count",
+            "type": "integer"
+          },
+          "problems": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentProblemRead"
+            },
+            "title": "Problems",
+            "type": "array"
+          },
+          "valid": {
+            "title": "Valid",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "valid",
+          "check_count",
+          "problems"
+        ],
+        "title": "SuiteValidationRead",
         "type": "object"
       },
       "TopValue": {
@@ -13881,6 +14002,48 @@
         ]
       }
     },
+    "/api/v1/suites/validate": {
+      "post": {
+        "description": "Runs every gate `POST /suites/import` applies and reports ALL the problems, not\nonly the first. Nothing is created and no datasource is opened, so a valid document\ncan still hold a check that names a column the table does not have.\n\nA document that cannot be read at all (malformed YAML, not a mapping) is a 422; one\nthat reads but is wrong comes back 200 with `valid: false`.",
+        "operationId": "validate_suite_document",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SuiteValidateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuiteValidationRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Validate a suite document against a connection without importing it",
+        "tags": [
+          "suites"
+        ]
+      }
+    },
     "/api/v1/suites/{suite_id}": {
       "delete": {
         "operationId": "delete_suite",
@@ -15221,6 +15384,22 @@
               "title": "Suite Id",
               "type": "string"
             }
+          },
+          {
+            "description": "`yaml` returns the same document as YAML text.",
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "json",
+              "description": "`yaml` returns the same document as YAML text.",
+              "enum": [
+                "json",
+                "yaml"
+              ],
+              "title": "Format",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -15230,9 +15409,14 @@
                 "schema": {
                   "$ref": "#/components/schemas/SuiteDocument"
                 }
+              },
+              "application/yaml": {
+                "schema": {
+                  "type": "string"
+                }
               }
             },
-            "description": "Successful Response"
+            "description": "The document \u2014 JSON, or YAML text with `format=yaml`."
           },
           "422": {
             "content": {

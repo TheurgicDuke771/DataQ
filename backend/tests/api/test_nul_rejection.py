@@ -117,7 +117,7 @@ def test_nul_deep_in_import_document_is_422(client: TestClient, db_session: Any)
         "/api/v1/suites/import",
         json={
             "connection_id": _connection_id(db_session),
-            "suite": {
+            "document": {
                 "name": "imported",
                 "checks": [
                     {
