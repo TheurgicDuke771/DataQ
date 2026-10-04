@@ -97,7 +97,12 @@ def score_as_of(
     """
     if not suite_ids:
         return None
-    run_ids = [r.id for r in session.scalars(latest_runs_per_suite_stmt(suite_ids, as_of=as_of))]
+    # A run still in flight at `as_of` had no verdict yet, whatever its status is today.
+    run_ids = [
+        r.id
+        for r in session.scalars(latest_runs_per_suite_stmt(suite_ids, as_of=as_of))
+        if r.finished_at is None or r.finished_at <= as_of
+    ]
     counts: dict[str, int] = defaultdict(int)
     for by_status in status_histograms(session, run_ids, complete_runs_only=True).values():
         for status, n in by_status.items():

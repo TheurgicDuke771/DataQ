@@ -552,7 +552,15 @@ def test_default_sort_is_still_namespace_then_name(db_session: Any) -> None:
 # ── asset score delta (#1556) ────────────────────────────────────────────────
 
 
-def _add_run(db: Any, asset: Asset, *, age_days: float, statuses: list[str], status: str) -> None:
+def _add_run(
+    db: Any,
+    asset: Asset,
+    *,
+    age_days: float,
+    statuses: list[str],
+    status: str,
+    finished_age_days: float | None = None,
+) -> None:
     """Another run on the asset's suite, `age_days` old, reusing its existing checks."""
     suite = db.scalars(select(Suite).where(Suite.asset_id == asset.id)).one()
     checks = list(db.scalars(select(Check).where(Check.suite_id == suite.id).order_by(Check.id)))
@@ -561,6 +569,11 @@ def _add_run(db: Any, asset: Asset, *, age_days: float, statuses: list[str], sta
         status=status,
         triggered_by="manual",
         created_at=datetime.now(UTC) - timedelta(days=age_days),
+        finished_at=(
+            datetime.now(UTC) - timedelta(days=finished_age_days)
+            if finished_age_days is not None
+            else None
+        ),
     )
     db.add(run)
     db.flush()
@@ -616,3 +629,27 @@ def test_score_delta_ignores_an_incomplete_run_at_the_comparison_point(db_sessio
 
     assert detail.previous_health_score is None
     assert detail.health_score_delta is None
+
+
+def test_score_delta_does_not_count_a_run_that_was_still_in_flight_then(db_session: Any) -> None:
+    """Created before the comparison point, finished after it: at that moment the suite
+    had no verdict, even though the run reads `succeeded` today."""
+    owner = _user(db_session)
+    asset = _suite_with_run(
+        db_session, owner, run_status="succeeded", result_statuses=["pass", "pass"]
+    )
+    _add_run(
+        db_session,
+        asset,
+        age_days=8,
+        finished_age_days=6,
+        statuses=["fail", "fail"],
+        status="succeeded",
+    )
+
+    detail = svc.get_visible_asset(db_session, asset.id, user_id=owner.id, score_delta_days=7)
+
+    assert detail.previous_health_score is None
+    # Once it had finished, it counts.
+    later = svc.get_visible_asset(db_session, asset.id, user_id=owner.id, score_delta_days=5)
+    assert later.previous_health_score == 50.0
