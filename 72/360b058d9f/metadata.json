@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "72360b058d9f",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-2370-bulk-thresholds",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "frontend/src/pages/Suites.tsx",
+    "frontend/tests/pages/Suites.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/72/360b058d9f/0/metadata.json",
+      "transcript": "/72/360b058d9f/0/full.jsonl",
+      "compact_transcript": "/72/360b058d9f/0/transcript.jsonl",
+      "content_hash": "/72/360b058d9f/0/content_hash.txt",
+      "prompt": "/72/360b058d9f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 10,
+    "cache_creation_tokens": 5121,
+    "cache_read_tokens": 3065211,
+    "output_tokens": 4175,
+    "api_call_count": 5
+  }
+}
