@@ -86,7 +86,7 @@ test.describe('Suites page', () => {
 
     // Snooze: both selected rows get the badge, the seeded row does not.
     await selectBoth();
-    await page.getByRole('button', { name: 'Snooze selected' }).click();
+    await page.getByRole('button', { name: 'Snooze selected', exact: true }).click();
     await page.getByText('1 hour', { exact: true }).click();
     for (const row of rows) await expect(row.getByText(/Snoozed until/)).toBeVisible();
     await expect(seeded.getByText(/Snoozed until/)).toHaveCount(0);
@@ -94,12 +94,12 @@ test.describe('Suites page', () => {
 
     // Unsnooze: the badges go.
     await selectBoth();
-    await page.getByRole('button', { name: 'Unsnooze selected' }).click();
+    await page.getByRole('button', { name: 'Unsnooze selected', exact: true }).click();
     for (const row of rows) await expect(row.getByText(/Snoozed until/)).toHaveCount(0);
 
     // Delete: confirm names the count; only the two throwaway checks go.
     await selectBoth();
-    await page.getByRole('button', { name: 'Delete selected' }).click();
+    await page.getByRole('button', { name: 'Delete selected', exact: true }).click();
     await page
       .getByRole('dialog', { name: 'Delete 2 checks?' })
       .getByRole('button', { name: 'Delete 2 checks' })

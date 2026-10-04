@@ -3375,7 +3375,8 @@ def test_bulk_snooze_then_unsnooze_changes_every_named_check(
     assert [c["id"] for c in body["checks"]] == picked  # request order
     untils = {c["alert_snoozed_until"] for c in body["checks"]}
     assert len(untils) == 1  # one moment for the whole batch
-    assert datetime.fromisoformat(untils.pop()) > datetime.now(UTC)
+    (until,) = untils
+    assert datetime.fromisoformat(until) > datetime.now(UTC)
     other = client.get(f"/api/v1/suites/{sid}/checks/{untouched}").json()
     assert other["alert_snoozed_until"] is None
     # The same per-check audit event a single snooze writes, and no version churn.
