@@ -6,7 +6,6 @@ import {
   Card,
   Divider,
   Dropdown,
-  Empty,
   Flex,
   Spin,
   Tag,
@@ -29,6 +28,7 @@ import {
   testConnection,
 } from '../api/connections';
 import { useCanAuthor, useCanMutateConnections, useWorkspaceRole } from '../auth/useMe';
+import { EmptyState } from '../components/shared/EmptyState';
 import { ConnectionTypeAvatar } from '../components/connections/connectionVisuals';
 import { activeAuthOption } from '../components/connections/connectionFormSpec';
 import { formatTimestamp } from '../components/results/resultsFormat';
@@ -183,7 +183,16 @@ function ConnectionsBody({
   }
   const connections = state.data;
   if (connections.length === 0) {
-    return <Empty description="No connections configured yet" />;
+    return (
+      <EmptyState
+        title="No connections yet"
+        description="A connection is a data source to check, or an orchestrator whose pipelines trigger suites."
+        action={
+          actions.canMutate ? { label: 'Add a connection', to: '/connections/new' } : undefined
+        }
+        note={actions.canMutate ? undefined : 'A workspace admin adds connections.'}
+      />
+    );
   }
   // Two top-level sections (Data sources / Orchestration) — the load-bearing distinction in DataQ
   // (CLAUDE.md §4).

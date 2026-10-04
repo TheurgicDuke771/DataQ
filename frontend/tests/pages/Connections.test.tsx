@@ -308,7 +308,26 @@ describe('Connections', () => {
 
     renderPage();
 
-    expect(await screen.findByText('No connections configured yet')).toBeInTheDocument();
+    expect(await screen.findByText('No connections yet')).toBeInTheDocument();
+    // An admin is offered the next step (the header has its own "New connection").
+    expect(screen.getByRole('button', { name: 'Add a connection' })).toBeInTheDocument();
+  });
+
+  it('tells a member who adds connections instead of offering a button that would 403', async () => {
+    mockList.mockResolvedValue([]);
+
+    render(
+      <MemoryRouter>
+        <WithMe role="member">
+          <AntApp>
+            <Connections />
+          </AntApp>
+        </WithMe>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('A workspace admin adds connections.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add a connection' })).not.toBeInTheDocument();
   });
 
   it('runs a connectivity test from a card and shows a healthy badge', async () => {

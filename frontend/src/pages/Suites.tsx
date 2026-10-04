@@ -6,7 +6,6 @@ import {
   Card,
   Checkbox,
   Dropdown,
-  Empty,
   Flex,
   Grid,
   Spin,
@@ -14,6 +13,7 @@ import {
   Tooltip,
   Typography,
 } from 'antd';
+import { EmptyState } from '../components/shared/EmptyState';
 import SimpleList from '../components/SimpleList';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -204,6 +204,8 @@ export function Suites() {
       <SuitesBody
         state={state}
         connections={connections}
+        canAuthor={canAuthor}
+        hasDatasource={hasDatasource}
         selectedId={selectedId}
         onSelect={(id) => navigate(`/suites/${id}`)}
         onEdit={(suite) => navigate(`/suites/${suite.id}/edit`)}
@@ -233,9 +235,13 @@ function SuitesBody({
   onSelect,
   onEdit,
   onDeleted,
+  canAuthor,
+  hasDatasource,
 }: {
   state: AsyncState<Suite[]>;
   connections: Connection[];
+  canAuthor: boolean;
+  hasDatasource: boolean;
   selectedId: string | null;
   onSelect: (id: string) => void;
   onEdit: (suite: Suite) => void;
@@ -260,7 +266,27 @@ function SuitesBody({
   }
   const suites = state.data;
   if (suites.length === 0) {
-    return <Empty description="No suites yet — create one to start authoring checks." />;
+    if (!canAuthor) {
+      return (
+        <EmptyState
+          title="No suites to show"
+          description="You see a suite once someone shares it with you."
+        />
+      );
+    }
+    return hasDatasource ? (
+      <EmptyState
+        title="No suites yet"
+        description="A suite is a set of checks on one table or file."
+        action={{ label: 'New suite', to: '/suites/new' }}
+      />
+    ) : (
+      <EmptyState
+        title="No suites yet"
+        description="A suite needs a data source connection to run against."
+        action={{ label: 'Go to connections', to: '/connections' }}
+      />
+    );
   }
   const selected = suites.find((s) => s.id === selectedId) ?? null;
 
@@ -717,9 +743,11 @@ function ChecksList({
               Suggest checks
             </Button>
           )}
-          <Button type="primary" size="small" onClick={onAdd}>
-            Add check
-          </Button>
+          {canEditChecks && (
+            <Button type="primary" size="small" onClick={onAdd}>
+              Add check
+            </Button>
+          )}
         </Flex>
       }
     >
@@ -746,9 +774,12 @@ function ChecksList({
         onAdded={onChanged}
       />
       {checks.length === 0 ? (
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description="No checks yet — add one to start."
+        <EmptyState
+          compact
+          title="No checks yet"
+          description="A check is one rule the data must meet."
+          action={canEditChecks ? { label: 'Add a check', onClick: onAdd } : undefined}
+          note={canEditChecks ? undefined : 'You have view access to this suite.'}
         />
       ) : (
         <>

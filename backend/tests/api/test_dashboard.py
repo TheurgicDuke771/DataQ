@@ -174,3 +174,24 @@ def test_coverage_is_workspace_wide_and_bounds_its_window(
     assert (body["assets_total"], body["coverage_pct"]) == (0, None)
     assert body["false_positive_rate"] is None
     assert too_wide.status_code == 422
+
+
+# ── first-run status (#1668) ─────────────────────────────────────────────────
+
+
+def test_onboarding_status_is_workspace_wide(client: TestClient, db_session: Any) -> None:
+    owner, outsider = _user(db_session), _user(db_session)
+    _suite_with_results(db_session, owner, ["pass"])
+    _as(outsider)
+
+    resp = client.get("/api/v1/dashboard/onboarding")
+
+    assert resp.status_code == 200, resp.text
+    # The outsider can open none of it and still sees the workspace has started.
+    assert resp.json() == {
+        "has_datasource": True,
+        "has_suite": True,
+        "has_check": True,
+        "has_run": True,
+        "complete": True,
+    }

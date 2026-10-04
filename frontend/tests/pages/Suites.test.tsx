@@ -114,10 +114,10 @@ function check(overrides: Partial<Check> = {}): Check {
 
 // Selecting a suite navigates to /suites/:suiteId, so render both routes at the same Suites
 // component (the param drives which suite is shown).
-function renderPage() {
+function renderPage(role: 'admin' | 'member' | 'viewer' = 'admin') {
   return render(
     <MemoryRouter initialEntries={['/suites']}>
-      <WithMe>
+      <WithMe role={role}>
         <AntApp>
           <Routes>
             <Route path="/suites" element={<Suites />} />
@@ -263,9 +263,35 @@ describe('Suites', () => {
 
     renderPage();
 
+    expect(await screen.findByText('No suites yet')).toBeInTheDocument();
+    // The empty state's own action, beside the header's "New suite".
+    const actions = screen.getAllByRole('button', { name: 'New suite' });
+    await userEvent.click(actions[actions.length - 1]);
+    expect(await screen.findByText('New suite page')).toBeInTheDocument();
+  });
+
+  it('sends an author to connections first when there is no data source', async () => {
+    mockListConnections.mockResolvedValue([]);
+    mockListSuites.mockResolvedValue([]);
+
+    renderPage();
+
     expect(
-      await screen.findByText('No suites yet — create one to start authoring checks.'),
+      await screen.findByText('A suite needs a data source connection to run against.'),
     ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Go to connections' })).toBeInTheDocument();
+  });
+
+  it('tells a viewer why the list is empty and offers nothing to create', async () => {
+    mockListConnections.mockResolvedValue([connection]);
+    mockListSuites.mockResolvedValue([]);
+
+    renderPage('viewer');
+
+    expect(
+      await screen.findByText('You see a suite once someone shares it with you.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'New suite' })).not.toBeInTheDocument();
   });
 
   it('warns when connections fail to load (create depends on them)', async () => {
@@ -683,6 +709,33 @@ describe('Suites', () => {
     expect(runButton).toBeDisabled();
     await user.click(runButton);
     expect(mockRunSuite).not.toHaveBeenCalled();
+  });
+
+  it('offers an editor the first check on a suite that has none', async () => {
+    const user = userEvent.setup();
+    mockListConnections.mockResolvedValue([connection]);
+    mockListSuites.mockResolvedValue([suite({ my_permission: 'edit' })]);
+    mockListChecks.mockResolvedValue([]);
+
+    renderPage();
+    await user.click(await screen.findByText('orders-suite'));
+
+    expect(await screen.findByText('No checks yet')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add a check' })).toBeInTheDocument();
+  });
+
+  it('offers a view-only user no way to add a check', async () => {
+    const user = userEvent.setup();
+    mockListConnections.mockResolvedValue([connection]);
+    mockListSuites.mockResolvedValue([suite({ my_permission: 'view' })]);
+    mockListChecks.mockResolvedValue([]);
+
+    renderPage();
+    await user.click(await screen.findByText('orders-suite'));
+
+    expect(await screen.findByText('You have view access to this suite.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add a check' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add check' })).not.toBeInTheDocument();
   });
 
   it('hides Run for a viewer (no edit permission)', async () => {

@@ -53,6 +53,12 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Added
 
+- **A first-run path and empty states that say what to do next.** A new workspace's Dashboard
+  shows a **Get started** panel: connect a data source, create a suite, add a check, run it. It
+  offers the next step, says who can take it when you cannot, and goes away once all four are
+  done. The empty Connections, Suites, Assets and checks lists now explain what belongs there
+  and offer the action your role allows. In the API, `GET /dashboard/onboarding` returns the
+  four steps as booleans.
 - **Say what an incident turned out to be.** Resolving an incident can record whether it was
   **fixed**, an **expected change** or a **false positive**. It is optional; left out, the
   incident is recorded as not stated. In the API, `POST /incidents/{id}/resolve` takes
@@ -124,6 +130,8 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Fixed
 
+- **Add check is no longer offered on a suite you can only view.** The button led to a form
+  whose save was refused.
 - **"Triggered by" names who started a run.** The Dashboard, Results, the run page and the
   printed report showed an internal identifier such as `manual:d7c88410-…`. They now show
   the person's name or email (`Manual — Olivia Admin`), `Schedule`, or the orchestration
