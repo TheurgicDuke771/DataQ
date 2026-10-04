@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "f1106c3c1f3d",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1734-suggest-prompt-column-cap",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/llm.py",
+    "backend/app/services/llm_checksuggest.py",
+    "backend/tests/services/test_llm_checksuggest.py",
+    "docs/site/guides/ai-features.md",
+    "docs/site/reference/changelog.md",
+    "docs/site/reference/openapi.json",
+    "frontend/src/api/llm.ts",
+    "frontend/src/components/suites/SuggestChecksDrawer.tsx",
+    "frontend/tests/components/SuggestChecksDrawer.test.tsx",
+    "packages/dataq-client/src/dataq_client/generated/api/llm/suggest_checks.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f1/106c3c1f3d/0/metadata.json",
+      "transcript": "/f1/106c3c1f3d/0/full.jsonl",
+      "compact_transcript": "/f1/106c3c1f3d/0/transcript.jsonl",
+      "content_hash": "/f1/106c3c1f3d/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 46,
+    "cache_creation_tokens": 44880,
+    "cache_read_tokens": 4468455,
+    "output_tokens": 16327,
+    "api_call_count": 23
+  }
+}
