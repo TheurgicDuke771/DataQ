@@ -11,6 +11,7 @@ import { getRunProgress, runSuite } from '../../src/api/runs';
 import {
   type Check,
   bulkDeleteChecks,
+  bulkSetThresholds,
   bulkSnoozeChecks,
   bulkUnsnoozeChecks,
   clearCheckSnooze,
@@ -45,6 +46,7 @@ vi.mock('../../src/api/suites', async (importOriginal) => {
     bulkSnoozeChecks: vi.fn(),
     bulkUnsnoozeChecks: vi.fn(),
     bulkDeleteChecks: vi.fn(),
+    bulkSetThresholds: vi.fn(),
     rebaselineCheck: vi.fn(),
   };
 });
@@ -68,6 +70,7 @@ const mockClearSnooze = vi.mocked(clearCheckSnooze);
 const mockBulkSnooze = vi.mocked(bulkSnoozeChecks);
 const mockBulkUnsnooze = vi.mocked(bulkUnsnoozeChecks);
 const mockBulkDelete = vi.mocked(bulkDeleteChecks);
+const mockBulkThresholds = vi.mocked(bulkSetThresholds);
 const mockRunSuite = vi.mocked(runSuite);
 const mockGetRunProgress = vi.mocked(getRunProgress);
 
@@ -416,6 +419,25 @@ describe('Suites', () => {
       expect(exceedsBulkLimit(BULK_CHECKS_MAX)).toBe(false);
       expect(exceedsBulkLimit(BULK_CHECKS_MAX + 1)).toBe(true);
       expect(BULK_CHECKS_MAX).toBe(500); // the backend's BULK_CHECKS_MAX
+    });
+
+    it('sets thresholds on the selected checks through the dialog', async () => {
+      const user = await openWithChecks();
+      mockBulkThresholds.mockResolvedValue({ affected: 2, checks: [] });
+
+      await user.click(screen.getByRole('checkbox', { name: 'Select alpha' }));
+      await user.click(screen.getByRole('checkbox', { name: 'Select beta' }));
+      await user.click(screen.getByRole('button', { name: 'Set thresholds' }));
+      await user.click(await screen.findByRole('combobox', { name: 'Fail' }));
+      const setTo = await screen.findAllByText('Set to');
+      await user.click(setTo[setTo.length - 1]);
+      await user.type(screen.getByRole('spinbutton', { name: 'Fail threshold' }), '5');
+      await user.click(screen.getByRole('button', { name: 'Apply to 2 checks' }));
+
+      await waitFor(() =>
+        expect(mockBulkThresholds).toHaveBeenCalledWith('s1', ['a', 'b'], { fail_threshold: 5 }),
+      );
+      expect(await screen.findByText('Thresholds set on 2 checks')).toBeInTheDocument();
     });
 
     it('shows no selection controls to a view-only user', async () => {

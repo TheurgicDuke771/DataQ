@@ -58,6 +58,10 @@ the per-PR history lives in the repo's commit log and pull requests.
   deleted in one action. It is all-or-nothing, and each check gets the same audit event a
   single action writes. In the API, `POST /suites/{id}/checks-bulk/snooze`,
   `/checks-bulk/unsnooze` and `/checks-bulk/delete`.
+- **Bulk severity thresholds.** **Set thresholds** on the same selection gives every selected
+  check the same warn, fail or critical value; each tier can be set, cleared or left as it
+  is. Refused as a whole, naming the checks at fault, if the selection mixes check kinds
+  or any check cannot take the result. In the API, `POST /suites/{id}/checks-bulk/thresholds`.
 - **A data-quality score per connection.** Each connection card shows a **DQ score** across
   every suite on that connection, from each suite's latest run if it completed. It is the same
   for every member, and absent when nothing has evaluated. In the API, connections gain

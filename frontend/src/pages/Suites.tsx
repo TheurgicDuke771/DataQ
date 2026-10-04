@@ -31,6 +31,7 @@ import {
   canRunSuite,
   type Check,
   bulkDeleteChecks,
+  bulkSetThresholds,
   bulkSnoozeChecks,
   bulkUnsnoozeChecks,
   clearCheckSnooze,
@@ -48,6 +49,7 @@ import { AssetLink } from '../components/assets/AssetLink';
 import { AutomaticTag } from '../components/suites/AutomaticTag';
 import { DimensionTag, EngineTag, formatThresholdsCompact } from '../components/checks/checkBadges';
 import { BULK_CHECKS_MAX, exceedsBulkLimit } from '../components/checks/bulkLimit';
+import { BulkThresholdsModal } from '../components/checks/BulkThresholdsModal';
 import { isSnoozed, SnoozedTag } from '../components/checks/snooze';
 import { ConnectionTypeAvatar } from '../components/connections/connectionVisuals';
 import { useCanAuthor, useWorkspaceRole } from '../auth/useMe';
@@ -599,6 +601,7 @@ function ChecksList({
   // refetch keeps the selection; `selectedIds` below drops ids whose check is gone.
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [thresholdsOpen, setThresholdsOpen] = useState(false);
   const toggle = (id: string, on: boolean) =>
     setSelected((prev) => {
       const next = new Set(prev);
@@ -720,6 +723,18 @@ function ChecksList({
         </Flex>
       }
     >
+      <BulkThresholdsModal
+        open={thresholdsOpen}
+        count={selectedIds.length}
+        onCancel={() => setThresholdsOpen(false)}
+        onApply={async (thresholds) => {
+          await runBulk(
+            () => bulkSetThresholds(suiteId, selectedIds, thresholds),
+            (n) => `Thresholds set on ${plural(n)}`,
+          );
+          setThresholdsOpen(false);
+        }}
+      />
       <SuggestChecksDrawer
         suiteId={suiteId}
         open={suggestOpen}
@@ -788,6 +803,13 @@ function ChecksList({
                     }
                   >
                     Unsnooze selected
+                  </Button>
+                  <Button
+                    size="small"
+                    disabled={bulkBusy || overBulkLimit}
+                    onClick={() => setThresholdsOpen(true)}
+                  >
+                    Set thresholds
                   </Button>
                   <Button
                     size="small"

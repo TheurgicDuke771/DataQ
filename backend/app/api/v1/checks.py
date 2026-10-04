@@ -8,7 +8,7 @@ from decimal import Decimal
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, status
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import ApiModel, ApiRequestModel
@@ -292,6 +292,9 @@ def clear_check_snooze(
 # ───────────────────────── bulk operations (#1669) ─────────────────
 
 
+_THRESHOLD_FIELDS = ("warn_threshold", "fail_threshold", "critical_threshold")
+
+
 class BulkChecksRequest(ApiRequestModel):
     check_ids: list[uuid.UUID] = Field(min_length=1, max_length=svc.BULK_CHECKS_MAX)
 
@@ -376,6 +379,60 @@ def bulk_delete_checks(
     require_permission(db, suite_id, current_user.id, minimum="edit")
     affected = svc.bulk_delete_checks(db, suite_id, payload.check_ids, actor_id=current_user.id)
     return BulkChecksResult(affected=affected)
+
+
+class BulkThresholdsRequest(BulkChecksRequest):
+    """Like `CheckUpdate`: an explicit `null` clears that threshold on every check, and
+    leaving the key out keeps each check's own value.
+    """
+
+    warn_threshold: Decimal | None = None
+    fail_threshold: Decimal | None = None
+    critical_threshold: Decimal | None = None
+
+    @model_validator(mode="after")
+    def _names_at_least_one_threshold(self) -> BulkThresholdsRequest:
+        if not self.model_fields_set & set(_THRESHOLD_FIELDS):
+            raise ValueError(
+                "name at least one of warn_threshold, fail_threshold, critical_threshold"
+            )
+        return self
+
+    def threshold(self, name: str) -> Decimal | svc._Keep | None:
+        if name not in self.model_fields_set:
+            return svc.KEEP
+        value: Decimal | None = getattr(self, name)
+        return value
+
+
+@router.post(
+    "/suites/{suite_id}/checks-bulk/thresholds",
+    response_model=BulkChecksResult,
+    summary="Set the same severity thresholds on many checks",
+    description=_BULK_ALL_OR_NOTHING
+    + " Also refused whole, with 422 and the offending checks named, if the selection mixes "
+    "check kinds or any check cannot take the resulting thresholds. A check already at "
+    "these values gets no new version.",
+)
+def bulk_set_thresholds(
+    suite_id: uuid.UUID,
+    payload: BulkThresholdsRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> BulkChecksResult:
+    require_permission(db, suite_id, current_user.id, minimum="edit")
+    checks = svc.bulk_set_thresholds(
+        db,
+        suite_id,
+        payload.check_ids,
+        warn_threshold=payload.threshold("warn_threshold"),
+        fail_threshold=payload.threshold("fail_threshold"),
+        critical_threshold=payload.threshold("critical_threshold"),
+        actor_id=current_user.id,
+    )
+    return BulkChecksResult(
+        affected=len(checks), checks=[CheckRead.model_validate(c) for c in checks]
+    )
 
 
 # ───────────────────────── version history (#280) ──────────────────

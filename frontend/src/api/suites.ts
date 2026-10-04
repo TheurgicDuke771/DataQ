@@ -281,6 +281,26 @@ export async function bulkDeleteChecks(
   return data;
 }
 
+/** Per tier: a number sets it, `null` clears it, an absent key keeps each check's own value. */
+export interface BulkThresholds {
+  warn_threshold?: number | null;
+  fail_threshold?: number | null;
+  critical_threshold?: number | null;
+}
+
+/** Set the same thresholds on many checks (edit-gated; refused whole if any check can't take them). */
+export async function bulkSetThresholds(
+  suiteId: string,
+  checkIds: string[],
+  thresholds: BulkThresholds,
+): Promise<BulkChecksResult> {
+  const { data } = await api.post<BulkChecksResult>(`/suites/${suiteId}/checks-bulk/thresholds`, {
+    check_ids: checkIds,
+    ...thresholds,
+  });
+  return data;
+}
+
 /** Drop a schema_drift check's stored baseline — the NEXT run recaptures it from
  *  the live target (#592; edit-gated; 422 for non-stateful kinds). */
 export async function rebaselineCheck(suiteId: string, checkId: string): Promise<void> {

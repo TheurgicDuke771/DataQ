@@ -97,6 +97,17 @@ test.describe('Suites page', () => {
     await page.getByRole('button', { name: 'Unsnooze selected', exact: true }).click();
     for (const row of rows) await expect(row.getByText(/Snoozed until/)).toHaveCount(0);
 
+    // Thresholds: one value on both, shown on each row; the seeded row keeps its own.
+    await selectBoth();
+    await page.getByRole('button', { name: 'Set thresholds', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Set thresholds on 2 checks' });
+    await dialog.getByRole('combobox', { name: 'Fail' }).click();
+    await page.locator('.ant-select-dropdown').last().getByText('Set to', { exact: true }).click();
+    await dialog.getByRole('spinbutton', { name: 'Fail threshold' }).fill('5');
+    await dialog.getByRole('button', { name: 'Apply to 2 checks' }).click();
+    for (const row of rows) await expect(row.getByText('· fail 5')).toBeVisible();
+    await expect(dialog).toHaveCount(0);
+
     // Delete: confirm names the count; only the two throwaway checks go.
     await selectBoth();
     await page.getByRole('button', { name: 'Delete selected', exact: true }).click();

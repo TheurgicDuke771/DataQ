@@ -178,9 +178,11 @@ Delivered when a run breaches its threshold ([Notifications & alerting](notifica
 - **Dedup** — you hear about a breakage once (and again on escalation); a clean run resets.
 - **Snooze** — silence a known-broken check for N hours (history + re-fire preserved).
 - **Bulk actions on checks** — tick checks on the suite page, or **Select all**, then
-  snooze, unsnooze or delete them together. It is all-or-nothing: if any one cannot be
-  changed, none are. A bulk delete removes each check's results and history, as a single
-  delete does.
+  snooze, unsnooze or delete them together, or **Set thresholds** to give them all the
+  same warn, fail or critical value. It is all-or-nothing: if any one cannot be changed,
+  none are, and the ones at fault are named. A bulk delete removes each check's results
+  and history, as a single delete does. Thresholds can only be set on checks of one kind
+  at a time, because a threshold is compared with the number that kind of check measures.
 - **Per-suite config** — channels + threshold + recipients set per suite.
 - **Connection poll-health alerts** — when an orchestration connection's poll keeps failing
   (an expired credential, a moved orchestrator), DataQ stops ingesting pipeline runs and
