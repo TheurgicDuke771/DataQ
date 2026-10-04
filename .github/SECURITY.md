@@ -35,7 +35,7 @@ repository and curated in [CHANGELOG.md](../CHANGELOG.md).
 | Version | Supported |
 |---|---|
 | `main` (latest commit) | Yes — fixes land here first |
-| Latest tagged release (currently **v1.1.0**) | Yes |
+| Latest tagged release (currently **v1.2.0**) | Yes |
 | Older tagged releases | No |
 
 Security fixes are applied to `main` and ship in the next release. There is no long-term

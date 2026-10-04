@@ -13,6 +13,43 @@ would act on. The step lives in the release checklist in
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-10-04
+
+The DQ-intelligence and operability cycle (2026-08-22 → 2026-10-04). The curated user-facing
+entry lives on the docs site — [docs/site/reference/changelog.md](docs/site/reference/changelog.md)
+— and in the GitHub Release body; headlines:
+
+### Added
+
+- **Six SQL datasources on one engine-generic base (ADR 0045):** PostgreSQL, MySQL / MariaDB,
+  Trino, Amazon Athena and Amazon Redshift, plus SQL Server / Azure SQL / Synapse / Fabric SQL
+  (ADR 0044). ADLS Gen2 connections can sign in as a service principal, which also covers
+  Fabric OneLake.
+- **Per-check engines (ADR 0036):** Snowflake DMF, including custom DMFs, and Databricks DQX
+  run in the user's own workspace, beside Great Expectations.
+- **LLM assistance, off by default (ADR 0042):** SQL generation, check suggestions and
+  root-cause narratives through a provider seam (Anthropic, any OpenAI-compatible endpoint,
+  Snowflake Cortex), each validated before anything is saved.
+- **Automated coverage (ADR 0047):** system-owned suites over the asset inventory, a review
+  queue of suggested rules, and coverage and false-positive figures on the Dashboard.
+- **Suites as code:** YAML suite files, `validate`, drift and `apply`, and a generated Python
+  client with the `dataq` CLI, attached to each release, under an API compatibility policy.
+- **A pipeline gate (ADR 0046):** `POST /orchestration/gate` lets a pipeline stage start its
+  bound suites and wait for the verdict.
+- **Operating a workspace:** reusable notification channels; the admin area as six pages
+  with in-app membership (ADR 0043), guided offboarding and a workspace-health view; a hash
+  chain over the audit log.
+- **Scores and bulk work:** health scores for assets, connections and dimensions; bulk snooze,
+  delete and thresholds for checks; a first-run path and empty states that say what to do next.
+- **MCP:** 46 → 54 tools, including column lineage tracing, notification channels, curated
+  docs, coverage figures and suggested rules.
+- **A production-like local stack:** `docker-compose.ghcr.yml` serves only the UI, over HTTPS
+  from a CA it generates, with TLS on every internal hop and data and a persistent vault in a
+  directory. A `--profile demo` sample warehouse shows real results on first sign-in.
+- **Accessibility:** every route passes the automated axe checks in both themes.
+- **Docs:** rebuilt on a task-first layout, versioned per release, with an upgrade guide and
+  a support policy.
+
 ### Changed
 
 - **AWS stack — Slack alerts are off unless `slack_webhook_secret_name` is set (#2292).** The
@@ -33,6 +70,16 @@ would act on. The step lives in the release checklist in
   of ISO dates failed every row. A `to_be_of_type` check on a UC `DATE` column that
   names `datetime64[ns]` / `datetime64[s]` must be changed to `type_: date`. Datetime
   bounds at midnight keep working; a bound with a time of day on a `DATE` column errors.
+- **Breaking — the prebuilt-image stack publishes only the UI, over HTTPS, and keeps its data
+  in a directory** (`DATAQ_DATA_DIR`, default `./dataq-data`). Take the compose file and the
+  images from the same release.
+- **This release adds 33 database migrations.** They run before the application starts. Back
+  up first; see the upgrade guide for rolling back.
+
+### Security
+
+- The custom-SQL guard lexes each engine's own quoting.
+- Sensitive columns stay masked in incident evidence, alerts and LLM prompts.
 
 ## [1.1.0] — 2026-08-21
 
@@ -120,6 +167,7 @@ Great Expectations (GX Core), deployed to Azure Container Apps.
   frontend the sole public surface), GHCR multi-arch images, GitHub Actions
   build→migrate→deploy pipeline, App Insights logs + OpenTelemetry traces.
 
-[Unreleased]: https://github.com/TheurgicDuke771/DataQ/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/TheurgicDuke771/DataQ/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/TheurgicDuke771/DataQ/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/TheurgicDuke771/DataQ/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/TheurgicDuke771/DataQ/releases/tag/v1.0.0

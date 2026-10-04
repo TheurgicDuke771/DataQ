@@ -2,7 +2,7 @@
 
 > Data quality monitoring built on Great Expectations — checks your tables and files, alerts the team that owns them, and reacts to the pipelines that load them.
 
-**📖 Docs: <https://theurgicduke771.github.io/DataQ/docs/latest/>** · **Status:** `v1.1.0` released 2026-08-21; v1.2 in progress ([changelog](CHANGELOG.md) · [tracker](docs/progress.md)) · MIT licensed
+**📖 Docs: <https://theurgicduke771.github.io/DataQ/docs/latest/>** · **Status:** `v1.2.0` released 2026-10-04 ([changelog](CHANGELOG.md) · [tracker](docs/progress.md)) · MIT licensed
 
 ![The monitoring dashboard: asset health, integrity score, pass rate and per-suite performance](docs/site/assets/screenshots/dashboard.png)
 
