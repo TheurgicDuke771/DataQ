@@ -1,0 +1,41 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "4a31d7faefd7",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-2370-bulk-thresholds",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "backend/app/api/v1/checks.py",
+    "backend/app/services/check_service.py",
+    "backend/tests/api/test_checks.py",
+    "backend/tests/support/audit_coverage.py",
+    "docs/site/guides/features.md",
+    "docs/site/reference/changelog.md",
+    "docs/site/reference/openapi.json",
+    "frontend/e2e/suites.spec.ts",
+    "frontend/src/api/suites.ts",
+    "frontend/src/components/checks/BulkThresholdsModal.tsx",
+    "frontend/src/pages/Suites.tsx",
+    "frontend/tests/components/BulkThresholdsModal.test.tsx",
+    "frontend/tests/pages/Suites.test.tsx",
+    "packages/dataq-client/src/dataq_client/generated/api/checks/bulk_set_thresholds.py",
+    "packages/dataq-client/src/dataq_client/generated/models/__init__.py",
+    "packages/dataq-client/src/dataq_client/generated/models/bulk_thresholds_request.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/4a/31d7faefd7/0/metadata.json",
+      "transcript": "/4a/31d7faefd7/0/full.jsonl",
+      "compact_transcript": "/4a/31d7faefd7/0/transcript.jsonl",
+      "content_hash": "/4a/31d7faefd7/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 26,
+    "cache_creation_tokens": 22651,
+    "cache_read_tokens": 7778825,
+    "output_tokens": 16459,
+    "api_call_count": 13
+  }
+}
