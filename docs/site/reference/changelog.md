@@ -53,6 +53,10 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Added
 
+- **An upgrade guide and a support policy.** [Upgrading](../operate/upgrading.md) covers what to
+  back up, the steps for the prebuilt-image stack and a cloud deployment, and rolling back.
+  `SUPPORT.md` says where to ask for help. The security page now states outright that DataQ
+  sends nothing to its authors.
 - **A first-run path and empty states that say what to do next.** A new workspace's Dashboard
   shows a **Get started** panel: connect a data source, create a suite, add a check, run it. It
   offers the next step, says who can take it when you cannot, and goes away once all four are
