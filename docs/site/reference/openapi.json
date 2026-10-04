@@ -662,6 +662,17 @@
             "title": "Failing Lineage Sources",
             "type": "array"
           },
+          "health_score_delta": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Health Score Delta"
+          },
           "inherited_classifications": {
             "anyOf": [
               {
@@ -688,9 +699,25 @@
             "title": "Lineage Edges",
             "type": "array"
           },
+          "previous_health_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Health Score"
+          },
           "restricted_suite_count": {
             "default": 0,
             "title": "Restricted Suite Count",
+            "type": "integer"
+          },
+          "score_delta_days": {
+            "default": 7,
+            "title": "Score Delta Days",
             "type": "integer"
           },
           "scorecard": {
@@ -10994,6 +11021,20 @@
               "format": "uuid",
               "title": "Asset Id",
               "type": "string"
+            }
+          },
+          {
+            "description": "How far back `previous_health_score` looks, in days.",
+            "in": "query",
+            "name": "score_delta_days",
+            "required": false,
+            "schema": {
+              "default": 7,
+              "description": "How far back `previous_health_score` looks, in days.",
+              "maximum": 90,
+              "minimum": 1,
+              "title": "Score Delta Days",
+              "type": "integer"
             }
           }
         ],

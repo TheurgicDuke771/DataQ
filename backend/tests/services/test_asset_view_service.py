@@ -6,11 +6,22 @@ semantics, an asset with no composing suites, and the empty-input short-circuits
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 import pytest
+from sqlalchemy import select
 
-from backend.app.db.models import DQ_DIMENSIONS, Asset, Check, Connection, Result, Run, User
+from backend.app.db.models import (
+    DQ_DIMENSIONS,
+    Asset,
+    Check,
+    Connection,
+    Result,
+    Run,
+    Suite,
+    User,
+)
 from backend.app.services import asset_view_service as svc
 from backend.app.services import run_service, scoring_settings_service, suite_service
 
@@ -536,3 +547,109 @@ def test_default_sort_is_still_namespace_then_name(db_session: Any) -> None:
     db_session.commit()
 
     assert [a.name for a in svc.list_visible_assets(db_session)] == ["A", "B"]
+
+
+# ── asset score delta (#1556) ────────────────────────────────────────────────
+
+
+def _add_run(
+    db: Any,
+    asset: Asset,
+    *,
+    age_days: float,
+    statuses: list[str],
+    status: str,
+    finished_age_days: float | None = None,
+) -> None:
+    """Another run on the asset's suite, `age_days` old, reusing its existing checks."""
+    suite = db.scalars(select(Suite).where(Suite.asset_id == asset.id)).one()
+    checks = list(db.scalars(select(Check).where(Check.suite_id == suite.id).order_by(Check.id)))
+    run = Run(
+        suite_id=suite.id,
+        status=status,
+        triggered_by="manual",
+        created_at=datetime.now(UTC) - timedelta(days=age_days),
+        finished_at=(
+            datetime.now(UTC) - timedelta(days=finished_age_days)
+            if finished_age_days is not None
+            else None
+        ),
+    )
+    db.add(run)
+    db.flush()
+    for check, result_status in zip(checks, statuses, strict=True):
+        db.add(Result(run_id=run.id, check_id=check.id, status=result_status))
+    db.commit()
+
+
+def test_score_delta_compares_with_the_latest_run_as_of_n_days_ago(db_session: Any) -> None:
+    owner = _user(db_session)
+    # Now: one fail of two → 75.0.
+    asset = _suite_with_run(
+        db_session, owner, run_status="succeeded", result_statuses=["fail", "pass"]
+    )
+    # Ten days ago both passed (100.0); twenty days ago both failed — superseded by then.
+    _add_run(db_session, asset, age_days=10, statuses=["pass", "pass"], status="succeeded")
+    _add_run(db_session, asset, age_days=20, statuses=["fail", "fail"], status="succeeded")
+
+    detail = svc.get_visible_asset(db_session, asset.id, user_id=owner.id, score_delta_days=7)
+
+    assert detail.summary.health_score == 75.0
+    assert detail.previous_health_score == 100.0
+    assert detail.health_score_delta == -25.0
+    assert detail.score_delta_days == 7
+    # A longer look-back lands on the older run instead.
+    older = svc.get_visible_asset(db_session, asset.id, user_id=owner.id, score_delta_days=15)
+    assert (older.previous_health_score, older.health_score_delta) == (50.0, 25.0)
+
+
+def test_score_delta_is_none_when_nothing_had_run_by_then(db_session: Any) -> None:
+    owner = _user(db_session)
+    asset = _suite_with_run(db_session, owner, run_status="succeeded", result_statuses=["fail"])
+
+    detail = svc.get_visible_asset(db_session, asset.id, user_id=owner.id)
+
+    assert detail.summary.health_score == 50.0
+    assert detail.previous_health_score is None
+    # No comparison — not "no change".
+    assert detail.health_score_delta is None
+
+
+def test_score_delta_ignores_an_incomplete_run_at_the_comparison_point(db_session: Any) -> None:
+    """The latest run as of then was cancelled mid-way: its partial results are not a
+    verdict, and an older complete run is not silently substituted for it."""
+    owner = _user(db_session)
+    asset = _suite_with_run(
+        db_session, owner, run_status="succeeded", result_statuses=["pass", "pass"]
+    )
+    _add_run(db_session, asset, age_days=10, statuses=["fail", "fail"], status="cancelled")
+    _add_run(db_session, asset, age_days=20, statuses=["pass", "pass"], status="succeeded")
+
+    detail = svc.get_visible_asset(db_session, asset.id, user_id=owner.id)
+
+    assert detail.previous_health_score is None
+    assert detail.health_score_delta is None
+
+
+def test_score_delta_does_not_count_a_run_that_was_still_in_flight_then(db_session: Any) -> None:
+    """Created before the comparison point, finished after it: at that moment the suite
+    had no verdict, even though the run reads `succeeded` today."""
+    owner = _user(db_session)
+    asset = _suite_with_run(
+        db_session, owner, run_status="succeeded", result_statuses=["pass", "pass"]
+    )
+    _add_run(
+        db_session,
+        asset,
+        age_days=8,
+        finished_age_days=6,
+        statuses=["fail", "fail"],
+        status="succeeded",
+    )
+
+    detail = svc.get_visible_asset(db_session, asset.id, user_id=owner.id, score_delta_days=7)
+
+    assert detail.previous_health_score is None
+    # Once it had finished, it counts.
+    later = svc.get_visible_asset(db_session, asset.id, user_id=owner.id, score_delta_days=5)
+    assert later.previous_health_score == 50.0

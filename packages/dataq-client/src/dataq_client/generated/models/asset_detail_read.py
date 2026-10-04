@@ -39,9 +39,12 @@ class AssetDetailRead:
                 Carries **two orthogonal health axes** (#803) the UI renders separately:
             upstream (list[LineageNodeRead]):
             failing_lineage_sources (list[LineageSourceHealthRead] | Unset):
+            health_score_delta (float | None | Unset):
             inherited_classifications (list[InheritedClassificationRead] | None | Unset):
             inherited_classifications_truncated (bool | Unset):  Default: False.
+            previous_health_score (float | None | Unset):
             restricted_suite_count (int | Unset):  Default: 0.
+            score_delta_days (int | Unset):  Default: 7.
             scorecard (None | ScorecardRead | Unset):
             warehouse_lineage_status (list[WarehouseLineageStatusRead] | Unset):
     """
@@ -52,9 +55,12 @@ class AssetDetailRead:
     summary: AssetSummaryRead
     upstream: list[LineageNodeRead]
     failing_lineage_sources: list[LineageSourceHealthRead] | Unset = UNSET
+    health_score_delta: float | None | Unset = UNSET
     inherited_classifications: list[InheritedClassificationRead] | None | Unset = UNSET
     inherited_classifications_truncated: bool | Unset = False
+    previous_health_score: float | None | Unset = UNSET
     restricted_suite_count: int | Unset = 0
+    score_delta_days: int | Unset = 7
     scorecard: None | ScorecardRead | Unset = UNSET
     warehouse_lineage_status: list[WarehouseLineageStatusRead] | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
@@ -91,6 +97,12 @@ class AssetDetailRead:
                 failing_lineage_sources_item = failing_lineage_sources_item_data.to_dict()
                 failing_lineage_sources.append(failing_lineage_sources_item)
 
+        health_score_delta: float | None | Unset
+        if isinstance(self.health_score_delta, Unset):
+            health_score_delta = UNSET
+        else:
+            health_score_delta = self.health_score_delta
+
         inherited_classifications: list[dict[str, Any]] | None | Unset
         if isinstance(self.inherited_classifications, Unset):
             inherited_classifications = UNSET
@@ -107,7 +119,15 @@ class AssetDetailRead:
 
         inherited_classifications_truncated = self.inherited_classifications_truncated
 
+        previous_health_score: float | None | Unset
+        if isinstance(self.previous_health_score, Unset):
+            previous_health_score = UNSET
+        else:
+            previous_health_score = self.previous_health_score
+
         restricted_suite_count = self.restricted_suite_count
+
+        score_delta_days = self.score_delta_days
 
         scorecard: dict[str, Any] | None | Unset
         if isinstance(self.scorecard, Unset):
@@ -137,12 +157,18 @@ class AssetDetailRead:
         )
         if failing_lineage_sources is not UNSET:
             field_dict["failing_lineage_sources"] = failing_lineage_sources
+        if health_score_delta is not UNSET:
+            field_dict["health_score_delta"] = health_score_delta
         if inherited_classifications is not UNSET:
             field_dict["inherited_classifications"] = inherited_classifications
         if inherited_classifications_truncated is not UNSET:
             field_dict["inherited_classifications_truncated"] = inherited_classifications_truncated
+        if previous_health_score is not UNSET:
+            field_dict["previous_health_score"] = previous_health_score
         if restricted_suite_count is not UNSET:
             field_dict["restricted_suite_count"] = restricted_suite_count
+        if score_delta_days is not UNSET:
+            field_dict["score_delta_days"] = score_delta_days
         if scorecard is not UNSET:
             field_dict["scorecard"] = scorecard
         if warehouse_lineage_status is not UNSET:
@@ -207,6 +233,15 @@ class AssetDetailRead:
 
                 failing_lineage_sources.append(failing_lineage_sources_item)
 
+        def _parse_health_score_delta(data: object) -> float | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(float | None | Unset, data)
+
+        health_score_delta = _parse_health_score_delta(d.pop("health_score_delta", UNSET))
+
         def _parse_inherited_classifications(
             data: object,
         ) -> list[InheritedClassificationRead] | None | Unset:
@@ -237,7 +272,18 @@ class AssetDetailRead:
 
         inherited_classifications_truncated = d.pop("inherited_classifications_truncated", UNSET)
 
+        def _parse_previous_health_score(data: object) -> float | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(float | None | Unset, data)
+
+        previous_health_score = _parse_previous_health_score(d.pop("previous_health_score", UNSET))
+
         restricted_suite_count = d.pop("restricted_suite_count", UNSET)
+
+        score_delta_days = d.pop("score_delta_days", UNSET)
 
         def _parse_scorecard(data: object) -> None | ScorecardRead | Unset:
             if data is None:
@@ -274,9 +320,12 @@ class AssetDetailRead:
             summary=summary,
             upstream=upstream,
             failing_lineage_sources=failing_lineage_sources,
+            health_score_delta=health_score_delta,
             inherited_classifications=inherited_classifications,
             inherited_classifications_truncated=inherited_classifications_truncated,
+            previous_health_score=previous_health_score,
             restricted_suite_count=restricted_suite_count,
+            score_delta_days=score_delta_days,
             scorecard=scorecard,
             warehouse_lineage_status=warehouse_lineage_status,
         )

@@ -604,6 +604,10 @@ dimension, so a failing custom SQL check lowers it. An asset where nothing evalu
 **No signal**, not 0. It is not the Dashboard's Data Integrity Score, which covers every
 run in a time window across all your suites.
 
+Beside it, the change **vs 7 days ago** compares the score with what the same calculation
+gave a week earlier: each suite's latest completed run as of then. Nothing is shown when
+there is no earlier score to compare with, which is different from "no change".
+
 On **Assets → All assets**, the **Score** column shows the same number, and **Sort by →
 Health score, lowest first** orders every asset in the workspace by it, with unscored
 assets last.
