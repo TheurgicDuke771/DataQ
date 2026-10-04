@@ -53,6 +53,11 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Added
 
+- **Bulk snooze, unsnooze and delete for checks.** The suite page's check list has a
+  checkbox per check and **Select all**; the selected checks can be snoozed, unsnoozed or
+  deleted in one action. It is all-or-nothing, and each check gets the same audit event a
+  single action writes. In the API, `POST /suites/{id}/checks-bulk/snooze`,
+  `/checks-bulk/unsnooze` and `/checks-bulk/delete`.
 - **A data-quality score per connection.** Each connection card shows a **DQ score** across
   every suite on that connection, from each suite's latest run if it completed. It is the same
   for every member, and absent when nothing has evaluated. In the API, connections gain

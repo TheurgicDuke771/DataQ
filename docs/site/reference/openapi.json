@@ -1309,6 +1309,75 @@
         "title": "BrowseFileRead",
         "type": "object"
       },
+      "BulkChecksRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "check_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Check Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "check_ids"
+        ],
+        "title": "BulkChecksRequest",
+        "type": "object"
+      },
+      "BulkChecksResult": {
+        "description": "`affected` is how many checks were changed. It is always every check named in\nthe request: a bulk call changes all of them or, on any refusal, none.",
+        "properties": {
+          "affected": {
+            "title": "Affected",
+            "type": "integer"
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/CheckRead"
+            },
+            "title": "Checks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "affected"
+        ],
+        "title": "BulkChecksResult",
+        "type": "object"
+      },
+      "BulkSnoozeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "check_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Check Ids",
+            "type": "array"
+          },
+          "hours": {
+            "description": "Mute each check's alerts for this many hours",
+            "exclusiveMinimum": 0.0,
+            "maximum": 720.0,
+            "title": "Hours",
+            "type": "number"
+          }
+        },
+        "required": [
+          "check_ids",
+          "hours"
+        ],
+        "title": "BulkSnoozeRequest",
+        "type": "object"
+      },
       "CatalogBrowseRead": {
         "description": "One level of the catalog \u2192 schema \u2192 table tree (a generic SQL connection such as\nPostgreSQL or MySQL starts at `schema`: its database is fixed). `truncated` means more names\nexist than `limit` \u2014 the list is then a prefix, and the target can still be typed by hand.",
         "properties": {
@@ -14437,6 +14506,168 @@
           }
         },
         "summary": "Create a check in a suite",
+        "tags": [
+          "checks"
+        ]
+      }
+    },
+    "/api/v1/suites/{suite_id}/checks-bulk/delete": {
+      "post": {
+        "description": "All-or-nothing: if any id is not a check of this suite the request is refused with 404 and nothing is changed. Duplicate ids count once. Deleting a check also deletes its results, version history and baseline.",
+        "operationId": "bulk_delete_checks",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suite_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Suite Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkChecksRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkChecksResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete many checks",
+        "tags": [
+          "checks"
+        ]
+      }
+    },
+    "/api/v1/suites/{suite_id}/checks-bulk/snooze": {
+      "post": {
+        "description": "All-or-nothing: if any id is not a check of this suite the request is refused with 404 and nothing is changed. Duplicate ids count once.",
+        "operationId": "bulk_snooze_checks",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suite_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Suite Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkSnoozeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkChecksResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Snooze the alerts of many checks",
+        "tags": [
+          "checks"
+        ]
+      }
+    },
+    "/api/v1/suites/{suite_id}/checks-bulk/unsnooze": {
+      "post": {
+        "description": "All-or-nothing: if any id is not a check of this suite the request is refused with 404 and nothing is changed. Duplicate ids count once.",
+        "operationId": "bulk_unsnooze_checks",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suite_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Suite Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkChecksRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkChecksResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Clear the alert snooze of many checks",
         "tags": [
           "checks"
         ]

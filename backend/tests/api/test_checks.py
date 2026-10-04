@@ -2255,8 +2255,8 @@ def test_dryrun_requires_edit_permission(client: TestClient, db_session: Any) ->
 # ───────────────────────── snooze (suppression) ────────────────────
 
 
-def _make_check(client: TestClient, sid: str) -> str:
-    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_payload())
+def _make_check(client: TestClient, sid: str, **overrides: Any) -> str:
+    resp = client.post(f"/api/v1/suites/{sid}/checks", json=_payload(**overrides))
     assert resp.status_code == 201
     return str(resp.json()["id"])
 
@@ -3344,3 +3344,149 @@ def test_a_cleared_threshold_is_recorded_in_the_check_version(
 
     assert versions[0]["warn_threshold"] is None
     assert float(versions[1]["warn_threshold"]) == 1.0
+
+
+# ── bulk snooze / unsnooze / delete (#1669) ──────────────────────────────────
+
+
+def _audit_actions(db_session: Any, check_ids: list[str]) -> list[tuple[str, str]]:
+    wanted = {uuid.UUID(c) for c in check_ids}
+    return sorted(
+        (str(e.entity_id), e.action)
+        for e in db_session.query(AuditEvent).filter(AuditEvent.entity_type == "check")
+        if e.entity_id in wanted and e.action != "check.create"
+    )
+
+
+def test_bulk_snooze_then_unsnooze_changes_every_named_check(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_id(client, db_session)
+    picked = [_make_check(client, sid, name=f"c{i}") for i in range(3)]
+    untouched = _make_check(client, sid, name="left alone")
+
+    snoozed = client.post(
+        f"/api/v1/suites/{sid}/checks-bulk/snooze", json={"check_ids": picked, "hours": 4}
+    )
+
+    assert snoozed.status_code == 200, snoozed.text
+    body = snoozed.json()
+    assert body["affected"] == 3
+    assert [c["id"] for c in body["checks"]] == picked  # request order
+    untils = {c["alert_snoozed_until"] for c in body["checks"]}
+    assert len(untils) == 1  # one moment for the whole batch
+    (until,) = untils
+    assert datetime.fromisoformat(until) > datetime.now(UTC)
+    other = client.get(f"/api/v1/suites/{sid}/checks/{untouched}").json()
+    assert other["alert_snoozed_until"] is None
+    # The same per-check audit event a single snooze writes, and no version churn.
+    assert _audit_actions(db_session, picked) == sorted((c, "check.snooze") for c in picked)
+    versions = client.get(f"/api/v1/suites/{sid}/checks/{picked[0]}/versions").json()
+    assert len(versions) == 1
+
+    cleared = client.post(f"/api/v1/suites/{sid}/checks-bulk/unsnooze", json={"check_ids": picked})
+
+    assert cleared.status_code == 200
+    assert {c["alert_snoozed_until"] for c in cleared.json()["checks"]} == {None}
+    assert sorted(a for _c, a in _audit_actions(db_session, picked)) == (
+        ["check.snooze"] * 3 + ["check.unsnooze"] * 3
+    )
+
+
+def test_bulk_delete_removes_the_named_checks_with_an_audit_event_each(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_id(client, db_session)
+    doomed = [_make_check(client, sid, name=f"d{i}") for i in range(2)]
+    kept = _make_check(client, sid, name="kept")
+
+    resp = client.post(f"/api/v1/suites/{sid}/checks-bulk/delete", json={"check_ids": doomed})
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {"affected": 2, "checks": []}
+    remaining = client.get(f"/api/v1/suites/{sid}/checks").json()
+    assert [c["id"] for c in remaining] == [kept]
+    deletes = [
+        e
+        for e in db_session.query(AuditEvent).filter(AuditEvent.action == "check.delete")
+        if (e.before or {}).get("name") in {"d0", "d1"}
+    ]
+    assert len(deletes) == 2
+
+
+@pytest.mark.parametrize("action", ["snooze", "unsnooze", "delete"])
+def test_bulk_refuses_the_whole_request_when_one_id_is_not_in_the_suite(
+    client: TestClient, db_session: Any, action: str
+) -> None:
+    """A check of ANOTHER suite the caller owns is as foreign as an unknown id: the
+    route's permission check was for this suite only."""
+    sid = _suite_id(client, db_session)
+    mine = _make_check(client, sid, name="mine")
+    other_suite = _suite_id(client, db_session)
+    foreign = _make_check(client, other_suite, name="foreign")
+    body: dict[str, Any] = {"check_ids": [mine, foreign]}
+    if action == "snooze":
+        body["hours"] = 1
+
+    resp = client.post(f"/api/v1/suites/{sid}/checks-bulk/{action}", json=body)
+
+    assert resp.status_code == 404
+    assert resp.json()["error"]["detail"]["missing_check_ids"] == [foreign]
+    # Nothing was changed — not even the check that WAS in the suite.
+    after = client.get(f"/api/v1/suites/{sid}/checks/{mine}")
+    assert after.status_code == 200
+    assert after.json()["alert_snoozed_until"] is None
+    still_there = client.get(f"/api/v1/suites/{other_suite}/checks/{foreign}")
+    assert still_there.status_code == 200
+    assert _audit_actions(db_session, [mine, foreign]) == []
+
+
+def test_bulk_counts_a_repeated_id_once(client: TestClient, db_session: Any) -> None:
+    sid = _suite_id(client, db_session)
+    cid = _make_check(client, sid)
+
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks-bulk/snooze", json={"check_ids": [cid, cid], "hours": 1}
+    )
+
+    assert resp.json()["affected"] == 1
+    assert _audit_actions(db_session, [cid]) == [(cid, "check.snooze")]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"check_ids": [], "hours": 1},
+        {"check_ids": [str(uuid.uuid4())], "hours": 0},
+        {"check_ids": [str(uuid.uuid4())], "hours": 721},
+        {"check_ids": [str(uuid.uuid4())]},
+        {"check_ids": [str(uuid.uuid4()) for _ in range(501)], "hours": 1},
+        {"check_ids": ["not-a-uuid"], "hours": 1},
+    ],
+)
+def test_bulk_snooze_rejects_a_bad_request_shape(
+    client: TestClient, db_session: Any, body: dict[str, Any]
+) -> None:
+    sid = _suite_id(client, db_session)
+    resp = client.post(f"/api/v1/suites/{sid}/checks-bulk/snooze", json=body)
+    assert resp.status_code == 422
+
+
+@pytest.mark.parametrize("action", ["snooze", "unsnooze", "delete"])
+def test_bulk_requires_edit_permission(client: TestClient, db_session: Any, action: str) -> None:
+    owner, b, _e, sid = _owner_b_e_suite(db_session)
+    _as(owner)
+    cid = _make_check(client, sid)
+    _grant(client, owner, sid, b, "view")
+    _as(b)
+    body: dict[str, Any] = {"check_ids": [cid]}
+    if action == "snooze":
+        body["hours"] = 1
+
+    resp = client.post(f"/api/v1/suites/{sid}/checks-bulk/{action}", json=body)
+
+    assert resp.status_code == 403
+    _as(owner)
+    unchanged = client.get(f"/api/v1/suites/{sid}/checks/{cid}")
+    assert unchanged.status_code == 200
+    assert unchanged.json()["alert_snoozed_until"] is None

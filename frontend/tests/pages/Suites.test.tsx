@@ -10,6 +10,9 @@ import { type Connection, listConnections } from '../../src/api/connections';
 import { getRunProgress, runSuite } from '../../src/api/runs';
 import {
   type Check,
+  bulkDeleteChecks,
+  bulkSnoozeChecks,
+  bulkUnsnoozeChecks,
   clearCheckSnooze,
   deleteCheck,
   deleteSuite,
@@ -20,6 +23,7 @@ import {
   snoozeCheck,
   type Suite,
 } from '../../src/api/suites';
+import { BULK_CHECKS_MAX, exceedsBulkLimit } from '../../src/components/checks/bulkLimit';
 import { Suites } from '../../src/pages/Suites';
 
 vi.mock('../../src/api/connections', async (importOriginal) => {
@@ -38,6 +42,9 @@ vi.mock('../../src/api/suites', async (importOriginal) => {
     getSuiteDeletionImpact: vi.fn(),
     snoozeCheck: vi.fn(),
     clearCheckSnooze: vi.fn(),
+    bulkSnoozeChecks: vi.fn(),
+    bulkUnsnoozeChecks: vi.fn(),
+    bulkDeleteChecks: vi.fn(),
     rebaselineCheck: vi.fn(),
   };
 });
@@ -58,6 +65,9 @@ const mockGetSuiteDeletionImpact = vi.mocked(getSuiteDeletionImpact);
 const mockSnoozeCheck = vi.mocked(snoozeCheck);
 const mockRebaseline = vi.mocked(rebaselineCheck);
 const mockClearSnooze = vi.mocked(clearCheckSnooze);
+const mockBulkSnooze = vi.mocked(bulkSnoozeChecks);
+const mockBulkUnsnooze = vi.mocked(bulkUnsnoozeChecks);
+const mockBulkDelete = vi.mocked(bulkDeleteChecks);
 const mockRunSuite = vi.mocked(runSuite);
 const mockGetRunProgress = vi.mocked(getRunProgress);
 
@@ -319,6 +329,100 @@ describe('Suites', () => {
     await waitFor(() => expect(mockSnoozeCheck).toHaveBeenCalledWith('s1', 'chk1', 24));
     // The list refetches and the row now carries the snoozed badge.
     expect(await screen.findByText(/Snoozed until/)).toBeInTheDocument();
+  });
+
+  describe('bulk check actions', () => {
+    const three = [
+      check({ id: 'a', name: 'alpha' }),
+      check({ id: 'b', name: 'beta' }),
+      check({ id: 'c', name: 'gamma' }),
+    ];
+
+    async function openWithChecks(permission: 'edit' | 'view' = 'edit') {
+      const user = userEvent.setup();
+      mockListConnections.mockResolvedValue([connection]);
+      mockListSuites.mockResolvedValue([suite({ my_permission: permission })]);
+      mockListChecks.mockResolvedValue(three);
+      renderPage();
+      await user.click(await screen.findByText('orders-suite'));
+      await screen.findByText('alpha');
+      return user;
+    }
+
+    it('offers no bulk action until something is selected', async () => {
+      await openWithChecks();
+      expect(screen.getByRole('checkbox', { name: 'Select all' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Delete selected' })).not.toBeInTheDocument();
+    });
+
+    it('snoozes exactly the selected checks and clears the selection', async () => {
+      const user = await openWithChecks();
+      mockBulkSnooze.mockResolvedValue({ affected: 2, checks: [] });
+
+      await user.click(screen.getByRole('checkbox', { name: 'Select alpha' }));
+      await user.click(screen.getByRole('checkbox', { name: 'Select gamma' }));
+      expect(screen.getByText('2 selected')).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Snooze selected' }));
+      await user.click(await screen.findByText('24 hours'));
+
+      await waitFor(() => expect(mockBulkSnooze).toHaveBeenCalledWith('s1', ['a', 'c'], 24));
+      expect(await screen.findByText('2 checks: alerts snoozed for 24 hours')).toBeInTheDocument();
+      await waitFor(() => expect(screen.queryByText('2 selected')).not.toBeInTheDocument());
+    });
+
+    it('selects every check with "Select all" and unsnoozes them', async () => {
+      const user = await openWithChecks();
+      mockBulkUnsnooze.mockResolvedValue({ affected: 3, checks: [] });
+
+      await user.click(screen.getByRole('checkbox', { name: 'Select all' }));
+      await user.click(screen.getByRole('button', { name: 'Unsnooze selected' }));
+
+      await waitFor(() => expect(mockBulkUnsnooze).toHaveBeenCalledWith('s1', ['a', 'b', 'c']));
+    });
+
+    it('deletes only after a confirmation that says what is lost', async () => {
+      const user = await openWithChecks();
+      mockBulkDelete.mockResolvedValue({ affected: 1, checks: [] });
+
+      await user.click(screen.getByRole('checkbox', { name: 'Select beta' }));
+      await user.click(screen.getByRole('button', { name: 'Delete selected' }));
+
+      expect(await screen.findByRole('dialog', { name: 'Delete 1 check?' })).toBeInTheDocument();
+      expect(screen.getByText(/results, version history and baseline/)).toBeInTheDocument();
+      expect(mockBulkDelete).not.toHaveBeenCalled();
+      await user.click(screen.getByRole('button', { name: 'Delete 1 check' }));
+
+      await waitFor(() => expect(mockBulkDelete).toHaveBeenCalledWith('s1', ['b']));
+    });
+
+    it('refetches after a refusal, so a check deleted elsewhere leaves the selection', async () => {
+      const user = await openWithChecks();
+      mockBulkUnsnooze.mockRejectedValue(new Error('1 of 2 checks were not found'));
+
+      await user.click(screen.getByRole('checkbox', { name: 'Select alpha' }));
+      await user.click(screen.getByRole('checkbox', { name: 'Select beta' }));
+      // Someone else deleted "beta" in the meantime: the refetch no longer returns it.
+      mockListChecks.mockResolvedValue(three.filter((c) => c.id !== 'b'));
+      await user.click(screen.getByRole('button', { name: 'Unsnooze selected' }));
+
+      expect(await screen.findByText(/Bulk action failed/)).toBeInTheDocument();
+      await waitFor(() => expect(screen.queryByText('beta')).not.toBeInTheDocument());
+      // The retry would now name only the check that still exists.
+      expect(screen.getByText('1 selected')).toBeInTheDocument();
+    });
+
+    it('treats a selection over the request cap as blocked, and the cap itself as fine', () => {
+      // 501 rows are too slow to render in jsdom; the bar disables on this predicate.
+      expect(exceedsBulkLimit(BULK_CHECKS_MAX)).toBe(false);
+      expect(exceedsBulkLimit(BULK_CHECKS_MAX + 1)).toBe(true);
+      expect(BULK_CHECKS_MAX).toBe(500); // the backend's BULK_CHECKS_MAX
+    });
+
+    it('shows no selection controls to a view-only user', async () => {
+      await openWithChecks('view');
+      expect(screen.queryByRole('checkbox', { name: 'Select all' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('checkbox', { name: 'Select alpha' })).not.toBeInTheDocument();
+    });
   });
 
   it('offers Re-baseline only on schema_drift checks and confirms before calling (#592)', async () => {

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import enum
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -1311,6 +1312,106 @@ def clear_check_snooze(
     session.refresh(check)
     log.info("check_snooze_cleared", check_id=str(check.id))
     return check
+
+
+# ── bulk operations (#1669) ──────────────────────────────────────────────────
+
+#: One request's worth. Enough for "select all" on a large suite, small enough that the
+#: row locks and audit writes of one transaction stay short.
+BULK_CHECKS_MAX = 500
+
+
+def _checks_for_bulk(
+    session: Session, suite_id: uuid.UUID, check_ids: Sequence[uuid.UUID]
+) -> list[Check]:
+    """The suite's checks named by ``check_ids``, locked, in request order. Refuses the
+    WHOLE request if any id is unknown or belongs to another suite — a bulk action that
+    quietly did part of what was asked would be reported as done.
+    """
+    wanted = list(dict.fromkeys(check_ids))
+    found = {
+        c.id: c
+        for c in session.scalars(
+            select(Check)
+            .where(Check.suite_id == suite_id, Check.id.in_(wanted))
+            # One lock order for every bulk request, so two overlapping ones queue
+            # instead of deadlocking.
+            .order_by(Check.id)
+            .with_for_update()
+        )
+    }
+    missing = [str(i) for i in wanted if i not in found]
+    if missing:
+        raise CheckNotFoundError(
+            f"{len(missing)} of {len(wanted)} checks were not found in this suite; "
+            "nothing was changed",
+            detail={"suite_id": str(suite_id), "missing_check_ids": missing[:20]},
+        )
+    return [found[i] for i in wanted]
+
+
+def bulk_snooze_checks(
+    session: Session,
+    suite_id: uuid.UUID,
+    check_ids: Sequence[uuid.UUID],
+    *,
+    hours: float | None,
+    now: datetime | None = None,
+    actor_id: uuid.UUID | None = None,
+) -> list[Check]:
+    """Snooze (``hours`` set) or unsnooze (``hours=None``) many checks in one
+    transaction, writing the same audit event per check that the single-check call does.
+    """
+    checks = _checks_for_bulk(session, suite_id, check_ids)
+    until = None if hours is None else (now or datetime.now(UTC)) + timedelta(hours=hours)
+    for check in checks:
+        audit_before = audit_service.snapshot("check", check)
+        check.alert_snoozed_until = until
+        audit_service.record_entity_change(
+            session,
+            action="check.unsnooze" if until is None else "check.snooze",
+            entity_type="check",
+            entity=check,
+            actor=actor_id,
+            before=audit_before,
+        )
+    session.commit()
+    for check in checks:
+        session.refresh(check)
+    log.info(
+        "checks_bulk_snoozed" if until is not None else "checks_bulk_snooze_cleared",
+        suite_id=str(suite_id),
+        count=len(checks),
+        hours=hours,
+    )
+    return checks
+
+
+def bulk_delete_checks(
+    session: Session,
+    suite_id: uuid.UUID,
+    check_ids: Sequence[uuid.UUID],
+    *,
+    actor_id: uuid.UUID | None = None,
+) -> int:
+    """Delete many checks in one transaction, one `check.delete` audit event each.
+    Like the single delete, each check's results, versions and baseline go with it.
+    """
+    checks = _checks_for_bulk(session, suite_id, check_ids)
+    for check in checks:
+        audit_before = audit_service.snapshot("check", check)
+        session.delete(check)
+        audit_service.record_entity_change(
+            session,
+            action="check.delete",
+            entity_type="check",
+            entity=None,
+            actor=actor_id,
+            before=audit_before,
+        )
+    session.commit()
+    log.info("checks_bulk_deleted", suite_id=str(suite_id), count=len(checks))
+    return len(checks)
 
 
 def list_check_versions(

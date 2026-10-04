@@ -28,6 +28,9 @@ from .batch_preview_read import BatchPreviewRead
 from .beat_health_read import BeatHealthRead
 from .beat_health_read_status import BeatHealthReadStatus
 from .browse_file_read import BrowseFileRead
+from .bulk_checks_request import BulkChecksRequest
+from .bulk_checks_result import BulkChecksResult
+from .bulk_snooze_request import BulkSnoozeRequest
 from .catalog_browse_read import CatalogBrowseRead
 from .catalog_browse_read_level import CatalogBrowseReadLevel
 from .catalog_entry_read import CatalogEntryRead
@@ -291,6 +294,9 @@ __all__ = (
     "BeatHealthRead",
     "BeatHealthReadStatus",
     "BrowseFileRead",
+    "BulkChecksRequest",
+    "BulkChecksResult",
+    "BulkSnoozeRequest",
     "CatalogBrowseRead",
     "CatalogBrowseReadLevel",
     "CatalogEntryRead",

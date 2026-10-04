@@ -241,6 +241,46 @@ export async function clearCheckSnooze(suiteId: string, checkId: string): Promis
   return data;
 }
 
+/** Result of a bulk check action — all-or-nothing, so `affected` is every check named. */
+export interface BulkChecksResult {
+  affected: number;
+  checks: Check[];
+}
+
+/** Snooze many checks at once (edit-gated; refused whole if any id is not in the suite). */
+export async function bulkSnoozeChecks(
+  suiteId: string,
+  checkIds: string[],
+  hours: number,
+): Promise<BulkChecksResult> {
+  const { data } = await api.post<BulkChecksResult>(`/suites/${suiteId}/checks-bulk/snooze`, {
+    check_ids: checkIds,
+    hours,
+  });
+  return data;
+}
+
+export async function bulkUnsnoozeChecks(
+  suiteId: string,
+  checkIds: string[],
+): Promise<BulkChecksResult> {
+  const { data } = await api.post<BulkChecksResult>(`/suites/${suiteId}/checks-bulk/unsnooze`, {
+    check_ids: checkIds,
+  });
+  return data;
+}
+
+/** Delete many checks at once — each check's results and history go with it. */
+export async function bulkDeleteChecks(
+  suiteId: string,
+  checkIds: string[],
+): Promise<BulkChecksResult> {
+  const { data } = await api.post<BulkChecksResult>(`/suites/${suiteId}/checks-bulk/delete`, {
+    check_ids: checkIds,
+  });
+  return data;
+}
+
 /** Drop a schema_drift check's stored baseline — the NEXT run recaptures it from
  *  the live target (#592; edit-gated; 422 for non-stateful kinds). */
 export async function rebaselineCheck(suiteId: string, checkId: string): Promise<void> {
