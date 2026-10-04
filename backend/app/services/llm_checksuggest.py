@@ -52,6 +52,11 @@ CHECKSUGGEST_KIND = "check_suggestion"
 
 MAX_SUGGESTIONS = 8
 _TOP_N = 5
+#: Columns profiled into one prompt (#1734). A wider table is cut to its first N in the
+#: order the datasource lists them, so neither the profile query nor the prompt grows
+#: with the table's width.
+MAX_PROMPT_COLUMNS = 100
+_VALUE_MAX_CHARS = 80
 
 # Bounds for the all-rejected error message (#1780 review): a per-item cap (matching
 # check_service.py's own _ERROR_ECHO_MAX_CHARS convention for echoed untrusted values)
@@ -189,13 +194,14 @@ def _profile_prompt(
     *,
     secret_store: SecretStore,
     actor: uuid.UUID | None,
-) -> tuple[str, list[str]]:
-    """Column names + masked profile stats. Refuses (rather than degrades) on
-    failure: a suggestion grounded in nothing is a confident wrong answer —
-    unlike #1512, the profile here is never optional, so no degrade path.
+) -> tuple[str, list[str], int]:
+    """Profiled column names + masked profile stats + the table's full column count.
+    Refuses (rather than degrades) on failure: a suggestion grounded in nothing is a
+    confident wrong answer — unlike #1512, the profile here is never optional, so no
+    degrade path.
     """
     with profile_service.shared_connection():  # list + profile on one login (#1645)
-        columns = llm_prompt_context.list_columns_for_prompt(
+        all_columns = llm_prompt_context.list_columns_for_prompt(
             session,
             suite,
             connection,
@@ -203,6 +209,7 @@ def _profile_prompt(
             actor=actor,
             consumer="llm_check_suggestion",
         )
+        columns = all_columns[:MAX_PROMPT_COLUMNS]
         profile = llm_prompt_context.masked_profile_for_prompt(
             session,
             suite,
@@ -219,12 +226,19 @@ def _profile_prompt(
         if col.distinct_count is not None:
             stats.append(f"distinct={col.distinct_count}")
         if col.min_value is not None or col.max_value is not None:
-            stats.append(f"range=[{col.min_value}, {col.max_value}]")
+            stats.append(f"range=[{_capped(str(col.min_value))}, {_capped(str(col.max_value))}]")
         if col.top_values:
-            top = ", ".join(f"{t.get('value')!r} x{t.get('count')}" for t in col.top_values)
+            top = ", ".join(
+                f"{_capped(repr(t.get('value')))} x{t.get('count')}" for t in col.top_values
+            )
             stats.append(f"top_values=[{top}]")
         lines.append(f"- {col.column}: {' '.join(stats)}")
-    return "\n".join(lines), columns
+    return "\n".join(lines), columns, len(all_columns)
+
+
+def _capped(text: str) -> str:
+    """A profiled value is free-form warehouse data; one long string must not size the prompt."""
+    return text if len(text) <= _VALUE_MAX_CHARS else text[: _VALUE_MAX_CHARS - 1] + "…"
 
 
 def _cadence_context(session: Session, suite: Suite) -> tuple[str, bool]:
@@ -290,15 +304,21 @@ def build_prompt(
     check_generation_preconditions(suite, connection)
     assert connection is not None  # preconditions refused None  # nosec B101
     actor = invocation.requested_by_user_id
-    profile_text, columns = _profile_prompt(
+    profile_text, columns, total = _profile_prompt(
         session, suite, connection, secret_store=secret_store, actor=actor
     )
-    remember_columns(session, invocation, columns)
+    remember_columns(session, invocation, columns, total=total)
     cadence_text, include_freshness = _cadence_context(session, suite)
     coverage_text = _coverage_warning_text(_near_misses(session, suite, actor))
     qualified = llm_prompt_context.qualified_target(suite)
+    cut_note = (
+        f"\n(The table has {total} columns; only the first {len(columns)} are shown. "
+        "Suggest checks only for the columns shown.)"
+        if total > len(columns)
+        else ""
+    )
     prompt = (
-        f"Table: {qualified}\nColumns: {', '.join(columns)}\n\n"
+        f"Table: {qualified}\nColumns: {', '.join(columns)}{cut_note}\n\n"
         f"Profile:\n{profile_text}{cadence_text}{coverage_text}"
     )
     system = _SYSTEM + (_FRESHNESS_SYSTEM_ADDENDUM if include_freshness else "")
@@ -311,15 +331,37 @@ def build_prompt(
 #: the row (explicit UPDATE, never a dirtied ORM object — see execute_invocation)
 #: so the record shows what "validated" was measured against.
 COLUMNS_KEY = "columns"
+#: `request` key carrying the table's full column count, which exceeds `len(columns)` when
+#: the prompt was cut to `MAX_PROMPT_COLUMNS` (#1734).
+COLUMNS_TOTAL_KEY = "columns_total"
 
 
-def remember_columns(session: Session, invocation: LlmInvocation, columns: list[str]) -> None:
+def remember_columns(
+    session: Session, invocation: LlmInvocation, columns: list[str], *, total: int | None = None
+) -> None:
     session.execute(
         update(LlmInvocation)
         .where(LlmInvocation.id == invocation.id)
-        .values(request={**(invocation.request or {}), COLUMNS_KEY: list(columns)})
+        .values(
+            request={
+                **(invocation.request or {}),
+                COLUMNS_KEY: list(columns),
+                COLUMNS_TOTAL_KEY: len(columns) if total is None else total,
+            }
+        )
     )
     session.commit()
+
+
+def _column_coverage(session: Session, invocation: LlmInvocation) -> dict[str, int]:
+    """How many of the table's columns the prompt covered. A row written before the
+    total was recorded reports its own column list as the whole table.
+    """
+    request = session.scalar(select(LlmInvocation.request).where(LlmInvocation.id == invocation.id))
+    request = request if isinstance(request, dict) else {}
+    profiled = len(request.get(COLUMNS_KEY) or [])
+    total = request.get(COLUMNS_TOTAL_KEY)
+    return {"profiled": profiled, "total": total if isinstance(total, int) else profiled}
 
 
 def _known_columns(session: Session, invocation: LlmInvocation) -> set[str]:
@@ -576,7 +618,14 @@ def validate_output(
     lineage_placement.annotate_suggestions(
         session, suite=suite, user_id=invocation.requested_by_user_id, suggestions=accepted
     )
-    return {"suggestions": accepted, "rejected": rejected, "coverage_warnings": coverage_warnings}
+    return {
+        "suggestions": accepted,
+        "rejected": rejected,
+        "coverage_warnings": coverage_warnings,
+        # `profiled < total` means the columns past the cap were never looked at (#1734) — no
+        # suggestion for one of them is not a finding that it needs no check.
+        "column_coverage": _column_coverage(session, invocation),
+    }
 
 
 llm_service.KIND_BUILDERS[CHECKSUGGEST_KIND] = build_prompt

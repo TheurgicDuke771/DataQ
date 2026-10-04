@@ -121,7 +121,12 @@ function SuggestBody({ suiteId, onAdded }: { suiteId: string; onAdded: () => voi
     return <Alert type="error" showIcon title="No suggestions" description={state.error} />;
   }
 
-  const { suggestions, rejected, coverage_warnings: warnings } = state.result;
+  const {
+    suggestions,
+    rejected,
+    coverage_warnings: warnings,
+    column_coverage: coverage,
+  } = state.result;
   const pending = suggestions.map((_, i) => i).filter((i) => !added.has(i));
   const addAll = async () => {
     for (const i of pending) await add(i, suggestions[i]);
@@ -146,6 +151,14 @@ function SuggestBody({ suiteId, onAdded }: { suiteId: string; onAdded: () => voi
           Add all remaining
         </Button>
       </Flex>
+      {coverage && coverage.profiled < coverage.total && (
+        <Alert
+          type="warning"
+          showIcon
+          title={`Only the first ${coverage.profiled} of ${coverage.total} columns were looked at`}
+          description="The other columns were not profiled, so no suggestion for one of them does not mean it needs no check."
+        />
+      )}
       {suggestions.length === 0 ? (
         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No suggestion survived." />
       ) : (

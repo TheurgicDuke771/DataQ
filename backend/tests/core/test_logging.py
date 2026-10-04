@@ -583,6 +583,44 @@ def test_downgrades_a_marked_exception_from_any_caller(capsys: pytest.CaptureFix
     assert record["error_type"] == "RuntimeError"
 
 
+@pytest.mark.parametrize(("log_level", "emitted"), [("WARNING", True), ("ERROR", False)])
+def test_a_downgraded_line_honours_the_configured_log_level(
+    monkeypatch: pytest.MonkeyPatch,
+    _restore_root_logging: None,
+    capsys: pytest.CaptureFixture[str],
+    log_level: str,
+    emitted: bool,
+) -> None:
+    """#1314: the level filter sees the caller's `.exception()`, so a line this processor
+    relabels as warning used to be emitted under LOG_LEVEL=ERROR. An unmarked exception
+    is still emitted at either level."""
+    monkeypatch.setenv("LOG_LEVEL", log_level)
+    get_settings.cache_clear()
+    configure_logging()
+    log = structlog.get_logger(f"downgrade_level_{log_level}")
+
+    exc = RuntimeError("every alert channel failed")
+    mark_already_logged(exc)
+    try:
+        try:
+            raise exc
+        except RuntimeError:
+            log.exception("already_reported_elsewhere")
+        try:
+            raise RuntimeError("a new bug")
+        except RuntimeError:
+            log.exception("genuinely_new")
+    finally:
+        # structlog's filter level is process-global; don't leave it at ERROR for other tests.
+        monkeypatch.undo()
+        get_settings.cache_clear()
+        configure_logging()
+
+    events = [json.loads(line)["event"] for line in capsys.readouterr().out.splitlines()]
+    assert ("already_reported_elsewhere" in events) is emitted
+    assert "genuinely_new" in events
+
+
 def test_an_unmarked_exception_from_the_same_new_caller_still_gets_a_traceback(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
