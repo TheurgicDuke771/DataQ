@@ -14,8 +14,6 @@ their values into the check.
 
 from __future__ import annotations
 
-import hashlib
-import json
 import re
 import uuid
 from collections.abc import Callable
@@ -37,7 +35,10 @@ from backend.app.services import (
     profile_service,
     run_target,
 )
+from backend.app.services.suggestion_claims import fingerprint
 from backend.app.services.suite_authz import require_permission
+
+__all__ = ["fingerprint"]
 
 log = get_logger(__name__)
 
@@ -57,13 +58,6 @@ class SuggestionNotFoundError(DataQError):
 class SuggestionDecidedError(DataQError):
     status_code = 409
     code = "suggestion_already_decided"
-
-
-def fingerprint(expectation_type: str, config: dict[str, Any]) -> str:
-    canonical = json.dumps(
-        {"type": expectation_type, "config": config}, sort_keys=True, default=str
-    )
-    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 def propose(
@@ -94,7 +88,7 @@ def propose(
     return inserted is not None
 
 
-def _value_set_is_sensitive(session: Session, suite: Suite) -> Callable[[str, list[Any]], bool]:
+def value_set_is_sensitive(session: Session, suite: Suite) -> Callable[[str, list[Any]], bool]:
     """The redaction ladder's own test for the TESTED column (``run_service._known_sensitive``):
     a governance tag (own or inherited through lineage), the suite's policy, fail-closed mode,
     or an affirmative name/value PII signal. A value set shown in a check is held to the same
@@ -210,13 +204,24 @@ def refresh_from_profile(session: Session, suite: Suite, *, secret_store: Secret
     )
     created = sum(
         propose(session, suite, source="profile", **rule)
-        for rule in rules_from_profile(profile, sensitive=_value_set_is_sensitive(session, suite))
+        for rule in rules_from_profile(profile, sensitive=value_set_is_sensitive(session, suite))
     )
     state = dict(suite.auto_state or {})
     state["profiled_at"] = datetime.now(UTC).isoformat()
     suite.auto_state = state
     session.commit()
     return created
+
+
+def rejected_fingerprints(session: Session, suite: Suite) -> set[str]:
+    """Rules a person has already turned down for this suite."""
+    return set(
+        session.scalars(
+            select(CheckSuggestion.fingerprint).where(
+                CheckSuggestion.suite_id == suite.id, CheckSuggestion.status == "rejected"
+            )
+        )
+    )
 
 
 def list_suggestions(

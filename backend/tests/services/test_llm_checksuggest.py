@@ -8,10 +8,17 @@ import dataclasses
 from typing import Any
 
 import pytest
+from sqlalchemy import select
 
-from backend.app.db.models import AuditEvent, LlmInvocation, Suite, User
+from backend.app.db.models import AuditEvent, CheckSuggestion, LlmInvocation, Suite, User
 from backend.app.llm.base import LLMOutputInvalidError, LLMRequestInvalidError, LLMResult
-from backend.app.services import llm_checksuggest, llm_service
+from backend.app.services import (
+    check_service,
+    llm_checksuggest,
+    llm_service,
+    suggestion_claims,
+    suggestion_service,
+)
 from backend.app.services import profile_service as profile_service_module
 from backend.app.services.profile_service import ColumnProfile, ProfileResult
 from backend.tests.support.fake_secret_store import FakeSecretStore
@@ -733,3 +740,206 @@ def test_remember_columns_persists_on_the_row(db_session: Any, admin: User) -> N
         llm_checksuggest.COLUMNS_KEY: ["A", "B"],
         llm_checksuggest.COLUMNS_TOTAL_KEY: 2,
     }
+
+
+# ── automatic suites: validated suggestions go to the review queue (ADR 0047 §4) ──
+
+
+def _auto_suite(db_session: Any, admin: User, **kwargs: Any) -> Suite:
+    suite = make_sql_suite(db_session, admin, **kwargs)
+    suite.origin = "auto"
+    suite.created_by = None
+    db_session.commit()
+    return suite
+
+
+def _queued(db_session: Any, suite: Suite) -> list[CheckSuggestion]:
+    return list(
+        db_session.scalars(
+            select(CheckSuggestion)
+            .where(CheckSuggestion.suite_id == suite.id)
+            .order_by(CheckSuggestion.name)
+        )
+    )
+
+
+def test_an_automatic_suites_suggestions_are_queued_as_llm_rules(
+    db_session: Any, admin: User
+) -> None:
+    suite = _auto_suite(db_session, admin)
+    invocation = _invocation(db_session, suite, admin)
+
+    out = llm_checksuggest.validate_output(
+        db_session,
+        invocation,
+        {
+            "suggestions": [
+                _suggestion(),
+                _suggestion(
+                    expectation_type="expect_column_values_to_be_unique",
+                    name="ids are unique",
+                    config={"column": "ID"},
+                ),
+            ]
+        },
+    )
+
+    assert out["queued_for_review"] == 2
+    rows = _queued(db_session, suite)
+    assert [(r.name, r.source, r.status) for r in rows] == [
+        ("ids are unique", "llm", "pending"),
+        ("no null emails", "llm", "pending"),
+    ]
+    assert rows[1].rationale == "the profile shows a low null rate already"
+
+
+def test_a_suite_a_person_authored_queues_nothing(db_session: Any, admin: User) -> None:
+    suite = make_sql_suite(db_session, admin)
+    invocation = _invocation(db_session, suite, admin)
+
+    out = llm_checksuggest.validate_output(db_session, invocation, {"suggestions": [_suggestion()]})
+
+    # None, not 0: there is no queue to add to, which is different from "nothing was new".
+    assert out["queued_for_review"] is None
+    assert _queued(db_session, suite) == []
+
+
+def test_a_rule_already_decided_is_not_queued_again(db_session: Any, admin: User) -> None:
+    suite = _auto_suite(db_session, admin)
+    first = llm_checksuggest.validate_output(
+        db_session, _invocation(db_session, suite, admin), {"suggestions": [_suggestion()]}
+    )
+    (row,) = _queued(db_session, suite)
+    row.status = "rejected"
+    db_session.commit()
+
+    other = _suggestion(
+        expectation_type="expect_column_values_to_be_unique",
+        name="ids are unique",
+        config={"column": "ID"},
+    )
+    again = llm_checksuggest.validate_output(
+        db_session,
+        _invocation(db_session, suite, admin),
+        {"suggestions": [_suggestion(), other]},
+    )
+
+    assert (first["queued_for_review"], again["queued_for_review"]) == (1, 1)
+    # The rejected rule is not offered again in the drawer either, and says why.
+    assert [s["name"] for s in again["suggestions"]] == ["ids are unique"]
+    assert [r["reason"] for r in again["rejected"]] == ["rejected earlier under Suggested rules"]
+    statuses = {r.name: r.status for r in _queued(db_session, suite)}
+    assert statuses == {"no null emails": "rejected", "ids are unique": "pending"}
+
+
+def test_adding_a_queued_rule_directly_marks_it_accepted_so_it_cannot_be_added_twice(
+    db_session: Any, admin: User
+) -> None:
+    """The drawer's Add creates the check through the ordinary create path. The rule's
+    queued copy must stop being pending, or accepting it later makes a second check."""
+    suite = _auto_suite(db_session, admin)
+    llm_checksuggest.validate_output(
+        db_session, _invocation(db_session, suite, admin), {"suggestions": [_suggestion()]}
+    )
+    db_session.commit()
+
+    check = check_service.create_check(
+        db_session,
+        suite_id=suite.id,
+        name="no null emails",
+        kind="expectation",
+        expectation_type="expect_column_values_to_not_be_null",
+        config={"column": "EMAIL"},
+        warn_threshold=None,
+        fail_threshold=None,
+        critical_threshold=None,
+        actor_id=admin.id,
+    )
+
+    (row,) = _queued(db_session, suite)
+    assert (row.status, row.check_id, row.decided_by) == ("accepted", check.id, admin.id)
+    # Audited like the accept button, by the person who added it.
+    (event,) = db_session.scalars(
+        select(AuditEvent).where(AuditEvent.action == "suggestion.accept")
+    ).all()
+    assert (event.entity_id, event.actor_user_id) == (row.id, admin.id)
+    assert event.after["check_id"] == str(check.id)
+    with pytest.raises(suggestion_service.SuggestionDecidedError):
+        suggestion_service.accept(db_session, row.id, user_id=admin.id)
+
+
+def test_a_check_of_another_kind_does_not_claim_a_queued_rule(db_session: Any, admin: User) -> None:
+    suite = _auto_suite(db_session, admin)
+    llm_checksuggest.validate_output(
+        db_session, _invocation(db_session, suite, admin), {"suggestions": [_suggestion()]}
+    )
+    db_session.commit()
+    (queued,) = _queued(db_session, suite)
+
+    class _Check:
+        id = queued.id
+        suite_id = suite.id
+        kind = "volume"
+        expectation_type = queued.expectation_type
+        config = queued.config
+
+    claimed = suggestion_claims.claim_for_created_check(db_session, _Check(), actor_id=admin.id)
+
+    assert claimed is False
+    assert _queued(db_session, suite)[0].status == "pending"
+
+
+@pytest.mark.parametrize(
+    "expectation_type",
+    [
+        "expect_column_values_to_be_in_set",
+        "expect_column_values_to_not_be_in_set",
+        "expect_column_distinct_values_to_be_in_set",
+    ],
+)
+def test_no_value_set_type_over_a_sensitive_column_is_queued(
+    db_session: Any, admin: User, expectation_type: str
+) -> None:
+    suite = _auto_suite(db_session, admin, column_policy={"pii_columns": ["EMAIL"]})
+    suggestion = {
+        "expectation_type": expectation_type,
+        "name": "emails",
+        "rationale": "few distinct values",
+        "config": {"column": "EMAIL", "value_set": ["a@x.com", "b@x.com"]},
+    }
+
+    out = llm_checksuggest.validate_output(
+        db_session, _invocation(db_session, suite, admin), {"suggestions": [suggestion]}
+    )
+
+    assert out["queued_for_review"] == 0
+    assert _queued(db_session, suite) == []
+
+
+def test_a_value_set_over_a_sensitive_column_is_shown_but_not_queued(
+    db_session: Any, admin: User
+) -> None:
+    """Accepting a queued rule copies its values into a check. The profile source never
+    queues a value set for a column the redaction ladder treats as sensitive; nor may
+    the LLM source."""
+    suite = _auto_suite(db_session, admin, column_policy={"pii_columns": ["EMAIL"]})
+    invocation = _invocation(db_session, suite, admin)
+    value_set = {
+        "expectation_type": "expect_column_values_to_be_in_set",
+        "name": "known emails",
+        "rationale": "few distinct values",
+        "config": {"column": "EMAIL", "value_set": ["a@x.com", "b@x.com"]},
+    }
+    harmless = {
+        **value_set,
+        "name": "known statuses",
+        "config": {"column": "STATUS", "value_set": ["A", "B"]},
+    }
+
+    out = llm_checksuggest.validate_output(
+        db_session, invocation, {"suggestions": [value_set, harmless]}
+    )
+
+    assert len(out["suggestions"]) == 2
+    assert out["queued_for_review"] == 1
+    assert [r.name for r in _queued(db_session, suite)] == ["known statuses"]

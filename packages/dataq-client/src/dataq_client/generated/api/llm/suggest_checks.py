@@ -76,13 +76,18 @@ def sync_detailed(
     `{profiled, total}`; when `profiled < total` the remaining columns were not
     looked at, so no suggestion for one of them says nothing about it.
 
+    On an automatically covered suite the validated suggestions are also saved to its
+    review queue (`GET /suites/{id}/suggestions`, `source: llm`); `queued_for_review` is how
+    many were new. It is null on a suite a person authored, which has no queue.
+
     If EVERY suggestion is rejected, the invocation fails instead — there is no
     empty-but-successful outcome for "nothing runnable came back" — and the
     top-level `rejected` shape above never gets written. The reasons are still
     readable, in two forms: folded into `error` as one summary sentence, and
     as a structured `{rejected, rejected_count, truncated}` object under
     `response` (unlike a successful run, where `response` is `{suggestions,
-    rejected, coverage_warnings, column_coverage}`) — a failed invocation's `response`
+    rejected, coverage_warnings, column_coverage, queued_for_review}`) — a failed
+    invocation's `response`
     field carries only that narrower rejection detail, not the full success shape.
     `rejected` itself may be shorter than `rejected_count`; `truncated` is
     `true` when it is, so a caller reading only `response` (not `error`'s own
@@ -126,13 +131,18 @@ def sync(
     `{profiled, total}`; when `profiled < total` the remaining columns were not
     looked at, so no suggestion for one of them says nothing about it.
 
+    On an automatically covered suite the validated suggestions are also saved to its
+    review queue (`GET /suites/{id}/suggestions`, `source: llm`); `queued_for_review` is how
+    many were new. It is null on a suite a person authored, which has no queue.
+
     If EVERY suggestion is rejected, the invocation fails instead — there is no
     empty-but-successful outcome for "nothing runnable came back" — and the
     top-level `rejected` shape above never gets written. The reasons are still
     readable, in two forms: folded into `error` as one summary sentence, and
     as a structured `{rejected, rejected_count, truncated}` object under
     `response` (unlike a successful run, where `response` is `{suggestions,
-    rejected, coverage_warnings, column_coverage}`) — a failed invocation's `response`
+    rejected, coverage_warnings, column_coverage, queued_for_review}`) — a failed
+    invocation's `response`
     field carries only that narrower rejection detail, not the full success shape.
     `rejected` itself may be shorter than `rejected_count`; `truncated` is
     `true` when it is, so a caller reading only `response` (not `error`'s own
@@ -171,13 +181,18 @@ async def asyncio_detailed(
     `{profiled, total}`; when `profiled < total` the remaining columns were not
     looked at, so no suggestion for one of them says nothing about it.
 
+    On an automatically covered suite the validated suggestions are also saved to its
+    review queue (`GET /suites/{id}/suggestions`, `source: llm`); `queued_for_review` is how
+    many were new. It is null on a suite a person authored, which has no queue.
+
     If EVERY suggestion is rejected, the invocation fails instead — there is no
     empty-but-successful outcome for "nothing runnable came back" — and the
     top-level `rejected` shape above never gets written. The reasons are still
     readable, in two forms: folded into `error` as one summary sentence, and
     as a structured `{rejected, rejected_count, truncated}` object under
     `response` (unlike a successful run, where `response` is `{suggestions,
-    rejected, coverage_warnings, column_coverage}`) — a failed invocation's `response`
+    rejected, coverage_warnings, column_coverage, queued_for_review}`) — a failed
+    invocation's `response`
     field carries only that narrower rejection detail, not the full success shape.
     `rejected` itself may be shorter than `rejected_count`; `truncated` is
     `true` when it is, so a caller reading only `response` (not `error`'s own
@@ -219,13 +234,18 @@ async def asyncio(
     `{profiled, total}`; when `profiled < total` the remaining columns were not
     looked at, so no suggestion for one of them says nothing about it.
 
+    On an automatically covered suite the validated suggestions are also saved to its
+    review queue (`GET /suites/{id}/suggestions`, `source: llm`); `queued_for_review` is how
+    many were new. It is null on a suite a person authored, which has no queue.
+
     If EVERY suggestion is rejected, the invocation fails instead — there is no
     empty-but-successful outcome for "nothing runnable came back" — and the
     top-level `rejected` shape above never gets written. The reasons are still
     readable, in two forms: folded into `error` as one summary sentence, and
     as a structured `{rejected, rejected_count, truncated}` object under
     `response` (unlike a successful run, where `response` is `{suggestions,
-    rejected, coverage_warnings, column_coverage}`) — a failed invocation's `response`
+    rejected, coverage_warnings, column_coverage, queued_for_review}`) — a failed
+    invocation's `response`
     field carries only that narrower rejection detail, not the full success shape.
     `rejected` itself may be shorter than `rejected_count`; `truncated` is
     `true` when it is, so a caller reading only `response` (not `error`'s own

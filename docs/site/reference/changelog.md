@@ -57,6 +57,10 @@ the per-PR history lives in the repo's commit log and pull requests.
   back up, the steps for the prebuilt-image stack and a cloud deployment, and rolling back.
   `SUPPORT.md` says where to ask for help. The security page now states outright that DataQ
   sends nothing to its authors.
+- **AI suggestions are kept for automatic suites.** Running **Suggest checks** on an
+  automatically covered suite now also saves the validated suggestions under **Suggested
+  rules**, marked **AI-suggested**, where they can be accepted or rejected later. A rule the
+  suite has already seen is not saved again. The invocation result gains `queued_for_review`.
 - **Two MCP tools for automatic coverage.** `get_coverage` returns the share of the asset
   inventory watched in the last 7 days and the false-positive rate of automatic checks, with
   the counts behind each. `list_suggested_rules` lists a suite's review queue. Both are

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from 'antd';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -56,6 +56,19 @@ describe('SuggestionsPanel (ADR 0047)', () => {
     renderPanel();
     await waitFor(() => expect(mockList).toHaveBeenCalledWith('s1'));
     expect(screen.queryByTestId('suggestions-panel')).toBeNull();
+  });
+
+  it('marks a rule the AI model proposed, and only that one', async () => {
+    mockList.mockResolvedValue([
+      suggestion(),
+      suggestion({ id: 'g2', source: 'llm', name: 'status is a known value' }),
+    ]);
+    renderPanel();
+
+    const ai = (await screen.findByText('status is a known value')).closest('li') as HTMLElement;
+    const measured = screen.getByText('order_id is never null').closest('li') as HTMLElement;
+    expect(within(ai).getByText('AI-suggested')).toBeInTheDocument();
+    expect(within(measured).queryByText('AI-suggested')).not.toBeInTheDocument();
   });
 
   it('accepting adds the check and refreshes', async () => {
