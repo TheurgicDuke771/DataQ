@@ -3874,6 +3874,13 @@ def list_incidents(
     empty result means "nothing visible to you", which is not the same as
     "nothing is wrong in the workspace" — unlike `list_assets`, whose health
     numbers are workspace-wide.
+
+    `resolution` (`fixed` / `expected_change` / `false_positive`) is what a person
+    said the incident turned out to be when resolving it. It is null on an
+    unresolved incident, on every auto-resolved one, on any resolved before this
+    was recorded, and on a manual resolve that did not say. Null means "not
+    stated": do not count it as "not a false positive", and do not compute a
+    false-positive rate from this field alone.
     """
     if status is not None and status not in INCIDENT_STATUSES:
         # A typo'd status would otherwise return `[]` — indistinguishable from
@@ -4040,6 +4047,13 @@ def get_incident(incident_id: str) -> dict[str, Any]:
 
     Requires view access to the incident's suite; an incident on a suite the
     caller cannot see is indistinguishable from one that does not exist.
+
+    `resolution` (`fixed` / `expected_change` / `false_positive`) is what a person
+    said the incident turned out to be when resolving it. It is null on an
+    unresolved incident, on every auto-resolved one, on any resolved before this
+    was recorded, and on a manual resolve that did not say. Null means "not
+    stated": do not count it as "not a false positive", and do not compute a
+    false-positive rate from this field alone.
     """
     iid = _parse_uuid(incident_id, field="incident_id")
     with _ctx() as (session, user), _service_errors():
@@ -4109,9 +4123,10 @@ def resolve_incident(
     problem, now corrected), ``expected_change`` (the data changed on purpose and
     the check was right to notice) or ``false_positive`` (nothing was wrong; the
     check should not have fired). Pass it only when the user has said which — it
-    feeds the workspace's false-positive rate, so a guess corrupts that number.
-    Left out, the incident is recorded with no stated resolution, which is not
-    the same as "not a false positive".
+    feeds the false-positive rate the app shows (not readable over MCP), so a
+    guess corrupts that number. Left out, the incident is recorded with no stated
+    resolution, which is not the same as "not a false positive". Auto-resolved
+    incidents never carry one.
 
     **This is a statement about the incident, not a fix to the data.** Resolving
     does not re-run anything and does not make the check pass; if the underlying
