@@ -50,7 +50,7 @@ docker-compose up     # backend :8000 · frontend :3000 · mail :8025
 
 ## AI assistants (MCP)
 
-DataQ serves **52 curated MCP tools** at `https://<your-dataq-host>/mcp/` — 28 read-only, 18 that change state, and 6 that open a live datasource connection (gated like writes). Keep the **trailing slash** and send `Authorization: Bearer <token>`: your OIDC token under SSO, or a DataQ API key (`dq_live_…`) under email sign-in. No connection credential ever passes through the MCP surface. Client setup for Claude, VS Code / Copilot and Cursor: [MCP setup →](https://theurgicduke771.github.io/DataQ/docs/latest/guides/mcp-setup/)
+DataQ serves **54 curated MCP tools** at `https://<your-dataq-host>/mcp/` — 30 read-only, 18 that change state, and 6 that open a live datasource connection (gated like writes). Keep the **trailing slash** and send `Authorization: Bearer <token>`: your OIDC token under SSO, or a DataQ API key (`dq_live_…`) under email sign-in. No connection credential ever passes through the MCP surface. Client setup for Claude, VS Code / Copilot and Cursor: [MCP setup →](https://theurgicduke771.github.io/DataQ/docs/latest/guides/mcp-setup/)
 
 ## Stack & deployment
 

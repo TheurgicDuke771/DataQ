@@ -26,7 +26,7 @@ cloud-conditional code paths**, and the same container images run everywhere.
 ## Features
 
 The application feature set — suites/checks across all nine datasource types, every monitor kind,
-assets/lineage/incidents, alerting, scheduling, the 52-tool MCP server, PATs, rate limiting —
+assets/lineage/incidents, alerting, scheduling, the 54-tool MCP server, PATs, rate limiting —
 is the **same code everywhere**. Where the installations genuinely differ:
 
 | Capability | Azure | AWS | Local |

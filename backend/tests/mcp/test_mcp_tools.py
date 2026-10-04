@@ -13,6 +13,7 @@ from sqlalchemy import select
 from backend.app.db.models import (
     Asset,
     Check,
+    CheckSuggestion,
     Connection,
     Incident,
     NotificationChannel,
@@ -5203,3 +5204,63 @@ def test_update_check_zero_sets_a_threshold_it_does_not_clear_it(
     out = server.update_check(str(suite.id), str(check.id), warn_threshold=0)
 
     assert out["warn_threshold"] == 0
+
+
+# ── coverage figures + the review queue (ADR 0047 §9) ────────────────────────
+
+
+def test_get_coverage_returns_counts_and_null_rates_when_nothing_is_measured(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """An empty workspace: every figure that cannot be computed is null, never 0."""
+    user = _user(db_session)
+    _as(monkeypatch, db_session, user)
+
+    out = server.get_coverage()
+
+    assert (out["assets_total"], out["assets_watched"]) == (0, 0)
+    assert out["coverage_pct"] is None
+    assert (out["resolved"], out["stated"], out["unstated"]) == (0, 0, 0)
+    assert out["false_positive_rate"] is None
+    assert (out["coverage_window_days"], out["false_positive_window_days"]) == (7, 30)
+
+
+def test_list_suggested_rules_returns_pending_by_default_and_everything_on_all(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    owner = _user(db_session)
+    suite = _suite(db_session, owner)
+    for name, status, source in (
+        ("waiting", "pending", "profile"),
+        ("turned down", "rejected", "llm"),
+    ):
+        db_session.add(
+            CheckSuggestion(
+                suite_id=suite.id,
+                source=source,
+                status=status,
+                fingerprint=name,
+                name=name,
+                expectation_type="expect_column_values_to_not_be_null",
+                config={"column": "id"},
+                rationale="No nulls in 500 rows." if source == "profile" else "looks required",
+            )
+        )
+    db_session.commit()
+    _as(monkeypatch, db_session, owner)
+
+    pending = server.list_suggested_rules(str(suite.id))
+    everything = server.list_suggested_rules(str(suite.id), status="all")
+
+    assert (pending["count"], pending["status_filter"]) == (1, "pending")
+    (row,) = pending["suggestions"]
+    assert (row["name"], row["source"], row["status"], row["check_id"]) == (
+        "waiting",
+        "profile",
+        "pending",
+        None,
+    )
+    assert {s["name"]: s["status"] for s in everything["suggestions"]} == {
+        "waiting": "pending",
+        "turned down": "rejected",
+    }
