@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "26932e288cfb",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1688-suite-document-yaml",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/api/test_nul_rejection.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/26/932e288cfb/0/metadata.json",
+      "transcript": "/26/932e288cfb/0/full.jsonl",
+      "compact_transcript": "/26/932e288cfb/0/transcript.jsonl",
+      "content_hash": "/26/932e288cfb/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 4,
+    "cache_creation_tokens": 1698,
+    "cache_read_tokens": 796679,
+    "output_tokens": 1356,
+    "api_call_count": 2
+  }
+}
