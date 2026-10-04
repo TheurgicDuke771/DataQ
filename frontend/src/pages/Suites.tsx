@@ -4,6 +4,7 @@ import {
   Alert,
   Button,
   Card,
+  Checkbox,
   Dropdown,
   Empty,
   Flex,
@@ -29,6 +30,9 @@ import {
   canManageSuite,
   canRunSuite,
   type Check,
+  bulkDeleteChecks,
+  bulkSnoozeChecks,
+  bulkUnsnoozeChecks,
   clearCheckSnooze,
   deleteCheck,
   deleteSuite,
@@ -590,6 +594,38 @@ function ChecksList({
     return () => clearInterval(id);
   }, []);
 
+  // Bulk selection (edit-gated like every action it leads to). Ids, not rows, so a
+  // refetch keeps the selection; `selectedIds` below drops ids whose check is gone.
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const toggle = (id: string, on: boolean) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+
+  const runBulk = async (
+    action: () => Promise<{ affected: number }>,
+    done: (n: number) => string,
+  ) => {
+    setBulkBusy(true);
+    try {
+      const { affected } = await action();
+      message.success(done(affected));
+      setSelected(new Set());
+      onChanged();
+    } catch (err) {
+      // All-or-nothing on the server: a failure changed no check.
+      message.error(`Nothing was changed: ${errorMessage(err)}`);
+      throw err;
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+  const plural = (n: number) => `${n} check${n === 1 ? '' : 's'}`;
+
   const onDelete = (check: Check) =>
     confirmDelete({
       label: check.name,
@@ -644,6 +680,24 @@ function ChecksList({
     return <Alert type="error" showIcon title="Failed to load checks" description={state.error} />;
   }
   const checks = state.data;
+  const selectedIds = checks.filter((c) => selected.has(c.id)).map((c) => c.id);
+  const allSelected = checks.length > 0 && selectedIds.length === checks.length;
+
+  const onBulkDelete = () =>
+    modal.confirm({
+      title: `Delete ${plural(selectedIds.length)}?`,
+      content:
+        'Each check is deleted together with its results, version history and baseline. Past runs will show fewer checks. This cannot be undone.',
+      okText: `Delete ${plural(selectedIds.length)}`,
+      okType: 'danger',
+      // Rejecting keeps the confirm open on failure, like the single delete.
+      onOk: () =>
+        runBulk(
+          () => bulkDeleteChecks(suiteId, selectedIds),
+          (n) => `${plural(n)} deleted`,
+        ),
+    });
+
   return (
     <Card
       size="small"
@@ -673,94 +727,161 @@ function ChecksList({
           description="No checks yet — add one to start."
         />
       ) : (
-        <SimpleList
-          dataSource={checks}
-          renderItem={(check) => (
-            <SimpleList.Item
-              actions={[
-                // Snooze/unsnooze are edit-gated (backend 403s a viewer), so the
-                // control renders only with the capability — like TriggersPanel.
-                ...(!canEditChecks
-                  ? []
-                  : isSnoozed(check, now)
+        <>
+          {canEditChecks && (
+            <Flex
+              align="center"
+              gap={12}
+              wrap
+              style={{ marginBottom: 8, minHeight: 32 }}
+              data-testid="checks-bulk-bar"
+            >
+              <Checkbox
+                checked={allSelected}
+                indeterminate={selectedIds.length > 0 && !allSelected}
+                onChange={(e) =>
+                  setSelected(e.target.checked ? new Set(checks.map((c) => c.id)) : new Set())
+                }
+              >
+                Select all
+              </Checkbox>
+              {selectedIds.length > 0 && (
+                <>
+                  <Typography.Text type="secondary">{selectedIds.length} selected</Typography.Text>
+                  <Dropdown
+                    menu={{
+                      items: SNOOZE_PRESETS.map((p) => ({ key: p.key, label: p.label })),
+                      onClick: ({ key }) => {
+                        const preset = SNOOZE_PRESETS.find((p) => p.key === key);
+                        if (!preset) return;
+                        void runBulk(
+                          () => bulkSnoozeChecks(suiteId, selectedIds, preset.hours),
+                          (n) => `${plural(n)}: alerts snoozed for ${preset.label}`,
+                        ).catch(() => undefined);
+                      },
+                    }}
+                    trigger={['click']}
+                    disabled={bulkBusy}
+                  >
+                    <Button size="small" loading={bulkBusy}>
+                      Snooze selected
+                    </Button>
+                  </Dropdown>
+                  <Button
+                    size="small"
+                    disabled={bulkBusy}
+                    onClick={() =>
+                      void runBulk(
+                        () => bulkUnsnoozeChecks(suiteId, selectedIds),
+                        (n) => `${plural(n)}: alerts active again`,
+                      ).catch(() => undefined)
+                    }
+                  >
+                    Unsnooze selected
+                  </Button>
+                  <Button size="small" danger disabled={bulkBusy} onClick={onBulkDelete}>
+                    Delete selected
+                  </Button>
+                </>
+              )}
+            </Flex>
+          )}
+          <SimpleList
+            dataSource={checks}
+            renderItem={(check) => (
+              <SimpleList.Item
+                actions={[
+                  // Snooze/unsnooze are edit-gated (backend 403s a viewer), so the
+                  // control renders only with the capability — like TriggersPanel.
+                  ...(!canEditChecks
+                    ? []
+                    : isSnoozed(check, now)
+                      ? [
+                          <Button
+                            key="snooze"
+                            type="link"
+                            size="small"
+                            onClick={() => onUnsnooze(check)}
+                          >
+                            Unsnooze
+                          </Button>,
+                        ]
+                      : [
+                          <Dropdown
+                            key="snooze"
+                            menu={{
+                              items: SNOOZE_PRESETS.map((p) => ({ key: p.key, label: p.label })),
+                              onClick: ({ key }) => {
+                                const preset = SNOOZE_PRESETS.find((p) => p.key === key);
+                                if (preset) void onSnooze(check, preset.hours, preset.label);
+                              },
+                            }}
+                            trigger={['click']}
+                          >
+                            <Button type="link" size="small">
+                              Snooze
+                            </Button>
+                          </Dropdown>,
+                        ]),
+                  // Re-baseline is schema_drift-only (the backend 422s other
+                  // kinds) and edit-gated like snooze.
+                  ...(canEditChecks && check.kind === 'schema_drift'
                     ? [
                         <Button
-                          key="snooze"
+                          key="rebaseline"
                           type="link"
                           size="small"
-                          onClick={() => onUnsnooze(check)}
+                          onClick={() => onRebaseline(check)}
                         >
-                          Unsnooze
+                          Re-baseline
                         </Button>,
                       ]
-                    : [
-                        <Dropdown
-                          key="snooze"
-                          menu={{
-                            items: SNOOZE_PRESETS.map((p) => ({ key: p.key, label: p.label })),
-                            onClick: ({ key }) => {
-                              const preset = SNOOZE_PRESETS.find((p) => p.key === key);
-                              if (preset) void onSnooze(check, preset.hours, preset.label);
-                            },
-                          }}
-                          trigger={['click']}
-                        >
-                          <Button type="link" size="small">
-                            Snooze
-                          </Button>
-                        </Dropdown>,
-                      ]),
-                // Re-baseline is schema_drift-only (the backend 422s other
-                // kinds) and edit-gated like snooze.
-                ...(canEditChecks && check.kind === 'schema_drift'
-                  ? [
-                      <Button
-                        key="rebaseline"
-                        type="link"
-                        size="small"
-                        onClick={() => onRebaseline(check)}
-                      >
-                        Re-baseline
-                      </Button>,
-                    ]
-                  : []),
-                <Button key="edit" type="link" size="small" onClick={() => onEdit(check)}>
-                  Edit
-                </Button>,
-                <Button
-                  key="delete"
-                  type="link"
-                  size="small"
-                  danger
-                  onClick={() => onDelete(check)}
-                >
-                  Delete
-                </Button>,
-              ]}
-            >
-              <Flex vertical gap={4}>
-                <Flex gap={8} align="center" wrap>
-                  <Typography.Text strong>{check.name}</Typography.Text>
-                  {/* Engine + dimension badges (#1551, checkBadges.tsx). */}
-                  <EngineTag engine={check.engine} />
-                  <AutomaticTag origin={check.origin} />
-                  <DimensionTag dimension={check.dimension} />
-                  <SnoozedTag check={check} now={now} />
-                </Flex>
-                <Flex gap={6} align="center" wrap>
-                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    {check.expectation_type}
-                  </Typography.Text>
-                  {formatThresholdsCompact(check) && (
+                    : []),
+                  <Button key="edit" type="link" size="small" onClick={() => onEdit(check)}>
+                    Edit
+                  </Button>,
+                  <Button
+                    key="delete"
+                    type="link"
+                    size="small"
+                    danger
+                    onClick={() => onDelete(check)}
+                  >
+                    Delete
+                  </Button>,
+                ]}
+              >
+                <Flex vertical gap={4}>
+                  <Flex gap={8} align="center" wrap>
+                    {canEditChecks && (
+                      <Checkbox
+                        aria-label={`Select ${check.name}`}
+                        checked={selected.has(check.id)}
+                        onChange={(e) => toggle(check.id, e.target.checked)}
+                      />
+                    )}
+                    <Typography.Text strong>{check.name}</Typography.Text>
+                    {/* Engine + dimension badges (#1551, checkBadges.tsx). */}
+                    <EngineTag engine={check.engine} />
+                    <AutomaticTag origin={check.origin} />
+                    <DimensionTag dimension={check.dimension} />
+                    <SnoozedTag check={check} now={now} />
+                  </Flex>
+                  <Flex gap={6} align="center" wrap>
                     <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                      · {formatThresholdsCompact(check)}
+                      {check.expectation_type}
                     </Typography.Text>
-                  )}
+                    {formatThresholdsCompact(check) && (
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        · {formatThresholdsCompact(check)}
+                      </Typography.Text>
+                    )}
+                  </Flex>
                 </Flex>
-              </Flex>
-            </SimpleList.Item>
-          )}
-        />
+              </SimpleList.Item>
+            )}
+          />
+        </>
       )}
     </Card>
   );

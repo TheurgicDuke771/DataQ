@@ -289,6 +289,95 @@ def clear_check_snooze(
     return CheckRead.model_validate(check)
 
 
+# ───────────────────────── bulk operations (#1669) ─────────────────
+
+
+class BulkChecksRequest(ApiRequestModel):
+    check_ids: list[uuid.UUID] = Field(min_length=1, max_length=svc.BULK_CHECKS_MAX)
+
+
+class BulkSnoozeRequest(BulkChecksRequest):
+    # Same 30-day cap as the single-check snooze.
+    hours: float = Field(gt=0, le=720, description="Mute each check's alerts for this many hours")
+
+
+class BulkChecksResult(ApiModel):
+    """`affected` is how many checks were changed. It is always every check named in
+    the request: a bulk call changes all of them or, on any refusal, none.
+    """
+
+    affected: int
+    checks: list[CheckRead] = Field(default_factory=list)
+
+
+# Under `checks-bulk/`, not `checks/bulk/`: the latter would be matched first by
+# `checks/{check_id}/snooze` with "bulk" as the check id.
+_BULK_ALL_OR_NOTHING = (
+    "All-or-nothing: if any id is not a check of this suite the request is refused with "
+    "404 and nothing is changed. Duplicate ids count once."
+)
+
+
+@router.post(
+    "/suites/{suite_id}/checks-bulk/snooze",
+    response_model=BulkChecksResult,
+    summary="Snooze the alerts of many checks",
+    description=_BULK_ALL_OR_NOTHING,
+)
+def bulk_snooze_checks(
+    suite_id: uuid.UUID,
+    payload: BulkSnoozeRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> BulkChecksResult:
+    require_permission(db, suite_id, current_user.id, minimum="edit")
+    checks = svc.bulk_snooze_checks(
+        db, suite_id, payload.check_ids, hours=payload.hours, actor_id=current_user.id
+    )
+    return BulkChecksResult(
+        affected=len(checks), checks=[CheckRead.model_validate(c) for c in checks]
+    )
+
+
+@router.post(
+    "/suites/{suite_id}/checks-bulk/unsnooze",
+    response_model=BulkChecksResult,
+    summary="Clear the alert snooze of many checks",
+    description=_BULK_ALL_OR_NOTHING,
+)
+def bulk_unsnooze_checks(
+    suite_id: uuid.UUID,
+    payload: BulkChecksRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> BulkChecksResult:
+    require_permission(db, suite_id, current_user.id, minimum="edit")
+    checks = svc.bulk_snooze_checks(
+        db, suite_id, payload.check_ids, hours=None, actor_id=current_user.id
+    )
+    return BulkChecksResult(
+        affected=len(checks), checks=[CheckRead.model_validate(c) for c in checks]
+    )
+
+
+@router.post(
+    "/suites/{suite_id}/checks-bulk/delete",
+    response_model=BulkChecksResult,
+    summary="Delete many checks",
+    description=_BULK_ALL_OR_NOTHING
+    + " Deleting a check also deletes its results, version history and baseline.",
+)
+def bulk_delete_checks(
+    suite_id: uuid.UUID,
+    payload: BulkChecksRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> BulkChecksResult:
+    require_permission(db, suite_id, current_user.id, minimum="edit")
+    affected = svc.bulk_delete_checks(db, suite_id, payload.check_ids, actor_id=current_user.id)
+    return BulkChecksResult(affected=affected)
+
+
 # ───────────────────────── version history (#280) ──────────────────
 
 

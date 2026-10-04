@@ -177,6 +177,10 @@ Delivered when a run breaches its threshold ([Notifications & alerting](notifica
 - **Severity routing** — urgency scales with severity; critical escalates.
 - **Dedup** — you hear about a breakage once (and again on escalation); a clean run resets.
 - **Snooze** — silence a known-broken check for N hours (history + re-fire preserved).
+- **Bulk actions on checks** — tick checks on the suite page, or **Select all**, then
+  snooze, unsnooze or delete them together. It is all-or-nothing: if any one cannot be
+  changed, none are. A bulk delete removes each check's results and history, as a single
+  delete does.
 - **Per-suite config** — channels + threshold + recipients set per suite.
 - **Connection poll-health alerts** — when an orchestration connection's poll keeps failing
   (an expired credential, a moved orchestrator), DataQ stops ingesting pipeline runs and

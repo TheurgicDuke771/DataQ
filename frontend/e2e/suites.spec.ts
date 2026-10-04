@@ -55,6 +55,59 @@ test.describe('Suites page', () => {
     await expect(page.locator('[role="listitem"]').filter({ hasText: name })).toHaveCount(0);
   });
 
+  test('bulk snooze, unsnooze and delete act on exactly the selected checks', async ({ page }) => {
+    const stamp = Date.now();
+    const names = [`e2e bulk a ${stamp}`, `e2e bulk b ${stamp}`];
+
+    await page.getByText('Orders quality').click();
+    await expect(page).toHaveURL(/\/suites\/[0-9a-f-]+$/);
+    const suiteId = page.url().split('/').pop();
+    // Two throwaway checks through the real API, so the seeded ones are never touched.
+    for (const name of names) {
+      const created = await page.request.post(`/api/v1/suites/${suiteId}/checks`, {
+        data: {
+          name,
+          expectation_type: 'expect_column_values_to_not_be_null',
+          config: { column: 'order_id' },
+        },
+      });
+      expect(created.status()).toBe(201);
+    }
+    await page.reload();
+    const rows = names.map((name) => page.locator('[role="listitem"]').filter({ hasText: name }));
+    const seeded = page.locator('[role="listitem"]').filter({ hasText: 'order_id not null' });
+    for (const row of rows) await expect(row).toBeVisible();
+
+    const selectBoth = async () => {
+      for (const name of names)
+        await page.getByRole('checkbox', { name: `Select ${name}` }).check();
+      await expect(page.getByText('2 selected')).toBeVisible();
+    };
+
+    // Snooze: both selected rows get the badge, the seeded row does not.
+    await selectBoth();
+    await page.getByRole('button', { name: 'Snooze selected' }).click();
+    await page.getByText('1 hour', { exact: true }).click();
+    for (const row of rows) await expect(row.getByText(/Snoozed until/)).toBeVisible();
+    await expect(seeded.getByText(/Snoozed until/)).toHaveCount(0);
+    await expect(page.getByText('2 selected')).toHaveCount(0);
+
+    // Unsnooze: the badges go.
+    await selectBoth();
+    await page.getByRole('button', { name: 'Unsnooze selected' }).click();
+    for (const row of rows) await expect(row.getByText(/Snoozed until/)).toHaveCount(0);
+
+    // Delete: confirm names the count; only the two throwaway checks go.
+    await selectBoth();
+    await page.getByRole('button', { name: 'Delete selected' }).click();
+    await page
+      .getByRole('dialog', { name: 'Delete 2 checks?' })
+      .getByRole('button', { name: 'Delete 2 checks' })
+      .click();
+    for (const row of rows) await expect(row).toHaveCount(0);
+    await expect(seeded).toBeVisible();
+  });
+
   test('create a suite, see it in the list, then delete it', async ({ page }) => {
     const name = `e2e suite ${Date.now()}`;
 
