@@ -1,0 +1,39 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "85d9bc1a6f04",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1558-workspace-dimension-rollup",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/dashboard.py",
+    "backend/app/services/asset_view_service.py",
+    "backend/tests/api/test_dashboard.py",
+    "backend/tests/services/test_asset_view_service.py",
+    "docs/site/guides/datasources-checks.md",
+    "docs/site/reference/changelog.md",
+    "docs/site/reference/openapi.json",
+    "frontend/src/api/dashboard.ts",
+    "frontend/src/components/assets/ScorecardPanel.tsx",
+    "frontend/src/components/dashboard/WorkspaceDimensions.tsx",
+    "frontend/src/pages/Dashboard.tsx",
+    "frontend/tests/components/WorkspaceDimensions.test.tsx",
+    "frontend/tests/pages/Dashboard.test.tsx",
+    "packages/dataq-client/src/dataq_client/generated/api/dashboard/get_workspace_dimensions.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/85/d9bc1a6f04/0/metadata.json",
+      "transcript": "/85/d9bc1a6f04/0/full.jsonl",
+      "compact_transcript": "/85/d9bc1a6f04/0/transcript.jsonl",
+      "content_hash": "/85/d9bc1a6f04/0/content_hash.txt",
+      "prompt": "/85/d9bc1a6f04/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 82,
+    "cache_creation_tokens": 57962,
+    "cache_read_tokens": 19160092,
+    "output_tokens": 36795,
+    "api_call_count": 41
+  }
+}

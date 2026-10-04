@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bxv9avsqc</task-id>
+<tool-use-id>toolu_01359zDpYGGmruTeusoPE1e8</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/051a3ae7-f154-4852-b2b4-477a2e7d4418/tasks/bxv9avsqc.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait until PRs 2362 and 2364 have both merged" completed (exit code 0)</summary>
+</task-notification>
