@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, Response
 from pydantic import ConfigDict, Field
@@ -73,6 +73,10 @@ class AssetSummaryRead(ApiModel):
     checks_total: int
     checks_passed: int
     last_run_at: datetime | None
+    # 0-100 over every evaluated result of the composing suites' latest complete runs,
+    # with the workspace's severity weights. NULL when nothing evaluated (never run, or
+    # only skip/error) — not 0, which means it ran and everything was critical.
+    health_score: float | None = None
     # Latest-run execution states (distinct from check severity): any composing
     # suite's latest run `failed` / still `queued`/`running`.
     has_failed_run: bool
@@ -344,10 +348,19 @@ def list_assets(
     response: Response,
     limit: int = Query(default=_LIST_LIMIT_DEFAULT, ge=1, le=_LIST_LIMIT_MAX),
     offset: int = Query(default=0, ge=0),
+    sort: Annotated[
+        Literal["name", "health_score"],
+        Query(
+            description=(
+                "`name` orders by namespace then name. `health_score` orders the whole "
+                "population lowest score first, assets with no score last."
+            )
+        ),
+    ] = "name",
 ) -> list[svc.AssetSummary]:
     # Workspace-true (ADR 0037): identical rows for every member — the service takes no user.
     response.headers[TOTAL_COUNT_HEADER] = str(svc.count_assets(db))
-    return svc.list_visible_assets(db, limit=limit, offset=offset)
+    return svc.list_visible_assets(db, limit=limit, offset=offset, sort=sort)
 
 
 @router.get("/assets/{asset_id}", response_model=AssetDetailRead, summary="Get an asset")

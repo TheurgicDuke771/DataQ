@@ -136,6 +136,24 @@ describe('ScorecardPanel (#889)', () => {
     expect(screen.getByText('1/1 passing')).toBeInTheDocument(); // the 3 did not leak in
   });
 
+  it('shows the asset health score above the dimension rows', () => {
+    render(<ScorecardPanel scorecard={card()} healthScore={87.5} />);
+    expect(screen.getByText('Asset health score')).toBeInTheDocument();
+    expect(screen.getByTestId('asset-health-score')).toHaveTextContent('87.5');
+  });
+
+  it('shows "no signal", not 0, when the asset has no score', () => {
+    render(<ScorecardPanel scorecard={card()} healthScore={null} />);
+    expect(screen.getByText('Asset health score')).toBeInTheDocument();
+    expect(screen.queryByTestId('asset-health-score')).not.toBeInTheDocument();
+    expect(screen.getByText('No signal')).toBeInTheDocument();
+  });
+
+  it('renders no headline when the API sent no asset score', () => {
+    render(<ScorecardPanel scorecard={card()} />);
+    expect(screen.queryByText('Asset health score')).not.toBeInTheDocument();
+  });
+
   it('uses singular wording for one unclassified check', () => {
     render(<ScorecardPanel scorecard={card({ unclassified_checks: 1, uncovered: [] })} />);
     expect(screen.getByText(/1 check has no dimension set/i)).toBeInTheDocument();

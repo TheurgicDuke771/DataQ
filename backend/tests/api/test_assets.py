@@ -327,6 +327,29 @@ def test_list_pagination_stable_slices(client: TestClient, world: dict[str, Any]
     assert resp.json() == []
 
 
+def test_list_carries_the_health_score_and_sorts_by_it(
+    client: TestClient, db_session: Any, world: dict[str, Any]
+) -> None:
+    """ORDERS (asset X) sorts after CUSTOMERS by name; by score it comes first — its
+    one result failed — and CUSTOMERS, which never ran, has no score and comes last."""
+    _as(world["owner"])
+    by_name = client.get("/api/v1/assets").json()
+    by_score = client.get("/api/v1/assets", params={"sort": "health_score"}).json()
+
+    assert [a["id"] for a in by_name] == [str(world["asset_y"]), str(world["asset_x"])]
+    assert [a["id"] for a in by_score] == [str(world["asset_x"]), str(world["asset_y"])]
+    # One fail of one evaluated result, default weights → 50.0.
+    assert [a["health_score"] for a in by_score] == [50.0, None]
+    detail = client.get(f"/api/v1/assets/{world['asset_x']}").json()
+    assert detail["summary"]["health_score"] == 50.0
+
+
+def test_list_rejects_an_unknown_sort(client: TestClient, world: dict[str, Any]) -> None:
+    _as(world["owner"])
+    resp = client.get("/api/v1/assets", params={"sort": "severity"})
+    assert resp.status_code == 422
+
+
 def test_total_count_header_matches_full_population(
     client: TestClient, world: dict[str, Any]
 ) -> None:

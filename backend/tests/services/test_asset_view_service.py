@@ -12,7 +12,7 @@ import pytest
 
 from backend.app.db.models import DQ_DIMENSIONS, Asset, Check, Connection, Result, Run, User
 from backend.app.services import asset_view_service as svc
-from backend.app.services import run_service, suite_service
+from backend.app.services import run_service, scoring_settings_service, suite_service
 
 
 def _user(db: Any) -> User:
@@ -417,3 +417,122 @@ def test_an_unclassified_check_that_only_errored_is_still_counted(db_session: An
     )
     card = _scorecard_for(db_session, asset, owner.id)
     assert card.unclassified_checks == 2
+
+
+# ── asset health score (#1556) ───────────────────────────────────────────────
+
+
+def test_health_score_counts_every_evaluated_result_including_unclassified(
+    db_session: Any,
+) -> None:
+    """The headline must not ignore a failing custom-SQL check just because it has no
+    dimension — that would contradict the asset's own health tag."""
+    owner = _user(db_session)
+    asset = _suite_with_dimensioned_results(
+        db_session,
+        owner,
+        results=[("completeness", "pass"), (None, "fail"), (None, "skip"), (None, "error")],
+    )
+    # One fail of two evaluated → 75.0; skip/error are outside the denominator.
+    assert svc.summarize_asset(db_session, asset).health_score == 75.0
+
+
+def test_health_score_is_none_when_nothing_evaluated(db_session: Any) -> None:
+    owner = _user(db_session)
+    never_evaluated = _suite_with_run(
+        db_session, owner, run_status="succeeded", result_statuses=["skip", "error"]
+    )
+    orphan = Asset(namespace="snowflake://x", name="ORPHAN")
+    db_session.add(orphan)
+    db_session.commit()
+
+    assert svc.summarize_asset(db_session, never_evaluated).health_score is None
+    assert svc.summarize_asset(db_session, orphan).health_score is None
+
+
+def test_health_score_ignores_a_latest_run_that_did_not_complete(db_session: Any) -> None:
+    """A partial result set is not a verdict on the asset (#318)."""
+    owner = _user(db_session)
+    asset = _suite_with_run(db_session, owner, run_status="running", result_statuses=["pass"])
+
+    assert svc.summarize_asset(db_session, asset).health_score is None
+
+
+def test_sort_by_health_score_orders_the_whole_population_worst_first(db_session: Any) -> None:
+    owner = _user(db_session)
+    healthy = _suite_with_run(
+        db_session, owner, run_status="succeeded", result_statuses=["pass", "pass"]
+    )
+    worst = _suite_with_run(
+        db_session, owner, run_status="succeeded", result_statuses=["critical", "pass"]
+    )
+    middling = _suite_with_run(
+        db_session, owner, run_status="succeeded", result_statuses=["warn", "pass"]
+    )
+    incomplete = _suite_with_run(
+        db_session, owner, run_status="running", result_statuses=["critical"]
+    )
+    unmonitored = Asset(namespace="snowflake://x", name="AAA_FIRST_BY_NAME")
+    db_session.add(unmonitored)
+    db_session.commit()
+
+    ordered = svc.list_visible_assets(db_session, sort="health_score")
+
+    assert [a.id for a in ordered[:3]] == [worst.id, middling.id, healthy.id]
+    assert [a.health_score for a in ordered[:3]] == [50.0, 87.5, 100.0]
+    # Unscored assets come last — even one whose name sorts first, and one whose only
+    # results belong to a run that has not completed.
+    assert {a.id for a in ordered[3:]} == {incomplete.id, unmonitored.id}
+    assert all(a.health_score is None for a in ordered[3:])
+    # The order is over the population, so a later page continues it.
+    page_two = svc.list_visible_assets(db_session, sort="health_score", limit=1, offset=1)
+    assert [a.id for a in page_two] == [middling.id]
+
+
+def test_sorted_order_agrees_with_displayed_scores_under_custom_weights(db_session: Any) -> None:
+    """The SQL ordering and the Python score read the same workspace weights."""
+    owner = _user(db_session)
+    warns = _suite_with_run(
+        db_session, owner, run_status="succeeded", result_statuses=["warn", "warn"]
+    )
+    one_fail = _suite_with_run(
+        db_session, owner, run_status="succeeded", result_statuses=["fail", "pass"]
+    )
+    # Default weights: warns 75.0 < one_fail 75.0 ties; make warn nearly free instead.
+    scoring_settings_service.set_weights(db_session, warn=0.1, fail=1.0, critical=2.0, actor=owner)
+    db_session.commit()
+
+    ordered = svc.list_visible_assets(db_session, sort="health_score")
+
+    assert [a.id for a in ordered] == [one_fail.id, warns.id]
+    assert [a.health_score for a in ordered] == [75.0, 95.0]
+
+
+def test_sort_order_never_contradicts_the_displayed_scores_at_a_rounding_half(
+    db_session: Any,
+) -> None:
+    """3 fails of 8 is a raw 81.25: Python displays 81.2, Postgres would round it to
+    81.3 and tie it with an asset that displays 81.3 — then name order would put the
+    81.3 asset first in a "lowest first" list."""
+    owner = _user(db_session)
+    half = _suite_with_run(
+        db_session, owner, run_status="succeeded", result_statuses=["fail"] * 3 + ["pass"] * 5
+    )
+    above = _suite_with_run(
+        db_session, owner, run_status="succeeded", result_statuses=["fail"] * 25 + ["pass"] * 42
+    )
+    half.name, above.name = "Z_SORTS_LAST_BY_NAME", "A_SORTS_FIRST_BY_NAME"
+    db_session.commit()
+
+    ordered = svc.list_visible_assets(db_session, sort="health_score")
+
+    assert [a.health_score for a in ordered] == [81.2, 81.3]
+    assert [a.id for a in ordered] == [half.id, above.id]
+
+
+def test_default_sort_is_still_namespace_then_name(db_session: Any) -> None:
+    for name in ("B", "A"):
+        db_session.add(Asset(namespace="snowflake://x", name=name))
+    db_session.commit()
+
+    assert [a.name for a in svc.list_visible_assets(db_session)] == ["A", "B"]
