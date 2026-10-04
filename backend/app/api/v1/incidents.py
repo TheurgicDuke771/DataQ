@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Query, Response
 from pydantic import Field
@@ -49,6 +49,9 @@ class IncidentRead(ApiModel):
     last_seen_at: datetime
     acknowledged_at: datetime | None
     resolved_at: datetime | None
+    # fixed | expected_change | false_positive, as stated by whoever resolved it. NULL on an
+    # unresolved incident, an auto-resolved one, and a manual resolve that did not say.
+    resolution: str | None = None
     check_name: str | None
     asset_namespace: str | None
     asset_name: str | None
@@ -74,6 +77,12 @@ class IncidentActionRequest(ApiRequestModel):
     """
 
     note: str | None = Field(default=None, max_length=_NOTE_MAX_LEN)
+
+
+class IncidentResolveRequest(IncidentActionRequest):
+    # What the incident turned out to be. Optional; left out, it is recorded as unstated.
+    # `false_positive` feeds the false-positive rate shown beside coverage.
+    resolution: Literal["fixed", "expected_change", "false_positive"] | None = None
 
 
 # ── serialization ─────────────────────────────────────────────────────────────
@@ -103,6 +112,7 @@ def _summary_fields(incident: Incident) -> dict[str, Any]:
         "last_seen_at": incident.last_seen_at,
         "acknowledged_at": incident.acknowledged_at,
         "resolved_at": incident.resolved_at,
+        "resolution": incident.resolution,
         "check_name": _evidence_get(ev, "check", "name"),
         "asset_namespace": _evidence_get(ev, "asset", "namespace"),
         "asset_name": _evidence_get(ev, "asset", "name"),
@@ -270,7 +280,7 @@ def acknowledge_incident(
 )
 def resolve_incident(
     incident_id: uuid.UUID,
-    payload: IncidentActionRequest,
+    payload: IncidentResolveRequest,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> IncidentDetailRead:
@@ -278,7 +288,7 @@ def resolve_incident(
         db, incident_id, user_id=current_user.id, for_action=True
     )
     incident = incident_service.resolve_incident(
-        db, incident, user_id=current_user.id, note=payload.note
+        db, incident, user_id=current_user.id, note=payload.note, resolution=payload.resolution
     )
     evidence = incident_service.evidence_for_caller(db, incident, user_id=current_user.id)
     return _to_detail(incident, evidence)

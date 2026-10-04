@@ -53,6 +53,10 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Added
 
+- **Say what an incident turned out to be.** Resolving an incident can record whether it was
+  **fixed**, an **expected change** or a **false positive**. It is optional; left out, the
+  incident is recorded as not stated. In the API, `POST /incidents/{id}/resolve` takes
+  `resolution` and incidents return it; the MCP `resolve_incident` tool takes it too.
 - **Apply a suite file onto an existing suite, and see drift.** `POST /suites/{id}/apply`
   creates, updates and (with `prune`) deletes checks to match a JSON or YAML document,
   matching checks by name; it is idempotent. With `dry_run` it changes nothing and reports

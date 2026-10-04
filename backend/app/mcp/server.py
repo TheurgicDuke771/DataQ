@@ -3805,6 +3805,10 @@ def _incident_payload(incident: Any) -> dict[str, Any]:
             incident.acknowledged_at.isoformat() if incident.acknowledged_at else None
         ),
         "resolved_at": incident.resolved_at.isoformat() if incident.resolved_at else None,
+        # What the resolver said it was: fixed | expected_change | false_positive. null
+        # on an unresolved or auto-resolved incident AND on a manual resolve that did
+        # not say — null never means "not a false positive".
+        "resolution": incident.resolution,
         # 'user' = a person closed it; 'auto' = a later passing result closed it.
         # Null while still open.
         "resolved_by": incident.resolved_by,
@@ -4094,11 +4098,20 @@ def ack_incident(
 def resolve_incident(
     incident_id: str,
     note: Annotated[str, Field(max_length=_NOTE_MAX_LEN)] | None = None,
+    resolution: Literal["fixed", "expected_change", "false_positive"] | None = None,
 ) -> dict[str, Any]:
     """Resolve an incident — declare the problem over.
 
     Use this for 'resolve that', 'the orders backfill fixed it', or 'close the
     freshness incident'. An optional ``note`` records the resolution.
+
+    ``resolution`` records what the incident turned out to be: ``fixed`` (a real
+    problem, now corrected), ``expected_change`` (the data changed on purpose and
+    the check was right to notice) or ``false_positive`` (nothing was wrong; the
+    check should not have fired). Pass it only when the user has said which — it
+    feeds the workspace's false-positive rate, so a guess corrupts that number.
+    Left out, the incident is recorded with no stated resolution, which is not
+    the same as "not a false positive".
 
     **This is a statement about the incident, not a fix to the data.** Resolving
     does not re-run anything and does not make the check pass; if the underlying
@@ -4120,7 +4133,9 @@ def resolve_incident(
         incident = incident_service.load_visible_incident(
             session, iid, user_id=user.id, for_action=True
         )
-        incident = incident_service.resolve_incident(session, incident, user_id=user.id, note=note)
+        incident = incident_service.resolve_incident(
+            session, incident, user_id=user.id, note=note, resolution=resolution
+        )
         return _incident_payload(incident)
 
 

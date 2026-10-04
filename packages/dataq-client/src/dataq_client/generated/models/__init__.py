@@ -136,6 +136,8 @@ from .incident_detail_read_evidence_type_0 import IncidentDetailReadEvidenceType
 from .incident_narrative_read import IncidentNarrativeRead
 from .incident_narrative_read_narrative_type_0 import IncidentNarrativeReadNarrativeType0
 from .incident_read import IncidentRead
+from .incident_resolve_request import IncidentResolveRequest
+from .incident_resolve_request_resolution_type_0 import IncidentResolveRequestResolutionType0
 from .inherited_classification_read import InheritedClassificationRead
 from .inherited_source_read import InheritedSourceRead
 from .inventory_sync_read import InventorySyncRead
@@ -403,6 +405,8 @@ __all__ = (
     "IncidentNarrativeRead",
     "IncidentNarrativeReadNarrativeType0",
     "IncidentRead",
+    "IncidentResolveRequest",
+    "IncidentResolveRequestResolutionType0",
     "InheritedClassificationRead",
     "InheritedSourceRead",
     "InventorySyncRead",
