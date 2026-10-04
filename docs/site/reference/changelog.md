@@ -59,6 +59,10 @@ the per-PR history lives in the repo's commit log and pull requests.
   done; what automatic coverage creates does not count. The empty Connections, Suites, Assets and checks lists now explain what belongs there
   and offer the action your role allows. In the API, `GET /dashboard/onboarding` returns the
   four steps as booleans.
+- **Two MCP tools for automatic coverage.** `get_coverage` returns the share of the asset
+  inventory watched in the last 7 days and the false-positive rate of automatic checks, with
+  the counts behind each. `list_suggested_rules` lists a suite's review queue. Both are
+  read-only; accepting or rejecting a rule is still done in the app. `/mcp` now has 54 tools.
 - **Say what an incident turned out to be.** Resolving an incident can record whether it was
   **fixed**, an **expected change** or a **false positive**. It is optional; left out, the
   incident is recorded as not stated. In the API, `POST /incidents/{id}/resolve` takes

@@ -28,7 +28,14 @@ MCP_OUT = ROOT / "docs/site/reference/mcp-tools.md"
 
 #: Gated like writes, but persist nothing: each opens a live datasource with a stored credential.
 LIVE_PROBE_TOOLS = frozenset(
-    {"dryrun_check", "list_columns", "profile_column", "suggest_column_policy", "test_connection"}
+    {
+        "browse_connection",
+        "dryrun_check",
+        "list_columns",
+        "profile_column",
+        "suggest_column_policy",
+        "test_connection",
+    }
 )
 #: gate -> (who can call it, read-only?). A gate missing here fails the build, so a new gate
 #: value gets classified deliberately rather than by string shape.
