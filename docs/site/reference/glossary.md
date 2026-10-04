@@ -20,7 +20,7 @@
 | **Incident** | The stateful, deduped object failing results roll up into: `open → acknowledged → resolved`, ≤1 active per (asset, check), evidence card attached (ADR 0034). |
 | **`pipeline_runs` vs `runs`** | Orchestration runs vs DataQ check runs — linked, never conflated. |
 | **Secret store** | Where credentials live — Azure Key Vault / AWS Secrets Manager / OpenBao (prod) or env/OpenBao (dev), behind one seam. |
-| **MCP** | Model Context Protocol — DataQ exposes 52 curated tools at `/mcp` for AI assistants (28 read-only, 18 that change state, 6 live-probe tools gated like writes). |
+| **MCP** | Model Context Protocol — DataQ exposes 54 curated tools at `/mcp` for AI assistants (30 read-only, 18 that change state, 6 live-probe tools gated like writes). |
 | **ADR** | Architecture Decision Record — `docs/site/adr/`, one markdown per significant decision. |
 
 ## Contact / ownership

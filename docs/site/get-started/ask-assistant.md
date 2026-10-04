@@ -31,7 +31,7 @@ Try the four questions the tools were designed around:
 Every tool states what it **cannot** see — a mid-run suite is reported as *not final*, an
 expired snooze as *expired*, a truncated list as *truncated* — because an assistant has no
 "running" badge to glance at. That design is documented in
-[MCP tool design](../architecture/mcp-honesty.md), and the full list of the 52 tools with who
+[MCP tool design](../architecture/mcp-honesty.md), and the full list of the 54 tools with who
 can call them is the [MCP tools reference](../reference/mcp-tools.md).
 
 !!! tip "Ask about the docs, too"

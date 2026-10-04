@@ -8,6 +8,7 @@ GATES: dict[str, str] = {
     # `get_asset` are here by ADR 0037's explicit decision.
     "get_adf_pipeline_status": "read",  # deprecated alias for get_pipeline_status (#1443)
     "get_asset": "read",
+    "get_coverage": "read",  # workspace-wide counts, nothing named (ADR 0047 §8)
     "get_doc": "read",  # curated docs/site pages, workspace-agnostic (#1626)
     "get_health_score": "read",
     "get_pipeline_status": "read",
@@ -34,6 +35,7 @@ GATES: dict[str, str] = {
     "get_suite_results": "suite:view",
     "list_check_versions": "suite:view",
     "list_checks": "suite:view",
+    "list_suggested_rules": "suite:view",
     "list_suite_channels": "suite:view",
     # ── writes (and live probes) gated on the suite ────────────────────────── `profile_column` is
     # here, not with the reads: it persists nothing.
