@@ -43,6 +43,7 @@ from backend.app.services import (
     llm_service,
     orchestration_service,
     profile_service,
+    suggestion_service,
 )
 from backend.app.services.workspace_health_service import NearMissRecord
 
@@ -515,6 +516,43 @@ def _format_rejection_reasons(rejected: list[dict[str, Any]]) -> str:
     return f"{joined}{suffix}"
 
 
+def _queue_for_review(session: Session, suite: Suite, accepted: list[dict[str, Any]]) -> int | None:
+    """Put an automatic suite's validated suggestions in its review queue as
+    ``source='llm'``, beside the profile-derived ones, so they outlive the drawer and a
+    rejection is remembered. Returns how many were new; a rule the suite has seen before
+    (pending, accepted or rejected) is not queued again.
+
+    Only what the queue can accept is queued: a plain expectation. A freshness suggestion
+    carries a kind and a threshold the queue's accept does not create. A value set over a
+    column the redaction ladder treats as sensitive is left out, as the profile source
+    leaves it out — accepting it would copy the values into a check.
+    """
+    if suite.origin != "auto":
+        return None
+    sensitive = suggestion_service.value_set_is_sensitive(session, suite)
+    queued = 0
+    for suggestion in accepted:
+        expectation_type = suggestion["expectation_type"]
+        config = suggestion["config"]
+        if expectation_type == FRESHNESS_EXPECTATION_TYPE:
+            continue
+        # Any type that carries a value set, not only "in set": not-in-set and the
+        # distinct-values types store the values just the same.
+        value_set = config.get("value_set")
+        if isinstance(value_set, list) and sensitive(str(config.get("column")), value_set):
+            continue
+        queued += suggestion_service.propose(
+            session,
+            suite,
+            source="llm",
+            name=suggestion["name"],
+            expectation_type=expectation_type,
+            config=config,
+            rationale=suggestion.get("rationale") or None,
+        )
+    return queued
+
+
 def validate_output(
     session: Session, invocation: LlmInvocation, payload: dict[str, Any]
 ) -> dict[str, Any]:
@@ -540,6 +578,11 @@ def validate_output(
     accepted: list[dict[str, Any]] = []
     rejected: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
+    turned_down = (
+        suggestion_service.rejected_fingerprints(session, suite)
+        if suite.origin == "auto"
+        else set()
+    )
     for raw in raw_suggestions:
         if not isinstance(raw, dict):
             rejected.append({"expectation_type": None, "reason": "suggestion was not an object"})
@@ -573,6 +616,17 @@ def validate_output(
             )
             continue
         seen.add(identity)
+        if suggestion_service.fingerprint(ok["expectation_type"], ok["config"]) in turned_down:
+            # Rejected under Suggested rules; offering it again in the drawer would ask
+            # the same person the same question.
+            rejected.append(
+                {
+                    "expectation_type": ok["expectation_type"],
+                    "name": ok.get("name"),
+                    "reason": "rejected earlier under Suggested rules",
+                }
+            )
+            continue
         accepted.append(ok)
     if not accepted:
         # The full `rejected` list is about to go out of scope — raised below
@@ -622,6 +676,9 @@ def validate_output(
         "suggestions": accepted,
         "rejected": rejected,
         "coverage_warnings": coverage_warnings,
+        # How many were newly added to an AUTOMATIC suite's review queue (ADR 0047 §4).
+        # None on a suite a person authored: there the drawer is the only place they live.
+        "queued_for_review": _queue_for_review(session, suite, accepted),
         # `profiled < total` means the columns past the cap were never looked at (#1734) — no
         # suggestion for one of them is not a finding that it needs no check.
         "column_coverage": _column_coverage(session, invocation),
