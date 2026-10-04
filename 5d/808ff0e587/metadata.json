@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "5d808ff0e587",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1556-asset-score-delta",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/assets.py",
+    "backend/app/services/asset_view_service.py",
+    "backend/app/services/rollup.py",
+    "backend/tests/api/test_assets.py",
+    "backend/tests/services/test_asset_view_service.py",
+    "docs/site/guides/datasources-checks.md",
+    "docs/site/reference/changelog.md",
+    "docs/site/reference/openapi.json",
+    "frontend/src/api/assets.ts",
+    "frontend/src/components/assets/ScorecardPanel.tsx",
+    "frontend/src/components/dashboard/MetricCard.tsx",
+    "frontend/src/pages/AssetDetail.tsx",
+    "frontend/tests/components/ScorecardPanel.test.tsx",
+    "packages/dataq-client/src/dataq_client/generated/api/assets/get_asset.py",
+    "packages/dataq-client/src/dataq_client/generated/models/asset_detail_read.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/5d/808ff0e587/0/metadata.json",
+      "transcript": "/5d/808ff0e587/0/full.jsonl",
+      "compact_transcript": "/5d/808ff0e587/0/transcript.jsonl",
+      "content_hash": "/5d/808ff0e587/0/content_hash.txt",
+      "prompt": "/5d/808ff0e587/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 16,
+    "cache_creation_tokens": 16662,
+    "cache_read_tokens": 3417230,
+    "output_tokens": 11522,
+    "api_call_count": 8
+  }
+}

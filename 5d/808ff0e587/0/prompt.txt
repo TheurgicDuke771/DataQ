@@ -1,0 +1,5 @@
+Unclassified checks in the asset score - Keep
+Asset score delta - Previous is the same score from each suite's latest run as of N days ago
+Scope of #1557 and #1558 - Workspace-wide like assets 
+
+Also what happend to the seeded demo, we were talking last week, is that already have a issue?
