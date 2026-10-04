@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "d77843f49fd3",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1334-check-ordinal",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/services/check_service.py",
+    "backend/app/services/probe.py",
+    "backend/app/services/suite_io_service.py",
+    "backend/tests/api/test_suites.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/d7/7843f49fd3/0/metadata.json",
+      "transcript": "/d7/7843f49fd3/0/full.jsonl",
+      "compact_transcript": "/d7/7843f49fd3/0/transcript.jsonl",
+      "content_hash": "/d7/7843f49fd3/0/content_hash.txt",
+      "prompt": "/d7/7843f49fd3/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 20,
+    "cache_creation_tokens": 14169,
+    "cache_read_tokens": 3150377,
+    "output_tokens": 7015,
+    "api_call_count": 10,
+    "subagent_tokens": {
+      "input_tokens": 10,
+      "cache_creation_tokens": 84850,
+      "cache_read_tokens": 315230,
+      "output_tokens": 71,
+      "api_call_count": 5
+    }
+  }
+}
