@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "5702f11ffa24",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1660-coverage-metrics",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/services/test_coverage_figures.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/57/02f11ffa24/0/metadata.json",
+      "transcript": "/57/02f11ffa24/0/full.jsonl",
+      "compact_transcript": "/57/02f11ffa24/0/transcript.jsonl",
+      "content_hash": "/57/02f11ffa24/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 17425,
+    "cache_read_tokens": 11380004,
+    "output_tokens": 8368,
+    "api_call_count": 12
+  }
+}
