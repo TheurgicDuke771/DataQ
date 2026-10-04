@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "bc34ed37996a",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1660-queue-llm-suggestions",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/services/llm_checksuggest.py",
+    "backend/app/services/suggestion_service.py",
+    "backend/tests/services/test_llm_checksuggest.py",
+    "backend/tests/services/test_suggestion_service.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/bc/34ed37996a/0/metadata.json",
+      "transcript": "/bc/34ed37996a/0/full.jsonl",
+      "compact_transcript": "/bc/34ed37996a/0/transcript.jsonl",
+      "content_hash": "/bc/34ed37996a/0/content_hash.txt",
+      "prompt": "/bc/34ed37996a/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 18487,
+    "cache_read_tokens": 10860142,
+    "output_tokens": 9225,
+    "api_call_count": 12
+  }
+}
