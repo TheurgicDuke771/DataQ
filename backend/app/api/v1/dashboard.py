@@ -7,6 +7,7 @@ from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import ConfigDict
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import ApiModel
@@ -15,7 +16,7 @@ from backend.app.core.auth import get_current_user
 from backend.app.core.roles import is_workspace_admin
 from backend.app.db.models import User
 from backend.app.db.session import get_db
-from backend.app.services import asset_view_service
+from backend.app.services import asset_view_service, coverage_service
 from backend.app.services import dashboard_service as svc
 
 router = APIRouter(tags=["dashboard"])
@@ -117,3 +118,51 @@ def get_workspace_dimensions(
     dimension are counted in `unclassified_checks` and are in no row.
     """
     return asset_view_service.workspace_scorecard(db)
+
+
+class CoverageFiguresRead(ApiModel):
+    """How much of the inventory is watched, and how often automatic checks cry wolf.
+
+    Workspace-wide, like the dimension rollup: identical for every member, counts only.
+
+    `coverage_pct` is `assets_watched / assets_total`: assets with at least one suite
+    that completed a run in the last `coverage_window_days`. `assets_watched_authored`
+    are watched by a suite a person authored; `assets_watched_auto_only` only by
+    automatic coverage. NULL when the workspace has no assets.
+
+    `false_positive_rate` is `false_positive / stated`, over automatic-suite incidents a
+    person resolved in the last `false_positive_window_days`. `stated` counts those
+    resolved WITH a stated resolution; `unstated` those without. NULL when nothing was
+    stated — which is "not measured", not "no false positives". Auto-resolved incidents
+    are in none of these numbers.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    assets_total: int
+    assets_watched: int
+    assets_watched_authored: int
+    assets_watched_auto_only: int
+    coverage_pct: float | None
+    coverage_window_days: int
+    false_positive_window_days: int
+    resolved: int
+    stated: int
+    unstated: int
+    false_positive: int
+    false_positive_rate: float | None
+
+
+@router.get(
+    "/dashboard/coverage",
+    response_model=CoverageFiguresRead,
+    summary="Coverage of the asset inventory and the false-positive rate of automatic checks",
+)
+def get_coverage_figures(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    false_positive_window_days: Annotated[int, Query(ge=1, le=_WINDOW_MAX)] = 30,
+) -> coverage_service.CoverageFigures:
+    return coverage_service.coverage_figures(
+        db, false_positive_window_days=false_positive_window_days
+    )
