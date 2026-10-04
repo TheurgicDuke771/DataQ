@@ -54,14 +54,22 @@ the per-PR history lives in the repo's commit log and pull requests.
 ### Added
 
 - **A data-quality score per connection.** Each connection card shows a **DQ score** across
-  every suite on that connection, from each suite's latest completed run. It is the same
+  every suite on that connection, from each suite's latest run if it completed. It is the same
   for every member, and absent when nothing has evaluated. In the API, connections gain
   `health_score`.
+- **Suites as YAML files, and a way to validate them.** A suite document can now be YAML as
+  well as JSON: `POST /suites/import` accepts `document_yaml`, and
+  `GET /suites/{id}/export?format=yaml` produces it. The new `POST /suites/validate`
+  reports every problem an import would be refused for and creates nothing. The format is
+  now documented field by field in [Suite document](suite-document.md). Plain YAML values
+  follow JSON's rules, so `NO` and `2026-01-01` stay text.
 - **An asset health score.** The asset page's scorecard now leads with one 0–100 number
   for the whole asset, and **Assets → All assets** shows it in a **Score** column and can
   sort the whole workspace by it, lowest first. It counts every check that evaluated in
-  each suite's latest completed run, including checks with no dimension. In the API,
-  assets gain `health_score` and `GET /assets` gains `sort=health_score`. See
+  each suite's latest completed run, including checks with no dimension. Beside it, the
+  asset page shows the change against the same score 7 days ago. In the API, assets gain
+  `health_score`, `GET /assets` gains `sort=health_score`, and `GET /assets/{id}` gains
+  `previous_health_score`, `health_score_delta` and `score_delta_days`. See
   [Datasources & checks](../guides/datasources-checks.md#seeing-coverage-the-asset-scorecard).
 - **Real mailboxes from the prebuilt-image stack.** Point the sign-in mailer at your own
   relay and supply its password once as `DATAQ_SMTP_PASSWORD`: a start-up step stores it in

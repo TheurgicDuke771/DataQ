@@ -10,35 +10,39 @@ from typing_extensions import Self
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
-    from ..models.suite_document_in import SuiteDocumentIn
+    from ..models.suite_validate_request_document_type_0 import SuiteValidateRequestDocumentType0
 
 
-T = TypeVar("T", bound="SuiteImportRequest")
+T = TypeVar("T", bound="SuiteValidateRequest")
 
 
 @_attrs_define
-class SuiteImportRequest:
-    """The document as JSON (`document`) or as YAML text (`document_yaml`) — exactly one.
+class SuiteValidateRequest:
+    """Like `SuiteImportRequest`, but `document` is taken as a plain object so that a
+    document of the wrong shape is REPORTED in the response instead of refusing the
+    request.
 
-    Attributes:
-        connection_id (UUID):
-        document (None | SuiteDocumentIn | Unset):
-        document_yaml (None | str | Unset):
+        Attributes:
+            connection_id (UUID):
+            document (None | SuiteValidateRequestDocumentType0 | Unset):
+            document_yaml (None | str | Unset):
     """
 
     connection_id: UUID
-    document: None | SuiteDocumentIn | Unset = UNSET
+    document: None | SuiteValidateRequestDocumentType0 | Unset = UNSET
     document_yaml: None | str | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
-        from ..models.suite_document_in import SuiteDocumentIn
+        from ..models.suite_validate_request_document_type_0 import (
+            SuiteValidateRequestDocumentType0,
+        )
 
         connection_id = str(self.connection_id)
 
         document: dict[str, Any] | None | Unset
         if isinstance(self.document, Unset):
             document = UNSET
-        elif isinstance(self.document, SuiteDocumentIn):
+        elif isinstance(self.document, SuiteValidateRequestDocumentType0):
             document = self.document.to_dict()
         else:
             document = self.document
@@ -65,12 +69,14 @@ class SuiteImportRequest:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
-        from ..models.suite_document_in import SuiteDocumentIn
+        from ..models.suite_validate_request_document_type_0 import (
+            SuiteValidateRequestDocumentType0,
+        )
 
         d = dict(src_dict)
         connection_id = UUID(d.pop("connection_id"))
 
-        def _parse_document(data: object) -> None | SuiteDocumentIn | Unset:
+        def _parse_document(data: object) -> None | SuiteValidateRequestDocumentType0 | Unset:
             if data is None:
                 return data
             if isinstance(data, Unset):
@@ -78,12 +84,12 @@ class SuiteImportRequest:
             try:
                 if not isinstance(data, dict):
                     raise TypeError()
-                document_type_0 = SuiteDocumentIn.from_dict(data)
+                document_type_0 = SuiteValidateRequestDocumentType0.from_dict(data)
 
                 return document_type_0
             except (TypeError, ValueError, AttributeError, KeyError):
                 pass
-            return cast(None | SuiteDocumentIn | Unset, data)
+            return cast(None | SuiteValidateRequestDocumentType0 | Unset, data)
 
         document = _parse_document(d.pop("document", UNSET))
 
@@ -96,10 +102,10 @@ class SuiteImportRequest:
 
         document_yaml = _parse_document_yaml(d.pop("document_yaml", UNSET))
 
-        suite_import_request = cls(
+        suite_validate_request = cls(
             connection_id=connection_id,
             document=document,
             document_yaml=document_yaml,
         )
 
-        return suite_import_request
+        return suite_validate_request

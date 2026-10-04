@@ -6,8 +6,8 @@ import uuid
 from decimal import Decimal
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import ConfigDict, Field
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from pydantic import ConfigDict, Field, ValidationError, model_validator
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import ApiModel, ApiRequestModel
@@ -28,6 +28,7 @@ from backend.app.services import (
     run_target,
 )
 from backend.app.services import profile_service as profile
+from backend.app.services import suite_document_yaml as suite_yaml
 from backend.app.services import suite_io_service as suite_io
 from backend.app.services import suite_service as svc
 from backend.app.services.suite_authz import (
@@ -382,22 +383,114 @@ class SuiteDocumentIn(ApiRequestModel):
 
 
 class SuiteImportRequest(ApiRequestModel):
+    """The document as JSON (`document`) or as YAML text (`document_yaml`) — exactly one."""
+
     connection_id: uuid.UUID
-    document: SuiteDocumentIn
+    document: SuiteDocumentIn | None = None
+    document_yaml: str | None = Field(default=None, max_length=suite_yaml.MAX_YAML_CHARS)
+
+    @model_validator(mode="after")
+    def _exactly_one_document(self) -> SuiteImportRequest:
+        if (self.document is None) == (self.document_yaml is None):
+            raise ValueError("send exactly one of document or document_yaml")
+        return self
+
+
+class SuiteValidateRequest(ApiRequestModel):
+    """Like `SuiteImportRequest`, but `document` is taken as a plain object so that a
+    document of the wrong shape is REPORTED in the response instead of refusing the
+    request.
+    """
+
+    connection_id: uuid.UUID
+    document: dict[str, Any] | None = None
+    document_yaml: str | None = Field(default=None, max_length=suite_yaml.MAX_YAML_CHARS)
+
+    @model_validator(mode="after")
+    def _exactly_one_document(self) -> SuiteValidateRequest:
+        if (self.document is None) == (self.document_yaml is None):
+            raise ValueError("send exactly one of document or document_yaml")
+        return self
+
+
+class DocumentProblemRead(ApiModel):
+    """One reason the document would be refused. `location` is `document` for a problem
+    with the document as a whole, `checks[2]` for the third check, or a field path such
+    as `checks[2].expectation_type` for a shape error.
+    """
+
+    location: str
+    check_name: str | None = None
+    code: str
+    message: str
+
+
+class SuiteValidationRead(ApiModel):
+    """`valid` is true exactly when `problems` is empty — importing this document onto
+    this connection would then be accepted. It says nothing about whether the checks
+    would PASS: no datasource is opened and no column is looked up.
+    """
+
+    valid: bool
+    check_count: int
+    problems: list[DocumentProblemRead]
+
+
+def _document_checks(doc: SuiteDocumentIn) -> list[dict[str, Any]]:
+    # `dimension` is dropped when the payload did not SET it.
+    return [
+        {
+            k: v
+            for k, v in c.model_dump().items()
+            if k != "dimension" or "dimension" in c.model_fields_set
+        }
+        for c in doc.checks
+    ]
+
+
+def _shape_problems(exc: ValidationError) -> list[DocumentProblemRead]:
+    problems = []
+    for error in exc.errors():
+        path = ""
+        for part in error["loc"]:
+            path += f"[{part}]" if isinstance(part, int) else f".{part}" if path else str(part)
+        # `msg` only: `input` would echo document content back.
+        problems.append(
+            DocumentProblemRead(
+                location=path or "document", code="document_shape_invalid", message=error["msg"]
+            )
+        )
+    return problems
 
 
 @router.get(
     "/suites/{suite_id}/export",
     response_model=SuiteDocument,
     summary="Export a suite as a portable document",
+    responses={
+        200: {
+            "content": {"application/yaml": {"schema": {"type": "string"}}},
+            "description": "The document — JSON, or YAML text with `format=yaml`.",
+        }
+    },
 )
 def export_suite(
     suite_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> SuiteDocument:
+    export_format: Annotated[
+        Literal["json", "yaml"],
+        Query(alias="format", description="`yaml` returns the same document as YAML text."),
+    ] = "json",
+) -> SuiteDocument | Response:
     suite = require_permission(db, suite_id, current_user.id, minimum="view")
-    return SuiteDocument.model_validate(suite_io.export_suite(db, suite))
+    document = SuiteDocument.model_validate(suite_io.export_suite(db, suite))
+    if export_format == "yaml":
+        return Response(
+            content=suite_yaml.dump_suite_document_yaml(document.model_dump(mode="json")),
+            media_type="application/yaml",
+        )
+    return document
 
 
 @router.post(
@@ -414,24 +507,75 @@ def import_suite(
     # Like create_suite: Member+ (ADR 0033 — a Viewer is read-only and cannot become an owner), and
     # the new suite is owned by the importer.
     doc = payload.document
+    if doc is None:
+        try:
+            doc = SuiteDocumentIn.model_validate(
+                suite_yaml.parse_suite_document_yaml(payload.document_yaml or "")
+            )
+        except ValidationError as exc:
+            problems = _shape_problems(exc)
+            raise suite_io.SuiteImportInvalidError(
+                f"the YAML document has the wrong shape — {problems[0].location}: "
+                f"{problems[0].message}",
+                detail={"problems": [p.model_dump() for p in problems]},
+            ) from exc
     suite = suite_io.import_suite(
         db,
         version=doc.version,
         name=doc.name,
         description=doc.description,
-        # `dimension` is dropped when the payload did not SET it.
-        checks=[
-            {
-                k: v
-                for k, v in c.model_dump().items()
-                if k != "dimension" or "dimension" in c.model_fields_set
-            }
-            for c in doc.checks
-        ],
+        checks=_document_checks(doc),
         connection_id=payload.connection_id,
         created_by=current_user.id,
     )
     return SuiteRead.model_validate(suite)
+
+
+@router.post(
+    "/suites/validate",
+    response_model=SuiteValidationRead,
+    summary="Validate a suite document against a connection without importing it",
+)
+def validate_suite_document(
+    payload: SuiteValidateRequest,
+    current_user: MemberUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> SuiteValidationRead:
+    """Runs every gate `POST /suites/import` applies and reports ALL the problems, not
+    only the first. Nothing is created and no datasource is opened, so a valid document
+    can still hold a check that names a column the table does not have.
+
+    A document that cannot be read at all (malformed YAML, not a mapping) is a 422; one
+    that reads but is wrong comes back 200 with `valid: false`.
+    """
+    raw = payload.document
+    if raw is None:
+        raw = suite_yaml.parse_suite_document_yaml(payload.document_yaml or "")
+    try:
+        doc = SuiteDocumentIn.model_validate(raw)
+    except ValidationError as exc:
+        checks = raw.get("checks")
+        return SuiteValidationRead(
+            valid=False,
+            check_count=len(checks) if isinstance(checks, list) else 0,
+            problems=_shape_problems(exc),
+        )
+    problems = suite_io.validate_document(
+        db, version=doc.version, checks=_document_checks(doc), connection_id=payload.connection_id
+    )
+    return SuiteValidationRead(
+        valid=not problems,
+        check_count=len(doc.checks),
+        problems=[
+            DocumentProblemRead(
+                location="document" if p.check_index is None else f"checks[{p.check_index}]",
+                check_name=p.check_name,
+                code=p.code,
+                message=p.message,
+            )
+            for p in problems
+        ],
+    )
 
 
 # ───────────────────────── column profiler (no persistence) ─────────

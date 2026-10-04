@@ -2524,3 +2524,225 @@ def test_cadence_requires_edit_access(client: TestClient, db_session: Any) -> No
     resp = client.get(f"/api/v1/suites/{sid}/cadence")
     assert resp.status_code == 403
     assert not db_session.scalars(select(Suite).where(Suite.name == "imported")).all()
+
+
+# ── YAML documents + validate (#1688) ────────────────────────────────────────
+
+
+def test_export_as_yaml_then_import_it_round_trips(client: TestClient, db_session: Any) -> None:
+    src = _suite_with_checks(client, db_session)
+    as_json = client.get(f"/api/v1/suites/{src}/export").json()
+    as_yaml = client.get(f"/api/v1/suites/{src}/export", params={"format": "yaml"})
+    target = _connection(db_session)
+
+    assert as_yaml.status_code == 200
+    assert as_yaml.headers["content-type"].startswith("application/yaml")
+    resp = client.post(
+        "/api/v1/suites/import",
+        json={"connection_id": str(target.id), "document_yaml": as_yaml.text},
+    )
+    assert resp.status_code == 201, resp.text
+    reexported = client.get(f"/api/v1/suites/{resp.json()['id']}/export").json()
+    assert _check_set(reexported["checks"]) == _check_set(as_json["checks"])
+
+
+def test_import_a_hand_written_yaml_document(client: TestClient, db_session: Any) -> None:
+    target = _connection(db_session)
+    document = """
+version: 1
+name: Orders quality
+checks:
+  - name: country is allowed
+    expectation_type: expect_column_values_to_be_in_set
+    config:
+      column: COUNTRY
+      value_set: [NO, SE, DK]
+    fail_threshold: 5
+"""
+    resp = client.post(
+        "/api/v1/suites/import", json={"connection_id": str(target.id), "document_yaml": document}
+    )
+    assert resp.status_code == 201, resp.text
+    check = db_session.scalars(
+        select(Check).where(Check.suite_id == uuid.UUID(resp.json()["id"]))
+    ).one()
+    # `NO` stays Norway, not the boolean false YAML 1.1 would read.
+    assert check.config["value_set"] == ["NO", "SE", "DK"]
+    assert check.fail_threshold == Decimal("5")
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {},
+        {"document": {"name": "x", "checks": []}, "document_yaml": "name: x"},
+    ],
+)
+def test_import_needs_exactly_one_document_form(
+    client: TestClient, db_session: Any, body: dict[str, Any]
+) -> None:
+    target = _connection(db_session)
+    resp = client.post("/api/v1/suites/import", json={"connection_id": str(target.id), **body})
+    assert resp.status_code == 422
+
+
+def test_import_refuses_a_misshapen_yaml_document_and_writes_nothing(
+    client: TestClient, db_session: Any
+) -> None:
+    target = _connection(db_session)
+    before = db_session.scalar(select(func.count()).select_from(Suite))
+    resp = client.post(
+        "/api/v1/suites/import",
+        json={
+            "connection_id": str(target.id),
+            "document_yaml": "name: x\nchecks:\n  - name: no type\n    surprise: 1\n",
+        },
+    )
+    assert resp.status_code == 422
+    error = resp.json()["error"]
+    assert error["code"] == "suite_import_invalid"
+    locations = {p["location"] for p in error["detail"]["problems"]}
+    assert locations == {"checks[0].expectation_type", "checks[0].surprise"}
+    assert db_session.scalar(select(func.count()).select_from(Suite)) == before
+
+
+def test_import_refuses_a_nul_smuggled_through_a_yaml_escape(
+    client: TestClient, db_session: Any
+) -> None:
+    """The request body carries a backslash and a zero — no NUL for the body check to
+    see. It only becomes one once the YAML is parsed."""
+    target = _connection(db_session)
+    resp = client.post(
+        "/api/v1/suites/import",
+        json={"connection_id": str(target.id), "document_yaml": 'name: "x\\0y"\nchecks: []\n'},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "suite_document_yaml_invalid"
+
+
+_VALIDATE_DOC: dict[str, Any] = {
+    "name": "x",
+    "checks": [
+        {
+            "name": "ok",
+            "expectation_type": "expect_column_values_to_not_be_null",
+            "config": {"column": "id"},
+        },
+        {
+            "name": "inverted",
+            "expectation_type": "expect_table_row_count_to_be_between",
+            "config": {"min_value": 1},
+            "warn_threshold": 9,
+            "fail_threshold": 2,
+        },
+        {"name": "unknown type", "expectation_type": "expect_the_impossible", "config": {}},
+    ],
+}
+
+
+def test_validate_reports_every_problem_and_creates_nothing(
+    client: TestClient, db_session: Any
+) -> None:
+    target = _connection(db_session)
+    before = db_session.scalar(select(func.count()).select_from(Suite))
+
+    resp = client.post(
+        "/api/v1/suites/validate", json={"connection_id": str(target.id), "document": _VALIDATE_DOC}
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["valid"] is False
+    assert body["check_count"] == 3
+    # Both bad checks are reported — import would have stopped at the first.
+    assert [(p["location"], p["check_name"]) for p in body["problems"]] == [
+        ("checks[1]", "inverted"),
+        ("checks[2]", "unknown type"),
+    ]
+    assert db_session.scalar(select(func.count()).select_from(Suite)) == before
+    # And import refuses the same document.
+    refused = client.post(
+        "/api/v1/suites/import", json={"connection_id": str(target.id), "document": _VALIDATE_DOC}
+    )
+    assert refused.status_code == 422
+
+
+def test_validate_passes_a_document_import_then_accepts(
+    client: TestClient, db_session: Any
+) -> None:
+    target = _connection(db_session)
+    document = {**_VALIDATE_DOC, "checks": _VALIDATE_DOC["checks"][:1]}
+    before = db_session.scalar(select(func.count()).select_from(Suite))
+
+    resp = client.post(
+        "/api/v1/suites/validate", json={"connection_id": str(target.id), "document": document}
+    )
+
+    assert resp.json() == {"valid": True, "check_count": 1, "problems": []}
+    assert db_session.scalar(select(func.count()).select_from(Suite)) == before
+    created = client.post(
+        "/api/v1/suites/import", json={"connection_id": str(target.id), "document": document}
+    )
+    assert created.status_code == 201
+
+
+def test_validate_reports_a_wrong_shape_instead_of_refusing_the_request(
+    client: TestClient, db_session: Any
+) -> None:
+    target = _connection(db_session)
+    resp = client.post(
+        "/api/v1/suites/validate",
+        json={
+            "connection_id": str(target.id),
+            "document_yaml": "checks:\n  - name: no type\n    surprise: 1\n",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["valid"] is False
+    assert body["check_count"] == 1
+    assert {p["location"] for p in body["problems"]} == {
+        "name",
+        "checks[0].expectation_type",
+        "checks[0].surprise",
+    }
+    assert {p["code"] for p in body["problems"]} == {"document_shape_invalid"}
+
+
+def test_validate_reports_a_document_level_problem_once(
+    client: TestClient, db_session: Any
+) -> None:
+    resp = client.post(
+        "/api/v1/suites/validate",
+        json={"connection_id": str(uuid.uuid4()), "document": _VALIDATE_DOC},
+    )
+    assert resp.json()["problems"] == [
+        {
+            "location": "document",
+            "check_name": None,
+            "code": "suite_import_connection_invalid",
+            "message": "connection not found",
+        }
+    ]
+
+
+def test_validate_refuses_unreadable_yaml(client: TestClient, db_session: Any) -> None:
+    target = _connection(db_session)
+    resp = client.post(
+        "/api/v1/suites/validate",
+        json={"connection_id": str(target.id), "document_yaml": "name: [unclosed"},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "suite_document_yaml_invalid"
+
+
+def test_validate_is_closed_to_a_viewer(client: TestClient, db_session: Any) -> None:
+    target = _connection(db_session)
+    viewer = User(aad_object_id=uuid.uuid4().hex, email="viewer@ex.com", role="viewer")
+    db_session.add(viewer)
+    db_session.commit()
+    _as(viewer)
+    resp = client.post(
+        "/api/v1/suites/validate", json={"connection_id": str(target.id), "document": _VALIDATE_DOC}
+    )
+    assert resp.status_code == 403

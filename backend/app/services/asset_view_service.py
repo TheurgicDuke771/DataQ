@@ -39,6 +39,7 @@ from backend.app.services.rollup import (
     evaluated_total,
     health_score,
     latest_runs_per_suite_stmt,
+    score_as_of,
     status_histograms,
 )
 from backend.app.services.run_service import operational_result_flags, outcome_from_histogram
@@ -243,6 +244,12 @@ class AssetDetail:
     summary: AssetSummary
     suites: list[ComposingSuite]
     scorecard: Scorecard | None = None
+    #: `summary.health_score` as it stood `score_delta_days` ago (#1556): the same
+    #: latest-complete-run-per-suite score, over runs created by then. None = nothing had
+    #: evaluated by then, so there is no delta — not a delta of 0.
+    previous_health_score: float | None = None
+    health_score_delta: float | None = None
+    score_delta_days: int = 7
     restricted_suite_count: int = 0
     upstream: list[LineageNode] = field(default_factory=list)
     downstream: list[LineageNode] = field(default_factory=list)
@@ -563,7 +570,12 @@ def _inherited_classifications(
 
 
 def get_visible_asset(
-    session: Session, asset_id: uuid.UUID, *, user_id: uuid.UUID, include_all: bool = False
+    session: Session,
+    asset_id: uuid.UUID,
+    *,
+    user_id: uuid.UUID,
+    include_all: bool = False,
+    score_delta_days: int = 7,
 ) -> AssetDetail:
     """One asset's detail (workspace-true aggregation + the caller's per-suite
     breakdown + lineage). Opens for **every** member (ADR 0037) — only a truly
@@ -587,10 +599,18 @@ def get_visible_asset(
     outcome_by_suite = _latest_outcomes(session, all_suites)
     composing = _composing_suites(visible, levels, outcome_by_suite)
 
-    summary = _roll_up(
-        asset,
-        [outcome_by_suite[s.id] for s in all_suites],
-        scoring_settings_service.weights(session),
+    weights = scoring_settings_service.weights(session)
+    summary = _roll_up(asset, [outcome_by_suite[s.id] for s in all_suites], weights)
+    previous = score_as_of(
+        session,
+        [s.id for s in all_suites],
+        datetime.now(UTC) - timedelta(days=score_delta_days),
+        weights,
+    )
+    delta = (
+        round(summary.health_score - previous, 1)
+        if summary.health_score is not None and previous is not None
+        else None
     )
     # Workspace-true, like the summary: ALL composing suites, never `visible`.
     scorecard = _scorecard(
@@ -608,6 +628,9 @@ def get_visible_asset(
         summary=summary,
         suites=composing,
         scorecard=scorecard,
+        previous_health_score=previous,
+        health_score_delta=delta,
+        score_delta_days=score_delta_days,
         restricted_suite_count=len(all_suites) - len(composing),
         upstream=_lineage_nodes(graph.upstream, has_suite),
         downstream=_lineage_nodes(graph.downstream, has_suite),

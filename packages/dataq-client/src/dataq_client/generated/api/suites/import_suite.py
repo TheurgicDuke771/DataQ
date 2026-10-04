@@ -68,7 +68,8 @@ def sync_detailed(
     """Import a suite document onto a connection
 
     Args:
-        body (SuiteImportRequest):
+        body (SuiteImportRequest): The document as JSON (`document`) or as YAML text
+            (`document_yaml`) — exactly one.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -97,7 +98,8 @@ def sync(
     """Import a suite document onto a connection
 
     Args:
-        body (SuiteImportRequest):
+        body (SuiteImportRequest): The document as JSON (`document`) or as YAML text
+            (`document_yaml`) — exactly one.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -121,7 +123,8 @@ async def asyncio_detailed(
     """Import a suite document onto a connection
 
     Args:
-        body (SuiteImportRequest):
+        body (SuiteImportRequest): The document as JSON (`document`) or as YAML text
+            (`document_yaml`) — exactly one.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -148,7 +151,8 @@ async def asyncio(
     """Import a suite document onto a connection
 
     Args:
-        body (SuiteImportRequest):
+        body (SuiteImportRequest): The document as JSON (`document`) or as YAML text
+            (`document_yaml`) — exactly one.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.

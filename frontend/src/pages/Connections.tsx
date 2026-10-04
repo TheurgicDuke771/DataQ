@@ -352,7 +352,7 @@ function ConnectionCard({
             {/* What DataQ FOUND on this connection, beside whether it can reach it. Absent
                 when nothing evaluated — never a 0, which would read as "everything failed". */}
             {connection.health_score != null && (
-              <Tooltip title="Data-quality score across every suite on this connection, including suites you cannot open. From each suite's latest completed run.">
+              <Tooltip title="Data-quality score across every suite on this connection, including suites you cannot open. Each suite counts through its latest run, and only once that run has completed.">
                 <Tag style={{ marginInlineEnd: 0 }}>DQ score {connection.health_score}</Tag>
               </Tooltip>
             )}

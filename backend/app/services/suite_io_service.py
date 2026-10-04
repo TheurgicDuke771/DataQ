@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import select
@@ -110,17 +111,7 @@ def _resolve_source_connection(session: Session, check_doc: dict[str, Any]) -> u
     return source_id
 
 
-def import_suite(
-    session: Session,
-    *,
-    version: int,
-    name: str,
-    description: str | None,
-    checks: list[dict[str, Any]],
-    connection_id: uuid.UUID,
-    created_by: uuid.UUID,
-) -> Suite:
-    """Create a new suite + checks from a document, bound to `connection_id`."""
+def _load_target_connection(session: Session, version: int, connection_id: uuid.UUID) -> Connection:
     if version != EXPORT_VERSION:
         raise SuiteImportInvalidError(
             f"unsupported export version {version!r}; this server imports v{EXPORT_VERSION}",
@@ -139,79 +130,139 @@ def import_suite(
             "they trigger suites via trigger bindings",
             detail={"connection_id": str(connection_id), "type": connection.type},
         )
-    # Validate every check (kind + custom-SQL / monitor / comparison guardrails) up front so a bad
-    # document writes nothing. connection.type is known here.
-    source_ids: list[uuid.UUID | None] = []
-    for c in checks:
-        validate_kind(c["kind"])
-        # ADR 0036 §5: a document carrying a native-engine check imports only where the target
-        # connection offers that engine — the same save-time validation as CRUD.
-        validate_engine(c.get("engine", GX_ENGINE), connection_type=connection.type)
-        validate_engine_compatibility(
-            c.get("engine", GX_ENGINE),
-            kind=c["kind"],
+    return connection
+
+
+def _validate_check(
+    session: Session, connection: Connection, c: dict[str, Any]
+) -> uuid.UUID | None:
+    """One document check through the save-time gates check CRUD applies (kind +
+    custom-SQL / monitor / comparison guardrails). Returns a comparison check's
+    resolved source connection id.
+    """
+    validate_kind(c["kind"])
+    # ADR 0036 §5: a document carrying a native-engine check imports only where the target
+    # connection offers that engine — the same save-time validation as CRUD.
+    validate_engine(c.get("engine", GX_ENGINE), connection_type=connection.type)
+    validate_engine_compatibility(
+        c.get("engine", GX_ENGINE),
+        kind=c["kind"],
+        expectation_type=c["expectation_type"],
+        config=c["config"],
+        warn_threshold=c["warn_threshold"],
+        fail_threshold=c["fail_threshold"],
+        critical_threshold=c["critical_threshold"],
+    )
+    # Direct `Check(...)` construction below has no Pydantic layer of its own — today the REST
+    # import route's `CheckDocumentIn` model already enforces the same 256/128 bounds.
+    validate_lengths(name=c["name"], expectation_type=c["expectation_type"])
+    # #568: an imported document must not smuggle in what a direct POST
+    # would 422 — same shared validator create_check/update_check use.
+    validate_threshold_ordering(
+        warn_threshold=c["warn_threshold"],
+        fail_threshold=c["fail_threshold"],
+        critical_threshold=c["critical_threshold"],
+    )
+    source_id = _resolve_source_connection(session, c) if c["kind"] == COMPARISON_KIND else None
+    if c["kind"] in MONITOR_KINDS:
+        validate_monitor_check(
+            c["kind"],
+            c["config"],
+            expectation_type=c["expectation_type"],
+            connection_type=connection.type,
+            warn_threshold=c["warn_threshold"],
+            fail_threshold=c["fail_threshold"],
+            critical_threshold=c["critical_threshold"],
+        )
+    elif c["kind"] == COMPARISON_KIND:
+        validate_comparison_check(
+            session,
+            config=c["config"],
+            expectation_type=c["expectation_type"],
+            source_connection_id=source_id,
+            suite_connection_type=connection.type,
+        )
+    elif is_custom_sql(c["expectation_type"]):
+        validate_custom_sql_check(
             expectation_type=c["expectation_type"],
             config=c["config"],
-            warn_threshold=c["warn_threshold"],
-            fail_threshold=c["fail_threshold"],
-            critical_threshold=c["critical_threshold"],
+            connection_type=connection.type,
         )
-        # Direct `Check(...)` construction below has no Pydantic layer of its own — today the REST
-        # import route's `CheckDocumentIn` model already enforces the same 256/128 bounds.
-        validate_lengths(name=c["name"], expectation_type=c["expectation_type"])
-        # #568: an imported document must not smuggle in what a direct POST
-        # would 422 — same shared validator create_check/update_check use.
-        validate_threshold_ordering(
-            warn_threshold=c["warn_threshold"],
-            fail_threshold=c["fail_threshold"],
-            critical_threshold=c["critical_threshold"],
-        )
-        source_ids.append(
-            _resolve_source_connection(session, c) if c["kind"] == COMPARISON_KIND else None
-        )
-        if c["kind"] in MONITOR_KINDS:
-            validate_monitor_check(
-                c["kind"],
-                c["config"],
-                expectation_type=c["expectation_type"],
-                connection_type=connection.type,
-                warn_threshold=c["warn_threshold"],
-                fail_threshold=c["fail_threshold"],
-                critical_threshold=c["critical_threshold"],
-            )
-        elif c["kind"] == COMPARISON_KIND:
-            validate_comparison_check(
-                session,
-                config=c["config"],
-                expectation_type=c["expectation_type"],
-                source_connection_id=source_ids[-1],
-                suite_connection_type=connection.type,
-            )
-        elif is_custom_sql(c["expectation_type"]):
-            validate_custom_sql_check(
-                expectation_type=c["expectation_type"],
-                config=c["config"],
-                connection_type=connection.type,
-            )
-        elif c.get("engine", GX_ENGINE) in (DMF_ENGINE, DQX_ENGINE):
-            # A dmf:* / dqx:* check — fully validated by validate_engine_compatibility above;
-            # not a GX expectation.
-            pass
-        else:
-            # Same author-time GX validation as check CRUD (#651) — an imported
-            # document must not smuggle in checks a direct POST would 422.
-            validate_expectation_check(c["expectation_type"], c["config"])
-            reject_dataframe_only_expectation(
-                c["expectation_type"],
-                connection_type=connection.type,
-                connection_config=dict(connection.config or {}),
-            )
-        reject_thresholds_on_unbanded(
+    elif c.get("engine", GX_ENGINE) in (DMF_ENGINE, DQX_ENGINE):
+        # A dmf:* / dqx:* check — fully validated by validate_engine_compatibility above;
+        # not a GX expectation.
+        pass
+    else:
+        # Same author-time GX validation as check CRUD (#651) — an imported
+        # document must not smuggle in checks a direct POST would 422.
+        validate_expectation_check(c["expectation_type"], c["config"])
+        reject_dataframe_only_expectation(
             c["expectation_type"],
-            warn_threshold=c["warn_threshold"],
-            fail_threshold=c["fail_threshold"],
-            critical_threshold=c["critical_threshold"],
+            connection_type=connection.type,
+            connection_config=dict(connection.config or {}),
         )
+    reject_thresholds_on_unbanded(
+        c["expectation_type"],
+        warn_threshold=c["warn_threshold"],
+        fail_threshold=c["fail_threshold"],
+        critical_threshold=c["critical_threshold"],
+    )
+    if "dimension" in c:
+        validate_dimension(c["dimension"])
+    return source_id
+
+
+@dataclass(frozen=True)
+class DocumentProblem:
+    """One reason a document would be refused. `check_index` is None for a problem with
+    the document as a whole (its version, its target connection).
+    """
+
+    code: str
+    message: str
+    check_index: int | None = None
+    check_name: str | None = None
+
+
+def validate_document(
+    session: Session, *, version: int, checks: list[dict[str, Any]], connection_id: uuid.UUID
+) -> list[DocumentProblem]:
+    """Everything `import_suite` would refuse this document for, without stopping at the
+    first and without writing anything (#1688). Empty means the import would be accepted.
+    """
+    try:
+        connection = _load_target_connection(session, version, connection_id)
+    except DataQError as exc:
+        # Every per-check gate depends on the connection's type, so there is nothing
+        # further to say until this is fixed.
+        return [DocumentProblem(code=exc.code, message=exc.message)]
+    problems = []
+    for index, c in enumerate(checks):
+        try:
+            _validate_check(session, connection, c)
+        except DataQError as exc:
+            problems.append(
+                DocumentProblem(
+                    code=exc.code, message=exc.message, check_index=index, check_name=c["name"]
+                )
+            )
+    return problems
+
+
+def import_suite(
+    session: Session,
+    *,
+    version: int,
+    name: str,
+    description: str | None,
+    checks: list[dict[str, Any]],
+    connection_id: uuid.UUID,
+    created_by: uuid.UUID,
+) -> Suite:
+    """Create a new suite + checks from a document, bound to `connection_id`."""
+    connection = _load_target_connection(session, version, connection_id)
+    # Validate every check up front so a bad document writes nothing.
+    source_ids = [_validate_check(session, connection, c) for c in checks]
 
     suite = Suite(
         name=name,

@@ -77,6 +77,7 @@ pyOpenSSL==26.4.0                 # python-tds's TLS; was a snowflake-connector 
 certifi==2026.7.22                # the CA bundle python-tds verifies against (TLS is only ON when a cafile is passed). MPL-2.0 (weak copyleft, unmodified — OK under rule 40)
 
 # ── Lineage (OpenLineage emission — ADR 0034 / #758) ──
+PyYAML==6.0.3                     # MIT; parses YAML suite documents (SafeLoader subclass only). Was transitive via openlineage-python — pinned from our side once imported directly
 jsonschema==4.26.0                # MIT; validates LLM structured output against caller schemas (ADR 0042). Was transitive via GX — pinned from our side once imported directly
 openlineage-python==1.52.0        # Apache-2.0 (rule 40); emits DQ RunEvents, dark by default. Core deps only (attrs/requests/httpx/pyyaml/python-dateutil/packaging) — no kafka/gcp extras
 

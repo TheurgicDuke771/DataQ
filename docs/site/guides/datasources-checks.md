@@ -142,7 +142,7 @@ derived from work DataQ already does rather than from a periodic probe, so it co
 warehouse credits and cannot report on a connection nobody has exercised.
 
 The card also shows a **DQ score** when the connection has one: 0–100 over every check
-that evaluated in the latest completed run of each suite on that connection, counting
+that evaluated in the latest run of each suite on that connection, if that run completed, counting
 suites you cannot open. It says what DataQ found in the data, where the health badges say
 whether DataQ could reach it. A connection where nothing has evaluated shows no score.
 
@@ -608,6 +608,10 @@ workspace's severity weights. Unlike the rows below it, it includes checks with 
 dimension, so a failing custom SQL check lowers it. An asset where nothing evaluated shows
 **No signal**, not 0. It is not the Dashboard's Data Integrity Score, which covers every
 run in a time window across all your suites.
+
+Beside it, the change **vs 7 days ago** compares the score with what the same calculation
+gave a week earlier: each suite's latest completed run as of then. Nothing is shown when
+there is no earlier score to compare with, which is different from "no change".
 
 On **Assets → All assets**, the **Score** column shows the same number, and **Sort by →
 Health score, lowest first** orders every asset in the workspace by it, with unscored

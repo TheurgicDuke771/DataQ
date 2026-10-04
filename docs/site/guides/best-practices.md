@@ -34,7 +34,8 @@ Two things the scorecard deliberately will not do, and you should read them the 
 - **One suite = one target** (a table or a file batch) on **one connection/env**. A
   suite named `orders — snowflake prod` beats a grab-bag `all my checks`.
 - Use suite **export / import** to promote a suite between environments (author on DEV,
-  import against the UAT/PROD connection) instead of re-clicking checks.
+  import against the UAT/PROD connection) instead of re-clicking checks. The file can be
+  YAML kept in a repository; see [Suite document](../reference/suite-document.md).
 - Share suites with **view** by default; reserve **edit** for the owning team
   (suite-level sharing is the access model **for suites**; connection management is gated separately by workspace role — Admin-only, ADR 0033. There are no folder scopes).
 
