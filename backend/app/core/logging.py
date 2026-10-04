@@ -160,11 +160,18 @@ def _downgrade_already_logged_exceptions(
     """Downgrade a record whose exception was already reported with a full traceback
     elsewhere (#1226/#1260/#1261) — in the processor chain, not per caller, same
     shape as PII redaction: a caller that forgets must not reintroduce the bug.
+
+    The level filter ran before this processor, against the `.exception()` the caller
+    used, so a line downgraded to warning would still be emitted under `LOG_LEVEL=ERROR`
+    (#1314). It is dropped here instead. A stdlib record bridged through
+    `foreign_pre_chain` arrives with no logger and cannot be dropped at this point.
     """
     exc = _already_logged_exception(event_dict.get("exc_info"))
     if exc is None:
         return event_dict
 
+    if isinstance(_logger, logging.Logger) and not _logger.isEnabledFor(logging.WARNING):
+        raise structlog.DropEvent
     event_dict["level"] = "warning"
     event_dict.setdefault("error_type", type(exc).__name__)
     event_dict.pop("exc_info", None)
