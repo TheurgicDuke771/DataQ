@@ -22,6 +22,8 @@ export interface Incident {
   last_seen_at: string;
   acknowledged_at: string | null;
   resolved_at: string | null;
+  /** What the resolver said it was. Null when unresolved, auto-resolved, or not stated. */
+  resolution?: IncidentResolution | null;
   /** Lifted from the snapshotted evidence card (may be null on legacy rows). */
   check_name: string | null;
   asset_namespace: string | null;
@@ -171,10 +173,25 @@ export async function acknowledgeIncident(
   return data;
 }
 
-/** Resolve an incident (→ resolved, resolved_by=user). Needs edit on its suite. */
-export async function resolveIncident(incidentId: string, note?: string): Promise<IncidentDetail> {
+/** What a resolved incident turned out to be. `false_positive` feeds the false-positive rate. */
+export type IncidentResolution = 'fixed' | 'expected_change' | 'false_positive';
+
+export const INCIDENT_RESOLUTION_LABELS: Record<IncidentResolution, string> = {
+  fixed: 'Fixed — a real problem, now corrected',
+  expected_change: 'Expected change — the data changed on purpose',
+  false_positive: 'False positive — nothing was wrong',
+};
+
+/** Resolve an incident (→ resolved, resolved_by=user). Needs edit on its suite. `resolution`
+ *  is optional: left out, the incident is recorded with no stated resolution. */
+export async function resolveIncident(
+  incidentId: string,
+  note?: string,
+  resolution?: IncidentResolution | null,
+): Promise<IncidentDetail> {
   const { data } = await api.post<IncidentDetail>(`/incidents/${incidentId}/resolve`, {
     note: note ?? null,
+    resolution: resolution ?? null,
   });
   return data;
 }

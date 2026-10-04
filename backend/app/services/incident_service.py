@@ -15,6 +15,7 @@ from backend.app.core.logging import get_logger
 from backend.app.db.models import (
     FAILING_TIERS,
     INCIDENT_ACTIVE_STATUSES,
+    INCIDENT_RESOLUTIONS,
     Asset,
     Check,
     Incident,
@@ -76,6 +77,11 @@ class IncidentNotActiveError(DataQError):
 
     status_code = 409
     code = "incident_not_active"
+
+
+class IncidentResolutionInvalidError(DataQError):
+    status_code = 422
+    code = "incident_resolution_invalid"
 
 
 # ── the fail-soft run hook ────────────────────────────────────────────────────
@@ -353,11 +359,25 @@ def acknowledge_incident(
 
 
 def resolve_incident(
-    session: Session, incident: Incident, *, user_id: uuid.UUID, note: str | None = None
+    session: Session,
+    incident: Incident,
+    *,
+    user_id: uuid.UUID,
+    note: str | None = None,
+    resolution: str | None = None,
 ) -> Incident:
     """Manually resolve an incident (``open|acknowledged → resolved``, ``resolved_by
     ='user'``). Manual wins over auto. A double-resolve is a 409.
+
+    ``resolution`` says what the incident turned out to be (ADR 0047 §8): ``fixed``,
+    ``expected_change`` or ``false_positive``. Optional — an unstated resolution stays
+    NULL and is counted as unstated, never as "not a false positive".
     """
+    if resolution is not None and resolution not in INCIDENT_RESOLUTIONS:
+        raise IncidentResolutionInvalidError(
+            f"resolution must be one of {', '.join(INCIDENT_RESOLUTIONS)}",
+            detail={"resolution": resolution[:64]},
+        )
     session.refresh(incident, with_for_update=True)
     if incident.status == "resolved":
         session.rollback()  # release the lock; nothing to write
@@ -371,6 +391,7 @@ def resolve_incident(
     incident.resolved_at = _now()
     if note is not None:
         incident.resolution_note = note
+    incident.resolution = resolution
     # Only the MANUAL resolve is audited.
     audit_service.record_entity_change(
         session,

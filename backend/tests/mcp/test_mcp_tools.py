@@ -4345,6 +4345,30 @@ def test_ack_incident_records_the_actor_and_leaves_it_unresolved(
     assert out["resolved_at"] is None
 
 
+def test_resolve_incident_records_a_stated_resolution_and_null_when_unstated(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    owner = _user(db_session)
+    asset = _asset(db_session)
+    suite = _suite(db_session, owner)
+    checks = []
+    for name in ("a", "b"):
+        check = Check(suite_id=suite.id, name=name, expectation_type="expect_x", config={})
+        db_session.add(check)
+        checks.append(check)
+    db_session.commit()
+    stated = _incident(db_session, asset=asset, check=checks[0], suite=suite)
+    unstated = _incident(db_session, asset=asset, check=checks[1], suite=suite)
+    _as(monkeypatch, db_session, owner)
+
+    first = server.resolve_incident(str(stated.id), resolution="false_positive")
+    second = server.resolve_incident(str(unstated.id))
+
+    assert first["resolution"] == "false_positive"
+    # Not stated is null — never defaulted to "fixed".
+    assert second["resolution"] is None
+
+
 def test_resolve_incident_refuses_a_second_resolve(db_session: Any, monkeypatch: Any) -> None:
     """A resolved incident is closed for good — the next breach opens a NEW one.
     A silent second resolve would let an assistant report a fresh action that
