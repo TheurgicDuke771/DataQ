@@ -351,10 +351,16 @@ def _latest_outcomes(session: Session, suites: list[Suite]) -> dict[uuid.UUID, R
 
 
 def _scorecard(
-    session: Session, suite_scope: Select[tuple[uuid.UUID]] | Sequence[uuid.UUID]
+    session: Session,
+    suite_scope: Select[tuple[uuid.UUID]] | Sequence[uuid.UUID],
+    run_ids: Sequence[uuid.UUID] | None = None,
 ) -> Scorecard:
     """Per-dimension coverage + score over ``suite_scope`` (#889) — one asset's suites,
     or every suite in the workspace (#1558).
+
+    ``run_ids`` pins the runs that are scored. The asset page passes the latest runs it
+    already resolved for the health score, so the two cannot disagree about a run that
+    lands between queries (#924). Without it, each suite's latest run is resolved here.
     """
     weights = scoring_settings_service.weights(session)
     # ── what exists (coverage) ──
@@ -370,14 +376,18 @@ def _scorecard(
     # `histograms[dim]` below would CREATE the key, silently mutating the mapping while iterating
     # over coverage.
     histograms: dict[str, dict[str, int]] = {}
-    latest = latest_runs_per_suite_stmt(suite_scope).subquery()
+    runs = (
+        latest_runs_per_suite_stmt(suite_scope).subquery()
+        if run_ids is None
+        else select(Run).where(Run.id.in_(run_ids)).subquery()
+    )
     result_rows = session.execute(
         select(Check.dimension, Result.status, func.count())
         .select_from(Result)
         .join(Check, Check.id == Result.check_id)
-        .join(latest, latest.c.id == Result.run_id)
+        .join(runs, runs.c.id == Result.run_id)
         # Only runs whose result set is complete may be scored (#318).
-        .where(latest.c.status.in_(AGGREGATABLE_RUN_STATUSES))
+        .where(runs.c.status.in_(AGGREGATABLE_RUN_STATUSES))
         .group_by(Check.dimension, Result.status)
     ).all()
     for dimension, status, count in result_rows:
@@ -617,7 +627,11 @@ def get_visible_asset(
         else None
     )
     # Workspace-true, like the summary: ALL composing suites, never `visible`.
-    scorecard = _scorecard(session, [s.id for s in all_suites])
+    scorecard = _scorecard(
+        session,
+        [s.id for s in all_suites],
+        [o.run_id for o in outcome_by_suite.values() if o.run_id],
+    )
     graph = lineage_neighbourhood(session, asset_id)
     neighbour_ids = [a.id for a, _ in graph.upstream] + [a.id for a, _ in graph.downstream]
     # One grouped lookup of "which of these assets has any suite" — the structural

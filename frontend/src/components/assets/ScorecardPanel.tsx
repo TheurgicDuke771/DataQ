@@ -76,8 +76,8 @@ export function ScorecardPanel({
             />
           )}
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            Every check that evaluated in each suite&apos;s latest completed run, including checks
-            with no dimension.
+            Every check that evaluated in each suite&apos;s latest run, if it completed, including
+            checks with no dimension.
           </Typography.Text>
         </Flex>
       )}

@@ -11992,7 +11992,7 @@
     },
     "/api/v1/dashboard/dimensions": {
       "get": {
-        "description": "One row per DQ dimension that has checks anywhere, scored from each suite's\nlatest completed run; `uncovered` lists the dimensions no suite has a check for.\n\n**Workspace-wide, unlike `/dashboard/summary`**: it covers every suite, including\nones the caller cannot open, and is identical for every member. Checks with no\ndimension are counted in `unclassified_checks` and are in no row.",
+        "description": "One row per DQ dimension that has checks anywhere; `uncovered` lists the\ndimensions no suite has a check for. Each suite is scored from its latest run, and\nonly if that run completed: a suite that is mid-run, failed or was cancelled keeps\nits checks in `checks_total` but adds nothing to the score until its next completed\nrun. An earlier completed run is not used in its place.\n\n**Workspace-wide, unlike `/dashboard/summary`**: it covers every suite, including\nones the caller cannot open, and is identical for every member. Checks with no\ndimension are counted in `unclassified_checks` and are in no row.",
         "operationId": "get_workspace_dimensions",
         "responses": {
           "200": {

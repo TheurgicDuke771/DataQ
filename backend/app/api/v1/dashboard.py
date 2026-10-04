@@ -106,8 +106,11 @@ def get_workspace_dimensions(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> asset_view_service.Scorecard:
-    """One row per DQ dimension that has checks anywhere, scored from each suite's
-    latest completed run; `uncovered` lists the dimensions no suite has a check for.
+    """One row per DQ dimension that has checks anywhere; `uncovered` lists the
+    dimensions no suite has a check for. Each suite is scored from its latest run, and
+    only if that run completed: a suite that is mid-run, failed or was cancelled keeps
+    its checks in `checks_total` but adds nothing to the score until its next completed
+    run. An earlier completed run is not used in its place.
 
     **Workspace-wide, unlike `/dashboard/summary`**: it covers every suite, including
     ones the caller cannot open, and is identical for every member. Checks with no

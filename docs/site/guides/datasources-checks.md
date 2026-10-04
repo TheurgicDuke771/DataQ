@@ -598,14 +598,16 @@ that exist, so the gap includes failing, skipped, errored **and** never-run chec
 hover it to see how many were excluded from the score.
 
 Above the dimension rows, the **asset health score** is one number for the whole asset:
-0–100 over every check that evaluated in each suite's latest completed run, with the
-workspace's severity weights. Unlike the rows below it, it includes checks with no
+0–100 over every check that evaluated in each suite's latest run, if it completed, with the
+workspace's severity weights. A suite whose latest run is still going, failed or was
+cancelled adds nothing until its next completed run; an older run is not used instead.
+Unlike the rows below it, it includes checks with no
 dimension, so a failing custom SQL check lowers it. An asset where nothing evaluated shows
 **No signal**, not 0. It is not the Dashboard's Data Integrity Score, which covers every
 run in a time window across all your suites.
 
 Beside it, the change **vs 7 days ago** compares the score with what the same calculation
-gave a week earlier: each suite's latest completed run as of then. Nothing is shown when
+gave a week earlier: each suite's latest run as of then, if it had completed. Nothing is shown when
 there is no earlier score to compare with, which is different from "no change".
 
 The **Dashboard** has the other cut: *Data quality by dimension, across the workspace*

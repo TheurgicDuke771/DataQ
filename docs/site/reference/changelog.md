@@ -67,7 +67,7 @@ the per-PR history lives in the repo's commit log and pull requests.
 - **An asset health score.** The asset page's scorecard now leads with one 0–100 number
   for the whole asset, and **Assets → All assets** shows it in a **Score** column and can
   sort the whole workspace by it, lowest first. It counts every check that evaluated in
-  each suite's latest completed run, including checks with no dimension. Beside it, the
+  each suite's latest run, if it completed, including checks with no dimension. Beside it, the
   asset page shows the change against the same score 7 days ago. In the API, assets gain
   `health_score`, `GET /assets` gains `sort=health_score`, and `GET /assets/{id}` gains
   `previous_health_score`, `health_score_delta` and `score_delta_days`. See

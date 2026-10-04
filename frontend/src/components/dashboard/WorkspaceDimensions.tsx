@@ -24,7 +24,7 @@ export function WorkspaceDimensions() {
       scorecard={state.data}
       title="Data quality by dimension, across the workspace"
       subject="the workspace"
-      note="Every suite in the workspace, including ones you cannot open. Each suite's latest completed run."
+      note="Every suite in the workspace, including ones you cannot open. Each suite counts through its latest run, and only once that run has completed."
     />
   );
 }
