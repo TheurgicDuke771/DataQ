@@ -72,14 +72,18 @@ def sync_detailed(
     would before it is ever stored — one that fails is dropped, not surfaced;
     see the invocation's `rejected` field for what didn't make it and why.
 
+    Only the first 100 columns of the table are profiled. `column_coverage` is
+    `{profiled, total}`; when `profiled < total` the remaining columns were not
+    looked at, so no suggestion for one of them says nothing about it.
+
     If EVERY suggestion is rejected, the invocation fails instead — there is no
     empty-but-successful outcome for "nothing runnable came back" — and the
     top-level `rejected` shape above never gets written. The reasons are still
     readable, in two forms: folded into `error` as one summary sentence, and
     as a structured `{rejected, rejected_count, truncated}` object under
     `response` (unlike a successful run, where `response` is `{suggestions,
-    rejected, coverage_warnings}`) — a failed invocation's `response` field
-    carries only that narrower rejection detail, not the full success shape.
+    rejected, coverage_warnings, column_coverage}`) — a failed invocation's `response`
+    field carries only that narrower rejection detail, not the full success shape.
     `rejected` itself may be shorter than `rejected_count`; `truncated` is
     `true` when it is, so a caller reading only `response` (not `error`'s own
     "(+N more)" text) still has a signal the list isn't exhaustive.
@@ -118,14 +122,18 @@ def sync(
     would before it is ever stored — one that fails is dropped, not surfaced;
     see the invocation's `rejected` field for what didn't make it and why.
 
+    Only the first 100 columns of the table are profiled. `column_coverage` is
+    `{profiled, total}`; when `profiled < total` the remaining columns were not
+    looked at, so no suggestion for one of them says nothing about it.
+
     If EVERY suggestion is rejected, the invocation fails instead — there is no
     empty-but-successful outcome for "nothing runnable came back" — and the
     top-level `rejected` shape above never gets written. The reasons are still
     readable, in two forms: folded into `error` as one summary sentence, and
     as a structured `{rejected, rejected_count, truncated}` object under
     `response` (unlike a successful run, where `response` is `{suggestions,
-    rejected, coverage_warnings}`) — a failed invocation's `response` field
-    carries only that narrower rejection detail, not the full success shape.
+    rejected, coverage_warnings, column_coverage}`) — a failed invocation's `response`
+    field carries only that narrower rejection detail, not the full success shape.
     `rejected` itself may be shorter than `rejected_count`; `truncated` is
     `true` when it is, so a caller reading only `response` (not `error`'s own
     "(+N more)" text) still has a signal the list isn't exhaustive.
@@ -159,14 +167,18 @@ async def asyncio_detailed(
     would before it is ever stored — one that fails is dropped, not surfaced;
     see the invocation's `rejected` field for what didn't make it and why.
 
+    Only the first 100 columns of the table are profiled. `column_coverage` is
+    `{profiled, total}`; when `profiled < total` the remaining columns were not
+    looked at, so no suggestion for one of them says nothing about it.
+
     If EVERY suggestion is rejected, the invocation fails instead — there is no
     empty-but-successful outcome for "nothing runnable came back" — and the
     top-level `rejected` shape above never gets written. The reasons are still
     readable, in two forms: folded into `error` as one summary sentence, and
     as a structured `{rejected, rejected_count, truncated}` object under
     `response` (unlike a successful run, where `response` is `{suggestions,
-    rejected, coverage_warnings}`) — a failed invocation's `response` field
-    carries only that narrower rejection detail, not the full success shape.
+    rejected, coverage_warnings, column_coverage}`) — a failed invocation's `response`
+    field carries only that narrower rejection detail, not the full success shape.
     `rejected` itself may be shorter than `rejected_count`; `truncated` is
     `true` when it is, so a caller reading only `response` (not `error`'s own
     "(+N more)" text) still has a signal the list isn't exhaustive.
@@ -203,14 +215,18 @@ async def asyncio(
     would before it is ever stored — one that fails is dropped, not surfaced;
     see the invocation's `rejected` field for what didn't make it and why.
 
+    Only the first 100 columns of the table are profiled. `column_coverage` is
+    `{profiled, total}`; when `profiled < total` the remaining columns were not
+    looked at, so no suggestion for one of them says nothing about it.
+
     If EVERY suggestion is rejected, the invocation fails instead — there is no
     empty-but-successful outcome for "nothing runnable came back" — and the
     top-level `rejected` shape above never gets written. The reasons are still
     readable, in two forms: folded into `error` as one summary sentence, and
     as a structured `{rejected, rejected_count, truncated}` object under
     `response` (unlike a successful run, where `response` is `{suggestions,
-    rejected, coverage_warnings}`) — a failed invocation's `response` field
-    carries only that narrower rejection detail, not the full success shape.
+    rejected, coverage_warnings, column_coverage}`) — a failed invocation's `response`
+    field carries only that narrower rejection detail, not the full success shape.
     `rejected` itself may be shorter than `rejected_count`; `truncated` is
     `true` when it is, so a caller reading only `response` (not `error`'s own
     "(+N more)" text) still has a signal the list isn't exhaustive.

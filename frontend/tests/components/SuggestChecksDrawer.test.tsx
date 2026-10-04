@@ -95,6 +95,27 @@ describe('SuggestChecksDrawer', () => {
     ).toBeInTheDocument();
   });
 
+  it('says so when only part of a wide table was profiled', async () => {
+    mockRun.mockResolvedValue(
+      row({ response: { ...RESULT, column_coverage: { profiled: 100, total: 340 } } }),
+    );
+    renderDrawer();
+    await screen.findByText('order_id not null');
+    expect(
+      screen.getByText('Only the first 100 of 340 columns were looked at'),
+    ).toBeInTheDocument();
+  });
+
+  it.each([{ profiled: 12, total: 12 }, undefined])(
+    'shows no column notice when every column was profiled (%o)',
+    async (column_coverage) => {
+      mockRun.mockResolvedValue(row({ response: { ...RESULT, column_coverage } }));
+      renderDrawer();
+      await screen.findByText('order_id not null');
+      expect(screen.queryByText(/columns were looked at/)).not.toBeInTheDocument();
+    },
+  );
+
   it('adds one suggestion through createCheck with the editor payload and refetches', async () => {
     mockRun.mockResolvedValue(row({ response: RESULT }));
     mockCreate.mockResolvedValue({} as never);
