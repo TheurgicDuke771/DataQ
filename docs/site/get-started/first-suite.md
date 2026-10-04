@@ -13,7 +13,11 @@ Open the app URL and sign in — the local/eval stack defaults to an **email one
 (check the bundled Mailpit inbox at `http://localhost:8025`); a production deployment
 typically uses your **identity provider (SSO)**. See
 [Getting started](install.md#choosing-an-auth-mode) for the three sign-in modes. You land on
-the **Dashboard** — empty for now. Once suites have run it looks like this:
+the **Dashboard** — empty for now, with a **Get started** panel listing the four steps this
+tutorial walks through (connect a data source, create a suite, add a check, run it). The
+panel offers the next step you are allowed to take, is the same for everyone in the
+workspace, and goes away once all four are done. Once suites have run the dashboard looks
+like this:
 
 ![The monitoring dashboard: asset health, integrity score, pass rate and per-suite performance](../assets/screenshots/dashboard.png){ .screenshot }
 

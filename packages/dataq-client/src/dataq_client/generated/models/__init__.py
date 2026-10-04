@@ -176,6 +176,7 @@ from .offboard_preview_read_membership_state import OffboardPreviewReadMembershi
 from .offboard_receipt_read import OffboardReceiptRead
 from .offboard_receipt_read_skipped_item import OffboardReceiptReadSkippedItem
 from .offboard_request import OffboardRequest
+from .onboarding_status_read import OnboardingStatusRead
 from .otp_request import OtpRequest
 from .otp_request_ack import OtpRequestAck
 from .otp_verify import OtpVerify
@@ -446,6 +447,7 @@ __all__ = (
     "OffboardReceiptRead",
     "OffboardReceiptReadSkippedItem",
     "OffboardRequest",
+    "OnboardingStatusRead",
     "OtpRequest",
     "OtpRequestAck",
     "OtpVerify",

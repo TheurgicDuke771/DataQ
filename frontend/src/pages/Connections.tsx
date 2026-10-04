@@ -6,7 +6,6 @@ import {
   Card,
   Divider,
   Dropdown,
-  Empty,
   Flex,
   Spin,
   Tag,
@@ -29,6 +28,7 @@ import {
   testConnection,
 } from '../api/connections';
 import { useCanAuthor, useCanMutateConnections, useWorkspaceRole } from '../auth/useMe';
+import { EmptyState } from '../components/shared/EmptyState';
 import { ConnectionTypeAvatar } from '../components/connections/connectionVisuals';
 import { activeAuthOption } from '../components/connections/connectionFormSpec';
 import { formatTimestamp } from '../components/results/resultsFormat';
@@ -53,6 +53,8 @@ interface ConnectionActions {
   onClearHealth: (id: string) => void;
   /** Admin: may create/edit/delete/re-auth a connection (ADR 0033). */
   canMutate: boolean;
+  /** False until `/me` resolves — "cannot" copy must wait for it. */
+  roleKnown: boolean;
   /** Member+: may test a connection. */
   canAuthor: boolean;
 }
@@ -113,6 +115,7 @@ export function Connections() {
     // 403.
     canMutate,
     canAuthor,
+    roleKnown: role !== null,
   };
 
   return (
@@ -183,7 +186,20 @@ function ConnectionsBody({
   }
   const connections = state.data;
   if (connections.length === 0) {
-    return <Empty description="No connections configured yet" />;
+    return (
+      <EmptyState
+        title="No connections yet"
+        description="A connection is a data source to check, or an orchestrator whose pipelines trigger suites."
+        action={
+          actions.canMutate ? { label: 'Add a connection', to: '/connections/new' } : undefined
+        }
+        note={
+          actions.roleKnown && !actions.canMutate
+            ? 'A workspace admin adds connections.'
+            : undefined
+        }
+      />
+    );
   }
   // Two top-level sections (Data sources / Orchestration) — the load-bearing distinction in DataQ
   // (CLAUDE.md §4).

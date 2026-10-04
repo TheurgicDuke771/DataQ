@@ -32,3 +32,34 @@ test.describe('Dashboard', () => {
     await expect(page.getByText('Orders quality').first()).toBeVisible();
   });
 });
+
+// First-run path (#1668). The seeded workspace has done every step, so the status is answered by
+// `page.route`: what is under test is the panel rendering in a real layout and its action
+// navigating, not the status query.
+test.describe('Dashboard — get started', () => {
+  test('is absent on a workspace that has done every step', async ({ page }) => {
+    await page.goto('/dashboard');
+    await expect(page.getByText('Data Integrity Score', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('get-started-panel')).toHaveCount(0);
+  });
+
+  test('offers the first step on a new workspace and goes there', async ({ page }) => {
+    await page.route('**/api/v1/dashboard/onboarding', (route) =>
+      route.fulfill({
+        json: {
+          has_datasource: false,
+          has_suite: false,
+          has_check: false,
+          has_run: false,
+          complete: false,
+        },
+      }),
+    );
+    await page.goto('/dashboard');
+
+    const panel = page.getByTestId('get-started-panel');
+    await expect(panel.getByText('Get started — 0 of 4 done')).toBeVisible();
+    await panel.getByRole('button', { name: 'Add a connection' }).click();
+    await expect(page).toHaveURL(/\/connections\/new$/);
+  });
+});

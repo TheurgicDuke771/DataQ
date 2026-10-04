@@ -6701,6 +6701,40 @@
         "title": "OffboardRequest",
         "type": "object"
       },
+      "OnboardingStatusRead": {
+        "description": "Which first-run steps the workspace has done.\n\nWorkspace-wide: true if ANY connection, suite, check or run exists, including ones the\ncaller cannot open, so every member sees the same answer. Booleans only. An\norchestration connection (ADF, Airflow, dbt) does not count as a data source, and\nsuites, checks and runs that automatic coverage made do not count: the steps are about\na person authoring them.",
+        "properties": {
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "has_check": {
+            "title": "Has Check",
+            "type": "boolean"
+          },
+          "has_datasource": {
+            "title": "Has Datasource",
+            "type": "boolean"
+          },
+          "has_run": {
+            "title": "Has Run",
+            "type": "boolean"
+          },
+          "has_suite": {
+            "title": "Has Suite",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "has_datasource",
+          "has_suite",
+          "has_check",
+          "has_run",
+          "complete"
+        ],
+        "title": "OnboardingStatusRead",
+        "type": "object"
+      },
       "OtpRequest": {
         "additionalProperties": false,
         "properties": {
@@ -12455,6 +12489,27 @@
           }
         },
         "summary": "Each DQ dimension across every suite in the workspace",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/api/v1/dashboard/onboarding": {
+      "get": {
+        "operationId": "get_onboarding_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingStatusRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Which first-run steps the workspace has done",
         "tags": [
           "dashboard"
         ]
