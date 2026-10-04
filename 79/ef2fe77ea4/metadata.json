@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "79ef2fe77ea4",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1314-downgraded-line-log-level",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/core/test_logging.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/79/ef2fe77ea4/0/metadata.json",
+      "transcript": "/79/ef2fe77ea4/0/full.jsonl",
+      "compact_transcript": "/79/ef2fe77ea4/0/transcript.jsonl",
+      "content_hash": "/79/ef2fe77ea4/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2,
+    "cache_creation_tokens": 2280,
+    "cache_read_tokens": 238847,
+    "output_tokens": 1378,
+    "api_call_count": 1
+  }
+}
