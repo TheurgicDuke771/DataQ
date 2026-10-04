@@ -46,5 +46,5 @@ A suite can hold several schedules (e.g. hourly on weekdays + a daily deep pass)
 ## Where results land
 
 Scheduled runs appear on **Results** and the **Dashboard** like any other run, with
-`triggered_by` marking the schedule. Alerting applies per the suite's
+**Schedule** in the **Triggered by** column. Alerting applies per the suite's
 [notification config](notifications.md).

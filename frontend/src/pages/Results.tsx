@@ -29,6 +29,7 @@ import {
 import {
   listPipelineRuns,
   listRuns,
+  triggeredByText,
   type PipelineRun,
   type Run,
   type RunListPage,
@@ -251,7 +252,7 @@ function RunsTab({
           />
         ),
     },
-    { title: 'Triggered by', dataIndex: 'triggered_by', render: (t: string | null) => t ?? '—' },
+    { title: 'Triggered by', render: (_: unknown, run: Run) => triggeredByText(run) },
     {
       title: 'Started',
       dataIndex: 'started_at',

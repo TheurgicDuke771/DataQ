@@ -686,8 +686,14 @@ describe('RunDetail page', () => {
     expect(downloadJson).toHaveBeenCalledTimes(1);
     const [filename, payload] = vi.mocked(downloadJson).mock.calls[0];
     expect(filename).toBe('orders_quality_run_r1.json');
-    const body = payload as { run: { suite_name: string }; checks: { sampling: unknown }[] };
+    const body = payload as {
+      run: { suite_name: string; triggered_by: string; triggered_by_label: string | null };
+      checks: { sampling: unknown }[];
+    };
     expect(body.run.suite_name).toBe('Orders quality');
+    // The marker stays the machine-readable key; the label rides beside it, null when absent.
+    expect(body.run.triggered_by).toBe('manual:u1');
+    expect(body.run.triggered_by_label).toBeNull();
     expect(body.checks).toHaveLength(1);
     // Explicit null, not an absent key: JSON is the machine-readable artifact most likely to feed
     // downstream reporting.
@@ -888,6 +894,19 @@ describe('RunDetail page', () => {
       const report = await screen.findByTestId('run-report');
       expect(within(report).queryByTestId('report-sampled-notice')).not.toBeInTheDocument();
       expect(within(report).queryByText(/\(sampled\)/)).not.toBeInTheDocument();
+    });
+
+    it('shows who triggered the run on the page and in the report', async () => {
+      mockGetRun.mockResolvedValue({ ...runDetail, triggered_by_label: 'Manual — Olivia Admin' });
+      mockGetSuite.mockResolvedValue(suite);
+      mockListChecks.mockResolvedValue([check]);
+      renderAt('r1');
+
+      const report = await screen.findByTestId('run-report');
+      expect(within(report).getByText('Manual — Olivia Admin')).toBeInTheDocument();
+      // Page header stat + the print report.
+      expect(screen.getAllByText('Manual — Olivia Admin')).toHaveLength(2);
+      expect(screen.queryByText('manual:u1')).not.toBeInTheDocument();
     });
 
     it('em-dashes a null triggered_by / metric_value in the report', async () => {

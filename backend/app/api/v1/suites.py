@@ -11,7 +11,7 @@ from pydantic import ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from backend.app.api.v1._base import ApiModel, ApiRequestModel
-from backend.app.api.v1.runs import RunRead
+from backend.app.api.v1.runs import RunRead, run_reads
 from backend.app.core.auth import MemberUser, get_current_user
 from backend.app.core.logging import get_logger
 from backend.app.core.roles import is_workspace_admin
@@ -295,7 +295,7 @@ def trigger_suite_run(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="failed to dispatch run",
         )
-    return RunRead.model_validate(run)
+    return run_reads(db, [run])[0]
 
 
 # ───────────────────────── export / import (portable documents) ─────

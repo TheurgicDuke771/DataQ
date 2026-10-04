@@ -17,7 +17,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { type Incident, listIncidents } from '../api/incidents';
-import { getRun, type Result, type ResultStatus, type RunStatus } from '../api/runs';
+import {
+  getRun,
+  triggeredByText,
+  type Result,
+  type ResultStatus,
+  type RunStatus,
+} from '../api/runs';
 import { type Check, getSuite, listChecks } from '../api/suites';
 import { AssetLink } from '../components/assets/AssetLink';
 import { IncidentEvidenceDrawer } from '../components/assets/IncidentEvidenceDrawer';
@@ -234,7 +240,7 @@ function RunDetailBody({
         <Stat label="Checks passed">
           {evaluated.length === 0 ? '—' : `${passed} / ${evaluated.length}`}
         </Stat>
-        <Stat label="Triggered by">{run.triggered_by ?? '—'}</Stat>
+        <Stat label="Triggered by">{triggeredByText(run)}</Stat>
         <Stat label="Started">{formatTimestamp(run.started_at)}</Stat>
         <Stat label="Duration">{formatDuration(run.started_at, run.finished_at)}</Stat>
       </div>
@@ -336,6 +342,7 @@ function DownloadMenu({
         suite_name: suiteName,
         status: run.status,
         triggered_by: run.triggered_by,
+        triggered_by_label: run.triggered_by_label ?? null,
         started_at: run.started_at,
         finished_at: run.finished_at,
       },

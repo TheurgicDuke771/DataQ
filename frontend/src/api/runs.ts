@@ -26,6 +26,9 @@ export interface Run {
   asset_id?: string | null;
   status: RunStatus;
   triggered_by: string | null;
+  /** `triggered_by` for display: who or what started the run. Null when the marker has no
+   *  known shape — show `triggered_by` as stored. */
+  triggered_by_label?: string | null;
   started_at: string | null;
   finished_at: string | null;
   created_at: string;
@@ -37,6 +40,11 @@ export interface Run {
   /** Redaction-safe reason for a `failed` run (#605) — a fixed classified
    *  message, never raw adapter text. Null for non-failed runs and older rows. */
   failure_reason: string | null;
+}
+
+/** What the "Triggered by" cell shows: the label, else the stored marker. */
+export function triggeredByText(run: Pick<Run, 'triggered_by' | 'triggered_by_label'>): string {
+  return run.triggered_by_label ?? run.triggered_by ?? '—';
 }
 
 /** Mirrors `ResultRead`. */

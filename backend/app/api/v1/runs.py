@@ -38,6 +38,7 @@ from backend.app.services import (
     privacy_settings_service,
     run_dispatch,
     suite_service,
+    trigger_labels,
 )
 from backend.app.services import run_service as svc
 from backend.app.services.comparison_report import ComparisonReportInvalidError, build_report
@@ -61,6 +62,9 @@ class RunRead(ApiModel):
     asset_id: uuid.UUID | None = None
     status: str  # queued | running | succeeded | failed | cancelled
     triggered_by: str | None
+    # `triggered_by` for display (#1735): the triggering user's name or email, the schedule, or
+    # the orchestration provider. NULL when the marker has no known shape — show it as stored.
+    triggered_by_label: str | None = None
     started_at: datetime | None
     finished_at: datetime | None
     created_at: datetime
@@ -176,6 +180,24 @@ def _outcome_update(outcome: tuple[int, int, str | None] | None) -> dict[str, ob
     return dict(zip(_OUTCOME_FIELDS, outcome or (0, 0, None), strict=True))
 
 
+def run_reads(
+    db: Session,
+    runs: Sequence[Run],
+    outcomes: Mapping[uuid.UUID, tuple[int, int, str | None]] | None = None,
+) -> list[RunRead]:
+    """`RunRead`s with the trigger label grafted, plus the data-quality outcome when
+    ``outcomes`` is given (a just-queued or just-cancelled run reports none).
+    """
+    labels = trigger_labels.trigger_labels(db, [r.triggered_by for r in runs])
+    reads = []
+    for run in runs:
+        update: dict[str, object] = {"triggered_by_label": labels.get(run.triggered_by or "")}
+        if outcomes is not None:
+            update |= _outcome_update(outcomes.get(run.id))
+        reads.append(RunRead.model_validate(run).model_copy(update=update))
+    return reads
+
+
 @router.get(
     "/runs",
     response_model=list[RunRead],
@@ -238,10 +260,7 @@ def list_runs(
     # Graft each run's data-quality outcome (total/passed/worst-severity) in one
     # grouped query, so the list can flag failing checks behind a `succeeded` run.
     outcomes = svc.check_outcome_counts(db, [r.id for r in runs])
-    return [
-        RunRead.model_validate(r).model_copy(update=_outcome_update(outcomes.get(r.id)))
-        for r in runs
-    ]
+    return run_reads(db, runs, outcomes)
 
 
 def _asset_column_tags(db: Session, suite: Any, run: Any = None) -> dict[str, str] | None:
@@ -366,7 +385,7 @@ def get_run(
     # `Run` has no `results` relationship to validate a RunDetailRead from directly, so validate
     # the run fields (as RunRead), graft the data-quality outcome (#571 — else checks_total/passed
     # stay at the 0/0 default here), and attach the separately-fetched, redaction-gated results.
-    outcome = svc.check_outcome_counts(db, [run.id]).get(run.id)
+    outcomes = svc.check_outcome_counts(db, [run.id])
     expectation_types = {r.id: context.get(r.id, (None, None))[1] for r in results}
     reads = [
         _result_read(
@@ -385,7 +404,7 @@ def get_run(
         db, current_user, run=run, results=reads, expectation_types=expectation_types
     )
     return RunDetailRead(
-        **RunRead.model_validate(run).model_copy(update=_outcome_update(outcome)).model_dump(),
+        **run_reads(db, [run], outcomes)[0].model_dump(),
         results=reads,
     )
 
@@ -450,7 +469,7 @@ def cancel_run(
     if not svc.cancel_run(db, run):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="run is already finished")
     run_dispatch.revoke_run(run.celery_task_id)
-    return RunRead.model_validate(run)
+    return run_reads(db, [run])[0]
 
 
 @router.get(
