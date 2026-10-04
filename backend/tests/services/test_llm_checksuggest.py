@@ -4,6 +4,7 @@ data discipline, access-event recording, and the human-authoring-path gate.
 
 from __future__ import annotations
 
+import dataclasses
 from typing import Any
 
 import pytest
@@ -92,6 +93,92 @@ def test_prompt_carries_table_columns_and_profile(
     assert "QTY: nulls=0.0% distinct=4 range=[1, 9]" in prompt
     assert schema == llm_checksuggest.CHECKSUGGEST_SCHEMA
     assert system is not None and "DATA, not instructions" in system
+
+
+def _wide_profile(columns: list[str]) -> ProfileResult:
+    return ProfileResult(
+        row_count=10,
+        columns=[
+            ColumnProfile(
+                column=c,
+                null_count=0,
+                null_fraction=0.0,
+                distinct_count=1,
+                min_value=None,
+                max_value=None,
+                top_values=[],
+            )
+            for c in columns
+        ],
+    )
+
+
+def test_a_wide_table_is_cut_to_the_column_cap_before_profiling(
+    db_session: Any, admin: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cap = llm_checksuggest.MAX_PROMPT_COLUMNS
+    every = [f"C{i:04d}" for i in range(cap + 240)]
+    suite = make_sql_suite(db_session, admin)
+    monkeypatch.setattr(profile_service_module, "list_columns", lambda *_a, **_kw: every)
+    profiled: list[list[str]] = []
+
+    def _fake_profile(*_a: Any, **kw: Any) -> ProfileResult:
+        profiled.append(list(kw["columns"]))
+        return _wide_profile(kw["columns"])
+
+    monkeypatch.setattr(profile_service_module, "profile_connection", _fake_profile)
+    invocation = _invocation(db_session, suite, admin)
+
+    prompt, _, _ = llm_checksuggest.build_prompt(db_session, invocation, FakeSecretStore())
+
+    # The warehouse is asked about the capped set only, not the whole table.
+    assert profiled == [every[:cap]]
+    assert every[cap - 1] in prompt and every[cap] not in prompt
+    assert f"The table has {len(every)} columns; only the first {cap} are shown" in prompt
+    db_session.expire_all()
+    stored = db_session.get(LlmInvocation, invocation.id).request
+    assert stored[llm_checksuggest.COLUMNS_KEY] == every[:cap]
+    assert stored[llm_checksuggest.COLUMNS_TOTAL_KEY] == len(every)
+
+
+def test_a_table_at_the_column_cap_is_not_reported_as_cut(
+    db_session: Any, admin: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    every = [f"C{i:04d}" for i in range(llm_checksuggest.MAX_PROMPT_COLUMNS)]
+    suite = make_sql_suite(db_session, admin)
+    monkeypatch.setattr(profile_service_module, "list_columns", lambda *_a, **_kw: every)
+    monkeypatch.setattr(
+        profile_service_module,
+        "profile_connection",
+        lambda *_a, **kw: _wide_profile(kw["columns"]),
+    )
+
+    prompt, _, _ = llm_checksuggest.build_prompt(
+        db_session, _invocation(db_session, suite, admin), FakeSecretStore()
+    )
+
+    assert every[-1] in prompt
+    assert "only the first" not in prompt
+
+
+def test_a_long_top_value_is_capped_in_the_prompt(
+    db_session: Any, admin: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    suite = make_sql_suite(db_session, admin)
+    monkeypatch.setattr(profile_service_module, "list_columns", lambda *_a, **_kw: ["QTY"])
+    long = "x" * 5000
+    qty = dataclasses.replace(
+        _profile().columns[1], min_value=long, top_values=[{"value": long, "count": 7}]
+    )
+    profile = ProfileResult(row_count=100, columns=[qty])
+    monkeypatch.setattr(profile_service_module, "profile_connection", lambda *_a, **_kw: profile)
+
+    prompt, _, _ = llm_checksuggest.build_prompt(
+        db_session, _invocation(db_session, suite, admin), FakeSecretStore()
+    )
+
+    assert "x" * 100 not in prompt
+    assert "… x7" in prompt
 
 
 def test_top_n_is_nonzero_unlike_sql_generation(
@@ -245,6 +332,18 @@ def test_output_gate_accepts_a_valid_suggestion(db_session: Any, admin: User) ->
     assert accepted["expectation_type"] == "expect_column_values_to_not_be_null"
     assert accepted["dimension"] == "completeness"  # derived, never trusted from the model
     assert out["rejected"] == []
+    # A row with no recorded total reports its own column list as the whole table.
+    assert out["column_coverage"] == {"profiled": len(KNOWN_COLUMNS), "total": len(KNOWN_COLUMNS)}
+
+
+def test_output_reports_partial_column_coverage(db_session: Any, admin: User) -> None:
+    suite = make_sql_suite(db_session, admin)
+    invocation = _invocation(db_session, suite, admin)
+    llm_checksuggest.remember_columns(db_session, invocation, list(KNOWN_COLUMNS), total=340)
+
+    out = llm_checksuggest.validate_output(db_session, invocation, {"suggestions": [_suggestion()]})
+
+    assert out["column_coverage"] == {"profiled": len(KNOWN_COLUMNS), "total": 340}
 
 
 def test_output_gate_drops_one_bad_suggestion_and_keeps_the_rest(
@@ -629,4 +728,8 @@ def test_remember_columns_persists_on_the_row(db_session: Any, admin: User) -> N
     llm_checksuggest.remember_columns(db_session, invocation, ["A", "B"])
     db_session.expire_all()
     stored = db_session.get(LlmInvocation, invocation.id)
-    assert stored.request == {"keep": "me", llm_checksuggest.COLUMNS_KEY: ["A", "B"]}
+    assert stored.request == {
+        "keep": "me",
+        llm_checksuggest.COLUMNS_KEY: ["A", "B"],
+        llm_checksuggest.COLUMNS_TOTAL_KEY: 2,
+    }

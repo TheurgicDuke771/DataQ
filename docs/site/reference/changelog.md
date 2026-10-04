@@ -86,6 +86,11 @@ the per-PR history lives in the repo's commit log and pull requests.
 - **The Custom SQL card opens the plain SQL editor.** Both cards in the Custom SQL step used
   to open a form with the **Generate from a description** box. It now appears only when you
   start from the **Generate from a description** card.
+- **Check suggestions on a wide table stay within the model's limits.** The suggestion prompt
+  grew with every column, so a table with hundreds of columns could cost far more or fail at
+  the provider. Only the first 100 columns are now profiled and sent, long values are
+  shortened, and the drawer says when part of the table was not looked at. The invocation's
+  result gains `column_coverage` (`{profiled, total}`).
 
 - **A completed run with no results no longer says it did not complete.** A check's results
   are removed when the check is deleted, so a finished run can be left with none (as can a

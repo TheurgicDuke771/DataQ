@@ -194,6 +194,10 @@ remaining**), so one you disagree with costs a glance. A separate warning surfac
 pipeline trigger binding that *nearly* matched this suite (right pipeline, wrong
 environment) — a coverage gap no column profile could reveal either way.
 
+On a table with more than 100 columns, only the first 100 are profiled and sent. The drawer
+says how many were looked at; the others get no suggestions, which is not a finding that
+they need no checks.
+
 **Placement and dedup from column lineage.** Where recorded column lineage reaches the suggested
 column, each suggestion also says where that column comes from. There are two recommendations,
 each made only when the column keeps the **same name on every hop** upstream. That is a
