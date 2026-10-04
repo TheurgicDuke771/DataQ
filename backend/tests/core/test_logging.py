@@ -602,13 +602,19 @@ def test_a_downgraded_line_honours_the_configured_log_level(
     exc = RuntimeError("every alert channel failed")
     mark_already_logged(exc)
     try:
-        raise exc
-    except RuntimeError:
-        log.exception("already_reported_elsewhere")
-    try:
-        raise RuntimeError("a new bug")
-    except RuntimeError:
-        log.exception("genuinely_new")
+        try:
+            raise exc
+        except RuntimeError:
+            log.exception("already_reported_elsewhere")
+        try:
+            raise RuntimeError("a new bug")
+        except RuntimeError:
+            log.exception("genuinely_new")
+    finally:
+        # structlog's filter level is process-global; don't leave it at ERROR for other tests.
+        monkeypatch.undo()
+        get_settings.cache_clear()
+        configure_logging()
 
     events = [json.loads(line)["event"] for line in capsys.readouterr().out.splitlines()]
     assert ("already_reported_elsewhere" in events) is emitted
