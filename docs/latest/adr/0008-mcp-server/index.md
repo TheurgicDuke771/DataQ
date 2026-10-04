@@ -169,10 +169,12 @@ inspect or undo it:
   `get_check_history`'s *result* history, with both docstrings cross-referencing the other, since
   "did this start failing because the data moved or because someone changed the check?" needs
   both and the names are otherwise easy to confuse.
-- `restore_check_version` is also the **only** path that can clear a field back to empty:
-  `update_check`'s PATCH convention reads an omitted argument as "leave alone", so it structurally
-  cannot. That correction was applied to `update_check`'s own docstring, which had said
-  recreating the check was the only option.
+- `restore_check_version` is also the path that can clear a field back to empty:
+  `update_check`'s PATCH convention reads an omitted argument as "leave alone". That
+  correction was applied to `update_check`'s own docstring, which had said recreating the
+  check was the only option. *Amended 2026-10-03:* the three severity thresholds are the
+  exception since `update_check` gained `clear_thresholds`; for every other field a restore
+  remains the only way.
 
 All five gate through `require_permission` on the owning suite (the schedule and binding tools
 resolve it from the row), so again no new authz path. The gate rows in

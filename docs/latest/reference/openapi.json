@@ -662,6 +662,17 @@
             "title": "Failing Lineage Sources",
             "type": "array"
           },
+          "health_score_delta": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Health Score Delta"
+          },
           "inherited_classifications": {
             "anyOf": [
               {
@@ -688,9 +699,25 @@
             "title": "Lineage Edges",
             "type": "array"
           },
+          "previous_health_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Health Score"
+          },
           "restricted_suite_count": {
             "default": 0,
             "title": "Restricted Suite Count",
+            "type": "integer"
+          },
+          "score_delta_days": {
+            "default": 7,
+            "title": "Score Delta Days",
             "type": "integer"
           },
           "scorecard": {
@@ -838,6 +865,17 @@
           "has_skip": {
             "title": "Has Skip",
             "type": "boolean"
+          },
+          "health_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Health Score"
           },
           "id": {
             "format": "uuid",
@@ -1271,6 +1309,141 @@
         "title": "BrowseFileRead",
         "type": "object"
       },
+      "BulkChecksRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "check_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Check Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "check_ids"
+        ],
+        "title": "BulkChecksRequest",
+        "type": "object"
+      },
+      "BulkChecksResult": {
+        "description": "`affected` is how many checks were changed. It is always every check named in\nthe request: a bulk call changes all of them or, on any refusal, none.",
+        "properties": {
+          "affected": {
+            "title": "Affected",
+            "type": "integer"
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/CheckRead"
+            },
+            "title": "Checks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "affected"
+        ],
+        "title": "BulkChecksResult",
+        "type": "object"
+      },
+      "BulkSnoozeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "check_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Check Ids",
+            "type": "array"
+          },
+          "hours": {
+            "description": "Mute each check's alerts for this many hours",
+            "exclusiveMinimum": 0.0,
+            "maximum": 720.0,
+            "title": "Hours",
+            "type": "number"
+          }
+        },
+        "required": [
+          "check_ids",
+          "hours"
+        ],
+        "title": "BulkSnoozeRequest",
+        "type": "object"
+      },
+      "BulkThresholdsRequest": {
+        "additionalProperties": false,
+        "description": "Like `CheckUpdate`: an explicit `null` clears that threshold on every check, and\nleaving the key out keeps each check's own value.",
+        "properties": {
+          "check_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Check Ids",
+            "type": "array"
+          },
+          "critical_threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Critical Threshold"
+          },
+          "fail_threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fail Threshold"
+          },
+          "warn_threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warn Threshold"
+          }
+        },
+        "required": [
+          "check_ids"
+        ],
+        "title": "BulkThresholdsRequest",
+        "type": "object"
+      },
       "CatalogBrowseRead": {
         "description": "One level of the catalog \u2192 schema \u2192 table tree (a generic SQL connection such as\nPostgreSQL or MySQL starts at `schema`: its database is fixed). `truncated` means more names\nexist than `limit` \u2014 the list is then a prefix, and the target can still be typed by hand.",
         "properties": {
@@ -1697,6 +1870,38 @@
           "captured_at"
         ],
         "title": "CheckBaselineRead",
+        "type": "object"
+      },
+      "CheckChangeRead": {
+        "properties": {
+          "action": {
+            "enum": [
+              "create",
+              "update",
+              "delete",
+              "unchanged"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "action",
+          "fields"
+        ],
+        "title": "CheckChangeRead",
         "type": "object"
       },
       "CheckCreate": {
@@ -3430,6 +3635,17 @@
             "title": "Has Secret",
             "type": "boolean"
           },
+          "health_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Health Score"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -3748,6 +3964,89 @@
           "created_at"
         ],
         "title": "ConnectionVersionRead",
+        "type": "object"
+      },
+      "CoverageFiguresRead": {
+        "description": "How much of the inventory is watched, and how often automatic checks cry wolf.\n\nWorkspace-wide, like the dimension rollup: identical for every member, counts only.\n\n`coverage_pct` is `assets_watched / assets_total`: assets with at least one suite\nthat completed a run in the last `coverage_window_days`. `assets_watched_authored`\nare watched by a suite a person authored; `assets_watched_auto_only` only by\nautomatic coverage. NULL when the workspace has no assets.\n\n`false_positive_rate` is `false_positive / stated`, over automatic-suite incidents a\nperson resolved in the last `false_positive_window_days`. `stated` counts those\nresolved WITH a stated resolution; `unstated` those without. NULL when nothing was\nstated \u2014 which is \"not measured\", not \"no false positives\". Auto-resolved incidents\nare in none of these numbers.",
+        "properties": {
+          "assets_total": {
+            "title": "Assets Total",
+            "type": "integer"
+          },
+          "assets_watched": {
+            "title": "Assets Watched",
+            "type": "integer"
+          },
+          "assets_watched_authored": {
+            "title": "Assets Watched Authored",
+            "type": "integer"
+          },
+          "assets_watched_auto_only": {
+            "title": "Assets Watched Auto Only",
+            "type": "integer"
+          },
+          "coverage_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage Pct"
+          },
+          "coverage_window_days": {
+            "title": "Coverage Window Days",
+            "type": "integer"
+          },
+          "false_positive": {
+            "title": "False Positive",
+            "type": "integer"
+          },
+          "false_positive_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "False Positive Rate"
+          },
+          "false_positive_window_days": {
+            "title": "False Positive Window Days",
+            "type": "integer"
+          },
+          "resolved": {
+            "title": "Resolved",
+            "type": "integer"
+          },
+          "stated": {
+            "title": "Stated",
+            "type": "integer"
+          },
+          "unstated": {
+            "title": "Unstated",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "assets_total",
+          "assets_watched",
+          "assets_watched_authored",
+          "assets_watched_auto_only",
+          "coverage_pct",
+          "coverage_window_days",
+          "false_positive_window_days",
+          "resolved",
+          "stated",
+          "unstated",
+          "false_positive",
+          "false_positive_rate"
+        ],
+        "title": "CoverageFiguresRead",
         "type": "object"
       },
       "CoverageGapRead": {
@@ -4211,6 +4510,41 @@
         "title": "DimensionScoreRead",
         "type": "object"
       },
+      "DocumentProblemRead": {
+        "description": "One reason the document would be refused. `location` is `document` for a problem\nwith the document as a whole, `checks[2]` for the third check, or a field path such\nas `checks[2].expectation_type` for a shape error.",
+        "properties": {
+          "check_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Check Name"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "location": {
+            "title": "Location",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "location",
+          "code",
+          "message"
+        ],
+        "title": "DocumentProblemRead",
+        "type": "object"
+      },
       "EventAck": {
         "properties": {
           "status": {
@@ -4661,6 +4995,17 @@
             ],
             "title": "Prior Incident Id"
           },
+          "resolution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolution"
+          },
           "resolution_note": {
             "anyOf": [
               {
@@ -4891,6 +5236,17 @@
             "title": "Occurrence Count",
             "type": "integer"
           },
+          "resolution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolution"
+          },
           "resolved_at": {
             "anyOf": [
               {
@@ -4942,6 +5298,41 @@
           "latest_status"
         ],
         "title": "IncidentRead",
+        "type": "object"
+      },
+      "IncidentResolveRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "resolution": {
+            "anyOf": [
+              {
+                "enum": [
+                  "fixed",
+                  "expected_change",
+                  "false_positive"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolution"
+          }
+        },
+        "title": "IncidentResolveRequest",
         "type": "object"
       },
       "InheritedClassificationRead": {
@@ -6310,6 +6701,40 @@
         "title": "OffboardRequest",
         "type": "object"
       },
+      "OnboardingStatusRead": {
+        "description": "Which first-run steps the workspace has done.\n\nWorkspace-wide: true if ANY connection, suite, check or run exists, including ones the\ncaller cannot open, so every member sees the same answer. Booleans only. An\norchestration connection (ADF, Airflow, dbt) does not count as a data source, and\nsuites, checks and runs that automatic coverage made do not count: the steps are about\na person authoring them.",
+        "properties": {
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "has_check": {
+            "title": "Has Check",
+            "type": "boolean"
+          },
+          "has_datasource": {
+            "title": "Has Datasource",
+            "type": "boolean"
+          },
+          "has_run": {
+            "title": "Has Run",
+            "type": "boolean"
+          },
+          "has_suite": {
+            "title": "Has Suite",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "has_datasource",
+          "has_suite",
+          "has_check",
+          "has_run",
+          "complete"
+        ],
+        "title": "OnboardingStatusRead",
+        "type": "object"
+      },
       "OtpRequest": {
         "additionalProperties": false,
         "properties": {
@@ -7178,6 +7603,17 @@
             ],
             "title": "Triggered By"
           },
+          "triggered_by_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Triggered By Label"
+          },
           "worst_severity": {
             "anyOf": [
               {
@@ -7490,6 +7926,17 @@
               }
             ],
             "title": "Triggered By"
+          },
+          "triggered_by_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Triggered By Label"
           },
           "worst_severity": {
             "anyOf": [
@@ -8181,6 +8628,91 @@
         "title": "SuggestionRead",
         "type": "object"
       },
+      "SuiteApplyRead": {
+        "description": "The plan, and whether it was carried out. With `dry_run` nothing was written and\n`changed` says whether the suite differs from the document (drift). Without it,\n`changed` says whether anything was written.\n\n`unmanaged` lists checks the suite has that the document does not name. They were\nleft alone because `prune` was false; they are NOT counted in `changed`.",
+        "properties": {
+          "changed": {
+            "title": "Changed",
+            "type": "boolean"
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/CheckChangeRead"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "suite_fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Suite Fields",
+            "type": "array"
+          },
+          "unmanaged": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unmanaged",
+            "type": "array"
+          }
+        },
+        "required": [
+          "dry_run",
+          "changed",
+          "suite_fields",
+          "checks",
+          "unmanaged"
+        ],
+        "title": "SuiteApplyRead",
+        "type": "object"
+      },
+      "SuiteApplyRequest": {
+        "additionalProperties": false,
+        "description": "A suite document to apply onto THIS suite \u2014 JSON (`document`) or YAML text\n(`document_yaml`), exactly one.",
+        "properties": {
+          "document": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SuiteDocumentIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "document_yaml": {
+            "anyOf": [
+              {
+                "maxLength": 1000000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Yaml"
+          },
+          "dry_run": {
+            "default": false,
+            "description": "Report what would change and change nothing. This is the drift check.",
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "prune": {
+            "default": false,
+            "description": "Also delete the suite's checks that the document does not name.",
+            "title": "Prune",
+            "type": "boolean"
+          }
+        },
+        "title": "SuiteApplyRequest",
+        "type": "object"
+      },
       "SuiteCadenceRead": {
         "description": "A suite's bound-pipeline cadence (#1648) \u2014 the deterministic freshness-\nthreshold hint the LLM suggestion prompt also uses when one is configured,\nbut computed here without any LLM at all.",
         "properties": {
@@ -8437,6 +8969,7 @@
       },
       "SuiteImportRequest": {
         "additionalProperties": false,
+        "description": "The document as JSON (`document`) or as YAML text (`document_yaml`) \u2014 exactly one.",
         "properties": {
           "connection_id": {
             "format": "uuid",
@@ -8444,12 +8977,30 @@
             "type": "string"
           },
           "document": {
-            "$ref": "#/components/schemas/SuiteDocumentIn"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SuiteDocumentIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "document_yaml": {
+            "anyOf": [
+              {
+                "maxLength": 1000000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Yaml"
           }
         },
         "required": [
-          "connection_id",
-          "document"
+          "connection_id"
         ],
         "title": "SuiteImportRequest",
         "type": "object"
@@ -8983,6 +9534,73 @@
           }
         },
         "title": "SuiteUpdate",
+        "type": "object"
+      },
+      "SuiteValidateRequest": {
+        "additionalProperties": false,
+        "description": "Like `SuiteImportRequest`, but `document` is taken as a plain object so that a\ndocument of the wrong shape is REPORTED in the response instead of refusing the\nrequest.",
+        "properties": {
+          "connection_id": {
+            "format": "uuid",
+            "title": "Connection Id",
+            "type": "string"
+          },
+          "document": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document"
+          },
+          "document_yaml": {
+            "anyOf": [
+              {
+                "maxLength": 1000000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Yaml"
+          }
+        },
+        "required": [
+          "connection_id"
+        ],
+        "title": "SuiteValidateRequest",
+        "type": "object"
+      },
+      "SuiteValidationRead": {
+        "description": "`valid` is true exactly when `problems` is empty \u2014 importing this document onto\nthis connection would then be accepted. It says nothing about whether the checks\nwould PASS: no datasource is opened and no column is looked up.",
+        "properties": {
+          "check_count": {
+            "title": "Check Count",
+            "type": "integer"
+          },
+          "problems": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentProblemRead"
+            },
+            "title": "Problems",
+            "type": "array"
+          },
+          "valid": {
+            "title": "Valid",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "valid",
+          "check_count",
+          "problems"
+        ],
+        "title": "SuiteValidationRead",
         "type": "object"
       },
       "TopValue": {
@@ -10891,6 +11509,22 @@
               "title": "Offset",
               "type": "integer"
             }
+          },
+          {
+            "description": "`name` orders by namespace then name. `health_score` orders the whole population lowest score first, assets with no score last.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "name",
+              "description": "`name` orders by namespace then name. `health_score` orders the whole population lowest score first, assets with no score last.",
+              "enum": [
+                "name",
+                "health_score"
+              ],
+              "title": "Sort",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -10945,6 +11579,20 @@
               "format": "uuid",
               "title": "Asset Id",
               "type": "string"
+            }
+          },
+          {
+            "description": "How far back `previous_health_score` looks, in days.",
+            "in": "query",
+            "name": "score_delta_days",
+            "required": false,
+            "schema": {
+              "default": 7,
+              "description": "How far back `previous_health_score` looks, in days.",
+              "maximum": 90,
+              "minimum": 1,
+              "title": "Score Delta Days",
+              "type": "integer"
             }
           }
         ],
@@ -11779,6 +12427,94 @@
         ]
       }
     },
+    "/api/v1/dashboard/coverage": {
+      "get": {
+        "operationId": "get_coverage_figures",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "false_positive_window_days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 90,
+              "minimum": 1,
+              "title": "False Positive Window Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoverageFiguresRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Coverage of the asset inventory and the false-positive rate of automatic checks",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/api/v1/dashboard/dimensions": {
+      "get": {
+        "description": "One row per DQ dimension that has checks anywhere; `uncovered` lists the\ndimensions no suite has a check for. Each suite is scored from its latest run, and\nonly if that run completed: a suite that is mid-run, failed or was cancelled keeps\nits checks in `checks_total` but adds nothing to the score until its next completed\nrun. An earlier completed run is not used in its place.\n\n**Workspace-wide, unlike `/dashboard/summary`**: it covers every suite, including\nones the caller cannot open, and is identical for every member. Checks with no\ndimension are counted in `unclassified_checks` and are in no row.",
+        "operationId": "get_workspace_dimensions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScorecardRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Each DQ dimension across every suite in the workspace",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/api/v1/dashboard/onboarding": {
+      "get": {
+        "operationId": "get_onboarding_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingStatusRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Which first-run steps the workspace has done",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
     "/api/v1/dashboard/summary": {
       "get": {
         "operationId": "get_dashboard_summary",
@@ -12102,7 +12838,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/IncidentActionRequest"
+                "$ref": "#/components/schemas/IncidentResolveRequest"
               }
             }
           },
@@ -12138,7 +12874,7 @@
     },
     "/api/v1/llm/check_suggestions": {
       "post": {
-        "description": "Queues a worker-side generation; poll `GET /llm/invocations/{id}`. Every\nsuggested check passes the same validator a human's `create_check` call\nwould before it is ever stored \u2014 one that fails is dropped, not surfaced;\nsee the invocation's `rejected` field for what didn't make it and why.\n\nIf EVERY suggestion is rejected, the invocation fails instead \u2014 there is no\nempty-but-successful outcome for \"nothing runnable came back\" \u2014 and the\ntop-level `rejected` shape above never gets written. The reasons are still\nreadable, in two forms: folded into `error` as one summary sentence, and\nas a structured `{rejected, rejected_count, truncated}` object under\n`response` (unlike a successful run, where `response` is `{suggestions,\nrejected, coverage_warnings}`) \u2014 a failed invocation's `response` field\ncarries only that narrower rejection detail, not the full success shape.\n`rejected` itself may be shorter than `rejected_count`; `truncated` is\n`true` when it is, so a caller reading only `response` (not `error`'s own\n\"(+N more)\" text) still has a signal the list isn't exhaustive.",
+        "description": "Queues a worker-side generation; poll `GET /llm/invocations/{id}`. Every\nsuggested check passes the same validator a human's `create_check` call\nwould before it is ever stored \u2014 one that fails is dropped, not surfaced;\nsee the invocation's `rejected` field for what didn't make it and why.\n\nOnly the first 100 columns of the table are profiled. `column_coverage` is\n`{profiled, total}`; when `profiled < total` the remaining columns were not\nlooked at, so no suggestion for one of them says nothing about it.\n\nOn an automatically covered suite the validated suggestions are also saved to its\nreview queue (`GET /suites/{id}/suggestions`, `source: llm`); `queued_for_review` is how\nmany were new. It is null on a suite a person authored, which has no queue.\n\nIf EVERY suggestion is rejected, the invocation fails instead \u2014 there is no\nempty-but-successful outcome for \"nothing runnable came back\" \u2014 and the\ntop-level `rejected` shape above never gets written. The reasons are still\nreadable, in two forms: folded into `error` as one summary sentence, and\nas a structured `{rejected, rejected_count, truncated}` object under\n`response` (unlike a successful run, where `response` is `{suggestions,\nrejected, coverage_warnings, column_coverage, queued_for_review}`) \u2014 a failed\ninvocation's `response`\nfield carries only that narrower rejection detail, not the full success shape.\n`rejected` itself may be shorter than `rejected_count`; `truncated` is\n`true` when it is, so a caller reading only `response` (not `error`'s own\n\"(+N more)\" text) still has a signal the list isn't exhaustive.",
         "operationId": "suggest_checks",
         "requestBody": {
           "content": {
@@ -13791,6 +14527,48 @@
         ]
       }
     },
+    "/api/v1/suites/validate": {
+      "post": {
+        "description": "Runs every gate `POST /suites/import` applies and reports ALL the problems, not\nonly the first. Nothing is created and no datasource is opened, so a valid document\ncan still hold a check that names a column the table does not have.\n\nA document that cannot be read at all (malformed YAML, not a mapping) is a 422; one\nthat reads but is wrong comes back 200 with `valid: false`.",
+        "operationId": "validate_suite_document",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SuiteValidateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuiteValidationRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Validate a suite document against a connection without importing it",
+        "tags": [
+          "suites"
+        ]
+      }
+    },
     "/api/v1/suites/{suite_id}": {
       "delete": {
         "operationId": "delete_suite",
@@ -13914,6 +14692,60 @@
           }
         },
         "summary": "Update a suite",
+        "tags": [
+          "suites"
+        ]
+      }
+    },
+    "/api/v1/suites/{suite_id}/apply": {
+      "post": {
+        "description": "Idempotent: applying the same document twice changes nothing the second time.\n\nChecks are matched by **name**. A check the document names and the suite lacks is\ncreated; one that differs is updated; one the suite has and the document does not\nis left alone unless `prune` is true, when it is deleted along with its results and\nhistory. The suite's connection and target are never touched.\n\nThe whole document is validated before anything is written. Each change is then\nmade the way an edit in the app is, with its own version and audit event \u2014 so a\nfailure part-way (a concurrent edit, say) leaves the earlier changes in place;\napply again to finish.",
+        "operationId": "apply_suite_document",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suite_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Suite Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SuiteApplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuiteApplyRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Apply a suite document onto an existing suite, or report its drift",
         "tags": [
           "suites"
         ]
@@ -14151,6 +14983,222 @@
           }
         },
         "summary": "Create a check in a suite",
+        "tags": [
+          "checks"
+        ]
+      }
+    },
+    "/api/v1/suites/{suite_id}/checks-bulk/delete": {
+      "post": {
+        "description": "All-or-nothing: if any id is not a check of this suite the request is refused with 404 and nothing is changed. Duplicate ids count once. Deleting a check also deletes its results, version history and baseline.",
+        "operationId": "bulk_delete_checks",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suite_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Suite Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkChecksRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkChecksResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete many checks",
+        "tags": [
+          "checks"
+        ]
+      }
+    },
+    "/api/v1/suites/{suite_id}/checks-bulk/snooze": {
+      "post": {
+        "description": "All-or-nothing: if any id is not a check of this suite the request is refused with 404 and nothing is changed. Duplicate ids count once.",
+        "operationId": "bulk_snooze_checks",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suite_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Suite Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkSnoozeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkChecksResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Snooze the alerts of many checks",
+        "tags": [
+          "checks"
+        ]
+      }
+    },
+    "/api/v1/suites/{suite_id}/checks-bulk/thresholds": {
+      "post": {
+        "description": "All-or-nothing: if any id is not a check of this suite the request is refused with 404 and nothing is changed. Duplicate ids count once. Also refused whole, with 422 and the offending checks named, if the selection mixes check kinds or any check cannot take the resulting thresholds. A check already at these values gets no new version.",
+        "operationId": "bulk_set_thresholds",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suite_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Suite Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkThresholdsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkChecksResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set the same severity thresholds on many checks",
+        "tags": [
+          "checks"
+        ]
+      }
+    },
+    "/api/v1/suites/{suite_id}/checks-bulk/unsnooze": {
+      "post": {
+        "description": "All-or-nothing: if any id is not a check of this suite the request is refused with 404 and nothing is changed. Duplicate ids count once.",
+        "operationId": "bulk_unsnooze_checks",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suite_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Suite Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkChecksRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkChecksResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Clear the alert snooze of many checks",
         "tags": [
           "checks"
         ]
@@ -15131,6 +16179,22 @@
               "title": "Suite Id",
               "type": "string"
             }
+          },
+          {
+            "description": "`yaml` returns the same document as YAML text.",
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "json",
+              "description": "`yaml` returns the same document as YAML text.",
+              "enum": [
+                "json",
+                "yaml"
+              ],
+              "title": "Format",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -15140,9 +16204,14 @@
                 "schema": {
                   "$ref": "#/components/schemas/SuiteDocument"
                 }
+              },
+              "application/yaml": {
+                "schema": {
+                  "type": "string"
+                }
               }
             },
-            "description": "Successful Response"
+            "description": "The document \u2014 JSON, or YAML text with `format=yaml`."
           },
           "422": {
             "content": {

@@ -46,6 +46,7 @@ lists which).
 - [Glossary](https://theurgicduke771.github.io/DataQ/docs/latest/reference/glossary/index.md): Maintainer & docs owner: **@TheurgicDuke771**. File issues / PRs on
 - [MCP tools](https://theurgicduke771.github.io/DataQ/docs/latest/reference/mcp-tools/index.md): Every tool DataQ's MCP server exposes at `/mcp`, generated from the server itself — the
 - [REST API](https://theurgicduke771.github.io/DataQ/docs/latest/reference/rest-api/index.md): DataQ's REST API is the same surface the web UI uses — versioned under `/api/v1`, with the
+- [Suite document](https://theurgicduke771.github.io/DataQ/docs/latest/reference/suite-document/index.md): A suite written as a file: its name, description and checks, with no database identity and
 
 ## Architecture
 
@@ -74,6 +75,7 @@ lists which).
 - [Observability](https://theurgicduke771.github.io/DataQ/docs/latest/operate/observability/index.md): FastAPI → Celery → Great Expectations. **PII is redacted at the logger level**, so
 - [Runbook & FAQ](https://theurgicduke771.github.io/DataQ/docs/latest/operate/runbook-faq/index.md): security-relevant — see the policy in
 - [Troubleshooting](https://theurgicduke771.github.io/DataQ/docs/latest/operate/troubleshooting/index.md): Common problems and where to look. For deeper telemetry (logs, traces, where they land) see
+- [Upgrading](https://theurgicduke771.github.io/DataQ/docs/latest/operate/upgrading/index.md): How to move a running DataQ to a newer release without losing data.
 
 ## Decision records (ADRs)
 

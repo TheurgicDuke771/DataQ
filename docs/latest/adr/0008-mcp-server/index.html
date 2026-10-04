@@ -1173,6 +1173,8 @@
       
         
       
+        
+      
     
     
     
@@ -1298,6 +1300,34 @@
     
   
     REST API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/suite-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Suite document
   
 
     
@@ -2025,6 +2055,8 @@
       
         
       
+        
+      
     
     
     
@@ -2122,6 +2154,34 @@
     
   
     Deployment parity (Azure · AWS · Local)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/upgrading/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrading
   
 
     
@@ -2581,10 +2641,12 @@ inspect or undo it:</p>
   <code>get_check_history</code>'s <em>result</em> history, with both docstrings cross-referencing the other, since
   "did this start failing because the data moved or because someone changed the check?" needs
   both and the names are otherwise easy to confuse.</li>
-<li><code>restore_check_version</code> is also the <strong>only</strong> path that can clear a field back to empty:
-  <code>update_check</code>'s PATCH convention reads an omitted argument as "leave alone", so it structurally
-  cannot. That correction was applied to <code>update_check</code>'s own docstring, which had said
-  recreating the check was the only option.</li>
+<li><code>restore_check_version</code> is also the path that can clear a field back to empty:
+  <code>update_check</code>'s PATCH convention reads an omitted argument as "leave alone". That
+  correction was applied to <code>update_check</code>'s own docstring, which had said recreating the
+  check was the only option. <em>Amended 2026-10-03:</em> the three severity thresholds are the
+  exception since <code>update_check</code> gained <code>clear_thresholds</code>; for every other field a restore
+  remains the only way.</li>
 </ul>
 <p>All five gate through <code>require_permission</code> on the owning suite (the schedule and binding tools
 resolve it from the row), so again no new authz path. The gate rows in

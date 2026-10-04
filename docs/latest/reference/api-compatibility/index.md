@@ -12,7 +12,7 @@ These are covered by this policy. A change to them follows the rules below.
 |---|---|
 | **REST API** (`/api/v1/...`) | Paths, HTTP methods, request fields and their meaning, response fields and their meaning, status codes, and the error envelope (`error.code`, `error.message`). The published [OpenAPI spec](rest-api.md) is the contract. |
 | **MCP tools** (`/mcp`) | Tool names, parameter names and meaning, and the documented fields of each tool's result. |
-| **Suite export document** | The JSON shape `export` produces and `import` accepts, versioned by its top-level `version` field. |
+| **Suite export document** | The shape `export` produces and `import` accepts, as JSON or YAML, versioned by its top-level `version` field. See [Suite document](suite-document.md). |
 | **Python client** (`dataq-client`) | The convenience layer (`DataQClient` and its methods, the typed run outcome) and the `dataq` command line: commands, flags and exit codes. |
 | **Personal access tokens** | The `Authorization: Bearer dq_live_...` scheme. |
 
@@ -72,6 +72,7 @@ Changes that took effect without the deprecation window above, and why:
 | Release | Change | Why no deprecation window |
 |---|---|---|
 | Unreleased | `POST /connections`, a config- or credential-changing `PATCH /connections/{id}`, and `POST /connections/{id}/reauth` return `422 connection_test_failed_on_save` and write nothing when the connection's test fails; `PUT /admin/llm` does the same for an enabled provider (`422 llm_test_failed_on_save`). | A request this now refuses used to save a connection that could not work, and a failing re-auth used to overwrite a working credential. A client that wants the old behaviour sends the new optional `skip_test: true`, so no client is left without a path. |
+| Unreleased | On `PATCH /suites/{id}/checks/{id}`, an explicit `null` for `warn_threshold`, `fail_threshold` or `critical_threshold` now clears that threshold; before, it was ignored. Omitting the key keeps the stored value, as it always did. | It is a bug fix: a threshold, once set, could not be removed through the API or the check editor at all, and `null` had no documented meaning there. The Python client is unaffected (it omits fields you do not set). |
 
 ## The export document's `version`
 

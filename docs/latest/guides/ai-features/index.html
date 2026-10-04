@@ -1286,6 +1286,8 @@
       
         
       
+        
+      
     
     
     
@@ -1411,6 +1413,34 @@
     
   
     REST API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/suite-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Suite document
   
 
     
@@ -2138,6 +2168,8 @@
       
         
       
+        
+      
     
     
     
@@ -2235,6 +2267,34 @@
     
   
     Deployment parity (Azure · AWS · Local)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/upgrading/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrading
   
 
     
@@ -2611,7 +2671,8 @@ suggested_next_checks}</code> shape shown above.<p></p>
 whose target is a table on a SQL datasource (Snowflake or Unity Catalog), start a check,
 pick <strong>Custom SQL</strong>, and describe the rule instead of writing it. <strong>Generate from a
 description</strong> sits beside the hand-written Custom SQL card — same check type underneath,
-just a different starting point:</p>
+just a different starting point. The description box appears only when you start from that
+card; the Custom SQL card opens the plain SQL editor:</p>
 <p><a class="glightbox" data-type="image" data-width="auto" data-height="auto" href="../../assets/screenshots/check-editor-custom-sql-picker.png" data-desc-position="bottom"><img alt="The Custom SQL category with two cards: &quot;Custom SQL&quot; for hand-written queries and &quot;Generate from a description&quot; for the model to translate" class="screenshot" src="../../assets/screenshots/check-editor-custom-sql-picker.png"></a></p>
 <video class="clip" autoplay="" loop="" muted="" playsinline="" poster="../../assets/videos/generate-sql.jpg">
   <source src="../../assets/videos/generate-sql.mp4" type="video/mp4">
@@ -2668,6 +2729,9 @@ Suggestions are proposals: nothing is created until you click <strong>Add</stron
 remaining</strong>), so one you disagree with costs a glance. A separate warning surfaces any
 pipeline trigger binding that <em>nearly</em> matched this suite (right pipeline, wrong
 environment) — a coverage gap no column profile could reveal either way.</p>
+<p>On a table with more than 100 columns, only the first 100 are profiled and sent. The drawer
+says how many were looked at; the others get no suggestions, which is not a finding that
+they need no checks.</p>
 <p><strong>Placement and dedup from column lineage.</strong> Where recorded column lineage reaches the suggested
 column, each suggestion also says where that column comes from. There are two recommendations,
 each made only when the column keeps the <strong>same name on every hop</strong> upstream. That is a

@@ -1179,6 +1179,8 @@
       
         
       
+        
+      
     
     
     
@@ -1304,6 +1306,34 @@
     
   
     REST API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/suite-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Suite document
   
 
     
@@ -2033,6 +2063,8 @@
       
         
       
+        
+      
     
     
     
@@ -2268,6 +2300,34 @@
     
   
     Deployment parity (Azure · AWS · Local)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../upgrading/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrading
   
 
     
@@ -2630,7 +2690,21 @@ identical images, identical topology, each seam pointed at the AWS implementatio
 <li><strong>Browser security headers</strong> ship with the frontend image on every deployment. Narrow the
   CSP's <code>connect-src</code> to your identity provider's origins with <code>DATAQ_CSP_CONNECT_SRC</code> — for
   Cognito that is <strong>two</strong> hosts (the issuer for discovery/JWKS, the hosted-UI domain for the
-  token exchange); the permissive <code>https:</code> default keeps sign-in working if you don't.</li>
+  token exchange); the permissive <code>https:</code> default keeps sign-in working if you don't.
+  <code>DATAQ_HSTS</code> holds the <code>Strict-Transport-Security</code> value (default one year with
+  subdomains); set it empty to omit the header.</li>
+<li><strong>TLS at the frontend container (optional).</strong> Both reference deployments end TLS at the
+  cloud edge, so the image listens on plain HTTP by default. Where nothing sits in front,
+  set <code>DATAQ_TLS_CERT</code> and <code>DATAQ_TLS_KEY</code> to PEM files mounted into the container and it
+  serves HTTPS on the same port, redirecting plain HTTP. Setting only one, or naming a
+  file it cannot read, stops the container at start with the reason. The local
+  prebuilt-image stack runs this way.</li>
+<li><strong>Verifying an HTTPS API upstream (optional).</strong> With <code>DATAQ_API_UPSTREAM</code> set to an
+  <code>https://</code> address, the frontend's proxy encrypts but does not verify the upstream
+  certificate unless <code>DATAQ_API_UPSTREAM_CA</code> names a PEM file to verify it against.</li>
+<li><strong>A vault behind a private CA.</strong> <code>OPENBAO_CA_BUNDLE</code> is the PEM file an <code>https://</code>
+  <code>OPENBAO_ADDR</code> is verified against, used instead of the system trust store. A path
+  that names no file stops the API at start.</li>
 <li><strong>Observability:</strong> the app's vendor-neutral OTLP export feeds an <strong>ADOT collector sidecar</strong>
   → X-Ray traces + OpenTelemetry logs in CloudWatch with matching trace ids.</li>
 <li><strong>Deploy:</strong> a parallel <strong>Deploy (AWS)</strong> workflow (<code>deploy-aws.yml</code>) — GitHub OIDC role

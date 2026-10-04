@@ -141,6 +141,11 @@ connection nothing uses stays unknown indefinitely. That is deliberate — the s
 derived from work DataQ already does rather than from a periodic probe, so it costs no
 warehouse credits and cannot report on a connection nobody has exercised.
 
+The card also shows a **DQ score** when the connection has one: 0–100 over every check
+that evaluated in the latest run of each suite on that connection, if that run completed, counting
+suites you cannot open. It says what DataQ found in the data, where the health badges say
+whether DataQ could reach it. A connection where nothing has evaluated shows no score.
+
 Only credential **rejections** move this signal. A missing SELECT grant, an unreachable
 host and a bad table name all leave it untouched, because none of them says the credential
 is dead — those surface as the run's own failure reason instead.
@@ -597,6 +602,28 @@ The `3/5 passing` figure counts checks that passed in the latest run out of chec
 that exist, so the gap includes failing, skipped, errored **and** never-run checks;
 hover it to see how many were excluded from the score.
 
+Above the dimension rows, the **asset health score** is one number for the whole asset:
+0–100 over every check that evaluated in each suite's latest run, if it completed, with the
+workspace's severity weights. A suite whose latest run is still going, failed or was
+cancelled adds nothing until its next completed run; an older run is not used instead.
+Unlike the rows below it, it includes checks with no
+dimension, so a failing custom SQL check lowers it. An asset where nothing evaluated shows
+**No signal**, not 0. It is not the Dashboard's Data Integrity Score, which covers every
+run in a time window across all your suites.
+
+Beside it, the change **vs 7 days ago** compares the score with what the same calculation
+gave a week earlier: each suite's latest run as of then, if it had completed. Nothing is shown when
+there is no earlier score to compare with, which is different from "no change".
+
+The **Dashboard** has the other cut: *Data quality by dimension, across the workspace*
+shows each dimension over every suite in the workspace, so one dimension slipping on many
+assets at once is visible in one place. Like the asset scorecard it is the same for
+everyone and counts suites you cannot open; the tiles below it cover only your suites.
+
+On **Assets → All assets**, the **Score** column shows the same number, and **Sort by →
+Health score, lowest first** orders every asset in the workspace by it, with unscored
+assets last.
+
 The numbers are **workspace-wide**: everyone who can see the asset sees the same
 score, whether or not they can open the suites behind it. Two people comparing
 notes on the same table should never see two different verdicts.
@@ -638,7 +665,10 @@ checks and a daily schedule. After its first run it adds *Data is fresh* on `ord
   least 100 rows, *unique* for an id-like column whose values are all distinct, and *one of these
   values* for a column with 2 to 10 distinct values. They appear under **Suggested rules** on the
   suite page, each with the reason (for example "No nulls in 12,480 rows"). Accepting one adds the
-  check; a rejected rule is never suggested again. A column the suite's policy or the warehouse
+  check; a rejected rule is never suggested again. If you run **Suggest checks** on an automatic
+  suite, the AI model's validated suggestions are saved to the same list, marked **AI-suggested**,
+  so they are still there after you close the panel. DataQ does not call the model on its own:
+  that happens only when someone runs Suggest checks. A column the suite's policy or the warehouse
   marks sensitive is never proposed as a value set, because that would copy its values into the
   check.
 - **Your changes win.** You can edit, snooze or share these suites and checks like any other.
@@ -655,6 +685,17 @@ checks and a daily schedule. After its first run it adds *Data is fresh* on `ord
   watched this closely. Deleting the column-profile check from a suite stops it for that table for
   good. Once a week each covered table is also profiled for suggested rules. A connection covers at most 500 tables (`AUTO_COVERAGE_MAX_ASSETS`); past
   that, the first 500 by name are covered and the overflow is logged.
+- **Say what an incident turned out to be.** When you resolve an incident, the confirmation
+  asks *What was it?*: **Fixed**, **Expected change** or **False positive**. It is optional and
+  works on any incident, not only automatic ones. An unanswered one is recorded as not stated,
+  never guessed. Marking false positives is how you find out whether automatic checks are
+  crying wolf.
+- **Is it working?** The Dashboard's **Coverage** panel shows two workspace-wide figures. *Assets
+  watched* is the share of assets in the inventory with at least one suite that completed a run
+  in the last 7 days, split into assets with authored checks and assets watched by automatic
+  coverage only. *False positives* is, of the automatic-suite incidents a person resolved in the
+  last 30 days **and said what they were**, the share marked false positive. Both show the counts
+  behind them. When nobody has stated a resolution the panel says "Not measured", not 0%.
 - **Who can see them.** Automatic suites have no human owner. Workspace admins see all of them
   and can share them; everyone sees the asset's health, which includes them.
 

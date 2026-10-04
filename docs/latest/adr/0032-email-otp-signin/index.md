@@ -7,6 +7,21 @@
 - **Related:** ADR 0026 (PATs — the verifier-secret and seam pattern this copies; Basic auth rejected there stays rejected), [0010](0010-provider-agnostic-infrastructure-seams.md)/[0013](0013-marketplace-distribution-and-anti-lock-in.md) (portability guardrails)
 - **Note:** built across four slices (backend, identity, frontend, SMTP pre-flight), with rate limiting as a hard prerequisite. Ratified 2026-07-09 — slices unblocked.
 
+> **Decision record (2026-10-03): Decision 4's uniform response is kept.** It was
+> reconsidered because a non-member sees the same "a code is on its way" screen as
+> a member and no mail arrives, which looks like a malfunction. Two changes were
+> weighed and declined. A per-address "not registered" message is the enumeration
+> oracle Decision 4 closes, and single tenancy does not remove it: the sign-in
+> page is reachable by anyone who can reach the deployment, and the member list
+> names who holds failing-row samples. A static "you may not be a member" line
+> adds nothing the existing copy does not already say ("If *address* can sign in
+> to this workspace…"). The operator's question, "is this address eligible?", is
+> answered where it is safe to answer: **Admin → Members**
+> ([ADR 0043](0043-in-app-workspace-membership.md)) lists who can sign in, and the
+> SMTP pre-flight separates a mail fault from a membership one. The 2026-09-02
+> amendment below is the same position applied to timing and outages; a response
+> that differs by eligibility would undo it.
+
 > **Amendment (2026-09-04, [ADR 0043](0043-in-app-workspace-membership.md)):**
 > once `workspace_members` is populated, the signup allowlist of decisions 2 and
 > 5 becomes a **bootstrap seed + break-glass** — grant-only, one input to a union

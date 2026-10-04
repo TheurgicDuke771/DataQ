@@ -1173,6 +1173,8 @@
       
         
       
+        
+      
     
     
     
@@ -1298,6 +1300,34 @@
     
   
     REST API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/suite-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Suite document
   
 
     
@@ -2025,6 +2055,8 @@
       
         
       
+        
+      
     
     
     
@@ -2122,6 +2154,34 @@
     
   
     Deployment parity (Azure · AWS · Local)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/upgrading/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrading
   
 
     
@@ -2413,14 +2473,21 @@ and a wrong claim is a false alert on every run.</p>
 <p>Every one of them assumes nothing about correct values: they report change against the
    table's own history, and skip until the history exists, as the anomaly kind already does on a cold start.</p>
 <ol>
-<li>
-<p><strong>Rules that assert something wait for a person.</strong> Profiling and, when an LLM is
+<li><strong>Rules that assert something wait for a person.</strong> Profiling and, when an LLM is
    configured, the LLM check suggester propose rules for the covered table (not-null where a column
    has never been null, unique on an identifier, accepted values on a low-cardinality column,
    ranges). They land in a review queue, <code>check_suggestions</code> (source <code>profile</code> or <code>llm</code>,
    status <code>pending</code>, <code>accepted</code>, <code>rejected</code>). Accepting creates the check in the automatic
-   suite; rejecting is remembered and the same rule is not proposed again.</p>
-</li>
+   suite; rejecting is remembered and the same rule is not proposed again.</li>
+</ol>
+<blockquote>
+<p><strong>Amended 2026-10-04.</strong> The reconciler proposes profile rules on its own. LLM
+suggestions are made <strong>on demand only</strong>: a person runs <em>Suggest checks</em> on an automatic
+suite and the validated suggestions the queue can hold are saved to it (freshness rules and
+value sets over a sensitive column are not). The reconciler never
+calls the model.</p>
+</blockquote>
+<ol>
 <li>
 <p><strong>Full severity.</strong> Automatic checks warn, fail and go critical like authored ones and alert
    through the suite's notification settings, which default to the workspace channel.
@@ -2486,6 +2553,10 @@ and a wrong claim is a false alert on every run.</p>
   gap this closes.</li>
 <li><strong>Coverage per asset or workspace-wide:</strong> per asset keeps it manual; workspace-wide takes the
   warehouse-cost decision away from whoever owns each connection.</li>
+<li><strong>The reconciler calling the LLM for every covered table</strong> (decided 2026-10-04): an unattended
+  call per table sends each table's profile to the model provider and spends tokens with nobody
+  having asked, on a schedule the workspace cannot see. On demand keeps both the data flow and
+  the cost tied to a person's request.</li>
 <li><strong>Starting automatic monitors at warn only:</strong> considered to limit early noise; the
   maintainer chose full severity, with the false-positive rate as the check on it.</li>
 <li><strong>Two checks per column</strong> for null rate and cardinality: a wide table would become hundreds

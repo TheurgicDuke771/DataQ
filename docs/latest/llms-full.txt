@@ -77,7 +77,7 @@ export DATAQ_SIGNIN_EMAIL=you@example.com        # the address allowed to sign i
 docker compose -f docker-compose.ghcr.yml up
 ```
 
-Open `http://localhost:3000`, type the address you exported, and read the six-digit code in the
+Open `https://localhost:3000` (accept the warning for the locally generated certificate), type the address you exported, and read the six-digit code in the
 bundled inbox at `http://localhost:8025`. The stack comes up migrated and seeded with demo
 data; nothing leaves your machine. Full flow, other sign-in modes and the from-source path:
 [Install](get-started/install.md).
@@ -199,7 +199,7 @@ Try the four questions the tools were designed around:
 Every tool states what it **cannot** see — a mid-run suite is reported as *not final*, an
 expired snooze as *expired*, a truncated list as *truncated* — because an assistant has no
 "running" badge to glance at. That design is documented in
-[MCP tool design](../architecture/mcp-honesty.md), and the full list of the 52 tools with who
+[MCP tool design](../architecture/mcp-honesty.md), and the full list of the 54 tools with who
 can call them is the [MCP tools reference](../reference/mcp-tools.md).
 
 !!! tip "Ask about the docs, too"
@@ -333,8 +333,9 @@ next occurrence. Details: [Scheduling](../guides/scheduling.md).
 
 ## Either way
 
-Runs land on **Results** and the **Dashboard** like a manual run, `triggered_by` says which
-schedule or pipeline started them, and the suite's [alert settings](first-alert.md) apply.
+Runs land on **Results** and the **Dashboard** like a manual run, the **Triggered by** column
+says whether a schedule or a pipeline started them, and the suite's
+[alert settings](first-alert.md) apply.
 
 
 ---
@@ -417,7 +418,11 @@ Open the app URL and sign in — the local/eval stack defaults to an **email one
 (check the bundled Mailpit inbox at `http://localhost:8025`); a production deployment
 typically uses your **identity provider (SSO)**. See
 [Getting started](install.md#choosing-an-auth-mode) for the three sign-in modes. You land on
-the **Dashboard** — empty for now. Once suites have run it looks like this:
+the **Dashboard** — empty for now, with a **Get started** panel listing the four steps this
+tutorial walks through (connect a data source, create a suite, add a check, run it). The
+panel offers the next step you are allowed to take, is the same for everyone in the
+workspace, and goes away once all four are done. Once suites have run the dashboard looks
+like this:
 
 ![The monitoring dashboard: asset health, integrity score, pass rate and per-suite performance](../assets/screenshots/dashboard.png){ .screenshot }
 
@@ -586,9 +591,8 @@ docker compose -f docker-compose.ghcr.yml up
 
 This pulls the published images from GHCR and brings up Postgres + Redis + the API +
 Celery worker + the UI + a local mail catcher, runs migrations, and seeds demo data.
-Open **`http://localhost:3000`**, type the address you exported, and read the 6-digit
-code in the bundled inbox at **`http://localhost:8025`**. API + Swagger at
-`http://localhost:8000/docs`.
+Open **`https://localhost:3000`**, type the address you exported, and read the 6-digit
+code in the bundled inbox at **`http://localhost:8025`**.
 
 - **Sign-in works with no SMTP relay.** The stack bundles its own mailbox
   ([Mailpit](https://mailpit.axllent.org), MIT), so DataQ's real mailer runs its real
@@ -596,10 +600,66 @@ code in the bundled inbox at **`http://localhost:8025`**. API + Swagger at
   internet. No mailbox has to exist; nothing leaves the host.
 - **Multi-arch:** the images are `linux/amd64` + `linux/arm64`, so Apple Silicon runs
   native (not emulated).
-- **Loopback-only:** every port binds to `127.0.0.1` — the stack is reachable from your
-  own machine but never the LAN. That matters more than usual for `:8025`, which serves
-  live sign-in codes to anyone who can reach it. **Not for production** — a real deploy
-  uses the OpenTofu stack (`deploy/terraform/azure`, ADR 0024).
+- **HTTPS with a local certificate.** On first start the stack generates its own
+  certificate authority (*DataQ Local Dev CA*) and a certificate for `localhost`, and the
+  UI serves HTTPS with it, so the session cookie is `Secure` as it is in production.
+  Your browser does not know this CA, so it warns once; accept the warning to continue,
+  or trust the CA on this machine and the warning goes away:
+
+    ```bash
+    curl -O https://raw.githubusercontent.com/TheurgicDuke771/DataQ/main/scripts/local-ca.sh
+    bash local-ca.sh install      # asks for sudo; `uninstall` reverses it, `status` reports
+    ```
+
+  It adds the CA to the macOS System keychain, or to the system CA store on Debian/Ubuntu
+  and Fedora/RHEL, and to Firefox's own store when the NSS `certutil` tool is installed
+  (otherwise it prints the manual step; on Windows it prints the `certutil` command). It
+  trusts only a certificate named *DataQ Local Dev CA*, and if you decline `sudo` the
+  stack keeps working with the warning. Run `uninstall` before `down -v`, or the old CA
+  stays trusted after its stack is gone. To point a single client at the CA instead
+  (`curl`, the CLI, an MCP client), copy the certificate out:
+
+    ```bash
+    docker compose -f docker-compose.ghcr.yml cp frontend:/certs/ca.pem dataq-local-ca.pem
+    curl --cacert dataq-local-ca.pem https://localhost:3000/healthz
+    ```
+
+  The CA's private key stays in a volume that only the generator mounts, and the CA
+  survives restarts; `down -v` removes it. The `localhost` certificate lasts a year and
+  is renewed when the stack is started within 30 days of its expiry; the same goes for
+  the certificates Postgres, Redis, the mail catcher, the vault and the API hold.
+  Containers that were
+  already running keep the old ones, so after a renewal restart the stack
+  (`docker compose -f docker-compose.ghcr.yml restart`). Plain
+  `http://localhost:3000` redirects to
+  HTTPS. The inbox on `:8025` stays plain HTTP on loopback.
+- **TLS inside the stack too.** The API, worker and scheduler reach Postgres with
+  `sslmode=verify-full`, Redis over `rediss://` (its plain port is off), and the mail
+  catcher over STARTTLS, each verified against the same local CA, and each server holds
+  a certificate for its own hostname only, with a key no other container can read.
+  The vault is reached over HTTPS and the UI's proxy talks to the API over TLS, both
+  verified the same way, and Postgres refuses a network client that is not on TLS.
+  These are the client code paths a managed database, cache, vault and mail relay use
+  in production. Two things stay plain by design: the inbox page on `:8025`, and the
+  demo profile's sample warehouse, which stands in for a warehouse of your own (the
+  connection's TLS setting is the control there).
+- **Check it yourself.** `scripts/local-smoke.sh` (fetch it the same way as the compose
+  file, and run it beside it) smokes the running stack the way a deployment is smoked
+  after a roll: the certificate verifies against the stack's CA, plain HTTP redirects,
+  the API and MCP refuse an anonymous caller, only the UI and the inbox have a host
+  port, a real sign-in, read and sign-out work with a `Secure` cookie, Postgres and Redis
+  are on TLS, and a burst is rate-limited. It exits non-zero if any check fails.
+- **One way in, as in production:** the UI on `:3000` is the only published surface. The
+  API has no host port; it is reached through the UI at `https://localhost:3000/api`, and
+  MCP clients connect to `https://localhost:3000/mcp/`. The database, Redis and the vault
+  are reachable only inside the compose network. The interactive API page is off, as it
+  is on a production deployment; the [API reference](../reference/rest-api.md) is published
+  with these docs.
+- **Loopback-only:** both published ports (`:3000` and the inbox on `:8025`) bind to
+  `127.0.0.1` — the stack is reachable from your own machine but never the LAN. That
+  matters more than usual for `:8025`, which serves live sign-in codes to anyone who can
+  reach it. **Not for production** — a real deploy uses the OpenTofu stack
+  (`deploy/terraform/azure`, ADR 0024).
 - **Try it on real data:** add `--profile demo` to the `up` command. It also starts a
   sample warehouse (PostgreSQL) holding a small shop dataset with deliberate defects, and
   connects DataQ to it: a connection named *Demo warehouse (PostgreSQL)*, two suites
@@ -613,7 +673,23 @@ code in the bundled inbox at **`http://localhost:8025`**. API + Swagger at
   port and is reachable only inside the compose network.
 - **Pin a release** instead of the moving stable tags:
   `DATAQ_BACKEND_TAG=vX.Y.Z DATAQ_FRONTEND_TAG=vX.Y.Z docker compose -f docker-compose.ghcr.yml up`.
-- **Reset:** `docker compose -f docker-compose.ghcr.yml --profile demo down -v` (drops the seeded DB and the sample warehouse).
+  Take the compose file from the same release (replace `main` with `vX.Y.Z` in the
+  download URL) and pin both images: the file and the images change together, and a
+  newer file with older images does not start.
+- **Your data lives in a directory.** The database, the sample warehouse and the vault
+  write to `./dataq-data` beside the compose file; set `DATAQ_DATA_DIR` to an absolute
+  path to keep it elsewhere. Connections, suites, results and the credentials you enter
+  survive a restart, `down -v` and a Docker reset, and the directory can be backed up or
+  moved while the stack is stopped. The vault unseals itself from a key file in that
+  directory, so there is no unseal step, and `OPENBAO_TOKEN` may change between starts:
+  the new token replaces the old one. **That convenience has a cost:** the key, the
+  vault's root token and the data sit together, so anyone who can read the directory can
+  read every stored credential. Treat it like a password file; a production deployment
+  uses a managed secret store instead.
+- **Reset:** `docker compose -f docker-compose.ghcr.yml --profile demo down -v`, then
+  delete the data directory (`rm -rf dataq-data`). `down -v` alone removes only the
+  certificates. On Linux the files belong to the containers' users, so deleting,
+  copying or moving the directory needs `sudo`.
 - Omitting `DATAQ_SIGNIN_EMAIL` stops the stack and says so — there is no no-sign-in
   default to fall into.
 
@@ -654,10 +730,11 @@ The default, and the rung for teams that have email but no IdP.
 **Locally there is nothing to configure but your address.** Both compose stacks run a
 [Mailpit](https://mailpit.axllent.org) container (MIT) as the mailbox: DataQ performs a
 real SMTP submission against it — the same `connect → AUTH → send` path a production
-relay gets — and the message appears in a web inbox at `http://localhost:8025`. The
-mailer runs with `AUTH_EMAIL_TLS_MODE=none` there, which is the plaintext downgrade
-`none` exists for and is logged loudly on every send: it is correct against a container
-you started on your own machine and wrong against anything else.
+relay gets — and the message appears in a web inbox at `http://localhost:8025`. On the
+prebuilt-image stack the mailer uses STARTTLS and verifies the catcher against the
+stack's local CA. On the from-source stack it runs with `AUTH_EMAIL_TLS_MODE=none`,
+the plaintext downgrade `none` exists for, logged loudly on every send: it is correct
+against a container you started on your own machine and wrong against anything else.
 
 **In production you still bring your own relay** — bundling an outbound mailer is a
 deliberate non-goal (direct-to-MX from an arbitrary self-hosted IP gets sign-in codes
@@ -761,6 +838,9 @@ docker-compose up      # Postgres + Redis + FastAPI (:8000) + React (:3000) + Ce
                        #   + Mailpit (:8025), the local inbox for sign-in codes
 ```
 
+`setup.sh` also offers to trust the local HTTPS certificate the prebuilt-image stack uses
+(it asks for `sudo`; `DATAQ_TRUST_LOCAL_CA=0` skips it, and declining is harmless).
+
 `setup.sh` asks **which address may sign in** and writes the answer to your gitignored
 `.env` as `DATAQ_SIGNIN_EMAIL`. That address is allow-listed *and* made a workspace
 admin, and you sign in by reading the code at `http://localhost:8025` — no cloud account
@@ -777,7 +857,61 @@ keep `DATAQ_SIGNIN_EMAIL` set and override the same key names in the **root `.en
 ```
 DATAQ_SIGNIN_EMAIL=you@example.com
 AUTH_EMAIL_SMTP_HOST=smtp.example.com
-AUTH_EMAIL_TLS_MODE=starttls          # the bundled catcher's default is `none` — plaintext
+# the from-source stack's catcher default is `none`
+AUTH_EMAIL_TLS_MODE=starttls
+# prebuilt-image stack only (see below); nothing may follow the `=`, not even a comment
+AUTH_EMAIL_CA_BUNDLE=
+```
+
+On the **prebuilt-image stack** the catcher is reached over STARTTLS and verified against
+the stack's local CA (`AUTH_EMAIL_CA_BUNDLE=/certs/ca.pem`), and that bundle is used
+*instead of* the usual certificate authorities. A public relay's certificate is not
+signed by the local CA, so set `AUTH_EMAIL_CA_BUNDLE=` (empty) alongside the host, or
+every sign-in mail fails certificate verification.
+
+#### Sending to real mailboxes from the prebuilt-image stack
+
+To have sign-in codes arrive in Gmail, Outlook or any other real mailbox, point the
+stack at an SMTP relay you have an account on. Put this in a `.env` file beside the
+compose file (or export the variables) and start the stack:
+
+```
+DATAQ_SIGNIN_EMAIL=you@example.com
+# Microsoft 365 / Outlook: smtp.office365.com
+AUTH_EMAIL_SMTP_HOST=smtp.gmail.com
+AUTH_EMAIL_SMTP_PORT=587
+AUTH_EMAIL_USERNAME=you@example.com
+AUTH_EMAIL_FROM=you@example.com
+# empty, so the relay is checked against the public CAs. Nothing may follow the `=`:
+# a comment on this line would become the value.
+AUTH_EMAIL_CA_BUNDLE=
+# needed on the first start only
+DATAQ_SMTP_PASSWORD=<the relay password>
+```
+
+- **The password is handed over once.** `DATAQ_SMTP_PASSWORD` is read by a start-up
+  step that writes it to the stack's vault and by nothing else; the API never has it in
+  its environment. The vault keeps it across restarts, so remove the line after the
+  first start. Supply it again only to change it.
+- **Gmail** needs an app password (an account with 2-step verification, then *App
+  passwords*), not your sign-in password. **Microsoft 365 / Outlook** works where SMTP
+  AUTH is enabled for the mailbox; many organisations turn it off.
+- The relay will only send **from** an address the account owns, so `AUTH_EMAIL_FROM`
+  is normally the same as the username.
+- With a real relay configured the bundled inbox on `:8025` receives nothing.
+- If the code does not arrive, an Admin can use **Admin → Settings → Send test email**,
+  which reports the relay's answer. With no password stored the start-up step
+  says so in its log (`docker compose logs otp-mail-secret`) rather than inventing one.
+
+**Alert emails** use a separate mailer. Turn it on the same way:
+
+```
+EMAIL_SMTP_HOST=smtp.gmail.com
+EMAIL_USERNAME=you@example.com
+# comma-separated recipients
+EMAIL_TO=team@example.com
+# first start only
+DATAQ_ALERT_SMTP_PASSWORD=<the relay password>
 ```
 
 `.env.app` is still the file for **host-side dev** (uvicorn on your own machine, which
@@ -1477,7 +1611,8 @@ Custom-SQL checks are the most flexible check type and the slowest to author. On
 whose target is a table on a SQL datasource (Snowflake or Unity Catalog), start a check,
 pick **Custom SQL**, and describe the rule instead of writing it. **Generate from a
 description** sits beside the hand-written Custom SQL card — same check type underneath,
-just a different starting point:
+just a different starting point. The description box appears only when you start from that
+card; the Custom SQL card opens the plain SQL editor:
 
 ![The Custom SQL category with two cards: "Custom SQL" for hand-written queries and "Generate from a description" for the model to translate](../assets/screenshots/check-editor-custom-sql-picker.png){ .screenshot }
 
@@ -1545,6 +1680,10 @@ Suggestions are proposals: nothing is created until you click **Add** (or **Add 
 remaining**), so one you disagree with costs a glance. A separate warning surfaces any
 pipeline trigger binding that *nearly* matched this suite (right pipeline, wrong
 environment) — a coverage gap no column profile could reveal either way.
+
+On a table with more than 100 columns, only the first 100 are profiled and sent. The drawer
+says how many were looked at; the others get no suggestions, which is not a finding that
+they need no checks.
 
 **Placement and dedup from column lineage.** Where recorded column lineage reaches the suggested
 column, each suggestion also says where that column comes from. There are two recommendations,
@@ -1732,7 +1871,8 @@ Two things the scorecard deliberately will not do, and you should read them the 
 - **One suite = one target** (a table or a file batch) on **one connection/env**. A
   suite named `orders — snowflake prod` beats a grab-bag `all my checks`.
 - Use suite **export / import** to promote a suite between environments (author on DEV,
-  import against the UAT/PROD connection) instead of re-clicking checks.
+  import against the UAT/PROD connection) instead of re-clicking checks. The file can be
+  YAML kept in a repository; see [Suite document](../reference/suite-document.md).
 - Share suites with **view** by default; reserve **edit** for the owning team
   (suite-level sharing is the access model **for suites**; connection management is gated separately by workspace role — Admin-only, ADR 0033. There are no folder scopes).
 
@@ -1932,6 +2072,11 @@ so an expired or revoked one is visible without anyone pressing Test. It has thr
 connection nothing uses stays unknown indefinitely. That is deliberate — the signal is
 derived from work DataQ already does rather than from a periodic probe, so it costs no
 warehouse credits and cannot report on a connection nobody has exercised.
+
+The card also shows a **DQ score** when the connection has one: 0–100 over every check
+that evaluated in the latest run of each suite on that connection, if that run completed, counting
+suites you cannot open. It says what DataQ found in the data, where the health badges say
+whether DataQ could reach it. A connection where nothing has evaluated shows no score.
 
 Only credential **rejections** move this signal. A missing SELECT grant, an unreachable
 host and a bad table name all leave it untouched, because none of them says the credential
@@ -2389,6 +2534,28 @@ The `3/5 passing` figure counts checks that passed in the latest run out of chec
 that exist, so the gap includes failing, skipped, errored **and** never-run checks;
 hover it to see how many were excluded from the score.
 
+Above the dimension rows, the **asset health score** is one number for the whole asset:
+0–100 over every check that evaluated in each suite's latest run, if it completed, with the
+workspace's severity weights. A suite whose latest run is still going, failed or was
+cancelled adds nothing until its next completed run; an older run is not used instead.
+Unlike the rows below it, it includes checks with no
+dimension, so a failing custom SQL check lowers it. An asset where nothing evaluated shows
+**No signal**, not 0. It is not the Dashboard's Data Integrity Score, which covers every
+run in a time window across all your suites.
+
+Beside it, the change **vs 7 days ago** compares the score with what the same calculation
+gave a week earlier: each suite's latest run as of then, if it had completed. Nothing is shown when
+there is no earlier score to compare with, which is different from "no change".
+
+The **Dashboard** has the other cut: *Data quality by dimension, across the workspace*
+shows each dimension over every suite in the workspace, so one dimension slipping on many
+assets at once is visible in one place. Like the asset scorecard it is the same for
+everyone and counts suites you cannot open; the tiles below it cover only your suites.
+
+On **Assets → All assets**, the **Score** column shows the same number, and **Sort by →
+Health score, lowest first** orders every asset in the workspace by it, with unscored
+assets last.
+
 The numbers are **workspace-wide**: everyone who can see the asset sees the same
 score, whether or not they can open the suites behind it. Two people comparing
 notes on the same table should never see two different verdicts.
@@ -2430,7 +2597,10 @@ checks and a daily schedule. After its first run it adds *Data is fresh* on `ord
   least 100 rows, *unique* for an id-like column whose values are all distinct, and *one of these
   values* for a column with 2 to 10 distinct values. They appear under **Suggested rules** on the
   suite page, each with the reason (for example "No nulls in 12,480 rows"). Accepting one adds the
-  check; a rejected rule is never suggested again. A column the suite's policy or the warehouse
+  check; a rejected rule is never suggested again. If you run **Suggest checks** on an automatic
+  suite, the AI model's validated suggestions are saved to the same list, marked **AI-suggested**,
+  so they are still there after you close the panel. DataQ does not call the model on its own:
+  that happens only when someone runs Suggest checks. A column the suite's policy or the warehouse
   marks sensitive is never proposed as a value set, because that would copy its values into the
   check.
 - **Your changes win.** You can edit, snooze or share these suites and checks like any other.
@@ -2447,6 +2617,17 @@ checks and a daily schedule. After its first run it adds *Data is fresh* on `ord
   watched this closely. Deleting the column-profile check from a suite stops it for that table for
   good. Once a week each covered table is also profiled for suggested rules. A connection covers at most 500 tables (`AUTO_COVERAGE_MAX_ASSETS`); past
   that, the first 500 by name are covered and the overflow is logged.
+- **Say what an incident turned out to be.** When you resolve an incident, the confirmation
+  asks *What was it?*: **Fixed**, **Expected change** or **False positive**. It is optional and
+  works on any incident, not only automatic ones. An unanswered one is recorded as not stated,
+  never guessed. Marking false positives is how you find out whether automatic checks are
+  crying wolf.
+- **Is it working?** The Dashboard's **Coverage** panel shows two workspace-wide figures. *Assets
+  watched* is the share of assets in the inventory with at least one suite that completed a run
+  in the last 7 days, split into assets with authored checks and assets watched by automatic
+  coverage only. *False positives* is, of the automatic-suite incidents a person resolved in the
+  last 30 days **and said what they were**, the share marked false positive. Both show the counts
+  behind them. When nobody has stated a resolution the panel says "Not measured", not 0%.
 - **Who can see them.** Automatic suites have no human owner. Workspace admins see all of them
   and can share them; everyone sees the asset's health, which includes them.
 
@@ -3233,6 +3414,12 @@ Delivered when a run breaches its threshold ([Notifications & alerting](notifica
 - **Severity routing** — urgency scales with severity; critical escalates.
 - **Dedup** — you hear about a breakage once (and again on escalation); a clean run resets.
 - **Snooze** — silence a known-broken check for N hours (history + re-fire preserved).
+- **Bulk actions on checks** — tick checks on the suite page, or **Select all**, then
+  snooze, unsnooze or delete them together, or **Set thresholds** to give them all the
+  same warn, fail or critical value. It is all-or-nothing: if any one cannot be changed,
+  none are, and the ones at fault are named. A bulk delete removes each check's results
+  and history, as a single delete does. Thresholds can only be set on checks of one kind
+  at a time, because a threshold is compared with the number that kind of check measures.
 - **Per-suite config** — channels + threshold + recipients set per suite.
 - **Connection poll-health alerts** — when an orchestration connection's poll keeps failing
   (an expired credential, a moved orchestrator), DataQ stops ingesting pipeline runs and
@@ -3280,7 +3467,7 @@ results surface applies. Raw sample rows never leave the deployment on any path.
 
 ## AI assistants (MCP)
 
-A curated **52-tool MCP server** at `/mcp` lets Claude / Copilot / Cursor list suites, read
+A curated **54-tool MCP server** at `/mcp` lets Claude / Copilot / Cursor list suites, read
 results, checks, runs, connections, schedules, trigger bindings, notification config and the
 reusable notification channels, trigger and cancel runs, poll status, add/update/delete/snooze
 checks, dry-run a check preview, manage schedules and trigger bindings end-to-end (create /
@@ -3290,7 +3477,7 @@ with health and lineage) and **incidents** (what is broken right now, with the e
 acknowledge and resolve them, and surface near-miss triggers that silently never fire), trace
 a column's lineage, list a target's columns, profile columns, suggest a PII policy, test a
 connection, read a curated docs page, and read the health score and pipeline status — in natural language, with the same per-suite authz as the
-UI. The 52 split three ways: **28 read-only, 18 that change state**, and **6 that persist
+UI. The 54 split three ways: **30 read-only, 18 that change state**, and **6 that persist
 nothing but open a live datasource connection with stored credentials** and so are gated like
 writes ([AI assistants](mcp-setup.md), ADR 0008 + its Tier 1–3B amendments).
 
@@ -3339,7 +3526,7 @@ The endpoint accepts the **same credentials as the REST API** (ADR [0008](../adr
     [0032](../adr/0032-email-otp-signin.md)) has no identity provider to issue bearer
     tokens, so an **API key is the only `/mcp` credential** there — mint one as
     below and use it exactly the same way. Everything else is identical, including
-    all 52 tools and per-suite permissions. Two rejections are deliberate in that
+    all 54 tools and per-suite permissions. Two rejections are deliberate in that
     mode: a raw JWT is refused (there is nothing to validate it against), and your
     **sign-in session is never accepted** — it is a browser credential and does not
     authenticate `/mcp`, whether presented as a bearer or carried as a cookie.
@@ -3397,7 +3584,7 @@ Start it via the command palette (`Cmd/Ctrl+Shift+P`) → **MCP: List Servers** 
 
 **Cursor** (`~/.cursor/mcp.json`) uses the same `mcpServers` shape as Claude Desktop.
 
-## The 52 tools
+## The 54 tools
 
 Each tool is a thin wrapper over the same service layer as the REST API — per-suite
 authorization (`view` for a read, `edit` for a mutation) and failing-sample redaction apply
@@ -3407,7 +3594,7 @@ drift-checked in CI, so it cannot go stale the way an earlier hand-typed pass of
 
 The tools split three ways, not two:
 
-- **Read-only** (28) — reads gated on `view` where a suite is named; workspace-wide reads such as
+- **Read-only** (30) — reads gated on `view` where a suite is named; workspace-wide reads such as
   `list_suites` and `get_health_score` need only a signed-in user.
 - **Changes state** (18) — every one gates on `edit` access to the affected suite (schedule,
   binding and incident tools via the suite they target); `import_suite` additionally requires
@@ -4082,8 +4269,11 @@ Other commands:
 ```bash
 dataq wait <run-id>                               # wait for a run someone else started
 dataq run <suite-id> --wait --json                # the outcome as JSON
-dataq export <suite-id> -o orders.json            # the suite's portable document
-dataq import orders.json --connection <conn-id>   # create a suite from it
+dataq export <suite-id> -o orders.yaml            # the suite's portable document (.json works too)
+dataq import orders.yaml --connection <conn-id>   # create a NEW suite from it
+dataq validate orders.yaml --connection <conn-id> # would it be accepted? exit 2 if not
+dataq drift orders.yaml --suite <suite-id>        # does the suite differ from the file? exit 2 if so
+dataq apply orders.yaml --suite <suite-id>        # make the suite match the file (--prune deletes extras)
 ```
 
 ## From Python
@@ -4333,7 +4523,7 @@ A suite can hold several schedules (e.g. hourly on weekdays + a daily deep pass)
 ## Where results land
 
 Scheduled runs appear on **Results** and the **Dashboard** like any other run, with
-`triggered_by` marking the schedule. Alerting applies per the suite's
+**Schedule** in the **Triggered by** column. Alerting applies per the suite's
 [notification config](notifications.md).
 
 
@@ -4350,6 +4540,7 @@ Look-up pages. Complete rather than narrative.
 | [Check types](check-types.md) | You want every check DataQ can author, with parameters, thresholds and datasource support — generated from the code. |
 | [Feature matrix](feature-matrix.md) | You need to know whether a capability works on a given datasource, provider or deployment. |
 | [REST API](rest-api.md) | You are scripting against `/api/v1` with a personal access token — includes the interactive explorer and the downloadable OpenAPI spec. |
+| [Suite document](suite-document.md) | You want to write a suite as a JSON or YAML file, validate it and import it — every field, the YAML rules and what the file does not carry. |
 | [API compatibility](api-compatibility.md) | You build against the REST API, MCP or the export document and want to know what stays stable across upgrades, and how a breaking change is announced. |
 | [MCP tools](mcp-tools.md) | You want every tool an AI assistant gets, with who can call it — generated from the server. |
 | [Glossary](glossary.md) | A term in the UI or docs is unfamiliar. |
@@ -4376,7 +4567,7 @@ These are covered by this policy. A change to them follows the rules below.
 |---|---|
 | **REST API** (`/api/v1/...`) | Paths, HTTP methods, request fields and their meaning, response fields and their meaning, status codes, and the error envelope (`error.code`, `error.message`). The published [OpenAPI spec](rest-api.md) is the contract. |
 | **MCP tools** (`/mcp`) | Tool names, parameter names and meaning, and the documented fields of each tool's result. |
-| **Suite export document** | The JSON shape `export` produces and `import` accepts, versioned by its top-level `version` field. |
+| **Suite export document** | The shape `export` produces and `import` accepts, as JSON or YAML, versioned by its top-level `version` field. See [Suite document](suite-document.md). |
 | **Python client** (`dataq-client`) | The convenience layer (`DataQClient` and its methods, the typed run outcome) and the `dataq` command line: commands, flags and exit codes. |
 | **Personal access tokens** | The `Authorization: Bearer dq_live_...` scheme. |
 
@@ -4436,6 +4627,7 @@ Changes that took effect without the deprecation window above, and why:
 | Release | Change | Why no deprecation window |
 |---|---|---|
 | Unreleased | `POST /connections`, a config- or credential-changing `PATCH /connections/{id}`, and `POST /connections/{id}/reauth` return `422 connection_test_failed_on_save` and write nothing when the connection's test fails; `PUT /admin/llm` does the same for an enabled provider (`422 llm_test_failed_on_save`). | A request this now refuses used to save a connection that could not work, and a failing re-auth used to overwrite a working credential. A client that wants the old behaviour sends the new optional `skip_test: true`, so no client is left without a path. |
+| Unreleased | On `PATCH /suites/{id}/checks/{id}`, an explicit `null` for `warn_threshold`, `fail_threshold` or `critical_threshold` now clears that threshold; before, it was ignored. Omitting the key keeps the stored value, as it always did. | It is a bug fix: a threshold, once set, could not be removed through the API or the check editor at all, and `null` had no documented meaning there. The Python client is unaffected (it omits fields you do not set). |
 
 ## The export document's `version`
 
@@ -4467,6 +4659,10 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ## Unreleased
 
+Nothing yet.
+
+## v1.2.0 — 2026-10-04
+
 ### Breaking
 
 - **A connection that fails its own test is no longer saved.** Creating a connection, changing
@@ -4484,7 +4680,106 @@ the per-PR history lives in the repo's commit log and pull requests.
   [A connection is tested before it is saved](../guides/datasources-checks.md#a-connection-is-tested-before-it-is-saved)
   and [API compatibility](api-compatibility.md#recorded-exceptions).
 
+- **The prebuilt-image stack publishes only the UI, over HTTPS.** `docker-compose.ghcr.yml`
+  now runs the way a production deployment does: the UI on `:3000` is the only way in, it
+  serves HTTPS with a certificate from a CA the stack generates on first start (your browser
+  warns until you trust it — `scripts/local-ca.sh install` does that, and `uninstall`
+  reverses it; plain HTTP redirects), and the API is reached through it at
+  `https://localhost:3000/api` (MCP at `https://localhost:3000/mcp/`).
+  The API (`:8000`), Postgres (`:5432`), Redis (`:6379`), the vault (`:8200`) and the mail
+  catcher's SMTP port (`:1025`) no longer have host ports, and the interactive API page at
+  `/docs` is off. Point scripts that called `http://localhost:8000` at
+  `https://localhost:3000` and give them the CA certificate (see Getting started). Inside
+  the stack, Postgres, Redis, the mail catcher, the vault and the API are all reached
+  over TLS verified against the same CA, and Postgres refuses a client without it. The inbox
+  stays at `http://localhost:8025`. The from-source stack (`docker-compose.yml`) is unchanged.
+
+- **The prebuilt-image stack keeps its data in a directory.** `docker-compose.ghcr.yml`
+  stores the database, the sample warehouse and the vault under `./dataq-data`
+  (`DATAQ_DATA_DIR` moves it) instead of Docker volumes, and the vault is no longer
+  in-memory: stored credentials survive a restart. Data in the previous `ghcr_postgres_data`
+  volume is not migrated; the stack starts fresh in the new directory. To reset, run
+  `down -v` and delete the directory.
+
+- **A check's severity thresholds can be cleared.** Emptying a warn, fail or critical
+  threshold in the check editor and saving used to leave the old value in place. `PATCH
+  /suites/{id}/checks/{id}` now treats an explicit `null` for `warn_threshold`,
+  `fail_threshold` or `critical_threshold` as *clear it*; leaving the key out still keeps
+  the stored value. **A client that sent `null` for these to mean "unchanged" must omit
+  the key instead.** A check that needs a fail or critical threshold (freshness, anomaly) still
+  refuses to lose its last one. Over MCP, `update_check` gains `clear_thresholds`.
+
 ### Added
+
+- **An upgrade guide and a support policy.** [Upgrading](../operate/upgrading.md) covers what to
+  back up, the steps for the prebuilt-image stack and a cloud deployment, and rolling back.
+  `SUPPORT.md` says where to ask for help. The security page now states outright that DataQ
+  sends nothing to its authors.
+- **A first-run path and empty states that say what to do next.** A new workspace's Dashboard
+  shows a **Get started** panel: connect a data source, create a suite, add a check, run it. It
+  offers the next step, says who can take it when you cannot, and goes away once all four are
+  done; what automatic coverage creates does not count. The empty Connections, Suites, Assets and checks lists now explain what belongs there
+  and offer the action your role allows. In the API, `GET /dashboard/onboarding` returns the
+  four steps as booleans.
+- **AI suggestions are kept for automatic suites.** Running **Suggest checks** on an
+  automatically covered suite now also saves the validated suggestions under **Suggested
+  rules**, marked **AI-suggested**, where they can be accepted or rejected later. A rule the
+  suite has already seen is not saved again. The invocation result gains `queued_for_review`.
+- **Two MCP tools for automatic coverage.** `get_coverage` returns the share of the asset
+  inventory watched in the last 7 days and the false-positive rate of automatic checks, with
+  the counts behind each. `list_suggested_rules` lists a suite's review queue. Both are
+  read-only; accepting or rejecting a rule is still done in the app. `/mcp` now has 54 tools.
+- **Say what an incident turned out to be.** Resolving an incident can record whether it was
+  **fixed**, an **expected change** or a **false positive**. It is optional; left out, the
+  incident is recorded as not stated. In the API, `POST /incidents/{id}/resolve` takes
+  `resolution` and incidents return it; the MCP `resolve_incident` tool takes it too.
+- **Coverage and false-positive figures on the Dashboard.** A new panel shows what share of the
+  asset inventory was watched by a suite in the last 7 days, and what share of resolved
+  automatic-check incidents were marked false positives in the last 30, each with the counts
+  behind it. In the API, `GET /dashboard/coverage`.
+- **Apply a suite file onto an existing suite, and see drift.** `POST /suites/{id}/apply`
+  creates, updates and (with `prune`) deletes checks to match a JSON or YAML document,
+  matching checks by name; it is idempotent. With `dry_run` it changes nothing and reports
+  how the suite differs from the file. The `dataq` command gains `validate`, `drift` and
+  `apply`, and reads and writes YAML. See [Suite document](suite-document.md).
+- **Bulk snooze, unsnooze and delete for checks.** The suite page's check list has a
+  checkbox per check and **Select all**; the selected checks can be snoozed, unsnoozed or
+  deleted in one action. It is all-or-nothing, and each check gets the same audit event a
+  single action writes. In the API, `POST /suites/{id}/checks-bulk/snooze`,
+  `/checks-bulk/unsnooze` and `/checks-bulk/delete`.
+- **Bulk severity thresholds.** **Set thresholds** on the same selection gives every selected
+  check the same warn, fail or critical value; each tier can be set, cleared or left as it
+  is. Refused as a whole, naming the checks at fault, if the selection mixes check kinds
+  or any check cannot take the result. In the API, `POST /suites/{id}/checks-bulk/thresholds`.
+- **A data-quality score per connection.** Each connection card shows a **DQ score** across
+  every suite on that connection, from each suite's latest run if it completed. It is the same
+  for every member, and absent when nothing has evaluated. In the API, connections gain
+  `health_score`.
+- **Each quality dimension across the whole workspace.** The Dashboard has a new panel
+  with one row per dimension over every suite in the workspace, with the same coverage
+  rules as the asset scorecard: a dimension with no checks anywhere is listed as not
+  covered, and checks with no dimension are counted separately. In the API,
+  `GET /dashboard/dimensions`.
+- **Suites as YAML files, and a way to validate them.** A suite document can now be YAML as
+  well as JSON: `POST /suites/import` accepts `document_yaml`, and
+  `GET /suites/{id}/export?format=yaml` produces it. The new `POST /suites/validate`
+  reports every problem an import would be refused for and creates nothing. The format is
+  now documented field by field in [Suite document](suite-document.md). Plain YAML values
+  follow JSON's rules, so `NO` and `2026-01-01` stay text.
+- **An asset health score.** The asset page's scorecard now leads with one 0–100 number
+  for the whole asset, and **Assets → All assets** shows it in a **Score** column and can
+  sort the whole workspace by it, lowest first. It counts every check that evaluated in
+  each suite's latest run, if it completed, including checks with no dimension. Beside it, the
+  asset page shows the change against the same score 7 days ago. In the API, assets gain
+  `health_score`, `GET /assets` gains `sort=health_score`, and `GET /assets/{id}` gains
+  `previous_health_score`, `health_score_delta` and `score_delta_days`. See
+  [Datasources & checks](../guides/datasources-checks.md#seeing-coverage-the-asset-scorecard).
+- **Real mailboxes from the prebuilt-image stack.** Point the sign-in mailer at your own
+  relay and supply its password once as `DATAQ_SMTP_PASSWORD`: a start-up step stores it in
+  the stack's vault, where it persists, and the API never holds it. The alert mailer's
+  `EMAIL_*` settings are now passed through as well, with `DATAQ_ALERT_SMTP_PASSWORD`. With
+  a relay configured and no password stored, the start-up step says so instead of storing a
+  random one. See Getting started.
 
 - **Python client and CLI (`dataq-client`).** Install the wheel attached to the release (or the
   latest from `main`), then
@@ -4504,6 +4799,32 @@ the per-PR history lives in the repo's commit log and pull requests.
   [Datasources & checks](../guides/datasources-checks.md#snowflake-dmf-adr-0036).
 
 ### Fixed
+
+- **An imported suite keeps its checks in the order of the file.** Checks created together (an
+  import, the demo data) were listed in an arbitrary, though stable, order. Checks now carry
+  their position, so lists, exports and run results follow the order they were written in.
+  Existing suites keep the order they show today. This release adds a database migration.
+- **Add check is no longer offered on a suite you can only view.** The button led to a form
+  whose save was refused.
+- **"Triggered by" names who started a run.** The Dashboard, Results, the run page and the
+  printed report showed an internal identifier such as `manual:d7c88410-…`. They now show
+  the person's name or email (`Manual — Olivia Admin`), `Schedule`, or the orchestration
+  provider. In the API, `triggered_by` is unchanged and runs gain `triggered_by_label`.
+- **The Custom SQL card opens the plain SQL editor.** Both cards in the Custom SQL step used
+  to open a form with the **Generate from a description** box. It now appears only when you
+  start from the **Generate from a description** card. Editing an existing custom SQL
+  check no longer shows it either.
+- **Check suggestions on a wide table stay within the model's limits.** The suggestion prompt
+  grew with every column, so a table with hundreds of columns could cost far more or fail at
+  the provider. Only the first 100 columns are now profiled and sent, long values are
+  shortened, and the drawer says when part of the table was not looked at. The invocation's
+  result gains `column_coverage` (`{profiled, total}`).
+
+- **A completed run with no results no longer says it did not complete.** A check's results
+  are removed when the check is deleted, so a finished run can be left with none (as can a
+  run of a suite that had no checks). The run
+  page and the printed report now say that, keep "did not complete" for runs that failed
+  or were cancelled, and say a queued or running run has not finished yet.
 
 - **A batch-target preview no longer comes back empty just because signing in was slow.** The
   preview's time budget now starts when the store returns its first object, not before the
@@ -6139,7 +6460,7 @@ risk that carries.
 |---|---|
 | Web UI | Dashboard · Assets · Connections · Suites · Results · Profile · Admin · Settings (Assets lead as the primary lens — ADR 0034 nav inversion; the Dashboard opens with an asset-health strip, and suites/runs link back to their asset) |
 | REST API | Versioned `/api/v1` (Swagger in non-prod) |
-| MCP | 52 curated tools at `/mcp` for AI assistants (ADR 0008). Served in both auth modes — SSO and email OTP; under OTP the credential is a **PAT only** ([MCP setup](../guides/mcp-setup.md)) |
+| MCP | 54 curated tools at `/mcp` for AI assistants (ADR 0008). Served in both auth modes — SSO and email OTP; under OTP the credential is a **PAT only** ([MCP setup](../guides/mcp-setup.md)) |
 
 
 ---
@@ -6168,7 +6489,7 @@ risk that carries.
 | **Incident** | The stateful, deduped object failing results roll up into: `open → acknowledged → resolved`, ≤1 active per (asset, check), evidence card attached (ADR 0034). |
 | **`pipeline_runs` vs `runs`** | Orchestration runs vs DataQ check runs — linked, never conflated. |
 | **Secret store** | Where credentials live — Azure Key Vault / AWS Secrets Manager / OpenBao (prod) or env/OpenBao (dev), behind one seam. |
-| **MCP** | Model Context Protocol — DataQ exposes 52 curated tools at `/mcp` for AI assistants (28 read-only, 18 that change state, 6 live-probe tools gated like writes). |
+| **MCP** | Model Context Protocol — DataQ exposes 54 curated tools at `/mcp` for AI assistants (30 read-only, 18 that change state, 6 live-probe tools gated like writes). |
 | **ADR** | Architecture Decision Record — `docs/site/adr/`, one markdown per significant decision. |
 
 ## Contact / ownership
@@ -6189,10 +6510,10 @@ run against), and the description is the opening of what an AI assistant is show
 
 | | Count |
 |---|---|
-| Tools | 52 |
-| Read-only | 28 |
-| Changes state | 19 |
-| Live probe | 5 |
+| Tools | 54 |
+| Read-only | 30 |
+| Changes state | 18 |
+| Live probe | 6 |
 
 No tool creates, edits or re-credentials a connection: every Admin-only capability is a
 connection mutation, and a credential must never transit an LLM.
@@ -6207,6 +6528,7 @@ connection mutation, and a credential must never transit an LLM.
 | `get_check` | `view` on the suite | Get one check's full definition by id. |
 | `get_check_history` | `view` on the suite | Get one check's recent result history — how it has behaved run over run. |
 | `get_column_policy` | `view` on the suite | Get the suite's failing-sample redaction policy — which columns are masked. |
+| `get_coverage` | any signed-in user | Get how much of the asset inventory is watched, and how often automatic checks cry wolf. |
 | `get_doc` | any signed-in user | Read a published DataQ user-facing doc page, verbatim. |
 | `get_health_score` | any signed-in user | Get the workspace data-quality health score and its trend. |
 | `get_incident` | `view` on the incident's suite | Get one incident with its evidence card — why it opened and what else broke. |
@@ -6225,6 +6547,7 @@ connection mutation, and a credential must never transit an LLM.
 | `list_notification_channels` | any signed-in user | List every reusable notification channel defined in the workspace. |
 | `list_runs` | any signed-in user; suite-scoped when a suite is named | List recent suite runs, newest first, with each run's data-quality outcome. |
 | `list_schedules` | any signed-in user; suite-scoped when a suite is named | List the cron schedules that run suites automatically. |
+| `list_suggested_rules` | `view` on the suite | List the rules waiting for review on a suite — proposals, not checks. |
 | `list_suite_channels` | `view` on the suite | List the reusable notification channels linked to one suite. |
 | `list_suites` | any signed-in user | List the data-quality suites the current user can access. |
 | `list_trigger_bindings` | any signed-in user; suite-scoped when a suite is named | List the orchestration triggers that run a suite when a pipeline succeeds. |
@@ -6235,7 +6558,6 @@ connection mutation, and a credential must never transit an LLM.
 | Tool | Who can call it | What it does |
 |---|---|---|
 | `ack_incident` | `edit` on the incident's suite | Acknowledge an incident — record that someone is looking at it. |
-| `browse_connection` | workspace Member or Admin | List what a connection can see, one level at a time, to pick a suite's run target. |
 | `cancel_run` | `edit` on the suite | Cancel a queued or still-running suite run. |
 | `create_check` | `edit` on the suite | Add a new check (a Great Expectations expectation, by default) to a suite. Requires edit access to the suite. Returns the created check's id. |
 | `create_schedule` | `edit` on the suite | Schedule a suite to run automatically on a cron expression. |
@@ -6258,6 +6580,7 @@ connection mutation, and a credential must never transit an LLM.
 
 | Tool | Who can call it | What it does |
 |---|---|---|
+| `browse_connection` | workspace Member or Admin | List what a connection can see, one level at a time, to pick a suite's run target. |
 | `dryrun_check` | `edit` on the suite | Preview a check against live data WITHOUT saving it. |
 | `list_columns` | `edit` on the suite | List the column names of a suite's table or file. |
 | `profile_column` | `edit` on the suite | Profile one or more columns of a table or file on a suite's connection. |
@@ -6540,6 +6863,259 @@ an outbound model request.
 | POST | `/admin/inventory-sync/{connection_id}/run` | Queue one inventory sync now. |
 | GET | `/admin/secret-sweep` | Last orphan-secret sweep report — `never_run` if the sweep hasn't recorded one. |
 | POST | `/admin/secret-sweep/run` | Run the orphan-secret sweep now, always report-only (audited). |
+
+
+---
+
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/reference/suite-document/ -->
+
+# Suite document
+
+A suite written as a file: its name, description and checks, with no database identity and
+no connection. Export produces one, import creates a suite from one, and validate tells you
+whether an import would be accepted. Keep it in a repository beside the pipeline it guards.
+
+The document can be JSON or YAML. Both mean exactly the same thing.
+
+```yaml
+version: 1
+name: Orders quality
+description: Checks on the orders table after the nightly load
+checks:
+  - name: order id is never null
+    expectation_type: expect_column_values_to_not_be_null
+    config:
+      column: order_id
+
+  - name: status is a known value
+    expectation_type: expect_column_values_to_be_in_set
+    config:
+      column: status
+      value_set: [NEW, PAID, SHIPPED, CANCELLED]
+      mostly: 0.99
+    warn_threshold: 0.5
+    fail_threshold: 2
+
+  - name: orders arrived today
+    kind: freshness
+    expectation_type: monitor:freshness
+    config:
+      column: order_ts
+    warn_threshold: 24
+    fail_threshold: 48
+```
+
+## Fields
+
+### Document
+
+| Field | Required | Meaning |
+|---|---|---|
+| `version` | no (default `1`) | The document format. This page describes version `1`; any other value is refused. |
+| `name` | yes | The suite's name, 1–128 characters. |
+| `description` | no | Up to 1024 characters. |
+| `checks` | no | A list of checks. An empty suite is valid. |
+
+An unknown field anywhere in the document is refused, so a typo in a field name is an error
+and never a silently ignored line.
+
+### Check
+
+| Field | Required | Meaning |
+|---|---|---|
+| `name` | yes | 1–256 characters. |
+| `expectation_type` | yes | The check type. Every type, its parameters and a worked example of each is on [Check types](check-types.md). |
+| `kind` | no (default `expectation`) | `expectation`, `freshness`, `volume`, `schema_drift`, `anomaly`, `aggregate` or `comparison`. Must match the type: a `monitor:freshness` type has kind `freshness`. |
+| `config` | no | The type's parameters, as shown for each type on [Check types](check-types.md). |
+| `warn_threshold`, `fail_threshold`, `critical_threshold` | no | Severity bands. They must be ordered warn ≤ fail ≤ critical, and only types that measure a number accept them. |
+| `dimension` | no | `accuracy`, `completeness`, `consistency`, `integrity`, `timeliness`, `uniqueness` or `validity`. **Leave the field out** to have it derived from the check type. Write `dimension: null` to keep the check unclassified on purpose. |
+| `engine` | no (default `gx`) | What evaluates the check. A native engine (`dmf`, `dqx`) imports only onto a connection that offers it. |
+| `source_connection` | comparison checks only | `{name, env}` of the connection the comparison reads its source from. It must already exist in the workspace under that name and environment. |
+
+## What the document does not carry
+
+- **The connection.** You name it when you import or validate, so the same file can be
+  applied to DEV and to PROD.
+- **The target table or file.** An imported suite has no target and cannot run until you set
+  one, in the app or through the API.
+- **Schedules, triggers, sharing and notification settings.** These belong to the suite in
+  the workspace, not to the document.
+- **Run history.** Importing always creates a new suite. To change an existing suite from a
+  file, use [apply](#apply-a-file-onto-an-existing-suite).
+
+## YAML rules
+
+DataQ reads YAML with JSON's rules for plain values, so a value is what it looks like:
+
+| You write | DataQ reads |
+|---|---|
+| `true`, `false` | a boolean |
+| `42`, `-2`, `1.5`, `1e3` | a number |
+| `null`, `~`, or nothing | null |
+| anything else, quoted or not | text |
+
+So `NO`, `yes`, `off`, `2026-01-01`, `1:30` and `010` are all text. Many YAML tools would
+read those as a boolean, a date or a number; DataQ does not, and a country code or a
+zero-padded identifier in a `value_set` stays what you wrote. To pass a number or `true` as
+text, quote it: `"42"`.
+
+Not supported, and refused with the line number:
+
+- anchors and aliases (`&name`, `*name`) and merge keys (`<<`)
+- explicit tags (`!!binary`, `!!timestamp`, …)
+- keys that are not text
+- nesting more than 32 levels deep
+- documents longer than 1,000,000 characters
+
+A YAML export quotes every text value another YAML tool might read as something else
+(`"no"`, `"2026-01-01"`, `"0x1F"`), so the file survives being loaded and rewritten elsewhere.
+
+## Validate before you import
+
+`POST /api/v1/suites/validate` runs every rule import applies and reports **all** the
+problems, where import stops at the first. It creates nothing.
+
+```bash
+curl -sS https://dataq.example.com/api/v1/suites/validate \
+  -H "Authorization: Bearer $DATAQ_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n --arg c "$CONNECTION_ID" --rawfile y orders.yaml \
+        '{connection_id: $c, document_yaml: $y}')"
+```
+
+```json
+{
+  "valid": false,
+  "check_count": 3,
+  "problems": [
+    {
+      "location": "checks[1]",
+      "check_name": "status is a known value",
+      "code": "check_config_invalid",
+      "message": "warn_threshold (2) must be <= fail_threshold (0.5) — severity thresholds band an increasingly bad metric, so they must be non-decreasing"
+    }
+  ]
+}
+```
+
+That is the example above with the second check's `warn_threshold` and `fail_threshold`
+swapped. `location` is `document` for a problem with the document as a whole, `checks[1]` for the
+second check, or a field path such as `checks[1].expectation_type` when a field is missing or
+misspelled. Branch on `code`, not on the message.
+
+`valid: true` means an import onto that connection would be accepted. It does **not** mean
+the checks would pass, or even run: validation opens no datasource, so it cannot tell you
+that a column named in a check does not exist. A file that cannot be read as YAML at all is
+a `422` with the line and column.
+
+Validation is against a connection because some rules depend on its type: a native-engine
+check, a type that only runs on a dataframe, a comparison's source.
+
+## Apply a file onto an existing suite
+
+`POST /api/v1/suites/{id}/apply` brings a suite in line with a document. It is idempotent:
+applying the same file twice changes nothing the second time.
+
+Checks are matched by **name**:
+
+| The check is | What apply does |
+|---|---|
+| in the file, not in the suite | creates it |
+| in both, and differs | updates it |
+| in both, and the same | nothing |
+| in the suite, not in the file | leaves it alone, and lists it under `unmanaged`. With `prune: true`, deletes it together with its results and history. |
+
+The suite's name and description are updated from the file. Its connection, target,
+schedules, sharing and notification settings are never touched.
+
+Send `dry_run: true` to get the same plan without changing anything. That plan is the
+**drift** between the file and the workspace:
+
+```json
+{
+  "dry_run": true,
+  "changed": true,
+  "suite_fields": [],
+  "checks": [
+    { "name": "status is a known value", "action": "update", "fields": ["config", "fail_threshold"] },
+    { "name": "order id is never null", "action": "unchanged", "fields": [] }
+  ],
+  "unmanaged": ["a check someone added in the app"]
+}
+```
+
+`fields` names what differs and never shows a value, so a plan is safe in CI logs.
+`unmanaged` checks do not count as drift unless you ask for `prune`.
+
+Things to know:
+
+- The whole file is validated before anything is written, so a file that is refused changes
+  nothing. Each change is then made like an edit in the app, with its own version and audit
+  entry. If something fails part-way, the earlier changes stay; apply again to finish.
+- A threshold the file leaves out is **cleared** on the check, because the file is the
+  whole definition.
+- Renaming a check in the file reads as one new check and one unmanaged check. With `prune`
+  the old one is deleted and its history goes with it.
+- A check's `kind` cannot be changed. Give the new check a different name.
+- Names must be unique, in the file and among the suite's checks the file names.
+- `dimension: null` creates a new check unclassified, as import does. On a check that
+  already exists it is treated as "leave it": apply cannot un-classify a check.
+- Only the checks apply would create or change are validated. A check the file leaves as
+  it is stays, even if it is of a type that could no longer be created today.
+- It needs edit access to the suite and runs with your own permissions.
+
+### From the command line
+
+The [`dataq` command](../guides/python-client.md) wraps the three calls. A `.yaml` or `.yml`
+file is sent as YAML; anything else is read as JSON.
+
+```bash
+dataq validate orders.yaml --connection "$CONNECTION_ID"   # exit 2 if the file is invalid
+dataq drift    orders.yaml --suite "$SUITE_ID"             # exit 2 if the suite differs
+dataq apply    orders.yaml --suite "$SUITE_ID" [--prune]
+dataq export   "$SUITE_ID" -o orders.yaml                  # start from what exists
+```
+
+### In CI
+
+Validate and report drift on every pull request, apply on merge. With GitHub Actions:
+
+```yaml
+jobs:
+  suites:
+    runs-on: ubuntu-latest
+    env:
+      DATAQ_URL: ${{ vars.DATAQ_URL }}
+      DATAQ_PAT: ${{ secrets.DATAQ_PAT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install "git+https://github.com/TheurgicDuke771/DataQ.git@main#subdirectory=packages/dataq-client"
+      - run: dataq validate suites/orders.yaml --connection "${{ vars.DATAQ_CONNECTION_ID }}"
+      - if: github.event_name == 'pull_request'
+        run: dataq drift suites/orders.yaml --suite "${{ vars.ORDERS_SUITE_ID }}" || true
+      - if: github.ref == 'refs/heads/main'
+        run: dataq apply suites/orders.yaml --suite "${{ vars.ORDERS_SUITE_ID }}"
+```
+
+The token is a personal access token of a user with edit access to the suite.
+
+## Import and export
+
+| To | Call |
+|---|---|
+| Export as JSON | `GET /api/v1/suites/{id}/export` |
+| Export as YAML | `GET /api/v1/suites/{id}/export?format=yaml` |
+| Import JSON | `POST /api/v1/suites/import` with `{connection_id, document}` |
+| Import YAML | `POST /api/v1/suites/import` with `{connection_id, document_yaml}` — the YAML as one text value |
+| Apply or check drift | `POST /api/v1/suites/{id}/apply` with `{document}` or `{document_yaml}`, plus `prune` and `dry_run` |
+
+Send `document` or `document_yaml`, never both. Import and validate need the Member role or
+higher; export needs view access to the suite.
+
+The format is covered by the [API compatibility](api-compatibility.md) policy.
 
 
 ---
@@ -7568,7 +8144,7 @@ Boundary notes:
 - **celery-beat is its own process/service, never embedded in the worker.** Beat only schedules — it enqueues tasks onto the broker, it never executes one — so a worker OOM (overlapping large suites under `worker_concurrency=4` and a 2 GiB hard limit) can never take the scheduler down with it. This is what stops orchestration polling, scheduled-suite dispatch, and every daily sweep from going silently dark because the process that ran them died. Exactly one beat instance may ever run (min=max=1 replica / desired_count=1) — a second would double-fire every periodic task.
 - **The outbound LLM intelligence layer is live, off by default.** An admin must configure a provider (Anthropic or an OpenAI-compatible endpoint) and credential before any call leaves the deployment. SQL generation and check suggestions send masked aggregate profiler statistics only; RCA narratives additionally send the triggering check's own `observed_value`, routed through the same column-policy/warehouse-tag redaction floor every other results surface applies, plus its `expected_value` (a check-authored threshold, never masked). Raw sample rows are never sent on any path. See [Security & data handling](../security/overview.md).
 - **All connection secrets via the deployment's secret store in production / staging** — Key Vault on Azure, Secrets Manager on AWS. Local dev may resolve secrets via `KV_SECRET_*` env vars through the `EnvSecretStore` backend (see `backend/app/core/secrets.py`). No credentials are ever hardcoded.
-- **The `/mcp` endpoint exposes the same service layer to AI clients.** The 52 FastMCP tools (28 read-only, 18 that change state, 6 live-probe tools gated like writes) are thin wrappers reusing the same services + per-suite authz + sample redaction as the REST API — no logic duplication. It mounts under **either** sign-in mode (SSO, email OTP) and stays unmounted, **fail-closed**, only when none is configured. Under SSO it validates the same OIDC bearer (Azure AD or Cognito — a `JWTVerifier` on the same tenant/audience/scope) or a PAT; **under email OTP a PAT is the only accepted credential** — a raw JWT and a session cookie are both rejected there, since there is no IdP-issued bearer to validate and a session is a browser-only credential. See [ADR 0008](../adr/0008-mcp-server.md) / [ADR 0032](../adr/0032-email-otp-signin.md).
+- **The `/mcp` endpoint exposes the same service layer to AI clients.** The 54 FastMCP tools (30 read-only, 18 that change state, 6 live-probe tools gated like writes) are thin wrappers reusing the same services + per-suite authz + sample redaction as the REST API — no logic duplication. It mounts under **either** sign-in mode (SSO, email OTP) and stays unmounted, **fail-closed**, only when none is configured. Under SSO it validates the same OIDC bearer (Azure AD or Cognito — a `JWTVerifier` on the same tenant/audience/scope) or a PAT; **under email OTP a PAT is the only accepted credential** — a raw JWT and a session cookie are both rejected there, since there is no IdP-issued bearer to validate and a session is a browser-only credential. See [ADR 0008](../adr/0008-mcp-server.md) / [ADR 0032](../adr/0032-email-otp-signin.md).
 - **Interactive API docs are off in production.** `/docs`, `/redoc`, and `/openapi.json` are disabled when `ENVIRONMENT=prod` (the prod-docs gate); available in dev/staging.
 
 
@@ -9909,6 +10485,11 @@ mechanism and points you at the live endpoint for the values.
 
 ### What can move data out
 
+**DataQ sends nothing to its authors.** There is no usage telemetry, no licence check and
+no update check: a deployment makes network calls only to the services its operator
+configures — its datasources, identity provider, orchestrators and the destinations below.
+The list below is the ones that can carry data out.
+
 Enumerated at `GET /api/v1/admin/deployment` — enumerated rather than derived, so
 a vector that is switched **off** still appears and an auditor can see it was
 considered:
@@ -10573,7 +11154,7 @@ a third-party endpoint.
 | 5 | **OIDC identity provider** — Azure AD, AWS Cognito, any standards-compliant issuer | Standard OIDC flows; DataQ receives (never sends) profile claims | User identity (email, name, subject id) held at the IdP | `oidc` auth mode |
 | 6 | **Secret store** — Azure Key Vault, AWS Secrets Manager, OpenBao/Vault | Warehouse credentials (write on connection create, read at run time) | No customer data — but the credentials unlock the systems that hold it | Always (one of the four backends) |
 | 7 | **Telemetry** — Azure Application Insights, AWS X-Ray/CloudWatch, any OTLP sink | Traces + structured logs, **PII-redacted at the logger** | Operational metadata; request ids, not warehouse values | When an exporter is configured |
-| 8 | **MCP AI clients** — whatever model provider stands behind a client holding a valid PAT | Run results, redacted failing samples, check configuration, via the 52 `/mcp` tools | Potentially, in redacted samples — the model provider and its jurisdiction are **chosen by the token holder** | When PATs are issued and `/mcp` is reachable |
+| 8 | **MCP AI clients** — whatever model provider stands behind a client holding a valid PAT | Run results, redacted failing samples, check configuration, via the 54 `/mcp` tools | Potentially, in redacted samples — the model provider and its jurisdiction are **chosen by the token holder** | When PATs are issued and `/mcp` is reachable |
 | 9 | **Outbound LLM intelligence** — DataQ calling a model on its own behalf | Schema + masked profiler statistics for SQL generation and check suggestions; RCA narratives additionally send the triggering check's own observed value, routed through that same column-policy/warehouse-tag masking floor, and its expected value (a check-authored threshold, not warehouse data, so never masked). Never raw sample rows | Potentially — profiler statistics or an observed value, both subject to the masking floor; model provider and jurisdiction are admin-chosen | **Live, off by default** — an admin must configure a provider + credential before any call leaves |
 | 10 | **Lineage provider** — Marquez / OpenLineage-compatible catalog | Pull of lineage graph metadata | No — table/job names, not row data | When `LINEAGE_PROVIDER` is configured |
 
@@ -10609,6 +11190,7 @@ Running DataQ for real: deploying it, watching it, and fixing it.
 |---|---|
 | [Deployment](deployment.md) | Azure Container Apps and AWS ECS reference deployments, the local Docker stack, every environment variable, and the Azure-free path. |
 | [Deployment parity](deployment-parity.md) | What is identical and what differs across Azure, AWS and local, service by service. |
+| [Upgrading](upgrading.md) | Moving to a newer release: what to back up, the steps per deployment, and how to roll back. |
 | [Observability](observability.md) | Structured logs, request and task spans, and where to find them on each cloud. |
 | [Troubleshooting](troubleshooting.md) | Symptom-first fixes for the failures operators actually hit. |
 | [Runbook & FAQ](runbook-faq.md) | Routine operations — credential rotation, retention, upgrades — and the questions that come up. |
@@ -10646,7 +11228,7 @@ cloud-conditional code paths**, and the same container images run everywhere.
 ## Features
 
 The application feature set — suites/checks across all nine datasource types, every monitor kind,
-assets/lineage/incidents, alerting, scheduling, the 52-tool MCP server, PATs, rate limiting —
+assets/lineage/incidents, alerting, scheduling, the 54-tool MCP server, PATs, rate limiting —
 is the **same code everywhere**. Where the installations genuinely differ:
 
 | Capability | Azure | AWS | Local |
@@ -10841,6 +11423,20 @@ Browser ──HTTPS──► CloudFront (public surface, origin secret verified 
   CSP's `connect-src` to your identity provider's origins with `DATAQ_CSP_CONNECT_SRC` — for
   Cognito that is **two** hosts (the issuer for discovery/JWKS, the hosted-UI domain for the
   token exchange); the permissive `https:` default keeps sign-in working if you don't.
+  `DATAQ_HSTS` holds the `Strict-Transport-Security` value (default one year with
+  subdomains); set it empty to omit the header.
+- **TLS at the frontend container (optional).** Both reference deployments end TLS at the
+  cloud edge, so the image listens on plain HTTP by default. Where nothing sits in front,
+  set `DATAQ_TLS_CERT` and `DATAQ_TLS_KEY` to PEM files mounted into the container and it
+  serves HTTPS on the same port, redirecting plain HTTP. Setting only one, or naming a
+  file it cannot read, stops the container at start with the reason. The local
+  prebuilt-image stack runs this way.
+- **Verifying an HTTPS API upstream (optional).** With `DATAQ_API_UPSTREAM` set to an
+  `https://` address, the frontend's proxy encrypts but does not verify the upstream
+  certificate unless `DATAQ_API_UPSTREAM_CA` names a PEM file to verify it against.
+- **A vault behind a private CA.** `OPENBAO_CA_BUNDLE` is the PEM file an `https://`
+  `OPENBAO_ADDR` is verified against, used instead of the system trust store. A path
+  that names no file stops the API at start.
 - **Observability:** the app's vendor-neutral OTLP export feeds an **ADOT collector sidecar**
   → X-Ray traces + OpenTelemetry logs in CloudWatch with matching trace ids.
 - **Deploy:** a parallel **Deploy (AWS)** workflow (`deploy-aws.yml`) — GitHub OIDC role
@@ -11035,7 +11631,7 @@ Azure and AWS are both live deployment targets behind the app's seams (ADR 0010/
 **Where do failed-row samples go?** Stored with the result, **PII-redacted**, and purged
 after a retention window — never written to logs.
 
-**Can an AI assistant use DataQ?** Yes — 52 MCP tools at `/mcp` (Claude Desktop / Claude.ai
+**Can an AI assistant use DataQ?** Yes — 54 MCP tools at `/mcp` (Claude Desktop / Claude.ai
 / Copilot / Cursor), OIDC-authenticated (Azure AD or Cognito) or via a PAT. See [AI assistants (MCP setup)](../guides/mcp-setup.md).
 
 **An asset shows no lineage — is that right?** Maybe not. "No lineage recorded" can mean an
@@ -11177,6 +11773,91 @@ trigger** a run — by design. See [Orchestration](../guides/orchestration.md).
 
 Check [Observability](observability.md) for where logs/traces land, and the
 [Runbook & FAQ](runbook-faq.md) for known limitations.
+
+
+---
+
+<!-- https://theurgicduke771.github.io/DataQ/docs/latest/operate/upgrading/ -->
+
+# Upgrading
+
+How to move a running DataQ to a newer release without losing data.
+
+## How releases work
+
+- Releases are tagged `vX.Y.Z` and follow [Semantic Versioning](https://semver.org/). The
+  backend and frontend images carry the same tag.
+- The [changelog](../reference/changelog.md) lists what changed in each release. An entry
+  marked **⚠️ breaking** needs action from you; read every such entry between the version you
+  run and the one you are moving to.
+- Database migrations only add to the schema in the release that needs them. A column or
+  table is removed in a later release than the code that stopped using it, so the previous
+  release keeps working while a new one rolls out.
+
+## Before you upgrade
+
+1. **Read the changelog** from your version to the target version. Note any one-time step an
+   entry asks for.
+2. **Back up the database.** For the prebuilt-image stack, stop the stack and copy the data
+   directory (`./dataq-data`, or the path in `DATAQ_DATA_DIR`). For a managed Postgres, take a
+   snapshot or a `pg_dump`.
+3. **Pin the target version.** Do not upgrade onto the moving `latest` tag.
+
+## The prebuilt-image stack
+
+The compose file and the images change together, so take the compose file from the release
+you are moving to and pin both images to it:
+
+```bash
+curl -O https://raw.githubusercontent.com/TheurgicDuke771/DataQ/vX.Y.Z/docker-compose.ghcr.yml
+export DATAQ_BACKEND_TAG=vX.Y.Z DATAQ_FRONTEND_TAG=vX.Y.Z
+docker compose -f docker-compose.ghcr.yml pull
+docker compose -f docker-compose.ghcr.yml up -d
+```
+
+The `migrate` service brings the database to the new schema before the API and the worker
+start; they do not start if it fails. Your connections, suites, results and stored
+credentials are in the data directory and are kept.
+
+## A cloud deployment
+
+Run the **Deploy** workflow on the release tag (see [Deployment](deployment.md)). It builds
+the images, runs the migration job and waits for it to succeed, and only then rolls the API,
+the worker and the frontend. If the migration fails, nothing is rolled.
+
+Infrastructure changes are separate: if the changelog says the OpenTofu stack changed, run
+`tofu plan` and `tofu apply` on it first.
+
+## After you upgrade
+
+- `/healthz` returns `200` and you can sign in.
+- A suite run completes. This exercises the worker, the secret store and a datasource
+  together.
+- Run any one-time step the changelog asked for.
+- Hard-refresh the browser if the app looks unchanged. The entry page is revalidated on every
+  load, but an open tab keeps the bundle it already loaded.
+
+## Rolling back
+
+Roll back by **restoring the backup you took** and starting the previous release on it:
+
+1. Stop the stack (or scale the API and the worker to zero).
+2. Restore the data directory, or the database snapshot, from before the upgrade.
+3. Re-pin the previous image tag, with the compose file from that release, and start.
+
+Re-pinning the previous tag **without** restoring does not work once the upgrade has applied a
+migration: the older release's migration step does not know the newer schema revision and
+stops, so the API and the worker never start. Anything written after the upgrade is lost by a
+restore, so decide quickly.
+
+If the changelog shows the release you upgraded to added no database migration, re-pinning
+the previous tag alone is enough.
+
+## Skipping versions
+
+You can upgrade straight to the latest release: the migration step applies every migration
+between your schema and the new one, in order. Read the changelog for every release you
+skip.
 
 
 ---
@@ -11995,10 +12676,12 @@ inspect or undo it:
   `get_check_history`'s *result* history, with both docstrings cross-referencing the other, since
   "did this start failing because the data moved or because someone changed the check?" needs
   both and the names are otherwise easy to confuse.
-- `restore_check_version` is also the **only** path that can clear a field back to empty:
-  `update_check`'s PATCH convention reads an omitted argument as "leave alone", so it structurally
-  cannot. That correction was applied to `update_check`'s own docstring, which had said
-  recreating the check was the only option.
+- `restore_check_version` is also the path that can clear a field back to empty:
+  `update_check`'s PATCH convention reads an omitted argument as "leave alone". That
+  correction was applied to `update_check`'s own docstring, which had said recreating the
+  check was the only option. *Amended 2026-10-03:* the three severity thresholds are the
+  exception since `update_check` gained `clear_thresholds`; for every other field a restore
+  remains the only way.
 
 All five gate through `require_permission` on the owning suite (the schedule and binding tools
 resolve it from the row), so again no new authz path. The gate rows in
@@ -14387,6 +15070,21 @@ So the only distribution-compliance obligation is notice preservation (MIT/BSD c
 - **Related:** ADR 0026 (PATs — the verifier-secret and seam pattern this copies; Basic auth rejected there stays rejected), [0010](0010-provider-agnostic-infrastructure-seams.md)/[0013](0013-marketplace-distribution-and-anti-lock-in.md) (portability guardrails)
 - **Note:** built across four slices (backend, identity, frontend, SMTP pre-flight), with rate limiting as a hard prerequisite. Ratified 2026-07-09 — slices unblocked.
 
+> **Decision record (2026-10-03): Decision 4's uniform response is kept.** It was
+> reconsidered because a non-member sees the same "a code is on its way" screen as
+> a member and no mail arrives, which looks like a malfunction. Two changes were
+> weighed and declined. A per-address "not registered" message is the enumeration
+> oracle Decision 4 closes, and single tenancy does not remove it: the sign-in
+> page is reachable by anyone who can reach the deployment, and the member list
+> names who holds failing-row samples. A static "you may not be a member" line
+> adds nothing the existing copy does not already say ("If *address* can sign in
+> to this workspace…"). The operator's question, "is this address eligible?", is
+> answered where it is safe to answer: **Admin → Members**
+> ([ADR 0043](0043-in-app-workspace-membership.md)) lists who can sign in, and the
+> SMTP pre-flight separates a mail fault from a membership one. The 2026-09-02
+> amendment below is the same position applied to timing and outages; a response
+> that differs by eligibility would undo it.
+
 > **Amendment (2026-09-04, [ADR 0043](0043-in-app-workspace-membership.md)):**
 > once `workspace_members` is populated, the signup allowlist of decisions 2 and
 > 5 becomes a **bootstrap seed + break-glass** — grant-only, one input to a union
@@ -15523,6 +16221,17 @@ The reason is sequencing, not disagreement. The backend catalog's purpose is eng
 - **Deciders:** @TheurgicDuke771
 
 Extends the `SecretStore` seam of ADR [0010](0010-provider-agnostic-infrastructure-seams.md) with a fourth backend; amends nothing — the production Azure Key Vault choice of ADR [0024](0024-app-deployment-infrastructure.md) stands.
+
+> **Amendment (2026-10-03): the prebuilt-image stack's vault is persistent.** The
+> consequence below, "dev-mode OpenBao is in-memory", still describes the from-source
+> stack. `docker-compose.ghcr.yml` now runs OpenBao on integrated (raft) storage in the
+> stack's data directory, auto-unsealed by a **static seal** key file, which removes the
+> objection recorded there (a persistent vault needing a manual unseal on every boot). A
+> one-shot initializes a fresh vault, mounts KV v2, and makes `OPENBAO_TOKEN` an orphan
+> token bound to a policy for that mount only, so the app no longer holds a root token
+> there. The trade is stated to the user: the seal key and the root token sit beside the
+> data, so the directory is as sensitive as the credentials in it. The contract of
+> decision 1 is unchanged: the app still speaks the KV v2 API with a token.
 
 ## Context
 
@@ -16788,6 +17497,12 @@ and a wrong claim is a false alert on every run.
    status `pending`, `accepted`, `rejected`). Accepting creates the check in the automatic
    suite; rejecting is remembered and the same rule is not proposed again.
 
+   > **Amended 2026-10-04.** The reconciler proposes profile rules on its own. LLM
+   > suggestions are made **on demand only**: a person runs *Suggest checks* on an automatic
+   > suite and the validated suggestions the queue can hold are saved to it (freshness rules and
+   > value sets over a sensitive column are not). The reconciler never
+   > calls the model.
+
 5. **Full severity.** Automatic checks warn, fail and go critical like authored ones and alert
    through the suite's notification settings, which default to the workspace channel.
    Defaults: anomaly checks warn at 3 standard deviations, fail at 4, critical at 6; a schema
@@ -16847,6 +17562,10 @@ and a wrong claim is a false alert on every run.
   gap this closes.
 - **Coverage per asset or workspace-wide:** per asset keeps it manual; workspace-wide takes the
   warehouse-cost decision away from whoever owns each connection.
+- **The reconciler calling the LLM for every covered table** (decided 2026-10-04): an unattended
+  call per table sends each table's profile to the model provider and spends tokens with nobody
+  having asked, on a schedule the workspace cannot see. On demand keeps both the data flow and
+  the cost tied to a person's request.
 - **Starting automatic monitors at warn only:** considered to limit early noise; the
   maintainer chose full severity, with the false-positive rate as the check on it.
 - **Two checks per column** for null rate and cardinality: a wide table would become hundreds

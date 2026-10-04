@@ -1292,6 +1292,8 @@
       
         
       
+        
+      
     
     
     
@@ -1417,6 +1419,34 @@
     
   
     REST API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/suite-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Suite document
   
 
     
@@ -2144,6 +2174,8 @@
       
         
       
+        
+      
     
     
     
@@ -2241,6 +2273,34 @@
     
   
     Deployment parity (Azure · AWS · Local)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/upgrading/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrading
   
 
     
@@ -2562,8 +2622,11 @@ dataq<span class="w"> </span>gate<span class="w"> </span>--provider<span class="
 <p>Other commands:</p>
 <div class="highlight"><pre><span></span><code>dataq<span class="w"> </span><span class="nb">wait</span><span class="w"> </span>&lt;run-id&gt;<span class="w">                               </span><span class="c1"># wait for a run someone else started</span>
 dataq<span class="w"> </span>run<span class="w"> </span>&lt;suite-id&gt;<span class="w"> </span>--wait<span class="w"> </span>--json<span class="w">                </span><span class="c1"># the outcome as JSON</span>
-dataq<span class="w"> </span><span class="nb">export</span><span class="w"> </span>&lt;suite-id&gt;<span class="w"> </span>-o<span class="w"> </span>orders.json<span class="w">            </span><span class="c1"># the suite's portable document</span>
-dataq<span class="w"> </span>import<span class="w"> </span>orders.json<span class="w"> </span>--connection<span class="w"> </span>&lt;conn-id&gt;<span class="w">   </span><span class="c1"># create a suite from it</span>
+dataq<span class="w"> </span><span class="nb">export</span><span class="w"> </span>&lt;suite-id&gt;<span class="w"> </span>-o<span class="w"> </span>orders.yaml<span class="w">            </span><span class="c1"># the suite's portable document (.json works too)</span>
+dataq<span class="w"> </span>import<span class="w"> </span>orders.yaml<span class="w"> </span>--connection<span class="w"> </span>&lt;conn-id&gt;<span class="w">   </span><span class="c1"># create a NEW suite from it</span>
+dataq<span class="w"> </span>validate<span class="w"> </span>orders.yaml<span class="w"> </span>--connection<span class="w"> </span>&lt;conn-id&gt;<span class="w"> </span><span class="c1"># would it be accepted? exit 2 if not</span>
+dataq<span class="w"> </span>drift<span class="w"> </span>orders.yaml<span class="w"> </span>--suite<span class="w"> </span>&lt;suite-id&gt;<span class="w">        </span><span class="c1"># does the suite differ from the file? exit 2 if so</span>
+dataq<span class="w"> </span>apply<span class="w"> </span>orders.yaml<span class="w"> </span>--suite<span class="w"> </span>&lt;suite-id&gt;<span class="w">        </span><span class="c1"># make the suite match the file (--prune deletes extras)</span>
 </code></pre></div>
 <h2 id="from-python">From Python<a class="headerlink" href="#from-python" title="Permanent link">¶</a></h2>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">dataq_client</span><span class="w"> </span><span class="kn">import</span> <span class="n">DataQClient</span>

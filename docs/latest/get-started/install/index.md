@@ -27,9 +27,8 @@ docker compose -f docker-compose.ghcr.yml up
 
 This pulls the published images from GHCR and brings up Postgres + Redis + the API +
 Celery worker + the UI + a local mail catcher, runs migrations, and seeds demo data.
-Open **`http://localhost:3000`**, type the address you exported, and read the 6-digit
-code in the bundled inbox at **`http://localhost:8025`**. API + Swagger at
-`http://localhost:8000/docs`.
+Open **`https://localhost:3000`**, type the address you exported, and read the 6-digit
+code in the bundled inbox at **`http://localhost:8025`**.
 
 - **Sign-in works with no SMTP relay.** The stack bundles its own mailbox
   ([Mailpit](https://mailpit.axllent.org), MIT), so DataQ's real mailer runs its real
@@ -37,10 +36,66 @@ code in the bundled inbox at **`http://localhost:8025`**. API + Swagger at
   internet. No mailbox has to exist; nothing leaves the host.
 - **Multi-arch:** the images are `linux/amd64` + `linux/arm64`, so Apple Silicon runs
   native (not emulated).
-- **Loopback-only:** every port binds to `127.0.0.1` — the stack is reachable from your
-  own machine but never the LAN. That matters more than usual for `:8025`, which serves
-  live sign-in codes to anyone who can reach it. **Not for production** — a real deploy
-  uses the OpenTofu stack (`deploy/terraform/azure`, ADR 0024).
+- **HTTPS with a local certificate.** On first start the stack generates its own
+  certificate authority (*DataQ Local Dev CA*) and a certificate for `localhost`, and the
+  UI serves HTTPS with it, so the session cookie is `Secure` as it is in production.
+  Your browser does not know this CA, so it warns once; accept the warning to continue,
+  or trust the CA on this machine and the warning goes away:
+
+    ```bash
+    curl -O https://raw.githubusercontent.com/TheurgicDuke771/DataQ/main/scripts/local-ca.sh
+    bash local-ca.sh install      # asks for sudo; `uninstall` reverses it, `status` reports
+    ```
+
+  It adds the CA to the macOS System keychain, or to the system CA store on Debian/Ubuntu
+  and Fedora/RHEL, and to Firefox's own store when the NSS `certutil` tool is installed
+  (otherwise it prints the manual step; on Windows it prints the `certutil` command). It
+  trusts only a certificate named *DataQ Local Dev CA*, and if you decline `sudo` the
+  stack keeps working with the warning. Run `uninstall` before `down -v`, or the old CA
+  stays trusted after its stack is gone. To point a single client at the CA instead
+  (`curl`, the CLI, an MCP client), copy the certificate out:
+
+    ```bash
+    docker compose -f docker-compose.ghcr.yml cp frontend:/certs/ca.pem dataq-local-ca.pem
+    curl --cacert dataq-local-ca.pem https://localhost:3000/healthz
+    ```
+
+  The CA's private key stays in a volume that only the generator mounts, and the CA
+  survives restarts; `down -v` removes it. The `localhost` certificate lasts a year and
+  is renewed when the stack is started within 30 days of its expiry; the same goes for
+  the certificates Postgres, Redis, the mail catcher, the vault and the API hold.
+  Containers that were
+  already running keep the old ones, so after a renewal restart the stack
+  (`docker compose -f docker-compose.ghcr.yml restart`). Plain
+  `http://localhost:3000` redirects to
+  HTTPS. The inbox on `:8025` stays plain HTTP on loopback.
+- **TLS inside the stack too.** The API, worker and scheduler reach Postgres with
+  `sslmode=verify-full`, Redis over `rediss://` (its plain port is off), and the mail
+  catcher over STARTTLS, each verified against the same local CA, and each server holds
+  a certificate for its own hostname only, with a key no other container can read.
+  The vault is reached over HTTPS and the UI's proxy talks to the API over TLS, both
+  verified the same way, and Postgres refuses a network client that is not on TLS.
+  These are the client code paths a managed database, cache, vault and mail relay use
+  in production. Two things stay plain by design: the inbox page on `:8025`, and the
+  demo profile's sample warehouse, which stands in for a warehouse of your own (the
+  connection's TLS setting is the control there).
+- **Check it yourself.** `scripts/local-smoke.sh` (fetch it the same way as the compose
+  file, and run it beside it) smokes the running stack the way a deployment is smoked
+  after a roll: the certificate verifies against the stack's CA, plain HTTP redirects,
+  the API and MCP refuse an anonymous caller, only the UI and the inbox have a host
+  port, a real sign-in, read and sign-out work with a `Secure` cookie, Postgres and Redis
+  are on TLS, and a burst is rate-limited. It exits non-zero if any check fails.
+- **One way in, as in production:** the UI on `:3000` is the only published surface. The
+  API has no host port; it is reached through the UI at `https://localhost:3000/api`, and
+  MCP clients connect to `https://localhost:3000/mcp/`. The database, Redis and the vault
+  are reachable only inside the compose network. The interactive API page is off, as it
+  is on a production deployment; the [API reference](../reference/rest-api.md) is published
+  with these docs.
+- **Loopback-only:** both published ports (`:3000` and the inbox on `:8025`) bind to
+  `127.0.0.1` — the stack is reachable from your own machine but never the LAN. That
+  matters more than usual for `:8025`, which serves live sign-in codes to anyone who can
+  reach it. **Not for production** — a real deploy uses the OpenTofu stack
+  (`deploy/terraform/azure`, ADR 0024).
 - **Try it on real data:** add `--profile demo` to the `up` command. It also starts a
   sample warehouse (PostgreSQL) holding a small shop dataset with deliberate defects, and
   connects DataQ to it: a connection named *Demo warehouse (PostgreSQL)*, two suites
@@ -54,7 +109,23 @@ code in the bundled inbox at **`http://localhost:8025`**. API + Swagger at
   port and is reachable only inside the compose network.
 - **Pin a release** instead of the moving stable tags:
   `DATAQ_BACKEND_TAG=vX.Y.Z DATAQ_FRONTEND_TAG=vX.Y.Z docker compose -f docker-compose.ghcr.yml up`.
-- **Reset:** `docker compose -f docker-compose.ghcr.yml --profile demo down -v` (drops the seeded DB and the sample warehouse).
+  Take the compose file from the same release (replace `main` with `vX.Y.Z` in the
+  download URL) and pin both images: the file and the images change together, and a
+  newer file with older images does not start.
+- **Your data lives in a directory.** The database, the sample warehouse and the vault
+  write to `./dataq-data` beside the compose file; set `DATAQ_DATA_DIR` to an absolute
+  path to keep it elsewhere. Connections, suites, results and the credentials you enter
+  survive a restart, `down -v` and a Docker reset, and the directory can be backed up or
+  moved while the stack is stopped. The vault unseals itself from a key file in that
+  directory, so there is no unseal step, and `OPENBAO_TOKEN` may change between starts:
+  the new token replaces the old one. **That convenience has a cost:** the key, the
+  vault's root token and the data sit together, so anyone who can read the directory can
+  read every stored credential. Treat it like a password file; a production deployment
+  uses a managed secret store instead.
+- **Reset:** `docker compose -f docker-compose.ghcr.yml --profile demo down -v`, then
+  delete the data directory (`rm -rf dataq-data`). `down -v` alone removes only the
+  certificates. On Linux the files belong to the containers' users, so deleting,
+  copying or moving the directory needs `sudo`.
 - Omitting `DATAQ_SIGNIN_EMAIL` stops the stack and says so — there is no no-sign-in
   default to fall into.
 
@@ -95,10 +166,11 @@ The default, and the rung for teams that have email but no IdP.
 **Locally there is nothing to configure but your address.** Both compose stacks run a
 [Mailpit](https://mailpit.axllent.org) container (MIT) as the mailbox: DataQ performs a
 real SMTP submission against it — the same `connect → AUTH → send` path a production
-relay gets — and the message appears in a web inbox at `http://localhost:8025`. The
-mailer runs with `AUTH_EMAIL_TLS_MODE=none` there, which is the plaintext downgrade
-`none` exists for and is logged loudly on every send: it is correct against a container
-you started on your own machine and wrong against anything else.
+relay gets — and the message appears in a web inbox at `http://localhost:8025`. On the
+prebuilt-image stack the mailer uses STARTTLS and verifies the catcher against the
+stack's local CA. On the from-source stack it runs with `AUTH_EMAIL_TLS_MODE=none`,
+the plaintext downgrade `none` exists for, logged loudly on every send: it is correct
+against a container you started on your own machine and wrong against anything else.
 
 **In production you still bring your own relay** — bundling an outbound mailer is a
 deliberate non-goal (direct-to-MX from an arbitrary self-hosted IP gets sign-in codes
@@ -202,6 +274,9 @@ docker-compose up      # Postgres + Redis + FastAPI (:8000) + React (:3000) + Ce
                        #   + Mailpit (:8025), the local inbox for sign-in codes
 ```
 
+`setup.sh` also offers to trust the local HTTPS certificate the prebuilt-image stack uses
+(it asks for `sudo`; `DATAQ_TRUST_LOCAL_CA=0` skips it, and declining is harmless).
+
 `setup.sh` asks **which address may sign in** and writes the answer to your gitignored
 `.env` as `DATAQ_SIGNIN_EMAIL`. That address is allow-listed *and* made a workspace
 admin, and you sign in by reading the code at `http://localhost:8025` — no cloud account
@@ -218,7 +293,61 @@ keep `DATAQ_SIGNIN_EMAIL` set and override the same key names in the **root `.en
 ```
 DATAQ_SIGNIN_EMAIL=you@example.com
 AUTH_EMAIL_SMTP_HOST=smtp.example.com
-AUTH_EMAIL_TLS_MODE=starttls          # the bundled catcher's default is `none` — plaintext
+# the from-source stack's catcher default is `none`
+AUTH_EMAIL_TLS_MODE=starttls
+# prebuilt-image stack only (see below); nothing may follow the `=`, not even a comment
+AUTH_EMAIL_CA_BUNDLE=
+```
+
+On the **prebuilt-image stack** the catcher is reached over STARTTLS and verified against
+the stack's local CA (`AUTH_EMAIL_CA_BUNDLE=/certs/ca.pem`), and that bundle is used
+*instead of* the usual certificate authorities. A public relay's certificate is not
+signed by the local CA, so set `AUTH_EMAIL_CA_BUNDLE=` (empty) alongside the host, or
+every sign-in mail fails certificate verification.
+
+#### Sending to real mailboxes from the prebuilt-image stack
+
+To have sign-in codes arrive in Gmail, Outlook or any other real mailbox, point the
+stack at an SMTP relay you have an account on. Put this in a `.env` file beside the
+compose file (or export the variables) and start the stack:
+
+```
+DATAQ_SIGNIN_EMAIL=you@example.com
+# Microsoft 365 / Outlook: smtp.office365.com
+AUTH_EMAIL_SMTP_HOST=smtp.gmail.com
+AUTH_EMAIL_SMTP_PORT=587
+AUTH_EMAIL_USERNAME=you@example.com
+AUTH_EMAIL_FROM=you@example.com
+# empty, so the relay is checked against the public CAs. Nothing may follow the `=`:
+# a comment on this line would become the value.
+AUTH_EMAIL_CA_BUNDLE=
+# needed on the first start only
+DATAQ_SMTP_PASSWORD=<the relay password>
+```
+
+- **The password is handed over once.** `DATAQ_SMTP_PASSWORD` is read by a start-up
+  step that writes it to the stack's vault and by nothing else; the API never has it in
+  its environment. The vault keeps it across restarts, so remove the line after the
+  first start. Supply it again only to change it.
+- **Gmail** needs an app password (an account with 2-step verification, then *App
+  passwords*), not your sign-in password. **Microsoft 365 / Outlook** works where SMTP
+  AUTH is enabled for the mailbox; many organisations turn it off.
+- The relay will only send **from** an address the account owns, so `AUTH_EMAIL_FROM`
+  is normally the same as the username.
+- With a real relay configured the bundled inbox on `:8025` receives nothing.
+- If the code does not arrive, an Admin can use **Admin → Settings → Send test email**,
+  which reports the relay's answer. With no password stored the start-up step
+  says so in its log (`docker compose logs otp-mail-secret`) rather than inventing one.
+
+**Alert emails** use a separate mailer. Turn it on the same way:
+
+```
+EMAIL_SMTP_HOST=smtp.gmail.com
+EMAIL_USERNAME=you@example.com
+# comma-separated recipients
+EMAIL_TO=team@example.com
+# first start only
+DATAQ_ALERT_SMTP_PASSWORD=<the relay password>
 ```
 
 `.env.app` is still the file for **host-side dev** (uvicorn on your own machine, which

@@ -1173,6 +1173,8 @@
       
         
       
+        
+      
     
     
     
@@ -1298,6 +1300,34 @@
     
   
     REST API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/suite-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Suite document
   
 
     
@@ -2025,6 +2055,8 @@
       
         
       
+        
+      
     
     
     
@@ -2122,6 +2154,34 @@
     
   
     Deployment parity (Azure · AWS · Local)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/upgrading/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrading
   
 
     
@@ -2361,6 +2421,18 @@
 <li><strong>Deciders:</strong> @TheurgicDuke771</li>
 </ul>
 <p>Extends the <code>SecretStore</code> seam of ADR <a href="../0010-provider-agnostic-infrastructure-seams/">0010</a> with a fourth backend; amends nothing — the production Azure Key Vault choice of ADR <a href="../0024-app-deployment-infrastructure/">0024</a> stands.</p>
+<blockquote>
+<p><strong>Amendment (2026-10-03): the prebuilt-image stack's vault is persistent.</strong> The
+consequence below, "dev-mode OpenBao is in-memory", still describes the from-source
+stack. <code>docker-compose.ghcr.yml</code> now runs OpenBao on integrated (raft) storage in the
+stack's data directory, auto-unsealed by a <strong>static seal</strong> key file, which removes the
+objection recorded there (a persistent vault needing a manual unseal on every boot). A
+one-shot initializes a fresh vault, mounts KV v2, and makes <code>OPENBAO_TOKEN</code> an orphan
+token bound to a policy for that mount only, so the app no longer holds a root token
+there. The trade is stated to the user: the seal key and the root token sit beside the
+data, so the directory is as sensitive as the credentials in it. The contract of
+decision 1 is unchanged: the app still speaks the KV v2 API with a token.</p>
+</blockquote>
 <h2 id="context">Context<a class="headerlink" href="#context" title="Permanent link">¶</a></h2>
 <p><code>SecretStore</code> (<a href="https://github.com/TheurgicDuke771/DataQ/blob/main/backend/app/core/secrets.py"><code>backend/app/core/secrets.py</code></a>) has carried three implementations since Week 2:</p>
 <table>

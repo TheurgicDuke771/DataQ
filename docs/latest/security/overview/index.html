@@ -1179,6 +1179,8 @@
       
         
       
+        
+      
     
     
     
@@ -1304,6 +1306,34 @@
     
   
     REST API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/suite-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Suite document
   
 
     
@@ -2424,6 +2454,8 @@
       
         
       
+        
+      
     
     
     
@@ -2521,6 +2553,34 @@
     
   
     Deployment parity (Azure · AWS · Local)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/upgrading/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrading
   
 
     
@@ -3739,6 +3799,10 @@ simply been written once and the infrastructure had moved. That is the failure
 mode of publishing per-deployment facts, and it is why this page now describes the
 mechanism and points you at the live endpoint for the values.</p>
 <h3 id="what-can-move-data-out">What can move data out<a class="headerlink" href="#what-can-move-data-out" title="Permanent link">¶</a></h3>
+<p><strong>DataQ sends nothing to its authors.</strong> There is no usage telemetry, no licence check and
+no update check: a deployment makes network calls only to the services its operator
+configures — its datasources, identity provider, orchestrators and the destinations below.
+The list below is the ones that can carry data out.</p>
 <p>Enumerated at <code>GET /api/v1/admin/deployment</code> — enumerated rather than derived, so
 a vector that is switched <strong>off</strong> still appears and an auditor can see it was
 considered:</p>

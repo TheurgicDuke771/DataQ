@@ -47,5 +47,6 @@ next occurrence. Details: [Scheduling](../guides/scheduling.md).
 
 ## Either way
 
-Runs land on **Results** and the **Dashboard** like a manual run, `triggered_by` says which
-schedule or pipeline started them, and the suite's [alert settings](first-alert.md) apply.
+Runs land on **Results** and the **Dashboard** like a manual run, the **Triggered by** column
+says whether a schedule or a pipeline started them, and the suite's
+[alert settings](first-alert.md) apply.

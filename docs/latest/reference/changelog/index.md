@@ -5,6 +5,10 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ## Unreleased
 
+Nothing yet.
+
+## v1.2.0 — 2026-10-04
+
 ### Breaking
 
 - **A connection that fails its own test is no longer saved.** Creating a connection, changing
@@ -22,7 +26,106 @@ the per-PR history lives in the repo's commit log and pull requests.
   [A connection is tested before it is saved](../guides/datasources-checks.md#a-connection-is-tested-before-it-is-saved)
   and [API compatibility](api-compatibility.md#recorded-exceptions).
 
+- **The prebuilt-image stack publishes only the UI, over HTTPS.** `docker-compose.ghcr.yml`
+  now runs the way a production deployment does: the UI on `:3000` is the only way in, it
+  serves HTTPS with a certificate from a CA the stack generates on first start (your browser
+  warns until you trust it — `scripts/local-ca.sh install` does that, and `uninstall`
+  reverses it; plain HTTP redirects), and the API is reached through it at
+  `https://localhost:3000/api` (MCP at `https://localhost:3000/mcp/`).
+  The API (`:8000`), Postgres (`:5432`), Redis (`:6379`), the vault (`:8200`) and the mail
+  catcher's SMTP port (`:1025`) no longer have host ports, and the interactive API page at
+  `/docs` is off. Point scripts that called `http://localhost:8000` at
+  `https://localhost:3000` and give them the CA certificate (see Getting started). Inside
+  the stack, Postgres, Redis, the mail catcher, the vault and the API are all reached
+  over TLS verified against the same CA, and Postgres refuses a client without it. The inbox
+  stays at `http://localhost:8025`. The from-source stack (`docker-compose.yml`) is unchanged.
+
+- **The prebuilt-image stack keeps its data in a directory.** `docker-compose.ghcr.yml`
+  stores the database, the sample warehouse and the vault under `./dataq-data`
+  (`DATAQ_DATA_DIR` moves it) instead of Docker volumes, and the vault is no longer
+  in-memory: stored credentials survive a restart. Data in the previous `ghcr_postgres_data`
+  volume is not migrated; the stack starts fresh in the new directory. To reset, run
+  `down -v` and delete the directory.
+
+- **A check's severity thresholds can be cleared.** Emptying a warn, fail or critical
+  threshold in the check editor and saving used to leave the old value in place. `PATCH
+  /suites/{id}/checks/{id}` now treats an explicit `null` for `warn_threshold`,
+  `fail_threshold` or `critical_threshold` as *clear it*; leaving the key out still keeps
+  the stored value. **A client that sent `null` for these to mean "unchanged" must omit
+  the key instead.** A check that needs a fail or critical threshold (freshness, anomaly) still
+  refuses to lose its last one. Over MCP, `update_check` gains `clear_thresholds`.
+
 ### Added
+
+- **An upgrade guide and a support policy.** [Upgrading](../operate/upgrading.md) covers what to
+  back up, the steps for the prebuilt-image stack and a cloud deployment, and rolling back.
+  `SUPPORT.md` says where to ask for help. The security page now states outright that DataQ
+  sends nothing to its authors.
+- **A first-run path and empty states that say what to do next.** A new workspace's Dashboard
+  shows a **Get started** panel: connect a data source, create a suite, add a check, run it. It
+  offers the next step, says who can take it when you cannot, and goes away once all four are
+  done; what automatic coverage creates does not count. The empty Connections, Suites, Assets and checks lists now explain what belongs there
+  and offer the action your role allows. In the API, `GET /dashboard/onboarding` returns the
+  four steps as booleans.
+- **AI suggestions are kept for automatic suites.** Running **Suggest checks** on an
+  automatically covered suite now also saves the validated suggestions under **Suggested
+  rules**, marked **AI-suggested**, where they can be accepted or rejected later. A rule the
+  suite has already seen is not saved again. The invocation result gains `queued_for_review`.
+- **Two MCP tools for automatic coverage.** `get_coverage` returns the share of the asset
+  inventory watched in the last 7 days and the false-positive rate of automatic checks, with
+  the counts behind each. `list_suggested_rules` lists a suite's review queue. Both are
+  read-only; accepting or rejecting a rule is still done in the app. `/mcp` now has 54 tools.
+- **Say what an incident turned out to be.** Resolving an incident can record whether it was
+  **fixed**, an **expected change** or a **false positive**. It is optional; left out, the
+  incident is recorded as not stated. In the API, `POST /incidents/{id}/resolve` takes
+  `resolution` and incidents return it; the MCP `resolve_incident` tool takes it too.
+- **Coverage and false-positive figures on the Dashboard.** A new panel shows what share of the
+  asset inventory was watched by a suite in the last 7 days, and what share of resolved
+  automatic-check incidents were marked false positives in the last 30, each with the counts
+  behind it. In the API, `GET /dashboard/coverage`.
+- **Apply a suite file onto an existing suite, and see drift.** `POST /suites/{id}/apply`
+  creates, updates and (with `prune`) deletes checks to match a JSON or YAML document,
+  matching checks by name; it is idempotent. With `dry_run` it changes nothing and reports
+  how the suite differs from the file. The `dataq` command gains `validate`, `drift` and
+  `apply`, and reads and writes YAML. See [Suite document](suite-document.md).
+- **Bulk snooze, unsnooze and delete for checks.** The suite page's check list has a
+  checkbox per check and **Select all**; the selected checks can be snoozed, unsnoozed or
+  deleted in one action. It is all-or-nothing, and each check gets the same audit event a
+  single action writes. In the API, `POST /suites/{id}/checks-bulk/snooze`,
+  `/checks-bulk/unsnooze` and `/checks-bulk/delete`.
+- **Bulk severity thresholds.** **Set thresholds** on the same selection gives every selected
+  check the same warn, fail or critical value; each tier can be set, cleared or left as it
+  is. Refused as a whole, naming the checks at fault, if the selection mixes check kinds
+  or any check cannot take the result. In the API, `POST /suites/{id}/checks-bulk/thresholds`.
+- **A data-quality score per connection.** Each connection card shows a **DQ score** across
+  every suite on that connection, from each suite's latest run if it completed. It is the same
+  for every member, and absent when nothing has evaluated. In the API, connections gain
+  `health_score`.
+- **Each quality dimension across the whole workspace.** The Dashboard has a new panel
+  with one row per dimension over every suite in the workspace, with the same coverage
+  rules as the asset scorecard: a dimension with no checks anywhere is listed as not
+  covered, and checks with no dimension are counted separately. In the API,
+  `GET /dashboard/dimensions`.
+- **Suites as YAML files, and a way to validate them.** A suite document can now be YAML as
+  well as JSON: `POST /suites/import` accepts `document_yaml`, and
+  `GET /suites/{id}/export?format=yaml` produces it. The new `POST /suites/validate`
+  reports every problem an import would be refused for and creates nothing. The format is
+  now documented field by field in [Suite document](suite-document.md). Plain YAML values
+  follow JSON's rules, so `NO` and `2026-01-01` stay text.
+- **An asset health score.** The asset page's scorecard now leads with one 0–100 number
+  for the whole asset, and **Assets → All assets** shows it in a **Score** column and can
+  sort the whole workspace by it, lowest first. It counts every check that evaluated in
+  each suite's latest run, if it completed, including checks with no dimension. Beside it, the
+  asset page shows the change against the same score 7 days ago. In the API, assets gain
+  `health_score`, `GET /assets` gains `sort=health_score`, and `GET /assets/{id}` gains
+  `previous_health_score`, `health_score_delta` and `score_delta_days`. See
+  [Datasources & checks](../guides/datasources-checks.md#seeing-coverage-the-asset-scorecard).
+- **Real mailboxes from the prebuilt-image stack.** Point the sign-in mailer at your own
+  relay and supply its password once as `DATAQ_SMTP_PASSWORD`: a start-up step stores it in
+  the stack's vault, where it persists, and the API never holds it. The alert mailer's
+  `EMAIL_*` settings are now passed through as well, with `DATAQ_ALERT_SMTP_PASSWORD`. With
+  a relay configured and no password stored, the start-up step says so instead of storing a
+  random one. See Getting started.
 
 - **Python client and CLI (`dataq-client`).** Install the wheel attached to the release (or the
   latest from `main`), then
@@ -42,6 +145,32 @@ the per-PR history lives in the repo's commit log and pull requests.
   [Datasources & checks](../guides/datasources-checks.md#snowflake-dmf-adr-0036).
 
 ### Fixed
+
+- **An imported suite keeps its checks in the order of the file.** Checks created together (an
+  import, the demo data) were listed in an arbitrary, though stable, order. Checks now carry
+  their position, so lists, exports and run results follow the order they were written in.
+  Existing suites keep the order they show today. This release adds a database migration.
+- **Add check is no longer offered on a suite you can only view.** The button led to a form
+  whose save was refused.
+- **"Triggered by" names who started a run.** The Dashboard, Results, the run page and the
+  printed report showed an internal identifier such as `manual:d7c88410-…`. They now show
+  the person's name or email (`Manual — Olivia Admin`), `Schedule`, or the orchestration
+  provider. In the API, `triggered_by` is unchanged and runs gain `triggered_by_label`.
+- **The Custom SQL card opens the plain SQL editor.** Both cards in the Custom SQL step used
+  to open a form with the **Generate from a description** box. It now appears only when you
+  start from the **Generate from a description** card. Editing an existing custom SQL
+  check no longer shows it either.
+- **Check suggestions on a wide table stay within the model's limits.** The suggestion prompt
+  grew with every column, so a table with hundreds of columns could cost far more or fail at
+  the provider. Only the first 100 columns are now profiled and sent, long values are
+  shortened, and the drawer says when part of the table was not looked at. The invocation's
+  result gains `column_coverage` (`{profiled, total}`).
+
+- **A completed run with no results no longer says it did not complete.** A check's results
+  are removed when the check is deleted, so a finished run can be left with none (as can a
+  run of a suite that had no checks). The run
+  page and the printed report now say that, keep "did not complete" for runs that failed
+  or were cancelled, and say a queued or running run has not finished yet.
 
 - **A batch-target preview no longer comes back empty just because signing in was slow.** The
   preview's time budget now starts when the store returns its first object, not before the

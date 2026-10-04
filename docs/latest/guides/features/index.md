@@ -177,6 +177,12 @@ Delivered when a run breaches its threshold ([Notifications & alerting](notifica
 - **Severity routing** — urgency scales with severity; critical escalates.
 - **Dedup** — you hear about a breakage once (and again on escalation); a clean run resets.
 - **Snooze** — silence a known-broken check for N hours (history + re-fire preserved).
+- **Bulk actions on checks** — tick checks on the suite page, or **Select all**, then
+  snooze, unsnooze or delete them together, or **Set thresholds** to give them all the
+  same warn, fail or critical value. It is all-or-nothing: if any one cannot be changed,
+  none are, and the ones at fault are named. A bulk delete removes each check's results
+  and history, as a single delete does. Thresholds can only be set on checks of one kind
+  at a time, because a threshold is compared with the number that kind of check measures.
 - **Per-suite config** — channels + threshold + recipients set per suite.
 - **Connection poll-health alerts** — when an orchestration connection's poll keeps failing
   (an expired credential, a moved orchestrator), DataQ stops ingesting pipeline runs and
@@ -224,7 +230,7 @@ results surface applies. Raw sample rows never leave the deployment on any path.
 
 ## AI assistants (MCP)
 
-A curated **52-tool MCP server** at `/mcp` lets Claude / Copilot / Cursor list suites, read
+A curated **54-tool MCP server** at `/mcp` lets Claude / Copilot / Cursor list suites, read
 results, checks, runs, connections, schedules, trigger bindings, notification config and the
 reusable notification channels, trigger and cancel runs, poll status, add/update/delete/snooze
 checks, dry-run a check preview, manage schedules and trigger bindings end-to-end (create /
@@ -234,7 +240,7 @@ with health and lineage) and **incidents** (what is broken right now, with the e
 acknowledge and resolve them, and surface near-miss triggers that silently never fire), trace
 a column's lineage, list a target's columns, profile columns, suggest a PII policy, test a
 connection, read a curated docs page, and read the health score and pipeline status — in natural language, with the same per-suite authz as the
-UI. The 52 split three ways: **28 read-only, 18 that change state**, and **6 that persist
+UI. The 54 split three ways: **30 read-only, 18 that change state**, and **6 that persist
 nothing but open a live datasource connection with stored credentials** and so are gated like
 writes ([AI assistants](mcp-setup.md), ADR 0008 + its Tier 1–3B amendments).
 

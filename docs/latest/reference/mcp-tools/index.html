@@ -1181,6 +1181,8 @@
       
         
       
+        
+      
     
     
     
@@ -1309,6 +1311,34 @@
     
   
     REST API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../suite-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Suite document
   
 
     
@@ -2116,6 +2146,8 @@
       
         
       
+        
+      
     
     
     
@@ -2213,6 +2245,34 @@
     
   
     Deployment parity (Azure · AWS · Local)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/upgrading/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrading
   
 
     
@@ -2437,19 +2497,19 @@ run against), and the description is the opening of what an AI assistant is show
 <tbody>
 <tr>
 <td>Tools</td>
-<td>52</td>
+<td>54</td>
 </tr>
 <tr>
 <td>Read-only</td>
-<td>28</td>
+<td>30</td>
 </tr>
 <tr>
 <td>Changes state</td>
-<td>19</td>
+<td>18</td>
 </tr>
 <tr>
 <td>Live probe</td>
-<td>5</td>
+<td>6</td>
 </tr>
 </tbody>
 </table>
@@ -2494,6 +2554,11 @@ connection mutation, and a credential must never transit an LLM.</p>
 <td><code>get_column_policy</code></td>
 <td><code>view</code> on the suite</td>
 <td>Get the suite's failing-sample redaction policy — which columns are masked.</td>
+</tr>
+<tr>
+<td><code>get_coverage</code></td>
+<td>any signed-in user</td>
+<td>Get how much of the asset inventory is watched, and how often automatic checks cry wolf.</td>
 </tr>
 <tr>
 <td><code>get_doc</code></td>
@@ -2586,6 +2651,11 @@ connection mutation, and a credential must never transit an LLM.</p>
 <td>List the cron schedules that run suites automatically.</td>
 </tr>
 <tr>
+<td><code>list_suggested_rules</code></td>
+<td><code>view</code> on the suite</td>
+<td>List the rules waiting for review on a suite — proposals, not checks.</td>
+</tr>
+<tr>
 <td><code>list_suite_channels</code></td>
 <td><code>view</code> on the suite</td>
 <td>List the reusable notification channels linked to one suite.</td>
@@ -2621,11 +2691,6 @@ connection mutation, and a credential must never transit an LLM.</p>
 <td><code>ack_incident</code></td>
 <td><code>edit</code> on the incident's suite</td>
 <td>Acknowledge an incident — record that someone is looking at it.</td>
-</tr>
-<tr>
-<td><code>browse_connection</code></td>
-<td>workspace Member or Admin</td>
-<td>List what a connection can see, one level at a time, to pick a suite's run target.</td>
 </tr>
 <tr>
 <td><code>cancel_run</code></td>
@@ -2724,6 +2789,11 @@ connection mutation, and a credential must never transit an LLM.</p>
 </tr>
 </thead>
 <tbody>
+<tr>
+<td><code>browse_connection</code></td>
+<td>workspace Member or Admin</td>
+<td>List what a connection can see, one level at a time, to pick a suite's run target.</td>
+</tr>
 <tr>
 <td><code>dryrun_check</code></td>
 <td><code>edit</code> on the suite</td>
