@@ -9,6 +9,8 @@ from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 from typing_extensions import Self
 
+from ..types import UNSET, Unset
+
 if TYPE_CHECKING:
     from ..models.incident_detail_read_evidence_type_0 import IncidentDetailReadEvidenceType0
 
@@ -43,6 +45,7 @@ class IncidentDetailRead:
             resolved_by_user_id (None | UUID):
             status (str):
             suite_id (UUID):
+            resolution (None | str | Unset):
     """
 
     acknowledge_note: None | str
@@ -66,6 +69,7 @@ class IncidentDetailRead:
     resolved_by_user_id: None | UUID
     status: str
     suite_id: UUID
+    resolution: None | str | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -146,6 +150,12 @@ class IncidentDetailRead:
 
         suite_id = str(self.suite_id)
 
+        resolution: None | str | Unset
+        if isinstance(self.resolution, Unset):
+            resolution = UNSET
+        else:
+            resolution = self.resolution
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -173,6 +183,8 @@ class IncidentDetailRead:
                 "suite_id": suite_id,
             }
         )
+        if resolution is not UNSET:
+            field_dict["resolution"] = resolution
 
         return field_dict
 
@@ -339,6 +351,15 @@ class IncidentDetailRead:
 
         suite_id = UUID(d.pop("suite_id"))
 
+        def _parse_resolution(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        resolution = _parse_resolution(d.pop("resolution", UNSET))
+
         incident_detail_read = cls(
             acknowledge_note=acknowledge_note,
             acknowledged_at=acknowledged_at,
@@ -361,6 +382,7 @@ class IncidentDetailRead:
             resolved_by_user_id=resolved_by_user_id,
             status=status,
             suite_id=suite_id,
+            resolution=resolution,
         )
 
         incident_detail_read.additional_properties = d

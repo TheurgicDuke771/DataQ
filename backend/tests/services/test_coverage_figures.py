@@ -159,3 +159,28 @@ def test_an_empty_workspace_has_no_coverage_figure(db_session: Any) -> None:
     assert (figures.assets_total, figures.assets_watched) == (0, 0)
     assert figures.coverage_pct is None
     assert figures.false_positive_rate is None
+
+
+def test_the_rate_moves_when_an_incident_is_resolved_through_the_real_resolve_path(
+    db_session: Any, conn: Connection
+) -> None:
+    """The other tests set `resolution` on the model directly. This one goes through
+    `incident_service.resolve_incident`, the only way the application writes it."""
+    from backend.app.services import incident_service
+
+    asset = _asset(db_session, "t")
+    auto = _suite(db_session, conn, asset, origin="auto")
+    check = Check(suite_id=auto.id, name="c", expectation_type="e", config={})
+    db_session.add(check)
+    db_session.flush()
+    incident = Incident(asset_id=asset.id, check_id=check.id, suite_id=auto.id, status="open")
+    db_session.add(incident)
+    db_session.commit()
+    assert cov.coverage_figures(db_session).false_positive_rate is None
+
+    incident_service.resolve_incident(
+        db_session, incident, user_id=conn.created_by, resolution="false_positive"
+    )
+
+    figures = cov.coverage_figures(db_session)
+    assert (figures.stated, figures.false_positive, figures.false_positive_rate) == (1, 1, 100.0)

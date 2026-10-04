@@ -4995,6 +4995,17 @@
             ],
             "title": "Prior Incident Id"
           },
+          "resolution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolution"
+          },
           "resolution_note": {
             "anyOf": [
               {
@@ -5225,6 +5236,17 @@
             "title": "Occurrence Count",
             "type": "integer"
           },
+          "resolution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolution"
+          },
           "resolved_at": {
             "anyOf": [
               {
@@ -5276,6 +5298,41 @@
           "latest_status"
         ],
         "title": "IncidentRead",
+        "type": "object"
+      },
+      "IncidentResolveRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "resolution": {
+            "anyOf": [
+              {
+                "enum": [
+                  "fixed",
+                  "expected_change",
+                  "false_positive"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolution"
+          }
+        },
+        "title": "IncidentResolveRequest",
         "type": "object"
       },
       "InheritedClassificationRead": {
@@ -12726,7 +12783,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/IncidentActionRequest"
+                "$ref": "#/components/schemas/IncidentResolveRequest"
               }
             }
           },

@@ -300,6 +300,25 @@ def test_acknowledged_incident_still_dedups_new_failure(
     assert active[0].occurrence_count == 2
 
 
+def test_resolve_refuses_an_unknown_resolution_at_the_service_door(
+    db_session: Any, world: dict[str, Any]
+) -> None:
+    """The REST route's Literal stops this earlier; a caller that is not the REST route
+    must get a 422 with a reason, not the table CHECK's IntegrityError."""
+    run = _run_with_result(db_session, world["suite"], world["check"], status="fail")
+    incident_service.sync_incidents_for_run(db_session, run_id=run.id)
+    (inc,) = _active(db_session, world["suite"].asset_id, world["check"].id)
+
+    with pytest.raises(incident_service.IncidentResolutionInvalidError) as excinfo:
+        incident_service.resolve_incident(
+            db_session, inc, user_id=world["owner"].id, resolution="wontfix"
+        )
+
+    assert excinfo.value.status_code == 422
+    db_session.refresh(inc)
+    assert (inc.status, inc.resolution) == ("open", None)
+
+
 def test_double_resolve_conflicts(db_session: Any, world: dict[str, Any]) -> None:
     run = _run_with_result(db_session, world["suite"], world["check"], status="fail")
     incident_service.sync_incidents_for_run(db_session, run_id=run.id)

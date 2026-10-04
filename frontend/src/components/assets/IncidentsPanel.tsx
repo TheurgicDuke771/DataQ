@@ -1,9 +1,11 @@
-import { App, Button, Card, Empty, Flex, Popconfirm, Table, Tag, Typography } from 'antd';
+import { App, Button, Card, Empty, Flex, Popconfirm, Select, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useState } from 'react';
 
 import {
+  INCIDENT_RESOLUTION_LABELS,
   type Incident,
+  type IncidentResolution,
   acknowledgeIncident,
   listIncidents,
   resolveIncident,
@@ -14,6 +16,54 @@ import { AsyncBody } from '../AsyncBody';
 import { formatTimestamp } from '../results/resultsFormat';
 import { IncidentEvidenceDrawer } from './IncidentEvidenceDrawer';
 import { ResultStatusTag } from '../shared/StatusTag';
+
+/**
+ * Resolve, with an optional "what was it?". The answer is how the false-positive rate is
+ * measured, so it is asked at the moment of resolving — but never required: an unstated
+ * resolution is recorded as unstated, not guessed.
+ */
+function ResolveButton({
+  busy,
+  onResolve,
+}: {
+  busy: boolean;
+  onResolve: (resolution: IncidentResolution | null) => void;
+}) {
+  const [resolution, setResolution] = useState<IncidentResolution | null>(null);
+  return (
+    <Popconfirm
+      title="Resolve this incident?"
+      okText="Resolve"
+      description={
+        <Flex vertical gap={4} style={{ width: 300 }}>
+          <Typography.Text type="secondary" id="incident-resolution-label">
+            What was it? (optional)
+          </Typography.Text>
+          <Select<IncidentResolution>
+            aria-labelledby="incident-resolution-label"
+            allowClear
+            placeholder="Not stated"
+            value={resolution ?? undefined}
+            onChange={(value) => setResolution(value ?? null)}
+            options={Object.entries(INCIDENT_RESOLUTION_LABELS).map(([value, label]) => ({
+              value: value as IncidentResolution,
+              label,
+            }))}
+          />
+        </Flex>
+      }
+      onConfirm={() => onResolve(resolution)}
+      // A choice made and then cancelled must not ride along on the next open.
+      onOpenChange={(open) => {
+        if (!open) setResolution(null);
+      }}
+    >
+      <Button size="small" type="primary" loading={busy}>
+        Resolve
+      </Button>
+    </Popconfirm>
+  );
+}
 
 /**
  * Incidents section on the asset page (ADR 0034 #761) — the *active* incidents (open /
@@ -174,15 +224,12 @@ function IncidentsTable({
                 Acknowledge
               </Button>
             )}
-            <Popconfirm
-              title="Resolve this incident?"
-              okText="Resolve"
-              onConfirm={() => void act(incident, 'resolve', resolveIncident)}
-            >
-              <Button size="small" type="primary" loading={busy}>
-                Resolve
-              </Button>
-            </Popconfirm>
+            <ResolveButton
+              busy={busy}
+              onResolve={(resolution) =>
+                void act(incident, 'resolve', (id) => resolveIncident(id, undefined, resolution))
+              }
+            />
           </Flex>
         );
       },

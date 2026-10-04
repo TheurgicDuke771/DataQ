@@ -53,6 +53,10 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Added
 
+- **Say what an incident turned out to be.** Resolving an incident can record whether it was
+  **fixed**, an **expected change** or a **false positive**. It is optional; left out, the
+  incident is recorded as not stated. In the API, `POST /incidents/{id}/resolve` takes
+  `resolution` and incidents return it; the MCP `resolve_incident` tool takes it too.
 - **Coverage and false-positive figures on the Dashboard.** A new panel shows what share of the
   asset inventory was watched by a suite in the last 7 days, and what share of resolved
   automatic-check incidents were marked false positives in the last 30, each with the counts

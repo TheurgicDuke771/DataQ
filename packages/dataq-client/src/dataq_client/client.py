@@ -29,6 +29,7 @@ from dataq_client.generated.models.gate_request_env import GateRequestEnv
 from dataq_client.generated.models.gate_request_fail_on import GateRequestFailOn
 from dataq_client.generated.models.gate_request_provider import GateRequestProvider
 from dataq_client.generated.models.incident_action_request import IncidentActionRequest
+from dataq_client.generated.models.incident_resolve_request import IncidentResolveRequest
 from dataq_client.generated.models.suite_apply_request import SuiteApplyRequest
 from dataq_client.generated.models.suite_import_request import SuiteImportRequest
 from dataq_client.generated.models.suite_validate_request import SuiteValidateRequest
@@ -373,8 +374,16 @@ class DataQClient:
             )
         )
 
-    def resolve_incident(self, incident_id: uuid.UUID | str, note: str | None = None) -> Any:
-        body = IncidentActionRequest.from_dict({} if note is None else {"note": note})
+    def resolve_incident(
+        self,
+        incident_id: uuid.UUID | str,
+        note: str | None = None,
+        resolution: str | None = None,
+    ) -> Any:
+        """Resolve an incident. ``resolution`` (``fixed``, ``expected_change`` or
+        ``false_positive``) records what it turned out to be; left out, none is stated."""
+        fields = {"note": note, "resolution": resolution}
+        body = IncidentResolveRequest.from_dict({k: v for k, v in fields.items() if v is not None})
         return _ok(
             resolve_incident.sync_detailed(uuid.UUID(str(incident_id)), client=self.api, body=body)
         )
