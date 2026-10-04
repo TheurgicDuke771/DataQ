@@ -63,6 +63,11 @@ and a wrong claim is a false alert on every run.
    status `pending`, `accepted`, `rejected`). Accepting creates the check in the automatic
    suite; rejecting is remembered and the same rule is not proposed again.
 
+   > **Amended 2026-10-04.** The reconciler proposes profile rules on its own. LLM
+   > suggestions are made **on demand only**: a person runs *Suggest checks* on an automatic
+   > suite and the validated suggestions are saved to the same queue. The reconciler never
+   > calls the model.
+
 5. **Full severity.** Automatic checks warn, fail and go critical like authored ones and alert
    through the suite's notification settings, which default to the workspace channel.
    Defaults: anomaly checks warn at 3 standard deviations, fail at 4, critical at 6; a schema
@@ -122,6 +127,10 @@ and a wrong claim is a false alert on every run.
   gap this closes.
 - **Coverage per asset or workspace-wide:** per asset keeps it manual; workspace-wide takes the
   warehouse-cost decision away from whoever owns each connection.
+- **The reconciler calling the LLM for every covered table** (decided 2026-10-04): an unattended
+  call per table sends each table's profile to the model provider and spends tokens with nobody
+  having asked, on a schedule the workspace cannot see. On demand keeps both the data flow and
+  the cost tied to a person's request.
 - **Starting automatic monitors at warn only:** considered to limit early noise; the
   maintainer chose full severity, with the false-positive rate as the check on it.
 - **Two checks per column** for null rate and cardinality: a wide table would become hundreds
