@@ -43,6 +43,11 @@ export interface AssetSummary {
   checks_passed: number;
   last_run_at: string | null;
   /**
+   * 0-100 over every evaluated result of the composing suites' latest complete runs. Null when
+   * nothing evaluated (never run, or only skip/error); absent on older payloads.
+   */
+  health_score?: number | null;
+  /**
    * Latest-run execution states (distinct from check severity): any composing suite's latest run
    * `failed` / still `queued`/`running`.
    */
@@ -222,8 +227,11 @@ export interface AssetMetadataUpdate {
  */
 export type AssetListPage = ListPage<AssetSummary>;
 
+/** `health_score` orders the whole population lowest score first, unscored assets last. */
+export type AssetSort = 'name' | 'health_score';
+
 export async function listAssets(
-  params?: { limit?: number; offset?: number },
+  params?: { limit?: number; offset?: number; sort?: AssetSort },
   // #1107: threaded through by the tree view's multi-page walk so an abort (unmount/toggle-away)
   // cancels the in-flight request too, not just the ones the walk loop hasn't issued yet.
   signal?: AbortSignal,

@@ -839,6 +839,17 @@
             "title": "Has Skip",
             "type": "boolean"
           },
+          "health_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Health Score"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -11033,6 +11044,22 @@
               "minimum": 0,
               "title": "Offset",
               "type": "integer"
+            }
+          },
+          {
+            "description": "`name` orders by namespace then name. `health_score` orders the whole population lowest score first, assets with no score last.",
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "name",
+              "description": "`name` orders by namespace then name. `health_score` orders the whole population lowest score first, assets with no score last.",
+              "enum": [
+                "name",
+                "health_score"
+              ],
+              "title": "Sort",
+              "type": "string"
             }
           }
         ],

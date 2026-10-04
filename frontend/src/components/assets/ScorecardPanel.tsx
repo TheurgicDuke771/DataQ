@@ -13,7 +13,14 @@ function scoreColour(score: number): string {
   return SEVERITY_SCALE.bad;
 }
 
-export function ScorecardPanel({ scorecard }: { scorecard?: Scorecard | null }) {
+export function ScorecardPanel({
+  scorecard,
+  healthScore,
+}: {
+  scorecard?: Scorecard | null;
+  /** The asset-level score; `undefined` (an older API) renders no headline. */
+  healthScore?: number | null;
+}) {
   // Absent (a pre-#889 API) is not the same as empty — render nothing rather
   // than an authoritative-looking "no coverage" we can't actually vouch for.
   if (!scorecard) return null;
@@ -30,6 +37,23 @@ export function ScorecardPanel({ scorecard }: { scorecard?: Scorecard | null }) 
       styles={{ body: { paddingTop: 12 } }}
       data-testid="scorecard-panel"
     >
+      {healthScore !== undefined && (
+        <Flex align="baseline" gap={10} wrap style={{ marginBottom: 14 }}>
+          <Typography.Text type="secondary">Asset health score</Typography.Text>
+          {healthScore === null ? (
+            // Nothing evaluated. 0 here would read as "everything failed".
+            <Tag>No signal</Tag>
+          ) : (
+            <Typography.Text strong style={{ fontSize: 24 }} data-testid="asset-health-score">
+              {healthScore}
+            </Typography.Text>
+          )}
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            Every check that evaluated in each suite&apos;s latest completed run, including checks
+            with no dimension.
+          </Typography.Text>
+        </Flex>
+      )}
       {covered.length === 0 ? (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -100,7 +124,7 @@ export function ScorecardPanel({ scorecard }: { scorecard?: Scorecard | null }) 
       {unclassified > 0 && (
         <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0 }}>
           {unclassified} check{unclassified === 1 ? '' : 's'} {unclassified === 1 ? 'has' : 'have'}{' '}
-          no dimension set, so {unclassified === 1 ? 'it is' : 'they are'} not counted above.
+          no dimension set, so {unclassified === 1 ? 'it is' : 'they are'} not in the rows above.
         </Typography.Paragraph>
       )}
     </Card>

@@ -59,6 +59,12 @@ the per-PR history lives in the repo's commit log and pull requests.
   reports every problem an import would be refused for and creates nothing. The format is
   now documented field by field in [Suite document](suite-document.md). Plain YAML values
   follow JSON's rules, so `NO` and `2026-01-01` stay text.
+- **An asset health score.** The asset page's scorecard now leads with one 0–100 number
+  for the whole asset, and **Assets → All assets** shows it in a **Score** column and can
+  sort the whole workspace by it, lowest first. It counts every check that evaluated in
+  each suite's latest completed run, including checks with no dimension. In the API,
+  assets gain `health_score` and `GET /assets` gains `sort=health_score`. See
+  [Datasources & checks](../guides/datasources-checks.md#seeing-coverage-the-asset-scorecard).
 - **Real mailboxes from the prebuilt-image stack.** Point the sign-in mailer at your own
   relay and supply its password once as `DATAQ_SMTP_PASSWORD`: a start-up step stores it in
   the stack's vault, where it persists, and the API never holds it. The alert mailer's

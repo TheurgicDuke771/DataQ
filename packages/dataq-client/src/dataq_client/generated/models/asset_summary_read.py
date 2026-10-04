@@ -39,6 +39,7 @@ class AssetSummaryRead:
             suite_count (int):
             worst_severity (None | str):
             auto_coverage_excluded (bool | Unset):  Default: False.
+            health_score (float | None | Unset):
     """
 
     checks_passed: int
@@ -59,6 +60,7 @@ class AssetSummaryRead:
     suite_count: int
     worst_severity: None | str
     auto_coverage_excluded: bool | Unset = False
+    health_score: float | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -109,6 +111,12 @@ class AssetSummaryRead:
 
         auto_coverage_excluded = self.auto_coverage_excluded
 
+        health_score: float | None | Unset
+        if isinstance(self.health_score, Unset):
+            health_score = UNSET
+        else:
+            health_score = self.health_score
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -134,6 +142,8 @@ class AssetSummaryRead:
         )
         if auto_coverage_excluded is not UNSET:
             field_dict["auto_coverage_excluded"] = auto_coverage_excluded
+        if health_score is not UNSET:
+            field_dict["health_score"] = health_score
 
         return field_dict
 
@@ -217,6 +227,15 @@ class AssetSummaryRead:
 
         auto_coverage_excluded = d.pop("auto_coverage_excluded", UNSET)
 
+        def _parse_health_score(data: object) -> float | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(float | None | Unset, data)
+
+        health_score = _parse_health_score(d.pop("health_score", UNSET))
+
         asset_summary_read = cls(
             checks_passed=checks_passed,
             checks_total=checks_total,
@@ -236,6 +255,7 @@ class AssetSummaryRead:
             suite_count=suite_count,
             worst_severity=worst_severity,
             auto_coverage_excluded=auto_coverage_excluded,
+            health_score=health_score,
         )
 
         asset_summary_read.additional_properties = d

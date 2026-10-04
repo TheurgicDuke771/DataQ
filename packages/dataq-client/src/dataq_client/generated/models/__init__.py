@@ -140,6 +140,7 @@ from .kpis_read import KpisRead
 from .lineage_edge_read import LineageEdgeRead
 from .lineage_node_read import LineageNodeRead
 from .lineage_source_health_read import LineageSourceHealthRead
+from .list_assets_sort import ListAssetsSort
 from .list_audit_events_action_class_type_0 import ListAuditEventsActionClassType0
 from .list_columns_file_format_type_0 import ListColumnsFileFormatType0
 from .list_suggestions_status import ListSuggestionsStatus
@@ -398,6 +399,7 @@ __all__ = (
     "LineageEdgeRead",
     "LineageNodeRead",
     "LineageSourceHealthRead",
+    "ListAssetsSort",
     "ListAuditEventsActionClassType0",
     "ListColumnsFileFormatType0",
     "ListSuggestionsStatus",
