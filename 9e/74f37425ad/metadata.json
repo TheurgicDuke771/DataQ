@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "9e74f37425ad",
+  "strategy": "manual-commit",
+  "branch": "docs/w8-ledger-2026-10-04",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/9e/74f37425ad/0/metadata.json",
+      "transcript": "/9e/74f37425ad/0/full.jsonl",
+      "compact_transcript": "/9e/74f37425ad/0/transcript.jsonl",
+      "content_hash": "/9e/74f37425ad/0/content_hash.txt",
+      "prompt": "/9e/74f37425ad/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 20,
+    "cache_creation_tokens": 8645,
+    "cache_read_tokens": 3429690,
+    "output_tokens": 5185,
+    "api_call_count": 10
+  }
+}

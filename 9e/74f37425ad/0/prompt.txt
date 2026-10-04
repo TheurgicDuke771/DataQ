@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b85d7siq1</task-id>
+<tool-use-id>toolu_01JgX4z8NoB4yeUQN87BS4i5</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/051a3ae7-f154-4852-b2b4-477a2e7d4418/tasks/b85d7siq1.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for PR 2385 or 2386 to merge or fail" completed (exit code 0)</summary>
+</task-notification>
