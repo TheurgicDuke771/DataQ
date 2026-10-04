@@ -129,6 +129,27 @@ describe('CheckEdit', () => {
     expect(await screen.findByText('Suite detail')).toBeInTheDocument();
   });
 
+  it('edits a custom SQL check in the plain editor, with no generate panel', async () => {
+    // The panel belongs to the "Generate from a description" entry point on the add page.
+    // An existing check already has its SQL; offering to regenerate over it is not an edit.
+    mockGetSuite.mockResolvedValue(suite);
+    mockGetConnection.mockResolvedValue(connection);
+    mockGetCheck.mockResolvedValue({
+      ...existing,
+      name: 'no negative totals',
+      expectation_type: 'unexpected_rows_expectation',
+      config: { unexpected_rows_query: 'SELECT * FROM {batch} WHERE total < 0' },
+      dimension: null,
+      warn_threshold: null,
+      fail_threshold: null,
+    });
+    renderPage();
+
+    expect(await screen.findByDisplayValue('no negative totals')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Generate SQL/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Describe the rule in plain language/)).not.toBeInTheDocument();
+  });
+
   it('surfaces a 422 whose field matches no form input instead of silently no-opping', async () => {
     const { AxiosError, AxiosHeaders } = await import('axios');
     const user = userEvent.setup();
