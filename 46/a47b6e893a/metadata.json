@@ -1,0 +1,43 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "46a47b6e893a",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1660-incident-resolution",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/incidents.py",
+    "backend/app/mcp/server.py",
+    "backend/app/services/incident_service.py",
+    "backend/tests/api/test_incidents.py",
+    "backend/tests/mcp/test_mcp_tools.py",
+    "backend/tests/services/test_incident_service.py",
+    "docs/site/guides/datasources-checks.md",
+    "docs/site/reference/changelog.md",
+    "docs/site/reference/openapi.json",
+    "frontend/src/api/incidents.ts",
+    "frontend/src/components/assets/IncidentsPanel.tsx",
+    "frontend/tests/components/IncidentsPanel.test.tsx",
+    "packages/dataq-client/src/dataq_client/generated/api/incidents/resolve_incident.py",
+    "packages/dataq-client/src/dataq_client/generated/models/__init__.py",
+    "packages/dataq-client/src/dataq_client/generated/models/incident_detail_read.py",
+    "packages/dataq-client/src/dataq_client/generated/models/incident_read.py",
+    "packages/dataq-client/src/dataq_client/generated/models/incident_resolve_request.py",
+    "packages/dataq-client/src/dataq_client/generated/models/incident_resolve_request_resolution_type_0.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/46/a47b6e893a/0/metadata.json",
+      "transcript": "/46/a47b6e893a/0/full.jsonl",
+      "compact_transcript": "/46/a47b6e893a/0/transcript.jsonl",
+      "content_hash": "/46/a47b6e893a/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 54,
+    "cache_creation_tokens": 37784,
+    "cache_read_tokens": 22896429,
+    "output_tokens": 18358,
+    "api_call_count": 27
+  }
+}
