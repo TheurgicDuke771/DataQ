@@ -475,6 +475,8 @@ function SuiteDetail({
     }
   };
 
+  // Bumped when the Suggest-checks drawer changes the suite's review queue.
+  const [queueNonce, setQueueNonce] = useState(0);
   const onDelete = async () => {
     // Blast-radius counts (#1320) are fetched before the confirm dialog opens so it
     // can state them plainly; a failed fetch degrades to the plain warning below
@@ -563,8 +565,16 @@ function SuiteDetail({
         onAdd={() => navigate(`/suites/${suite.id}/checks/new`)}
         onEdit={(check) => navigate(`/suites/${suite.id}/checks/${check.id}/edit`)}
         onChanged={reload}
+        onQueueChanged={() => setQueueNonce((n) => n + 1)}
       />
-      <SuggestionsPanel suiteId={suite.id} canDecide={canRun} onAccepted={reload} />
+      {/* Re-keyed so it refetches when the Suggest-checks drawer saves rules to the queue or
+          adds one that was queued. */}
+      <SuggestionsPanel
+        key={queueNonce}
+        suiteId={suite.id}
+        canDecide={canRun}
+        onAccepted={reload}
+      />
       {/* Triggers + schedules are edit-gated (same as runs): a pipeline/DAG bound
           here runs the suite on its success; a schedule runs it on a cron cadence.
           canRun is exactly the edit-level capability. */}
@@ -607,6 +617,7 @@ function ChecksList({
   onAdd,
   onEdit,
   onChanged,
+  onQueueChanged,
 }: {
   suiteId: string;
   state: AsyncState<Check[]>;
@@ -618,6 +629,8 @@ function ChecksList({
   onAdd: () => void;
   onEdit: (check: Check) => void;
   onChanged: () => void;
+  /** The suite's "Suggested rules" queue changed from inside the Suggest-checks drawer. */
+  onQueueChanged?: () => void;
 }) {
   const { message, modal } = App.useApp();
   const confirmDelete = useConfirmDelete();
@@ -779,6 +792,7 @@ function ChecksList({
         open={suggestOpen}
         onClose={() => setSuggestOpen(false)}
         onAdded={onChanged}
+        onQueueChanged={onQueueChanged}
       />
       {checks.length === 0 ? (
         <EmptyState

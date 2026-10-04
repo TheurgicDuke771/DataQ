@@ -157,6 +157,9 @@ export interface CheckSuggestionsResponse {
   suggestions: CheckSuggestion[];
   rejected: RejectedSuggestion[];
   coverage_warnings: CoverageWarning[];
+  /** How many suggestions were newly saved to the suite's "Suggested rules" queue. Null on a
+   *  suite a person authored (it has no queue to save to); absent on an older result. */
+  queued_for_review?: number | null;
   /** How many of the table's columns were profiled; `profiled < total` on a table wider
    *  than the prompt's column cap. Absent on a result stored before the field existed. */
   column_coverage?: { profiled: number; total: number };
