@@ -1,0 +1,43 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "0220dcf5dcf0",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1688-suite-apply-drift",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/suites.py",
+    "backend/app/services/suite_io_service.py",
+    "backend/tests/api/test_suites.py",
+    "backend/tests/docs/test_suite_document_page.py",
+    "backend/tests/support/audit_coverage.py",
+    "docs/site/guides/python-client.md",
+    "docs/site/reference/changelog.md",
+    "docs/site/reference/openapi.json",
+    "docs/site/reference/suite-document.md",
+    "packages/dataq-client/src/dataq_client/cli.py",
+    "packages/dataq-client/src/dataq_client/client.py",
+    "packages/dataq-client/src/dataq_client/generated/api/suites/apply_suite_document.py",
+    "packages/dataq-client/src/dataq_client/generated/models/__init__.py",
+    "packages/dataq-client/src/dataq_client/generated/models/check_change_read.py",
+    "packages/dataq-client/src/dataq_client/generated/models/check_change_read_action.py",
+    "packages/dataq-client/src/dataq_client/generated/models/suite_apply_read.py",
+    "packages/dataq-client/src/dataq_client/generated/models/suite_apply_request.py",
+    "packages/dataq-client/tests/test_client.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/02/20dcf5dcf0/0/metadata.json",
+      "transcript": "/02/20dcf5dcf0/0/full.jsonl",
+      "compact_transcript": "/02/20dcf5dcf0/0/transcript.jsonl",
+      "content_hash": "/02/20dcf5dcf0/0/content_hash.txt",
+      "prompt": "/02/20dcf5dcf0/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 92,
+    "cache_creation_tokens": 762225,
+    "cache_read_tokens": 33540271,
+    "output_tokens": 54163,
+    "api_call_count": 46
+  }
+}
