@@ -17,7 +17,12 @@ from backend.app.core.secrets import SecretStore, get_secret_store
 from backend.app.core.uri_credentials import redact_config_uris
 from backend.app.db.models import Connection, User
 from backend.app.db.session import get_db
-from backend.app.services import browse_service, credential_health
+from backend.app.services import (
+    browse_service,
+    credential_health,
+    rollup,
+    scoring_settings_service,
+)
 from backend.app.services import connection_service as svc
 from backend.app.services.check_service import config_refused_expectation_types
 
@@ -127,6 +132,14 @@ class ConnectionRead(ApiModel):
     last_run_error: str | None = None
     consecutive_run_failures: int = 0
 
+    # Data-quality score (#1557): 0-100 over every evaluated result of the latest complete
+    # run of each suite on this connection, with the workspace's severity weights.
+    # Workspace-wide — it counts suites the caller cannot open. NULL = nothing evaluated
+    # (no suites, no completed run, or only skip/error), which is not 0; always NULL on an
+    # orchestration connection, which has no suites. Distinct from the run and credential
+    # health above: those say whether DataQ could reach the datasource, this what it found.
+    health_score: float | None = None
+
     # Credential expiry (#838) — when the credential itself states one (a SAS prints `se=`).
     credential_expires_at: datetime | None = None
     # When the expiry was last read (#1024).
@@ -159,7 +172,10 @@ class ConnectionRead(ApiModel):
 
     @classmethod
     def from_model(
-        cls, conn: Connection, health: svc.DatasourceHealth | None = None
+        cls,
+        conn: Connection,
+        health: svc.DatasourceHealth | None = None,
+        health_score: float | None = None,
     ) -> ConnectionRead:
         health = health or svc.DatasourceHealth()
         return cls(
@@ -178,6 +194,7 @@ class ConnectionRead(ApiModel):
             last_run_at=health.last_run_at,
             last_run_error=health.reason,
             consecutive_run_failures=health.consecutive_failures,
+            health_score=health_score,
             credential_expires_at=conn.credential_expires_at,
             credential_expiry_checked_at=conn.credential_expiry_checked_at,
             inventory_sync_last_attempted_at=conn.inventory_sync_last_attempted_at,
@@ -292,8 +309,10 @@ def list_connections(
     conns = svc.list_connections(db, conn_type=type, env=env)
     # One batched query for the whole list, not one per connection — the N+1 that
     # #947 just removed from the MCP surface.
-    health = svc.datasource_health(db, [c.id for c in conns])
-    return [ConnectionRead.from_model(c, health.get(c.id)) for c in conns]
+    ids = [c.id for c in conns]
+    health = svc.datasource_health(db, ids)
+    scores = rollup.connection_scores(db, ids, scoring_settings_service.weights(db))
+    return [ConnectionRead.from_model(c, health.get(c.id), scores.get(c.id)) for c in conns]
 
 
 @router.get(
@@ -307,7 +326,10 @@ def get_connection(
     db: Annotated[Session, Depends(get_db)],
 ) -> ConnectionRead:
     conn = svc.get_connection(db, connection_id)
-    return ConnectionRead.from_model(conn, svc.datasource_health(db, [conn.id]).get(conn.id))
+    scores = rollup.connection_scores(db, [conn.id], scoring_settings_service.weights(db))
+    return ConnectionRead.from_model(
+        conn, svc.datasource_health(db, [conn.id]).get(conn.id), scores.get(conn.id)
+    )
 
 
 @router.patch(

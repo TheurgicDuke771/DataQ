@@ -39,6 +39,7 @@ class ConnectionRead:
         credential_expiry_checked_at (datetime.datetime | None | Unset):
         credential_health (CredentialHealthRead | None | Unset):
         engine_capabilities (ConnectionReadEngineCapabilitiesType0 | None | Unset):
+        health_score (float | None | Unset):
         inventory_sync_failing_since (datetime.datetime | None | Unset):
         inventory_sync_last_attempted_at (datetime.datetime | None | Unset):
         inventory_sync_last_error (None | str | Unset):
@@ -64,6 +65,7 @@ class ConnectionRead:
     credential_expiry_checked_at: datetime.datetime | None | Unset = UNSET
     credential_health: CredentialHealthRead | None | Unset = UNSET
     engine_capabilities: ConnectionReadEngineCapabilitiesType0 | None | Unset = UNSET
+    health_score: float | None | Unset = UNSET
     inventory_sync_failing_since: datetime.datetime | None | Unset = UNSET
     inventory_sync_last_attempted_at: datetime.datetime | None | Unset = UNSET
     inventory_sync_last_error: None | str | Unset = UNSET
@@ -135,6 +137,12 @@ class ConnectionRead:
             engine_capabilities = self.engine_capabilities.to_dict()
         else:
             engine_capabilities = self.engine_capabilities
+
+        health_score: float | None | Unset
+        if isinstance(self.health_score, Unset):
+            health_score = UNSET
+        else:
+            health_score = self.health_score
 
         inventory_sync_failing_since: None | str | Unset
         if isinstance(self.inventory_sync_failing_since, Unset):
@@ -229,6 +237,8 @@ class ConnectionRead:
             field_dict["credential_health"] = credential_health
         if engine_capabilities is not UNSET:
             field_dict["engine_capabilities"] = engine_capabilities
+        if health_score is not UNSET:
+            field_dict["health_score"] = health_score
         if inventory_sync_failing_since is not UNSET:
             field_dict["inventory_sync_failing_since"] = inventory_sync_failing_since
         if inventory_sync_last_attempted_at is not UNSET:
@@ -363,6 +373,15 @@ class ConnectionRead:
             return cast(ConnectionReadEngineCapabilitiesType0 | None | Unset, data)
 
         engine_capabilities = _parse_engine_capabilities(d.pop("engine_capabilities", UNSET))
+
+        def _parse_health_score(data: object) -> float | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(float | None | Unset, data)
+
+        health_score = _parse_health_score(d.pop("health_score", UNSET))
 
         def _parse_inventory_sync_failing_since(data: object) -> datetime.datetime | None | Unset:
             if data is None:
@@ -513,6 +532,7 @@ class ConnectionRead:
             credential_expiry_checked_at=credential_expiry_checked_at,
             credential_health=credential_health,
             engine_capabilities=engine_capabilities,
+            health_score=health_score,
             inventory_sync_failing_since=inventory_sync_failing_since,
             inventory_sync_last_attempted_at=inventory_sync_last_attempted_at,
             inventory_sync_last_error=inventory_sync_last_error,
