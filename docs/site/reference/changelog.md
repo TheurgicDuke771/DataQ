@@ -5,6 +5,10 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ## Unreleased
 
+Nothing yet.
+
+## v1.2.0 — 2026-10-04
+
 ### Breaking
 
 - **A connection that fails its own test is no longer saved.** Creating a connection, changing
