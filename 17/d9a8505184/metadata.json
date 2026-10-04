@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "17d9a8505184",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1929-no-generate-panel-on-edit",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/site/reference/changelog.md",
+    "frontend/src/pages/CheckEdit.tsx",
+    "frontend/tests/pages/CheckEdit.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/17/d9a8505184/0/metadata.json",
+      "transcript": "/17/d9a8505184/0/full.jsonl",
+      "compact_transcript": "/17/d9a8505184/0/transcript.jsonl",
+      "content_hash": "/17/d9a8505184/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 14,
+    "cache_creation_tokens": 9713,
+    "cache_read_tokens": 5761896,
+    "output_tokens": 4123,
+    "api_call_count": 7
+  }
+}
