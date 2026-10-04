@@ -12,6 +12,7 @@ import pytest
 from dataq_client import (
     AuthError,
     DataQClient,
+    DataQError,
     GateTimeoutError,
     RateLimitedError,
     RunOutcome,
@@ -359,3 +360,150 @@ def test_cli_gate_timeout_exits_four(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("dataq_client.client.time.sleep", lambda _s: None)
     argv = ["gate", "--provider", "airflow", "--pipeline", "nightly", "--env", "dev"]
     assert cli.main([*argv, "--run-id", "r1", "--timeout", "0"]) == 4
+
+
+# ── suite documents: validate / apply / drift (checks-as-code) ──
+
+
+_PLAN = {
+    "dry_run": True,
+    "changed": True,
+    "suite_fields": [],
+    "checks": [
+        {"name": "amount_range", "action": "update", "fields": ["config"]},
+        {"name": "id_not_null", "action": "unchanged", "fields": []},
+    ],
+    "unmanaged": ["legacy"],
+}
+
+
+def test_a_yaml_document_is_sent_as_text_and_a_json_one_as_an_object() -> None:
+    server = _Server(
+        _json(200, {"valid": True, "check_count": 0, "problems": []}),
+        _json(200, {"valid": True, "check_count": 0, "problems": []}),
+    )
+    client = _client(server)
+    connection = str(uuid.uuid4())
+
+    client.validate_suite("name: orders\nchecks: []\n", connection)
+    client.validate_suite({"name": "orders", "checks": []}, connection)
+
+    as_yaml, as_json = (json.loads(r.content) for r in server.requests)
+    assert server.requests[0].url.path == "/api/v1/suites/validate"
+    # The server parses the YAML, so client and server cannot disagree about a value.
+    assert as_yaml == {"connection_id": connection, "document_yaml": "name: orders\nchecks: []\n"}
+    assert as_json == {"connection_id": connection, "document": {"name": "orders", "checks": []}}
+
+
+def test_apply_sends_prune_and_dry_run_and_returns_the_plan() -> None:
+    server = _Server(_json(200, _PLAN))
+    plan = _client(server).apply_suite(SUITE, {"name": "o", "checks": []}, prune=True, dry_run=True)
+
+    request = server.requests[0]
+    assert request.url.path == f"/api/v1/suites/{SUITE}/apply"
+    sent = json.loads(request.content)
+    assert (sent["prune"], sent["dry_run"]) == (True, True)
+    assert plan == _PLAN
+
+
+def test_a_refused_apply_raises_with_the_servers_code() -> None:
+    server = _Server(_json(422, {"error": {"code": "suite_import_invalid", "message": "bad"}}))
+    with pytest.raises(DataQError) as excinfo:
+        _client(server).apply_suite(SUITE, {"name": "o", "checks": []})
+    assert excinfo.value.code == "suite_import_invalid"
+
+
+def _cli_with(monkeypatch: pytest.MonkeyPatch, *responses: httpx.Response) -> _Server:
+    server = _Server(*responses)
+    monkeypatch.setenv("DATAQ_URL", "https://dq.example.com")
+    monkeypatch.setenv("DATAQ_PAT", "dq_live_x")
+    monkeypatch.setattr(cli, "DataQClient", lambda _url=None: _client(server))
+    return server
+
+
+@pytest.mark.parametrize(("changed", "code"), [(True, 2), (False, 0)])
+def test_cli_drift_exits_two_only_when_the_suite_differs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Any,
+    capsys: pytest.CaptureFixture[str],
+    changed: bool,
+    code: int,
+) -> None:
+    plan = {**_PLAN, "changed": changed}
+    if not changed:
+        plan["checks"] = [{"name": "id_not_null", "action": "unchanged", "fields": []}]
+    server = _cli_with(monkeypatch, _json(200, plan))
+    file = tmp_path / "orders.yaml"
+    file.write_text("name: orders\nchecks: []\n")
+
+    exit_code_ = cli.main(["drift", str(file), "--suite", str(SUITE)])
+
+    assert exit_code_ == code
+    # drift never writes: it is the dry run.
+    assert json.loads(server.requests[0].content)["dry_run"] is True
+    out = capsys.readouterr().out
+    assert ("update  amount_range (config)" in out) is changed
+    assert ("no drift" in out) is not changed
+
+
+def test_cli_apply_writes_and_exits_zero_even_when_it_changed_things(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any, capsys: pytest.CaptureFixture[str]
+) -> None:
+    server = _cli_with(monkeypatch, _json(200, {**_PLAN, "dry_run": False}))
+    file = tmp_path / "orders.json"
+    file.write_text(json.dumps({"name": "orders", "checks": []}))
+
+    exit_code_ = cli.main(["apply", str(file), "--suite", str(SUITE), "--prune"])
+
+    assert exit_code_ == 0
+    sent = json.loads(server.requests[0].content)
+    assert (sent["dry_run"], sent["prune"]) == (False, True)
+    assert sent["document"] == {"name": "orders", "checks": []}  # .json is sent as an object
+    out = capsys.readouterr().out
+    assert "changed: 0 created, 1 updated, 0 deleted" in out
+    assert "None" not in out
+    assert "not in the document, left alone: legacy" in out
+
+
+@pytest.mark.parametrize(("valid", "code"), [(True, 0), (False, 2)])
+def test_cli_validate_exits_by_validity_and_prints_every_problem(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Any,
+    capsys: pytest.CaptureFixture[str],
+    valid: bool,
+    code: int,
+) -> None:
+    problems = (
+        []
+        if valid
+        else [
+            {"location": "checks[1]", "check_name": "bad", "code": "x", "message": "wrong type"},
+            {"location": "document", "check_name": None, "code": "y", "message": "no connection"},
+        ]
+    )
+    _cli_with(monkeypatch, _json(200, {"valid": valid, "check_count": 2, "problems": problems}))
+    file = tmp_path / "orders.yml"
+    file.write_text("name: orders\n")
+
+    exit_code_ = cli.main(["validate", str(file), "--connection", str(uuid.uuid4())])
+
+    assert exit_code_ == code
+    out = capsys.readouterr().out
+    assert ("checks[1] (bad): wrong type" in out) is not valid
+    assert ("document: no connection" in out) is not valid
+
+
+def test_cli_export_writes_yaml_when_the_output_file_is_yaml(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    server = _cli_with(
+        monkeypatch,
+        httpx.Response(200, text="name: orders\n", headers={"content-type": "application/yaml"}),
+    )
+    out = tmp_path / "orders.yaml"
+
+    exit_code_ = cli.main(["export", str(SUITE), "-o", str(out)])
+
+    assert exit_code_ == 0
+    assert server.requests[0].url.params["format"] == "yaml"
+    assert out.read_text() == "name: orders\n"

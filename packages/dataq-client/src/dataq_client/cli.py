@@ -1,11 +1,12 @@
-"""The ``dataq`` command line: run a suite or a pipeline gate and exit by the result, export and
-import suites.
+"""The ``dataq`` command line: run a suite or a pipeline gate and exit by the result; export,
+import, validate and apply suite documents.
 
 Exit codes, so a CI step or a scheduler task needs no Python::
 
     0  the run finished and nothing failed (``gate``: passed)
     1  the worst result was a warning
     2  a check failed (fail or critical) (``gate``: failed at or above ``--fail-on``)
+       (``validate``: the document is invalid; ``drift``: the suite differs from the document)
     3  the run itself did not complete (failed, cancelled) or a check could not be evaluated
        (``gate``: error)
     4  a client, auth or transport problem, or a timeout — DataQ's verdict is unknown
@@ -121,11 +122,73 @@ def _parser() -> argparse.ArgumentParser:
     export = commands.add_parser("export", help="write a suite's document to a file or stdout")
     export.add_argument("suite_id")
     export.add_argument("-o", "--output", help="file to write (default: stdout)")
+    export.add_argument(
+        "--format",
+        choices=("json", "yaml"),
+        help="default: yaml when --output ends in .yaml/.yml, else json",
+    )
 
-    imp = commands.add_parser("import", help="create a suite from an exported document")
+    imp = commands.add_parser("import", help="create a NEW suite from a document (JSON or YAML)")
     imp.add_argument("file")
     imp.add_argument("--connection", required=True, help="the connection the new suite runs on")
+
+    validate = commands.add_parser(
+        "validate",
+        help="check a suite document against a connection; creates nothing. Exit 2 if invalid",
+    )
+    validate.add_argument("file")
+    validate.add_argument("--connection", required=True, help="the connection it would run on")
+    validate.add_argument("--json", action="store_true")
+
+    for name, text in (
+        ("apply", "bring an existing suite in line with a document (checks matched by name)"),
+        ("drift", "report how a suite differs from a document; writes nothing. Exit 2 on drift"),
+    ):
+        sub = commands.add_parser(name, help=text)
+        sub.add_argument("file")
+        sub.add_argument("--suite", required=True, help="the suite to compare or change")
+        sub.add_argument(
+            "--prune",
+            action="store_true",
+            help="also delete (apply) or count as drift (drift) checks the document does not name",
+        )
+        sub.add_argument("--json", action="store_true")
     return parser
+
+
+def _read_document(path: str) -> dict[str, Any] | str:
+    """A .yaml/.yml file is sent as text for the server to parse; anything else is JSON."""
+    text = Path(path).read_text()
+    if path.lower().endswith((".yaml", ".yml")):
+        return text
+    document: dict[str, Any] = json.loads(text)
+    return document
+
+
+def _print_plan(plan: dict[str, Any], *, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(plan))
+        return
+    for field in plan["suite_fields"]:
+        print(f"  suite {field}: update")
+    for check in plan["checks"]:
+        if check["action"] == "unchanged":
+            continue
+        detail = f" ({', '.join(check['fields'])})" if check["fields"] else ""
+        print(f"  {check['action']:<7} {check['name']}{detail}")
+    for name in plan["unmanaged"]:
+        print(f"  not in the document, left alone: {name}")
+    counts = {
+        a: sum(c["action"] == a for c in plan["checks"]) for a in ("create", "update", "delete")
+    }
+    verb = "would change" if plan["dry_run"] else "changed"
+    if plan["changed"]:
+        print(
+            f"{verb}: {counts['create']} created, {counts['update']} updated, "
+            f"{counts['delete']} deleted"
+        )
+    else:
+        print("no drift" if plan["dry_run"] else "already up to date")
 
 
 def _run(args: argparse.Namespace, client: DataQClient) -> int:
@@ -154,14 +217,40 @@ def _run(args: argparse.Namespace, client: DataQClient) -> int:
         _print_gate(verdict, as_json=args.json)
         return _GATE_EXIT[verdict.state]
     if args.command == "export":
-        text = json.dumps(client.export_suite(args.suite_id), indent=2) + "\n"
+        as_yaml = args.format == "yaml" or (
+            args.format is None and (args.output or "").lower().endswith((".yaml", ".yml"))
+        )
+        if as_yaml:
+            text = client.export_suite_yaml(args.suite_id)
+        else:
+            text = json.dumps(client.export_suite(args.suite_id), indent=2) + "\n"
         if args.output:
             Path(args.output).write_text(text)
         else:
             sys.stdout.write(text)
         return EXIT_OK
-    document: dict[str, Any] = json.loads(Path(args.file).read_text())
-    suite = client.import_suite(document, args.connection)
+    if args.command == "validate":
+        result = client.validate_suite(_read_document(args.file), args.connection)
+        if args.json:
+            print(json.dumps(result))
+        else:
+            for problem in result["problems"]:
+                name = f" ({problem['check_name']})" if problem.get("check_name") else ""
+                print(f"  {problem['location']}{name}: {problem['message']}")
+            print(
+                f"valid: {result['check_count']} checks"
+                if result["valid"]
+                else f"invalid: {len(result['problems'])} problem(s)"
+            )
+        return EXIT_OK if result["valid"] else EXIT_FAIL
+    if args.command in ("apply", "drift"):
+        dry_run = args.command == "drift"
+        plan = client.apply_suite(
+            args.suite, _read_document(args.file), prune=args.prune, dry_run=dry_run
+        )
+        _print_plan(plan, as_json=args.json)
+        return EXIT_FAIL if dry_run and plan["changed"] else EXIT_OK
+    suite = client.import_suite(_read_document(args.file), args.connection)
     print(f"imported suite {suite.id}: {suite.name}")
     return EXIT_OK
 

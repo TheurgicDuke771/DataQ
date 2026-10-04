@@ -18,6 +18,9 @@ AUDITED: Final[dict[tuple[str, str], str]] = {
     ("PATCH", "/api/v1/suites/{suite_id}"): "suite.update",
     ("DELETE", "/api/v1/suites/{suite_id}"): "suite.delete",
     ("POST", "/api/v1/suites/import"): "suite.import",
+    # Each change an apply makes is audited as the edit it is (check.create / check.update
+    # / check.delete, suite.update); `check.update` stands for the route here.
+    ("POST", "/api/v1/suites/{suite_id}/apply"): "check.update",
     # ── The redaction policy. A change here changes what personal data the
     # product will surface, so it is among the highest-value events in the table.
     ("PUT", "/api/v1/suites/{suite_id}/column-policy"): "suite.column_policy_update",

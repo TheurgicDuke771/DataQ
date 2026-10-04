@@ -16,14 +16,22 @@ from typing import Any
 
 from dataq_client.generated.api.incidents import acknowledge_incident, resolve_incident
 from dataq_client.generated.api.runs import get_run, get_run_progress, pipeline_gate
-from dataq_client.generated.api.suites import export_suite, import_suite, trigger_suite_run
+from dataq_client.generated.api.suites import (
+    apply_suite_document,
+    export_suite,
+    import_suite,
+    trigger_suite_run,
+    validate_suite_document,
+)
 from dataq_client.generated.client import AuthenticatedClient
 from dataq_client.generated.models.gate_request import GateRequest
 from dataq_client.generated.models.gate_request_env import GateRequestEnv
 from dataq_client.generated.models.gate_request_fail_on import GateRequestFailOn
 from dataq_client.generated.models.gate_request_provider import GateRequestProvider
 from dataq_client.generated.models.incident_action_request import IncidentActionRequest
+from dataq_client.generated.models.suite_apply_request import SuiteApplyRequest
 from dataq_client.generated.models.suite_import_request import SuiteImportRequest
+from dataq_client.generated.models.suite_validate_request import SuiteValidateRequest
 from dataq_client.generated.types import Response
 
 #: The server's run lifecycle; a run in one of the last three will not change again.
@@ -115,7 +123,9 @@ class RunOutcome:
         return self.status in TERMINAL_RUN_STATUSES
 
 
-def _error_from(response: Response[Any]) -> DataQError:
+def _error_from(response: Any) -> DataQError:
+    """``response`` is a generated ``Response`` or a raw ``httpx.Response``: both carry
+    ``status_code`` and ``content``."""
     status = int(response.status_code)
     code, message = f"http_{status}", response.content.decode("utf-8", "replace")[:500]
     try:
@@ -146,6 +156,19 @@ def _ok(response: Response[Any]) -> Any:
             "the server answered with a status this client version does not expect",
         )
     return response.parsed
+
+
+def _document_field(document: dict[str, Any] | str) -> dict[str, Any]:
+    """YAML travels as text and is parsed by the server, so this client needs no YAML
+    library and cannot disagree with the server about what a value means."""
+    return {"document_yaml": document} if isinstance(document, str) else {"document": document}
+
+
+def _json_body(response: Response[Any]) -> dict[str, Any]:
+    if not 200 <= int(response.status_code) < 300:
+        raise _error_from(response)
+    body: dict[str, Any] = json.loads(response.content)
+    return body
 
 
 def _outcome(run: Any) -> RunOutcome:
@@ -294,12 +317,53 @@ class DataQClient:
         document: dict[str, Any] = json.loads(response.content)
         return document
 
-    def import_suite(self, document: dict[str, Any], connection_id: uuid.UUID | str) -> Any:
-        """Create a new suite from an exported document, bound to ``connection_id``."""
+    def export_suite_yaml(self, suite_id: uuid.UUID | str) -> str:
+        """The suite's document as YAML text."""
+        # Requested directly: the generated call parses every 200 body as JSON.
+        response = self.api.get_httpx_client().get(
+            f"/api/v1/suites/{uuid.UUID(str(suite_id))}/export", params={"format": "yaml"}
+        )
+        if not 200 <= response.status_code < 300:
+            raise _error_from(response)
+        return response.text
+
+    def import_suite(self, document: dict[str, Any] | str, connection_id: uuid.UUID | str) -> Any:
+        """Create a new suite from a document, bound to ``connection_id``. ``document`` is
+        the JSON document as a dict, or YAML text."""
         body = SuiteImportRequest.from_dict(
-            {"connection_id": str(connection_id), "document": document}
+            {"connection_id": str(connection_id), **_document_field(document)}
         )
         return _ok(import_suite.sync_detailed(client=self.api, body=body))
+
+    def validate_suite(
+        self, document: dict[str, Any] | str, connection_id: uuid.UUID | str
+    ) -> dict[str, Any]:
+        """Whether importing ``document`` onto ``connection_id`` would be accepted, with
+        every problem if not: ``{"valid", "check_count", "problems"}``. Creates nothing,
+        and opens no datasource — a valid document can still name a column that does not
+        exist."""
+        body = SuiteValidateRequest.from_dict(
+            {"connection_id": str(connection_id), **_document_field(document)}
+        )
+        return _json_body(validate_suite_document.sync_detailed(client=self.api, body=body))
+
+    def apply_suite(
+        self,
+        suite_id: uuid.UUID | str,
+        document: dict[str, Any] | str,
+        *,
+        prune: bool = False,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Bring an existing suite in line with ``document``; checks are matched by name.
+        With ``dry_run`` nothing is written and ``changed`` reports drift. ``prune`` also
+        deletes checks the document does not name, with their results and history."""
+        body = SuiteApplyRequest.from_dict(
+            {**_document_field(document), "prune": prune, "dry_run": dry_run}
+        )
+        return _json_body(
+            apply_suite_document.sync_detailed(uuid.UUID(str(suite_id)), client=self.api, body=body)
+        )
 
     def acknowledge_incident(self, incident_id: uuid.UUID | str, note: str | None = None) -> Any:
         body = IncidentActionRequest.from_dict({} if note is None else {"note": note})

@@ -578,6 +578,111 @@ def validate_suite_document(
     )
 
 
+class SuiteApplyRequest(ApiRequestModel):
+    """A suite document to apply onto THIS suite — JSON (`document`) or YAML text
+    (`document_yaml`), exactly one.
+    """
+
+    document: SuiteDocumentIn | None = None
+    document_yaml: str | None = Field(default=None, max_length=suite_yaml.MAX_YAML_CHARS)
+    prune: bool = Field(
+        default=False,
+        description="Also delete the suite's checks that the document does not name.",
+    )
+    dry_run: bool = Field(
+        default=False,
+        description="Report what would change and change nothing. This is the drift check.",
+    )
+
+    @model_validator(mode="after")
+    def _exactly_one_document(self) -> SuiteApplyRequest:
+        if (self.document is None) == (self.document_yaml is None):
+            raise ValueError("send exactly one of document or document_yaml")
+        return self
+
+
+class CheckChangeRead(ApiModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    name: str
+    action: Literal["create", "update", "delete", "unchanged"]
+    # On an update, the names of the fields that differ. Never their values.
+    fields: list[str]
+
+
+class SuiteApplyRead(ApiModel):
+    """The plan, and whether it was carried out. With `dry_run` nothing was written and
+    `changed` says whether the suite differs from the document (drift). Without it,
+    `changed` says whether anything was written.
+
+    `unmanaged` lists checks the suite has that the document does not name. They were
+    left alone because `prune` was false; they are NOT counted in `changed`.
+    """
+
+    dry_run: bool
+    changed: bool
+    suite_fields: list[str]
+    checks: list[CheckChangeRead]
+    unmanaged: list[str]
+
+
+@router.post(
+    "/suites/{suite_id}/apply",
+    response_model=SuiteApplyRead,
+    summary="Apply a suite document onto an existing suite, or report its drift",
+)
+def apply_suite_document(
+    suite_id: uuid.UUID,
+    payload: SuiteApplyRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> SuiteApplyRead:
+    """Idempotent: applying the same document twice changes nothing the second time.
+
+    Checks are matched by **name**. A check the document names and the suite lacks is
+    created; one that differs is updated; one the suite has and the document does not
+    is left alone unless `prune` is true, when it is deleted along with its results and
+    history. The suite's connection and target are never touched.
+
+    The whole document is validated before anything is written. Each change is then
+    made the way an edit in the app is, with its own version and audit event — so a
+    failure part-way (a concurrent edit, say) leaves the earlier changes in place;
+    apply again to finish.
+    """
+    suite = require_permission(db, suite_id, current_user.id, minimum="edit")
+    doc = payload.document
+    if doc is None:
+        try:
+            doc = SuiteDocumentIn.model_validate(
+                suite_yaml.parse_suite_document_yaml(payload.document_yaml or "")
+            )
+        except ValidationError as exc:
+            problems = _shape_problems(exc)
+            raise suite_io.SuiteImportInvalidError(
+                f"the YAML document has the wrong shape — {problems[0].location}: "
+                f"{problems[0].message}",
+                detail={"problems": [p.model_dump() for p in problems]},
+            ) from exc
+    plan = suite_io.apply_document(
+        db,
+        suite,
+        version=doc.version,
+        name=doc.name,
+        description=doc.description,
+        checks=_document_checks(doc),
+        prune=payload.prune,
+        dry_run=payload.dry_run,
+        actor_id=current_user.id,
+    )
+    return SuiteApplyRead(
+        dry_run=payload.dry_run,
+        changed=plan.changed,
+        suite_fields=plan.suite_fields,
+        checks=[CheckChangeRead.model_validate(c) for c in plan.checks],
+        unmanaged=plan.unmanaged,
+    )
+
+
 # ───────────────────────── column profiler (no persistence) ─────────
 
 

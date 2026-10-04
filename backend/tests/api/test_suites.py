@@ -2746,3 +2746,325 @@ def test_validate_is_closed_to_a_viewer(client: TestClient, db_session: Any) -> 
         "/api/v1/suites/validate", json={"connection_id": str(target.id), "document": _VALIDATE_DOC}
     )
     assert resp.status_code == 403
+
+
+# ── apply a document onto an existing suite; drift (#1688 phase 2) ───────────
+
+
+def _doc_check(name: str, **over: Any) -> dict[str, Any]:
+    return {
+        "name": name,
+        "expectation_type": "expect_column_values_to_not_be_null",
+        "config": {"column": "id"},
+        **over,
+    }
+
+
+def _apply(client: TestClient, sid: str, checks: list[dict[str, Any]], **body: Any) -> Any:
+    return client.post(
+        f"/api/v1/suites/{sid}/apply",
+        json={"document": {"name": "src", "checks": checks}, **body},
+    )
+
+
+def _actions(body: dict[str, Any]) -> dict[str, str]:
+    return {c["name"]: c["action"] for c in body["checks"]}
+
+
+def test_apply_creates_updates_and_leaves_unmanaged_checks_alone(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_with_checks(client, db_session)  # has "rowcount" and "notnull"
+    document = [
+        _doc_check("notnull", config={"column": "order_id"}, fail_threshold=5),  # differs
+        _doc_check("brand new"),
+    ]
+
+    resp = _apply(client, sid, document)
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert (body["dry_run"], body["changed"]) == (False, True)
+    assert _actions(body) == {"notnull": "update", "brand new": "create"}
+    changed_fields = next(c["fields"] for c in body["checks"] if c["name"] == "notnull")
+    assert sorted(changed_fields) == ["config", "fail_threshold"]
+    # Not named by the document and prune is off: reported, not deleted.
+    assert body["unmanaged"] == ["rowcount"]
+    stored = {
+        c.name: c for c in db_session.scalars(select(Check).where(Check.suite_id == uuid.UUID(sid)))
+    }
+    assert set(stored) == {"rowcount", "notnull", "brand new"}
+    assert stored["notnull"].config == {"column": "order_id"}
+    assert stored["notnull"].fail_threshold == Decimal("5")
+
+
+def test_apply_is_idempotent(client: TestClient, db_session: Any) -> None:
+    sid = _suite_with_checks(client, db_session)
+    document = [_doc_check("notnull", config={"column": "order_id"}), _doc_check("extra")]
+    first = _apply(client, sid, document)
+    assert first.json()["changed"] is True
+    checks = client.get(f"/api/v1/suites/{sid}/checks").json()
+    notnull = next(c["id"] for c in checks if c["name"] == "notnull")
+    versions_before = len(client.get(f"/api/v1/suites/{sid}/checks/{notnull}/versions").json())
+
+    second = _apply(client, sid, document)
+
+    body = second.json()
+    assert body["changed"] is False
+    assert set(_actions(body).values()) == {"unchanged"}
+    versions_after = len(client.get(f"/api/v1/suites/{sid}/checks/{notnull}/versions").json())
+    assert versions_after == versions_before  # no version churn from a no-op apply
+
+
+def test_dry_run_reports_drift_and_writes_nothing(client: TestClient, db_session: Any) -> None:
+    sid = _suite_with_checks(client, db_session)
+    before = client.get(f"/api/v1/suites/{sid}/export").json()
+
+    resp = _apply(
+        client,
+        sid,
+        [_doc_check("notnull", fail_threshold=9), _doc_check("new")],
+        dry_run=True,
+        prune=True,
+    )
+
+    body = resp.json()
+    assert (body["dry_run"], body["changed"]) == (True, True)
+    assert _actions(body) == {"notnull": "update", "new": "create", "rowcount": "delete"}
+    after = client.get(f"/api/v1/suites/{sid}/export").json()
+    assert after == before
+
+
+def test_dry_run_of_the_suites_own_export_reports_no_drift(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_with_checks(client, db_session)
+    exported = client.get(f"/api/v1/suites/{sid}/export", params={"format": "yaml"}).text
+
+    resp = client.post(
+        f"/api/v1/suites/{sid}/apply", json={"document_yaml": exported, "dry_run": True}
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["changed"] is False
+    assert body["unmanaged"] == []
+
+
+def test_apply_with_prune_deletes_checks_the_document_does_not_name(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_with_checks(client, db_session)
+
+    resp = _apply(client, sid, [_doc_check("notnull")], prune=True)
+
+    assert _actions(resp.json()) == {"notnull": "unchanged", "rowcount": "delete"}
+    assert resp.json()["unmanaged"] == []
+    remaining = [c["name"] for c in client.get(f"/api/v1/suites/{sid}/checks").json()]
+    assert remaining == ["notnull"]
+
+
+def test_apply_clears_a_threshold_the_document_dropped(client: TestClient, db_session: Any) -> None:
+    sid = _suite_with_checks(client, db_session)  # rowcount has warn 5, fail 7.5
+
+    resp = _apply(
+        client,
+        sid,
+        [
+            {
+                "name": "rowcount",
+                "expectation_type": "expect_table_row_count_to_be_between",
+                "config": {"min_value": 1},
+                "fail_threshold": 7.5,
+            }
+        ],
+    )
+
+    assert _actions(resp.json()) == {"rowcount": "update"}
+    rowcount = next(
+        c for c in client.get(f"/api/v1/suites/{sid}/checks").json() if c["name"] == "rowcount"
+    )
+    assert (rowcount["warn_threshold"], rowcount["fail_threshold"]) == (None, 7.5)
+
+
+def test_apply_refuses_an_invalid_document_and_changes_nothing(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_with_checks(client, db_session)
+    before = client.get(f"/api/v1/suites/{sid}/export").json()
+
+    resp = _apply(
+        client,
+        sid,
+        [
+            _doc_check("would be created"),
+            _doc_check("bad", expectation_type="expect_the_impossible"),
+        ],
+        prune=True,
+    )
+
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "suite_import_invalid"
+    after = client.get(f"/api/v1/suites/{sid}/export").json()
+    assert after == before
+
+
+@pytest.mark.parametrize("where", ["document", "suite"])
+def test_apply_refuses_ambiguous_names(client: TestClient, db_session: Any, where: str) -> None:
+    sid = _suite_with_checks(client, db_session)
+    if where == "suite":
+        db_session.add(
+            Check(
+                suite_id=uuid.UUID(sid),
+                name="notnull",
+                expectation_type="expect_column_values_to_not_be_null",
+                config={"column": "other"},
+            )
+        )
+        db_session.commit()
+        document = [_doc_check("notnull")]
+    else:
+        document = [_doc_check("twice"), _doc_check("twice")]
+
+    resp = _apply(client, sid, document)
+
+    assert resp.status_code == 422
+    assert "matched by name" in resp.json()["error"]["message"]
+
+
+def test_apply_refuses_to_change_a_checks_kind(client: TestClient, db_session: Any) -> None:
+    sid = _suite_with_checks(client, db_session)
+
+    resp = _apply(
+        client,
+        sid,
+        [
+            {
+                "name": "notnull",
+                "kind": "freshness",
+                "expectation_type": "monitor:freshness",
+                "config": {"column": "updated_at"},
+                "fail_threshold": 48,
+            }
+        ],
+    )
+
+    assert resp.status_code == 422
+    assert "kind cannot be changed" in resp.json()["error"]["message"]
+
+
+def test_apply_requires_edit_permission(client: TestClient, db_session: Any) -> None:
+    owner, b, _e, sid = _owner_b_e_suite(db_session)
+    _share(client, owner, sid, b, "view")
+    _as(b)
+
+    for dry_run in (True, False):
+        resp = _apply(client, sid, [_doc_check("x")], dry_run=dry_run)
+        assert resp.status_code == 403
+
+
+def test_apply_on_a_sampled_suite_refuses_a_row_count_check_before_writing_anything(
+    client: TestClient, db_session: Any
+) -> None:
+    """The rule create_check applies must also be in the up-front validation: otherwise
+    the rename and the first check are committed before the row-count check is refused."""
+    conn = _connection(db_session, conn_type="s3")
+    created = client.post(
+        "/api/v1/suites",
+        json={
+            "name": "sampled",
+            "connection_id": str(conn.id),
+            "target": {
+                "path": "raw/orders.csv",
+                "sampling": {"strategy": "random", "rows": 1000, "seed": 7},
+            },
+        },
+    )
+    assert created.status_code == 201, created.text
+    sid = created.json()["id"]
+    document = {
+        "name": "renamed by apply",
+        "checks": [
+            _doc_check("fine"),
+            {
+                "name": "row count",
+                "expectation_type": "expect_table_row_count_to_be_between",
+                "config": {"min_value": 1},
+            },
+        ],
+    }
+
+    dry = client.post(f"/api/v1/suites/{sid}/apply", json={"document": document, "dry_run": True})
+    real = client.post(f"/api/v1/suites/{sid}/apply", json={"document": document})
+
+    # The dry run and the real apply agree: both refuse.
+    assert (dry.status_code, real.status_code) == (422, 422)
+    suite = client.get(f"/api/v1/suites/{sid}").json()
+    assert suite["name"] == "sampled"
+    remaining = client.get(f"/api/v1/suites/{sid}/checks").json()
+    assert remaining == []
+
+
+def test_drift_of_a_suite_holding_a_legacy_check_type_is_not_refused(
+    client: TestClient, db_session: Any
+) -> None:
+    """A stored check of a type today's allowlist would not accept is not being written
+    by an apply that leaves it alone, so it must not fail validation."""
+    sid = _suite_with_checks(client, db_session)
+    db_session.add(
+        Check(
+            suite_id=uuid.UUID(sid),
+            name="legacy",
+            expectation_type="expect_something_no_longer_vetted",
+            config={"column": "id"},
+        )
+    )
+    db_session.commit()
+    exported = client.get(f"/api/v1/suites/{sid}/export").json()
+
+    resp = client.post(f"/api/v1/suites/{sid}/apply", json={"document": exported, "dry_run": True})
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["changed"] is False
+
+
+def test_prune_deletes_every_unmanaged_check_even_when_two_share_a_name(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_with_checks(client, db_session)
+    for column in ("a", "b"):
+        db_session.add(
+            Check(
+                suite_id=uuid.UUID(sid),
+                name="twin",
+                expectation_type="expect_column_values_to_not_be_null",
+                config={"column": column},
+            )
+        )
+    db_session.commit()
+
+    resp = _apply(client, sid, [_doc_check("notnull")], prune=True)
+
+    assert resp.status_code == 200, resp.text
+    deleted = sorted(c["name"] for c in resp.json()["checks"] if c["action"] == "delete")
+    assert deleted == ["rowcount", "twin", "twin"]
+    remaining = [c["name"] for c in client.get(f"/api/v1/suites/{sid}/checks").json()]
+    assert remaining == ["notnull"]
+
+
+def test_apply_creates_an_explicitly_unclassified_check_and_derives_an_omitted_one(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_with_checks(client, db_session)
+
+    resp = _apply(
+        client, sid, [_doc_check("left unclassified", dimension=None), _doc_check("derived")]
+    )
+
+    assert resp.status_code == 200, resp.text
+    stored = {
+        c.name: c.dimension
+        for c in db_session.scalars(select(Check).where(Check.suite_id == uuid.UUID(sid)))
+    }
+    assert stored["left unclassified"] is None
+    assert stored["derived"] == "completeness"

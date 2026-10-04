@@ -80,8 +80,11 @@ Other commands:
 ```bash
 dataq wait <run-id>                               # wait for a run someone else started
 dataq run <suite-id> --wait --json                # the outcome as JSON
-dataq export <suite-id> -o orders.json            # the suite's portable document
-dataq import orders.json --connection <conn-id>   # create a suite from it
+dataq export <suite-id> -o orders.yaml            # the suite's portable document (.json works too)
+dataq import orders.yaml --connection <conn-id>   # create a NEW suite from it
+dataq validate orders.yaml --connection <conn-id> # would it be accepted? exit 2 if not
+dataq drift orders.yaml --suite <suite-id>        # does the suite differ from the file? exit 2 if so
+dataq apply orders.yaml --suite <suite-id>        # make the suite match the file (--prune deletes extras)
 ```
 
 ## From Python

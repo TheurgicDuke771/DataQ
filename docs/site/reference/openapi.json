@@ -1872,6 +1872,38 @@
         "title": "CheckBaselineRead",
         "type": "object"
       },
+      "CheckChangeRead": {
+        "properties": {
+          "action": {
+            "enum": [
+              "create",
+              "update",
+              "delete",
+              "unchanged"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "action",
+          "fields"
+        ],
+        "title": "CheckChangeRead",
+        "type": "object"
+      },
       "CheckCreate": {
         "additionalProperties": false,
         "properties": {
@@ -8422,6 +8454,91 @@
         "title": "SuggestionRead",
         "type": "object"
       },
+      "SuiteApplyRead": {
+        "description": "The plan, and whether it was carried out. With `dry_run` nothing was written and\n`changed` says whether the suite differs from the document (drift). Without it,\n`changed` says whether anything was written.\n\n`unmanaged` lists checks the suite has that the document does not name. They were\nleft alone because `prune` was false; they are NOT counted in `changed`.",
+        "properties": {
+          "changed": {
+            "title": "Changed",
+            "type": "boolean"
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/CheckChangeRead"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "dry_run": {
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "suite_fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Suite Fields",
+            "type": "array"
+          },
+          "unmanaged": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unmanaged",
+            "type": "array"
+          }
+        },
+        "required": [
+          "dry_run",
+          "changed",
+          "suite_fields",
+          "checks",
+          "unmanaged"
+        ],
+        "title": "SuiteApplyRead",
+        "type": "object"
+      },
+      "SuiteApplyRequest": {
+        "additionalProperties": false,
+        "description": "A suite document to apply onto THIS suite \u2014 JSON (`document`) or YAML text\n(`document_yaml`), exactly one.",
+        "properties": {
+          "document": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SuiteDocumentIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "document_yaml": {
+            "anyOf": [
+              {
+                "maxLength": 1000000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Yaml"
+          },
+          "dry_run": {
+            "default": false,
+            "description": "Report what would change and change nothing. This is the drift check.",
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "prune": {
+            "default": false,
+            "description": "Also delete the suite's checks that the document does not name.",
+            "title": "Prune",
+            "type": "boolean"
+          }
+        },
+        "title": "SuiteApplyRequest",
+        "type": "object"
+      },
       "SuiteCadenceRead": {
         "description": "A suite's bound-pipeline cadence (#1648) \u2014 the deterministic freshness-\nthreshold hint the LLM suggestion prompt also uses when one is configured,\nbut computed here without any LLM at all.",
         "properties": {
@@ -14335,6 +14452,60 @@
           }
         },
         "summary": "Update a suite",
+        "tags": [
+          "suites"
+        ]
+      }
+    },
+    "/api/v1/suites/{suite_id}/apply": {
+      "post": {
+        "description": "Idempotent: applying the same document twice changes nothing the second time.\n\nChecks are matched by **name**. A check the document names and the suite lacks is\ncreated; one that differs is updated; one the suite has and the document does not\nis left alone unless `prune` is true, when it is deleted along with its results and\nhistory. The suite's connection and target are never touched.\n\nThe whole document is validated before anything is written. Each change is then\nmade the way an edit in the app is, with its own version and audit event \u2014 so a\nfailure part-way (a concurrent edit, say) leaves the earlier changes in place;\napply again to finish.",
+        "operationId": "apply_suite_document",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suite_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Suite Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SuiteApplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuiteApplyRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Apply a suite document onto an existing suite, or report its drift",
         "tags": [
           "suites"
         ]
