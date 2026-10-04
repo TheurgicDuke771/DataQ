@@ -19,6 +19,9 @@ export function ScorecardPanel({
   healthScore,
   scoreDelta,
   deltaDays = 7,
+  title = 'Data quality by dimension',
+  subject = 'this asset',
+  note,
 }: {
   scorecard?: Scorecard | null;
   /** The asset-level score; `undefined` (an older API) renders no headline. */
@@ -26,6 +29,11 @@ export function ScorecardPanel({
   /** Change in points since `deltaDays` ago; null when there is nothing to compare with. */
   scoreDelta?: number | null;
   deltaDays?: number;
+  /** Card title and what the rows cover; the defaults describe one asset. */
+  title?: string;
+  subject?: string;
+  /** A line under the title saying what population the rows are over. */
+  note?: string;
 }) {
   // Absent (a pre-#889 API) is not the same as empty — render nothing rather
   // than an authoritative-looking "no coverage" we can't actually vouch for.
@@ -38,11 +46,16 @@ export function ScorecardPanel({
 
   return (
     <Card
-      title="Data quality by dimension"
+      title={title}
       size="small"
       styles={{ body: { paddingTop: 12 } }}
       data-testid="scorecard-panel"
     >
+      {note && (
+        <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 12 }}>
+          {note}
+        </Typography.Paragraph>
+      )}
       {healthScore !== undefined && (
         <Flex align="baseline" gap={10} wrap style={{ marginBottom: 14 }}>
           <Typography.Text type="secondary">Asset health score</Typography.Text>
@@ -63,8 +76,8 @@ export function ScorecardPanel({
             />
           )}
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            Every check that evaluated in each suite&apos;s latest completed run, including checks
-            with no dimension.
+            Every check that evaluated in each suite&apos;s latest run, if it completed, including
+            checks with no dimension.
           </Typography.Text>
         </Flex>
       )}
@@ -73,7 +86,7 @@ export function ScorecardPanel({
           image={Empty.PRESENTED_IMAGE_SIMPLE}
           description={
             noChecksAtAll
-              ? 'No checks on this asset yet — every dimension is uncovered.'
+              ? `No checks on ${subject} yet — every dimension is uncovered.`
               : 'No checks here carry a dimension yet, so there is nothing to score.'
           }
         />

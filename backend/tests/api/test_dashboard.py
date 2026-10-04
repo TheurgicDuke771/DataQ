@@ -123,3 +123,31 @@ def test_summary_empty_workspace_is_clean(client: TestClient, db_session: Any) -
     assert body["kpis"]["active_connections"] == 0
     assert body["suite_performance"] == []
     assert len(body["trend"]) >= 7
+
+
+# ── workspace-wide dimension rollup (#1558) ──────────────────────────────────
+
+
+def test_dimensions_are_workspace_wide_for_a_caller_with_no_suites(
+    client: TestClient, db_session: Any
+) -> None:
+    """Unlike `/dashboard/summary`, the rollup is the same for every member: a caller
+    who owns nothing still sees the dimension another user's suite covers."""
+    owner, outsider = _user(db_session), _user(db_session)
+    suite = _suite_with_results(db_session, owner, ["pass", "fail"])
+    for check in db_session.query(Check).filter(Check.suite_id == suite.id):
+        check.dimension = "completeness"
+    db_session.commit()
+
+    _as(outsider)
+    summary = client.get("/api/v1/dashboard/summary").json()
+    dimensions = client.get("/api/v1/dashboard/dimensions")
+
+    assert summary["suite_performance"] == []  # the summary stays scoped to the caller
+    assert dimensions.status_code == 200
+    body = dimensions.json()
+    assert [(d["dimension"], d["checks_total"], d["score"]) for d in body["covered"]] == [
+        ("completeness", 2, 75.0)
+    ]
+    assert "completeness" not in body["uncovered"]
+    assert len(body["uncovered"]) == 6

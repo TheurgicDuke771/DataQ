@@ -653,3 +653,56 @@ def test_score_delta_does_not_count_a_run_that_was_still_in_flight_then(db_sessi
     # Once it had finished, it counts.
     later = svc.get_visible_asset(db_session, asset.id, user_id=owner.id, score_delta_days=5)
     assert later.previous_health_score == 50.0
+
+
+# ── workspace-wide dimension rollup (#1558) ──────────────────────────────────
+
+
+def test_workspace_scorecard_cuts_one_dimension_across_every_asset(db_session: Any) -> None:
+    owner, someone_else = _user(db_session), _user(db_session)
+    _suite_with_dimensioned_results(
+        db_session, owner, results=[("timeliness", "pass"), ("validity", "pass")]
+    )
+    # Another owner's suite on another asset: the rollup is workspace-true, so it counts.
+    _suite_with_dimensioned_results(
+        db_session,
+        someone_else,
+        results=[("timeliness", "fail"), ("timeliness", "skip"), (None, "fail")],
+    )
+
+    card = svc.workspace_scorecard(db_session)
+    by_dim = {d.dimension: d for d in card.covered}
+
+    assert set(by_dim) == {"timeliness", "validity"}
+    # 3 timeliness checks exist; 2 evaluated (the skip did not); 1 fail of 2 → 75.0.
+    timeliness = by_dim["timeliness"]
+    assert (timeliness.checks_total, timeliness.checks_evaluated, timeliness.checks_passing) == (
+        3,
+        2,
+        1,
+    )
+    assert timeliness.score == 75.0
+    assert by_dim["validity"].score == 100.0
+    assert card.unclassified_checks == 1
+    assert set(card.uncovered) == set(DQ_DIMENSIONS) - {"timeliness", "validity"}
+
+
+def test_workspace_scorecard_scores_only_each_suites_latest_complete_run(db_session: Any) -> None:
+    owner = _user(db_session)
+    asset = _suite_with_dimensioned_results(db_session, owner, results=[("validity", "pass")])
+    # Older run of the same suite failed; a newer one is still running with a failure so far.
+    _add_run(db_session, asset, age_days=3, statuses=["fail"], status="succeeded")
+
+    card = svc.workspace_scorecard(db_session)
+    assert card.covered[0].score == 100.0
+
+    _add_run(db_session, asset, age_days=-1, statuses=["fail"], status="running")
+    card = svc.workspace_scorecard(db_session)
+    # The latest run is incomplete, so the dimension is covered but has no signal.
+    assert (card.covered[0].checks_total, card.covered[0].score) == (1, None)
+
+
+def test_workspace_scorecard_of_an_empty_workspace_is_all_uncovered(db_session: Any) -> None:
+    card = svc.workspace_scorecard(db_session)
+    assert (card.covered, card.unclassified_checks) == ([], 0)
+    assert set(card.uncovered) == set(DQ_DIMENSIONS)

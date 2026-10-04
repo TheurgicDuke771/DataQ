@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import ColumnElement, Float, and_, case, cast, func, or_, select
+from sqlalchemy import ColumnElement, Float, Select, and_, case, cast, func, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import get_settings
@@ -350,13 +350,23 @@ def _latest_outcomes(session: Session, suites: list[Suite]) -> dict[uuid.UUID, R
     return by_suite
 
 
-def _scorecard(session: Session, suite_ids: list[uuid.UUID], run_ids: list[uuid.UUID]) -> Scorecard:
-    """Per-dimension coverage + score for an asset (#889)."""
+def _scorecard(
+    session: Session,
+    suite_scope: Select[tuple[uuid.UUID]] | Sequence[uuid.UUID],
+    run_ids: Sequence[uuid.UUID] | None = None,
+) -> Scorecard:
+    """Per-dimension coverage + score over ``suite_scope`` (#889) — one asset's suites,
+    or every suite in the workspace (#1558).
+
+    ``run_ids`` pins the runs that are scored. The asset page passes the latest runs it
+    already resolved for the health score, so the two cannot disagree about a run that
+    lands between queries (#924). Without it, each suite's latest run is resolved here.
+    """
     weights = scoring_settings_service.weights(session)
     # ── what exists (coverage) ──
     check_rows = session.execute(
         select(Check.dimension, func.count())
-        .where(Check.suite_id.in_(suite_ids))
+        .where(Check.suite_id.in_(suite_scope))
         .group_by(Check.dimension)
     ).all()
     checks_by_dimension = {d: n for d, n in check_rows if d is not None}
@@ -366,19 +376,23 @@ def _scorecard(session: Session, suite_ids: list[uuid.UUID], run_ids: list[uuid.
     # `histograms[dim]` below would CREATE the key, silently mutating the mapping while iterating
     # over coverage.
     histograms: dict[str, dict[str, int]] = {}
-    if run_ids:
-        result_rows = session.execute(
-            select(Check.dimension, Result.status, func.count())
-            .select_from(Result)
-            .join(Check, Check.id == Result.check_id)
-            # Only runs whose result set is complete may be scored (#318).
-            .join(Run, Run.id == Result.run_id)
-            .where(Result.run_id.in_(run_ids), Run.status.in_(AGGREGATABLE_RUN_STATUSES))
-            .group_by(Check.dimension, Result.status)
-        ).all()
-        for dimension, status, count in result_rows:
-            if dimension is not None:
-                histograms.setdefault(dimension, {})[status] = count
+    runs = (
+        latest_runs_per_suite_stmt(suite_scope).subquery()
+        if run_ids is None
+        else select(Run).where(Run.id.in_(run_ids)).subquery()
+    )
+    result_rows = session.execute(
+        select(Check.dimension, Result.status, func.count())
+        .select_from(Result)
+        .join(Check, Check.id == Result.check_id)
+        .join(runs, runs.c.id == Result.run_id)
+        # Only runs whose result set is complete may be scored (#318).
+        .where(runs.c.status.in_(AGGREGATABLE_RUN_STATUSES))
+        .group_by(Check.dimension, Result.status)
+    ).all()
+    for dimension, status, count in result_rows:
+        if dimension is not None:
+            histograms.setdefault(dimension, {})[status] = count
 
     covered = []
     for dimension, total in sorted(checks_by_dimension.items()):
@@ -779,6 +793,14 @@ def failing_lineage_sources(session: Session) -> list[LineageSourceHealth]:
         )
         for c in rows
     ]
+
+
+def workspace_scorecard(session: Session) -> Scorecard:
+    """Each DQ dimension across EVERY suite in the workspace (#1558) — the cut the
+    per-asset scorecards hide from each other. Workspace-true like the asset scorecard
+    (ADR 0037): it takes no user and is never grant-filtered.
+    """
+    return _scorecard(session, select(Suite.id))
 
 
 def summarize_asset(session: Session, asset: Asset) -> AssetSummary:
