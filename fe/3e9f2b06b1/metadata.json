@@ -1,0 +1,43 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "fe3e9f2b06b1",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1556-asset-health-score",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/assets.py",
+    "backend/app/services/asset_view_service.py",
+    "backend/app/services/run_service.py",
+    "backend/tests/api/test_assets.py",
+    "backend/tests/services/test_asset_view_service.py",
+    "docs/site/guides/datasources-checks.md",
+    "docs/site/reference/changelog.md",
+    "docs/site/reference/openapi.json",
+    "frontend/src/api/assets.ts",
+    "frontend/src/components/assets/ScorecardPanel.tsx",
+    "frontend/src/pages/AssetDetail.tsx",
+    "frontend/src/pages/Assets.tsx",
+    "frontend/tests/components/ScorecardPanel.test.tsx",
+    "frontend/tests/pages/Assets.test.tsx",
+    "packages/dataq-client/src/dataq_client/generated/api/assets/list_assets.py",
+    "packages/dataq-client/src/dataq_client/generated/models/__init__.py",
+    "packages/dataq-client/src/dataq_client/generated/models/asset_summary_read.py",
+    "packages/dataq-client/src/dataq_client/generated/models/list_assets_sort.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/fe/3e9f2b06b1/0/metadata.json",
+      "transcript": "/fe/3e9f2b06b1/0/full.jsonl",
+      "compact_transcript": "/fe/3e9f2b06b1/0/transcript.jsonl",
+      "content_hash": "/fe/3e9f2b06b1/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 80,
+    "cache_creation_tokens": 71448,
+    "cache_read_tokens": 11288940,
+    "output_tokens": 29100,
+    "api_call_count": 40
+  }
+}
