@@ -120,9 +120,10 @@ migrations · backend tests 4,180 → **8,536** · frontend 1,012 →
 
 ## Final verification before the tag
 
-- CI green on `main` at the close commit; zero open PRs.
-- All eight weekly milestones closed with 0 open; the Week 8 milestone held
-  only the cycle epic (#1518), closed with it.
+- CI green on `main` at the close commit; zero open PRs once the close-out PR
+  merges.
+- Weeks 1–7 closed with 0 open. The Week 8 milestone holds only the cycle epic
+  (#1518); both are closed as the last step, with the tag and the release.
 - Backend 8,536 tests and frontend 1,651 tests green. The last migration
   (`49bd96efd9fc`, `checks.ordinal`) was run up, down and up on a scratch
   database.
@@ -133,8 +134,9 @@ migrations · backend tests 4,180 → **8,536** · frontend 1,012 →
 
 ## What rolls (explicitly, never silently)
 
-- **76 open issues** carry into v1.3 planning: the `v1.2 Backlog` milestone (74)
-  and `v1.3 Backlog` (#732, plus anything filed after this close).
+- **75 open issues** carry into v1.3 planning: the `v1.2 Backlog` milestone (74)
+  and `v1.3 Backlog` (#732, plus anything filed after this close). The 76th open
+  issue at the close is the cycle epic, which does not carry.
 - **#2224** — the cloud live-verification epic, waiting on a test instance.
 - **#717** — Iceberg v3, trigger-gated.
 - **Security follow-ups filed, not fixed:** #2348 (deleting a check rewrites run
