@@ -109,7 +109,9 @@ from .data_subject_request import DataSubjectRequest
 from .deployment_posture_read import DeploymentPostureRead
 from .deployment_posture_read_zero_sample_source import DeploymentPostureReadZeroSampleSource
 from .dimension_score_read import DimensionScoreRead
+from .document_problem_read import DocumentProblemRead
 from .event_ack import EventAck
+from .export_suite_format import ExportSuiteFormat
 from .external_transfer import ExternalTransfer
 from .file_browse_read import FileBrowseRead
 from .gate_read import GateRead
@@ -240,6 +242,9 @@ from .suite_target_strategy_type_0 import SuiteTargetStrategyType0
 from .suite_transfer import SuiteTransfer
 from .suite_transfer_result import SuiteTransferResult
 from .suite_update import SuiteUpdate
+from .suite_validate_request import SuiteValidateRequest
+from .suite_validate_request_document_type_0 import SuiteValidateRequestDocumentType0
+from .suite_validation_read import SuiteValidationRead
 from .top_value import TopValue
 from .trace_direction import TraceDirection
 from .trend_point_read import TrendPointRead
@@ -362,7 +367,9 @@ __all__ = (
     "DeploymentPostureRead",
     "DeploymentPostureReadZeroSampleSource",
     "DimensionScoreRead",
+    "DocumentProblemRead",
     "EventAck",
+    "ExportSuiteFormat",
     "ExternalTransfer",
     "FileBrowseRead",
     "GateRead",
@@ -493,6 +500,9 @@ __all__ = (
     "SuiteTransfer",
     "SuiteTransferResult",
     "SuiteUpdate",
+    "SuiteValidateRequest",
+    "SuiteValidateRequestDocumentType0",
+    "SuiteValidationRead",
     "TopValue",
     "TraceDirection",
     "TrendPointRead",

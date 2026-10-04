@@ -124,6 +124,9 @@ EXEMPT: Final[dict[tuple[str, str], str]] = {
     ("POST", "/api/v1/connections/test"): (
         "tests an unsaved draft — structurally cannot persist (#1116)"
     ),
+    ("POST", "/api/v1/suites/validate"): (
+        "validates a suite document and returns the problems — writes nothing (#1688)"
+    ),
     ("POST", "/api/v1/admin/llm/test"): (
         "live-probes an unsaved LLM config draft — structurally cannot persist (ADR 0042)"
     ),

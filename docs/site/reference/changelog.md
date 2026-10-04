@@ -53,6 +53,12 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Added
 
+- **Suites as YAML files, and a way to validate them.** A suite document can now be YAML as
+  well as JSON: `POST /suites/import` accepts `document_yaml`, and
+  `GET /suites/{id}/export?format=yaml` produces it. The new `POST /suites/validate`
+  reports every problem an import would be refused for and creates nothing. The format is
+  now documented field by field in [Suite document](suite-document.md). Plain YAML values
+  follow JSON's rules, so `NO` and `2026-01-01` stay text.
 - **Real mailboxes from the prebuilt-image stack.** Point the sign-in mailer at your own
   relay and supply its password once as `DATAQ_SMTP_PASSWORD`: a start-up step stores it in
   the stack's vault, where it persists, and the API never holds it. The alert mailer's
