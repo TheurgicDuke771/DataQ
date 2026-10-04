@@ -3,7 +3,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
-import { listRuns, type Run, type RunStatus } from '../../api/runs';
+import { listRuns, triggeredByText, type Run, type RunStatus } from '../../api/runs';
 import { listSuites } from '../../api/suites';
 import { useAsyncData } from '../../hooks/useAsyncData';
 import { formatDuration, formatTimestamp } from '../results/resultsFormat';
@@ -63,7 +63,7 @@ export function RecentRuns() {
           />
         ),
     },
-    { title: 'Triggered by', dataIndex: 'triggered_by', render: (t: string | null) => t ?? '—' },
+    { title: 'Triggered by', render: (_: unknown, run: Run) => triggeredByText(run) },
     { title: 'Started', dataIndex: 'started_at', render: (t: string | null) => formatTimestamp(t) },
     {
       title: 'Duration',

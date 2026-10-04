@@ -31,6 +31,7 @@ class RunRead:
         checks_total (int | Unset):  Default: 0.
         failure_reason (None | str | Unset):
         queued_reason (None | str | Unset):
+        triggered_by_label (None | str | Unset):
         worst_severity (None | str | Unset):
     """
 
@@ -46,6 +47,7 @@ class RunRead:
     checks_total: int | Unset = 0
     failure_reason: None | str | Unset = UNSET
     queued_reason: None | str | Unset = UNSET
+    triggered_by_label: None | str | Unset = UNSET
     worst_severity: None | str | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
@@ -97,6 +99,12 @@ class RunRead:
         else:
             queued_reason = self.queued_reason
 
+        triggered_by_label: None | str | Unset
+        if isinstance(self.triggered_by_label, Unset):
+            triggered_by_label = UNSET
+        else:
+            triggered_by_label = self.triggered_by_label
+
         worst_severity: None | str | Unset
         if isinstance(self.worst_severity, Unset):
             worst_severity = UNSET
@@ -126,6 +134,8 @@ class RunRead:
             field_dict["failure_reason"] = failure_reason
         if queued_reason is not UNSET:
             field_dict["queued_reason"] = queued_reason
+        if triggered_by_label is not UNSET:
+            field_dict["triggered_by_label"] = triggered_by_label
         if worst_severity is not UNSET:
             field_dict["worst_severity"] = worst_severity
 
@@ -218,6 +228,15 @@ class RunRead:
 
         queued_reason = _parse_queued_reason(d.pop("queued_reason", UNSET))
 
+        def _parse_triggered_by_label(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        triggered_by_label = _parse_triggered_by_label(d.pop("triggered_by_label", UNSET))
+
         def _parse_worst_severity(data: object) -> None | str | Unset:
             if data is None:
                 return data
@@ -240,6 +259,7 @@ class RunRead:
             checks_total=checks_total,
             failure_reason=failure_reason,
             queued_reason=queued_reason,
+            triggered_by_label=triggered_by_label,
             worst_severity=worst_severity,
         )
 

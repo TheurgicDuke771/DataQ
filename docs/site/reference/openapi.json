@@ -7178,6 +7178,17 @@
             ],
             "title": "Triggered By"
           },
+          "triggered_by_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Triggered By Label"
+          },
           "worst_severity": {
             "anyOf": [
               {
@@ -7490,6 +7501,17 @@
               }
             ],
             "title": "Triggered By"
+          },
+          "triggered_by_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Triggered By Label"
           },
           "worst_severity": {
             "anyOf": [

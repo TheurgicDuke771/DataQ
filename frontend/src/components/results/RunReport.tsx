@@ -1,4 +1,4 @@
-import type { RunDetail as RunDetailType } from '../../api/runs';
+import { triggeredByText, type RunDetail as RunDetailType } from '../../api/runs';
 import { checkLabel, noResultsMessage } from './runResultLabels';
 import type { Check } from '../../api/suites';
 import { engineShortLabel } from '../checks/checkBadges';
@@ -57,7 +57,7 @@ export function RunReport({
           </tr>
           <tr>
             <th scope="row">Triggered by</th>
-            <td>{run.triggered_by ?? '—'}</td>
+            <td>{triggeredByText(run)}</td>
           </tr>
           <tr>
             <th scope="row">Started</th>

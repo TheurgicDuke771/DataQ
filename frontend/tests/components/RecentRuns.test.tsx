@@ -73,6 +73,26 @@ describe('RecentRuns', () => {
     expect(screen.getByText('succeeded')).toBeInTheDocument();
   });
 
+  it('shows who triggered the run instead of the stored marker', async () => {
+    mockListRuns.mockResolvedValue({
+      items: [{ ...run, triggered_by_label: 'Manual — Olivia Admin' }],
+      total: 1,
+    });
+    mockListSuites.mockResolvedValue([suite]);
+    renderWidget();
+
+    expect(await screen.findByText('Manual — Olivia Admin')).toBeInTheDocument();
+    expect(screen.queryByText('manual:u1')).not.toBeInTheDocument();
+  });
+
+  it('falls back to the stored marker when the API sends no label', async () => {
+    mockListRuns.mockResolvedValue({ items: [run], total: 1 });
+    mockListSuites.mockResolvedValue([suite]);
+    renderWidget();
+
+    expect(await screen.findByText('manual:u1')).toBeInTheDocument();
+  });
+
   it('deep-links a row to the routed run detail', async () => {
     mockListRuns.mockResolvedValue({ items: [run], total: [run].length });
     mockListSuites.mockResolvedValue([suite]);
