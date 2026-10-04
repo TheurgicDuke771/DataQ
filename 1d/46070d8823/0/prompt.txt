@@ -1,0 +1,4 @@
+start with bulk snooze, unsnooze and delete. Keep enable/disable as a separate piece of work.
+What is this Severity change?
+
+Hey, on a side note, how is our local setup, did we created users [admin, member guest], datasources, orchestration [airflow,  dbt]?

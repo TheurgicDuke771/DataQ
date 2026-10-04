@@ -1,0 +1,43 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "1d46070d8823",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1669-bulk-check-operations",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/checks.py",
+    "backend/app/services/check_service.py",
+    "backend/tests/api/test_checks.py",
+    "backend/tests/support/audit_coverage.py",
+    "docs/site/guides/features.md",
+    "docs/site/reference/changelog.md",
+    "docs/site/reference/openapi.json",
+    "frontend/e2e/suites.spec.ts",
+    "frontend/src/api/suites.ts",
+    "frontend/src/pages/Suites.tsx",
+    "frontend/tests/pages/Suites.test.tsx",
+    "packages/dataq-client/src/dataq_client/generated/api/checks/bulk_delete_checks.py",
+    "packages/dataq-client/src/dataq_client/generated/api/checks/bulk_snooze_checks.py",
+    "packages/dataq-client/src/dataq_client/generated/api/checks/bulk_unsnooze_checks.py",
+    "packages/dataq-client/src/dataq_client/generated/models/__init__.py",
+    "packages/dataq-client/src/dataq_client/generated/models/bulk_checks_request.py",
+    "packages/dataq-client/src/dataq_client/generated/models/bulk_checks_result.py",
+    "packages/dataq-client/src/dataq_client/generated/models/bulk_snooze_request.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/1d/46070d8823/0/metadata.json",
+      "transcript": "/1d/46070d8823/0/full.jsonl",
+      "compact_transcript": "/1d/46070d8823/0/transcript.jsonl",
+      "content_hash": "/1d/46070d8823/0/content_hash.txt",
+      "prompt": "/1d/46070d8823/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 48,
+    "cache_creation_tokens": 45216,
+    "cache_read_tokens": 12943377,
+    "output_tokens": 25976,
+    "api_call_count": 24
+  }
+}
