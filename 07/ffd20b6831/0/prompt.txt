@@ -1,0 +1,28 @@
+don't use the same postgres instance - the current one is for DataQ's metadata
+
+---
+
+Create a new postgres for data source.
+
+---
+
+<task-notification>
+<task-id>by8pr2p1q</task-id>
+<tool-use-id>toolu_01MGTUZ4iuZFyp7gJ5ZDRpuW</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/051a3ae7-f154-4852-b2b4-477a2e7d4418/tasks/by8pr2p1q.output</output-file>
+<status>completed</status>
+<summary>Background command "Start the local harness stack (Airflow and MinIO) with its own script" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+create fakesnow and other sources also
+
+---
+
+You are making those data persistent, correct?
+Also setup some daily/batch job to insert/update the seed data
+
+---
+
+Once the setup is done, close the last week 7 issue and close the milestone too.

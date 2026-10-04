@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "07ffd20b6831",
+  "strategy": "manual-commit",
+  "branch": "docs/progress-w7-bulk-checks",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/07/ffd20b6831/0/metadata.json",
+      "transcript": "/07/ffd20b6831/0/full.jsonl",
+      "compact_transcript": "/07/ffd20b6831/0/transcript.jsonl",
+      "content_hash": "/07/ffd20b6831/0/content_hash.txt",
+      "prompt": "/07/ffd20b6831/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 78,
+    "cache_creation_tokens": 85818,
+    "cache_read_tokens": 25771258,
+    "output_tokens": 42758,
+    "api_call_count": 39
+  }
+}
