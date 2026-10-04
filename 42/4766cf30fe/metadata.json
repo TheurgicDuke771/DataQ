@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "424766cf30fe",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1334-check-ordinal",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/alembic/versions/49bd96efd9fc_check_ordinal.py",
+    "backend/app/db/models.py",
+    "backend/app/services/check_service.py",
+    "backend/app/services/probe.py",
+    "backend/app/services/suite_io_service.py",
+    "backend/tests/api/test_suites.py",
+    "backend/tests/db/test_check_ordinal_migration.py",
+    "docs/site/reference/changelog.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/42/4766cf30fe/0/metadata.json",
+      "transcript": "/42/4766cf30fe/0/full.jsonl",
+      "compact_transcript": "/42/4766cf30fe/0/transcript.jsonl",
+      "content_hash": "/42/4766cf30fe/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 42,
+    "cache_creation_tokens": 29001,
+    "cache_read_tokens": 6115339,
+    "output_tokens": 16093,
+    "api_call_count": 21
+  }
+}
