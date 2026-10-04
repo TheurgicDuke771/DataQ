@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "bb71a0afe766",
+  "strategy": "manual-commit",
+  "branch": "fix/issue-1734-suggest-prompt-column-cap",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/site/guides/ai-features.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/bb/71a0afe766/0/metadata.json",
+      "transcript": "/bb/71a0afe766/0/full.jsonl",
+      "compact_transcript": "/bb/71a0afe766/0/transcript.jsonl",
+      "content_hash": "/bb/71a0afe766/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 5426,
+    "cache_read_tokens": 891272,
+    "output_tokens": 3105,
+    "api_call_count": 4
+  }
+}
