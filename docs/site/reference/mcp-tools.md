@@ -8,8 +8,8 @@ run against), and the description is the opening of what an AI assistant is show
 |---|---|
 | Tools | 54 |
 | Read-only | 30 |
-| Changes state | 19 |
-| Live probe | 5 |
+| Changes state | 18 |
+| Live probe | 6 |
 
 No tool creates, edits or re-credentials a connection: every Admin-only capability is a
 connection mutation, and a credential must never transit an LLM.
@@ -54,7 +54,6 @@ connection mutation, and a credential must never transit an LLM.
 | Tool | Who can call it | What it does |
 |---|---|---|
 | `ack_incident` | `edit` on the incident's suite | Acknowledge an incident — record that someone is looking at it. |
-| `browse_connection` | workspace Member or Admin | List what a connection can see, one level at a time, to pick a suite's run target. |
 | `cancel_run` | `edit` on the suite | Cancel a queued or still-running suite run. |
 | `create_check` | `edit` on the suite | Add a new check (a Great Expectations expectation, by default) to a suite. Requires edit access to the suite. Returns the created check's id. |
 | `create_schedule` | `edit` on the suite | Schedule a suite to run automatically on a cron expression. |
@@ -77,6 +76,7 @@ connection mutation, and a credential must never transit an LLM.
 
 | Tool | Who can call it | What it does |
 |---|---|---|
+| `browse_connection` | workspace Member or Admin | List what a connection can see, one level at a time, to pick a suite's run target. |
 | `dryrun_check` | `edit` on the suite | Preview a check against live data WITHOUT saving it. |
 | `list_columns` | `edit` on the suite | List the column names of a suite's table or file. |
 | `profile_column` | `edit` on the suite | Profile one or more columns of a table or file on a suite's connection. |
