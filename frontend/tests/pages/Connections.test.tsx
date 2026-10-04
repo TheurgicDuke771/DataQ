@@ -81,6 +81,19 @@ describe('Connections', () => {
     expect(screen.getByText('no credential')).toBeInTheDocument();
   });
 
+  it('shows the data-quality score only for a connection that has one', async () => {
+    mockList.mockResolvedValue([
+      conn({ id: 'c1', name: 'sf-dev', type: 'snowflake', env: 'dev', health_score: 87.5 }),
+      conn({ id: 'c2', name: 'sf-new', type: 'snowflake', env: 'qa', health_score: null }),
+    ]);
+
+    renderPage();
+
+    expect(await screen.findByText('DQ score 87.5')).toBeInTheDocument();
+    // No score is not a score of 0.
+    expect(screen.getAllByText(/DQ score/)).toHaveLength(1);
+  });
+
   it('flags a datasource whose recent runs are all failing, without clicking Test (#954)', async () => {
     // The whole point: a dead credential must be visible on the LIST.
     mockList.mockResolvedValue([

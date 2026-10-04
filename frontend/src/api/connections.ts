@@ -216,6 +216,12 @@ export interface Connection {
   last_run_at?: string | null;
   last_run_error?: string | null;
   consecutive_run_failures?: number;
+  /**
+   * 0-100 over every evaluated result of the latest complete run of each suite on this
+   * connection (workspace-wide). Null when nothing evaluated; always null on an orchestration
+   * connection.
+   */
+  health_score?: number | null;
   /** When the credential itself says it stops working (#838) — a SAS prints `se=`. */
   credential_expires_at?: string | null;
   /** When the expiry was last READ (#1024). */

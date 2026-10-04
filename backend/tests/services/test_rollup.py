@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
+from sqlalchemy import event
 
 from backend.app.db.models import (
     RESULT_OPERATIONAL_STATUSES,
@@ -20,12 +21,16 @@ from backend.app.db.models import (
 )
 from backend.app.services.rollup import (
     SEVERITY_STATUSES,
+    connection_scores,
     evaluated_total,
     health_score,
     latest_runs_per_suite_stmt,
     pass_rate,
     status_histograms,
 )
+from backend.app.services.scoring_settings_service import DEFAULT_WEIGHTS
+
+_WEIGHTS = DEFAULT_WEIGHTS
 
 # ── vocabulary invariants ──
 
@@ -222,3 +227,115 @@ def test_the_latest_run_counts_whatever_its_status(db_session: Any, status: str)
 
 def test_empty_scope_returns_nothing(db_session: Any) -> None:
     assert list(db_session.scalars(latest_runs_per_suite_stmt([]))) == []
+
+
+# ── connection_scores (#1557) ──
+
+
+def _owner(db: Any) -> User:
+    user = User(aad_object_id=uuid.uuid4().hex, email=f"{uuid.uuid4().hex[:8]}@ex.com")
+    db.add(user)
+    db.flush()
+    return user
+
+
+def _conn(db: Any, owner: User) -> Connection:
+    conn = Connection(
+        name=f"c-{uuid.uuid4().hex[:8]}",
+        type="snowflake",
+        env="dev",
+        config={},
+        secret_ref="kv-x",
+        created_by=owner.id,
+    )
+    db.add(conn)
+    db.flush()
+    return conn
+
+
+def _suite_run(
+    db: Any, conn: Connection, owner: User, statuses: list[str], *, run_status: str = "succeeded"
+) -> Suite:
+    suite = Suite(name=f"s-{uuid.uuid4().hex[:6]}", connection_id=conn.id, created_by=owner.id)
+    db.add(suite)
+    db.flush()
+    _run_on(db, suite, statuses, run_status=run_status)
+    return suite
+
+
+def _run_on(
+    db: Any, suite: Suite, statuses: list[str], *, run_status: str = "succeeded", age_days: int = 0
+) -> None:
+    run = Run(
+        suite_id=suite.id,
+        status=run_status,
+        triggered_by="manual",
+        created_at=datetime.now(UTC) - timedelta(days=age_days),
+    )
+    db.add(run)
+    db.flush()
+    for status in statuses:
+        check = Check(
+            suite_id=suite.id, name=f"k-{uuid.uuid4().hex[:6]}", expectation_type="e", config={}
+        )
+        db.add(check)
+        db.flush()
+        db.add(Result(run_id=run.id, check_id=check.id, status=status))
+    db.flush()
+
+
+def test_connection_score_pools_every_suite_on_the_connection(db_session: Any) -> None:
+    owner, other = _owner(db_session), _owner(db_session)
+    conn, quiet = _conn(db_session, owner), _conn(db_session, owner)
+    _suite_run(db_session, conn, owner, ["pass", "pass", "pass"])
+    # Another user's suite on the same connection counts too — the score is workspace-true.
+    _suite_run(db_session, conn, other, ["fail", "skip", "error"])
+
+    scores = connection_scores(db_session, [conn.id, quiet.id], weights=_WEIGHTS)
+
+    # 1 fail of 4 evaluated (skip/error are outside the denominator) → 87.5.
+    assert scores == {conn.id: 87.5}
+    # Nothing evaluated on `quiet`: absent, never 0 or 100.
+    assert quiet.id not in scores
+    # Only skip/error is also "nothing evaluated".
+    _suite_run(db_session, quiet, owner, ["skip", "error"])
+    assert quiet.id not in connection_scores(db_session, [quiet.id], weights=_WEIGHTS)
+
+
+def test_connection_score_uses_only_each_suites_latest_complete_run(db_session: Any) -> None:
+    owner = _owner(db_session)
+    conn = _conn(db_session, owner)
+    suite = _suite_run(db_session, conn, owner, ["pass"])
+    _run_on(db_session, suite, ["critical"], age_days=5)  # superseded
+    stalled = _suite_run(db_session, conn, owner, ["critical"], run_status="running")
+
+    assert connection_scores(db_session, [conn.id], weights=_WEIGHTS) == {conn.id: 100.0}
+    # A suite whose latest run failed outright contributes nothing, even though an older
+    # run of it completed.
+    _run_on(db_session, stalled, ["critical"], age_days=5)
+    assert connection_scores(db_session, [conn.id], weights=_WEIGHTS) == {conn.id: 100.0}
+
+
+def test_connection_scores_cost_one_query_for_any_number_of_connections(db_session: Any) -> None:
+    owner = _owner(db_session)
+    conns = [_conn(db_session, owner) for _ in range(6)]
+    for conn in conns:
+        _suite_run(db_session, conn, owner, ["pass", "warn"])
+    statements: list[str] = []
+    bind = db_session.get_bind()
+
+    def _count(*args: Any) -> None:
+        statements.append(args[2])
+
+    event.listen(bind, "before_cursor_execute", _count)
+    try:
+        scores = connection_scores(db_session, [c.id for c in conns], weights=_WEIGHTS)
+    finally:
+        event.remove(bind, "before_cursor_execute", _count)
+
+    assert len(scores) == 6
+    assert len(statements) == 1
+
+
+def test_connection_scores_of_no_connections_runs_no_query(db_session: Any) -> None:
+    assert connection_scores(db_session, [], weights=_WEIGHTS) == {}

@@ -13,7 +13,7 @@ from typing import Any
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
-from backend.app.db.models import RESULT_SEVERITY_TIERS, Result, Run
+from backend.app.db.models import RESULT_SEVERITY_TIERS, Result, Run, Suite
 from backend.app.services.scoring_settings_service import DEFAULT_WEIGHTS, Weights
 
 # ── health score (ADR 0005) ──────────────────────────────────────────────────
@@ -126,3 +126,31 @@ def status_histograms(
     for run_id, status, n in rows:
         by_run[run_id][status] = n
     return dict(by_run)
+
+
+def connection_scores(
+    session: Session, connection_ids: Sequence[uuid.UUID], weights: Weights
+) -> dict[uuid.UUID, float]:
+    """``connection_id -> health score`` over every evaluated result of the latest
+    complete run of each suite on that connection (#1557), in one grouped query.
+    Workspace-true: every suite counts, whoever can open it. A connection with nothing
+    evaluated — no suites, no completed run, only skip/error — is absent.
+    """
+    if not connection_ids:
+        return {}
+    latest = latest_runs_per_suite_stmt(
+        select(Suite.id).where(Suite.connection_id.in_(connection_ids))
+    ).subquery()
+    rows = session.execute(
+        select(Suite.connection_id, Result.status, func.count())
+        .select_from(latest)
+        .join(Suite, Suite.id == latest.c.suite_id)
+        .join(Result, Result.run_id == latest.c.id)
+        .where(latest.c.status.in_(AGGREGATABLE_RUN_STATUSES))
+        .group_by(Suite.connection_id, Result.status)
+    )
+    counts: dict[uuid.UUID, dict[str, int]] = defaultdict(dict)
+    for connection_id, status, n in rows:
+        counts[connection_id][status] = n
+    scores = {cid: health_score(by_status, weights) for cid, by_status in counts.items()}
+    return {cid: score for cid, score in scores.items() if score is not None}

@@ -141,6 +141,11 @@ connection nothing uses stays unknown indefinitely. That is deliberate — the s
 derived from work DataQ already does rather than from a periodic probe, so it costs no
 warehouse credits and cannot report on a connection nobody has exercised.
 
+The card also shows a **DQ score** when the connection has one: 0–100 over every check
+that evaluated in the latest run of each suite on that connection, if that run completed, counting
+suites you cannot open. It says what DataQ found in the data, where the health badges say
+whether DataQ could reach it. A connection where nothing has evaluated shows no score.
+
 Only credential **rejections** move this signal. A missing SELECT grant, an unreachable
 host and a bad table name all leave it untouched, because none of them says the credential
 is dead — those surface as the run's own failure reason instead.

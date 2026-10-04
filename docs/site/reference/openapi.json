@@ -3468,6 +3468,17 @@
             "title": "Has Secret",
             "type": "boolean"
           },
+          "health_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Health Score"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
