@@ -440,6 +440,22 @@ describe('Suites', () => {
       expect(await screen.findByText('Thresholds set on 2 checks')).toBeInTheDocument();
     });
 
+    it('opens the thresholds dialog fresh each time, not with the last choice', async () => {
+      const user = await openWithChecks();
+      await user.click(screen.getByRole('checkbox', { name: 'Select alpha' }));
+      await user.click(screen.getByRole('button', { name: 'Set thresholds' }));
+      await user.click(await screen.findByRole('combobox', { name: 'Fail' }));
+      const clear = await screen.findAllByText('Clear');
+      await user.click(clear[clear.length - 1]);
+      expect(screen.getByRole('button', { name: 'Apply to 1 check' })).toBeEnabled();
+      await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      await user.click(screen.getByRole('button', { name: 'Set thresholds' }));
+
+      // Nothing is chosen, so nothing can be applied by one stray click.
+      expect(await screen.findByRole('button', { name: 'Apply to 1 check' })).toBeDisabled();
+    });
+
     it('shows no selection controls to a view-only user', async () => {
       await openWithChecks('view');
       expect(screen.queryByRole('checkbox', { name: 'Select all' })).not.toBeInTheDocument();

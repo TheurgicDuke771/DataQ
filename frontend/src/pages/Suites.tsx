@@ -723,18 +723,22 @@ function ChecksList({
         </Flex>
       }
     >
-      <BulkThresholdsModal
-        open={thresholdsOpen}
-        count={selectedIds.length}
-        onCancel={() => setThresholdsOpen(false)}
-        onApply={async (thresholds) => {
-          await runBulk(
-            () => bulkSetThresholds(suiteId, selectedIds, thresholds),
-            (n) => `Thresholds set on ${plural(n)}`,
-          );
-          setThresholdsOpen(false);
-        }}
-      />
+      {/* Mounted only while open, so each opening starts from "leave as it is" — a tier
+          chosen for one selection must not be pre-filled for the next. */}
+      {thresholdsOpen && (
+        <BulkThresholdsModal
+          open={thresholdsOpen}
+          count={selectedIds.length}
+          onCancel={() => setThresholdsOpen(false)}
+          onApply={async (thresholds) => {
+            await runBulk(
+              () => bulkSetThresholds(suiteId, selectedIds, thresholds),
+              (n) => `Thresholds set on ${plural(n)}`,
+            );
+            setThresholdsOpen(false);
+          }}
+        />
+      )}
       <SuggestChecksDrawer
         suiteId={suiteId}
         open={suggestOpen}
