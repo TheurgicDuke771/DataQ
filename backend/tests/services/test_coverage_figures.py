@@ -178,8 +178,10 @@ def test_the_rate_moves_when_an_incident_is_resolved_through_the_real_resolve_pa
     db_session.commit()
     assert cov.coverage_figures(db_session).false_positive_rate is None
 
+    resolver = conn.created_by
+    assert resolver is not None
     incident_service.resolve_incident(
-        db_session, incident, user_id=conn.created_by, resolution="false_positive"
+        db_session, incident, user_id=resolver, resolution="false_positive"
     )
 
     figures = cov.coverage_figures(db_session)
