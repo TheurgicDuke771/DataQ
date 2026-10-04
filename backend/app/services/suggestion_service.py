@@ -94,7 +94,7 @@ def propose(
     return inserted is not None
 
 
-def _value_set_is_sensitive(session: Session, suite: Suite) -> Callable[[str, list[Any]], bool]:
+def value_set_is_sensitive(session: Session, suite: Suite) -> Callable[[str, list[Any]], bool]:
     """The redaction ladder's own test for the TESTED column (``run_service._known_sensitive``):
     a governance tag (own or inherited through lineage), the suite's policy, fail-closed mode,
     or an affirmative name/value PII signal. A value set shown in a check is held to the same
@@ -210,7 +210,7 @@ def refresh_from_profile(session: Session, suite: Suite, *, secret_store: Secret
     )
     created = sum(
         propose(session, suite, source="profile", **rule)
-        for rule in rules_from_profile(profile, sensitive=_value_set_is_sensitive(session, suite))
+        for rule in rules_from_profile(profile, sensitive=value_set_is_sensitive(session, suite))
     )
     state = dict(suite.auto_state or {})
     state["profiled_at"] = datetime.now(UTC).isoformat()

@@ -126,6 +126,7 @@ function SuggestBody({ suiteId, onAdded }: { suiteId: string; onAdded: () => voi
     rejected,
     coverage_warnings: warnings,
     column_coverage: coverage,
+    queued_for_review: queued,
   } = state.result;
   const pending = suggestions.map((_, i) => i).filter((i) => !added.has(i));
   const addAll = async () => {
@@ -151,6 +152,14 @@ function SuggestBody({ suiteId, onAdded }: { suiteId: string; onAdded: () => voi
           Add all remaining
         </Button>
       </Flex>
+      {queued != null && queued > 0 && (
+        <Alert
+          type="info"
+          showIcon
+          title={`${queued} also saved under Suggested rules`}
+          description="This suite is covered automatically, so these stay on its page for review after you close this panel. Rules it had already seen were not saved again."
+        />
+      )}
       {coverage && coverage.profiled < coverage.total && (
         <Alert
           type="warning"

@@ -1,4 +1,4 @@
-import { App, Button, Card, Flex, List, Typography } from 'antd';
+import { App, Button, Card, Flex, List, Tag, Typography } from 'antd';
 import { useState } from 'react';
 
 import {
@@ -55,8 +55,8 @@ export function SuggestionsPanel({
         <Flex vertical gap={2}>
           <Typography.Text strong>Suggested rules ({state.data.length})</Typography.Text>
           <Typography.Text type="secondary" style={{ fontSize: 12, fontWeight: 400 }}>
-            Proposed from this table’s own data. Accepting adds the check; a rejected rule is not
-            suggested again.
+            Proposed from this table’s own data, or by the AI model where marked. Accepting adds the
+            check; a rejected rule is not suggested again.
           </Typography.Text>
         </Flex>
       }
@@ -91,7 +91,14 @@ export function SuggestionsPanel({
             }
           >
             <List.Item.Meta
-              title={item.name}
+              title={
+                <Flex gap={8} align="center" wrap>
+                  <span>{item.name}</span>
+                  {/* An AI-proposed rule passed the same validator, but its reason is the
+                      model's wording, not a measured fact like the profile's. */}
+                  {item.source === 'llm' && <Tag>AI-suggested</Tag>}
+                </Flex>
+              }
               description={item.rationale ?? item.expectation_type}
             />
           </List.Item>

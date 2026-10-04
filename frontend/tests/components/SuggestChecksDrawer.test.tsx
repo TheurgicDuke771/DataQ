@@ -95,6 +95,23 @@ describe('SuggestChecksDrawer', () => {
     ).toBeInTheDocument();
   });
 
+  it('says how many were saved to the review queue on an automatic suite', async () => {
+    mockRun.mockResolvedValue(row({ response: { ...RESULT, queued_for_review: 2 } }));
+    renderDrawer();
+    await screen.findByText('order_id not null');
+    expect(screen.getByText('2 also saved under Suggested rules')).toBeInTheDocument();
+  });
+
+  it.each([null, 0, undefined])(
+    'says nothing about a queue when none were saved (%s)',
+    async (q) => {
+      mockRun.mockResolvedValue(row({ response: { ...RESULT, queued_for_review: q } }));
+      renderDrawer();
+      await screen.findByText('order_id not null');
+      expect(screen.queryByText(/saved under Suggested rules/)).not.toBeInTheDocument();
+    },
+  );
+
   it('says so when only part of a wide table was profiled', async () => {
     mockRun.mockResolvedValue(
       row({ response: { ...RESULT, column_coverage: { profiled: 100, total: 340 } } }),

@@ -8,8 +8,9 @@ import dataclasses
 from typing import Any
 
 import pytest
+from sqlalchemy import select
 
-from backend.app.db.models import AuditEvent, LlmInvocation, Suite, User
+from backend.app.db.models import AuditEvent, CheckSuggestion, LlmInvocation, Suite, User
 from backend.app.llm.base import LLMOutputInvalidError, LLMRequestInvalidError, LLMResult
 from backend.app.services import llm_checksuggest, llm_service
 from backend.app.services import profile_service as profile_service_module
@@ -733,3 +734,112 @@ def test_remember_columns_persists_on_the_row(db_session: Any, admin: User) -> N
         llm_checksuggest.COLUMNS_KEY: ["A", "B"],
         llm_checksuggest.COLUMNS_TOTAL_KEY: 2,
     }
+
+
+# ── automatic suites: validated suggestions go to the review queue (ADR 0047 §4) ──
+
+
+def _auto_suite(db_session: Any, admin: User, **kwargs: Any) -> Suite:
+    suite = make_sql_suite(db_session, admin, **kwargs)
+    suite.origin = "auto"
+    suite.created_by = None
+    db_session.commit()
+    return suite
+
+
+def _queued(db_session: Any, suite: Suite) -> list[CheckSuggestion]:
+    return list(
+        db_session.scalars(
+            select(CheckSuggestion)
+            .where(CheckSuggestion.suite_id == suite.id)
+            .order_by(CheckSuggestion.name)
+        )
+    )
+
+
+def test_an_automatic_suites_suggestions_are_queued_as_llm_rules(
+    db_session: Any, admin: User
+) -> None:
+    suite = _auto_suite(db_session, admin)
+    invocation = _invocation(db_session, suite, admin)
+
+    out = llm_checksuggest.validate_output(
+        db_session,
+        invocation,
+        {
+            "suggestions": [
+                _suggestion(),
+                _suggestion(
+                    expectation_type="expect_column_values_to_be_unique",
+                    name="ids are unique",
+                    config={"column": "ID"},
+                ),
+            ]
+        },
+    )
+
+    assert out["queued_for_review"] == 2
+    rows = _queued(db_session, suite)
+    assert [(r.name, r.source, r.status) for r in rows] == [
+        ("ids are unique", "llm", "pending"),
+        ("no null emails", "llm", "pending"),
+    ]
+    assert rows[1].rationale == "the profile shows a low null rate already"
+
+
+def test_a_suite_a_person_authored_queues_nothing(db_session: Any, admin: User) -> None:
+    suite = make_sql_suite(db_session, admin)
+    invocation = _invocation(db_session, suite, admin)
+
+    out = llm_checksuggest.validate_output(db_session, invocation, {"suggestions": [_suggestion()]})
+
+    # None, not 0: there is no queue to add to, which is different from "nothing was new".
+    assert out["queued_for_review"] is None
+    assert _queued(db_session, suite) == []
+
+
+def test_a_rule_already_decided_is_not_queued_again(db_session: Any, admin: User) -> None:
+    suite = _auto_suite(db_session, admin)
+    first = llm_checksuggest.validate_output(
+        db_session, _invocation(db_session, suite, admin), {"suggestions": [_suggestion()]}
+    )
+    (row,) = _queued(db_session, suite)
+    row.status = "rejected"
+    db_session.commit()
+
+    again = llm_checksuggest.validate_output(
+        db_session, _invocation(db_session, suite, admin), {"suggestions": [_suggestion()]}
+    )
+
+    assert (first["queued_for_review"], again["queued_for_review"]) == (1, 0)
+    (still,) = _queued(db_session, suite)
+    assert still.status == "rejected"  # a rejection is remembered, not reopened
+
+
+def test_a_value_set_over_a_sensitive_column_is_shown_but_not_queued(
+    db_session: Any, admin: User
+) -> None:
+    """Accepting a queued rule copies its values into a check. The profile source never
+    queues a value set for a column the redaction ladder treats as sensitive; nor may
+    the LLM source."""
+    suite = _auto_suite(db_session, admin, column_policy={"pii_columns": ["EMAIL"]})
+    invocation = _invocation(db_session, suite, admin)
+    value_set = {
+        "expectation_type": "expect_column_values_to_be_in_set",
+        "name": "known emails",
+        "rationale": "few distinct values",
+        "config": {"column": "EMAIL", "value_set": ["a@x.com", "b@x.com"]},
+    }
+    harmless = {
+        **value_set,
+        "name": "known statuses",
+        "config": {"column": "STATUS", "value_set": ["A", "B"]},
+    }
+
+    out = llm_checksuggest.validate_output(
+        db_session, invocation, {"suggestions": [value_set, harmless]}
+    )
+
+    assert len(out["suggestions"]) == 2
+    assert out["queued_for_review"] == 1
+    assert [r.name for r in _queued(db_session, suite)] == ["known statuses"]

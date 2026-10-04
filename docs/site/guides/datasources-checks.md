@@ -665,7 +665,10 @@ checks and a daily schedule. After its first run it adds *Data is fresh* on `ord
   least 100 rows, *unique* for an id-like column whose values are all distinct, and *one of these
   values* for a column with 2 to 10 distinct values. They appear under **Suggested rules** on the
   suite page, each with the reason (for example "No nulls in 12,480 rows"). Accepting one adds the
-  check; a rejected rule is never suggested again. A column the suite's policy or the warehouse
+  check; a rejected rule is never suggested again. If you run **Suggest checks** on an automatic
+  suite, the AI model's validated suggestions are saved to the same list, marked **AI-suggested**,
+  so they are still there after you close the panel. DataQ does not call the model on its own:
+  that happens only when someone runs Suggest checks. A column the suite's policy or the warehouse
   marks sensitive is never proposed as a value set, because that would copy its values into the
   check.
 - **Your changes win.** You can edit, snooze or share these suites and checks like any other.
