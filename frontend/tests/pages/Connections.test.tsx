@@ -1,6 +1,7 @@
 import { App as AntApp } from 'antd';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MeContext } from '../../src/auth/meContext';
 import { MemoryRouter } from 'react-router-dom';
 
 import { WithMe } from '../support/me';
@@ -328,6 +329,23 @@ describe('Connections', () => {
 
     expect(await screen.findByText('A workspace admin adds connections.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Add a connection' })).not.toBeInTheDocument();
+  });
+
+  it('does not say who adds connections before the role is known', async () => {
+    mockList.mockResolvedValue([]);
+
+    render(
+      <MemoryRouter>
+        <MeContext.Provider value={{ status: 'loading' }}>
+          <AntApp>
+            <Connections />
+          </AntApp>
+        </MeContext.Provider>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('No connections yet')).toBeInTheDocument();
+    expect(screen.queryByText('A workspace admin adds connections.')).not.toBeInTheDocument();
   });
 
   it('runs a connectivity test from a card and shows a healthy badge', async () => {

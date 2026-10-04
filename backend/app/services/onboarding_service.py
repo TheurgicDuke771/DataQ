@@ -29,7 +29,9 @@ def onboarding_status(session: Session) -> OnboardingStatus:
     return OnboardingStatus(
         # An orchestration connection is not something a check can run against.
         has_datasource=any_row(Connection.type.not_in(ORCHESTRATION_PROVIDERS)),
-        has_suite=any_row(Suite.id.is_not(None)),
-        has_check=any_row(Check.id.is_not(None)),
-        has_run=any_row(Run.id.is_not(None)),
+        # Automatic coverage (ADR 0047) creates suites, checks and runs with nobody having
+        # authored anything; the steps are about a person doing so.
+        has_suite=any_row(Suite.origin == "user"),
+        has_check=any_row(Check.origin != "auto"),
+        has_run=any_row(Run.suite_id.in_(select(Suite.id).where(Suite.origin == "user"))),
     )

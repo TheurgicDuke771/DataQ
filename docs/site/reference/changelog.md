@@ -56,7 +56,7 @@ the per-PR history lives in the repo's commit log and pull requests.
 - **A first-run path and empty states that say what to do next.** A new workspace's Dashboard
   shows a **Get started** panel: connect a data source, create a suite, add a check, run it. It
   offers the next step, says who can take it when you cannot, and goes away once all four are
-  done. The empty Connections, Suites, Assets and checks lists now explain what belongs there
+  done; what automatic coverage creates does not count. The empty Connections, Suites, Assets and checks lists now explain what belongs there
   and offer the action your role allows. In the API, `GET /dashboard/onboarding` returns the
   four steps as booleans.
 - **Say what an incident turned out to be.** Resolving an incident can record whether it was

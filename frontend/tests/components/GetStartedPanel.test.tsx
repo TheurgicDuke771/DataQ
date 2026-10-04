@@ -80,6 +80,17 @@ describe('GetStartedPanel', () => {
     expect(screen.getByText('new suite page')).toBeInTheDocument();
   });
 
+  it('tells a viewer who can take a later step', async () => {
+    asRole('viewer');
+    mockGet.mockResolvedValue({ ...NOTHING, has_datasource: true, has_suite: true });
+    renderPanel();
+
+    expect(
+      await screen.findByText('Someone with edit access to a suite adds checks.'),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['Hide']);
+  });
+
   it('is not shown once every step is done', async () => {
     asRole('admin');
     mockGet.mockResolvedValue({

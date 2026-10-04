@@ -16,7 +16,9 @@ class OnboardingStatusRead:
 
     Workspace-wide: true if ANY connection, suite, check or run exists, including ones the
     caller cannot open, so every member sees the same answer. Booleans only. An
-    orchestration connection (ADF, Airflow, dbt) does not count as a data source.
+    orchestration connection (ADF, Airflow, dbt) does not count as a data source, and
+    suites, checks and runs that automatic coverage made do not count: the steps are about
+    a person authoring them.
 
         Attributes:
             complete (bool):

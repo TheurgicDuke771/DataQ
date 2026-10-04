@@ -53,6 +53,8 @@ interface ConnectionActions {
   onClearHealth: (id: string) => void;
   /** Admin: may create/edit/delete/re-auth a connection (ADR 0033). */
   canMutate: boolean;
+  /** False until `/me` resolves — "cannot" copy must wait for it. */
+  roleKnown: boolean;
   /** Member+: may test a connection. */
   canAuthor: boolean;
 }
@@ -113,6 +115,7 @@ export function Connections() {
     // 403.
     canMutate,
     canAuthor,
+    roleKnown: role !== null,
   };
 
   return (
@@ -190,7 +193,11 @@ function ConnectionsBody({
         action={
           actions.canMutate ? { label: 'Add a connection', to: '/connections/new' } : undefined
         }
-        note={actions.canMutate ? undefined : 'A workspace admin adds connections.'}
+        note={
+          actions.roleKnown && !actions.canMutate
+            ? 'A workspace admin adds connections.'
+            : undefined
+        }
       />
     );
   }

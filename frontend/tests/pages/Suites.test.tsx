@@ -1,6 +1,7 @@
 import { App as AntApp } from 'antd';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MeContext } from '../../src/auth/meContext';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 import { WithMe } from '../support/me';
@@ -280,6 +281,39 @@ describe('Suites', () => {
       await screen.findByText('A suite needs a data source connection to run against.'),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Go to connections' })).toBeInTheDocument();
+  });
+
+  it('does not send an author to connections while the connection list has not loaded', async () => {
+    mockListConnections.mockRejectedValue(new Error('conn down'));
+    mockListSuites.mockResolvedValue([]);
+
+    renderPage();
+
+    expect(await screen.findByText('No suites yet')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Go to connections' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('A suite needs a data source connection to run against.'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('does not tell anyone they cannot create a suite before the role is known', async () => {
+    mockListConnections.mockResolvedValue([connection]);
+    mockListSuites.mockResolvedValue([]);
+
+    render(
+      <MemoryRouter initialEntries={['/suites']}>
+        <MeContext.Provider value={{ status: 'loading' }}>
+          <AntApp>
+            <Suites />
+          </AntApp>
+        </MeContext.Provider>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('No suites yet')).toBeInTheDocument();
+    expect(
+      screen.queryByText('You see a suite once someone shares it with you.'),
+    ).not.toBeInTheDocument();
   });
 
   it('tells a viewer why the list is empty and offers nothing to create', async () => {

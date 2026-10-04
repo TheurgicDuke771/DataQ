@@ -204,8 +204,8 @@ export function Suites() {
       <SuitesBody
         state={state}
         connections={connections}
-        canAuthor={canAuthor}
-        hasDatasource={hasDatasource}
+        canAuthor={role === null ? null : canAuthor}
+        hasDatasource={connState.status === 'ok' ? hasDatasource : null}
         selectedId={selectedId}
         onSelect={(id) => navigate(`/suites/${id}`)}
         onEdit={(suite) => navigate(`/suites/${suite.id}/edit`)}
@@ -240,8 +240,10 @@ function SuitesBody({
 }: {
   state: AsyncState<Suite[]>;
   connections: Connection[];
-  canAuthor: boolean;
-  hasDatasource: boolean;
+  /** `null` until the role is known. */
+  canAuthor: boolean | null;
+  /** `null` until the connection list has loaded. */
+  hasDatasource: boolean | null;
   selectedId: string | null;
   onSelect: (id: string) => void;
   onEdit: (suite: Suite) => void;
@@ -266,6 +268,11 @@ function SuitesBody({
   }
   const suites = state.data;
   if (suites.length === 0) {
+    // `null` = not known yet (`/me` or the connection list still loading, or failed): say only
+    // what is certain rather than "you cannot" or "add a connection first".
+    if (canAuthor === null || (canAuthor && hasDatasource === null)) {
+      return <EmptyState title="No suites yet" />;
+    }
     if (!canAuthor) {
       return (
         <EmptyState

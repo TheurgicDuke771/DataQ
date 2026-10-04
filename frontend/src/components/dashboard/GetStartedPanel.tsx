@@ -65,12 +65,14 @@ export function GetStartedPanel() {
       title: 'Add a check',
       detail: 'Open the suite and add a rule the data must meet.',
       action: canAuthor ? { label: 'Open suites', to: '/suites' } : undefined,
+      blocked: known && !canAuthor ? 'Someone with edit access to a suite adds checks.' : undefined,
     },
     {
       key: 'has_run',
       title: 'Run the suite',
       detail: 'Run it now from the suite, or give it a schedule.',
       action: canAuthor ? { label: 'Open suites', to: '/suites' } : undefined,
+      blocked: known && !canAuthor ? 'Someone with edit access to a suite runs it.' : undefined,
     },
   ];
   // Only the first step not yet done offers its action: the later ones depend on it.

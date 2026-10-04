@@ -6702,7 +6702,7 @@
         "type": "object"
       },
       "OnboardingStatusRead": {
-        "description": "Which first-run steps the workspace has done.\n\nWorkspace-wide: true if ANY connection, suite, check or run exists, including ones the\ncaller cannot open, so every member sees the same answer. Booleans only. An\norchestration connection (ADF, Airflow, dbt) does not count as a data source.",
+        "description": "Which first-run steps the workspace has done.\n\nWorkspace-wide: true if ANY connection, suite, check or run exists, including ones the\ncaller cannot open, so every member sees the same answer. Booleans only. An\norchestration connection (ADF, Airflow, dbt) does not count as a data source, and\nsuites, checks and runs that automatic coverage made do not count: the steps are about\na person authoring them.",
         "properties": {
           "complete": {
             "title": "Complete",

@@ -72,3 +72,24 @@ def test_each_step_is_reported_on_its_own_and_complete_needs_all_four(db_session
         False,
     )
     assert after_run.complete is True
+
+
+def test_what_automatic_coverage_made_does_not_count(db_session: Any) -> None:
+    conn = _connection(db_session, "postgres")
+    suite = Suite(name="auto: orders", connection_id=conn.id, origin="auto", created_by=None)
+    db_session.add(suite)
+    db_session.flush()
+    db_session.add(
+        Check(suite_id=suite.id, name="c", expectation_type="e", config={}, origin="auto")
+    )
+    db_session.add(Run(suite_id=suite.id, status="succeeded", triggered_by="schedule"))
+    db_session.flush()
+
+    status = onboarding_status(db_session)
+
+    assert (status.has_datasource, status.has_suite, status.has_check, status.has_run) == (
+        True,
+        False,
+        False,
+        False,
+    )
