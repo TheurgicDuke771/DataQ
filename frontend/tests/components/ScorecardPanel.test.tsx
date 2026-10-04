@@ -149,6 +149,18 @@ describe('ScorecardPanel (#889)', () => {
     expect(screen.getByText('No signal')).toBeInTheDocument();
   });
 
+  it('shows the change since the comparison point beside the score', () => {
+    render(
+      <ScorecardPanel scorecard={card()} healthScore={87.5} scoreDelta={-4.5} deltaDays={7} />,
+    );
+    expect(screen.getByText(/-4\.5 pts vs 7 days ago/)).toBeInTheDocument();
+  });
+
+  it.each([null, undefined])('shows no change when there is nothing to compare with (%s)', (d) => {
+    render(<ScorecardPanel scorecard={card()} healthScore={87.5} scoreDelta={d} />);
+    expect(screen.queryByText(/days ago/)).not.toBeInTheDocument();
+  });
+
   it('renders no headline when the API sent no asset score', () => {
     render(<ScorecardPanel scorecard={card()} />);
     expect(screen.queryByText('Asset health score')).not.toBeInTheDocument();

@@ -7,6 +7,7 @@ from __future__ import annotations
 import uuid
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import Select, func, select
@@ -75,14 +76,33 @@ AGGREGATABLE_RUN_STATUSES: frozenset[str] = frozenset({"succeeded"})
 
 def latest_runs_per_suite_stmt(
     suite_scope: Select[tuple[uuid.UUID]] | Sequence[uuid.UUID],
+    *,
+    as_of: datetime | None = None,
 ) -> Select[Any]:
-    """`SELECT DISTINCT ON (suite_id) * FROM runs …` — each suite's newest run."""
-    return (
-        select(Run)
-        .where(Run.suite_id.in_(suite_scope))
-        .order_by(Run.suite_id, Run.created_at.desc(), Run.id.desc())
-        .distinct(Run.suite_id)
-    )
+    """`SELECT DISTINCT ON (suite_id) * FROM runs …` — each suite's newest run, or
+    with ``as_of`` the newest one created at or before that moment.
+    """
+    stmt = select(Run).where(Run.suite_id.in_(suite_scope))
+    if as_of is not None:
+        stmt = stmt.where(Run.created_at <= as_of)
+    return stmt.order_by(Run.suite_id, Run.created_at.desc(), Run.id.desc()).distinct(Run.suite_id)
+
+
+def score_as_of(
+    session: Session, suite_ids: Sequence[uuid.UUID], as_of: datetime, weights: Weights
+) -> float | None:
+    """The health score these suites' latest complete runs gave as of ``as_of`` — the
+    same latest-run-per-suite rule as the current score, moved back in time. ``None``
+    when nothing had evaluated by then.
+    """
+    if not suite_ids:
+        return None
+    run_ids = [r.id for r in session.scalars(latest_runs_per_suite_stmt(suite_ids, as_of=as_of))]
+    counts: dict[str, int] = defaultdict(int)
+    for by_status in status_histograms(session, run_ids, complete_runs_only=True).values():
+        for status, n in by_status.items():
+            counts[status] += n
+    return health_score(counts, weights)
 
 
 def status_histograms(

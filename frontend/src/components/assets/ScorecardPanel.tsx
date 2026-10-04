@@ -3,6 +3,7 @@ import { Alert, Card, Empty, Flex, Progress, Space, Tag, Tooltip, Typography } f
 import type { Scorecard } from '../../api/assets';
 import { SEVERITY_SCALE } from '../../theme';
 import { DimensionTag } from '../checks/checkBadges';
+import { DeltaBadge } from '../dashboard/MetricCard';
 import { DIMENSION_LABEL, DQ_DIMENSION_HELP, type DqDimension } from '../checks/expectationCatalog';
 
 /** The asset DQ scorecard (#889) — per-dimension coverage and score. */
@@ -16,10 +17,15 @@ function scoreColour(score: number): string {
 export function ScorecardPanel({
   scorecard,
   healthScore,
+  scoreDelta,
+  deltaDays = 7,
 }: {
   scorecard?: Scorecard | null;
   /** The asset-level score; `undefined` (an older API) renders no headline. */
   healthScore?: number | null;
+  /** Change in points since `deltaDays` ago; null when there is nothing to compare with. */
+  scoreDelta?: number | null;
+  deltaDays?: number;
 }) {
   // Absent (a pre-#889 API) is not the same as empty — render nothing rather
   // than an authoritative-looking "no coverage" we can't actually vouch for.
@@ -47,6 +53,14 @@ export function ScorecardPanel({
             <Typography.Text strong style={{ fontSize: 24 }} data-testid="asset-health-score">
               {healthScore}
             </Typography.Text>
+          )}
+          {healthScore !== null && scoreDelta != null && (
+            <DeltaBadge
+              delta={scoreDelta}
+              unit=" pts"
+              goodWhen="up"
+              versus={`vs ${deltaDays} day${deltaDays === 1 ? '' : 's'} ago`}
+            />
           )}
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             Every check that evaluated in each suite&apos;s latest completed run, including checks

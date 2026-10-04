@@ -161,6 +161,13 @@ export interface AssetDetail {
   summary: AssetSummary;
   /** Absent from a pre-#889 API — the panel simply doesn't render. */
   scorecard?: Scorecard | null;
+  /**
+   * `summary.health_score` as it stood `score_delta_days` ago, and the change in points. Both
+   * null when nothing had evaluated by then — no comparison, not "no change".
+   */
+  previous_health_score?: number | null;
+  health_score_delta?: number | null;
+  score_delta_days?: number;
   /** Only the suites the viewer can see (ADR 0027). */
   suites: ComposingSuite[];
   /**

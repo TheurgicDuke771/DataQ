@@ -28,14 +28,17 @@ interface MetricCardProps {
 const DELTA_GOOD = 'var(--dq-delta-good)';
 const DELTA_BAD = 'var(--dq-delta-bad)';
 
-function DeltaBadge({
+export function DeltaBadge({
   delta,
   unit,
   goodWhen,
+  versus = 'vs prior period',
 }: {
   delta: number;
   unit: string;
   goodWhen: 'up' | 'down';
+  /** What the change is measured against. */
+  versus?: string;
 }) {
   const up = delta > 0;
   const improved = delta === 0 ? null : up === (goodWhen === 'up');
@@ -46,7 +49,7 @@ function DeltaBadge({
       type={improved === null ? 'secondary' : undefined}
     >
       {up ? <RiseOutlined /> : delta < 0 ? <FallOutlined /> : null}{' '}
-      {`${up ? '+' : ''}${delta}${unit} vs prior period`}
+      {`${up ? '+' : ''}${delta}${unit} ${versus}`}
     </Typography.Text>
   );
 }

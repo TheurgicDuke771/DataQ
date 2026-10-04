@@ -221,6 +221,13 @@ class AssetDetailRead(ApiModel):
     summary: AssetSummaryRead
     suites: list[ComposingSuiteRead]
     scorecard: ScorecardRead | None = None
+    # `summary.health_score` as it stood `score_delta_days` ago: the same score, over each
+    # suite's latest complete run created by then. `health_score_delta` is the change in
+    # points; both are null when nothing had evaluated by then (or nothing has now), which
+    # is "no comparison", not "no change".
+    previous_health_score: float | None = None
+    health_score_delta: float | None = None
+    score_delta_days: int = 7
     restricted_suite_count: int = 0
     upstream: list[LineageNodeRead]
     downstream: list[LineageNodeRead]
@@ -368,11 +375,19 @@ def get_asset(
     asset_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    score_delta_days: Annotated[
+        int,
+        Query(ge=1, le=90, description="How far back `previous_health_score` looks, in days."),
+    ] = 7,
 ) -> svc.AssetDetail:
     # Opens for every member (ADR 0037) — only a truly unknown id 404s. The caller
     # shapes the composing-suite LIST only (their ADR 0027 grants; admins see all).
     return svc.get_visible_asset(
-        db, asset_id, user_id=current_user.id, include_all=is_workspace_admin(current_user)
+        db,
+        asset_id,
+        user_id=current_user.id,
+        include_all=is_workspace_admin(current_user),
+        score_delta_days=score_delta_days,
     )
 
 

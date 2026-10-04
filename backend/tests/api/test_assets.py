@@ -344,6 +344,20 @@ def test_list_carries_the_health_score_and_sorts_by_it(
     assert detail["summary"]["health_score"] == 50.0
 
 
+def test_detail_carries_the_score_delta_and_bounds_its_look_back(
+    client: TestClient, world: dict[str, Any]
+) -> None:
+    _as(world["owner"])
+    detail = client.get(f"/api/v1/assets/{world['asset_x']}", params={"score_delta_days": 30})
+    out_of_range = client.get(f"/api/v1/assets/{world['asset_x']}", params={"score_delta_days": 0})
+
+    body = detail.json()
+    assert body["score_delta_days"] == 30
+    # Nothing had run 30 days ago, so there is no comparison.
+    assert (body["previous_health_score"], body["health_score_delta"]) == (None, None)
+    assert out_of_range.status_code == 422
+
+
 def test_list_rejects_an_unknown_sort(client: TestClient, world: dict[str, Any]) -> None:
     _as(world["owner"])
     resp = client.get("/api/v1/assets", params={"sort": "severity"})
