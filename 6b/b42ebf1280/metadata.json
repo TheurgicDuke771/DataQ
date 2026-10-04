@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "6bb42ebf1280",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1660-coverage-metrics",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/dashboard.py",
+    "backend/app/services/coverage_service.py",
+    "backend/tests/api/test_dashboard.py",
+    "backend/tests/services/test_coverage_figures.py",
+    "docs/site/guides/datasources-checks.md",
+    "docs/site/reference/changelog.md",
+    "docs/site/reference/openapi.json",
+    "frontend/src/api/dashboard.ts",
+    "frontend/src/components/dashboard/CoveragePanel.tsx",
+    "frontend/src/pages/Dashboard.tsx",
+    "frontend/tests/components/CoveragePanel.test.tsx",
+    "frontend/tests/pages/Dashboard.test.tsx",
+    "packages/dataq-client/src/dataq_client/generated/api/dashboard/get_coverage_figures.py",
+    "packages/dataq-client/src/dataq_client/generated/models/__init__.py",
+    "packages/dataq-client/src/dataq_client/generated/models/coverage_figures_read.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/6b/b42ebf1280/0/metadata.json",
+      "transcript": "/6b/b42ebf1280/0/full.jsonl",
+      "compact_transcript": "/6b/b42ebf1280/0/transcript.jsonl",
+      "content_hash": "/6b/b42ebf1280/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 18,
+    "cache_creation_tokens": 18166,
+    "cache_read_tokens": 7958757,
+    "output_tokens": 14413,
+    "api_call_count": 9
+  }
+}
