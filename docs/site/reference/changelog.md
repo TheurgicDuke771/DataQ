@@ -79,6 +79,10 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Fixed
 
+- **"Triggered by" names who started a run.** The Dashboard, Results, the run page and the
+  printed report showed an internal identifier such as `manual:d7c88410-…`. They now show
+  the person's name or email (`Manual — Olivia Admin`), `Schedule`, or the orchestration
+  provider. In the API, `triggered_by` is unchanged and runs gain `triggered_by_label`.
 - **The Custom SQL card opens the plain SQL editor.** Both cards in the Custom SQL step used
   to open a form with the **Generate from a description** box. It now appears only when you
   start from the **Generate from a description** card.

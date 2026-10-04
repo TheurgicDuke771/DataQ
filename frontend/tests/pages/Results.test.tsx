@@ -191,6 +191,19 @@ describe('Results page', () => {
     expect(screen.getByText('failed')).toBeInTheDocument();
   });
 
+  it('shows who triggered the run instead of the stored marker', async () => {
+    mockListRuns.mockResolvedValue(
+      runsPage([{ ...succeededRun, triggered_by_label: 'Manual — Olivia Admin' }]),
+    );
+    mockListSuites.mockResolvedValue([ordersSuite]);
+    mockListConnections.mockResolvedValue([snowflakeConn]);
+    mockListPipelineRuns.mockResolvedValue(pipelineRunsPage([]));
+    renderResults();
+
+    expect(await screen.findByText('Manual — Olivia Admin')).toBeInTheDocument();
+    expect(screen.queryByText('manual:u1')).not.toBeInTheDocument();
+  });
+
   it('navigates to the routed run-detail page on row click', async () => {
     mockListRuns.mockResolvedValue(runsPage([succeededRun]));
     mockListSuites.mockResolvedValue([ordersSuite]);

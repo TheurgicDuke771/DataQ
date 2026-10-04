@@ -103,6 +103,7 @@ def test_trigger_creates_queued_run_and_dispatches(
     assert body["status"] == "queued"
     assert body["suite_id"] == str(suite.id)
     assert body["triggered_by"] == f"manual:{dev.id}"
+    assert body["triggered_by_label"] == "Manual — dev@ex"
     run = db_session.get(Run, uuid.UUID(body["id"]))
     assert run is not None and run.status == "queued"
     assert stub_run_dispatch == [body["id"]]
@@ -220,6 +221,27 @@ def test_list_runs_scoped_to_accessible_suites_newest_first(
     ids = [r["id"] for r in body]
     assert str(theirs.id) not in {r["suite_id"] for r in body}
     assert ids[:2] == [str(r2.id), str(r1.id)]  # newest (r2) first
+
+
+def test_runs_carry_a_trigger_label_on_list_and_detail(client: TestClient, db_session: Any) -> None:
+    dev = _user(db_session, "dev@ex")
+    dev.display_name = "Dev Eloper"
+    suite = _suite(db_session, dev, target={"table": "T"})
+    manual = _run(db_session, suite, status="succeeded")
+    manual.triggered_by = f"manual:{dev.id}"
+    legacy = _run(db_session, suite, status="succeeded")
+    legacy.triggered_by = "seed:run:failed"
+    db_session.commit()
+
+    _as(dev)
+    listed = {r["id"]: r for r in client.get("/api/v1/runs").json()}
+    detail = client.get(f"/api/v1/runs/{manual.id}").json()
+
+    assert listed[str(manual.id)]["triggered_by_label"] == "Manual — Dev Eloper"
+    assert listed[str(manual.id)]["triggered_by"] == f"manual:{dev.id}"
+    # An unknown marker shape gets no label, so the client shows it as stored.
+    assert listed[str(legacy.id)]["triggered_by_label"] is None
+    assert detail["triggered_by_label"] == "Manual — Dev Eloper"
 
 
 def test_list_runs_workspace_admin_sees_all(
