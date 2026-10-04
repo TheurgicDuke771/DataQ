@@ -1,0 +1,51 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "3963996898c4",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1688-suite-document-yaml",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/suites.py",
+    "backend/app/services/suite_document_yaml.py",
+    "backend/app/services/suite_io_service.py",
+    "backend/requirements-typecheck.txt",
+    "backend/requirements.txt",
+    "backend/tests/api/test_suites.py",
+    "backend/tests/docs/test_suite_document_page.py",
+    "backend/tests/services/test_suite_document_yaml.py",
+    "backend/tests/support/audit_coverage.py",
+    "docs/site/guides/best-practices.md",
+    "docs/site/reference/api-compatibility.md",
+    "docs/site/reference/changelog.md",
+    "docs/site/reference/index.md",
+    "docs/site/reference/openapi.json",
+    "docs/site/reference/suite-document.md",
+    "mkdocs.yml",
+    "packages/dataq-client/src/dataq_client/generated/api/suites/export_suite.py",
+    "packages/dataq-client/src/dataq_client/generated/api/suites/import_suite.py",
+    "packages/dataq-client/src/dataq_client/generated/api/suites/validate_suite_document.py",
+    "packages/dataq-client/src/dataq_client/generated/models/__init__.py",
+    "packages/dataq-client/src/dataq_client/generated/models/document_problem_read.py",
+    "packages/dataq-client/src/dataq_client/generated/models/export_suite_format.py",
+    "packages/dataq-client/src/dataq_client/generated/models/suite_import_request.py",
+    "packages/dataq-client/src/dataq_client/generated/models/suite_validate_request.py",
+    "packages/dataq-client/src/dataq_client/generated/models/suite_validate_request_document_type_0.py",
+    "packages/dataq-client/src/dataq_client/generated/models/suite_validation_read.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/39/63996898c4/0/metadata.json",
+      "transcript": "/39/63996898c4/0/full.jsonl",
+      "compact_transcript": "/39/63996898c4/0/transcript.jsonl",
+      "content_hash": "/39/63996898c4/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 70,
+    "cache_creation_tokens": 67757,
+    "cache_read_tokens": 12924970,
+    "output_tokens": 40318,
+    "api_call_count": 35
+  }
+}
