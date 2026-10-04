@@ -653,7 +653,8 @@ mechanism and points you at the live endpoint for the values.
 
 **DataQ sends nothing to its authors.** There is no usage telemetry, no licence check and
 no update check: a deployment makes network calls only to the services its operator
-configures. Every one of those is listed here.
+configures — its datasources, identity provider, orchestrators and the destinations below.
+The list below is the ones that can carry data out.
 
 Enumerated at `GET /api/v1/admin/deployment` — enumerated rather than derived, so
 a vector that is switched **off** still appears and an auditor can see it was

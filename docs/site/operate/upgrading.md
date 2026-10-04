@@ -10,8 +10,8 @@ How to move a running DataQ to a newer release without losing data.
   marked **⚠️ breaking** needs action from you; read every such entry between the version you
   run and the one you are moving to.
 - Database migrations only add to the schema in the release that needs them. A column or
-  table is removed in a later release than the code that stopped using it. This is what makes
-  the roll-back below possible.
+  table is removed in a later release than the code that stopped using it, so the previous
+  release keeps working while a new one rolls out.
 
 ## Before you upgrade
 
@@ -58,11 +58,19 @@ Infrastructure changes are separate: if the changelog says the OpenTofu stack ch
 
 ## Rolling back
 
-Re-pin the previous image tag and start the stack (or run the Deploy workflow on the
-previous tag). The previous release runs against the newer schema because migrations in a
-release only add to it. Do **not** run a schema downgrade as part of a roll-back.
+Roll back by **restoring the backup you took** and starting the previous release on it:
 
-If a release went wrong in a way a re-pin does not fix, restore the backup you took.
+1. Stop the stack (or scale the API and the worker to zero).
+2. Restore the data directory, or the database snapshot, from before the upgrade.
+3. Re-pin the previous image tag, with the compose file from that release, and start.
+
+Re-pinning the previous tag **without** restoring does not work once the upgrade has applied a
+migration: the older release's migration step does not know the newer schema revision and
+stops, so the API and the worker never start. Anything written after the upgrade is lost by a
+restore, so decide quickly.
+
+If the changelog shows the release you upgraded to added no database migration, re-pinning
+the previous tag alone is enough.
 
 ## Skipping versions
 
