@@ -1,0 +1,4783 @@
+<!DOCTYPE html><html lang="en" class="no-js"><head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="DataQ — a single-tenant data-quality monitoring platform built on Great Expectations. User-friendly guides + developer references.">
+      
+      
+      
+        <link rel="canonical" href="https://theurgicduke771.github.io/DataQ/docs/v1.2.0/guides/datasources-checks/">
+      
+      
+        <link rel="prev" href="../features/">
+      
+      
+        <link rel="next" href="../scheduling/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Datasources &amp; checks - DataQ</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  <link href="../../assets/stylesheets/glightbox.min.css" rel="stylesheet"><script src="../../assets/javascripts/glightbox.min.js"></script><style id="glightbox-style">
+            html.glightbox-open { overflow: initial; height: 100%; }
+            .gslide-title { margin-top: 0px; user-select: text; }
+            .gslide-desc { color: #666; user-select: text; }
+            .gslide-image img { background: white; }
+            .gscrollbar-fixer { padding-right: 15px; }
+            .gdesc-inner { font-size: 0.75rem; }
+            body[data-md-color-scheme="slate"] .gdesc-inner { background: var(--md-default-bg-color); }
+            body[data-md-color-scheme="slate"] .gslide-title { color: var(--md-default-fg-color); }
+            body[data-md-color-scheme="slate"] .gslide-desc { color: var(--md-default-fg-color); }
+        </style></head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#datasources-checks" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden="">
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="DataQ" class="md-header__button md-logo" aria-label="DataQ" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"></path></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"></path></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            DataQ
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Datasources &amp; checks
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo" aria-label="Switch to dark mode" type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden="">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"></path></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo" aria-label="Switch to light mode" type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden="">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"></path></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required="">
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"></path></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard="" data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"></path></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix="">
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/TheurgicDuke771/DataQ" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"></path></svg>
+  </div>
+  <div class="md-source__repository">
+    TheurgicDuke771/DataQ
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../get-started/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Get started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../architecture/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../security/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Security &amp; compliance
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../operate/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Operate
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="DataQ" class="md-nav__button md-logo" aria-label="DataQ" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"></path></svg>
+
+    </a>
+    DataQ
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/TheurgicDuke771/DataQ" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"></path></svg>
+  </div>
+  <div class="md-source__repository">
+    TheurgicDuke771/DataQ
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix="">
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../get-started/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Get started
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Get started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../get-started/install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../get-started/first-suite/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Your first suite
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../get-started/first-alert/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Your first alert
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../get-started/connect-pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Run it automatically
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../get-started/ask-assistant/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Ask an AI assistant
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../get-started/concepts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked="">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Features overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Datasources &amp; checks
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Datasources &amp; checks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+      
+        <li class="md-nav__item">
+  <a href="#supported-datasources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Supported datasources
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#add-a-connection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Add a connection
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Add a connection">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-connection-is-tested-before-it-is-saved" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A connection is tested before it is saved
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#onelake-fabric-lakehouse-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OneLake (Fabric lakehouse files)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#iceberg-on-an-s3-compatible-store" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Iceberg on an S3-compatible store
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#moving-a-connection-to-a-new-host" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Moving a connection to a new host
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#credential-health" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Credential health
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#s3-compatible-object-stores" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        S3-compatible object stores
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#postgresql" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PostgreSQL
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mysql-mariadb" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MySQL / MariaDB
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#trino" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trino
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#amazon-athena" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Amazon Athena
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#amazon-redshift" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Amazon Redshift
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sql-server-azure-sql-fabric-t-sql" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SQL Server / Azure SQL / Fabric (T-SQL)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#identifier-casing-snowflake-unity-catalog-postgresql" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Identifier casing (Snowflake / Unity Catalog / PostgreSQL)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#seeing-coverage-the-asset-scorecard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Seeing coverage: the asset scorecard
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#automatic-coverage-watch-every-table-without-writing-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Automatic coverage: watch every table without writing checks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#flat-files-formats-and-csv-delimiters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Flat files: formats and CSV delimiters
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Flat files: formats and CSV delimiters">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#json-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JSON files
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#very-large-targets-sampling-and-the-scan-cap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Very large targets: sampling and the scan cap
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#author-a-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Author a check
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Author a check">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#browsing-for-a-run-target" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Browsing for a run target
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gx-expectation-all-datasources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GX expectation (all datasources)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#which-expectation-types-are-available" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Which expectation types are available
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#custom-sql-snowflake-unity-catalog-postgresql-mysql-trino-sql-server-athena-redshift-adr-0019" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server / Athena / Redshift — ADR 0019)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#snowflake-dmf-adr-0036" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Snowflake DMF (ADR 0036)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#databricks-dqx-adr-0036" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Databricks DQX (ADR 0036)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#freshness-monitor-all-datasources-adr-00120030" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Freshness monitor (all datasources — ADR 0012/0030)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#volume-monitor-all-datasources-adr-00120030" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Volume monitor (all datasources — ADR 0012/0030)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#aggregate-monitor-all-datasources-adr-0012" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Aggregate monitor (all datasources — ADR 0012)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#schema-drift-monitor-all-datasources-adr-0012" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Schema-drift monitor (all datasources — ADR 0012)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#anomaly-monitor-snowflake-unity-catalog-the-generic-sql-engines-adr-0012" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Anomaly monitor (Snowflake / Unity Catalog / the generic SQL engines — ADR 0012)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#comparison-check-all-datasources-adr-0015" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Comparison check (all datasources — ADR 0015)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dq-dimension-adr-0038" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DQ dimension (ADR 0038)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#type-names-for-expect_column_values_to_be_of_type" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Type names for expect_column_values_to_be_of_type
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#run-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Run it
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../scheduling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scheduling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../orchestration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Orchestration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../notifications/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Notifications &amp; alerting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mcp-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI assistants (MCP)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ai-features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI features (LLM)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api-keys/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API keys (PATs)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python-client/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python client &amp; CLI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../admin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Admin control centre
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../recommended-usage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recommended usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../best-practices/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Best practices
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/check-types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Check types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/feature-matrix/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Feature matrix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/rest-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    REST API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/suite-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Suite document
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/api-compatibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API compatibility
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/mcp-tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/glossary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Glossary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../architecture/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Decision records (ADRs)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/mcp-honesty/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP tool design (honesty)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/evidence-card/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Incident evidence card
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/perf-baseline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Performance baseline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../security/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security &amp; compliance
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6" id="__nav_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Security &amp; compliance
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security &amp; data handling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_3">
+        
+          
+          <label class="md-nav__link" for="__nav_6_3" id="__nav_6_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compliance
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Compliance
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/compliance/sub-processors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sub-processor disclosure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/compliance/dpia-input-sheet/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DPIA input sheet
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/compliance/data-subject-rights-runbook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data-subject-rights runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/compliance/breach-notification-runbook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Breach-notification runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/compliance/dpa-baa-templates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DPA / BAA templates (counsel-gated)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../operate/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operate
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_7" id="__nav_7_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Operate
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/deployment-parity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment parity (Azure · AWS · Local)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/upgrading/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrading
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/observability/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Observability
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/runbook-faq/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runbook &amp; FAQ
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+      
+        <li class="md-nav__item">
+  <a href="#supported-datasources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Supported datasources
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#add-a-connection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Add a connection
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Add a connection">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-connection-is-tested-before-it-is-saved" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A connection is tested before it is saved
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#onelake-fabric-lakehouse-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OneLake (Fabric lakehouse files)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#iceberg-on-an-s3-compatible-store" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Iceberg on an S3-compatible store
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#moving-a-connection-to-a-new-host" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Moving a connection to a new host
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#credential-health" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Credential health
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#s3-compatible-object-stores" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        S3-compatible object stores
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#postgresql" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PostgreSQL
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mysql-mariadb" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MySQL / MariaDB
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#trino" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trino
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#amazon-athena" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Amazon Athena
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#amazon-redshift" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Amazon Redshift
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sql-server-azure-sql-fabric-t-sql" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SQL Server / Azure SQL / Fabric (T-SQL)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#identifier-casing-snowflake-unity-catalog-postgresql" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Identifier casing (Snowflake / Unity Catalog / PostgreSQL)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#seeing-coverage-the-asset-scorecard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Seeing coverage: the asset scorecard
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#automatic-coverage-watch-every-table-without-writing-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Automatic coverage: watch every table without writing checks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#flat-files-formats-and-csv-delimiters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Flat files: formats and CSV delimiters
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Flat files: formats and CSV delimiters">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#json-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JSON files
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#very-large-targets-sampling-and-the-scan-cap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Very large targets: sampling and the scan cap
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#author-a-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Author a check
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Author a check">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#browsing-for-a-run-target" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Browsing for a run target
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gx-expectation-all-datasources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GX expectation (all datasources)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#which-expectation-types-are-available" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Which expectation types are available
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#custom-sql-snowflake-unity-catalog-postgresql-mysql-trino-sql-server-athena-redshift-adr-0019" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server / Athena / Redshift — ADR 0019)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#snowflake-dmf-adr-0036" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Snowflake DMF (ADR 0036)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#databricks-dqx-adr-0036" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Databricks DQX (ADR 0036)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#freshness-monitor-all-datasources-adr-00120030" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Freshness monitor (all datasources — ADR 0012/0030)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#volume-monitor-all-datasources-adr-00120030" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Volume monitor (all datasources — ADR 0012/0030)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#aggregate-monitor-all-datasources-adr-0012" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Aggregate monitor (all datasources — ADR 0012)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#schema-drift-monitor-all-datasources-adr-0012" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Schema-drift monitor (all datasources — ADR 0012)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#anomaly-monitor-snowflake-unity-catalog-the-generic-sql-engines-adr-0012" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Anomaly monitor (Snowflake / Unity Catalog / the generic SQL engines — ADR 0012)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#comparison-check-all-datasources-adr-0015" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Comparison check (all datasources — ADR 0015)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dq-dimension-adr-0038" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DQ dimension (ADR 0038)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#type-names-for-expect_column_values_to_be_of_type" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Type names for expect_column_values_to_be_of_type
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#run-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Run it
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+  
+    
+    
+    
+    
+    
+    <div class="dq-actions">
+      <a class="dq-action" href="index.md" target="_blank" rel="noopener" title="Open this page as raw Markdown">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20.56 18H3.44C2.65 18 2 17.37 2 16.59V7.41C2 6.63 2.65 6 3.44 6h17.12c.79 0 1.44.63 1.44 1.41v9.18c0 .78-.65 1.41-1.44 1.41M3.44 6.94c-.26 0-.48.21-.48.47v9.19c0 .25.22.46.48.46h17.12c.26 0 .48-.21.48-.46V7.41c0-.26-.22-.47-.48-.47zm1.45 8.25V8.81h1.92l1.92 2.35 1.92-2.35h1.93v6.38h-1.93v-3.66l-1.92 2.35-1.92-2.35v3.66zm12.01 0-2.9-3.1h1.94V8.81h1.92v3.28h1.93z"></path></svg> Markdown
+      </a>
+      <button class="dq-action" type="button" data-dq-copy="" title="Copy this page as Markdown">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 21H8V7h11m0-2H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2m-3-4H4a2 2 0 0 0-2 2v14h2V3h12z"></path></svg> Copy
+      </button>
+      <div class="dq-ask">
+        <button class="dq-action" type="button" data-dq-ask="" aria-haspopup="menu" aria-expanded="false" title="Open this page in your own AI assistant">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17.5 15.5c0 1.11-.89 2-2 2s-2-.89-2-2 .9-2 2-2 2 .9 2 2m-9-2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.89 2-2-.89-2-2-2M23 15v3c0 .55-.45 1-1 1h-1v1c0 1.11-.89 2-2 2H5a2 2 0 0 1-2-2v-1H2c-.55 0-1-.45-1-1v-3c0-.55.45-1 1-1h1c0-3.87 3.13-7 7-7h1V5.73c-.6-.34-1-.99-1-1.73 0-1.1.9-2 2-2s2 .9 2 2c0 .74-.4 1.39-1 1.73V7h1c3.87 0 7 3.13 7 7h1c.55 0 1 .45 1 1m-2 1h-2v-2c0-2.76-2.24-5-5-5h-4c-2.76 0-5 2.24-5 5v2H3v1h2v3h14v-3h2z"></path></svg> Ask AI <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7.41 8.58 12 13.17l4.59-4.59L18 10l-6 6-6-6z"></path></svg>
+        </button>
+        <div class="dq-ask__menu" role="menu" hidden="">
+          <a href="https://claude.ai/new?q=Read%20the%20DataQ%20documentation%20page%20%22Datasources%20%26%20checks%22%20at%20https%3A//theurgicduke771.github.io/DataQ/docs/v1.2.0/guides/datasources-checks/%20%28a%20plain%20Markdown%20copy%20is%20at%20https%3A//theurgicduke771.github.io/DataQ/docs/v1.2.0/guides/datasources-checks/index.md%29%20and%20help%20me%20with%20questions%20about%20it." target="_blank" rel="noopener">Claude</a>
+          <a href="https://chatgpt.com/?q=Read%20the%20DataQ%20documentation%20page%20%22Datasources%20%26%20checks%22%20at%20https%3A//theurgicduke771.github.io/DataQ/docs/v1.2.0/guides/datasources-checks/%20and%20help%20me%20with%20questions%20about%20it." target="_blank" rel="noopener">ChatGPT</a>
+          <a href="https://github.com/copilot?prompt=Read%20the%20DataQ%20documentation%20page%20%22Datasources%20%26%20checks%22%20at%20https%3A//theurgicduke771.github.io/DataQ/docs/v1.2.0/guides/datasources-checks/%20%28a%20plain%20Markdown%20copy%20is%20at%20https%3A//theurgicduke771.github.io/DataQ/docs/v1.2.0/guides/datasources-checks/index.md%29%20and%20help%20me%20with%20questions%20about%20it." target="_blank" rel="noopener">GitHub Copilot</a>
+          <a href="../../guides/mcp-setup/" title="Cursor, Claude Desktop and others read these pages over MCP">Connect your assistant (MCP)</a>
+        </div>
+      </div>
+    </div>
+  
+  
+                  
+
+
+  
+  
+
+
+<h1 id="datasources-checks">Datasources &amp; checks<a class="headerlink" href="#datasources-checks" title="Permanent link">¶</a></h1>
+<h2 id="supported-datasources">Supported datasources<a class="headerlink" href="#supported-datasources" title="Permanent link">¶</a></h2>
+<table>
+<thead>
+<tr>
+<th>Datasource</th>
+<th>Connection</th>
+<th>Check authoring</th>
+<th>Execution</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Snowflake (DEV/QA/UAT)</td>
+<td>account + user + key/PAT</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>ADLS Gen2 (flat files) — and ADLS-compatible endpoints such as <a href="#onelake-fabric-lakehouse-files">Fabric OneLake</a></td>
+<td>account URL + container, SAS <strong>or</strong> Entra service principal</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>AWS S3 <strong>and S3-compatible</strong> (flat files)</td>
+<td>bucket + region, access key (+ optional endpoint)</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Unity Catalog (Databricks)</td>
+<td>workspace URL + warehouse + PAT</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Apache Iceberg</td>
+<td>catalog URI + catalog type (REST/SQL/Glue/Hive) + optional storage credential</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>PostgreSQL (any server — self-hosted or a managed service)</td>
+<td>host + port + database + user, password; TLS mode</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>MySQL / MariaDB (any server — self-hosted or a managed service)</td>
+<td>host + port + database + user, password; TLS mode</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Trino (any cluster, incl. Starburst — and every catalog it federates)</td>
+<td>host + port + catalog + user; password, JWT or none; TLS + optional private CA</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>SQL Server / T-SQL (SQL Server, Azure SQL, Synapse; Fabric SQL via the ODBC lane)</td>
+<td>host + port + database; SQL login (user, password) or Entra service principal (tenant + client ID, client secret)</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Amazon Athena (serverless SQL over S3 through the Glue catalog)</td>
+<td>region + IAM access key (key ID, secret access key); optional workgroup, query-results location, data catalog</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Amazon Redshift (provisioned clusters and Serverless workgroups)</td>
+<td>endpoint + port + database + user, password; TLS mode</td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+</tbody>
+</table>
+<h2 id="add-a-connection">Add a connection<a class="headerlink" href="#add-a-connection" title="Permanent link">¶</a></h2>
+<p>Adding, editing, deleting or re-credentialing a connection requires the <strong>Admin</strong> workspace
+role (ADR <a href="../../adr/0033-workspace-roles-rbac/">0033</a>) — connections are shared infrastructure
+holding credentials, and every suite in the workspace runs on them. Members and Viewers can
+see and reference them, and Members can run the saved-connection <strong>Test</strong>.</p>
+<p>In the UI, <strong>Connections → Add connection</strong>, pick the datasource, fill the type-specific
+fields, and <strong>Test</strong> it (a live reachability probe). Credentials are stored in the secret
+store (Azure Key Vault / AWS Secrets Manager / OpenBao, depending on deployment), never in the database.</p>
+<h3 id="a-connection-is-tested-before-it-is-saved">A connection is tested before it is saved<a class="headerlink" href="#a-connection-is-tested-before-it-is-saved" title="Permanent link">¶</a></h3>
+<p><strong>Create</strong> runs the same live test as the <strong>Test</strong> button first, and saves nothing if it fails:
+the form shows the reason and the connection is not created. The same applies when you edit a
+connection's settings or credential (a rename alone is not tested) and when you
+<strong>re-authenticate</strong> — a new credential that does not work is refused, and the stored one stays
+in place.</p>
+<p>If the test fails for a reason that does not mean the connection is wrong, an Admin can choose
+<strong>Create without testing</strong> (or <strong>Save without testing</strong> / <strong>Rotate without testing</strong>). Use it
+when:</p>
+<ul>
+<li>the store is not reachable from the DataQ API right now, but will be from the workers that
+  run the checks;</li>
+<li>an orchestrator (ADF, Airflow) is down while you register it;</li>
+<li>a <strong>new dbt project</strong> has not published a <code>run_results.json</code> yet — its test fails until the
+  first build does (see <a href="../orchestration/">Orchestration</a>).</li>
+</ul>
+<p>A connection saved this way is not verified: its credential health reads <em>Unknown</em>, and the
+audit log records that its test was skipped. Test it once the store is reachable. Over the API,
+send <code>skip_test: true</code> with the create, update or re-auth request; see the
+<a href="../../reference/rest-api/#connections">REST API</a>.</p>
+<p>Snowflake supports two auth modes: <strong>password</strong> and <strong>key pair (RSA)</strong>. For key pair,
+paste the PEM private key; if the key is passphrase-protected (PKCS#8), fill the optional
+<strong>Key passphrase</strong> field — both parts are stored together as one secret and rotate
+atomically via <strong>Re-auth</strong>. Leave the passphrase blank for an unencrypted key.
+Key-pair connections also require <strong>Role</strong> (the GX key-pair form mandates one for suite
+runs, so it is validated when the connection is saved).</p>
+<p>ADLS Gen2 supports two auth modes: a <strong>SAS token</strong> (the default, and what every connection
+created before this option existed uses) and an <strong>Entra ID service principal</strong> — the
+directory (<strong>Tenant ID</strong>) and application (<strong>Client ID</strong>) IDs, plus the app's <strong>client secret</strong>
+as the credential. A service principal needs a <em>data</em> role on the container (e.g. <em>Storage
+Blob Data Reader</em>); <strong>Test</strong> lists one entry to prove it, because the container-properties call
+alone also succeeds for a principal that holds only the control-plane <em>Contributor</em> role and
+would then fail every read. DataQ cannot read a client secret's expiry — it lives in Entra ID —
+so the connection card says <strong>expiry not visible</strong> instead of counting down; track it where the
+secret was created and <strong>Re-auth</strong> before it lapses. A wrong or expired client secret is
+recorded as a rejected credential; a wrong tenant or client ID, or a missing data role, is
+reported as a configuration or permission problem instead.</p>
+<h3 id="onelake-fabric-lakehouse-files">OneLake (Fabric lakehouse files)<a class="headerlink" href="#onelake-fabric-lakehouse-files" title="Permanent link">¶</a></h3>
+<p>Microsoft Fabric OneLake serves the same Blob API, so an <strong>ADLS Gen2</strong> connection reads a
+lakehouse's <code>Files/</code> area — CSV, Parquet and JSON, with every flat-file check, freshness (including
+arrival-time), volume, the profiler, browsing and batch targets. There is no separate
+connection type:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Account URL</td>
+<td><code>https://onelake.blob.fabric.microsoft.com</code></td>
+</tr>
+<tr>
+<td>Container</td>
+<td>the Fabric <strong>workspace</strong> name or ID</td>
+</tr>
+<tr>
+<td>Auth type</td>
+<td><strong>Service principal</strong> — OneLake does not accept a stored SAS (its SAS is user-delegated and lasts at most an hour)</td>
+</tr>
+<tr>
+<td>Run target path</td>
+<td><code>&lt;lakehouse&gt;.Lakehouse/Files/&lt;folder&gt;/&lt;file&gt;</code>, e.g. <code>sales.Lakehouse/Files/orders/orders_2026-09-27.csv</code></td>
+</tr>
+</tbody>
+</table>
+<p>Prerequisites, in Fabric: the tenant setting <em>Service principals can use Fabric APIs</em> must be
+enabled, and the service principal must be a member of the workspace (Viewer is enough to
+read). OneLake reports a workspace the principal cannot see as <strong>not found</strong>, so a
+"table/path does not exist" failure on a correct workspace name usually means a missing
+workspace role. A batch target's prefix must reach inside an item
+(<code>&lt;lakehouse&gt;.Lakehouse/Files/...</code>): OneLake refuses a flat listing of the workspace root,
+though <strong>Browse</strong> starts there fine. Assets from OneLake are named
+<code>abfss://&lt;workspace&gt;@onelake.dfs.fabric.microsoft.com/...</code>. Only public-cloud Entra ID is
+supported for the token (<code>login.microsoftonline.com</code>).</p>
+<h3 id="iceberg-on-an-s3-compatible-store">Iceberg on an S3-compatible store<a class="headerlink" href="#iceberg-on-an-s3-compatible-store" title="Permanent link">¶</a></h3>
+<p>For MinIO, R2, Ceph and similar, set the storage properties on the connection:
+<code>s3.endpoint</code> (e.g. <code>http://minio:9000</code>), <code>s3.access-key-id</code> and <code>s3.path-style-access=true</code>,
+with the secret key as the stored credential (<code>secret_property: s3.secret-access-key</code>). If
+reads fail with <code>ACCESS_DENIED</code> while the store accepts the key elsewhere, add <code>s3.region</code>
+(any region the store accepts, e.g. <code>us-east-1</code>): pyarrow's S3 client signs with a region,
+and some stores check it.</p>
+<p><strong>Test connection</strong> lists the catalog's namespaces and then loads the first table it finds,
+which reads that table's metadata file from the warehouse with the storage credential. A wrong
+storage credential therefore fails the test. On a catalog with no tables yet, only the catalog
+itself can be checked.</p>
+<h3 id="moving-a-connection-to-a-new-host">Moving a connection to a new host<a class="headerlink" href="#moving-a-connection-to-a-new-host" title="Permanent link">¶</a></h3>
+<p>Editing a field that decides <em>where</em> the credential is sent — Snowflake <code>account</code>, ADLS
+<code>account_url</code> / <code>auth_type</code> / <code>tenant_id</code> / <code>client_id</code>, S3/dbt <code>endpoint_url</code>, Unity Catalog <code>workspace_url</code>, Iceberg <code>catalog_uri</code> /
+<code>warehouse</code> / <code>properties</code> / <code>secret_property</code>, PostgreSQL / MySQL <code>host</code> / <code>port</code>, Trino
+<code>host</code> / <code>port</code> / <code>sslmode</code> / <code>ca_bundle</code> / <code>auth_type</code>, SQL Server <code>host</code> / <code>port</code> / <code>auth_type</code> /
+<code>tenant_id</code> / <code>client_id</code> / <code>ca_bundle</code> / <code>driver</code>, Airflow
+<code>base_url</code>, dbt <code>artifacts_uri</code> —
+requires re-entering
+that credential in the same save. The edit form asks for it as soon as you change one of
+those fields; through the API the request is rejected with <code>422 credential_redirect</code> until
+you include it.</p>
+<p>This is deliberate. A stored credential is never forwarded to a destination the caller
+changed, so an Admin who may <em>rotate</em> a credential still cannot <em>read</em> one by pointing the
+connection at a host they control and pressing Test. Moving a connection is fully supported —
+doing it with a credential you don't know is not.</p>
+<h3 id="credential-health">Credential health<a class="headerlink" href="#credential-health" title="Permanent link">¶</a></h3>
+<p>A datasource connection reports whether its stored credential is still being <strong>accepted</strong>,
+so an expired or revoked one is visible without anyone pressing Test. It has three states:</p>
+<table>
+<thead>
+<tr>
+<th>State</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Unknown</strong></td>
+<td>The credential has not been used yet. Nothing has run, dry-run, profiled or tested against this connection, so DataQ has observed nothing about it.</td>
+</tr>
+<tr>
+<td><strong>Healthy</strong></td>
+<td>The datasource accepted the credential the last time DataQ used it.</td>
+</tr>
+<tr>
+<td><strong>Failing</strong></td>
+<td>The datasource <strong>rejected</strong> the credential. The connection also shows how many consecutive rejections it has had, and a classified reason — never raw driver text, which can carry a token or DSN fragment.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Unknown is not a clean bill of health</strong>, and it is never silently upgraded to healthy: a
+connection nothing uses stays unknown indefinitely. That is deliberate — the signal is
+derived from work DataQ already does rather than from a periodic probe, so it costs no
+warehouse credits and cannot report on a connection nobody has exercised.</p>
+<p>The card also shows a <strong>DQ score</strong> when the connection has one: 0–100 over every check
+that evaluated in the latest run of each suite on that connection, if that run completed, counting
+suites you cannot open. It says what DataQ found in the data, where the health badges say
+whether DataQ could reach it. A connection where nothing has evaluated shows no score.</p>
+<p>Only credential <strong>rejections</strong> move this signal. A missing SELECT grant, an unreachable
+host and a bad table name all leave it untouched, because none of them says the credential
+is dead — those surface as the run's own failure reason instead.</p>
+<p>Re-authenticating a connection (which tests the new credential first), or a passing <strong>Test
+connection</strong>, clears the signal immediately — a credential rotated in <em>without</em> testing resets
+it to <strong>Unknown</strong> instead; you do not have to wait for the next scheduled run to confirm a rotation
+worked. Workspace admins see every datasource connection's credential health together on
+the admin health view.</p>
+<p>Orchestration providers (ADF, Airflow, dbt) do not carry this signal — their equivalent is
+polling health, which is reported separately.</p>
+<h3 id="s3-compatible-object-stores">S3-compatible object stores<a class="headerlink" href="#s3-compatible-object-stores" title="Permanent link">¶</a></h3>
+<p>The <strong>S3</strong> connection is not AWS-only. Leave <strong>Endpoint URL</strong> blank and it addresses AWS
+exactly as before; set it to a store that speaks the S3 API — MinIO, Ceph/RadosGW,
+Cloudflare R2, Wasabi, Backblaze B2, SeaweedFS, or an on-prem gateway — and the same
+connection, checks and monitors work unchanged.</p>
+<ul>
+<li><strong>Endpoint URL</strong> — the full base URL including scheme, e.g.
+  <code>https://minio.example.com:9000</code>. A URL without <code>http://</code>/<code>https://</code> is rejected at
+  save time rather than failing later as an opaque connection error.</li>
+<li><strong>Addressing style</strong> — <code>auto</code> (default), <code>path</code> or <code>virtual</code>. <code>auto</code> uses <strong>path</strong>
+  addressing whenever an endpoint is set, which is what MinIO and SeaweedFS require;
+  with no endpoint it leaves AWS's default untouched. Override it only if your store
+  needs the other form (R2 and Wasabi accept virtual-host addressing).</li>
+<li><strong>Region</strong> is still required — S3-compatible stores generally ignore it, but the AWS
+  SDK requires a value. <code>us-east-1</code> is the conventional filler.</li>
+<li>The endpoint must <strong>not</strong> embed a credential (<code>https://key:secret@host</code>). Connection
+  <code>config</code> is stored and returned in plaintext, so a credential there would live outside
+  the secret store; it is rejected at save time. Put the key in <strong>Access key ID</strong> and the
+  secret in the credential field.</li>
+<li>An <code>http://</code> endpoint is accepted (in-cluster MinIO usually has no TLS), but object
+  bytes and request signatures then travel <strong>cleartext</strong> — prefer <code>https://</code> for anything
+  crossing a network you don't control.</li>
+</ul>
+<p><strong>Asset identity.</strong> With no <strong>Endpoint URL</strong> (AWS), the asset namespace is exactly
+<code>s3://{bucket}</code> — unchanged, since AWS bucket names are globally unique and this form
+is already persisted on every S3 asset in production. With an <strong>Endpoint URL</strong> set, the
+namespace becomes <code>s3://{host[:port]}/{bucket}</code> — the endpoint's authority (scheme
+stripped, default port elided, host lower-cased) joins the bucket, so two stores that
+happen to share a bucket name (an AWS bucket and a MinIO bucket both named <code>landing</code>,
+say) resolve to <em>different</em> assets instead of merging their scorecards, lineage and
+incidents (decided in
+<a href="../../adr/0040-warehouse-inventory-sync-table-enumeration-seam/">ADR 0040</a> §6).</p>
+<p>The same two fields exist on a <strong>dbt</strong> orchestration connection whose <code>artifacts_uri</code> is
+<code>s3://…</code>, so the artifacts poll can read from the same store.</p>
+<h3 id="postgresql">PostgreSQL<a class="headerlink" href="#postgresql" title="Permanent link">¶</a></h3>
+<p>One connection type for <strong>any PostgreSQL server</strong> — self-hosted, or a managed service on any
+cloud. It is named for the engine, never for a vendor that hosts it (ADR
+<a href="../../adr/0010-provider-agnostic-infrastructure-seams/">0010</a>), and is the first engine on
+DataQ's generic SQL datasource base, which the MySQL/MariaDB, Trino, SQL Server, Athena and
+Redshift adapters reuse.</p>
+<ul>
+<li><strong>Fields:</strong> host (a bare hostname or IP — no scheme, port or path), port (default 5432),
+  database, user, an optional default schema (default <code>public</code>: where a target with no
+  schema resolves), and the password as the connection's secret.</li>
+<li><strong>TLS:</strong> <code>require</code> by default. <code>verify-full</code> / <code>verify-ca</code> also check the server
+  certificate, against the system trust store. <code>disable</code> must be chosen explicitly; libpq's
+  <code>prefer</code> — which silently falls back to plaintext — is not offered.</li>
+<li><strong>Read only, always.</strong> Every session DataQ opens sets <code>default_transaction_read_only</code>, so
+  the server itself refuses a write, whatever a query contains. Give DataQ its own login role
+  anyway, with no more than it needs:</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="k">CREATE</span><span class="w"> </span><span class="k">ROLE</span><span class="w"> </span><span class="n">dataq_reader</span><span class="w"> </span><span class="n">LOGIN</span><span class="w"> </span><span class="n">PASSWORD</span><span class="w"> </span><span class="s1">'…'</span><span class="p">;</span>
+<span class="k">GRANT</span><span class="w"> </span><span class="k">CONNECT</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="k">DATABASE</span><span class="w"> </span><span class="n">shop</span><span class="w"> </span><span class="k">TO</span><span class="w"> </span><span class="n">dataq_reader</span><span class="p">;</span>
+<span class="k">GRANT</span><span class="w"> </span><span class="k">USAGE</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="k">SCHEMA</span><span class="w"> </span><span class="n">sales</span><span class="w"> </span><span class="k">TO</span><span class="w"> </span><span class="n">dataq_reader</span><span class="p">;</span>
+<span class="k">GRANT</span><span class="w"> </span><span class="k">SELECT</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="k">ALL</span><span class="w"> </span><span class="n">TABLES</span><span class="w"> </span><span class="k">IN</span><span class="w"> </span><span class="k">SCHEMA</span><span class="w"> </span><span class="n">sales</span><span class="w"> </span><span class="k">TO</span><span class="w"> </span><span class="n">dataq_reader</span><span class="p">;</span>
+</code></pre></div>
+<ul>
+<li><strong>Name resolution.</strong> Each session's <code>search_path</code> is <code>pg_catalog</code>, then the target's schema,
+  then <code>public</code> — so an unqualified name in custom SQL resolves in the table's own schema, and
+  extension objects installed in <code>public</code> (citext, pg_trgm, PostGIS) still work. <code>pg_catalog</code>
+  comes first on purpose: a function planted in a schema DataQ reads can never override a
+  built-in DataQ's own SQL calls. Still, don't give untrusted roles <code>CREATE</code> on schemas DataQ
+  checks — a function with a <em>different</em> signature there is still callable by name.</li>
+<li><strong>Everything runs in the database</strong> — expectations on a SQL batch, monitors as scalar
+  aggregates, custom SQL as-is — so no rows are loaded into the worker and a run target
+  takes no sampling block.</li>
+<li><strong>The profiler</strong> reports min/max as unavailable (null) for types PostgreSQL has no MIN/MAX
+  for — <code>boolean</code>, <code>json</code>/<code>jsonb</code>, <code>uuid</code>, geometric — and distinct count / top values as
+  unavailable for types with no equality (<code>json</code>, <code>xml</code>, geometric), instead of failing the
+  whole profile. A domain is judged by the type it is a domain over, and an array by its
+  element type. A JSON cell in a failing-row sample is shown as its JSON text.</li>
+<li><strong>No column tags.</strong> PostgreSQL has no column-tag feature for DataQ to read, so its columns
+  are classified by the suite's column policy and DataQ's own name/value checks only — see
+  <a href="../../security/overview/">security</a>.</li>
+<li><strong>Inventory sync</strong> enumerates the tables, views, materialized views and foreign tables the
+  user can <code>SELECT</code>, in schemas it has <code>USAGE</code> on (partitions are left out — their parent is
+  what a check targets). There is <strong>no warehouse-native lineage</strong>: PostgreSQL keeps no lineage
+  log to read, so a PostgreSQL asset's lineage comes from dbt, OpenLineage or a catalog, and
+  an empty graph means "not observed", not "nothing feeds this table".</li>
+</ul>
+<h3 id="mysql-mariadb">MySQL / MariaDB<a class="headerlink" href="#mysql-mariadb" title="Permanent link">¶</a></h3>
+<p>One connection type for <strong>any MySQL or MariaDB server</strong>, on the same generic SQL base as
+PostgreSQL. The driver is <strong>PyMySQL</strong> (MIT); the GPL-licensed MySQL drivers are never used.
+Works with MySQL 8 and MariaDB 10.6 and later, including the long-term line many managed
+services still default to.</p>
+<ul>
+<li><strong>Fields:</strong> host, port (default 3306), database, user, and the password as the secret. A
+  MySQL <em>schema</em> is a database, so a run target's optional schema names another database
+  (it defaults to the connection's).</li>
+<li><strong>TLS:</strong> the same modes as PostgreSQL, <code>require</code> by default. <code>require</code> encrypts and refuses a
+  server without TLS (PyMySQL's own default would quietly fall back to plaintext); <code>verify-*</code>
+  also checks the certificate against the system trust store, so a server with MySQL's
+  self-generated certificate fails them.</li>
+<li><strong>Read only, UTC.</strong> Every session runs <code>SET SESSION TRANSACTION READ ONLY</code> (the statement
+  every version accepts — the <code>transaction_read_only</code> variable does not exist before
+  MariaDB 11.1) and sets <code>time_zone = '+00:00'</code>, so a
+  <code>TIMESTAMP</code> column comes back in UTC and freshness is right whatever the server's zone is
+  (<code>DATETIME</code> has no zone and is read as UTC). <strong>One exception:</strong> GX checks uniqueness on
+  MySQL by copying the column into session temporary tables, which a read-only transaction
+  refuses — so <em>Column values unique</em> runs on its own session without the read-only guard.
+  No SQL you wrote ever runs there. It needs the <code>CREATE TEMPORARY TABLES</code> grant; without it
+  that one check errors and the rest of the suite is unaffected:</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="k">CREATE</span><span class="w"> </span><span class="k">USER</span><span class="w"> </span><span class="s1">'dataq_reader'</span><span class="o">@</span><span class="s1">'%'</span><span class="w"> </span><span class="n">IDENTIFIED</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="s1">'…'</span><span class="p">;</span>
+<span class="k">GRANT</span><span class="w"> </span><span class="k">SELECT</span><span class="p">,</span><span class="w"> </span><span class="k">SHOW</span><span class="w"> </span><span class="k">VIEW</span><span class="p">,</span><span class="w"> </span><span class="k">CREATE</span><span class="w"> </span><span class="k">TEMPORARY</span><span class="w"> </span><span class="n">TABLES</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="n">shop</span><span class="p">.</span><span class="o">*</span><span class="w"> </span><span class="k">TO</span><span class="w"> </span><span class="s1">'dataq_reader'</span><span class="o">@</span><span class="s1">'%'</span><span class="p">;</span>
+</code></pre></div>
+<ul>
+<li><strong>Collation decides equality.</strong> Uniqueness, set membership and comparisons follow the
+  column's collation: under the default case-insensitive one, <code>'a'</code> and <code>'A'</code> are duplicates.
+  Column names are case-insensitive; <strong>table and database names are case-sensitive</strong> on a Linux
+  server (<code>lower_case_table_names=0</code>), so type them exactly as the server shows them.</li>
+<li><strong>Types:</strong> <code>BOOLEAN</code> is <code>TINYINT(1)</code> (values <code>0</code>/<code>1</code>); MariaDB's <code>JSON</code> is <code>LONGTEXT</code>, which is
+  what schema drift reports for it.</li>
+<li><strong>No column tags, no warehouse-native lineage</strong> — as for PostgreSQL. Inventory sync and the
+  schema browser list what <code>information_schema</code> shows the user, which is privilege-filtered.</li>
+</ul>
+<h3 id="trino">Trino<a class="headerlink" href="#trino" title="Permanent link">¶</a></h3>
+<p>One connection type for <strong>any Trino cluster</strong> — including Starburst — and through it every
+store the cluster federates (Hive, Iceberg, Delta, PostgreSQL, MySQL, Cassandra, MongoDB,
+Kafka topics…) with no per-store adapter on DataQ's side. It is the third engine on the
+generic SQL base. Supports HTTPS (including a private CA), password and JWT authentication,
+and whatever access control the cluster enforces.</p>
+<ul>
+<li><strong>Fields:</strong> host, port (default 443, or 8080 with TLS disabled), <strong>catalog</strong>, user, an
+  optional default schema (default <code>default</code>), and the auth type with its secret. A
+  connection reads <strong>one catalog</strong> — the counterpart of a PostgreSQL database — so a target
+  is <code>schema.table</code> inside it and its asset is <code>catalog.schema.table</code>. Add one connection per
+  catalog you want to check.</li>
+<li><strong>Authentication:</strong> <code>password</code> (Trino's PASSWORD authenticator — a password file, LDAP, …;
+  sent as HTTP basic), <code>jwt</code> (a bearer token; DataQ reads its <code>exp</code> and shows when it
+  expires, so rotate it with <strong>Re-authenticate</strong> before then), or <code>none</code> for a cluster
+  without authentication (no secret is stored; Trino still needs a user name). A password or
+  token is <strong>only ever sent over TLS</strong>: <code>password</code>/<code>jwt</code> with TLS disabled is refused when
+  you save, before anything is sent.</li>
+<li><strong>TLS:</strong> <code>verify-full</code> by default — the certificate and the host name are always checked;
+  there is no mode that encrypts without verifying. For a certificate from a <strong>private CA</strong>,
+  paste the CA's PEM into <strong>CA bundle</strong>: it replaces the system trust store for this
+  connection. Changing the host, port, TLS mode, CA bundle or auth type counts as moving the
+  credential, so the edit asks for it again (switching to <code>none</code> asks for nothing — the stored
+  one is simply no longer sent). The CA must be a well-formed X.509 CA (with a
+  <code>keyUsage</code> extension) — the worker's TLS stack verifies strictly.</li>
+<li><strong>Not read-only at the session — the credential is the guarantee.</strong> Trino has no session
+  or transaction read-only switch a client can set, so unlike PostgreSQL and MySQL, DataQ
+  cannot make the server refuse a write. Custom SQL still passes DataQ's validator, which
+  rejects writes and DDL — but the guarantee rests on <strong>the Trino user DataQ connects as</strong>:
+  give it read-only access in the cluster's access control, e.g. with file-based rules:</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"catalogs"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">"user"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dataq_reader"</span><span class="p">,</span><span class="w"> </span><span class="nt">"catalog"</span><span class="p">:</span><span class="w"> </span><span class="s2">"hive"</span><span class="p">,</span><span class="w"> </span><span class="nt">"allow"</span><span class="p">:</span><span class="w"> </span><span class="s2">"read-only"</span><span class="p">}],</span>
+<span class="w">  </span><span class="nt">"tables"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">"user"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dataq_reader"</span><span class="p">,</span><span class="w"> </span><span class="nt">"schema"</span><span class="p">:</span><span class="w"> </span><span class="s2">"sales"</span><span class="p">,</span><span class="w"> </span><span class="nt">"privileges"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"SELECT"</span><span class="p">]}]</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Listings (the schema browser, inventory sync) show what that access control lets the user
+  see.
+- <strong>Names are lower case.</strong> Trino folds every identifier to lower case — quoted or not — and
+  its catalogs report them that way, so the catalog, schema and table must be typed in
+  lower case (a mixed-case name is refused when you save). A connector over a store with
+  mixed-case names (PostgreSQL, MySQL) presents them lower-cased; on those catalogs enable the
+  connector's <code>case-insensitive-name-matching</code> so Trino can resolve them. A mixed-case
+  <strong>column</strong> name in a check works — it folds like any other.
+- <strong>Time zones.</strong> Every session runs in UTC, so a <code>timestamp</code> (no zone) column is read as
+  UTC wall-clock time; <code>timestamp with time zone</code> carries its own zone. Freshness is right
+  either way.
+- <strong>Everything runs on the cluster</strong> — expectations on a SQL batch (GX never creates
+  temporary tables on Trino; uniqueness is one aggregate query), monitors as scalar
+  aggregates, custom SQL as-is. A check costs whatever the query costs the catalog behind
+  it — a full scan of a large Hive table is a full scan.
+- <strong>Comparisons are byte-wise:</strong> <code>'a'</code> and <code>'A'</code> are different values (unlike MySQL's default
+  collation).
+- <strong>The profiler</strong> reports min/max, distinct count and top values as unavailable (null) for
+  types Trino cannot order — <code>json</code>, <code>map</code>, and anything containing one (<code>array(json)</code>, a
+  <code>row</code> with a <code>map</code> field), plus the sketch/digest and geometry types.
+- <strong>No column tags, no warehouse-native lineage.</strong> DataQ reads no column-classification
+  source from Trino, and Trino keeps no lineage log DataQ reads — lineage comes from dbt,
+  OpenLineage or a catalog, and an empty graph means "not observed".</p>
+<h3 id="amazon-athena">Amazon Athena<a class="headerlink" href="#amazon-athena" title="Permanent link">¶</a></h3>
+<p>Serverless SQL over data in S3, through the AWS Glue catalog. It is an engine on the generic
+SQL base, like Trino (Athena's own engine is Trino-based).</p>
+<ul>
+<li><strong>Fields:</strong> the <strong>region</strong> (the endpoint follows from it — there is no host or port), the
+  IAM <strong>access key ID</strong> with the <strong>secret access key</strong> as the stored secret, and optionally a
+  <strong>workgroup</strong> (default <code>primary</code>), a <strong>query-results location</strong> (<code>s3://bucket/prefix/</code>;
+  needed unless the workgroup enforces its own), a <strong>data catalog</strong> (default
+  <code>awsdatacatalog</code>, the Glue catalog) and a <strong>default database</strong>. A connection reads one data
+  catalog; a Glue database is the schema, so a target is <code>database.table</code> and its asset is
+  <code>catalog.database.table</code>.</li>
+<li><strong>Every check is a billed query.</strong> Athena charges per byte scanned, with a per-query
+  minimum, and every check, monitor, profile, browse listing and inventory sync is a query.
+  Each also takes seconds: a 24-check suite runs for a few minutes. Prefer Parquet or ORC
+  tables and partitions, which Athena scans far less of.</li>
+<li><strong>Not read-only at the session — the IAM policy is the guarantee.</strong> Athena has no
+  read-only session. Custom SQL still passes DataQ's validator, which rejects writes and DDL,
+  but give DataQ an IAM principal that can only read:</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"Statement"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span><span class="nt">"Effect"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Allow"</span><span class="p">,</span><span class="w"> </span><span class="nt">"Resource"</span><span class="p">:</span><span class="w"> </span><span class="s2">"*"</span><span class="p">,</span><span class="w"> </span><span class="nt">"Action"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"athena:StartQueryExecution"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"athena:GetQueryExecution"</span><span class="p">,</span><span class="w"> </span><span class="s2">"athena:GetQueryResults"</span><span class="p">,</span><span class="w"> </span><span class="s2">"athena:StopQueryExecution"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"athena:GetWorkGroup"</span><span class="p">,</span><span class="w"> </span><span class="s2">"glue:GetDatabase"</span><span class="p">,</span><span class="w"> </span><span class="s2">"glue:GetDatabases"</span><span class="p">,</span><span class="w"> </span><span class="s2">"glue:GetTable"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"glue:GetTables"</span><span class="p">,</span><span class="w"> </span><span class="s2">"glue:GetPartitions"</span><span class="p">]},</span>
+<span class="w">    </span><span class="p">{</span><span class="nt">"Effect"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Allow"</span><span class="p">,</span><span class="w"> </span><span class="nt">"Action"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"s3:GetBucketLocation"</span><span class="p">,</span><span class="w"> </span><span class="s2">"s3:ListBucket"</span><span class="p">],</span>
+<span class="w">     </span><span class="nt">"Resource"</span><span class="p">:</span><span class="w"> </span><span class="s2">"arn:aws:s3:::your-bucket"</span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="nt">"Effect"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Allow"</span><span class="p">,</span><span class="w"> </span><span class="nt">"Action"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"s3:GetObject"</span><span class="p">],</span>
+<span class="w">     </span><span class="nt">"Resource"</span><span class="p">:</span><span class="w"> </span><span class="s2">"arn:aws:s3:::your-bucket/your-data/*"</span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="nt">"Effect"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Allow"</span><span class="p">,</span><span class="w"> </span><span class="nt">"Action"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"s3:GetObject"</span><span class="p">,</span><span class="w"> </span><span class="s2">"s3:PutObject"</span><span class="p">],</span>
+<span class="w">     </span><span class="nt">"Resource"</span><span class="p">:</span><span class="w"> </span><span class="s2">"arn:aws:s3:::your-bucket/athena-results/*"</span><span class="p">}</span>
+<span class="w">  </span><span class="p">]</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Query results land in the results location, so changing the region, workgroup or results
+  location counts as moving the credential, and the edit asks for it again.
+- <strong>Names are lower case.</strong> Glue folds every name to lower case, so the database and table
+  must be typed that way (a mixed-case name is refused when you save).
+- <strong>Type names</strong> for <code>to_be_of_type</code> are the bare Athena names: <code>DECIMAL</code>, <code>TIMESTAMP</code>,
+  <code>VARCHAR</code>, <code>BIGINT</code>.
+- <strong>No column tags, no warehouse-native lineage.</strong> Lineage comes from dbt, OpenLineage or a
+  catalog, and an empty graph means "not observed".</p>
+<h3 id="amazon-redshift">Amazon Redshift<a class="headerlink" href="#amazon-redshift" title="Permanent link">¶</a></h3>
+<p>Provisioned clusters and Redshift Serverless workgroups, on the generic SQL base. Redshift
+speaks the PostgreSQL protocol, so it behaves like the PostgreSQL connection in most respects.</p>
+<ul>
+<li><strong>Fields:</strong> the <strong>endpoint</strong> host (the cluster's or workgroup's, without <code>:5439/dev</code>), port
+  (default 5439), database, a database user, an optional default schema (default <code>public</code>),
+  and the user's password as the connection's secret. IAM authentication is not supported:
+  create a database user for DataQ.</li>
+<li><strong>TLS:</strong> <code>require</code> by default, and every TLS mode checks the server's certificate chain
+  against Amazon's certificate authorities. <code>verify-full</code> also checks the hostname.</li>
+<li><strong>Read only, always.</strong> As on PostgreSQL, every session sets <code>default_transaction_read_only</code>,
+  so Redshift itself refuses a write. Give DataQ a user that can only read what it checks:</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="k">CREATE</span><span class="w"> </span><span class="k">USER</span><span class="w"> </span><span class="n">dataq_reader</span><span class="w"> </span><span class="n">PASSWORD</span><span class="w"> </span><span class="s1">'…'</span><span class="p">;</span>
+<span class="k">GRANT</span><span class="w"> </span><span class="k">USAGE</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="k">SCHEMA</span><span class="w"> </span><span class="n">sales</span><span class="w"> </span><span class="k">TO</span><span class="w"> </span><span class="n">dataq_reader</span><span class="p">;</span>
+<span class="k">GRANT</span><span class="w"> </span><span class="k">SELECT</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="k">ALL</span><span class="w"> </span><span class="n">TABLES</span><span class="w"> </span><span class="k">IN</span><span class="w"> </span><span class="k">SCHEMA</span><span class="w"> </span><span class="n">sales</span><span class="w"> </span><span class="k">TO</span><span class="w"> </span><span class="n">dataq_reader</span><span class="p">;</span>
+</code></pre></div>
+<p><code>GRANT … ON ALL TABLES</code> covers only the tables that exist when you run it; add
+  <code>ALTER DEFAULT PRIVILEGES IN SCHEMA sales GRANT SELECT ON TABLES TO dataq_reader</code> for tables
+  created later.
+- <strong>Names are lower case.</strong> Redshift folds every name to lower case, so schemas and tables must
+  be typed that way (a mixed-case name is refused when you save). A cluster that enables
+  <code>enable_case_sensitive_identifier</code> is not supported.
+- <strong>Views.</strong> Late-binding views (<code>WITH NO SCHEMA BINDING</code>) work everywhere, including the
+  profiler and schema drift. A <strong>materialized view is listed as a view</strong> when you browse or in
+  the inventory: Redshift's system catalog cannot tell the two apart in a single query.
+- <strong>The profiler</strong> reports min/max as unavailable for <code>BOOLEAN</code>, <code>SUPER</code>, <code>GEOMETRY</code>,
+  <code>GEOGRAPHY</code> and <code>HLLSKETCH</code> (Redshift has no MIN/MAX for them, and MIN over <code>SUPER</code> returns
+  nothing useful), and distinct count / top values as unavailable for the spatial and sketch
+  types, which have no equality.
+- <strong>No column tags, no warehouse-native lineage.</strong> Lineage comes from dbt, OpenLineage or a
+  catalog, and an empty graph means "not observed".</p>
+<h3 id="sql-server-azure-sql-fabric-t-sql">SQL Server / Azure SQL / Fabric (T-SQL)<a class="headerlink" href="#sql-server-azure-sql-fabric-t-sql" title="Permanent link">¶</a></h3>
+<p>One connection type (<code>mssql</code>) for <strong>anything that speaks SQL Server's TDS protocol</strong> — SQL
+Server itself, Azure SQL Database, Synapse dedicated pools, and the Microsoft Fabric SQL
+endpoints (Warehouse, Lakehouse SQL analytics endpoint, SQL database in Fabric). It is named for
+the engine, not a cloud (ADR <a href="../../adr/0010-provider-agnostic-infrastructure-seams/">0010</a>),
+and sits on the same generic SQL base as PostgreSQL. The driver decision and its trade-offs are
+<a href="../../adr/0044-mssql-tds-driver-and-entra-auth/">ADR 0044</a>. SQL Server, Azure SQL Database and
+Synapse work with either auth mode on either driver lane; Microsoft Fabric Warehouse and Lakehouse
+SQL analytics endpoints work on the ODBC lane.</p>
+<ul>
+<li><strong>Fields:</strong> host (a bare hostname — e.g. <code>myserver.database.windows.net</code>; no scheme, port or
+  <code>\instance</code>: connect to a named instance by its port), port (default 1433), database, an
+  optional default schema (default <code>dbo</code>), and one of two <strong>auth modes</strong>:<ul>
+<li><strong>SQL login</strong> — <code>user</code>, and the password as the secret. SQL Server, Azure SQL, Synapse.</li>
+<li><strong>Entra service principal</strong> — <code>tenant_id</code> and <code>client_id</code>, and the client secret as the
+  secret. DataQ asks Entra ID for a token for <code>https://database.windows.net/</code> and presents
+  it at login; the client secret never goes to the database server. Azure SQL, Synapse and
+  Fabric. The principal must exist in the database (<code>CREATE USER [app-name] FROM EXTERNAL
+  PROVIDER</code>) with read access. DataQ cannot read a client secret's expiry — track it in
+  Entra ID and re-authenticate before it lapses. Managed identity and certificate
+  credentials are not supported yet.</li>
+</ul>
+</li>
+<li><strong>TLS is always on and always verified.</strong> There is no TLS mode to choose: every connection is
+  encrypted, the server certificate must chain to a trusted CA (the public roots DataQ ships,
+  or a <strong>private CA certificate</strong> you paste into the connection for a self-hosted server), and
+  the hostname must match the certificate. Connecting by IP address fails for that reason — use
+  the name on the certificate. The shipped driver speaks TLS 1.2; TDS 8 "strict" encryption is
+  not supported yet.</li>
+<li><strong>Read only — by grant, not by session.</strong> Like Trino and unlike PostgreSQL and MySQL, SQL Server has no
+  per-session read-only switch, so DataQ <strong>cannot make the server refuse a write</strong>. The guards
+  are the custom-SQL validator (which understands T-SQL <code>[bracket]</code> identifiers and refuses
+  <code>OPENQUERY</code>/<code>OPENROWSET</code>/<code>OPENDATASOURCE</code>, <code>BULK</code>, <code>DBCC</code>, <code>WAITFOR</code>, <code>BACKUP</code>/<code>RESTORE</code>
+  and the rest of the ADR 0019 list) and <strong>the login you give DataQ, which must be read-only</strong>:</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="c1">-- in the target database</span>
+<span class="k">CREATE</span><span class="w"> </span><span class="k">USER</span><span class="w"> </span><span class="n">dataq_reader</span><span class="w"> </span><span class="k">FOR</span><span class="w"> </span><span class="n">LOGIN</span><span class="w"> </span><span class="n">dataq_reader</span><span class="p">;</span><span class="w">   </span><span class="c1">-- or FROM EXTERNAL PROVIDER for Entra</span>
+<span class="k">ALTER</span><span class="w"> </span><span class="k">ROLE</span><span class="w"> </span><span class="n">db_datareader</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="n">MEMBER</span><span class="w"> </span><span class="n">dataq_reader</span><span class="p">;</span>
+</code></pre></div>
+<p>Nothing else is needed: the session-scoped <code>#temp</code> tables some SQL Server queries use need no
+  extra grant (verified with a <code>db_datareader</code>-only login).
+- <strong>Two driver lanes</strong> (<code>driver</code>):
+    - <strong><code>python-tds</code></strong> (default) — pure-Python and MIT-licensed, shipped in the DataQ image. It
+      covers SQL Server, Azure SQL and Synapse.
+    - <strong><code>odbc</code></strong> — Microsoft ODBC Driver 18 through <code>pyodbc</code>. DataQ <strong>does not ship</strong> this
+      driver (its licence does not allow us to redistribute it — ADR 0044), so this lane only
+      works in an image <strong>you</strong> build on top of DataQ's — a sketch (DataQ's CI does not build
+      or test it, since doing so would mean accepting the driver's licence):</p>
+<div class="highlight"><pre><span></span><code>  ```dockerfile
+  FROM ghcr.io/theurgicduke771/dataq-backend:latest
+  USER root
+  RUN apt-get update &amp;&amp; ACCEPT_EULA=Y apt-get install -y --no-install-recommends \
+        msodbcsql18 unixodbc &amp;&amp; pip install pyodbc &amp;&amp; rm -rf /var/lib/apt/lists/*
+  USER 10001
+  ```
+
+  (add Microsoft's apt repository first, as Microsoft's install guide describes). Pick
+  `odbc` on the connection; an optional `odbc_driver` names a different installed driver.
+  If the lane is chosen but the driver or `pyodbc` is missing, **Test** says exactly that
+  and how to fix it. On this lane the driver's own certificate checking applies (encryption
+  required, server certificate and hostname verified against the image's trust store —
+  connecting by IP is refused here too). A service principal still logs in with a token
+  DataQ requests from Entra ID, so a wrong client secret fails at once with Entra's own
+  error rather than a login timeout.
+</code></pre></div>
+<ul>
+<li><strong>Microsoft Fabric SQL endpoints need the ODBC lane today.</strong> Over the default <code>python-tds</code>
+  driver, Fabric rejects the login after routing it (a known incompatibility in that driver,
+  still being worked on); Test and runs say so and point at the ODBC lane instead of showing the
+  raw driver error. Fabric accepts Entra ID only, and
+  two things are set up on the Fabric side: the tenant setting <strong>Service principals can use
+  Fabric APIs</strong>, and a workspace role (or item permission) for the principal. If Fabric refuses
+  the principal's login on the ODBC lane, Test names those two prerequisites.</li>
+</ul>
+<p>On a Fabric Warehouse or Lakehouse SQL endpoint, <strong>seven expectation types are not
+  available</strong>: <em>Column values unique</em>, <em>Compound columns unique</em>, <em>Values unique within
+  record</em>, <em>Column A greater than B</em>, <em>Column pair equal</em>, <em>Column pair in set</em> and
+  <em>Multicolumn sum</em>. Great Expectations evaluates them on SQL Server through a temporary table,
+  which Fabric refuses, so the check editor does not offer them on a Fabric connection, and
+  saving one through the API or MCP is refused with the reason. Use custom SQL instead, e.g.
+  <code>SELECT id FROM {batch} GROUP BY id HAVING COUNT(*) &gt; 1</code> for uniqueness. A Fabric endpoint's
+  first login after it has been idle can take longer than Test Connection's 10 seconds — test
+  again; runs wait up to a minute.
+- <strong>Everything runs in the database</strong>, as on PostgreSQL. A run target takes no sampling block
+  (so no <code>TABLESAMPLE</code>). Freshness reads <code>datetimeoffset</code> as the instant it is (offset
+  honoured), <code>datetime2</code>/<code>datetime</code> as UTC, and <code>date</code> as midnight UTC.
+- <strong>Regular expressions are not available</strong>: T-SQL has no regex operator Great Expectations can
+  translate to, so the four regex expectations are refused when you save them (and hidden in
+  the editor). Use a custom-SQL check with <code>LIKE</code> or <code>PATINDEX</code>. Value-length checks use
+  T-SQL <code>LEN</code>, which ignores trailing spaces.
+- <strong>Type checks</strong> (<code>to_be_of_type</code>, <code>in_type_list</code>) compare the bare type name: <code>DECIMAL</code> for
+  <code>decimal(12,2)</code>, <code>INTEGER</code> for <code>int</code>, <code>NVARCHAR</code>, <code>DATETIME2</code>, <code>DATETIMEOFFSET</code>, <code>BIT</code>.
+- <strong>The profiler</strong> reports min/max as unavailable (null) for types SQL Server has no MIN/MAX for
+  — <code>bit</code>, <code>xml</code>, <code>geography</code>/<code>geometry</code>, <code>text</code>/<code>ntext</code>/<code>image</code>, <code>json</code>, <code>vector</code> — and distinct
+  count / top values as unavailable for all of those except <code>bit</code>.
+- <strong>Names</strong> resolve under the database's catalog collation. On the usual case-insensitive
+  catalogs any casing reaches the object. On a <strong>case-sensitive</strong> one — a Fabric Warehouse by
+  default, or an Azure SQL database created with a case-sensitive catalog collation — type
+  schema, table and column names exactly as they are stored; mixed-case names are resolved as
+  spelled.
+- <strong>Comparison queries</strong> are read as a derived table, which SQL Server constrains: name every
+  computed column (<code>amount * 2 AS doubled_amount</code> — an unnamed one is refused with that fix),
+  and write a common table expression as a subquery (a query starting with <code>WITH</code> is refused
+  when you save). A trailing <code>ORDER BY</code> is fine; DataQ reads it with <code>OFFSET 0 ROWS</code>, and the
+  comparison orders rows itself.
+- <strong>No column tags.</strong> DataQ does not read SQL Server's sensitivity classifications
+  (<code>sys.sensitivity_classifications</code>) yet — reading them needs a permission a reader login
+  usually lacks, and without it the catalog view silently returns nothing, which DataQ would
+  otherwise report as "no sensitive columns". Columns are classified by the suite's column
+  policy and DataQ's own checks. There is no warehouse-native lineage either.
+- <strong>Inventory sync and browsing</strong> list the tables and views in <code>INFORMATION_SCHEMA</code> that the
+  login can <code>SELECT</code>; the fixed-role schemas every database carries (<code>db_datareader</code>, …) are
+  never offered.
+- <strong>Speed.</strong> The shipped driver is pure Python. DataQ pushes aggregates to the server and caps
+  samples, so this rarely matters, but every query is one network round trip — a suite run
+  from a region far from the database is dominated by latency, not by the database.
+- <strong>Azure SQL serverless</strong> databases pause when idle. The first login resumes them, which can
+  take up to a minute: a run waits for it, a Test Connection gives up after 10 seconds — test
+  again once the database is awake.</p>
+<h3 id="identifier-casing-snowflake-unity-catalog-postgresql">Identifier casing (Snowflake / Unity Catalog / PostgreSQL)<a class="headerlink" href="#identifier-casing-snowflake-unity-catalog-postgresql" title="Permanent link">¶</a></h3>
+<p>Warehouses fold <strong>unquoted</strong> identifiers — Snowflake upper-cases them — so a column
+created as <code>order_ts</code> is really stored as <code>ORDER_TS</code>, while one created as
+<code>"Amount"</code> is stored mixed-case and is only reachable quoted.</p>
+<p>DataQ handles both: type the name <strong>exactly as the column dropdown reports it</strong>.
+Lower-case names are sent unquoted and fold as the warehouse always folded them;
+anything else is quoted for you, using the right quote character for the engine
+(Snowflake <code>"</code>, Databricks backticks). This applies to every SQL path — profiling,
+the aggregate/top-values queries, and freshness/volume monitors alike.</p>
+<p><strong>Still unsupported</strong>, and refused with a 422 rather than silently mis-resolved:</p>
+<ul>
+<li>Identifiers needing quotes for reasons other than case — spaces, dots, leading
+  digits, non-ASCII characters.</li>
+<li>Genuinely <strong>reserved words</strong> (<code>order</code>, <code>select</code>, …) used as a column or table
+  name. An unquoted <code>order</code> is stored <code>ORDER</code>, which neither <code>order</code> (parse error)
+  nor <code>"order"</code> (wrong case) reaches.</li>
+</ul>
+<p>In both cases, alias the column in a view and point the check at that.</p>
+<p><strong>PostgreSQL</strong> folds unquoted names to <em>lower</em>-case, so the same rule gives the natural
+result there: <code>order_id</code> is sent bare, while <code>CustomerId</code> or <code>Sales</code> (created quoted) are
+quoted and matched exactly. PostgreSQL silently <strong>truncates</strong> a name longer than 63
+characters, which could resolve a different object — so a longer table or schema name is
+refused when the suite is saved.</p>
+<p>One more caveat: in a <strong>three-part</strong> <code>catalog.schema.table</code> target, only the table
+gets quoted — a mixed-case <em>catalog or schema</em> still folds. This affects nobody
+today (Unity Catalog is the only three-part datasource and it resolves identifiers
+case-insensitively), but don't rely on it if that changes.</p>
+<h3 id="seeing-coverage-the-asset-scorecard">Seeing coverage: the asset scorecard<a class="headerlink" href="#seeing-coverage-the-asset-scorecard" title="Permanent link">¶</a></h3>
+<p>Because every check carries a dimension, the <strong>asset page</strong> shows a <em>Data quality
+by dimension</em> panel: per-dimension score and check counts, plus — the part worth
+looking at — the dimensions with <strong>no checks at all</strong>.</p>
+<p>Three states, deliberately kept distinct:</p>
+<table>
+<thead>
+<tr>
+<th>What you see</th>
+<th>What it means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A score bar</td>
+<td>Checks exist and evaluated in the latest run.</td>
+</tr>
+<tr>
+<td><strong>No signal</strong></td>
+<td>Checks exist, but none evaluated — not yet run, or all skipped/errored. Not 0%: nothing was measured.</td>
+</tr>
+<tr>
+<td>Listed under <strong>Not covered</strong></td>
+<td>No checks for that dimension exist at all. Not 0%, and <em>definitely</em> not 100%.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Coverage counts checks, not runs.</strong> A check you author today counts as coverage
+immediately — it does not need a completed run first, and a suite whose latest run
+failed does not lose its coverage. The score is the part that waits for a run.</p>
+<p>The <code>3/5 passing</code> figure counts checks that passed in the latest run out of checks
+that exist, so the gap includes failing, skipped, errored <strong>and</strong> never-run checks;
+hover it to see how many were excluded from the score.</p>
+<p>Above the dimension rows, the <strong>asset health score</strong> is one number for the whole asset:
+0–100 over every check that evaluated in each suite's latest run, if it completed, with the
+workspace's severity weights. A suite whose latest run is still going, failed or was
+cancelled adds nothing until its next completed run; an older run is not used instead.
+Unlike the rows below it, it includes checks with no
+dimension, so a failing custom SQL check lowers it. An asset where nothing evaluated shows
+<strong>No signal</strong>, not 0. It is not the Dashboard's Data Integrity Score, which covers every
+run in a time window across all your suites.</p>
+<p>Beside it, the change <strong>vs 7 days ago</strong> compares the score with what the same calculation
+gave a week earlier: each suite's latest run as of then, if it had completed. Nothing is shown when
+there is no earlier score to compare with, which is different from "no change".</p>
+<p>The <strong>Dashboard</strong> has the other cut: <em>Data quality by dimension, across the workspace</em>
+shows each dimension over every suite in the workspace, so one dimension slipping on many
+assets at once is visible in one place. Like the asset scorecard it is the same for
+everyone and counts suites you cannot open; the tiles below it cover only your suites.</p>
+<p>On <strong>Assets → All assets</strong>, the <strong>Score</strong> column shows the same number, and <strong>Sort by →
+Health score, lowest first</strong> orders every asset in the workspace by it, with unscored
+assets last.</p>
+<p>The numbers are <strong>workspace-wide</strong>: everyone who can see the asset sees the same
+score, whether or not they can open the suites behind it. Two people comparing
+notes on the same table should never see two different verdicts.</p>
+<p>Checks with no dimension set are counted separately ("N checks have no dimension
+set") rather than filed under a dimension — otherwise "Not covered" would be wrong.</p>
+<h3 id="automatic-coverage-watch-every-table-without-writing-checks">Automatic coverage: watch every table without writing checks<a class="headerlink" href="#automatic-coverage-watch-every-table-without-writing-checks" title="Permanent link">¶</a></h3>
+<p>Switch on <strong>Automatic coverage</strong> on a Snowflake, Unity Catalog or SQL-database connection
+(PostgreSQL, MySQL/MariaDB, Trino, SQL Server, Athena, Redshift) and every table its inventory
+lists gets watched, with no check written by hand. Only a workspace admin can switch it on, like
+any connection change.</p>
+<p>For each table, DataQ creates one suite marked <strong>Automatic</strong>, named <code>Auto: &lt;table&gt;</code>, holding
+checks that compare the table with its own history rather than asserting anything about the
+data:</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>What it reports</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Row count is normal</td>
+<td>The row count against the same weekday in earlier weeks.</td>
+</tr>
+<tr>
+<td>Data is fresh</td>
+<td>The age of the newest value in a load or event timestamp column, against its history.</td>
+</tr>
+<tr>
+<td>Schema is unchanged</td>
+<td>Any added, removed or retyped column.</td>
+</tr>
+<tr>
+<td>Column profile is normal</td>
+<td>Every column's null rate and distinct count against their own history (see <em>Column profile</em> under the anomaly monitor).</td>
+</tr>
+</tbody>
+</table>
+<p>The row-count, freshness and column-profile checks are anomaly checks: they warn at 3 standard deviations from the table's history,
+fail at 4 and go critical at 6, and they skip until the table has four earlier runs on the same
+weekday, so a new suite starts scoring in its fifth week. The freshness check appears after the
+first run, once the schema check has recorded the columns: DataQ prefers a column such as
+<code>loaded_at</code> or <code>updated_at</code>, and if the table has no timestamp column it says so instead of
+guessing. A schema change fails.</p>
+<p>For example, with coverage on for a connection whose inventory lists <code>shop.public.orders</code>, the
+next daily pass creates <em>Auto: shop.public.orders</em> with the row-count, schema and column-profile
+checks and a daily schedule. After its first run it adds <em>Data is fresh</em> on <code>ordered_at</code>.</p>
+<ul>
+<li><strong>Suggested rules wait for you.</strong> Once a week DataQ profiles each covered table and proposes
+  rules that assert something about its data: <em>never null</em> for a column with no nulls in at
+  least 100 rows, <em>unique</em> for an id-like column whose values are all distinct, and <em>one of these
+  values</em> for a column with 2 to 10 distinct values. They appear under <strong>Suggested rules</strong> on the
+  suite page, each with the reason (for example "No nulls in 12,480 rows"). Accepting one adds the
+  check; a rejected rule is never suggested again. If you run <strong>Suggest checks</strong> on an automatic
+  suite, the AI model's validated suggestions are saved to the same list, marked <strong>AI-suggested</strong>,
+  so they are still there after you close the panel. DataQ does not call the model on its own:
+  that happens only when someone runs Suggest checks. A column the suite's policy or the warehouse
+  marks sensitive is never proposed as a value set, because that would copy its values into the
+  check.</li>
+<li><strong>Your changes win.</strong> You can edit, snooze or share these suites and checks like any other.
+  DataQ only ever adds a missing check. It never changes one you edited, and a check you delete
+  is not added back.</li>
+<li><strong>Leaving a table out.</strong> On the asset page, an admin can switch off <em>Include in automatic
+  coverage</em>. The table's suite is paused, not deleted, and its history stays. Switching coverage
+  off for the whole connection pauses all of its automatic suites the same way.</li>
+<li><strong>Cost.</strong> Each covered table runs its checks once a day, at a time spread across the day by
+  table. The row-count and freshness checks are cheap aggregates, but the <strong>column-profile check
+  reads the whole table</strong>: it counts nulls and distinct values for up to 100 columns. On an engine
+  that bills by data scanned, Amazon Athena especially, that is a full scan of every covered table
+  every day, so estimate it before switching coverage on, and exclude large tables you don't need
+  watched this closely. Deleting the column-profile check from a suite stops it for that table for
+  good. Once a week each covered table is also profiled for suggested rules. A connection covers at most 500 tables (<code>AUTO_COVERAGE_MAX_ASSETS</code>); past
+  that, the first 500 by name are covered and the overflow is logged.</li>
+<li><strong>Say what an incident turned out to be.</strong> When you resolve an incident, the confirmation
+  asks <em>What was it?</em>: <strong>Fixed</strong>, <strong>Expected change</strong> or <strong>False positive</strong>. It is optional and
+  works on any incident, not only automatic ones. An unanswered one is recorded as not stated,
+  never guessed. Marking false positives is how you find out whether automatic checks are
+  crying wolf.</li>
+<li><strong>Is it working?</strong> The Dashboard's <strong>Coverage</strong> panel shows two workspace-wide figures. <em>Assets
+  watched</em> is the share of assets in the inventory with at least one suite that completed a run
+  in the last 7 days, split into assets with authored checks and assets watched by automatic
+  coverage only. <em>False positives</em> is, of the automatic-suite incidents a person resolved in the
+  last 30 days <strong>and said what they were</strong>, the share marked false positive. Both show the counts
+  behind them. When nobody has stated a resolution the panel says "Not measured", not 0%.</li>
+<li><strong>Who can see them.</strong> Automatic suites have no human owner. Workspace admins see all of them
+  and can share them; everyone sees the asset's health, which includes them.</li>
+</ul>
+<h3 id="flat-files-formats-and-csv-delimiters">Flat files: formats and CSV delimiters<a class="headerlink" href="#flat-files-formats-and-csv-delimiters" title="Permanent link">¶</a></h3>
+<p>Flat-file connections (ADLS Gen2 / S3) read <code>.csv</code>, <code>.parquet</code>/<code>.pq</code>, and JSON as
+<code>.jsonl</code>/<code>.ndjson</code>/<code>.json</code> (see <a href="#json-files">JSON files</a> below). The run reads the
+format from the file's <strong>extension</strong>; a target's <em>File format</em> choice is used by the
+profiler and column listing. <strong>The CSV
+delimiter is detected per file, not per connection</strong> — a connection is a whole
+bucket/container and the files under it need not agree, so DataQ sniffs each file's
+header. Comma, semicolon, tab, and pipe are recognised; anything it can't decide
+(a single-column file, an empty file) is read as comma-separated.</p>
+<p>If a file uses some other separator, DataQ will parse the whole header as one
+column — the symptom is a <strong>column dropdown offering a single long name</strong> like
+<code>id;email;amount</code>. Convert the file to one of the four separators, or to Parquet.</p>
+<h4 id="json-files">JSON files<a class="headerlink" href="#json-files" title="Permanent link">¶</a></h4>
+<p>DataQ reads two JSON shapes, told apart by the file's first character, whatever the
+extension:</p>
+<ul>
+<li><strong>JSON Lines</strong> (NDJSON) — one object per line. The usual shape for event and log
+  exports, and the one to prefer: it streams, so sampling and counting never hold the
+  file.</li>
+<li><strong>A top-level array of objects</strong> — <code>[{...}, {...}]</code>, compact or pretty-printed.</li>
+</ul>
+<p>Each object is one row and each key a column. What is refused, with a message naming
+the problem rather than a generic read failure:</p>
+<ul>
+<li><strong>Nested values.</strong> A column holding an object or an array (<code>"address": {...}</code>,
+  <code>"tags": [...]</code>) has no single scalar type for a check to run against, so the file is
+  refused and the columns named. Flatten upstream — <code>address_city</code>, not
+  <code>address.city</code>. Counting rows (a volume monitor) still works on such a file; every
+  path that reads columns refuses it.</li>
+<li><strong>A column whose type changes</strong> — a number in one row and a string in another.
+  <code>null</code> is fine anywhere, and whole numbers mixed with decimals read as decimals.</li>
+<li>An array whose elements are not all objects, a repeated key in one object, a
+  pretty-printed object in a <code>.jsonl</code> file (JSON Lines means one per line), or text
+  that is not UTF-8.</li>
+</ul>
+<p><strong>Types.</strong> Numbers read as <code>int64</code> or <code>double</code> (an integer column with a <code>null</code> stays
+an integer), <code>true</code>/<code>false</code> as <code>bool</code>, and <strong>every string as a string</strong> — including
+ISO timestamps and dates. JSON has no date type, and the reader underneath would
+otherwise guess <code>timestamp</code> for <code>2026-01-01T10:00:00</code> but not for
+<code>2026-01-01T10:00:00.5</code>, so a column's type would change with its data. Freshness
+parses a timestamp string, exactly as it does for CSV. A number too large for 64
+bits reads as a <code>double</code> and loses precision — send identifiers that large as strings.</p>
+<p><strong>Sampling a JSON file</strong> (see below) types it from its <strong>first 1 MiB</strong>. The full read
+types every row, so the two can only disagree when the early rows are not
+representative — a field that first appears later, a column that is <code>null</code> early and
+holds values later, or whole numbers early and decimals later. A sampled run refuses
+such a file rather than silently retyping it mid-stream; turn sampling off, or make the
+first rows representative. Column listing, the profiler and schema drift read the same
+first block, so a field that first appears deep in a file is not listed there.</p>
+<h3 id="very-large-targets-sampling-and-the-scan-cap">Very large targets: sampling and the scan cap<a class="headerlink" href="#very-large-targets-sampling-and-the-scan-cap" title="Permanent link">¶</a></h3>
+<p>Snowflake and Iceberg monitors answer from the warehouse or from file metadata, so
+size is not a worker concern there. <strong>Unity Catalog is different for the checks that
+still need a DataFrame</strong>: the common expectation types (not-null, unique, between,
+in-set, length, regex, row-count and more) push down to a Databricks-SQL batch by
+default, so the warehouse evaluates them and the worker never materializes the
+table — the same "cost scales with the warehouse" shape as Snowflake. A handful of
+types (<code>expect_column_values_to_be_of_type</code>, suites with a declared sample) still
+run against a DataFrame the worker holds, and <strong>flat files always do</strong>, so a big
+enough target on either of those paths runs the worker out of memory. Two things
+guard that.</p>
+<p><strong>A hard cap, on by default, on the DataFrame path.</strong> Before a run materializes
+anything it checks the object's size (flat files), the table's <code>COUNT(*)</code> (Unity
+Catalog, when the run isn't pushed down) or the current snapshot's row count
+(Iceberg, which reads it straight from metadata). Over the cap the run ends
+<strong>failed</strong> with a message naming the target, the two numbers, and what to do —
+never a half-finished run or a silent hang. Defaults are 128 MiB and 1.5M rows
+(3M rows for Iceberg, whose measured ceiling is higher), tuned for the reference
+2 GiB worker; an operator can change them
+(<code>RUN_MAX_SCAN_BYTES</code> / <code>RUN_MAX_SCAN_ROWS</code>, and <code>RUN_MAX_SCAN_ROWS_ICEBERG</code> where
+Iceberg's own measured ceiling differs — see <code>deploy/README.md</code>). A pushed-down
+Unity Catalog check is not subject to this cap — it has been run against 200M-row
+tables with flat worker memory.</p>
+<p><strong>Sampling, opt-in per suite.</strong> Add a <code>sampling</code> block to the suite's target and
+checks run against a bounded sample instead of the whole dataset:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="w"> </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"landing/orders.csv"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"sampling"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">"strategy"</span><span class="p">:</span><span class="w"> </span><span class="s2">"head"</span><span class="p">,</span><span class="w"> </span><span class="nt">"rows"</span><span class="p">:</span><span class="w"> </span><span class="mi">100000</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+<ul>
+<li><code>head</code> — the first N rows. Cheapest by far (a bounded read that stops early), but
+  <strong>not representative</strong>: files usually arrive ordered by load time, so a head
+  sample sees one slice of the key space. Good for a smoke check, not for a
+  uniqueness claim.</li>
+<li><code>random</code> — N rows drawn uniformly across the whole dataset. Representative;
+  costs one extra cheap pass to learn the population size. Add <code>"seed": &lt;int&gt;</code> to
+  make a run reproducible — leave it out and each run inspects different rows,
+  which is usually what you want from a monitor.</li>
+</ul>
+<p>Sampling <strong>replaces</strong> the size cap for that suite (the read is bounded by the
+sample), so it is the supported way to check a target that is otherwise too big.</p>
+<p>Things it deliberately <strong>refuses</strong> rather than silently allowing:</p>
+<ul>
+<li><strong>Sampling on Snowflake or Iceberg targets</strong> — Snowflake never loads rows, so a
+  sample there would change nothing while labelling every result "sampled".</li>
+<li><strong>Freshness monitors are never sampled</strong> — a <code>MAX</code> over a sample is a <em>smaller</em>
+  maximum, which would report healthy data as critically stale.</li>
+<li><strong>Table row-count expectations on a sampled suite</strong> (<code>expect_table_row_count_*</code>)
+  — against a sample they measure the <em>sample</em> and report it as the dataset's
+  size, so a healthy 5M-row file with <code>min_value: 4000000</code> would fail critically
+  forever. Refused at author time in both directions (adding the check, and
+  turning sampling on under one), and per check at run time for suites that
+  predate the gate. Use a <strong>volume monitor</strong> instead: it counts the whole dataset
+  without loading it.</li>
+<li><strong>Sampling on a comparison check's <code>source</code></strong> — refused at author time
+  (422), not silently ignored. A comparison diffs by key, so two independent
+  positional samples of the two sides would share almost no keys and report a
+  confidently wrong reconciliation; that needs <em>coherent</em> key-set sampling,
+  a different mechanism this ADR decided not to build (see
+  <a href="../../adr/0015-two-connection-comparison-check-model/#amendment-2026-09-16-comparison-sources-do-not-support-sampling">ADR 0015's amendment</a>).
+  For a large comparison, use <code>COMPARISON_MAX_ROWS</code>'s fail-fast cap and narrow
+  the source (or target) with a query filter instead of sampling it.</li>
+</ul>
+<p>On Unity Catalog a seeded random sample is pushed down as
+<code>TABLESAMPLE (p PERCENT) REPEATABLE (seed)</code>, so the seed genuinely pins the draw
+rather than only being recorded.</p>
+<p><strong>Every result says whether it was sampled</strong>, and only when it genuinely was — a
+sample larger than the dataset covered everything, and is reported as a complete
+read. Within one run a volume monitor (pushed down, exact) and a sampled
+expectation can sit side by side, so the label is per check, not per run.</p>
+<h2 id="author-a-check">Author a check<a class="headerlink" href="#author-a-check" title="Permanent link">¶</a></h2>
+<ol>
+<li>Create (or open) a <strong>suite</strong> and point it at a <strong>target</strong> — a table (Snowflake/UC/PostgreSQL), a
+   file/path or batch pattern (ADLS/S3), or an Iceberg <code>namespace.table</code>. On every datasource
+   you can <strong>browse</strong> for it instead of typing it — see below.</li>
+<li><strong>Add check</strong> opens a dedicated page (<code>/suites/&lt;id&gt;/checks/new</code>): pick a <strong>category</strong>,
+   then the check type, then fill its config. The authoring paths:</li>
+</ol>
+<h3 id="browsing-for-a-run-target">Browsing for a run target<a class="headerlink" href="#browsing-for-a-run-target" title="Permanent link">¶</a></h3>
+<p>The suite form offers a picker beside the target fields on every datasource; typing the
+target still works everywhere.</p>
+<ul>
+<li><strong>Unity Catalog — Browse catalog…</strong> lists catalogs, then the chosen catalog's schemas,
+  then that schema's tables; picking a table fills <strong>Catalog</strong>, <strong>Schema</strong> and <strong>Table</strong>.
+  The names come from <code>system.information_schema</code>, so the list is what the connection's
+  credential can see — a table it has no privilege on is not shown, and an empty level
+  means "nothing visible to this credential", not "nothing exists". The <code>system</code>,
+  <code>samples</code> and <code>__databricks_internal</code> catalogs are never listed.</li>
+<li><strong>PostgreSQL — Browse schemas…</strong> lists the schemas the user has <code>USAGE</code> on, then that
+  schema's tables and views it can <code>SELECT</code> — the same query the inventory sync enumerates
+  with. There is no catalog level: the connection pins one database. <strong>MySQL / MariaDB</strong>
+  works the same way, its schemas being the databases the user has privileges on, and
+  <strong>Trino</strong> inside the connection's catalog, listing what the cluster's access control
+  lets the user see. <strong>SQL Server / Azure SQL</strong> likewise, inside the connection's database.</li>
+<li><strong>Snowflake — Browse schemas…</strong> lists the schemas of the connection's database, then a
+  schema's tables and views, from that database's <code>INFORMATION_SCHEMA</code> — already filtered
+  to what the connection's role can see.</li>
+<li><strong>Iceberg — Browse schemas…</strong> lists the catalog's top-level namespaces, then a namespace's
+  tables, and fills <strong>Namespace</strong> and <strong>Table</strong>. It reads catalog metadata only, never a data
+  file. Nested namespaces are not listed — type a nested one in.</li>
+<li><strong>ADLS Gen2 / S3 — Browse files…</strong> (single-file mode) walks the folders of the
+  connection's one container or bucket and fills <strong>File path</strong> with the file you pick.
+  <strong>Browse folders…</strong> (batch mode) fills <strong>Prefix</strong> with the folder you are in.</li>
+</ul>
+<p>At the table level a tag marks anything that is not a plain table: <strong>View</strong>,
+<strong>Materialized view</strong>, <strong>Dynamic table</strong> (Snowflake) or <strong>Streaming table</strong> (Unity
+Catalog). A freshness or volume monitor on a plain view re-runs the view's query on every
+check rather than reading stored rows.</p>
+<p>Each level is <strong>one bounded request</strong> of up to 200 names. When a level holds more, the
+picker says so ("Showing the first 200 … there are more") rather than presenting a partial
+list as the whole thing — type the name into the field instead. A name DataQ cannot target
+(anything that is not a plain identifier: letters, digits, <code>_</code> and <code>$</code>, not starting with a
+digit) is listed but not pickable, since a suite pointed at it could not run.</p>
+<p>Browsing opens the datasource with the connection's stored credential, so it needs the
+<strong>Member</strong> role (the same bar as testing a connection); Viewers cannot author suites and do
+not get the picker. Only names, sizes and timestamps come back — never a credential or a
+row. The same listings are available over the REST API as
+<code>GET /connections/{id}/browse/catalog</code> and <code>GET /connections/{id}/browse/files</code>.</p>
+<h3 id="gx-expectation-all-datasources">GX expectation (all datasources)<a class="headerlink" href="#gx-expectation-all-datasources" title="Permanent link">¶</a></h3>
+<p>Pick a <em>Column values</em> / <em>Table shape</em> expectation (e.g. <code>Column values not null</code>), name
+it, set the column, and optionally band severity with <strong>Warn ≥ / Fail ≥ / Critical ≥</strong>
+thresholds over the unexpected-%. Leave thresholds blank for binary pass/fail.</p>
+<p><strong>Tolerance (<code>mostly</code>).</strong> Most row-wise expectations take an optional tolerance — a
+<em>fraction</em>, so <code>0.95</code> means "pass if at least 95% of rows conform". Leave it blank to
+require every row. It moves the line at which the check itself succeeds; it does <strong>not</strong>
+change the unexpected-% the severity bands read, so a warn threshold below your tolerance
+can still raise a warning on a run the check passed.</p>
+<p><strong>Negative rules.</strong> Several types assert what must <em>not</em> be there: <em>Column values not in
+set</em> (forbidden values, placeholders like <code>N/A</code>), <em>Column values do not match regex</em>, and
+<em>Column values match none of a list of regexes</em>. <em>Column values null</em> is the inverse of
+<em>not null</em> — for a deprecated column that must stay empty.</p>
+<p><strong>Beyond one column.</strong> <em>Compound columns unique</em> takes a list of columns and checks the
+combination (a multi-column key); <em>Column A greater than column B</em> compares two columns
+row by row, optionally allowing equality; <em>Column A equals column B</em> asserts they agree;
+<em>Columns sum to a total</em> checks that several columns add up per row; <em>Values unique within
+each row</em> asserts the listed columns differ <strong>within</strong> a row (a transfer whose source and
+destination must not match) — as opposed to across rows. <em>Column distinct values in set</em> /
+<em>contain set</em> compare the set of values the column holds rather than counting rows — so
+they report <strong>which</strong> values are unexpected or missing, and they have no unexpected-% for
+the severity bands to read (thresholds on those two are ignored; the result is a plain
+pass/fail).</p>
+<p><strong>Text shape.</strong> <em>Column value lengths equal</em> pins a fixed-width code; <em>Column values match
+a list of regexes</em> accepts several legitimate formats at once (any one of them by default,
+or all of them).</p>
+<p><strong>Date formats and JSON.</strong> <em>Column values match a date format</em> validates a date or
+timestamp stored as text against a Python <code>strftime</code> format, and <em>Column values are valid
+JSON</em> parses a text payload column. Great Expectations implements both for dataframe
+batches only, so they are offered on flat files, Iceberg and Unity Catalog but <strong>not on
+Snowflake</strong>, where the editor hides them and the API rejects them — use a custom-SQL check
+(or a VARIANT column) there rather than saving a check that would error on every run.</p>
+<h3 id="which-expectation-types-are-available">Which expectation types are available<a class="headerlink" href="#which-expectation-types-are-available" title="Permanent link">¶</a></h3>
+<p>The complete, generated list — every type with its parameters, thresholds and the datasources
+it runs on — is the <a href="../../reference/check-types/">Check types reference</a>.</p>
+<p>DataQ serves a <strong>vetted subset</strong> of Great Expectations' built-ins, not all of them
+(<code>backend/app/datasources/expectation_allowlist.py</code>). Every type in it is executed on both
+a dataframe and a SQL batch in CI, so it is known to run rather than merely to exist. The
+API, the MCP tools and suite import all validate against that same list, so a check written
+outside the editor cannot smuggle in a type the editor would not offer; the refusal says
+whether the type is unknown to Great Expectations altogether or simply not enabled here,
+and lists what is.</p>
+<p>Two groups are deliberately absent. <strong>GX's scalar aggregates</strong>
+(<code>expect_column_mean_to_be_between</code> and its siblings) report a single number and no
+unexpected-%, so severity bands have nothing to band — the <em>Aggregate</em> monitor measures that
+shape properly, with two-sided bands and a trend. <strong>Whole-table set comparisons</strong> (columns match an expected set or
+ordered list) are what the <em>Schema-drift</em> monitor does, against a captured baseline. For
+anything with no vetted type, write a custom-SQL check.</p>
+<h3 id="custom-sql-snowflake-unity-catalog-postgresql-mysql-trino-sql-server-athena-redshift-adr-0019">Custom SQL (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server / Athena / Redshift — ADR 0019)<a class="headerlink" href="#custom-sql-snowflake-unity-catalog-postgresql-mysql-trino-sql-server-athena-redshift-adr-0019" title="Permanent link">¶</a></h3>
+<p>A read-only SQL rule in the Monaco editor: <strong>any rows returned are failures</strong>. Use
+<code>{batch}</code> as a placeholder for the suite's target table
+(<code>SELECT * FROM {batch} WHERE amount &lt; 0</code>). Single read-only statement enforced
+server-side.</p>
+<p>The query runs <strong>in the warehouse</strong>, so the result is a pass/fail plus the number
+of rows returned — no severity banding (a row count isn't comparable across tables).</p>
+<p><strong>On Unity Catalog the suite's run target must name a schema.</strong> Custom SQL is the
+one check kind that needs it: the query is addressed as <code>catalog.schema.table</code>, and
+a two-part name would silently resolve against the session's default schema — a
+<em>different table</em>, quietly checked. A UC target without a schema therefore errors
+its custom-SQL checks (with that reason on the result) while every other check in
+the suite runs normally. Set the schema on the suite's run target to fix it.
+Snowflake, PostgreSQL, MySQL and Trino are unaffected — their schema comes from the connection.</p>
+<h3 id="snowflake-dmf-adr-0036">Snowflake DMF (ADR 0036)<a class="headerlink" href="#snowflake-dmf-adr-0036" title="Permanent link">¶</a></h3>
+<p>On a Snowflake connection, the check editor offers a separate <strong>Snowflake DMF</strong>
+category: your own custom DMFs (below), and seven system types — null count, null percent, duplicate count, unique count,
+blank count (VARCHAR columns; empty or space-only strings — not NULLs, and tabs/newlines
+aren't treated as blank), future-timestamp percent (DATE / TIMESTAMP_LTZ /
+TIMESTAMP_TZ columns) and accepted values (below) — that run on Snowflake's own <code>SNOWFLAKE.CORE.*</code> <strong>Data Metric Functions</strong> instead of a
+GX expectation. Same authoring flow (pick the type, set the column); the difference
+is the <code>engine</code> the check runs on (<code>dmf</code> vs the default <code>gx</code>). Every type except unique
+count needs a fail or critical threshold, banded like any other metric. Not offered on other
+datasources.</p>
+<p><strong>Accepted values (DMF)</strong> counts rows whose value is not in your list, using Snowflake's
+<code>ACCEPTED_VALUES</code> function. <code>ACCEPTED_VALUES</code> can't be called on demand, so DataQ evaluates it
+through <code>SYSTEM$DATA_METRIC_SCAN</code>. That needs no DMF attached to the table and only the SELECT
+rights DataQ already has. <strong>NULLs are not counted as violations.</strong> The scan reads the column
+in full.</p>
+<p><code>SCHEMA_CHANGE_COUNT</code> is not offered. It only exists as a DMF attached to the table on a
+schedule, because it counts changes since its previous scheduled run. Attaching one needs table
+ownership, which DataQ's read-only role deliberately lacks. Use the schema-drift monitor
+instead.</p>
+<p><strong>Custom DMF</strong> runs a data metric function your team created in Snowflake with
+<code>CREATE DATA METRIC FUNCTION</code>. Give it the function's fully qualified name
+(<code>DATABASE.SCHEMA.FUNCTION</code>) and the suite table's columns, in the order the function's
+<code>TABLE(...)</code> argument declares them. DataQ calls it the same on-demand way as the system
+functions:</p>
+<div class="highlight"><pre><span></span><code><span class="k">SELECT</span><span class="w"> </span><span class="n">DATAQ_DB</span><span class="p">.</span><span class="n">QUALITY</span><span class="p">.</span><span class="n">NEG_AMOUNT</span><span class="p">(</span><span class="k">SELECT</span><span class="w"> </span><span class="n">AMOUNT</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">RETAIL</span><span class="p">.</span><span class="n">ORDERS</span><span class="p">)</span>
+</code></pre></div>
+<ul>
+<li><strong>Names are identifiers, never SQL.</strong> Each part of the name and each column must be a
+  plain identifier (letters, digits, <code>_</code>, <code>$</code>). Anything else is refused when you save. An
+  all-lower-case name is left unquoted, so Snowflake reads it in upper case; any other name is
+  quoted exactly as you typed it.</li>
+<li><strong>The return value is the metric.</strong> It is banded by the thresholds, higher = worse, and a
+  fail or critical threshold is required. It is shown as-is, never masked, so write
+  functions that return a count or a percentage, not a data value. The check's dimension is
+  left unclassified unless you set one, because DataQ cannot know what the function measures.</li>
+<li><strong>What the role needs:</strong> <code>USAGE</code> on the function and on its database and schema, plus
+  <code>SELECT</code> on the table. A function the role cannot use fails exactly like one that does not
+  exist, and the check's error says so.</li>
+<li><strong>Picking a function.</strong> Testing the connection lists the custom DMFs its role can use, and
+  the editor suggests them. The list is only as fresh as the last test, so re-test after
+  creating a function. You can always type a name that isn't listed. Functions in the
+  <code>SNOWFLAKE</code> database are refused: use their own DMF check types.</li>
+<li><strong>Preview it first.</strong> DMF checks, custom ones included, can be dry-run from the editor. A
+  wrong name, missing grant or mismatched column list shows up there before you save.</li>
+</ul>
+<h3 id="databricks-dqx-adr-0036">Databricks DQX (ADR 0036)<a class="headerlink" href="#databricks-dqx-adr-0036" title="Permanent link">¶</a></h3>
+<p>On a Unity Catalog connection, the check editor offers a <strong>Databricks DQX</strong> category: row
+rules evaluated by <a href="https://github.com/databrickslabs/dqx">Databricks Labs DQX</a> inside your
+own workspace. The rules are not null, not empty, not null or empty, in list, in range,
+matches regex, not less than and not greater than. Each check reports the number of failing
+rows, so it fails on any failing row. Optional thresholds band that count instead.</p>
+<p><strong>Where it runs.</strong> DataQ does not contain or install DQX: it is published under the
+Databricks License, which permits use only with Databricks services. When a run includes
+DQX checks, DataQ uploads a small notebook to the connection user's workspace folder
+(<code>/Users/&lt;you&gt;/.dataq/</code>) and submits <strong>one serverless job for all of the run's DQX checks</strong>.
+The notebook installs a pinned DQX version and returns only failing-row counts, never row
+values. Expect about a minute of job start-up per run. For the same reason a DQX check has
+<strong>no dry-run preview</strong>: run the suite to see its result.</p>
+<p><strong>What the connection's token needs:</strong> permission to create workspace files in its own home
+folder and to submit serverless jobs, plus <code>SELECT</code> on the target table. A rule the
+workspace rejects errors only that check. A job that fails errors every DQX check in the run
+with a classified reason. Your GX checks are unaffected.</p>
+<p><strong>Values are always literals.</strong> DQX evaluates a bare string argument as a Spark SQL
+expression, so DataQ builds every rule itself: columns must be plain identifiers, list values
+are sent as quoted literals, and limits must be numbers or ISO dates.</p>
+<p><strong>Stream mode.</strong> Each DQX check has a <strong>Read</strong> setting. <strong>Snapshot</strong> (the default) evaluates
+the whole table every run. <strong>Stream</strong> evaluates only the rows appended since the check's last
+successful run, which is what you want on a Lakeflow streaming table or any Delta table that
+grows by appends. It runs in the same one job per run, on your existing schedule. The job reads
+the table as a Delta stream (<code>readStream</code> with an <code>availableNow</code> trigger), counts failing rows
+per rule, and stops once it has caught up.</p>
+<ul>
+<li><strong>Where the stream resumes.</strong> DataQ records the Delta version the stream reached with each
+  result, and the next run starts from there. A run whose result was never saved, for example
+  because it was cancelled, is re-read next time instead of skipped. The first run of a stream
+  check reads the whole table.</li>
+<li><strong>What the result says.</strong> The failing-row count and the row count cover only the new rows.
+  The result also records the version range it read. A run with no new rows is recorded as
+  <code>skip</code>, not <code>pass</code>.</li>
+<li><strong>Setup.</strong> Set the connection's <strong>DQX checkpoint volume</strong> (<code>catalog.schema.volume</code>). Spark
+  needs somewhere to keep a stream checkpoint while the job runs, and serverless compute
+  refuses both temporary and DBFS locations. DataQ uses a fresh folder in that volume for each
+  run and deletes it afterwards. The token needs <code>READ VOLUME</code> and <code>WRITE VOLUME</code> on it. A
+  stream check on a connection without a volume errors on its own; your other checks still
+  run.</li>
+<li><strong>Limits.</strong></li>
+<li>Only appended rows are evaluated. A commit that rewrites existing rows (<code>UPDATE</code>,
+    <code>DELETE</code>, <code>MERGE</code>, an overwrite) is skipped, including any rows it inserted. The result
+    counts the skipped commits in <code>change_commits_skipped</code>. Use snapshot mode on a table that
+    is not append-only.</li>
+<li>If the table was replaced, or its history no longer reaches the recorded version, the
+    stream restarts from the whole table and the result says why (<code>restarted</code>).</li>
+<li>Run a stream check more often than the table's <code>VACUUM</code> retention (7 days by default).
+    Otherwise the files it needs to resume from can be gone and the job fails. To restart a
+    stream check from the whole table, run it once in snapshot mode.</li>
+</ul>
+<h3 id="freshness-monitor-all-datasources-adr-00120030">Freshness monitor (all datasources — ADR 0012/0030)<a class="headerlink" href="#freshness-monitor-all-datasources-adr-00120030" title="Permanent link">¶</a></h3>
+<p><em>How stale is the target?</em> Point it at the load/updated <strong>timestamp column</strong>; the check
+measures hours since <code>MAX(column)</code> and bands that age with the thresholds. A <strong>fail or
+critical threshold is required</strong> — without one, a freshness check could never fail.</p>
+<p><strong>On a flat file (ADLS Gen2 / S3) the timestamp column is optional.</strong> Leave it blank
+and the check measures <strong>when the file last landed</strong> (the object's modified time)
+instead of the newest timestamp inside it. These catch different failures, and a
+landing zone usually wants both:</p>
+<table>
+<thead>
+<tr>
+<th>Blank column (arrival time)</th>
+<th>Named column (in-file <code>MAX</code>)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Catches <strong>"the producer stopped sending files"</strong> — no new file has arrived. An in-file <code>MAX</code> is blind to this: the newest file is old, but its rows look perfectly fresh.</td>
+<td>Catches <strong>"files keep arriving but the data in them is stale"</strong> — the pipeline runs, the content doesn't advance.</td>
+</tr>
+<tr>
+<td>Costs a listing, no data read.</td>
+<td>Reads the resolved batch.</td>
+</tr>
+</tbody>
+</table>
+<p>Caveats for the in-file form: a CSV's timestamps are text, so they're parsed — use
+<strong>ISO-8601</strong>, since an ambiguous <code>06/07/2026</code> follows pandas' day-first inference.
+A <strong>numeric</strong> column is refused outright rather than read as an epoch offset, which
+would date your data to 1970 and fire critical staleness forever.</p>
+<h3 id="volume-monitor-all-datasources-adr-00120030">Volume monitor (all datasources — ADR 0012/0030)<a class="headerlink" href="#volume-monitor-all-datasources-adr-00120030" title="Permanent link">¶</a></h3>
+<p><em>Did the load deliver?</em> Set the expected <strong>min/max row count</strong>; thresholds optionally
+band the % by which the count falls outside the range (a spike can exceed 100%), or
+leave them blank for binary in-range pass/fail. On a flat file the count is over the
+<strong>resolved batch</strong> — the single file the target's batch pattern selects, not the
+whole prefix.</p>
+<h3 id="aggregate-monitor-all-datasources-adr-0012">Aggregate monitor (all datasources — ADR 0012)<a class="headerlink" href="#aggregate-monitor-all-datasources-adr-0012" title="Permanent link">¶</a></h3>
+<p><em>Is this column's statistic where it should be?</em> Pick one statistic — <strong>mean, median, sum,
+standard deviation, min or max</strong> — over one numeric column, and set <strong>two-sided bands</strong>:
+<em>Fail below / Fail above</em>, optionally a tighter <em>Warn below / Warn above</em> inside them and a
+wider <em>Critical below / Critical above</em> outside them. The bands nest (critical ⊇ fail ⊇ warn,
+bounds inclusive) and are checked when you save. An aggregate fails too low as well as too
+high, so it takes <strong>no</strong> warn/fail/critical threshold — those band a metric that only gets
+worse upward, and the editor hides them.</p>
+<p>The statistic itself is stored as the result's metric every run, so the <strong>trend view</strong> plots it
+with the bands drawn in, and it is ready for a future anomaly baseline. Semantics match SQL on
+every datasource: NULLs are skipped, the standard deviation is the sample one (n − 1), and mean,
+median and standard deviation are computed over a double-precision float — several engines
+(Databricks, Trino, Athena, Redshift, MySQL/MariaDB) otherwise round a DECIMAL average to a
+fixed number of places. An <strong>empty table or an all-NULL column reports error</strong>, never a pass
+on a made-up 0 (a standard deviation needs at least two values). A text or date column is an
+error too: the monitor needs a numeric column.</p>
+<p>Warehouses compute it with one pushdown query (Unity Catalog included); flat files and Iceberg
+read the one column into the worker, under the same scan caps as a check. <strong>Median</strong> is exact
+wherever it is offered and is <strong>not offered on MySQL/MariaDB, Trino or Athena</strong>, which have
+only an approximate percentile — use the mean there, or a custom-SQL check with the engine's
+<code>approx_percentile</code>. Its DQ dimension is left for you to set, since a statistic can speak to
+accuracy, validity or consistency depending on why you wrote it. Under zero-sample mode a
+<strong>min or max</strong> result keeps its status but not its value: that value is one cell of the table.</p>
+<h3 id="schema-drift-monitor-all-datasources-adr-0012">Schema-drift monitor (all datasources — ADR 0012)<a class="headerlink" href="#schema-drift-monitor-all-datasources-adr-0012" title="Permanent link">¶</a></h3>
+<p><em>Did the shape change under you?</em> Capture a <strong>baseline</strong> column-name/type snapshot,
+then each run diffs the live snapshot against it and flags any add / drop /
+type-change. Introspection is per-datasource, never a <code>CheckRunner</code>/GX pass or a
+data scan: <code>information_schema</code> for Snowflake/Unity Catalog/PostgreSQL/MySQL/Trino, the Parquet footer (or
+a bounded CSV header sample, or a JSON file's first 1 MiB) for ADLS Gen2/S3 flat files, and the loaded table's own
+metadata for Iceberg. Re-baseline explicitly once you've reviewed a drift and want
+it as the new normal — it is never re-baselined for you.</p>
+<h3 id="anomaly-monitor-snowflake-unity-catalog-the-generic-sql-engines-adr-0012">Anomaly monitor (Snowflake / Unity Catalog / the generic SQL engines — ADR 0012)<a class="headerlink" href="#anomaly-monitor-snowflake-unity-catalog-the-generic-sql-engines-adr-0012" title="Permanent link">¶</a></h3>
+<p><em>Is this value abnormal for this dataset?</em> Where a volume monitor asks "is the row
+count inside a range I chose?", the anomaly monitor learns the range: it keeps a
+rolling mean/stddev of the target's own <strong>row count</strong> or <strong>freshness age</strong> and bands
+each run's <strong>z-score</strong> through the usual warn / fail / critical thresholds. Optional
+<strong>seasonality</strong> makes the baseline weekday-aware, so a quiet Sunday isn't an anomaly
+just for being smaller than Monday.</p>
+<p>Below its <code>min_points</code> of history the check reports <strong>skip</strong>, never a fabricated
+pass — a baseline that hasn't seen enough runs has no opinion. The per-check
+<strong>trend view</strong> overlays the learned baseline band on the metric history so you can
+see what "normal" currently means. SQL datasources only: the anomaly executor takes
+its own measurement over a live SQL connection, which the natively-computed Iceberg
+and flat-file monitor paths don't expose.</p>
+<p><strong>Column profile</strong> is a third target metric that watches every column at once. One
+query per run measures each column's <strong>null percentage</strong> and <strong>distinct count</strong>, and
+each of those gets its own history. The result names the columns that moved, largest
+deviation first, and its metric (the z-score the thresholds read) is the largest one.</p>
+<ul>
+<li>A null rate is flagged whichever way it moves. A distinct count is flagged only when
+  it <strong>falls</strong>: a growing table's distinct counts rise every day, but a column that
+  collapses from 50 values to 1 is a problem.</li>
+<li>A column that has never had a null is not flagged for one stray null: the spread a
+  null rate is measured against is never taken as less than 1 percentage point, and a
+  distinct count's never as less than 10% of its mean.</li>
+<li>It measures the first 100 columns in table order and reports how many there are in
+  total. A column whose type the engine can't cast to a string (Redshift <code>GEOMETRY</code> or <code>BOOLEAN</code>), or
+  whose cast drops values (Redshift <code>SUPER</code> objects), keeps its null rate but gets no
+  distinct count, and is listed under <code>distinct_unavailable</code>. Every other column is still
+  counted.</li>
+</ul>
+<p>For example, with <code>{"target_metric": "column_profile", "window": 8, "min_points": 3}</code> on
+<code>orders</code>, three runs build the history. When a load then leaves <code>customer_email</code> empty,
+the next run reports <code>customer_email</code> · <code>null_pct</code> · value <code>100</code> against a mean of about
+<code>2</code>, and fails.</p>
+<h3 id="comparison-check-all-datasources-adr-0015">Comparison check (all datasources — ADR 0015)<a class="headerlink" href="#comparison-check-all-datasources-adr-0015" title="Permanent link">¶</a></h3>
+<p><em>Does this dataset reconcile against that one?</em> A comparison check diffs the suite's
+dataset (the <strong>target under test</strong>) against a <strong>baseline</strong> on any other datasource
+connection — cross-type and cross-env both work (Snowflake DEV vs Snowflake QA, or
+Snowflake vs the flat-file extract it was loaded from). Rows are joined on the key
+columns you pick, producing <strong>matched / mismatched / additional-per-side</strong> buckets
+with a mismatch-% metric that bands through the normal severity thresholds. Reads
+are capped fail-fast (<code>COMPARISON_MAX_ROWS</code>), samples are redacted like every other
+failing-row surface, and a CSV/XLSX report of the differences is downloadable
+on demand (derived at read time, never stored). Either SQL side can use a read-only
+query projection instead of a whole table.</p>
+<h3 id="dq-dimension-adr-0038">DQ dimension (ADR 0038)<a class="headerlink" href="#dq-dimension-adr-0038" title="Permanent link">¶</a></h3>
+<p>Every check carries a <strong>DQ dimension</strong> — the quality aspect it measures. This is a
+third axis, separate from the check <em>kind</em> (how it works) and the expectation type
+(the specific rule):</p>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th>Question it answers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Accuracy</td>
+<td>Does the data match reality / a trusted source?</td>
+</tr>
+<tr>
+<td>Completeness</td>
+<td>Is all the expected data present?</td>
+</tr>
+<tr>
+<td>Consistency</td>
+<td>Do related datasets agree with each other?</td>
+</tr>
+<tr>
+<td>Integrity</td>
+<td>Do relationships between datasets hold?</td>
+</tr>
+<tr>
+<td>Timeliness</td>
+<td>Is the data recent enough?</td>
+</tr>
+<tr>
+<td>Uniqueness</td>
+<td>Are there unexpected duplicates?</td>
+</tr>
+<tr>
+<td>Validity</td>
+<td>Does the data conform to its rules and formats?</td>
+</tr>
+</tbody>
+</table>
+<p><strong>It is filled in for you.</strong> The editor defaults it from the check type — a
+not-null check is Completeness, a freshness monitor is Timeliness — and you can
+change it at any time, including long after the check was created. Derivation is a
+good guess about intent, not a fact: the same range check is <em>Validity</em> when it
+bounds a percentage and <em>Accuracy</em> when it asserts a reconciled total.</p>
+<p>Two dimensions are <strong>never</strong> guessed. <strong>Accuracy</strong> and <strong>Integrity</strong> can't be
+inferred from the shape of a rule, and a <strong>custom SQL</strong> check is an arbitrary
+predicate with no derivable answer at all — those start blank for you to set.</p>
+<p>Leaving it blank is legitimate: the check is recorded as <em>unclassified</em> and shows
+up as a <strong>coverage gap</strong> rather than being quietly filed under a dimension it
+doesn't belong to. That matters because the point of dimensions is coverage —
+"this table has no Timeliness checks at all" is the actionable finding, and it
+would be a lie if unclassified checks were silently bucketed.</p>
+<p>Checks created before this feature landed are unclassified until you next edit
+them; they were deliberately not bulk-classified, so a derived guess is never
+mistaken for someone's decision.</p>
+<h3 id="type-names-for-expect_column_values_to_be_of_type">Type names for <code>expect_column_values_to_be_of_type</code><a class="headerlink" href="#type-names-for-expect_column_values_to_be_of_type" title="Permanent link">¶</a></h3>
+<p>Everything here applies equally to its sibling <strong>Column values are of one of several
+types</strong> (<code>expect_column_values_to_be_in_type_list</code>), whose <code>type_list</code> takes the same
+vocabulary — one entry per acceptable type.</p>
+<p>The <strong>Column values are of type</strong> expectation's <code>type_</code> field is the one place the
+check editor's "obvious" answer is usually wrong. GX validates it against a
+<em>different</em> type vocabulary depending on which engine actually runs the check — not
+the type your warehouse/catalog shows you:</p>
+<ul>
+<li><strong>Snowflake</strong> builds a real SQL batch (<code>SqlAlchemyExecutionEngine</code>) and string-compares
+  <code>type_</code> against the <strong>fully-qualified dialect type</strong>, not the short column type. A
+  <code>NUMBER</code> column reports as <code>DECIMAL(38, 0)</code>; <code>VARCHAR</code> reports as <code>VARCHAR(16777216)</code>.
+  Plugging in <code>NUMBER</code> or <code>DECIMAL</code> alone fails every time.</li>
+<li><strong>MySQL / MariaDB</strong> build a SQL batch too, but GX compares the SQLAlchemy type <em>class</em>
+  there, so <code>type_</code> is the bare type name: <code>DECIMAL</code>, <code>VARCHAR</code>, <code>TINYINT</code> (a <code>BOOLEAN</code>).</li>
+<li><strong>PostgreSQL</strong> builds the same kind of SQL batch and compares the same way: a
+  <code>numeric(12,2)</code> column is <code>NUMERIC(12, 2)</code>, a <code>timestamptz</code> is <code>TIMESTAMP WITH TIME ZONE</code>.</li>
+<li><strong>Trino</strong> compares the same way, in its own type names: <code>DECIMAL(12, 2)</code>, <code>VARCHAR</code>,
+  <code>TIMESTAMP(6)</code>, <code>TIMESTAMP(6) WITH TIME ZONE</code>, <code>BIGINT</code>.</li>
+<li><strong>Unity Catalog, ADLS Gen2 / S3, and Apache Iceberg</strong> all read the target into a
+  pandas DataFrame first (<code>PandasExecutionEngine</code>). GX first tries an <strong>exact dtype
+  match</strong>; only when the column's dtype is <code>object</code> and <code>type_</code> isn't
+  <code>object</code>/<code>object_</code>/<code>O</code> does it fall back to a <strong>row-wise Python value-type compare</strong>.
+  In practice:</li>
+<li>Numeric columns report numpy dtypes — <code>int64</code>, <code>float64</code>, <code>bool</code>. <strong>Caveat:</strong> an
+    integer column containing <em>any</em> NULL is upcast to <code>float64</code> by the read
+    (<code>pd.read_sql_table</code> / <code>pd.read_csv</code>), so a nullable <code>BIGINT</code> reports <code>float64</code>,
+    not <code>int64</code>.</li>
+<li>String columns on <strong>Unity Catalog and CSV</strong> reads are plain pandas <code>object</code> dtype
+    (these reads are <em>not</em> Arrow-backed). Both <code>type_: object</code> (exact dtype match) and
+    <code>type_: str</code> (row-wise value-type match) pass — pick either.</li>
+<li><strong>Parquet, JSON and Iceberg</strong> reads <em>are</em> Arrow-backed and can report Arrow-flavored
+    dtype names — calibrate from a dry-run rather than assuming the CSV/UC names.</li>
+<li><strong><code>DATE</code> columns</strong> on Unity Catalog, Parquet and Iceberg stay dates: use
+    <code>type_: date</code>, and write date bounds and value sets as dates (<code>2026-01-02</code>).
+    A bound at midnight (<code>2026-01-02T00:00:00</code>) is read as that date; one with a
+    time of day has no date equivalent and errors.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Datasource</th>
+<th>Engine</th>
+<th><code>type_</code> guidance</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Snowflake</td>
+<td>SQL (dialect-native)</td>
+<td><code>DECIMAL(38, 0)</code> for <code>NUMBER</code>, <code>VARCHAR(16777216)</code> for <code>VARCHAR</code></td>
+</tr>
+<tr>
+<td>PostgreSQL</td>
+<td>SQL (dialect-native)</td>
+<td><code>NUMERIC(12, 2)</code> for <code>numeric(12,2)</code>, <code>TIMESTAMP WITH TIME ZONE</code> for <code>timestamptz</code>, <code>TEXT</code>, <code>INTEGER</code></td>
+</tr>
+<tr>
+<td>MySQL / MariaDB</td>
+<td>SQL (SQLAlchemy type class)</td>
+<td><code>DECIMAL</code> for <code>DECIMAL(12,2)</code>, <code>VARCHAR</code>, <code>INTEGER</code>, <code>TIMESTAMP</code>, <code>DATETIME</code>, <code>TINYINT</code> for <code>BOOLEAN</code></td>
+</tr>
+<tr>
+<td>Trino</td>
+<td>SQL (dialect-native)</td>
+<td><code>DECIMAL(12, 2)</code>, <code>VARCHAR</code> / <code>VARCHAR(20)</code>, <code>TIMESTAMP(6)</code>, <code>TIMESTAMP(6) WITH TIME ZONE</code>, <code>BIGINT</code></td>
+</tr>
+<tr>
+<td>Amazon Athena</td>
+<td>SQL (bare type name)</td>
+<td><code>DECIMAL</code>, <code>TIMESTAMP</code>, <code>VARCHAR</code>, <code>BIGINT</code>, <code>BOOLEAN</code></td>
+</tr>
+<tr>
+<td>Amazon Redshift</td>
+<td>SQL (bare type name)</td>
+<td><code>DECIMAL</code> (not <code>NUMERIC</code>), <code>VARCHAR</code>, <code>BIGINT</code>, <code>TIMESTAMP</code>, <code>TIMESTAMPTZ</code>, <code>DATE</code>, <code>BOOLEAN</code>, <code>SUPER</code>, <code>GEOMETRY</code>; a <code>VARBYTE</code> column reads as <code>VARCHAR</code></td>
+</tr>
+<tr>
+<td>SQL Server</td>
+<td>SQL (SQLAlchemy type name)</td>
+<td><code>DECIMAL</code> for <code>decimal(12,2)</code>, <code>INTEGER</code> for <code>int</code>, <code>NVARCHAR</code>, <code>DATETIME2</code>, <code>DATETIMEOFFSET</code>, <code>BIT</code></td>
+</tr>
+<tr>
+<td>Unity Catalog</td>
+<td>pandas DataFrame (not Arrow-backed)</td>
+<td><code>int64</code> for non-nullable <code>BIGINT</code> (<strong><code>float64</code> if the column contains NULLs</strong>); <code>object</code> or <code>str</code> for <code>STRING</code>; <code>date</code> for <code>DATE</code></td>
+</tr>
+<tr>
+<td>ADLS Gen2 / S3 (CSV)</td>
+<td>pandas DataFrame (not Arrow-backed)</td>
+<td><code>int64</code>/<code>float64</code>/<code>bool</code> for numerics (<strong>NULLs upcast integers to <code>float64</code></strong>); <code>object</code> or <code>str</code> for strings</td>
+</tr>
+<tr>
+<td>ADLS Gen2 / S3 (Parquet) / Iceberg</td>
+<td>pandas DataFrame (Arrow-backed)</td>
+<td>Arrow-flavored dtype names — confirm via a dry-run's <code>observed_value</code></td>
+</tr>
+<tr>
+<td>ADLS Gen2 / S3 (JSON)</td>
+<td>pandas DataFrame (Arrow-backed)</td>
+<td>Python value type names — <code>int</code>, <code>float</code>, <code>str</code>, <code>bool</code> (an integer column with NULLs stays <code>int</code>); <code>int64</code> / <code>object</code> do <strong>not</strong> pass</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Calibration tip:</strong> don't guess — <strong>dry-run first</strong>, but know where the trail runs
+out. On <strong>Snowflake, PostgreSQL, Trino and the Arrow-backed sources</strong> (Parquet/JSON/Iceberg), a failing
+result's <code>observed_value</code> carries the <em>exact</em> string GX expected — copy it into
+<code>type_</code> and re-run to confirm green. On <strong>Unity Catalog / CSV</strong>, a wrong value-type
+guess (e.g. <code>int64</code> against a string column) falls to GX's row-wise compare, which
+fails with <strong>no observed value at all</strong> — the dry-run preview renders Observed as
+"—". If you see that, don't hunt for a magic string: the column is <code>object</code> dtype, so
+enter <code>object</code> or the Python value type name (<code>str</code>). The check editor's help text
+under the field repeats this per the suite's connection type.</p>
+<p>Before saving any of them: <strong>Dry-run</strong> previews pass/fail against live data, and the
+<strong>column profiler</strong> (nulls, distinct count, min/max, top values) helps place thresholds.</p>
+<h2 id="run-it">Run it<a class="headerlink" href="#run-it" title="Permanent link">¶</a></h2>
+<p>Run a suite <strong>now</strong>, on a <strong><a href="../scheduling/">cron schedule</a></strong>, or <strong>triggered</strong> by a
+pipeline (see <strong><a href="../orchestration/">Orchestration</a></strong>). Results land on the <strong>Results</strong>
+page and the <strong>Dashboard</strong> (health score + trends); failures alert per the suite's
+<strong><a href="../notifications/">notification config</a></strong>.</p>
+<p>Severity comes from thresholds banding the observed unexpected-percentage
+(warn &lt; fail &lt; critical); see ADR 0005 / 0016 for the model, and
+<strong><a href="../best-practices/">Best practices</a></strong> for how to pick the bands.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden="">
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"></path></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer">
+        
+          
+          <a href="../features/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Features overview">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"></path></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Features overview
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../scheduling/" class="md-footer__link md-footer__link--next" aria-label="Next: Scheduling">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Scheduling
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"></path></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.indexes", "navigation.sections", "navigation.top", "navigation.tracking", "navigation.instant", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.tabs.link", "search.share"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+  
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="../../assets/clips.js"></script>
+      
+    
+  <script>
+    // Delegated on document: instant navigation swaps the content region without
+    // re-running this block, so per-element listeners would die after the first click.
+    (function () {
+      if (window.__dqActionsBound) return;
+      window.__dqActionsBound = true;
+      function closeMenus() {
+        document.querySelectorAll(".dq-ask__menu:not([hidden])").forEach(function (m) {
+          m.hidden = true;
+          m.previousElementSibling.setAttribute("aria-expanded", "false");
+        });
+      }
+      document.addEventListener("click", async function (e) {
+        var ask = e.target.closest("[data-dq-ask]");
+        if (ask) {
+          e.stopPropagation();
+          var menu = ask.nextElementSibling;
+          var open = menu.hidden;
+          closeMenus();
+          menu.hidden = !open;
+          ask.setAttribute("aria-expanded", String(open));
+          return;
+        }
+        closeMenus();
+        var copy = e.target.closest("[data-dq-copy]");
+        if (!copy) return;
+        var label = copy.innerHTML;
+        try {
+          // Relative to the page being viewed — works under mkdocs serve, forks and mirrors.
+          var md = await (await fetch("index.md")).text();
+          await navigator.clipboard.writeText(md);
+          copy.textContent = "Copied";
+        } catch (err) {
+          copy.textContent = "Copy failed";
+        }
+        setTimeout(function () { copy.innerHTML = label; }, 1500);
+      });
+    })();
+  </script>
+
+  
+<script id="init-glightbox">const lightbox = GLightbox({"touchNavigation": true, "loop": false, "zoomable": true, "draggable": true, "openEffect": "zoom", "closeEffect": "zoom", "slideEffect": "slide"});
+document$.subscribe(()=>{ lightbox.reload(); });
+</script></body></html>

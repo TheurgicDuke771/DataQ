@@ -1,0 +1,200 @@
+# ADR 0035 — Request rate limiting on every public surface
+
+- **Status:** Accepted
+- **Date:** 2026-07-11
+- **Deciders:** @TheurgicDuke771
+- **Related:** ADR [0028](0028-cloud-neutral-image-runtime-config-generic-oidc.md) / [0013](0013-marketplace-distribution-and-anti-lock-in.md) (portable, cloud-neutral posture — the limiter must ride the app image, not an Azure edge), [0026](0026-auth-api-keys-and-principal-seam.md) (PATs — the authenticated `tok:` bucket), [0032](0032-email-otp-signin.md) (email OTP — this limiter is its named hard prereq), [0008](0008-mcp-server.md) (the `/mcp` mount this must also cover)
+
+## Context
+
+Every public surface DataQ exposes — the REST API, the orchestration webhook
+receivers, and the mounted FastMCP app at `/mcp` — is unthrottled. A single
+client (a misconfigured poller, a credential-stuffing script against the token
+endpoints, a runaway MCP loop) can saturate the API worker pool and the Postgres
+connection budget. This is a standing gap, and it is a **named hard prerequisite
+for ADR 0032's email OTP sign-in**: passwordless OTP mints and verifies
+codes over unauthenticated HTTP, which must not be brute-forceable.
+
+The deployment is cloud-neutral by policy (ADR 0028 / 0013) and headed for a
+local-first posture as Azure winds down, so the throttle cannot live in an
+Azure-specific edge (Front Door / APIM). It must ride the app itself.
+
+## Decision
+
+**An app-level HTTP middleware** (`backend/app/core/rate_limit.py`), registered
+on the parent FastAPI app as the **innermost** user middleware.
+
+- **Why app-level, not nginx `limit_req` or a FastAPI dependency:** the limiter
+  must be *principal-aware* (per-token vs per-IP — nginx can't hash our bearer),
+  portable across ACA / compose / local (ADR 0028), and cover the **`/mcp`
+  ASGI mount** — which a route `Depends(...)` cannot reach (it wraps a
+  sub-application, not our routes). Parent-app middleware sees every request
+  before routing, `/mcp` included.
+- **Why innermost:** a 429 then exits back out through `CORSMiddleware` (so a
+  cross-origin browser sees the 429, not an opaque CORS failure) and through
+  `request_id_middleware` (so 429s get `X-Request-ID` + the structured request
+  log).
+- **Algorithm — fixed-window counter, 60s, window index in the key**
+  (`rl:{cls}:{key}:{window}`). Baking the window into the key removes the
+  read-modify-EXPIRE race entirely: the key simply rotates at each boundary, and
+  `EXPIRE` (set unconditionally at 2× the window in the same INCR pipeline) is
+  pure garbage collection, never the limit boundary. One Redis round-trip per
+  request.
+- **No new dependency.** `redis==5.3.1` is already in the runtime
+  (`redis.asyncio`). A 30-line INCR beats adding `slowapi`/`limits` — a
+  dependency, its transitive graph, and a license review (CONTRIBUTING rule 40)
+  — for an algorithm this small. The store sits behind a `RateLimitStore`
+  Protocol so the impl is swappable.
+- **Fail-open.** Any store error returns `None` → the request is allowed, logged
+  once per window (`rate_limit_store_unavailable`). A Redis outage must degrade
+  to "no limiting", never to a hard-down API.
+- **A breaker for a slow-but-alive Redis.** The socket timeouts
+  (`socket_timeout=0.2` / `socket_connect_timeout=0.5`) bound the penalty when
+  Redis is *down*, and fail-open then kicks in fast. They do nothing when it is
+  *up and degraded* — a GC pause, a noisy neighbour: this is the innermost
+  middleware, covering `/api` + `/mcp` + the webhooks, so **every** request
+  serially waits out the full timeout and the app's p99 becomes Redis's p99,
+  while we keep hammering a server that is already struggling.
+
+  After **5 consecutive** store failures the breaker opens for **5 seconds** and
+  `incr_windows` returns the fail-open signal *without awaiting anything*.
+  Reopening is a single probe with no extra state: once the window passes the
+  next request simply goes through, re-opening on failure and resetting the
+  counter on success. The counter is *consecutive* failures, so a Redis that
+  drops one request in five never trips it — that is annoying, not degraded, and
+  opening the breaker for it would silently switch enforcement off across the
+  whole API.
+
+  Open is deliberately a short, self-clearing state. This ADR biases availability
+  over enforcement, but an open breaker **is** enforcement off, so it must never
+  be long-lived. Trips and closures are logged
+  (`rate_limit_store_breaker_open` / `_closed`) — a brownout that would otherwise
+  read as "the API got slow" becomes a named event.
+
+  The breaker MECHANISM lives in `core.circuit_breaker` and is shared
+  with the OTP per-email counter store (ADR 0032, another fixed-window counter on
+  the same Redis), so there is one implementation to reason about rather than two
+  that drift. The **state stays per store**: a shared breaker would let an OTP
+  brownout switch off API rate limiting, and the reverse — one subsystem's
+  degradation disabling an unrelated control is the failure a breaker exists to
+  prevent. The event prefix names which breaker moved.
+- **Endpoint classes** (per-minute, config-driven — `RATE_LIMIT_*`):
+
+  | Class | Matches | Key | Default |
+  |---|---|---|---|
+  | `webhook` | `/api/v1/orchestration/events/*` | per provider **+** client-IP (**even with a bearer** — machine path), **plus** a per-IP `ipall` ceiling. The known provider segment (adf/airflow/dbt, from the shared `ORCHESTRATION_PROVIDERS` vocabulary) is folded into the key so one noisy orchestrator can't crowd out another's callbacks from the same egress IP; an *unknown* segment shares one bare-IP bucket, so a path scanner can't mint fresh buckets by rotating the segment; and the `rl:webhook:ipall:{ip}` ceiling (`RATE_LIMIT_WEBHOOK_IP_PER_MINUTE`) bounds the **aggregate** one IP can spend across provider buckets — without it, per-provider folding would quietly multiply the per-IP webhook budget by (providers + 1). Ops note: provider-folded keys match `rl:webhook:*:ip:*` in a Redis SCAN, not the earlier bare `rl:webhook:ip:*` — and the ip component is the **folded network** (`ip:2.57.171.0/24`), so an exact-address lookup (`MATCH *ip:203.0.113.7*`) returns nothing even at /32 (`ip:203.0.113.7/32`); SCAN with the folded form | 120 (per provider bucket) / 240 (`ipall`) |
+  | `auth` | `/api/v1/auth/*` | per client-IP (**even with a bearer** — matched before the bearer branch, like `webhook`, so a token can't dodge it) | 10 |
+  | `default` | any request with a bearer | per `sha256(token)[:32]` **plus** a per-IP `ipall` ceiling | 300 (token) / 1200 (`ipall`) |
+  | `unauth` | everything else | per client-IP | 120 |
+
+  "Per client-IP" throughout this table means per client-IP **prefix** — see the threat-model section below.
+
+
+  The raw token is never a key input — only its hash — so it is never logged or
+  stored. `/healthz` and a **genuine CORS preflight** (an `OPTIONS` carrying both
+  `Origin` and `Access-Control-Request-Method`) are exempt; a bare `OPTIONS`
+  is counted like any other request.
+
+  - **Per-IP ceiling on the `default` class (`rate_limit_ip_per_minute`, default
+    1200)** — the rotated-token backstop. The middleware runs *before* auth, so a
+    bearer is unvalidated: an attacker cycling a fresh random `Bearer <nonce>` per
+    request would otherwise mint a brand-new `tok:` bucket every time (count = 1,
+    never a 429) and never be capped. The `default` class therefore increments a
+    SECOND `rl:default:ipall:{ip}:{window}` bucket counting ALL bearer traffic
+    from one IP; a request is throttled when the token bucket OR the `ipall`
+    ceiling is exceeded (both counters move in one pipelined round trip; when both
+    exceed, the 429 reports the token limit). The `webhook`/`unauth`/`auth`
+    classes stay single-key — each is already IP-capped on its own bucket, and
+    dropping the bearer only demotes an attacker to the lower `unauth` per-IP cap.
+    **The `auth` class (per-IP half) shipped separately** — the class table's
+    former "extension point" row for ADR 0032's OTP surface. It covers only what
+    the middleware CAN see (path + IP): the per-email counters ADR 0032 §8 also
+    calls for are a separate, service-level layer keyed on the normalized email
+    from the parsed request body, which a `BaseHTTPMiddleware` dispatch cannot
+    read without draining/replaying the receive channel on the hot path — that
+    half lands in the OTP service itself, with or before the backend slice. **`/mcp` shares
+    the `default` class** — it is a bearer-authenticated surface like the REST
+    API, so per-token buckets apply uniformly; no separate policy needed.
+- **Headers on the 429 only:** `Retry-After`, `X-RateLimit-Limit`,
+  `X-RateLimit-Remaining: 0`, with `error_envelope("rate_limited", …,
+  {"retry_after_seconds": N})`. We do not spend a header budget on every 200.
+- **nginx `limit_req` is explicitly out of scope.** A connection-level zone in
+  the frontend proxy is legitimate defence-in-depth, but the `http{}`-context
+  zone directive has no in-repo home today (the nginx conf is generated), and it
+  can't do principal-aware limits. Left as a documented future layer.
+
+### Threat model — per-IP means per address prefix
+
+Every per-IP bucket (unauth, webhook, and both `ipall` ceilings) keys on an
+address **prefix** — IPv4 `/24`, IPv6 `/64` by default
+(`RATE_LIMIT_IPV4_PREFIX` / `RATE_LIMIT_IPV6_PREFIX`) — not the full address.
+Keying per `/32` dilutes the cap against a **rotating NAT/proxy pool**: the
+post-deploy verification observed a 200-request burst from one machine land
+on 11 distinct source IPs inside a single `2.57.171.0/24` pool (13–26 requests
+each, none near the 120 cap). The same mechanics serve a deliberately
+distributed low-rate attacker. Folding onto the allocation prefix makes the pool
+share one bucket; `/64` is the standard single-subscriber IPv6 allocation, where
+per-address keying would be trivially dilutable (one host holds 2^64 addresses).
+Trade-offs, accepted: a prefix that legitimately hosts many independent clients
+(CGNAT, corporate egress) shares the cap — the masks are tunable per deployment,
+and `/32` / `/128` disable grouping. NB: the "unaffected" case is only
+single-egress-IP NAT (those users already shared one /32 bucket); **pool-based
+CGNAT** — a carrier NATing subscribers across a /24-or-wider pool — previously
+spread across many independent buckets and now shares one, so a CGNAT-heavy user
+base may genuinely need a longer mask (or /32). The prefix
+length rides in the key (`ip:2.57.171.0/24`), so retuning starts fresh buckets
+instead of cross-counting, and the token-bucket class is IP-independent and
+untouched.
+
+### Threat model — the client-IP rule
+
+Per-IP buckets pick the client from `X-Forwarded-For` at a **configurable trusted
+depth** (`RATE_LIMIT_XFF_TRUSTED_HOPS`, default 1). XFF is a chain — each trusted
+proxy appends the peer it saw — so the genuine client is the entry
+`trusted_hops` from the right; a client-supplied XFF only pollutes the *left*,
+beyond the trusted depth. A single-proxy compose setup uses hops=1 (rightmost);
+the **ACA ingress chain measures three appends** — public-envoy → nginx →
+internal-envoy — so the deployment sets hops=3, restoring per-IP class integrity
+(hops=1 would collapse every client into the shared nginx-pod IP). **Direct-hit
+caveat:** XFF is trusted only for the *exact* configured depth — a chain shorter
+than `trusted_hops` means the request did not traverse the expected proxy stack,
+so XFF is untrustworthy and we fall back to the socket peer (never the leftmost,
+most-spoofable entry). Confirm the exact prod depth against one logged live XFF
+post-deploy.
+
+## Consequences
+
+**Positive** — every surface (REST + webhooks + `/mcp`) is throttled by one
+portable seam; the OTP prereq is unblocked; no new dependency, no license
+review; fail-open means a Redis blip never takes the API down.
+
+**Accepted residual risks** —
+- **Bearer rotation is now bounded by the per-IP ceiling:** a rotating attacker
+  still mints a fresh `tok:` bucket per token, but every one of those requests
+  also increments the `default` class's `rl:default:ipall:{ip}` bucket, so a
+  single IP is capped at `rate_limit_ip_per_minute` (1200) regardless of how many
+  tokens it cycles. A genuinely distributed rotation (many IPs) still needs a
+  network-layer backstop, but the single-IP bypass is closed.
+- **Fixed-window 2× boundary burst:** a client can send up to 2× the limit across
+  a window boundary. Acceptable for abuse-prevention (vs the complexity of a
+  sliding-log / token-bucket).
+- **Fail-open disables limiting during a Redis outage** — a deliberate
+  availability-over-enforcement trade, logged once per window.
+
+**Follow-ups (filed from the review round):** a circuit breaker for a slow-but-alive Redis,
+so a laggy store isn't paid per request — **done**, described above. Keying the
+webhook bucket per-provider-path, not bare per-IP, so one noisy orchestrator
+can't throttle another — **done**, folded into the class table above.
+
+## Alternatives considered
+
+- **`slowapi` / `limits` dependency** — rejected: a dep + transitive graph +
+  license review for a 30-line INCR (CONTRIBUTING rule 40).
+- **nginx `limit_req`** — rejected as the primary control: not principal-aware,
+  no in-repo home for the zone directive; kept as a documented future layer.
+- **FastAPI route dependency** — rejected: cannot cover the `/mcp` ASGI mount,
+  and would have to be wired onto every router.
+- **Postgres counter table** — rejected: a hot-path write per request on the
+  same DB the app is trying to protect.
+- **Fail-closed** — rejected: a Redis outage would take the entire API down;
+  availability wins for a rate limiter.

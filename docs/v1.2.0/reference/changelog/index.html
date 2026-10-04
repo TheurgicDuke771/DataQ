@@ -1,0 +1,3207 @@
+<!DOCTYPE html><html lang="en" class="no-js"><head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="DataQ — a single-tenant data-quality monitoring platform built on Great Expectations. User-friendly guides + developer references.">
+      
+      
+      
+        <link rel="canonical" href="https://theurgicduke771.github.io/DataQ/docs/v1.2.0/reference/changelog/">
+      
+      
+        <link rel="prev" href="../glossary/">
+      
+      
+        <link rel="next" href="../../architecture/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Changelog - DataQ</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  <link href="../../assets/stylesheets/glightbox.min.css" rel="stylesheet"><script src="../../assets/javascripts/glightbox.min.js"></script><style id="glightbox-style">
+            html.glightbox-open { overflow: initial; height: 100%; }
+            .gslide-title { margin-top: 0px; user-select: text; }
+            .gslide-desc { color: #666; user-select: text; }
+            .gslide-image img { background: white; }
+            .gscrollbar-fixer { padding-right: 15px; }
+            .gdesc-inner { font-size: 0.75rem; }
+            body[data-md-color-scheme="slate"] .gdesc-inner { background: var(--md-default-bg-color); }
+            body[data-md-color-scheme="slate"] .gslide-title { color: var(--md-default-fg-color); }
+            body[data-md-color-scheme="slate"] .gslide-desc { color: var(--md-default-fg-color); }
+        </style></head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#changelog" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden="">
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="DataQ" class="md-header__button md-logo" aria-label="DataQ" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"></path></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"></path></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            DataQ
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Changelog
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo" aria-label="Switch to dark mode" type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden="">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"></path></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo" aria-label="Switch to light mode" type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden="">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"></path></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required="">
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"></path></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard="" data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"></path></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix="">
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/TheurgicDuke771/DataQ" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"></path></svg>
+  </div>
+  <div class="md-source__repository">
+    TheurgicDuke771/DataQ
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../get-started/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Get started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guides/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../architecture/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../security/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Security &amp; compliance
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../operate/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Operate
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="DataQ" class="md-nav__button md-logo" aria-label="DataQ" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"></path></svg>
+
+    </a>
+    DataQ
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/TheurgicDuke771/DataQ" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"></path></svg>
+  </div>
+  <div class="md-source__repository">
+    TheurgicDuke771/DataQ
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix="">
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../get-started/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Get started
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Get started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../get-started/install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../get-started/first-suite/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Your first suite
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../get-started/first-alert/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Your first alert
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../get-started/connect-pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Run it automatically
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../get-started/ask-assistant/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Ask an AI assistant
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../get-started/concepts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../guides/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Features overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/datasources-checks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Datasources &amp; checks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/scheduling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scheduling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/orchestration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Orchestration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/notifications/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Notifications &amp; alerting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/mcp-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI assistants (MCP)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/ai-features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI features (LLM)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/api-keys/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API keys (PATs)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/python-client/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python client &amp; CLI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/admin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Admin control centre
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/recommended-usage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recommended usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/best-practices/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Best practices
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked="">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../check-types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Check types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../feature-matrix/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Feature matrix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../rest-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    REST API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../suite-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Suite document
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api-compatibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API compatibility
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mcp-tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../glossary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Glossary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+      
+        <li class="md-nav__item">
+  <a href="#unreleased" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Unreleased
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v120-2026-10-04" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.2.0 — 2026-10-04
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v1.2.0 — 2026-10-04">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#security" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../architecture/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Decision records (ADRs)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/mcp-honesty/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP tool design (honesty)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/evidence-card/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Incident evidence card
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/perf-baseline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Performance baseline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../security/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security &amp; compliance
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6" id="__nav_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Security &amp; compliance
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security &amp; data handling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_3">
+        
+          
+          <label class="md-nav__link" for="__nav_6_3" id="__nav_6_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compliance
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Compliance
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/compliance/sub-processors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sub-processor disclosure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/compliance/dpia-input-sheet/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DPIA input sheet
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/compliance/data-subject-rights-runbook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data-subject-rights runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/compliance/breach-notification-runbook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Breach-notification runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/compliance/dpa-baa-templates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DPA / BAA templates (counsel-gated)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../operate/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operate
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_7" id="__nav_7_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Operate
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/deployment-parity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment parity (Azure · AWS · Local)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/upgrading/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrading
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/observability/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Observability
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/runbook-faq/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runbook &amp; FAQ
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+      
+        <li class="md-nav__item">
+  <a href="#unreleased" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Unreleased
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v120-2026-10-04" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1.2.0 — 2026-10-04
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="v1.2.0 — 2026-10-04">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#security" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+  
+    
+    
+    
+    
+    
+    <div class="dq-actions">
+      <a class="dq-action" href="index.md" target="_blank" rel="noopener" title="Open this page as raw Markdown">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20.56 18H3.44C2.65 18 2 17.37 2 16.59V7.41C2 6.63 2.65 6 3.44 6h17.12c.79 0 1.44.63 1.44 1.41v9.18c0 .78-.65 1.41-1.44 1.41M3.44 6.94c-.26 0-.48.21-.48.47v9.19c0 .25.22.46.48.46h17.12c.26 0 .48-.21.48-.46V7.41c0-.26-.22-.47-.48-.47zm1.45 8.25V8.81h1.92l1.92 2.35 1.92-2.35h1.93v6.38h-1.93v-3.66l-1.92 2.35-1.92-2.35v3.66zm12.01 0-2.9-3.1h1.94V8.81h1.92v3.28h1.93z"></path></svg> Markdown
+      </a>
+      <button class="dq-action" type="button" data-dq-copy="" title="Copy this page as Markdown">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 21H8V7h11m0-2H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2m-3-4H4a2 2 0 0 0-2 2v14h2V3h12z"></path></svg> Copy
+      </button>
+      <div class="dq-ask">
+        <button class="dq-action" type="button" data-dq-ask="" aria-haspopup="menu" aria-expanded="false" title="Open this page in your own AI assistant">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17.5 15.5c0 1.11-.89 2-2 2s-2-.89-2-2 .9-2 2-2 2 .9 2 2m-9-2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.89 2-2-.89-2-2-2M23 15v3c0 .55-.45 1-1 1h-1v1c0 1.11-.89 2-2 2H5a2 2 0 0 1-2-2v-1H2c-.55 0-1-.45-1-1v-3c0-.55.45-1 1-1h1c0-3.87 3.13-7 7-7h1V5.73c-.6-.34-1-.99-1-1.73 0-1.1.9-2 2-2s2 .9 2 2c0 .74-.4 1.39-1 1.73V7h1c3.87 0 7 3.13 7 7h1c.55 0 1 .45 1 1m-2 1h-2v-2c0-2.76-2.24-5-5-5h-4c-2.76 0-5 2.24-5 5v2H3v1h2v3h14v-3h2z"></path></svg> Ask AI <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7.41 8.58 12 13.17l4.59-4.59L18 10l-6 6-6-6z"></path></svg>
+        </button>
+        <div class="dq-ask__menu" role="menu" hidden="">
+          <a href="https://claude.ai/new?q=Read%20the%20DataQ%20documentation%20page%20%22Changelog%22%20at%20https%3A//theurgicduke771.github.io/DataQ/docs/v1.2.0/reference/changelog/%20%28a%20plain%20Markdown%20copy%20is%20at%20https%3A//theurgicduke771.github.io/DataQ/docs/v1.2.0/reference/changelog/index.md%29%20and%20help%20me%20with%20questions%20about%20it." target="_blank" rel="noopener">Claude</a>
+          <a href="https://chatgpt.com/?q=Read%20the%20DataQ%20documentation%20page%20%22Changelog%22%20at%20https%3A//theurgicduke771.github.io/DataQ/docs/v1.2.0/reference/changelog/%20and%20help%20me%20with%20questions%20about%20it." target="_blank" rel="noopener">ChatGPT</a>
+          <a href="https://github.com/copilot?prompt=Read%20the%20DataQ%20documentation%20page%20%22Changelog%22%20at%20https%3A//theurgicduke771.github.io/DataQ/docs/v1.2.0/reference/changelog/%20%28a%20plain%20Markdown%20copy%20is%20at%20https%3A//theurgicduke771.github.io/DataQ/docs/v1.2.0/reference/changelog/index.md%29%20and%20help%20me%20with%20questions%20about%20it." target="_blank" rel="noopener">GitHub Copilot</a>
+          <a href="../../guides/mcp-setup/" title="Cursor, Claude Desktop and others read these pages over MCP">Connect your assistant (MCP)</a>
+        </div>
+      </div>
+    </div>
+  
+  
+                  
+
+
+  
+  
+
+
+<h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">¶</a></h1>
+<p>Notable, user-facing changes. Dates are the release/merge date. This is a curated summary —
+the per-PR history lives in the repo's commit log and pull requests.</p>
+<h2 id="unreleased">Unreleased<a class="headerlink" href="#unreleased" title="Permanent link">¶</a></h2>
+<p>Nothing yet.</p>
+<h2 id="v120-2026-10-04">v1.2.0 — 2026-10-04<a class="headerlink" href="#v120-2026-10-04" title="Permanent link">¶</a></h2>
+<h3 id="breaking">Breaking<a class="headerlink" href="#breaking" title="Permanent link">¶</a></h3>
+<ul>
+<li>
+<p><strong>A connection that fails its own test is no longer saved.</strong> Creating a connection, changing
+  its settings or credential, and re-authenticating it now run the connection's test first. If
+  the test fails, the request returns <code>422</code> with <code>error.code</code>
+  <code>connection_test_failed_on_save</code> and nothing is written — a re-authentication keeps the
+  stored credential instead of replacing it with one that does not work (before, it replaced
+  it and then reported the failure). The reason is the same safe message <strong>Test</strong> gives. An
+  Admin can still save on purpose, for a store the API cannot reach while you set it up or a
+  new dbt project with no <code>run_results.json</code> yet: <strong>Create/Save/Rotate without testing</strong> in the
+  UI, or <code>"skip_test": true</code> in the request body; the audit log records it. Saving an
+  <strong>enabled</strong> LLM provider (<code>PUT /admin/llm</code>) likewise runs its test first
+  (<code>llm_test_failed_on_save</code>); a disabled one is saved untested. API clients that create
+  connections with a config that fails its test must fix the config or send <code>skip_test</code>. See
+  <a href="../../guides/datasources-checks/#a-connection-is-tested-before-it-is-saved">A connection is tested before it is saved</a>
+  and <a href="../api-compatibility/#recorded-exceptions">API compatibility</a>.</p>
+</li>
+<li>
+<p><strong>The prebuilt-image stack publishes only the UI, over HTTPS.</strong> <code>docker-compose.ghcr.yml</code>
+  now runs the way a production deployment does: the UI on <code>:3000</code> is the only way in, it
+  serves HTTPS with a certificate from a CA the stack generates on first start (your browser
+  warns until you trust it — <code>scripts/local-ca.sh install</code> does that, and <code>uninstall</code>
+  reverses it; plain HTTP redirects), and the API is reached through it at
+  <code>https://localhost:3000/api</code> (MCP at <code>https://localhost:3000/mcp/</code>).
+  The API (<code>:8000</code>), Postgres (<code>:5432</code>), Redis (<code>:6379</code>), the vault (<code>:8200</code>) and the mail
+  catcher's SMTP port (<code>:1025</code>) no longer have host ports, and the interactive API page at
+  <code>/docs</code> is off. Point scripts that called <code>http://localhost:8000</code> at
+  <code>https://localhost:3000</code> and give them the CA certificate (see Getting started). Inside
+  the stack, Postgres, Redis, the mail catcher, the vault and the API are all reached
+  over TLS verified against the same CA, and Postgres refuses a client without it. The inbox
+  stays at <code>http://localhost:8025</code>. The from-source stack (<code>docker-compose.yml</code>) is unchanged.</p>
+</li>
+<li>
+<p><strong>The prebuilt-image stack keeps its data in a directory.</strong> <code>docker-compose.ghcr.yml</code>
+  stores the database, the sample warehouse and the vault under <code>./dataq-data</code>
+  (<code>DATAQ_DATA_DIR</code> moves it) instead of Docker volumes, and the vault is no longer
+  in-memory: stored credentials survive a restart. Data in the previous <code>ghcr_postgres_data</code>
+  volume is not migrated; the stack starts fresh in the new directory. To reset, run
+  <code>down -v</code> and delete the directory.</p>
+</li>
+<li>
+<p><strong>A check's severity thresholds can be cleared.</strong> Emptying a warn, fail or critical
+  threshold in the check editor and saving used to leave the old value in place. <code>PATCH
+  /suites/{id}/checks/{id}</code> now treats an explicit <code>null</code> for <code>warn_threshold</code>,
+  <code>fail_threshold</code> or <code>critical_threshold</code> as <em>clear it</em>; leaving the key out still keeps
+  the stored value. <strong>A client that sent <code>null</code> for these to mean "unchanged" must omit
+  the key instead.</strong> A check that needs a fail or critical threshold (freshness, anomaly) still
+  refuses to lose its last one. Over MCP, <code>update_check</code> gains <code>clear_thresholds</code>.</p>
+</li>
+</ul>
+<h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">¶</a></h3>
+<ul>
+<li><strong>An upgrade guide and a support policy.</strong> <a href="../../operate/upgrading/">Upgrading</a> covers what to
+  back up, the steps for the prebuilt-image stack and a cloud deployment, and rolling back.
+  <code>SUPPORT.md</code> says where to ask for help. The security page now states outright that DataQ
+  sends nothing to its authors.</li>
+<li><strong>A first-run path and empty states that say what to do next.</strong> A new workspace's Dashboard
+  shows a <strong>Get started</strong> panel: connect a data source, create a suite, add a check, run it. It
+  offers the next step, says who can take it when you cannot, and goes away once all four are
+  done; what automatic coverage creates does not count. The empty Connections, Suites, Assets and checks lists now explain what belongs there
+  and offer the action your role allows. In the API, <code>GET /dashboard/onboarding</code> returns the
+  four steps as booleans.</li>
+<li><strong>AI suggestions are kept for automatic suites.</strong> Running <strong>Suggest checks</strong> on an
+  automatically covered suite now also saves the validated suggestions under <strong>Suggested
+  rules</strong>, marked <strong>AI-suggested</strong>, where they can be accepted or rejected later. A rule the
+  suite has already seen is not saved again. The invocation result gains <code>queued_for_review</code>.</li>
+<li><strong>Two MCP tools for automatic coverage.</strong> <code>get_coverage</code> returns the share of the asset
+  inventory watched in the last 7 days and the false-positive rate of automatic checks, with
+  the counts behind each. <code>list_suggested_rules</code> lists a suite's review queue. Both are
+  read-only; accepting or rejecting a rule is still done in the app. <code>/mcp</code> now has 54 tools.</li>
+<li><strong>Say what an incident turned out to be.</strong> Resolving an incident can record whether it was
+  <strong>fixed</strong>, an <strong>expected change</strong> or a <strong>false positive</strong>. It is optional; left out, the
+  incident is recorded as not stated. In the API, <code>POST /incidents/{id}/resolve</code> takes
+  <code>resolution</code> and incidents return it; the MCP <code>resolve_incident</code> tool takes it too.</li>
+<li><strong>Coverage and false-positive figures on the Dashboard.</strong> A new panel shows what share of the
+  asset inventory was watched by a suite in the last 7 days, and what share of resolved
+  automatic-check incidents were marked false positives in the last 30, each with the counts
+  behind it. In the API, <code>GET /dashboard/coverage</code>.</li>
+<li><strong>Apply a suite file onto an existing suite, and see drift.</strong> <code>POST /suites/{id}/apply</code>
+  creates, updates and (with <code>prune</code>) deletes checks to match a JSON or YAML document,
+  matching checks by name; it is idempotent. With <code>dry_run</code> it changes nothing and reports
+  how the suite differs from the file. The <code>dataq</code> command gains <code>validate</code>, <code>drift</code> and
+  <code>apply</code>, and reads and writes YAML. See <a href="../suite-document/">Suite document</a>.</li>
+<li><strong>Bulk snooze, unsnooze and delete for checks.</strong> The suite page's check list has a
+  checkbox per check and <strong>Select all</strong>; the selected checks can be snoozed, unsnoozed or
+  deleted in one action. It is all-or-nothing, and each check gets the same audit event a
+  single action writes. In the API, <code>POST /suites/{id}/checks-bulk/snooze</code>,
+  <code>/checks-bulk/unsnooze</code> and <code>/checks-bulk/delete</code>.</li>
+<li><strong>Bulk severity thresholds.</strong> <strong>Set thresholds</strong> on the same selection gives every selected
+  check the same warn, fail or critical value; each tier can be set, cleared or left as it
+  is. Refused as a whole, naming the checks at fault, if the selection mixes check kinds
+  or any check cannot take the result. In the API, <code>POST /suites/{id}/checks-bulk/thresholds</code>.</li>
+<li><strong>A data-quality score per connection.</strong> Each connection card shows a <strong>DQ score</strong> across
+  every suite on that connection, from each suite's latest run if it completed. It is the same
+  for every member, and absent when nothing has evaluated. In the API, connections gain
+  <code>health_score</code>.</li>
+<li><strong>Each quality dimension across the whole workspace.</strong> The Dashboard has a new panel
+  with one row per dimension over every suite in the workspace, with the same coverage
+  rules as the asset scorecard: a dimension with no checks anywhere is listed as not
+  covered, and checks with no dimension are counted separately. In the API,
+  <code>GET /dashboard/dimensions</code>.</li>
+<li><strong>Suites as YAML files, and a way to validate them.</strong> A suite document can now be YAML as
+  well as JSON: <code>POST /suites/import</code> accepts <code>document_yaml</code>, and
+  <code>GET /suites/{id}/export?format=yaml</code> produces it. The new <code>POST /suites/validate</code>
+  reports every problem an import would be refused for and creates nothing. The format is
+  now documented field by field in <a href="../suite-document/">Suite document</a>. Plain YAML values
+  follow JSON's rules, so <code>NO</code> and <code>2026-01-01</code> stay text.</li>
+<li><strong>An asset health score.</strong> The asset page's scorecard now leads with one 0–100 number
+  for the whole asset, and <strong>Assets → All assets</strong> shows it in a <strong>Score</strong> column and can
+  sort the whole workspace by it, lowest first. It counts every check that evaluated in
+  each suite's latest run, if it completed, including checks with no dimension. Beside it, the
+  asset page shows the change against the same score 7 days ago. In the API, assets gain
+  <code>health_score</code>, <code>GET /assets</code> gains <code>sort=health_score</code>, and <code>GET /assets/{id}</code> gains
+  <code>previous_health_score</code>, <code>health_score_delta</code> and <code>score_delta_days</code>. See
+  <a href="../../guides/datasources-checks/#seeing-coverage-the-asset-scorecard">Datasources &amp; checks</a>.</li>
+<li>
+<p><strong>Real mailboxes from the prebuilt-image stack.</strong> Point the sign-in mailer at your own
+  relay and supply its password once as <code>DATAQ_SMTP_PASSWORD</code>: a start-up step stores it in
+  the stack's vault, where it persists, and the API never holds it. The alert mailer's
+  <code>EMAIL_*</code> settings are now passed through as well, with <code>DATAQ_ALERT_SMTP_PASSWORD</code>. With
+  a relay configured and no password stored, the start-up step says so instead of storing a
+  random one. See Getting started.</p>
+</li>
+<li>
+<p><strong>Python client and CLI (<code>dataq-client</code>).</strong> Install the wheel attached to the release (or the
+  latest from <code>main</code>), then
+  <code>dataq run &lt;suite&gt; --wait</code> gates a CI step on a suite's result with a documented exit code
+  (0 ok · 1 warn · 2 fail · 3 run error · 4 client error). The Python API keeps a run's
+  lifecycle and its worst severity as separate fields, and exposes every REST endpoint through
+  a layer generated from the API's own specification. See
+  <a href="../../guides/python-client/">Python client &amp; CLI</a>.</p>
+</li>
+<li><strong>API compatibility policy.</strong> What stays stable across upgrades for the REST API, MCP tools,
+  the suite export document and the Python client, and how a breaking change is announced. See
+  <a href="../api-compatibility/">API compatibility</a>.</li>
+<li><strong>Custom Snowflake DMFs as checks.</strong> On a Snowflake connection, a <strong>Custom DMF</strong> check runs
+  a data metric function your team created, named <code>DATABASE.SCHEMA.FUNCTION</code>, over columns of
+  the suite's table. Its return value is banded by the check's thresholds. Testing the
+  connection lists the custom DMFs its role can use, and the editor suggests them. DMF checks
+  can now be dry-run from the editor too. See
+  <a href="../../guides/datasources-checks/#snowflake-dmf-adr-0036">Datasources &amp; checks</a>.</li>
+</ul>
+<h3 id="fixed">Fixed<a class="headerlink" href="#fixed" title="Permanent link">¶</a></h3>
+<ul>
+<li><strong>An imported suite keeps its checks in the order of the file.</strong> Checks created together (an
+  import, the demo data) were listed in an arbitrary, though stable, order. Checks now carry
+  their position, so lists, exports and run results follow the order they were written in.
+  Existing suites keep the order they show today. This release adds a database migration.</li>
+<li><strong>Add check is no longer offered on a suite you can only view.</strong> The button led to a form
+  whose save was refused.</li>
+<li><strong>"Triggered by" names who started a run.</strong> The Dashboard, Results, the run page and the
+  printed report showed an internal identifier such as <code>manual:d7c88410-…</code>. They now show
+  the person's name or email (<code>Manual — Olivia Admin</code>), <code>Schedule</code>, or the orchestration
+  provider. In the API, <code>triggered_by</code> is unchanged and runs gain <code>triggered_by_label</code>.</li>
+<li><strong>The Custom SQL card opens the plain SQL editor.</strong> Both cards in the Custom SQL step used
+  to open a form with the <strong>Generate from a description</strong> box. It now appears only when you
+  start from the <strong>Generate from a description</strong> card. Editing an existing custom SQL
+  check no longer shows it either.</li>
+<li>
+<p><strong>Check suggestions on a wide table stay within the model's limits.</strong> The suggestion prompt
+  grew with every column, so a table with hundreds of columns could cost far more or fail at
+  the provider. Only the first 100 columns are now profiled and sent, long values are
+  shortened, and the drawer says when part of the table was not looked at. The invocation's
+  result gains <code>column_coverage</code> (<code>{profiled, total}</code>).</p>
+</li>
+<li>
+<p><strong>A completed run with no results no longer says it did not complete.</strong> A check's results
+  are removed when the check is deleted, so a finished run can be left with none (as can a
+  run of a suite that had no checks). The run
+  page and the printed report now say that, keep "did not complete" for runs that failed
+  or were cancelled, and say a queued or running run has not finished yet.</p>
+</li>
+<li>
+<p><strong>A batch-target preview no longer comes back empty just because signing in was slow.</strong> The
+  preview's time budget now starts when the store returns its first object, not before the
+  client authenticates; a service principal's token request alone could use the whole budget.</p>
+</li>
+<li>
+<p><strong>The batch-target preview no longer scans unbounded, or matches a regex it hasn't
+  vetted, in the API process.</strong> The suite editor's live "resolves to" hint now stops at a
+  small object-count/wall-clock budget (<code>BATCH_PREVIEW_MAX_OBJECTS</code>/<code>_MAX_SECONDS</code>) and
+  reports <code>truncated</code> honestly instead of scanning until it can be sure; a batch pattern is
+  refused up front if it is too long or shaped for catastrophic regex backtracking (the
+  same check applies whether the pattern is being saved or previewed). The frontend cancels
+  a superseded preview request instead of merely ignoring its answer.</p>
+</li>
+</ul>
+<h3 id="added_1">Added<a class="headerlink" href="#added_1" title="Permanent link">¶</a></h3>
+<ul>
+<li>
+<p><strong>ADLS Gen2 connections can authenticate as an Entra ID service principal — which also
+  opens Microsoft Fabric OneLake lakehouse files.</strong> Pick <em>Service principal</em> and give the
+  tenant ID, client ID and client secret; point the account URL at
+  <code>https://onelake.blob.fabric.microsoft.com</code> with the workspace as the container to run any
+  flat-file check, freshness, volume, profile or browse against <code>&lt;lakehouse&gt;.Lakehouse/Files/</code>.
+  SAS connections are unchanged. Changing the tenant, client, auth type or account URL
+  requires re-entering the secret. A client secret's expiry is not readable by DataQ, so the
+  connection card says so rather than showing nothing. See
+  <a href="../../guides/datasources-checks/#onelake-fabric-lakehouse-files">OneLake</a>.</p>
+</li>
+<li>
+<p><strong>MySQL / MariaDB datasource.</strong> Any MySQL or MariaDB server, on the same generic SQL
+  base as PostgreSQL and through the MIT-licensed PyMySQL driver: every SQL-capable check,
+  all monitors, the profiler, browsing and inventory sync. Sessions are read-only and UTC;
+  TLS is <code>require</code> by default. <em>Column values unique</em> needs the <code>CREATE TEMPORARY TABLES</code>
+  grant — see <a href="../../guides/datasources-checks/#mysql-mariadb">Datasources &amp; checks</a>.</p>
+</li>
+<li>
+<p><strong>dbt artifacts on OneLake, or as a service principal.</strong> A dbt connection can read its
+  ADLS artifacts as an Entra service principal, and from an ADLS-compatible endpoint such as
+  Fabric OneLake — see <a href="../../guides/orchestration/">Orchestration</a>.</p>
+</li>
+<li>
+<p><strong>Amazon Redshift datasource.</strong> Connect a provisioned Redshift cluster or a Serverless
+  workgroup with a database user and run every SQL-capable check, custom SQL, all monitors,
+  the profiler, schema → table browsing and inventory sync. Sessions are read-only at the
+  server, and every TLS mode checks the certificate chain against Amazon's certificate
+  authorities — see <a href="../../guides/datasources-checks/#amazon-redshift">Datasources &amp; checks</a>.</p>
+</li>
+<li>
+<p><strong>Amazon Athena datasource.</strong> Connect Athena by region and IAM access key — one data catalog
+  per connection, a Glue database as the schema — and run every SQL-capable check, custom SQL,
+  all monitors, the profiler, database → table browsing and inventory sync. Every check is a
+  billed Athena query. Athena has no read-only session, so give DataQ an IAM principal that can
+  only read — see <a href="../../guides/datasources-checks/#amazon-athena">Datasources &amp; checks</a>.</p>
+</li>
+<li>
+<p><strong>Trino datasource.</strong> Connect any Trino (or Starburst) cluster — one catalog per connection
+  — and check whatever that catalog federates (Hive, Iceberg, PostgreSQL, Cassandra, Kafka…)
+  with every SQL-capable check, all monitors, the profiler, schema → table browsing and
+  inventory sync. Password, JWT (its expiry is shown) or no authentication; TLS always verifies
+  the server, with an optional private CA bundle, and a credential is never sent in plaintext.
+  Trino has no read-only session, so give DataQ a Trino user with read-only access — see
+  <a href="../../guides/datasources-checks/#trino">Datasources &amp; checks</a>.</p>
+</li>
+<li>
+<p><strong>PostgreSQL datasource.</strong> Connect any PostgreSQL server — self-hosted or a managed
+  service — and run every SQL-capable check on it: GX expectations and custom SQL by pushdown,
+  freshness / volume / anomaly / schema-drift monitors, comparisons, the column profiler,
+  schema → table browsing for the run target, and inventory sync into the asset view. TLS is
+  <code>require</code> by default and every session is read-only at the server. It is the first engine on
+  a new engine-generic SQL base (ADR <a href="../../adr/0045-engine-generic-sql-datasource-base/">0045</a>).
+  See <a href="../../guides/datasources-checks/#postgresql">Datasources &amp; checks</a>.</p>
+</li>
+<li>
+<p><strong>SQL Server / Azure SQL / Fabric datasource.</strong> One <code>mssql</code> connection type for anything that
+  speaks SQL Server's TDS protocol — SQL Server, Azure SQL Database, Synapse, and Microsoft
+  Fabric SQL endpoints — with a SQL login or an Entra ID service principal. Every SQL-capable
+  check runs by pushdown, plus monitors, comparisons, the profiler, schema → table browsing and
+  inventory sync. TLS is always on and always verified (certificate and hostname). The default
+  driver is pure-Python and shipped; Fabric SQL endpoints currently need an optional ODBC lane
+  you install yourself, and
+  DataQ tells you so instead of showing a driver error. On Fabric, the uniqueness and
+  column-pair expectations are refused (Fabric does not support the temporary table GX builds
+  for them). Regex
+  expectations are not available on SQL Server. ADR
+  <a href="../../adr/0044-mssql-tds-driver-and-entra-auth/">0044</a>; see
+  <a href="../../guides/datasources-checks/#sql-server-azure-sql-fabric-t-sql">Datasources &amp; checks</a>.</p>
+</li>
+</ul>
+<h3 id="security">Security<a class="headerlink" href="#security" title="Permanent link">¶</a></h3>
+<ul>
+<li>
+<p><strong>The custom-SQL guard now lexes each engine's own quoting.</strong> A T-SQL <code>[bracket]</code> or a
+  Databricks <code>`backtick`</code> identifier containing a quote could make the read-only check
+  mistake a following statement for part of a string; the guard now reads those identifiers
+  as identifiers, rejects a nested block comment (engines disagree where one ends), and on
+  SQL Server also refuses <code>OPENQUERY</code>, <code>OPENROWSET</code>, <code>OPENDATASOURCE</code>, <code>BULK</code>, <code>DBCC</code> and
+  <code>WAITFOR</code>. A query whose engine is unknown must pass every engine's rules.</p>
+</li>
+<li>
+<p><strong>Sensitive columns stay masked downstream.</strong> If a warehouse tag marks a column sensitive,
+  every column that recorded column lineage shows is copied or derived from it is masked as well,
+  across REST, MCP, alerts and incident evidence. This only ever adds masking: a column's own tag
+  still wins, and nothing inherits <code>public</code>. <code>LINEAGE_CLASSIFICATION_PROPAGATION=false</code> turns it
+  off. See <a href="../../security/overview/">security</a>.</p>
+</li>
+<li>
+<p><strong>Check suggestions know where a column comes from.</strong> A suggested check on a column that
+  is copied unchanged from an upstream table now says so — "an equivalent check already runs
+  upstream" or "place it at the origin" — so one bad load fires one alert, not one per copy.
+  Derived columns get their provenance only; the advice never hides a suggestion. See
+  <a href="../../guides/ai-features/">AI features</a>.</p>
+</li>
+<li>
+<p><strong>Trace one column through lineage.</strong> The asset page's <em>Column lineage</em> card (and
+  <code>GET /assets/{id}/column-lineage</code>, MCP <code>trace_column_lineage</code>) follows a single column up to
+  where it originates and down to every column derived from it. Every lineage edge now says
+  why it has no column pairs when it has none (<code>column_coverage</code>: none recorded · unavailable ·
+  unknown · not captured), so an empty column trace is never presented as "unrelated".
+  Snowflake column pairs are now read from <code>ACCESS_HISTORY</code> even when <code>GET_LINEAGE</code> answers —
+  previously an Enterprise account recorded none. See
+  <a href="../../guides/orchestration/">orchestration &amp; lineage</a>.</p>
+</li>
+<li>
+<p><strong>Browse for a run target instead of typing it.</strong> On a Unity Catalog suite, <strong>Browse
+  catalog…</strong> walks catalogs → schemas → tables and fills all three fields; on an ADLS Gen2 or
+  S3 suite, <strong>Browse files…</strong> (single file) or <strong>Browse folders…</strong> (batch prefix) walks the
+  connection's container or bucket. Each level is one bounded listing (up to 200 names) and
+  says so when there are more; a name DataQ cannot target is shown but not pickable. Nothing
+  is saved until you save the suite, and the typed fields keep working exactly as before.
+  Needs the Member role, like testing a connection.</p>
+</li>
+<li>
+<p><strong>Offboarding is one guided pass.</strong> Admin → Members → <strong>Offboard</strong> hands a departing
+  member's suites to somebody else, revokes every API key and browser session they hold,
+  and withdraws their membership — in a single transaction, so a half-finished departure
+  is not a state the workspace can end up in. A preview says what will be touched before
+  anything is typed, the last Admin is refused, and the confirmation is the member's own
+  address typed out. Their authored history is kept. Where an environment allowlist would
+  still admit the address, the step is skipped and the variable named rather than a
+  withdrawal being reported that did not happen. See the
+  <a href="../../guides/admin/">admin control centre guide</a>.</p>
+</li>
+<li>
+<p><strong>Health-score weights are a workspace setting.</strong> Admin → Settings → Scoring changes the
+  penalty each severity tier carries (<code>warn</code> / <code>fail</code> / <code>critical</code>; defaults 0.5 / 1.0 / 2.0)
+  and every change is audited. Scores are computed on read, so a change recolours every score
+  at once, past and present — the audit log is where the step is explained. See the
+  <a href="../../guides/admin/">admin control centre guide</a>.</p>
+</li>
+<li>
+<p><strong>Zero-sample mode is a workspace setting.</strong> Admin → Settings → Privacy &amp; failing samples
+  turns it on without a restart; the environment variable stays the floor and cannot be
+  turned off from the app. <code>GET /admin/deployment</code> now says which of the two is in force.</p>
+</li>
+</ul>
+<h3 id="changed">Changed<a class="headerlink" href="#changed" title="Permanent link">¶</a></h3>
+<ul>
+<li>
+<p>⚠️ <strong>Suites alert through admin-configured channels only.</strong> The per-suite Notifications
+  panel no longer takes a Teams or Slack webhook URL or a recipient list: it offers the
+  channels a workspace Admin created under Settings, and that is all. Existing inline
+  destinations keep delivering and are shown as a <em>Legacy inline destinations</em> card with a
+  Clear per entry. On the API, setting one is refused for every caller (the field is
+  named); clearing stays open to anyone with edit access.</p>
+</li>
+<li>
+<p>⚠️ <strong>Every DataQ user signs in.</strong> The local stack has one sign-in mode, emailed
+  codes, and a mis-set or empty sign-in configuration now stops the API with a message
+  naming it instead of coming up open. Existing local setups: an <code>.env</code> with an empty
+  <code>DATAQ_SIGNIN_EMAIL=</code> no longer boots — set an address or re-run <code>setup.sh</code>, which
+  now re-asks.</p>
+</li>
+<li>
+<p><strong>The admin area is now six routed, deep-linkable pages.</strong> <code>/admin</code> splits into
+  <code>overview</code>, <code>members</code>, <code>suites</code>, <code>settings</code>, <code>compliance</code> and <code>integrations</code> —
+  the tab you are on is the URL, so any tab can be bookmarked, shared or
+  reloaded in place, and each page loads only its own data instead of one long
+  scroll fetching everything. The standalone workspace <strong>Settings</strong> page folds
+  in: <code>/settings</code> redirects to <code>/admin/settings</code>, and the sidebar carries a
+  single <strong>Admin</strong> entry instead of two links to the same area. Every admin
+  route is gated at the route, so a deep link (or a demoted user's bookmark)
+  gets the Forbidden page and fetches nothing. See the
+  <a href="../../guides/admin/">admin control centre guide</a>.</p>
+</li>
+</ul>
+<h3 id="added_2">Added<a class="headerlink" href="#added_2" title="Permanent link">¶</a></h3>
+<ul>
+<li><strong>Admin → Integrations is an operations page.</strong> Regenerate any provider's webhook secret
+  or signing key (shown once; the previous value keeps working for a short grace window),
+  see per-connection polling health with <strong>Poll all now</strong>, and turn warehouse inventory
+  sync on or off per connection with <strong>Run now</strong>.</li>
+<li>
+<p><strong>Admins can now operate the workspace, not just observe it.</strong> <strong>Admin → Members</strong>
+  gains <strong>Revoke</strong> on any per-suite access grant — previously only a suite's own owner
+  could remove a share, so cleaning up after a departure meant first being granted access
+  to every suite. <strong>Admin → Suites</strong> gains <strong>Transfer</strong>, the offboarding primitive: a suite
+  moves to a new owner, who gets full control, while the previous owner keeps an editor
+  grant unless you clear the checkbox (workspace viewers cannot own a suite and are not
+  offered). It also gains <strong>Delete</strong> for any suite, behind a confirmation that states the
+  exact number of checks, runs, results, schedules and trigger bindings the cascade would
+  destroy and requires the suite's name to be typed. All three are audited with the
+  admin-override recorded, and the delete's event carries the counts. See the
+  <a href="../../guides/admin/">admin control centre guide</a>.</p>
+</li>
+<li>
+<p><strong>Workspace membership is managed in the app.</strong> <strong>Admin → Members</strong> gains an
+  <strong>Add member</strong> dialog (email plus an optional initial role) and per-row removal,
+  so admitting or removing somebody no longer means editing deployment config and
+  restarting. Removal takes effect on that person's <strong>next request</strong> for every
+  credential kind — an identity-provider sign-in, a live browser session, and every
+  API key they hold — which closes a gap where a departed member's API key kept
+  working indefinitely. Adding a member does not create an account at your identity
+  provider; that stays a prerequisite, and the dialog says so.</p>
+<p>⚠️ <strong>Adding the first member turns enforcement on for the whole workspace.</strong>
+Until then nothing changes: who may sign in is decided entirely by your existing
+allowlist settings. The first add also admits every existing user in the same
+transaction, so nobody signed in is evicted — those rows are flagged under a
+<strong>review imported members</strong> banner to confirm or remove, because a user record
+proves somebody signed in once, not that they still belong. The allowlist
+settings stay available as grant-only break-glass. See the
+<a href="../../guides/admin/">admin control centre guide</a>.
+- <strong>Admin → Overview is now a workspace-health page.</strong> Four counts — members, suites
+  (and the distinct connections they target), open incidents with the acknowledged
+  subset, and today's runs by status over the UTC day — above a <strong>needs-attention</strong>
+  feed and a <strong>workspace-health</strong> checklist covering the audit chain, the scheduler
+  heartbeat and queue depth, the orphan-secret sweep (with a report-only <strong>Run sweep</strong>),
+  and orchestration polling. Every row links to the thing that fixes it. A signal that
+  could not be read, or that has genuinely observed nothing — a connection never polled,
+  a heartbeat that has never ticked, an unreachable broker, a sweep that has never run —
+  renders as <strong>unknown</strong> or <strong>not monitored</strong> with the reason, never as a zero, a green
+  tick, or a missing row. See the <a href="../../guides/admin/">admin control centre guide</a>.</p>
+</li>
+<li>
+<p><strong>Four admin capabilities that had no UI now have one.</strong> On <strong>Admin → Compliance</strong>:
+  audit-chain verification behind an explicit <strong>Verify now</strong> (it reads the whole hashed
+  set, so it never runs on page load) reporting intact / broken-at-an-event / nothing-to-
+  verify / not-verified as four distinct answers, plus the legacy-row count and whether an
+  external anchor exists; and the <strong>data-subject rights</strong> tools — GDPR Art 15/20 export
+  and Art 17 (CCPA delete) erasure over the samples DataQ has captured, with erasure gated
+  on retyping the subject value exactly and both actions producing an on-screen receipt.
+  On <strong>Admin → Settings</strong>, the email pre-flight result now stays on the card with the
+  failing transport stage and the request ID instead of passing by in a toast. On
+  <strong>Admin → Integrations</strong>, each webhook row states its auth mode, so it is obvious which
+  URLs are themselves credentials. See the
+  <a href="../../guides/admin/">admin control centre guide</a> and the
+  <a href="../../security/compliance/data-subject-rights-runbook/">data-subject-rights runbook</a>.</p>
+</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden="">
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"></path></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer">
+        
+          
+          <a href="../glossary/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Glossary">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"></path></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Glossary
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../../architecture/" class="md-footer__link md-footer__link--next" aria-label="Next: Architecture">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Architecture
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"></path></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.indexes", "navigation.sections", "navigation.top", "navigation.tracking", "navigation.instant", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.tabs.link", "search.share"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+  
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="../../assets/clips.js"></script>
+      
+    
+  <script>
+    // Delegated on document: instant navigation swaps the content region without
+    // re-running this block, so per-element listeners would die after the first click.
+    (function () {
+      if (window.__dqActionsBound) return;
+      window.__dqActionsBound = true;
+      function closeMenus() {
+        document.querySelectorAll(".dq-ask__menu:not([hidden])").forEach(function (m) {
+          m.hidden = true;
+          m.previousElementSibling.setAttribute("aria-expanded", "false");
+        });
+      }
+      document.addEventListener("click", async function (e) {
+        var ask = e.target.closest("[data-dq-ask]");
+        if (ask) {
+          e.stopPropagation();
+          var menu = ask.nextElementSibling;
+          var open = menu.hidden;
+          closeMenus();
+          menu.hidden = !open;
+          ask.setAttribute("aria-expanded", String(open));
+          return;
+        }
+        closeMenus();
+        var copy = e.target.closest("[data-dq-copy]");
+        if (!copy) return;
+        var label = copy.innerHTML;
+        try {
+          // Relative to the page being viewed — works under mkdocs serve, forks and mirrors.
+          var md = await (await fetch("index.md")).text();
+          await navigator.clipboard.writeText(md);
+          copy.textContent = "Copied";
+        } catch (err) {
+          copy.textContent = "Copy failed";
+        }
+        setTimeout(function () { copy.innerHTML = label; }, 1500);
+      });
+    })();
+  </script>
+
+  
+<script id="init-glightbox">const lightbox = GLightbox({"touchNavigation": true, "loop": false, "zoomable": true, "draggable": true, "openEffect": "zoom", "closeEffect": "zoom", "slideEffect": "slide"});
+document$.subscribe(()=>{ lightbox.reload(); });
+</script></body></html>

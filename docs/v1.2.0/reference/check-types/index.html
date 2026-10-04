@@ -1,0 +1,4846 @@
+<!DOCTYPE html><html lang="en" class="no-js"><head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="DataQ — a single-tenant data-quality monitoring platform built on Great Expectations. User-friendly guides + developer references.">
+      
+      
+      
+        <link rel="canonical" href="https://theurgicduke771.github.io/DataQ/docs/v1.2.0/reference/check-types/">
+      
+      
+        <link rel="prev" href="../">
+      
+      
+        <link rel="next" href="../feature-matrix/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Check types - DataQ</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  <link href="../../assets/stylesheets/glightbox.min.css" rel="stylesheet"><script src="../../assets/javascripts/glightbox.min.js"></script><style id="glightbox-style">
+            html.glightbox-open { overflow: initial; height: 100%; }
+            .gslide-title { margin-top: 0px; user-select: text; }
+            .gslide-desc { color: #666; user-select: text; }
+            .gslide-image img { background: white; }
+            .gscrollbar-fixer { padding-right: 15px; }
+            .gdesc-inner { font-size: 0.75rem; }
+            body[data-md-color-scheme="slate"] .gdesc-inner { background: var(--md-default-bg-color); }
+            body[data-md-color-scheme="slate"] .gslide-title { color: var(--md-default-fg-color); }
+            body[data-md-color-scheme="slate"] .gslide-desc { color: var(--md-default-fg-color); }
+        </style></head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#check-types" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden="">
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="DataQ" class="md-header__button md-logo" aria-label="DataQ" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"></path></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"></path></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            DataQ
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Check types
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo" aria-label="Switch to dark mode" type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden="">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"></path></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo" aria-label="Switch to light mode" type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden="">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"></path></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required="">
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"></path></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"></path></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard="" data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"></path></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix="">
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/TheurgicDuke771/DataQ" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"></path></svg>
+  </div>
+  <div class="md-source__repository">
+    TheurgicDuke771/DataQ
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../get-started/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Get started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guides/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../architecture/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../security/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Security &amp; compliance
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../operate/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Operate
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="DataQ" class="md-nav__button md-logo" aria-label="DataQ" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"></path></svg>
+
+    </a>
+    DataQ
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/TheurgicDuke771/DataQ" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"></path></svg>
+  </div>
+  <div class="md-source__repository">
+    TheurgicDuke771/DataQ
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix="">
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../get-started/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Get started
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Get started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../get-started/install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../get-started/first-suite/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Your first suite
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../get-started/first-alert/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Your first alert
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../get-started/connect-pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Run it automatically
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../get-started/ask-assistant/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Ask an AI assistant
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../get-started/concepts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../guides/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Features overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/datasources-checks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Datasources &amp; checks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/scheduling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scheduling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/orchestration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Orchestration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/notifications/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Notifications &amp; alerting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/mcp-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI assistants (MCP)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/ai-features/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI features (LLM)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/api-keys/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API keys (PATs)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/python-client/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python client &amp; CLI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/admin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Admin control centre
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/recommended-usage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recommended usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/best-practices/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Best practices
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked="">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Check types
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Check types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+      
+        <li class="md-nav__item">
+  <a href="#column-values" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Column values
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Column values">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#table-shape" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Table shape
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Table shape">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#examples_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#freshness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Freshness
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Freshness">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#examples_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#volume" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Volume
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Volume">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#examples_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#aggregate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Aggregate
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Aggregate">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#examples_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Schema
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Schema">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#examples_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#anomaly" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Anomaly
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Anomaly">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#examples_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#comparison" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Comparison
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Comparison">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#examples_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#custom-sql" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Custom SQL
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Custom SQL">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#examples_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#snowflake-dmf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Snowflake DMF
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Snowflake DMF">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#examples_9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#databricks-dqx" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Databricks DQX
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Databricks DQX">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#examples_10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#authorable-outside-the-editor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Authorable outside the editor
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#not-offered-and-why" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Not offered, and why
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../feature-matrix/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Feature matrix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../rest-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    REST API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../suite-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Suite document
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api-compatibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API compatibility
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mcp-tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../glossary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Glossary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../architecture/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adr/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Decision records (ADRs)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/mcp-honesty/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP tool design (honesty)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/evidence-card/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Incident evidence card
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/perf-baseline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Performance baseline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../security/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security &amp; compliance
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6" id="__nav_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Security &amp; compliance
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security &amp; data handling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_3">
+        
+          
+          <label class="md-nav__link" for="__nav_6_3" id="__nav_6_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compliance
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Compliance
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/compliance/sub-processors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sub-processor disclosure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/compliance/dpia-input-sheet/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DPIA input sheet
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/compliance/data-subject-rights-runbook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data-subject-rights runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/compliance/breach-notification-runbook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Breach-notification runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security/compliance/dpa-baa-templates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DPA / BAA templates (counsel-gated)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7">
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../operate/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operate
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_7" id="__nav_7_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Operate
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix="">
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/deployment-parity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment parity (Azure · AWS · Local)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/upgrading/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrading
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/observability/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Observability
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operate/runbook-faq/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Runbook &amp; FAQ
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc">
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix="">
+      
+        <li class="md-nav__item">
+  <a href="#column-values" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Column values
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Column values">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#table-shape" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Table shape
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Table shape">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#examples_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#freshness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Freshness
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Freshness">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#examples_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#volume" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Volume
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Volume">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#examples_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#aggregate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Aggregate
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Aggregate">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#examples_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Schema
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Schema">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#examples_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#anomaly" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Anomaly
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Anomaly">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#examples_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#comparison" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Comparison
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Comparison">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#examples_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#custom-sql" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Custom SQL
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Custom SQL">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#examples_8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#snowflake-dmf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Snowflake DMF
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Snowflake DMF">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#examples_9" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#databricks-dqx" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Databricks DQX
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Databricks DQX">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#examples_10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#authorable-outside-the-editor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Authorable outside the editor
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#not-offered-and-why" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Not offered, and why
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+  
+    
+    
+    
+    
+    
+    <div class="dq-actions">
+      <a class="dq-action" href="index.md" target="_blank" rel="noopener" title="Open this page as raw Markdown">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20.56 18H3.44C2.65 18 2 17.37 2 16.59V7.41C2 6.63 2.65 6 3.44 6h17.12c.79 0 1.44.63 1.44 1.41v9.18c0 .78-.65 1.41-1.44 1.41M3.44 6.94c-.26 0-.48.21-.48.47v9.19c0 .25.22.46.48.46h17.12c.26 0 .48-.21.48-.46V7.41c0-.26-.22-.47-.48-.47zm1.45 8.25V8.81h1.92l1.92 2.35 1.92-2.35h1.93v6.38h-1.93v-3.66l-1.92 2.35-1.92-2.35v3.66zm12.01 0-2.9-3.1h1.94V8.81h1.92v3.28h1.93z"></path></svg> Markdown
+      </a>
+      <button class="dq-action" type="button" data-dq-copy="" title="Copy this page as Markdown">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 21H8V7h11m0-2H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2m-3-4H4a2 2 0 0 0-2 2v14h2V3h12z"></path></svg> Copy
+      </button>
+      <div class="dq-ask">
+        <button class="dq-action" type="button" data-dq-ask="" aria-haspopup="menu" aria-expanded="false" title="Open this page in your own AI assistant">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17.5 15.5c0 1.11-.89 2-2 2s-2-.89-2-2 .9-2 2-2 2 .9 2 2m-9-2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.89 2-2-.89-2-2-2M23 15v3c0 .55-.45 1-1 1h-1v1c0 1.11-.89 2-2 2H5a2 2 0 0 1-2-2v-1H2c-.55 0-1-.45-1-1v-3c0-.55.45-1 1-1h1c0-3.87 3.13-7 7-7h1V5.73c-.6-.34-1-.99-1-1.73 0-1.1.9-2 2-2s2 .9 2 2c0 .74-.4 1.39-1 1.73V7h1c3.87 0 7 3.13 7 7h1c.55 0 1 .45 1 1m-2 1h-2v-2c0-2.76-2.24-5-5-5h-4c-2.76 0-5 2.24-5 5v2H3v1h2v3h14v-3h2z"></path></svg> Ask AI <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7.41 8.58 12 13.17l4.59-4.59L18 10l-6 6-6-6z"></path></svg>
+        </button>
+        <div class="dq-ask__menu" role="menu" hidden="">
+          <a href="https://claude.ai/new?q=Read%20the%20DataQ%20documentation%20page%20%22Check%20types%22%20at%20https%3A//theurgicduke771.github.io/DataQ/docs/v1.2.0/reference/check-types/%20%28a%20plain%20Markdown%20copy%20is%20at%20https%3A//theurgicduke771.github.io/DataQ/docs/v1.2.0/reference/check-types/index.md%29%20and%20help%20me%20with%20questions%20about%20it." target="_blank" rel="noopener">Claude</a>
+          <a href="https://chatgpt.com/?q=Read%20the%20DataQ%20documentation%20page%20%22Check%20types%22%20at%20https%3A//theurgicduke771.github.io/DataQ/docs/v1.2.0/reference/check-types/%20and%20help%20me%20with%20questions%20about%20it." target="_blank" rel="noopener">ChatGPT</a>
+          <a href="https://github.com/copilot?prompt=Read%20the%20DataQ%20documentation%20page%20%22Check%20types%22%20at%20https%3A//theurgicduke771.github.io/DataQ/docs/v1.2.0/reference/check-types/%20%28a%20plain%20Markdown%20copy%20is%20at%20https%3A//theurgicduke771.github.io/DataQ/docs/v1.2.0/reference/check-types/index.md%29%20and%20help%20me%20with%20questions%20about%20it." target="_blank" rel="noopener">GitHub Copilot</a>
+          <a href="../../guides/mcp-setup/" title="Cursor, Claude Desktop and others read these pages over MCP">Connect your assistant (MCP)</a>
+        </div>
+      </div>
+    </div>
+  
+  
+                  
+
+
+  
+  
+
+
+<h1 id="check-types">Check types<a class="headerlink" href="#check-types" title="Permanent link">¶</a></h1>
+<p>Every kind of check DataQ can author, generated from the check editor's catalog and the
+backend's vetted allowlist — so this page cannot drift from what the product actually
+offers. Every GX type on this page is executed in CI on a dataframe batch, and on a SQL batch too unless its row says it is dataframe-only.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Count</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Check types in the editor</td>
+<td>48</td>
+</tr>
+<tr>
+<td>GX expectation types vetted by the backend</td>
+<td>25</td>
+</tr>
+</tbody>
+</table>
+<p>How to read a row: <strong>Parameters</strong> are the editor's fields (<code>mostly</code> is GX's optional row
+tolerance, a fraction). <strong>Thresholds</strong> are the severity bands read from the result.
+<strong>Dimension</strong> is the default data-quality dimension the check is classified under; you can
+change it on any check.</p>
+<p>Each section ends with <strong>examples</strong>: the body you would send to create the check (<code>POST /api/v1/suites/{suite_id}/checks</code>; the same fields work over MCP and in a suite import) and, for every type that runs on a plain table, the result DataQ reports on the sample below. Those results are produced by DataQ's own check engine and re-checked in CI.</p>
+<details class="info">
+<summary>The sample table every example below runs on</summary>
+<p>Ten orders, with one deliberate defect in most columns.</p>
+<table>
+<thead>
+<tr>
+<th>order_id</th>
+<th>customer_email</th>
+<th>status</th>
+<th>amount</th>
+<th>discount</th>
+<th>subtotal</th>
+<th>tax</th>
+<th>total</th>
+<th>country</th>
+<th>sku</th>
+<th>ordered_at</th>
+<th>shipped_at</th>
+<th>payload</th>
+<th>legacy_code</th>
+<th>invoice_total</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>ana@example.com</td>
+<td>shipped</td>
+<td>120.0</td>
+<td>10.0</td>
+<td>90.0</td>
+<td>10.0</td>
+<td>100.0</td>
+<td>US</td>
+<td>SKU-0001</td>
+<td>2026-09-20 09:15:00</td>
+<td>2026-09-21 10:00:00</td>
+<td>{"gift": false}</td>
+<td>NULL</td>
+<td>100.0</td>
+</tr>
+<tr>
+<td>2</td>
+<td>bo@example.com</td>
+<td>pending</td>
+<td>75.5</td>
+<td>0.0</td>
+<td>80.0</td>
+<td>20.0</td>
+<td>100.0</td>
+<td>GB</td>
+<td>SKU-0002</td>
+<td>2026-09-21 14:02:00</td>
+<td>2026-09-22 08:30:00</td>
+<td>{"gift": true}</td>
+<td>NULL</td>
+<td>100.0</td>
+</tr>
+<tr>
+<td>3</td>
+<td>chen@example.com</td>
+<td>shipped</td>
+<td>310.0</td>
+<td>25.0</td>
+<td>70.0</td>
+<td>30.0</td>
+<td>100.0</td>
+<td>IN</td>
+<td>SKU-0003</td>
+<td>2026-09-22 18:45:00</td>
+<td>2026-09-23 12:00:00</td>
+<td>{}</td>
+<td>NULL</td>
+<td>100.0</td>
+</tr>
+<tr>
+<td>4</td>
+<td>NULL</td>
+<td>cancelled</td>
+<td>42.0</td>
+<td>0.0</td>
+<td>95.0</td>
+<td>5.0</td>
+<td>100.0</td>
+<td>DE</td>
+<td>SKU-0004</td>
+<td>2026-09-23 07:30:00</td>
+<td>2026-09-24 09:00:00</td>
+<td>{"gift": false}</td>
+<td>NULL</td>
+<td>105.0</td>
+</tr>
+<tr>
+<td>5</td>
+<td>dev@example.com</td>
+<td>refunded</td>
+<td>18.25</td>
+<td>2.0</td>
+<td>60.0</td>
+<td>40.0</td>
+<td>100.0</td>
+<td>US</td>
+<td>SKU-0005</td>
+<td>2026-09-24 11:11:00</td>
+<td>2026-09-25 16:20:00</td>
+<td>{"gift": false}</td>
+<td>NULL</td>
+<td>100.0</td>
+</tr>
+<tr>
+<td>6</td>
+<td>eli@example.com</td>
+<td>shipped</td>
+<td>-5.0</td>
+<td>0.0</td>
+<td>85.0</td>
+<td>15.0</td>
+<td>100.0</td>
+<td>USA</td>
+<td>SKU-0006</td>
+<td>2026-09-25 22:05:00</td>
+<td>2026-09-26 07:45:00</td>
+<td>{"gift": true}</td>
+<td>NULL</td>
+<td>100.0</td>
+</tr>
+<tr>
+<td>7</td>
+<td>not-an-email</td>
+<td>pending</td>
+<td>99.99</td>
+<td>150.0</td>
+<td>50.0</td>
+<td>50.0</td>
+<td>100.0</td>
+<td>FR</td>
+<td>SKU-0007</td>
+<td>2026-09-26 13:40:00</td>
+<td>2026-09-27 10:10:00</td>
+<td>{"gift": false}</td>
+<td>NULL</td>
+<td>100.0</td>
+</tr>
+<tr>
+<td>8</td>
+<td>fay@example.com</td>
+<td>NULL</td>
+<td>250.0</td>
+<td>20.0</td>
+<td>99.0</td>
+<td>1.0</td>
+<td>100.0</td>
+<td>GB</td>
+<td>sku_8</td>
+<td>2026-09-27 08:00:00</td>
+<td>2026-09-27 06:00:00</td>
+<td>{bad json</td>
+<td>NULL</td>
+<td>100.0</td>
+</tr>
+<tr>
+<td>9</td>
+<td>gus@example.com</td>
+<td>shipped</td>
+<td>60.0</td>
+<td>5.0</td>
+<td>75.0</td>
+<td>25.0</td>
+<td>100.0</td>
+<td>IN</td>
+<td>SKU-0009</td>
+<td>2026-09-27 19:25:00</td>
+<td>2026-09-28 09:30:00</td>
+<td>{"gift": false}</td>
+<td>NULL</td>
+<td>100.0</td>
+</tr>
+<tr>
+<td>7</td>
+<td>hal@example.com</td>
+<td>shipped</td>
+<td>88.0</td>
+<td>8.0</td>
+<td>40.0</td>
+<td>50.0</td>
+<td>90.0</td>
+<td>US</td>
+<td>SKU-0010</td>
+<td>2026/09/28 06:00</td>
+<td>2026-09-28 18:00:00</td>
+<td>{"gift": true}</td>
+<td>NULL</td>
+<td>90.0</td>
+</tr>
+</tbody>
+</table>
+</details>
+<h2 id="column-values">Column values<a class="headerlink" href="#column-values" title="Permanent link">¶</a></h2>
+<p>Great Expectations built-ins that look at the values in one or more columns. Each returns an unexpected-% that the warn / fail / critical severity bands read.</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Type</th>
+<th>What it checks</th>
+<th>Dimension</th>
+<th>Parameters</th>
+<th>Thresholds</th>
+<th>Runs on</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Column values not null</strong></td>
+<td><code>expect_column_values_to_not_be_null</code></td>
+<td>Every value in the column is non-null.</td>
+<td>Completeness</td>
+<td><code>column</code>, <code>mostly</code> <em>(optional)</em></td>
+<td>warn / fail / critical</td>
+<td>All datasources · SQL pushdown on Unity Catalog</td>
+</tr>
+<tr>
+<td><strong>Column values unique</strong></td>
+<td><code>expect_column_values_to_be_unique</code></td>
+<td>Values in the column are distinct (no duplicates).</td>
+<td>Uniqueness</td>
+<td><code>column</code>, <code>mostly</code> <em>(optional)</em></td>
+<td>warn / fail / critical</td>
+<td>All datasources · SQL pushdown on Unity Catalog</td>
+</tr>
+<tr>
+<td><strong>Column values in range</strong></td>
+<td><code>expect_column_values_to_be_between</code></td>
+<td>Numeric values fall within [min, max].</td>
+<td>Validity</td>
+<td><code>column</code>, <code>min_value</code> <em>(optional)</em>, <code>max_value</code> <em>(optional)</em>, <code>mostly</code> <em>(optional)</em></td>
+<td>warn / fail / critical</td>
+<td>All datasources · SQL pushdown on Unity Catalog</td>
+</tr>
+<tr>
+<td><strong>Column values in set</strong></td>
+<td><code>expect_column_values_to_be_in_set</code></td>
+<td>Every value is one of an allowed set.</td>
+<td>Validity</td>
+<td><code>column</code>, <code>value_set</code>, <code>mostly</code> <em>(optional)</em></td>
+<td>warn / fail / critical</td>
+<td>All datasources · SQL pushdown on Unity Catalog</td>
+</tr>
+<tr>
+<td><strong>Column values null</strong></td>
+<td><code>expect_column_values_to_be_null</code></td>
+<td>Every value in the column is null — for a deprecated or not-yet-populated column that should stay empty. The inverse of “Column values not null”.</td>
+<td>Validity</td>
+<td><code>column</code>, <code>mostly</code> <em>(optional)</em></td>
+<td>warn / fail / critical</td>
+<td>All datasources · SQL pushdown on Unity Catalog</td>
+</tr>
+<tr>
+<td><strong>Column values not in set</strong></td>
+<td><code>expect_column_values_to_not_be_in_set</code></td>
+<td>No value is one of a forbidden set — e.g. a status that should never reach this table, or placeholder values like “N/A” and “UNKNOWN”.</td>
+<td>Validity</td>
+<td><code>column</code>, <code>value_set</code>, <code>mostly</code> <em>(optional)</em></td>
+<td>warn / fail / critical</td>
+<td>All datasources · SQL pushdown on Unity Catalog</td>
+</tr>
+<tr>
+<td><strong>Column value lengths in range</strong></td>
+<td><code>expect_column_value_lengths_to_be_between</code></td>
+<td>String lengths fall within [min, max].</td>
+<td>Validity</td>
+<td><code>column</code>, <code>min_value</code> <em>(optional)</em>, <code>max_value</code> <em>(optional)</em>, <code>mostly</code> <em>(optional)</em></td>
+<td>warn / fail / critical</td>
+<td>All datasources · SQL pushdown on Unity Catalog</td>
+</tr>
+<tr>
+<td><strong>Column value lengths equal</strong></td>
+<td><code>expect_column_value_lengths_to_equal</code></td>
+<td>Every value is exactly the given number of characters — for a fixed-width code (ISO country, SKU, account number).</td>
+<td>Validity</td>
+<td><code>column</code>, <code>value</code>, <code>mostly</code> <em>(optional)</em></td>
+<td>warn / fail / critical</td>
+<td>All datasources · SQL pushdown on Unity Catalog</td>
+</tr>
+<tr>
+<td><strong>Column values match regex</strong></td>
+<td><code>expect_column_values_to_match_regex</code></td>
+<td>Every value matches the given regular expression.</td>
+<td>Validity</td>
+<td><code>column</code>, <code>regex</code>, <code>mostly</code> <em>(optional)</em></td>
+<td>warn / fail / critical</td>
+<td>Snowflake, ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL / MariaDB, Trino, Amazon Athena, Amazon Redshift — not SQL Server (no translation for that SQL dialect; refused at author time) · SQL pushdown on Unity Catalog</td>
+</tr>
+<tr>
+<td><strong>Column values do not match regex</strong></td>
+<td><code>expect_column_values_to_not_match_regex</code></td>
+<td>No value matches the given regular expression — for catching a pattern that should never appear (a stray delimiter, an unredacted identifier).</td>
+<td>Validity</td>
+<td><code>column</code>, <code>regex</code>, <code>mostly</code> <em>(optional)</em></td>
+<td>warn / fail / critical</td>
+<td>Snowflake, ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL / MariaDB, Trino, Amazon Athena, Amazon Redshift — not SQL Server (no translation for that SQL dialect; refused at author time) · SQL pushdown on Unity Catalog</td>
+</tr>
+<tr>
+<td><strong>Column values match a list of regexes</strong></td>
+<td><code>expect_column_values_to_match_regex_list</code></td>
+<td>Every value matches the regexes in the list — by default ANY one of them is enough, for a column carrying several legitimate formats (e.g. two phone-number conventions).</td>
+<td>Validity</td>
+<td><code>column</code>, <code>regex_list</code>, <code>match_on</code> <em>(optional)</em>, <code>mostly</code> <em>(optional)</em></td>
+<td>warn / fail / critical</td>
+<td>Snowflake, ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL / MariaDB, Trino, Amazon Athena, Amazon Redshift — not SQL Server (no translation for that SQL dialect; refused at author time) · SQL pushdown on Unity Catalog</td>
+</tr>
+<tr>
+<td><strong>Column values match none of a list of regexes</strong></td>
+<td><code>expect_column_values_to_not_match_regex_list</code></td>
+<td>No value matches ANY regex in the list — a deny-list of forbidden formats.</td>
+<td>Validity</td>
+<td><code>column</code>, <code>regex_list</code>, <code>mostly</code> <em>(optional)</em></td>
+<td>warn / fail / critical</td>
+<td>Snowflake, ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL / MariaDB, Trino, Amazon Athena, Amazon Redshift — not SQL Server (no translation for that SQL dialect; refused at author time) · SQL pushdown on Unity Catalog</td>
+</tr>
+<tr>
+<td><strong>Column values are valid JSON</strong></td>
+<td><code>expect_column_values_to_be_json_parseable</code></td>
+<td>Every value parses as JSON — for a payload/metadata column stored as text. Not offered on Snowflake, PostgreSQL, MySQL, Trino or SQL Server: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there (or, on Snowflake, a VARIANT column).</td>
+<td>Validity</td>
+<td><code>column</code>, <code>mostly</code> <em>(optional)</em></td>
+<td>warn / fail / critical</td>
+<td>ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg — not Snowflake, PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena, Amazon Redshift (no SQL implementation; refused at author time)</td>
+</tr>
+<tr>
+<td><strong>Column values are of type</strong></td>
+<td><code>expect_column_values_to_be_of_type</code></td>
+<td>Every value in the column matches the given data type.</td>
+<td>Validity</td>
+<td><code>column</code>, <code>type_</code>, <code>mostly</code> <em>(optional)</em></td>
+<td>warn / fail / critical</td>
+<td>All datasources</td>
+</tr>
+<tr>
+<td><strong>Column values are of one of several types</strong></td>
+<td><code>expect_column_values_to_be_in_type_list</code></td>
+<td>Every value in the column matches at least one of the given data types — the tolerant sibling of “Column values are of type”, for a column whose type legitimately varies by datasource or load.</td>
+<td>Validity</td>
+<td><code>column</code>, <code>type_list</code>, <code>mostly</code> <em>(optional)</em></td>
+<td>warn / fail / critical</td>
+<td>All datasources</td>
+</tr>
+<tr>
+<td><strong>Compound columns unique</strong></td>
+<td><code>expect_compound_columns_to_be_unique</code></td>
+<td>The COMBINATION of values across the listed columns is distinct on every row — a multi-column primary or business key. Each column on its own may repeat freely.</td>
+<td>Uniqueness</td>
+<td><code>column_list</code>, <code>mostly</code> <em>(optional)</em></td>
+<td>warn / fail / critical</td>
+<td>All datasources · SQL pushdown on Unity Catalog</td>
+</tr>
+<tr>
+<td><strong>Column A greater than column B</strong></td>
+<td><code>expect_column_pair_values_a_to_be_greater_than_b</code></td>
+<td>Row by row, column A is greater than column B — e.g. ended_at &gt; started_at, or total &gt;= discount.</td>
+<td>Validity</td>
+<td><code>column_A</code>, <code>column_B</code>, <code>or_equal</code> <em>(optional)</em>, <code>mostly</code> <em>(optional)</em></td>
+<td>warn / fail / critical</td>
+<td>All datasources · SQL pushdown on Unity Catalog</td>
+</tr>
+<tr>
+<td><strong>Column A equals column B</strong></td>
+<td><code>expect_column_pair_values_to_be_equal</code></td>
+<td>Row by row, the two columns hold the same value — e.g. a denormalised copy that must agree with its source, or a total that must match a recomputed one.</td>
+<td>Validity</td>
+<td><code>column_A</code>, <code>column_B</code>, <code>mostly</code> <em>(optional)</em></td>
+<td>warn / fail / critical</td>
+<td>All datasources · SQL pushdown on Unity Catalog</td>
+</tr>
+<tr>
+<td><strong>Values unique within each row</strong></td>
+<td><code>expect_select_column_values_to_be_unique_within_record</code></td>
+<td>Within a single row, the listed columns all hold different values — e.g. a transfer whose source and destination account must not be the same. This is per-row; use “Compound columns unique” for uniqueness ACROSS rows.</td>
+<td>Uniqueness</td>
+<td><code>column_list</code>, <code>mostly</code> <em>(optional)</em></td>
+<td>warn / fail / critical</td>
+<td>All datasources · SQL pushdown on Unity Catalog</td>
+</tr>
+<tr>
+<td><strong>Columns sum to a total</strong></td>
+<td><code>expect_multicolumn_sum_to_equal</code></td>
+<td>Row by row, the listed columns add up to the given total — e.g. subtotal + tax + shipping = total.</td>
+<td>Validity</td>
+<td><code>column_list</code>, <code>sum_total</code>, <code>mostly</code> <em>(optional)</em></td>
+<td>warn / fail / critical</td>
+<td>All datasources · SQL pushdown on Unity Catalog</td>
+</tr>
+<tr>
+<td><strong>Column distinct values in set</strong></td>
+<td><code>expect_column_distinct_values_to_be_in_set</code></td>
+<td>Every DISTINCT value present in the column is one of an allowed set — reports WHICH unexpected values exist rather than how many rows carry them. Use “Column values in set” when you care about the row count.</td>
+<td>Validity</td>
+<td><code>column</code>, <code>value_set</code></td>
+<td>None — pass/fail only</td>
+<td>All datasources · SQL pushdown on Unity Catalog</td>
+</tr>
+<tr>
+<td><strong>Column distinct values contain set</strong></td>
+<td><code>expect_column_distinct_values_to_contain_set</code></td>
+<td>Every value in the given set appears at least once in the column — catches a category that stopped arriving. The column may also contain other values.</td>
+<td>Completeness</td>
+<td><code>column</code>, <code>value_set</code></td>
+<td>None — pass/fail only</td>
+<td>All datasources · SQL pushdown on Unity Catalog</td>
+</tr>
+<tr>
+<td><strong>Column values match a date format</strong></td>
+<td><code>expect_column_values_to_match_strftime_format</code></td>
+<td>Every value parses under the given strftime format — for a date or timestamp stored as text. Not offered on Snowflake, PostgreSQL, MySQL, Trino or SQL Server: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there.</td>
+<td>Validity</td>
+<td><code>column</code>, <code>strftime_format</code>, <code>mostly</code> <em>(optional)</em></td>
+<td>warn / fail / critical</td>
+<td>ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg — not Snowflake, PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena, Amazon Redshift (no SQL implementation; refused at author time)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="examples">Examples<a class="headerlink" href="#examples" title="Permanent link">¶</a></h3>
+<details class="example">
+<summary>Column values not null</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Column values not null"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"expect_column_values_to_not_be_null"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"customer_email"</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">"warn_threshold"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"fail_threshold"</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>On the sample:</strong> <strong>FAIL</strong> · 10% unexpected (1 row) · unexpected values <code>[null]</code></p>
+<p>Order 4 has no email: 1 of 10 rows (10%).</p>
+</details>
+<details class="example">
+<summary>Column values unique</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Column values unique"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"expect_column_values_to_be_unique"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"order_id"</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>On the sample:</strong> <strong>FAIL</strong> · 20% unexpected (2 rows) · unexpected values <code>[7, 7]</code></p>
+<p>Order id 7 appears twice, so both rows are unexpected.</p>
+</details>
+<details class="example">
+<summary>Column values in range</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Column values in range"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"expect_column_values_to_be_between"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"amount"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"min_value"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"max_value"</span><span class="p">:</span><span class="w"> </span><span class="mi">1000</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>On the sample:</strong> <strong>FAIL</strong> · 10% unexpected (1 row) · unexpected values <code>[-5.0]</code></p>
+<p>Order 6 has a negative amount.</p>
+</details>
+<details class="example">
+<summary>Column values in set</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Column values in set"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"expect_column_values_to_be_in_set"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"status"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"value_set"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="s2">"pending"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"shipped"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"cancelled"</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>On the sample:</strong> <strong>FAIL</strong> · 11.11% unexpected (1 row) · unexpected values <code>["refunded"]</code></p>
+<p><code>refunded</code> is not in the allowed set: 1 of the 9 non-NULL values (GX skips a NULL).</p>
+</details>
+<details class="example">
+<summary>Column values null</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Column values null"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"expect_column_values_to_be_null"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"legacy_code"</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>On the sample:</strong> <strong>PASS</strong> · 0% unexpected (0 rows)</p>
+<p>A retired column that must stay empty: every row is NULL.</p>
+</details>
+<details class="example">
+<summary>Column values not in set</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Column values not in set"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"expect_column_values_to_not_be_in_set"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"status"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"value_set"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="s2">"refunded"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"unknown"</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>On the sample:</strong> <strong>FAIL</strong> · 11.11% unexpected (1 row) · unexpected values <code>["refunded"]</code></p>
+<p>One order is <code>refunded</code>, a status that should never reach this table.</p>
+</details>
+<details class="example">
+<summary>Column value lengths in range</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Column value lengths in range"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"expect_column_value_lengths_to_be_between"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"sku"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"min_value"</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"max_value"</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>On the sample:</strong> <strong>FAIL</strong> · 10% unexpected (1 row) · unexpected values <code>["sku_8"]</code></p>
+<p><code>sku_8</code> is five characters.</p>
+</details>
+<details class="example">
+<summary>Column value lengths equal</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Column value lengths equal"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"expect_column_value_lengths_to_equal"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"country"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"value"</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>On the sample:</strong> <strong>FAIL</strong> · 10% unexpected (1 row) · unexpected values <code>["USA"]</code></p>
+<p><code>USA</code> is not an ISO 3166 alpha-2 code.</p>
+</details>
+<details class="example">
+<summary>Column values match regex</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Column values match regex"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"expect_column_values_to_match_regex"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"sku"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"regex"</span><span class="p">:</span><span class="w"> </span><span class="s2">"^SKU-\\d{4}$"</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>On the sample:</strong> <strong>FAIL</strong> · 10% unexpected (1 row) · unexpected values <code>["sku_8"]</code></p>
+<p><code>sku_8</code> doesn't match the SKU pattern.</p>
+</details>
+<details class="example">
+<summary>Column values do not match regex</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Column values do not match regex"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"expect_column_values_to_not_match_regex"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"customer_email"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"regex"</span><span class="p">:</span><span class="w"> </span><span class="s2">"^[^@]+$"</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>On the sample:</strong> <strong>FAIL</strong> · 11.11% unexpected (1 row) · unexpected values <code>["not-an-email"]</code></p>
+<p>A value with no <code>@</code> is not an email: <code>not-an-email</code>.</p>
+</details>
+<details class="example">
+<summary>Column values match a list of regexes</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Column values match a list of regexes"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"expect_column_values_to_match_regex_list"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"sku"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"regex_list"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="s2">"^SKU-\\d{4}$"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"^LEGACY-\\d+$"</span>
+<span class="w">    </span><span class="p">],</span>
+<span class="w">    </span><span class="nt">"match_on"</span><span class="p">:</span><span class="w"> </span><span class="s2">"any"</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>On the sample:</strong> <strong>FAIL</strong> · 10% unexpected (1 row) · unexpected values <code>["sku_8"]</code></p>
+<p>Two accepted formats; <code>sku_8</code> matches neither.</p>
+</details>
+<details class="example">
+<summary>Column values match none of a list of regexes</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Column values match none of a list of regexes"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"expect_column_values_to_not_match_regex_list"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"customer_email"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"regex_list"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="s2">"@test\\."</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"^not-"</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>On the sample:</strong> <strong>FAIL</strong> · 11.11% unexpected (1 row) · unexpected values <code>["not-an-email"]</code></p>
+<p>A deny-list of placeholder addresses; <code>not-an-email</code> is caught.</p>
+</details>
+<details class="example">
+<summary>Column values are valid JSON</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Column values are valid JSON"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"expect_column_values_to_be_json_parseable"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"payload"</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>On the sample:</strong> <strong>FAIL</strong> · 10% unexpected (1 row) · unexpected values <code>["{bad json"]</code></p>
+<p>Order 8's payload is truncated JSON.</p>
+</details>
+<details class="example">
+<summary>Column values are of type</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Column values are of type"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"expect_column_values_to_be_of_type"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"amount"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"type_"</span><span class="p">:</span><span class="w"> </span><span class="s2">"float64"</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>On the sample:</strong> <strong>PASS</strong> · observed <code>"float64"</code></p>
+<p>The sample is a pandas frame, so the dtype name is <code>float64</code> (see the dtype table in the datasources guide).</p>
+</details>
+<details class="example">
+<summary>Column values are of one of several types</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Column values are of one of several types"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"expect_column_values_to_be_in_type_list"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"order_id"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"type_list"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="s2">"int64"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"int32"</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>On the sample:</strong> <strong>PASS</strong> · observed <code>"int64"</code></p>
+<p>Either integer width is accepted.</p>
+</details>
+<details class="example">
+<summary>Compound columns unique</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Compound columns unique"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"expect_compound_columns_to_be_unique"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column_list"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="s2">"order_id"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"customer_email"</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>On the sample:</strong> <strong>PASS</strong> · 0% unexpected (0 rows)</p>
+<p>The duplicated order id carries two different emails, so the pair is still unique.</p>
+</details>
+<details class="example">
+<summary>Column A greater than column B</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Column A greater than column B"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"expect_column_pair_values_a_to_be_greater_than_b"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column_A"</span><span class="p">:</span><span class="w"> </span><span class="s2">"shipped_at"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"column_B"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ordered_at"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"or_equal"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>On the sample:</strong> <strong>FAIL</strong> · 20% unexpected (2 rows) · unexpected values <code>[["2026-09-27 06:00:00", "2026-09-27 08:00:00"], ["2026-09-28 18:00:00", "2026/09/28 06:00"]]</code></p>
+<p>Order 8 shipped before it was ordered. These are text columns, so the last row, whose date is written <code>2026/09/28 06:00</code>, also compares out of order: parse dates upstream.</p>
+</details>
+<details class="example">
+<summary>Column A equals column B</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Column A equals column B"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"expect_column_pair_values_to_be_equal"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column_A"</span><span class="p">:</span><span class="w"> </span><span class="s2">"total"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"column_B"</span><span class="p">:</span><span class="w"> </span><span class="s2">"invoice_total"</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>On the sample:</strong> <strong>FAIL</strong> · 10% unexpected (1 row) · unexpected values <code>[[100.0, 105.0]]</code></p>
+<p>Order 4 was invoiced 5 more than its total, so 1 row of 10 fails.</p>
+</details>
+<details class="example">
+<summary>Values unique within each row</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Values unique within each row"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"expect_select_column_values_to_be_unique_within_record"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column_list"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="s2">"subtotal"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"tax"</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>On the sample:</strong> <strong>FAIL</strong> · 10% unexpected (1 row) · unexpected values <code>[{"subtotal": 50.0, "tax": 50.0}]</code></p>
+<p>Order 7 has subtotal and tax both 50.</p>
+</details>
+<details class="example">
+<summary>Columns sum to a total</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Columns sum to a total"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"expect_multicolumn_sum_to_equal"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column_list"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="s2">"subtotal"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"tax"</span>
+<span class="w">    </span><span class="p">],</span>
+<span class="w">    </span><span class="nt">"sum_total"</span><span class="p">:</span><span class="w"> </span><span class="mi">100</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>On the sample:</strong> <strong>FAIL</strong> · 10% unexpected (1 row) · unexpected values <code>[{"subtotal": 40.0, "tax": 50.0}]</code></p>
+<p>The last row's parts sum to 90.</p>
+</details>
+<details class="example">
+<summary>Column distinct values in set</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Column distinct values in set"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"expect_column_distinct_values_to_be_in_set"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"country"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"value_set"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="s2">"US"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"GB"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"IN"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"DE"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"FR"</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>On the sample:</strong> <strong>FAIL</strong> · unexpected values <code>["USA"]</code></p>
+<p><code>USA</code> is outside the set. There is no unexpected-%: the check passes or fails on the set of distinct values, and the failing sample lists the ones outside it.</p>
+</details>
+<details class="example">
+<summary>Column distinct values contain set</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Column distinct values contain set"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"expect_column_distinct_values_to_contain_set"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"country"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"value_set"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="s2">"US"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"GB"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"JP"</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>On the sample:</strong> <strong>FAIL</strong></p>
+<p>No order comes from Japan.</p>
+</details>
+<details class="example">
+<summary>Column values match a date format</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Column values match a date format"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"expect_column_values_to_match_strftime_format"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ordered_at"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"strftime_format"</span><span class="p">:</span><span class="w"> </span><span class="s2">"%Y-%m-%d %H:%M:%S"</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>On the sample:</strong> <strong>FAIL</strong> · 10% unexpected (1 row) · unexpected values <code>["2026/09/28 06:00"]</code></p>
+<p>The last row was written as <code>2026/09/28 06:00</code>.</p>
+</details>
+<h2 id="table-shape">Table shape<a class="headerlink" href="#table-shape" title="Permanent link">¶</a></h2>
+<p>Whole-table expectations.</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Type</th>
+<th>What it checks</th>
+<th>Dimension</th>
+<th>Parameters</th>
+<th>Thresholds</th>
+<th>Runs on</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Table row count in range</strong></td>
+<td><code>expect_table_row_count_to_be_between</code></td>
+<td>The table’s row count falls within [min, max].</td>
+<td>Completeness</td>
+<td><code>min_value</code> <em>(optional)</em>, <code>max_value</code> <em>(optional)</em></td>
+<td>warn / fail / critical</td>
+<td>All datasources · SQL pushdown on Unity Catalog</td>
+</tr>
+</tbody>
+</table>
+<h3 id="examples_1">Examples<a class="headerlink" href="#examples_1" title="Permanent link">¶</a></h3>
+<details class="example">
+<summary>Table row count in range</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Table row count in range"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"expect_table_row_count_to_be_between"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"min_value"</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"max_value"</span><span class="p">:</span><span class="w"> </span><span class="mi">1000</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>On the sample:</strong> <strong>PASS</strong> · observed <code>10</code></p>
+<p>Ten rows is inside the band.</p>
+</details>
+<h2 id="freshness">Freshness<a class="headerlink" href="#freshness" title="Permanent link">¶</a></h2>
+<p>How stale is the target? Measured from a timestamp column (or file arrival time on flat files), reported in hours, banded by age. Requires a fail or critical threshold.</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Type</th>
+<th>What it checks</th>
+<th>Dimension</th>
+<th>Parameters</th>
+<th>Thresholds</th>
+<th>Runs on</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Freshness</strong></td>
+<td><code>monitor:freshness</code></td>
+<td>How stale is the target? Measures hours since the latest timestamp in the data — or, on a flat file with no column set, since the file last landed.</td>
+<td>Timeliness</td>
+<td><code>column</code></td>
+<td>warn / fail / critical (fail or critical required)</td>
+<td>All datasources</td>
+</tr>
+</tbody>
+</table>
+<h3 id="examples_2">Examples<a class="headerlink" href="#examples_2" title="Permanent link">¶</a></h3>
+<details class="example">
+<summary>Freshness</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Freshness"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"monitor:freshness"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"kind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"freshness"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"shipped_at"</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">"warn_threshold"</span><span class="p">:</span><span class="w"> </span><span class="mi">24</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"fail_threshold"</span><span class="p">:</span><span class="w"> </span><span class="mi">48</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Reports the newest <code>shipped_at</code> and its age in hours as the metric; with these thresholds, 24 h old or more warns and 48 h fails. Leave <code>column</code> out on a flat file to measure the file's arrival time instead.</p>
+</details>
+<h2 id="volume">Volume<a class="headerlink" href="#volume" title="Permanent link">¶</a></h2>
+<p>Did the load deliver the expected row count? Banded by count. Requires a fail or critical threshold.</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Type</th>
+<th>What it checks</th>
+<th>Dimension</th>
+<th>Parameters</th>
+<th>Thresholds</th>
+<th>Runs on</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Volume</strong></td>
+<td><code>monitor:volume</code></td>
+<td>Did the load deliver the expected row count? Flags a count outside an allowed range.</td>
+<td>Completeness</td>
+<td><code>min_rows</code>, <code>max_rows</code></td>
+<td>warn / fail / critical</td>
+<td>All datasources</td>
+</tr>
+</tbody>
+</table>
+<h3 id="examples_3">Examples<a class="headerlink" href="#examples_3" title="Permanent link">¶</a></h3>
+<details class="example">
+<summary>Volume</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Volume"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"monitor:volume"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"kind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"volume"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"min_rows"</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"max_rows"</span><span class="p">:</span><span class="w"> </span><span class="mi">1000</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Reports the row count as the metric; outside the band fails. On the sample, 10 rows passes.</p>
+</details>
+<h2 id="aggregate">Aggregate<a class="headerlink" href="#aggregate" title="Permanent link">¶</a></h2>
+<p>Does a column statistic — mean, median, sum, standard deviation, min or max — stay inside two-sided bands? The value is recorded every run, so it trends; an empty table or all-NULL column reports error, never a made-up 0.</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Type</th>
+<th>What it checks</th>
+<th>Dimension</th>
+<th>Parameters</th>
+<th>Thresholds</th>
+<th>Runs on</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Aggregate statistic</strong></td>
+<td><code>monitor:aggregate</code></td>
+<td>A column statistic — mean, median, sum, standard deviation, min or max — stays inside two-sided bands. The value itself is recorded every run, so it trends. An empty table or an all-NULL column reports error, never a made-up 0.</td>
+<td>— (set it yourself)</td>
+<td><code>aggregate</code>, <code>column</code>, <code>min_value</code> <em>(optional)</em>, <code>max_value</code> <em>(optional)</em>, <code>warn_min</code> <em>(optional)</em>, <code>warn_max</code> <em>(optional)</em>, <code>critical_min</code> <em>(optional)</em>, <code>critical_max</code> <em>(optional)</em></td>
+<td>Two-sided warn / fail / critical bounds, set as parameters</td>
+<td>All datasources — median not on MySQL / MariaDB, Trino, Amazon Athena (no exact median; refused at author time)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="examples_4">Examples<a class="headerlink" href="#examples_4" title="Permanent link">¶</a></h3>
+<details class="example">
+<summary>Aggregate statistic</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Aggregate statistic"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"monitor:aggregate"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"kind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"aggregate"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"aggregate"</span><span class="p">:</span><span class="w"> </span><span class="s2">"mean"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"amount"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"min_value"</span><span class="p">:</span><span class="w"> </span><span class="mi">50</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"warn_max"</span><span class="p">:</span><span class="w"> </span><span class="mi">100</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Reports the mean of <code>amount</code> as the metric and records it every run, so it trends. On the sample the mean is 105.87: above <code>warn_max</code>, inside the fail band, so WARN.</p>
+</details>
+<h2 id="schema">Schema<a class="headerlink" href="#schema" title="Permanent link">¶</a></h2>
+<p>Did the table's columns change against a captured baseline?</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Type</th>
+<th>What it checks</th>
+<th>Dimension</th>
+<th>Parameters</th>
+<th>Thresholds</th>
+<th>Runs on</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Schema drift</strong></td>
+<td><code>monitor:schema_drift</code></td>
+<td>Did the table’s column shape change? Diffs the live columns (names + types) against a baseline captured on the first run. Works on every datasource — warehouses via information_schema, flat files via the file header/footer, Iceberg from table metadata.</td>
+<td>Consistency</td>
+<td><code>ignore_columns</code> <em>(optional)</em></td>
+<td>warn / fail / critical</td>
+<td>All datasources</td>
+</tr>
+</tbody>
+</table>
+<h3 id="examples_5">Examples<a class="headerlink" href="#examples_5" title="Permanent link">¶</a></h3>
+<details class="example">
+<summary>Schema drift</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Schema drift"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"monitor:schema_drift"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"kind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"schema_drift"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"ignore_columns"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="s2">"legacy_code"</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>The first run captures the columns and their types as the baseline; later runs report every added, dropped or retyped column. <code>legacy_code</code> is never compared.</p>
+</details>
+<h2 id="anomaly">Anomaly<a class="headerlink" href="#anomaly" title="Permanent link">¶</a></h2>
+<p>Is today's value unusual against a rolling baseline of this check's own history? Skips until enough history exists.</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Type</th>
+<th>What it checks</th>
+<th>Dimension</th>
+<th>Parameters</th>
+<th>Thresholds</th>
+<th>Runs on</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Anomaly</strong></td>
+<td><code>monitor:anomaly</code></td>
+<td>Learns a rolling baseline (mean/stddev) from this check’s own metric history and flags how far this run deviates (a z-score). Reports skip, never a fake pass/fail, until enough history accrues.</td>
+<td>— (set it yourself)</td>
+<td><code>target_metric</code>, <code>column</code>, <code>window</code> <em>(optional)</em>, <code>min_points</code> <em>(optional)</em>, <code>seasonality</code> <em>(optional)</em></td>
+<td>warn / fail / critical (fail or critical required)</td>
+<td>Snowflake, Unity Catalog, PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena, Amazon Redshift</td>
+</tr>
+</tbody>
+</table>
+<h3 id="examples_6">Examples<a class="headerlink" href="#examples_6" title="Permanent link">¶</a></h3>
+<details class="example">
+<summary>Anomaly</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Anomaly"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"monitor:anomaly"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"kind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"anomaly"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"target_metric"</span><span class="p">:</span><span class="w"> </span><span class="s2">"row_count"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"window"</span><span class="p">:</span><span class="w"> </span><span class="mi">14</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"min_points"</span><span class="p">:</span><span class="w"> </span><span class="mi">7</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"seasonality"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">"warn_threshold"</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"fail_threshold"</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Reports the z-score of today's row count against the last 14 runs on the same weekday (<code>seasonality</code> keeps only those; off, it is the last 14 runs of any day). It skips until 7 such runs exist, so on a daily schedule about seven weeks.</p>
+</details>
+<h2 id="comparison">Comparison<a class="headerlink" href="#comparison" title="Permanent link">¶</a></h2>
+<p>Reconcile the suite's target against a second dataset, possibly on another connection.</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Type</th>
+<th>What it checks</th>
+<th>Dimension</th>
+<th>Parameters</th>
+<th>Thresholds</th>
+<th>Runs on</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Records reconciliation</strong></td>
+<td><code>comparison:records</code></td>
+<td>Diff this suite’s dataset (the target under test) against a baseline on another connection, joined on key columns — matched / mismatched / additional-per-side ROW buckets.</td>
+<td>Consistency</td>
+<td>—</td>
+<td>warn / fail / critical</td>
+<td>All datasources</td>
+</tr>
+<tr>
+<td><strong>Column-level reconciliation</strong></td>
+<td><code>comparison:columns</code></td>
+<td>Same key-joined diff, counted per VALUE: each column reports its own matched / mismatched / additional-per-side counts. Pick this when you need to know WHICH columns drift, not just which rows.</td>
+<td>Consistency</td>
+<td>—</td>
+<td>warn / fail / critical</td>
+<td>All datasources</td>
+</tr>
+</tbody>
+</table>
+<h3 id="examples_7">Examples<a class="headerlink" href="#examples_7" title="Permanent link">¶</a></h3>
+<details class="example">
+<summary>Records reconciliation</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Records reconciliation"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"comparison:records"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"kind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"comparison"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"table"</span><span class="p">:</span><span class="w"> </span><span class="s2">"orders_staging"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"schema"</span><span class="p">:</span><span class="w"> </span><span class="s2">"public"</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="nt">"keys"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="s2">"order_id"</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">"source_connection_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"&lt;connection id&gt;"</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Joins the suite's target to <code>orders_staging</code> on <code>order_id</code> and reports matched, mismatched and missing rows on each side; set <code>source_connection_id</code> to the connection holding the source.</p>
+</details>
+<details class="example">
+<summary>Column-level reconciliation</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Column-level reconciliation"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"comparison:columns"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"kind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"comparison"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"table"</span><span class="p">:</span><span class="w"> </span><span class="s2">"orders_staging"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"schema"</span><span class="p">:</span><span class="w"> </span><span class="s2">"public"</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="nt">"keys"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="s2">"order_id"</span>
+<span class="w">    </span><span class="p">],</span>
+<span class="w">    </span><span class="nt">"columns"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="s2">"amount"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"status"</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">"source_connection_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"&lt;connection id&gt;"</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Like the record comparison, but compares only the listed columns and reports the mismatch rate for each.</p>
+</details>
+<h2 id="custom-sql">Custom SQL<a class="headerlink" href="#custom-sql" title="Permanent link">¶</a></h2>
+<p>Any predicate you can write in SQL, validated before it runs.</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Type</th>
+<th>What it checks</th>
+<th>Dimension</th>
+<th>Parameters</th>
+<th>Thresholds</th>
+<th>Runs on</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Custom SQL</strong></td>
+<td><code>unexpected_rows_expectation</code></td>
+<td>A SQL query that should return no rows — any rows it returns are failures.</td>
+<td>— (set it yourself)</td>
+<td><code>unexpected_rows_query</code></td>
+<td>warn / fail / critical</td>
+<td>Snowflake, Unity Catalog, PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena, Amazon Redshift</td>
+</tr>
+</tbody>
+</table>
+<h3 id="examples_8">Examples<a class="headerlink" href="#examples_8" title="Permanent link">¶</a></h3>
+<details class="example">
+<summary>Custom SQL</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Custom SQL"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"unexpected_rows_expectation"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"unexpected_rows_query"</span><span class="p">:</span><span class="w"> </span><span class="s2">"SELECT * FROM {batch} WHERE discount &gt; amount"</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Every row the query returns is unexpected. On the sample, order 7's discount (150) exceeds its amount, so 1 row fails. <code>{batch}</code> is the suite's target.</p>
+</details>
+<h2 id="snowflake-dmf">Snowflake DMF<a class="headerlink" href="#snowflake-dmf" title="Permanent link">¶</a></h2>
+<p>Snowflake's native Data Metric Functions, evaluated inside Snowflake.</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Type</th>
+<th>What it checks</th>
+<th>Dimension</th>
+<th>Parameters</th>
+<th>Thresholds</th>
+<th>Runs on</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Null count (DMF)</strong></td>
+<td><code>dmf:null_count</code></td>
+<td>Snowflake’s system NULL_COUNT metric function, computed natively in the warehouse.</td>
+<td>Completeness</td>
+<td><code>column</code></td>
+<td>warn / fail / critical (fail or critical required)</td>
+<td>Snowflake</td>
+</tr>
+<tr>
+<td><strong>Null percent (DMF)</strong></td>
+<td><code>dmf:null_percent</code></td>
+<td>Snowflake’s system NULL_PERCENT metric function (0–100), computed natively in the warehouse.</td>
+<td>Completeness</td>
+<td><code>column</code></td>
+<td>warn / fail / critical (fail or critical required)</td>
+<td>Snowflake</td>
+</tr>
+<tr>
+<td><strong>Duplicate count (DMF)</strong></td>
+<td><code>dmf:duplicate_count</code></td>
+<td>Snowflake’s system DUPLICATE_COUNT metric function, computed natively in the warehouse.</td>
+<td>Uniqueness</td>
+<td><code>column</code></td>
+<td>warn / fail / critical (fail or critical required)</td>
+<td>Snowflake</td>
+</tr>
+<tr>
+<td><strong>Blank count (DMF)</strong></td>
+<td><code>dmf:blank_count</code></td>
+<td>Snowflake’s system BLANK_COUNT metric function, computed natively in the warehouse — counts empty or space-only strings (not NULLs; tabs/newlines aren’t treated as blank). VARCHAR columns only.</td>
+<td>Completeness</td>
+<td><code>column</code></td>
+<td>warn / fail / critical (fail or critical required)</td>
+<td>Snowflake</td>
+</tr>
+<tr>
+<td><strong>Future timestamp percent (DMF)</strong></td>
+<td><code>dmf:future_timestamp_percent</code></td>
+<td>Snowflake’s system FUTURE_TIMESTAMP_PERCENT metric function (0–100): the share of rows dated after the evaluation time. DATE, TIMESTAMP_LTZ and TIMESTAMP_TZ columns only.</td>
+<td>Validity</td>
+<td><code>column</code></td>
+<td>warn / fail / critical (fail or critical required)</td>
+<td>Snowflake</td>
+</tr>
+<tr>
+<td><strong>Accepted values (DMF)</strong></td>
+<td><code>dmf:accepted_values</code></td>
+<td>Snowflake’s system ACCEPTED_VALUES metric function, evaluated in the warehouse: counts rows whose value is not in the list. NULLs are not counted as violations.</td>
+<td>Validity</td>
+<td><code>column</code>, <code>value_set</code></td>
+<td>warn / fail / critical (fail or critical required)</td>
+<td>Snowflake</td>
+</tr>
+<tr>
+<td><strong>Unique count (DMF)</strong></td>
+<td><code>dmf:unique_count</code></td>
+<td>Snowflake’s system UNIQUE_COUNT metric function, computed natively in the warehouse. Degrades downward, so this type carries no thresholds — read the observed value directly.</td>
+<td>Uniqueness</td>
+<td><code>column</code></td>
+<td>None — pass/fail only</td>
+<td>Snowflake</td>
+</tr>
+<tr>
+<td><strong>Custom DMF</strong></td>
+<td><code>dmf:custom</code></td>
+<td>A data metric function your team created in Snowflake (CREATE DATA METRIC FUNCTION), called in the warehouse over columns of this suite’s table. Its return value is the metric, shown as-is — write DMFs that return a count or a percentage, not a data value.</td>
+<td>— (set it yourself)</td>
+<td><code>function</code>, <code>columns</code></td>
+<td>warn / fail / critical (fail or critical required)</td>
+<td>Snowflake</td>
+</tr>
+</tbody>
+</table>
+<h3 id="examples_9">Examples<a class="headerlink" href="#examples_9" title="Permanent link">¶</a></h3>
+<details class="example">
+<summary>Null count (DMF)</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Null count (DMF)"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dmf:null_count"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"engine"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dmf"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"CUSTOMER_EMAIL"</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">"fail_threshold"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Snowflake counts the NULLs itself (<code>SNOWFLAKE.CORE.NULL_COUNT</code>); the count is the metric. On the sample it would be 1.</p>
+</details>
+<details class="example">
+<summary>Null percent (DMF)</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Null percent (DMF)"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dmf:null_percent"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"engine"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dmf"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"CUSTOMER_EMAIL"</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">"warn_threshold"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"fail_threshold"</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>The NULL percentage (10 on the sample).</p>
+</details>
+<details class="example">
+<summary>Duplicate count (DMF)</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Duplicate count (DMF)"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dmf:duplicate_count"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"engine"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dmf"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ORDER_ID"</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">"fail_threshold"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Rows whose value repeats another row's (2 on the sample: both order 7s).</p>
+</details>
+<details class="example">
+<summary>Blank count (DMF)</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Blank count (DMF)"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dmf:blank_count"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"engine"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dmf"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"STATUS"</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">"fail_threshold"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Empty or whitespace-only strings; a NULL is not blank.</p>
+</details>
+<details class="example">
+<summary>Future timestamp percent (DMF)</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Future timestamp percent (DMF)"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dmf:future_timestamp_percent"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"engine"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dmf"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"SHIPPED_AT"</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">"fail_threshold"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.01</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>The percentage of timestamps later than now; takes DATE, TIMESTAMP_LTZ and TIMESTAMP_TZ columns only.</p>
+</details>
+<details class="example">
+<summary>Accepted values (DMF)</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Accepted values (DMF)"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dmf:accepted_values"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"engine"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dmf"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"STATUS"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"value_set"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="s2">"pending"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"shipped"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"cancelled"</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">"fail_threshold"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Values outside the set.</p>
+</details>
+<details class="example">
+<summary>Unique count (DMF)</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Unique count (DMF)"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dmf:unique_count"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"engine"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dmf"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ORDER_ID"</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>The number of distinct non-NULL values (9 on the sample).</p>
+</details>
+<details class="example">
+<summary>Custom DMF</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Custom DMF"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dmf:custom"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"engine"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dmf"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"function"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ANALYTICS.DQ.NEGATIVE_AMOUNTS"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"columns"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="s2">"AMOUNT"</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">"fail_threshold"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Calls your own data metric function over the listed columns; whatever it returns is the metric, banded by the thresholds.</p>
+</details>
+<h2 id="databricks-dqx">Databricks DQX<a class="headerlink" href="#databricks-dqx" title="Permanent link">¶</a></h2>
+<p>Databricks Labs DQX row rules, evaluated by a serverless job in your own workspace.</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Type</th>
+<th>What it checks</th>
+<th>Dimension</th>
+<th>Parameters</th>
+<th>Thresholds</th>
+<th>Runs on</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Not null (DQX)</strong></td>
+<td><code>dqx:is_not_null</code></td>
+<td>Rows where the column is NULL.</td>
+<td>Completeness</td>
+<td><code>column</code>, <code>mode</code> <em>(optional)</em></td>
+<td>warn / fail / critical</td>
+<td>All datasources</td>
+</tr>
+<tr>
+<td><strong>Not empty (DQX)</strong></td>
+<td><code>dqx:is_not_empty</code></td>
+<td>Rows where the column is an empty string.</td>
+<td>Completeness</td>
+<td><code>column</code>, <code>mode</code> <em>(optional)</em></td>
+<td>warn / fail / critical</td>
+<td>All datasources</td>
+</tr>
+<tr>
+<td><strong>Not null or empty (DQX)</strong></td>
+<td><code>dqx:is_not_null_and_not_empty</code></td>
+<td>Rows where the column is NULL or an empty string.</td>
+<td>Completeness</td>
+<td><code>column</code>, <code>mode</code> <em>(optional)</em></td>
+<td>warn / fail / critical</td>
+<td>All datasources</td>
+</tr>
+<tr>
+<td><strong>In list (DQX)</strong></td>
+<td><code>dqx:is_in_list</code></td>
+<td>Rows whose value is not one of the allowed values.</td>
+<td>Validity</td>
+<td><code>column</code>, <code>allowed</code>, <code>mode</code> <em>(optional)</em></td>
+<td>warn / fail / critical</td>
+<td>All datasources</td>
+</tr>
+<tr>
+<td><strong>In range (DQX)</strong></td>
+<td><code>dqx:is_in_range</code></td>
+<td>Rows whose value falls outside the inclusive range.</td>
+<td>Validity</td>
+<td><code>column</code>, <code>min_limit</code>, <code>max_limit</code>, <code>mode</code> <em>(optional)</em></td>
+<td>warn / fail / critical</td>
+<td>All datasources</td>
+</tr>
+<tr>
+<td><strong>Matches regex (DQX)</strong></td>
+<td><code>dqx:regex_match</code></td>
+<td>Rows whose value does not match the regular expression.</td>
+<td>Validity</td>
+<td><code>column</code>, <code>regex</code>, <code>mode</code> <em>(optional)</em></td>
+<td>warn / fail / critical</td>
+<td>All datasources</td>
+</tr>
+<tr>
+<td><strong>Not less than (DQX)</strong></td>
+<td><code>dqx:is_not_less_than</code></td>
+<td>Rows whose value is below the limit.</td>
+<td>Validity</td>
+<td><code>column</code>, <code>limit</code>, <code>mode</code> <em>(optional)</em></td>
+<td>warn / fail / critical</td>
+<td>All datasources</td>
+</tr>
+<tr>
+<td><strong>Not greater than (DQX)</strong></td>
+<td><code>dqx:is_not_greater_than</code></td>
+<td>Rows whose value is above the limit.</td>
+<td>Validity</td>
+<td><code>column</code>, <code>limit</code>, <code>mode</code> <em>(optional)</em></td>
+<td>warn / fail / critical</td>
+<td>All datasources</td>
+</tr>
+</tbody>
+</table>
+<h3 id="examples_10">Examples<a class="headerlink" href="#examples_10" title="Permanent link">¶</a></h3>
+<details class="example">
+<summary>Not null (DQX)</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Not null (DQX)"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dqx:is_not_null"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"engine"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dqx"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"customer_email"</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">"fail_threshold"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Databricks DQX counts failing rows in your workspace; the failing count is the metric (1 on the sample).</p>
+</details>
+<details class="example">
+<summary>Not empty (DQX)</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Not empty (DQX)"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dqx:is_not_empty"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"engine"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dqx"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"status"</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">"fail_threshold"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Rows whose value is an empty string.</p>
+</details>
+<details class="example">
+<summary>Not null or empty (DQX)</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Not null or empty (DQX)"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dqx:is_not_null_and_not_empty"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"engine"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dqx"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"status"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"mode"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stream"</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">"fail_threshold"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>NULL or empty. <code>mode: stream</code> evaluates only rows appended since the last run.</p>
+</details>
+<details class="example">
+<summary>In list (DQX)</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"In list (DQX)"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dqx:is_in_list"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"engine"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dqx"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"status"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"allowed"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="s2">"pending"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"shipped"</span><span class="p">,</span>
+<span class="w">      </span><span class="s2">"cancelled"</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">"fail_threshold"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Rows outside the list (<code>refunded</code> on the sample).</p>
+</details>
+<details class="example">
+<summary>In range (DQX)</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"In range (DQX)"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dqx:is_in_range"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"engine"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dqx"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"amount"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"min_limit"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"max_limit"</span><span class="p">:</span><span class="w"> </span><span class="mi">1000</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">"fail_threshold"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Rows outside [0, 1000] (order 6).</p>
+</details>
+<details class="example">
+<summary>Matches regex (DQX)</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Matches regex (DQX)"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dqx:regex_match"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"engine"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dqx"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"sku"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"regex"</span><span class="p">:</span><span class="w"> </span><span class="s2">"^SKU-[0-9]{4}$"</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">"fail_threshold"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Rows not matching (<code>sku_8</code>).</p>
+</details>
+<details class="example">
+<summary>Not less than (DQX)</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Not less than (DQX)"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dqx:is_not_less_than"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"engine"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dqx"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"amount"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"limit"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">"fail_threshold"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Rows below the limit.</p>
+</details>
+<details class="example">
+<summary>Not greater than (DQX)</summary>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Not greater than (DQX)"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expectation_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dqx:is_not_greater_than"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"engine"</span><span class="p">:</span><span class="w"> </span><span class="s2">"dqx"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"config"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"column"</span><span class="p">:</span><span class="w"> </span><span class="s2">"discount"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"limit"</span><span class="p">:</span><span class="w"> </span><span class="mi">100</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">"fail_threshold"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Rows above the limit (order 7's discount of 150).</p>
+</details>
+<h2 id="authorable-outside-the-editor">Authorable outside the editor<a class="headerlink" href="#authorable-outside-the-editor" title="Permanent link">¶</a></h2>
+<p>Vetted by the backend but with no editor widget: usable over the REST API, MCP and
+suite import, which hand the backend raw JSON.</p>
+<ul>
+<li><code>expect_column_pair_values_to_be_in_set</code></li>
+</ul>
+<h2 id="not-offered-and-why">Not offered, and why<a class="headerlink" href="#not-offered-and-why" title="Permanent link">¶</a></h2>
+<p><strong>GX's scalar aggregates</strong> (<code>expect_column_mean_to_be_between</code> and its siblings) report one
+number and no unexpected-%, so severity bands have nothing to band — the Aggregate monitor
+measures that shape instead, with two-sided bands and a trend. <strong>Whole-table column-set
+comparisons</strong> are what the Schema-drift monitor does against a captured baseline. For
+anything else, write a custom-SQL check.</p>
+<hr>
+<p><em>Generated by <code>scripts/docs/gen-check-catalog.py</code> — edit the catalog or the allowlist, not this page.</em></p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden="">
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"></path></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer">
+        
+          
+          <a href="../" class="md-footer__link md-footer__link--prev" aria-label="Previous: Reference">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"></path></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Reference
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../feature-matrix/" class="md-footer__link md-footer__link--next" aria-label="Next: Feature matrix">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Feature matrix
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"></path></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.indexes", "navigation.sections", "navigation.top", "navigation.tracking", "navigation.instant", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.tabs.link", "search.share"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+  
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="../../assets/clips.js"></script>
+      
+    
+  <script>
+    // Delegated on document: instant navigation swaps the content region without
+    // re-running this block, so per-element listeners would die after the first click.
+    (function () {
+      if (window.__dqActionsBound) return;
+      window.__dqActionsBound = true;
+      function closeMenus() {
+        document.querySelectorAll(".dq-ask__menu:not([hidden])").forEach(function (m) {
+          m.hidden = true;
+          m.previousElementSibling.setAttribute("aria-expanded", "false");
+        });
+      }
+      document.addEventListener("click", async function (e) {
+        var ask = e.target.closest("[data-dq-ask]");
+        if (ask) {
+          e.stopPropagation();
+          var menu = ask.nextElementSibling;
+          var open = menu.hidden;
+          closeMenus();
+          menu.hidden = !open;
+          ask.setAttribute("aria-expanded", String(open));
+          return;
+        }
+        closeMenus();
+        var copy = e.target.closest("[data-dq-copy]");
+        if (!copy) return;
+        var label = copy.innerHTML;
+        try {
+          // Relative to the page being viewed — works under mkdocs serve, forks and mirrors.
+          var md = await (await fetch("index.md")).text();
+          await navigator.clipboard.writeText(md);
+          copy.textContent = "Copied";
+        } catch (err) {
+          copy.textContent = "Copy failed";
+        }
+        setTimeout(function () { copy.innerHTML = label; }, 1500);
+      });
+    })();
+  </script>
+
+  
+<script id="init-glightbox">const lightbox = GLightbox({"touchNavigation": true, "loop": false, "zoomable": true, "draggable": true, "openEffect": "zoom", "closeEffect": "zoom", "slideEffect": "slide"});
+document$.subscribe(()=>{ lightbox.reload(); });
+</script></body></html>
