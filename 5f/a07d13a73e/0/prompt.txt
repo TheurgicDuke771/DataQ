@@ -1,0 +1,17 @@
+2381 is blocked
+
+---
+
+<task-notification>
+<summary>Commit security review found 2 issues: missing-authorization-and-audit-parity in backend/app/services/suggestion_claims.py; parser-differential in backend/app/services/suggestion_claims.py</summary>
+</task-notification>
+
+---
+
+#2382 CI failed
+
+---
+
+<task-notification>
+<summary>Commit security review found 2 issues: missing-authorization in backend/app/services/suggestion_claims.py; race-condition-audit-integrity in backend/app/services/suggestion_claims.py</summary>
+</task-notification>

@@ -1,0 +1,47 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "5fa07d13a73e",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1668-onboarding",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/dashboard.py",
+    "backend/app/services/onboarding_service.py",
+    "backend/tests/api/test_dashboard.py",
+    "backend/tests/services/test_onboarding_service.py",
+    "docs/site/get-started/first-suite.md",
+    "docs/site/reference/changelog.md",
+    "docs/site/reference/openapi.json",
+    "frontend/e2e/dashboard.spec.ts",
+    "frontend/src/api/dashboard.ts",
+    "frontend/src/components/dashboard/GetStartedPanel.tsx",
+    "frontend/src/components/shared/EmptyState.tsx",
+    "frontend/src/pages/Assets.tsx",
+    "frontend/src/pages/Connections.tsx",
+    "frontend/src/pages/Dashboard.tsx",
+    "frontend/src/pages/Suites.tsx",
+    "frontend/tests/components/GetStartedPanel.test.tsx",
+    "frontend/tests/pages/Connections.test.tsx",
+    "frontend/tests/pages/Dashboard.test.tsx",
+    "frontend/tests/pages/Suites.test.tsx",
+    "packages/dataq-client/src/dataq_client/generated/api/dashboard/get_onboarding_status.py",
+    "packages/dataq-client/src/dataq_client/generated/models/__init__.py",
+    "packages/dataq-client/src/dataq_client/generated/models/onboarding_status_read.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/5f/a07d13a73e/0/metadata.json",
+      "transcript": "/5f/a07d13a73e/0/full.jsonl",
+      "compact_transcript": "/5f/a07d13a73e/0/transcript.jsonl",
+      "content_hash": "/5f/a07d13a73e/0/content_hash.txt",
+      "prompt": "/5f/a07d13a73e/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 136,
+    "cache_creation_tokens": 92101,
+    "cache_read_tokens": 13362442,
+    "output_tokens": 41634,
+    "api_call_count": 68
+  }
+}
