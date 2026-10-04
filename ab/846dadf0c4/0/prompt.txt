@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>blk12hhdx</task-id>
+<tool-use-id>toolu_01Ro6xnGhP5AMxHfThnmfi7T</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/051a3ae7-f154-4852-b2b4-477a2e7d4418/tasks/blk12hhdx.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait until one of the two score PRs merges, then report both states" completed (exit code 0)</summary>
+</task-notification>
