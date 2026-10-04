@@ -2522,7 +2522,10 @@
   <strong>before</strong> the app rolls.</li>
 <li>Deploy via the <strong>Deploy</strong> workflow (<code>workflow_dispatch</code>); verify <code>/healthz</code> 200,
   <code>/api/v1/me</code> 401 (auth enforced), SPA + deep links load.</li>
-<li>Docs site published (this site) and linked from the README.</li>
+<li>Docs site published (this site) and linked from the README: after the tag, <code>/docs/&lt;tag&gt;/</code>
+  and <code>/docs/latest/</code> both load. If the <strong>Docs</strong> workflow run sits in <em>pending</em>, an older run
+  is holding the queue; cancel that one. A tag's Docs run that was <em>cancelled</em> while it
+  waited did not publish: re-run it.</li>
 </ul>
 <p>Full deploy steps + verification: the repository's <strong><code>deploy/README.md</code></strong>.</p>
 <h2 id="live-smoke-deployed-stack-harness-data">Live smoke (deployed stack + harness data)<a class="headerlink" href="#live-smoke-deployed-stack-harness-data" title="Permanent link">¶</a></h2>

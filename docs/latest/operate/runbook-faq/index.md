@@ -18,7 +18,10 @@
   **before** the app rolls.
 - Deploy via the **Deploy** workflow (`workflow_dispatch`); verify `/healthz` 200,
   `/api/v1/me` 401 (auth enforced), SPA + deep links load.
-- Docs site published (this site) and linked from the README.
+- Docs site published (this site) and linked from the README: after the tag, `/docs/<tag>/`
+  and `/docs/latest/` both load. If the **Docs** workflow run sits in *pending*, an older run
+  is holding the queue; cancel that one. A tag's Docs run that was *cancelled* while it
+  waited did not publish: re-run it.
 
 Full deploy steps + verification: the repository's **`deploy/README.md`**.
 
