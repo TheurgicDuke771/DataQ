@@ -1,3 +1,4 @@
+import type { Scorecard } from './assets';
 import { api } from './client';
 
 /**
@@ -49,5 +50,14 @@ export async function getDashboardSummary(windowDays?: number): Promise<Dashboar
   const { data } = await api.get<DashboardSummary>('/dashboard/summary', {
     params: windowDays ? { window_days: windowDays } : undefined,
   });
+  return data;
+}
+
+/**
+ * Each DQ dimension across every suite in the workspace. Workspace-wide, unlike the summary:
+ * it includes suites the caller cannot open and is the same for every member.
+ */
+export async function getWorkspaceDimensions(): Promise<Scorecard> {
+  const { data } = await api.get<Scorecard>('/dashboard/dimensions');
   return data;
 }

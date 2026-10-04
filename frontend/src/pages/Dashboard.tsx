@@ -11,6 +11,7 @@ import { useState } from 'react';
 import { getDashboardSummary } from '../api/dashboard';
 import { Page } from '../components/layout/Page';
 import { AssetHealthLead } from '../components/dashboard/AssetHealthLead';
+import { WorkspaceDimensions } from '../components/dashboard/WorkspaceDimensions';
 import { MetricCard } from '../components/dashboard/MetricCard';
 import { formatDurationMs } from '../components/results/resultsFormat';
 import { QualityTrends } from '../components/dashboard/QualityTrends';
@@ -73,6 +74,10 @@ export function Dashboard() {
       {/* Asset-level health leads the dashboard (ADR 0034 navigation inversion,
           #773) — assets are what users reason about; the KPI/trends below stay. */}
       <AssetHealthLead />
+
+      {/* One dimension across every asset — workspace-wide like the lead above, and
+          labelled as such because the tiles below cover only the viewer's suites. */}
+      <WorkspaceDimensions />
 
       {/* Five tiles: stacked on phones, 2-up on small screens, 3+2 at xl+. */}
       <Row gutter={[16, 16]}>
