@@ -508,6 +508,28 @@ def test_sorted_order_agrees_with_displayed_scores_under_custom_weights(db_sessi
     assert [a.health_score for a in ordered] == [75.0, 95.0]
 
 
+def test_sort_order_never_contradicts_the_displayed_scores_at_a_rounding_half(
+    db_session: Any,
+) -> None:
+    """3 fails of 8 is a raw 81.25: Python displays 81.2, Postgres would round it to
+    81.3 and tie it with an asset that displays 81.3 — then name order would put the
+    81.3 asset first in a "lowest first" list."""
+    owner = _user(db_session)
+    half = _suite_with_run(
+        db_session, owner, run_status="succeeded", result_statuses=["fail"] * 3 + ["pass"] * 5
+    )
+    above = _suite_with_run(
+        db_session, owner, run_status="succeeded", result_statuses=["fail"] * 25 + ["pass"] * 42
+    )
+    half.name, above.name = "Z_SORTS_LAST_BY_NAME", "A_SORTS_FIRST_BY_NAME"
+    db_session.commit()
+
+    ordered = svc.list_visible_assets(db_session, sort="health_score")
+
+    assert [a.health_score for a in ordered] == [81.2, 81.3]
+    assert [a.id for a in ordered] == [half.id, above.id]
+
+
 def test_default_sort_is_still_namespace_then_name(db_session: Any) -> None:
     for name in ("B", "A"):
         db_session.add(Asset(namespace="snowflake://x", name=name))

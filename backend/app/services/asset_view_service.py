@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import ColumnElement, Float, Numeric, and_, case, cast, func, or_, select
+from sqlalchemy import ColumnElement, Float, and_, case, cast, func, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import get_settings
@@ -462,8 +462,10 @@ def count_assets(session: Session) -> int:
 
 
 def _asset_scores(weights: Weights) -> Any:
-    """``asset_id -> health score`` as a subquery, the same number `_roll_up` computes
-    in Python — so a page ordered by it agrees with the scores it displays.
+    """``asset_id -> health score`` as a subquery, the number `_roll_up` computes in
+    Python but left UNROUNDED: Postgres and Python round a half differently (81.25 is
+    81.3 there and 81.2 here), so ordering on a rounded key could contradict the scores
+    the page displays.
     """
     latest = latest_runs_per_suite_stmt(
         select(Suite.id).where(Suite.asset_id.is_not(None))
@@ -473,7 +475,7 @@ def _asset_scores(weights: Weights) -> Any:
     )
     score = 100.0 * (1.0 - cast(func.sum(penalty), Float) / (func.count() * weights.critical))
     return (
-        select(Suite.asset_id.label("asset_id"), func.round(cast(score, Numeric), 1).label("score"))
+        select(Suite.asset_id.label("asset_id"), score.label("score"))
         .select_from(Suite)
         .join(latest, latest.c.suite_id == Suite.id)
         .join(Result, Result.run_id == latest.c.id)

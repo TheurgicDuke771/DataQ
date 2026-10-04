@@ -346,7 +346,8 @@ def test_list_carries_the_health_score_and_sorts_by_it(
 
 def test_list_rejects_an_unknown_sort(client: TestClient, world: dict[str, Any]) -> None:
     _as(world["owner"])
-    assert client.get("/api/v1/assets", params={"sort": "severity"}).status_code == 422
+    resp = client.get("/api/v1/assets", params={"sort": "severity"})
+    assert resp.status_code == 422
 
 
 def test_total_count_header_matches_full_population(
