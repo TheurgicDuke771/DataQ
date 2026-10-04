@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.db.models import CheckSuggestion
+from backend.app.services import audit_service
 
 
 def fingerprint(expectation_type: str, config: dict[str, Any]) -> str:
@@ -31,6 +32,10 @@ def claim_for_created_check(session: Session, check: Any, *, actor_id: uuid.UUID
     accepted and point it at the check, so accepting it later cannot create a duplicate.
     Does not commit: it rides the caller's own commit, with the check.
     """
+    if check.kind != "expectation":
+        # A queued rule is always an expectation; a monitor that happens to share a type
+        # and config with one is a different check.
+        return False
     suggestion = session.scalar(
         select(CheckSuggestion)
         .where(
@@ -46,4 +51,18 @@ def claim_for_created_check(session: Session, check: Any, *, actor_id: uuid.UUID
     suggestion.check_id = check.id
     suggestion.decided_by = actor_id
     suggestion.decided_at = datetime.now(UTC)
+    # The same event the accept button writes: either way a person decided this rule.
+    audit_service.record(
+        session,
+        action="suggestion.accept",
+        entity_type="check_suggestion",
+        entity_id=suggestion.id,
+        actor=actor_id,
+        after={
+            "suite_id": str(suggestion.suite_id),
+            "expectation_type": suggestion.expectation_type,
+            "status": "accepted",
+            "check_id": str(check.id),
+        },
+    )
     return True

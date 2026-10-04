@@ -12,7 +12,13 @@ from sqlalchemy import select
 
 from backend.app.db.models import AuditEvent, CheckSuggestion, LlmInvocation, Suite, User
 from backend.app.llm.base import LLMOutputInvalidError, LLMRequestInvalidError, LLMResult
-from backend.app.services import check_service, llm_checksuggest, llm_service, suggestion_service
+from backend.app.services import (
+    check_service,
+    llm_checksuggest,
+    llm_service,
+    suggestion_claims,
+    suggestion_service,
+)
 from backend.app.services import profile_service as profile_service_module
 from backend.app.services.profile_service import ColumnProfile, ProfileResult
 from backend.tests.support.fake_secret_store import FakeSecretStore
@@ -852,8 +858,35 @@ def test_adding_a_queued_rule_directly_marks_it_accepted_so_it_cannot_be_added_t
 
     (row,) = _queued(db_session, suite)
     assert (row.status, row.check_id, row.decided_by) == ("accepted", check.id, admin.id)
+    # Audited like the accept button, by the person who added it.
+    (event,) = db_session.scalars(
+        select(AuditEvent).where(AuditEvent.action == "suggestion.accept")
+    ).all()
+    assert (event.entity_id, event.actor_user_id) == (row.id, admin.id)
+    assert event.after["check_id"] == str(check.id)
     with pytest.raises(suggestion_service.SuggestionDecidedError):
         suggestion_service.accept(db_session, row.id, user_id=admin.id)
+
+
+def test_a_check_of_another_kind_does_not_claim_a_queued_rule(db_session: Any, admin: User) -> None:
+    suite = _auto_suite(db_session, admin)
+    llm_checksuggest.validate_output(
+        db_session, _invocation(db_session, suite, admin), {"suggestions": [_suggestion()]}
+    )
+    db_session.commit()
+    (queued,) = _queued(db_session, suite)
+
+    class _Check:
+        id = queued.id
+        suite_id = suite.id
+        kind = "volume"
+        expectation_type = queued.expectation_type
+        config = queued.config
+
+    claimed = suggestion_claims.claim_for_created_check(db_session, _Check(), actor_id=admin.id)
+
+    assert claimed is False
+    assert _queued(db_session, suite)[0].status == "pending"
 
 
 @pytest.mark.parametrize(
