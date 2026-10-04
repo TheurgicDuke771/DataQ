@@ -87,6 +87,7 @@ def ensure_probe_fixtures(
                 name=name,
                 expectation_type=expectation_type,
                 config=dict(config),
+                ordinal=len(checks) + 1,
             )
             session.add(check)
             checks.append(check)

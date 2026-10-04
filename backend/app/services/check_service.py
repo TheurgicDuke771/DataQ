@@ -859,6 +859,14 @@ def record_check_version(
     return version
 
 
+def next_check_ordinal(session: Session, suite_id: uuid.UUID) -> int:
+    """The position a new check takes: after every check the suite has. Two creates racing
+    can draw the same number; `CHECK_ORDER` then falls back to ``created_at, id``.
+    """
+    highest = session.scalar(select(func.max(Check.ordinal)).where(Check.suite_id == suite_id))
+    return (highest or 0) + 1
+
+
 def create_check(
     session: Session,
     *,
@@ -974,6 +982,7 @@ def create_check(
         fail_threshold=fail_threshold,
         critical_threshold=critical_threshold,
         origin=origin,
+        ordinal=next_check_ordinal(session, suite_id),
     )
     session.add(check)
     session.flush()  # assign check.id so the v1 snapshot can reference it

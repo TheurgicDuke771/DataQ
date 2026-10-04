@@ -287,8 +287,10 @@ def import_suite(
             warn_threshold=c["warn_threshold"],
             fail_threshold=c["fail_threshold"],
             critical_threshold=c["critical_threshold"],
+            # Document order: these rows share one `created_at`.
+            ordinal=position,
         )
-        for c, source_id in zip(checks, source_ids, strict=True)
+        for position, (c, source_id) in enumerate(zip(checks, source_ids, strict=True), start=1)
     ]
     session.add(suite)
     session.flush()  # assign check ids so each can carry a v1 snapshot (#280)

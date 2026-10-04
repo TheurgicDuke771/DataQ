@@ -556,6 +556,9 @@ class Check(Base):
     # Evaluating engine (ADR 0036).
     engine: Mapped[str] = mapped_column(String(32), nullable=False, server_default=text("'gx'"))
     origin: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'user'"))
+    # Position among the suite's checks, 1-based, in the order they were authored (#1334).
+    # Gaps are fine (a delete leaves one); NULL sorts last.
+    ordinal: Mapped[int | None] = mapped_column(Integer)
     expectation_type: Mapped[str] = mapped_column(String(128), nullable=False)
     # DQ dimension (ADR 0038): derived at author time then STORED (SQL GROUP BY + override survival,
     # #889).
@@ -766,8 +769,9 @@ class Run(Base):
     created_at: Mapped[datetime] = _created_at()
 
 
-#: The ONE ordering key for a suite's checks and anything listed per check.
-CHECK_ORDER = (Check.created_at.nulls_last(), Check.id)
+#: The ONE ordering key for a suite's checks and anything listed per check. `ordinal` is the
+#: authoring order (#1334); the rest breaks ties and orders rows that have none.
+CHECK_ORDER = (Check.ordinal.nulls_last(), Check.created_at.nulls_last(), Check.id)
 
 
 class Result(Base):

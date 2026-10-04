@@ -3068,3 +3068,62 @@ def test_apply_creates_an_explicitly_unclassified_check_and_derives_an_omitted_o
     }
     assert stored["left unclassified"] is None
     assert stored["derived"] == "completeness"
+
+
+# ── authoring order (#1334) ──────────────────────────────────────────────────
+
+
+def test_an_imported_suite_lists_its_checks_in_document_order(
+    client: TestClient, db_session: Any
+) -> None:
+    """An import inserts every check in ONE transaction, so they share a `created_at`
+    and only the ordinal can say which came first. Six checks: the `id` tie-break would
+    land on document order by chance once in 720.
+    """
+    src = _suite_with_checks(client, db_session)
+    document = client.get(f"/api/v1/suites/{src}/export").json()
+    template = document["checks"][0]
+    names = ["zeta", "alpha", "mid", "omega", "beta", "last"]
+    document["checks"] = [{**template, "name": name} for name in names]
+    target = _connection(db_session)
+
+    new_id = client.post(
+        "/api/v1/suites/import",
+        json={"connection_id": str(target.id), "document": document},
+    ).json()["id"]
+    listed = client.get(f"/api/v1/suites/{new_id}/checks").json()
+    exported = client.get(f"/api/v1/suites/{new_id}/export").json()
+
+    assert [c["name"] for c in listed] == names
+    assert [c["name"] for c in exported["checks"]] == names
+
+
+def test_a_check_added_later_goes_after_the_imported_ones(
+    client: TestClient, db_session: Any
+) -> None:
+    src = _suite_with_checks(client, db_session)
+    document = client.get(f"/api/v1/suites/{src}/export").json()
+    template = document["checks"][0]
+    document["checks"] = [{**template, "name": name} for name in ["b", "a"]]
+    target = _connection(db_session)
+    new_id = client.post(
+        "/api/v1/suites/import",
+        json={"connection_id": str(target.id), "document": document},
+    ).json()["id"]
+
+    created = client.post(
+        f"/api/v1/suites/{new_id}/checks",
+        json={
+            "name": "0-first-by-name",
+            "expectation_type": template["expectation_type"],
+            "config": template["config"],
+        },
+    )
+    listed = client.get(f"/api/v1/suites/{new_id}/checks").json()
+
+    assert created.status_code == 201, created.text
+    assert [c["name"] for c in listed] == ["b", "a", "0-first-by-name"]
+    ordinals = db_session.scalars(
+        select(Check.ordinal).where(Check.suite_id == uuid.UUID(new_id)).order_by(Check.ordinal)
+    ).all()
+    assert ordinals == [1, 2, 3]
