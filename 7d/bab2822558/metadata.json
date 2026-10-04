@@ -1,0 +1,48 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "7dbab2822558",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1660-mcp-coverage-tools",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CLAUDE.md",
+    "README.md",
+    "backend/app/mcp/server.py",
+    "backend/tests/mcp/test_mcp_tools.py",
+    "backend/tests/support/mcp_gates.py",
+    "docs/site/architecture/overview.md",
+    "docs/site/get-started/ask-assistant.md",
+    "docs/site/guides/features.md",
+    "docs/site/guides/mcp-setup.md",
+    "docs/site/operate/deployment-parity.md",
+    "docs/site/operate/runbook-faq.md",
+    "docs/site/reference/changelog.md",
+    "docs/site/reference/feature-matrix.md",
+    "docs/site/reference/glossary.md",
+    "docs/site/reference/mcp-tools.md",
+    "docs/site/security/compliance/sub-processors.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/7d/bab2822558/0/metadata.json",
+      "transcript": "/7d/bab2822558/0/full.jsonl",
+      "compact_transcript": "/7d/bab2822558/0/transcript.jsonl",
+      "content_hash": "/7d/bab2822558/0/content_hash.txt",
+      "prompt": "/7d/bab2822558/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 50,
+    "cache_creation_tokens": 125435,
+    "cache_read_tokens": 9885103,
+    "output_tokens": 14991,
+    "api_call_count": 25,
+    "subagent_tokens": {
+      "input_tokens": 20,
+      "cache_creation_tokens": 101189,
+      "cache_read_tokens": 832194,
+      "output_tokens": 73,
+      "api_call_count": 10
+    }
+  }
+}

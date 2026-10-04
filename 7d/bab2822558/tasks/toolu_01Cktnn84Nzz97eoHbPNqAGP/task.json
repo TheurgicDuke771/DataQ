@@ -1,0 +1,26 @@
+{
+  "tool_use_id": "toolu_01Cktnn84Nzz97eoHbPNqAGP",
+  "agent_id": "a5922f8d1c10cace1",
+  "subagent_type": "mcp-honesty-reviewer",
+  "task_description": "MCP honesty review new tools",
+  "files": [
+    "CLAUDE.md",
+    "README.md",
+    "backend/app/mcp/server.py",
+    "backend/tests/mcp/test_mcp_tools.py",
+    "backend/tests/support/mcp_gates.py",
+    "docs/site/architecture/overview.md",
+    "docs/site/get-started/ask-assistant.md",
+    "docs/site/guides/features.md",
+    "docs/site/guides/mcp-setup.md",
+    "docs/site/operate/deployment-parity.md",
+    "docs/site/operate/runbook-faq.md",
+    "docs/site/reference/changelog.md",
+    "docs/site/reference/feature-matrix.md",
+    "docs/site/reference/glossary.md",
+    "docs/site/reference/mcp-tools.md",
+    "docs/site/security/compliance/sub-processors.md"
+  ],
+  "started_at": "2026-10-04T15:39:23.003628+05:30",
+  "completed_at": "2026-10-04T15:39:23.003985+05:30"
+}
