@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "5ed0ce9f554e",
+  "strategy": "manual-commit",
+  "branch": "docs/v1.2-close",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/retro-v1.2.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/5e/d0ce9f554e/0/metadata.json",
+      "transcript": "/5e/d0ce9f554e/0/full.jsonl",
+      "compact_transcript": "/5e/d0ce9f554e/0/transcript.jsonl",
+      "content_hash": "/5e/d0ce9f554e/0/content_hash.txt",
+      "prompt": "/5e/d0ce9f554e/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 42,
+    "cache_creation_tokens": 40210,
+    "cache_read_tokens": 9280884,
+    "output_tokens": 19743,
+    "api_call_count": 21
+  }
+}
