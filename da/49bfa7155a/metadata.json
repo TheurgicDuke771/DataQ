@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "da49bfa7155a",
+  "strategy": "manual-commit",
+  "branch": "docs/v1.3-cycle-plan",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "context/roadmap-v1.2-v1.3.md",
+    "docs/progress.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/da/49bfa7155a/0/metadata.json",
+      "transcript": "/da/49bfa7155a/0/full.jsonl",
+      "compact_transcript": "/da/49bfa7155a/0/transcript.jsonl",
+      "content_hash": "/da/49bfa7155a/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 4,
+    "cache_creation_tokens": 1460,
+    "cache_read_tokens": 1042695,
+    "output_tokens": 2078,
+    "api_call_count": 2
+  }
+}
