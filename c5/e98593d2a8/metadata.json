@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "c5e98593d2a8",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1669-bulk-check-operations",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/services/check_service.py",
+    "frontend/src/components/checks/bulkLimit.ts",
+    "frontend/src/pages/Suites.tsx",
+    "frontend/tests/pages/Suites.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/c5/e98593d2a8/0/metadata.json",
+      "transcript": "/c5/e98593d2a8/0/full.jsonl",
+      "compact_transcript": "/c5/e98593d2a8/0/transcript.jsonl",
+      "content_hash": "/c5/e98593d2a8/0/content_hash.txt",
+      "prompt": "/c5/e98593d2a8/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 14,
+    "cache_creation_tokens": 12807,
+    "cache_read_tokens": 3980714,
+    "output_tokens": 8404,
+    "api_call_count": 7
+  }
+}
