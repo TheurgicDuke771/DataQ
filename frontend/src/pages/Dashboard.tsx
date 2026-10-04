@@ -12,6 +12,7 @@ import { getDashboardSummary } from '../api/dashboard';
 import { Page } from '../components/layout/Page';
 import { AssetHealthLead } from '../components/dashboard/AssetHealthLead';
 import { CoveragePanel } from '../components/dashboard/CoveragePanel';
+import { GetStartedPanel } from '../components/dashboard/GetStartedPanel';
 import { WorkspaceDimensions } from '../components/dashboard/WorkspaceDimensions';
 import { MetricCard } from '../components/dashboard/MetricCard';
 import { formatDurationMs } from '../components/results/resultsFormat';
@@ -71,6 +72,8 @@ export function Dashboard() {
       {state.status === 'error' && (
         <Alert type="error" showIcon title="Failed to load dashboard" description={state.error} />
       )}
+
+      <GetStartedPanel />
 
       {/* Asset-level health leads the dashboard (ADR 0034 navigation inversion,
           #773) — assets are what users reason about; the KPI/trends below stay. */}
