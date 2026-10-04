@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "26fb586fb7a7",
+  "strategy": "manual-commit",
+  "branch": "chore/codeql-triage-191-192",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/scripts/local_vault.py",
+    "backend/tests/core/test_openbao_tls.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/26/fb586fb7a7/0/metadata.json",
+      "transcript": "/26/fb586fb7a7/0/full.jsonl",
+      "compact_transcript": "/26/fb586fb7a7/0/transcript.jsonl",
+      "content_hash": "/26/fb586fb7a7/0/content_hash.txt",
+      "prompt": "/26/fb586fb7a7/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 3561,
+    "cache_read_tokens": 3263453,
+    "output_tokens": 3284,
+    "api_call_count": 4
+  }
+}
