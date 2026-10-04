@@ -1,0 +1,11 @@
+#2384 and #2385 have conflicts
+
+---
+
+<task-notification>
+<task-id>b5p93a76h</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/051a3ae7-f154-4852-b2b4-477a2e7d4418/tasks/b5p93a76h.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait until one of the three PRs merges or a check fails" completed (exit code 0)</summary>
+</task-notification>
