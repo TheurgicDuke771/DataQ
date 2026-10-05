@@ -30,7 +30,7 @@
 | **Current cycle** | **v1.3 — 8 weeks, 2026-10-05 → 2026-11-29**, no net-new features: roadmap and filed features first (W1–W5), then bug fixes and security (W6), polish (W7), debt, decisions and the close (W8). Roadmap theme in [context/roadmap-v1.2-v1.3.md](../context/roadmap-v1.2-v1.3.md). |
 | **Environment** | No live cloud environment (estate retired 2026-10-03). Work is verified on the local stacks; live verification against Snowflake, Unity Catalog, Azure or AWS waits on [#2224](https://github.com/TheurgicDuke771/DataQ/issues/2224). |
 | **Open issues** | **77** open repo-wide (2026-10-05, live re-count), all in the eight v1.3 weekly milestones; `v1.3 Backlog` is empty and `v1.2 Backlog` is closed. |
-| **Open PRs** | **1 open** (2026-10-05): this plan. |
+| **Open PRs** | **0 open** (2026-10-05, live re-count); the v1.3 plan merged as [#2394](https://github.com/TheurgicDuke771/DataQ/pull/2394). |
 
 ---
 

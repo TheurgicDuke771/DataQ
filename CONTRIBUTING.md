@@ -154,7 +154,7 @@ These are locked on Day 1 of Week 1. Do not drift.
     ```json
     { "error": { "code": "SNAKE_CASE_CODE", "message": "Human-readable string", "detail": {} } }
     ```
-29. **App Insights exception tracking wired from Week 1**, not Week 7. Middleware in `backend/app/main.py` captures all unhandled exceptions from the first commit.
+29. **App Insights exception tracking wired from Week 1**, not Week 7. Middleware in `backend/app/main.py` captures all unhandled exceptions from the first commit; request/task spans and logs export through the vendor-neutral OpenTelemetry seam (`backend/app/core/tracing.py` + `core/otel.py` — App Insights on Azure, OTLP elsewhere).
 
 ---
 
@@ -196,11 +196,11 @@ These are locked on Day 1 of Week 1. Do not drift.
 |---|---|---|
 | API | `backend/app/api/v1/` | FastAPI routers only — no business logic |
 | Services | `backend/app/services/` | Business logic, orchestration between layers |
-| Orchestration | `backend/app/orchestration/` | `OrchestrationProvider` abstraction + ADF/Airflow impls |
-| Datasources | `backend/app/datasources/` | GX adapter per datasource type |
+| Orchestration | `backend/app/orchestration/` | `OrchestrationProvider` abstraction + ADF/Airflow/dbt impls |
+| Datasources | `backend/app/datasources/` | `ConnectionAdapter` + `CheckRunner` per datasource type (engine-generic SQL base for the SQL engines, ADR 0045) |
 | DB | `backend/app/db/` | SQLAlchemy models + session management |
 | Core | `backend/app/core/` | Config, logging, errors — imported by all layers |
-| MCP | `backend/app/mcp/` | FastMCP tools (Week 7 only) |
+| MCP | `backend/app/mcp/` | FastMCP tools (54, see ADR 0008) |
 
 **Naming:**
 - Files: `snake_case.py`
@@ -220,9 +220,10 @@ These are locked on Day 1 of Week 1. Do not drift.
 |---|---|---|
 | Pages | `src/pages/` | Route-level components |
 | Components | `src/components/` | Reusable UI components |
-| API client | `src/api/` | Generated OpenAPI client (Week 4+) |
+| API client | `src/api/` | Hand-written axios client, one module per resource |
+| Auth | `src/auth/` | OIDC / OTP / bypass sign-in, `MeProvider`, role gating |
 | Hooks | `src/hooks/` | Custom React hooks |
-| Store | `src/store/` | Global state (if needed) |
+| Utils | `src/utils/` | Shared helpers |
 
 **Naming:**
 - Component files: `PascalCase.tsx`
@@ -239,10 +240,10 @@ These are locked on Day 1 of Week 1. Do not drift.
 
 # Day-to-day:
 conda activate dataq
-docker-compose up           # starts Postgres, Redis, FastAPI, React dev server, Celery worker
+docker-compose up           # starts Postgres, Redis, OpenBao, Mailpit, FastAPI, React dev server, Celery worker + beat
 
-# Backend only:
-cd backend && uvicorn app.main:app --reload
+# Backend only (from the repo root — imports are `backend.app.*`):
+uvicorn backend.app.main:app --reload
 
 # Frontend only:
 cd frontend && pnpm dev
@@ -255,8 +256,8 @@ pre-commit run --all-files
 pre-commit install --install-hooks   # first run compiles the betterleaks Go hook
                                      # (pre-commit ≥3.0 bootstraps Go automatically)
 
-# Run backend tests (Week 8+):
-cd backend && pytest
+# Run backend tests (from the repo root; testpaths + the 80% coverage gate live in pyproject.toml):
+pytest
 
 # Run frontend tests (Week 8+):
 cd frontend && pnpm test

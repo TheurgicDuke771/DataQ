@@ -2,7 +2,7 @@
 
 > Keep these diagrams in sync with the code. When a new component, datasource, integration, or DB table is added, update the relevant diagram in the same PR.
 >
-> ☁️ **These diagrams are drawn using Azure's component names** (Container Apps, Key Vault, App Insights, Azure AD) because that's the concrete deployment they trace through. DataQ runs as an equally-live peer deployment on **AWS** (ECS Fargate, Secrets Manager, CloudWatch+X-Ray, Cognito) behind the exact same seams — see [deployment parity](../operate/deployment-parity.md) for the side-by-side. Neither cloud is primary; read "Key Vault" / "App Insights" / "Azure AD" below as "the secret store" / "the observability backend" / "the OIDC authority" and substitute the AWS equivalent where relevant.
+> ☁️ **These diagrams are drawn using Azure's component names** (Container Apps, Key Vault, App Insights, Azure AD) because that's the reference deployment they were first traced through. The **AWS** reference deployment (ECS Fargate, Secrets Manager, CloudWatch+X-Ray, Cognito) sits behind the exact same seams, and both ship as IaC under `deploy/terraform/{azure,aws}` (the project's own live Azure and AWS environments were retired 2026-10-03; cloud hosting remains supported and recommended) — see [deployment parity](../operate/deployment-parity.md) for the side-by-side. Neither cloud is primary; read "Key Vault" / "App Insights" / "Azure AD" below as "the secret store" / "the observability backend" / "the OIDC authority" and substitute the AWS equivalent where relevant.
 
 ```mermaid
 %%{init: {'flowchart': {'curve': 'linear'}}}%%
@@ -78,7 +78,7 @@ The flow reads left → right: **inputs** (Clients, Orchestration) drive the **D
 
 ## Data model (ER diagram)
 
-> Source of truth: [`backend/app/db/models.py`](https://github.com/TheurgicDuke771/DataQ/blob/main/backend/app/db/models.py) (28 tables). Update this diagram in the same PR as any model/migration change.
+> Source of truth: [`backend/app/db/models.py`](https://github.com/TheurgicDuke771/DataQ/blob/main/backend/app/db/models.py) (32 tables). Update this diagram in the same PR as any model/migration change.
 
 ```mermaid
 erDiagram
@@ -128,7 +128,7 @@ erDiagram
     connections {
         uuid id PK
         string name "unique per env"
-        string type "snowflake / adls_gen2 / s3 / unity_catalog / iceberg / postgres / mysql / trino / mssql / adf / airflow / dbt"
+        string type "snowflake / adls_gen2 / s3 / unity_catalog / iceberg / postgres / mysql / trino / mssql / athena / redshift / adf / airflow / dbt"
         string env "dev / qa / uat / prod"
         jsonb config "non-secret datasource config"
         string secret_ref "SecretStore key, never the credential"
@@ -191,6 +191,7 @@ erDiagram
         string kind "expectation / freshness / volume / schema_drift / anomaly / comparison (ADR 0012/0015)"
         string expectation_type
         string origin "user / auto / suggestion (ADR 0047)"
+        string engine "gx / dmf / dqx / dataplex — per-check evaluator, default gx (ADR 0036)"
         string dimension "DQ dimension (ADR 0038) — nullable; NULL = unclassified"
         uuid source_connection_id FK "comparison baseline datasource (ADR 0015; RESTRICT) — set iff kind='comparison'"
         numeric warn_threshold
@@ -675,7 +676,7 @@ flowchart LR
 Boundary notes:
 
 - **Defense in depth, not perimeter trust:** the API validates every request's bearer JWT itself (`fastapi-azure-auth` for REST, `JWTVerifier` for MCP — same tenant/audience/scope) even though it is only reachable through the frontend proxy. Platform-level auth (SWA EasyAuth) is explicitly disabled.
-- **The only endpoints that bypass user JWT auth** are the two orchestration webhook receivers (each with its own secret scheme, above) and the health probe. Webhook secrets live in Key Vault and are compared constant-time; they are never logged.
+- **The only endpoints that bypass user JWT auth** are the three orchestration webhook receivers — ADF · Airflow · dbt, each with its own secret scheme, above — the email-OTP sign-in endpoints (`/auth/otp/request` · `/auth/otp/verify`, rate-limited, ADR 0032) and the health probe. Webhook secrets live in Key Vault and are compared constant-time; they are never logged.
 - **Nothing secret is baked into images or served to the browser.** The frontend's runtime `DATAQ_AUTH_*` config is non-secret OIDC metadata (ADR 0028); all real secrets resolve at use-time from Key Vault via user-assigned managed identity.
 - **MCP is fail-closed:** without resolvable auth config the `/mcp` mount does not come up at all (ADR 0008).
 
@@ -687,6 +688,6 @@ Boundary notes:
 - **The worker consumes two Celery queues.** `run_suite` and the periodic beat-dispatched tasks stay on the default `celery` queue; the three LLM intelligence tasks (`sql_generation` · `check_suggestion` · `rca_narrative`) route to a dedicated `llm` queue, so a backlog of long-running suite runs never starves an LLM request behind it. Both queues are consumed by the same worker process (`-Q celery,llm`) — this is queue separation for fair scheduling, not a second worker deployment.
 - **celery-beat is its own process/service, never embedded in the worker.** Beat only schedules — it enqueues tasks onto the broker, it never executes one — so a worker OOM (overlapping large suites under `worker_concurrency=4` and a 2 GiB hard limit) can never take the scheduler down with it. This is what stops orchestration polling, scheduled-suite dispatch, and every daily sweep from going silently dark because the process that ran them died. Exactly one beat instance may ever run (min=max=1 replica / desired_count=1) — a second would double-fire every periodic task.
 - **The outbound LLM intelligence layer is live, off by default.** An admin must configure a provider (Anthropic or an OpenAI-compatible endpoint) and credential before any call leaves the deployment. SQL generation and check suggestions send masked aggregate profiler statistics only; RCA narratives additionally send the triggering check's own `observed_value`, routed through the same column-policy/warehouse-tag redaction floor every other results surface applies, plus its `expected_value` (a check-authored threshold, never masked). Raw sample rows are never sent on any path. See [Security & data handling](../security/overview.md).
-- **All connection secrets via the deployment's secret store in production / staging** — Key Vault on Azure, Secrets Manager on AWS. Local dev may resolve secrets via `KV_SECRET_*` env vars through the `EnvSecretStore` backend (see `backend/app/core/secrets.py`). No credentials are ever hardcoded.
+- **All connection secrets via the deployment's secret store in production / staging** — Key Vault on Azure, Secrets Manager on AWS, OpenBao (KV v2) self-hosted (ADR [0039](../adr/0039-openbao-self-hosted-secret-backend.md)). Local dev may resolve secrets via `KV_SECRET_*` env vars through the `EnvSecretStore` backend (see `backend/app/core/secrets.py`). No credentials are ever hardcoded.
 - **The `/mcp` endpoint exposes the same service layer to AI clients.** The 54 FastMCP tools (30 read-only, 18 that change state, 6 live-probe tools gated like writes) are thin wrappers reusing the same services + per-suite authz + sample redaction as the REST API — no logic duplication. It mounts under **either** sign-in mode (SSO, email OTP) and stays unmounted, **fail-closed**, only when none is configured. Under SSO it validates the same OIDC bearer (Azure AD or Cognito — a `JWTVerifier` on the same tenant/audience/scope) or a PAT; **under email OTP a PAT is the only accepted credential** — a raw JWT and a session cookie are both rejected there, since there is no IdP-issued bearer to validate and a session is a browser-only credential. See [ADR 0008](../adr/0008-mcp-server.md) / [ADR 0032](../adr/0032-email-otp-signin.md).
 - **Interactive API docs are off in production.** `/docs`, `/redoc`, and `/openapi.json` are disabled when `ENVIRONMENT=prod` (the prod-docs gate); available in dev/staging.
