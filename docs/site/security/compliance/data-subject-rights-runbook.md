@@ -16,7 +16,7 @@ tables — and `incidents.evidence`, a stored snapshot of an incident's evidence
 card whose `failing_result.observed_value` can carry the same kind of literal
 warehouse cell value (see the [DPIA input sheet](dpia-input-sheet.md) for the
 full inventory). **This runbook's access/erasure endpoints below cover all three**
-(the incident snapshot is matched by the check's current tested column — see §5). A "data subject" in DataQ's own
+(the incident snapshot is matched by the check's tested column as of the snapshot's write time — see §5). A "data subject" in DataQ's own
 data is identified the same way the warehouse identifies them: a **`(column,
 value)` pair** — e.g. `column=email, value=alice@example.com` — not a DataQ user
 id (that is Class 2, workspace-account data, and is handled by ordinary account

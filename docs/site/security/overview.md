@@ -177,7 +177,8 @@ are the reason this mode is opt-in rather than the default:
 
 - The **frontend is the only public surface**; the API runs on **internal ingress** and is
   reached only through the frontend's same-origin `/api`, `/healthz`, and `/mcp` proxy
-  (ADR 0028 §5). All traffic is over **HTTPS/TLS**.
+  (ADR 0028 §5). All public traffic is over **HTTPS/TLS**; the internal hops that are not
+  are listed under [Encryption](#encryption).
 - The **MCP** AI-assistant endpoint is **fail-closed** — unauthenticated requests are rejected
   (ADR 0008), and it is not mounted at all unless the deployment has a working sign-in
   configuration. It authenticates from the `Authorization` header only and **never reads a
@@ -217,7 +218,7 @@ are the reason this mode is opt-in rather than the default:
 ## Secrets
 
 - Datasource credentials, webhook signing keys, and channel secrets are held in a **secret
-  store behind a seam** — Azure Key Vault in the primary reference deployment, AWS Secrets
+  store behind a seam** — Azure Key Vault on the Azure stack, AWS Secrets
   Manager on the AWS stack, OpenBao/Vault self-hosted — never in the database or in git. The
   app reads them via a managed identity (Azure) or the task IAM role (AWS).
 - Secret **references** (names), not secret values, are stored alongside connections. Deleting
@@ -228,7 +229,9 @@ are the reason this mode is opt-in rather than the default:
 - **A stored credential is never sent to a destination the caller changed.** Editing a config
   field that decides where a credential goes — Snowflake `account`, ADLS `account_url`/`auth_type`/`tenant_id`/`client_id`,
   S3/dbt `endpoint_url`, Unity Catalog `workspace_url`, Iceberg `catalog_uri`/`warehouse`/
-  `properties`/`secret_property`, Airflow `base_url`, dbt `artifacts_uri` — requires re-supplying that
+  `properties`/`secret_property`, the SQL engines' `host`/`port` (plus Trino's `sslmode`/`ca_bundle`/`auth_type`,
+  SQL Server's `auth_type`/`tenant_id`/`client_id`/`ca_bundle`/`driver`, Athena's `region`/`work_group`/
+  `s3_staging_dir`), Airflow `base_url`, dbt `artifacts_uri`/`endpoint_url`/`account_url` — requires re-supplying that
   credential in the same request, or the update is rejected (`422 credential_redirect`).
   Moving a connection to a new host is a supported operation; doing it with a credential you
   do not know is not. This is why an Admin, who may **rotate** a credential, still cannot
@@ -354,7 +357,8 @@ service-managed keys requires another restore.
 Meeting all three is a deployment topology, not a feature flag — which is why CMK is
 documented here rather than shipped as an option that could be enabled unsafely. A
 stack that provisions its own server and a purge-protected vault can adopt it; the
-maintainers' reference deployment does neither, so it is out of scope there.
+maintainers' former reference deployment (retired 2026-10-03) did neither, so it was out of
+scope there.
 
 ## Column classification from your warehouse
 

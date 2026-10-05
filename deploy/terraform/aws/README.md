@@ -1,7 +1,9 @@
 # DataQ on AWS — Terraform (OpenTofu) runbook
 
-A second, parallel deployment of DataQ (Azure stays the deployed prod — see
-`deploy/terraform/azure/`), into a fresh, dedicated AWS account. Unlike the
+A second, parallel deployment target for DataQ (peer to `deploy/terraform/azure/`), into a
+fresh, dedicated AWS account. This stack was applied and live-verified from 2026-08-15; that
+reference deployment was retired with the rest of the project's cloud estate on 2026-10-03,
+and the stack and `deploy-aws.yml` remain supported. Unlike the
 Azure stack, nothing here is shared with another stack: this account exists
 only for this deployment.
 
@@ -19,13 +21,13 @@ only for this deployment.
 | _(no resource)_ — Slack alerts, only when `slack_webhook_secret_name` is set | The stack never creates the Slack webhook secret: create `<prefix>/<name>` in Secrets Manager yourself, then set the variable. Empty (the default) leaves the channel off rather than naming a secret that doesn't exist. **Upgrading:** a deployment that already created `<prefix>/channel-slack-webhook` must set `slack_webhook_secret_name = "channel-slack-webhook"`, or Slack stops at the next task-definition replace. |
 | `aws_ses_email_identity` + `aws_iam_user.ses_smtp` (+key/policy) — only when `alert_email` set | Email alert channel (#1368): SES identities (sandbox — sender `alert_email` + each distinct `alert_email_to` recipient, one verification click each) + a send-only SMTP credential |
 | `aws_iam_openid_connect_provider.github` + `aws_iam_role.github_deploy` | GitHub Actions → AWS auth for the Deploy workflow, OIDC federation, no stored access keys |
-| CloudWatch Log Groups (6) | Container logs (4) + `/dataq-app/otel` (app OTel logs via the collector) + `/dataq-app/adot` (the collector's own stdout) |
+| CloudWatch Log Groups (7) | Container logs (5 — api, worker, beat, frontend, migrate) + `/dataq-app/otel` (app OTel logs via the collector) + `/dataq-app/adot` (the collector's own stdout) |
 | ADOT collector sidecars (in the api + worker task defs, `adot.tf`) | APM/tracing (#1369): the app's vendor-neutral OTLP export (`core/otel.py`, #589) points at `localhost:4318`; the sidecar ships traces → **X-Ray**, OTel logs → CloudWatch. Config injected via `AOT_CONFIG_CONTENT` (minimal two-pipeline config, minimal IAM) |
 
 ## Prerequisites
 
 - **OpenTofu** (`tofu`), not Terraform — same ADR 0024 rationale as the Azure stack.
-- **AWS CLI credentials** for a **scoped IAM user**, never root. This repo's own bring-up used `AWS_PROFILE=dataq-deploy` (set as the default in the operator's shell) — see the session notes for the IAM bootstrap steps (create user, attach a policy, remove root's access keys/login session).
+- **AWS CLI credentials** for a **scoped IAM user**, never root. This repo's own bring-up used `AWS_PROFILE=dataq-deploy` (set as the default in the operator's shell) — bootstrap it once by hand: create the user, attach a policy, then remove root's access keys/login session.
 - A **GitHub repo** with Actions enabled (for the OIDC federation to have something to trust).
 - Nothing else pre-exists — this stack creates its own VPC, database, cache, etc. from scratch, unlike the Azure stack's shared-resource dependencies.
 
@@ -52,7 +54,7 @@ tofu plan -input=false -out=tfplan \
 tofu apply -input=false tfplan
 ```
 
-**Cost starts here.** `tofu apply` creates real, billable AWS resources (Fargate, RDS, ElastiCache, ALB). Review the plan before applying. See the root-level deployment plan (in the session that built this stack) for the cost breakdown against the AWS free-tier credit.
+**Cost starts here.** `tofu apply` creates real, billable AWS resources (Fargate, RDS, ElastiCache, ALB). Review the plan before applying.
 
 > **Existing stack picking up a new service (e.g. `beat`, #1811)?** `tofu apply` first — the
 > Deploy workflow only rolls images onto services that already exist, it never creates them.
@@ -95,13 +97,13 @@ the Azure `deploy.yml` runs, adapted to ECS:
    is deployment-specific and deliberately not tracked in the repo (#730).
    Set it with `gh variable set AWS_FRONTEND_URL --body "$(tofu output -raw frontend_url)"`.
 
-It is `workflow_dispatch`-only (Azure stays primary prod), takes an optional
+It is `workflow_dispatch`-only, takes an optional
 `image_tag` input (blank → `aws-<sha>`), and needs no AWS-side registry
 credential — the GHCR packages are public and ECS pulls them anonymously.
 
 ## Rolling task-definition changes (env vars, sidecars)
 
-The api/worker/frontend task definitions carry `lifecycle { ignore_changes =
+The api/worker/beat/frontend (and migrate) task definitions carry `lifecycle { ignore_changes =
 [container_definitions] }` (CI rolls images out-of-band), so a Terraform-side
 change to env vars or sidecar containers is **silently ignored by a plain
 apply**. To roll one:
@@ -177,8 +179,7 @@ whatever `aws_region` says.
   also what would close the cleartext **CloudFront→ALB hop** (`origin_protocol_policy
   = http-only`, cloudfront.tf) and let HSTS mean something end-to-end.
 - No private-subnet/NAT hardening — see `main.tf`'s decision note.
-- No `.github/workflows/deploy-aws.yml` yet — this stack only provisions the
-  infra the workflow will drive.
-- The Cognito `client_id`-vs-`aud` accommodation in `OidcBearerScheme`
-  (backend) needs confirming against a real token from **this** pool once
-  it's live — see `cognito.tf`'s comment.
+- The Cognito `client_id`-vs-`aud` accommodation in `OidcBearerScheme` was
+  confirmed against a real token from this pool while it was live (2026-08-15:
+  Cognito access tokens carry neither `email` nor `aud`, so the profile comes
+  from the userinfo endpoint) — see `OidcBearerScheme` in `backend/app/core/auth.py`.

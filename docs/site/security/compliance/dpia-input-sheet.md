@@ -43,15 +43,16 @@ surgically removes only the matching row/cell from `sample_failures` /
 other subjects — intact. **The same on-demand erasure also scrubs `incidents.evidence`**
 (the row above): the matching cell is removed from an incident's stored snapshot in
 place, and the response reports result and incident hits separately. The snapshot
-is matched by the check's *current* tested column (an incident keeps no result row
-to resolve the column as of capture time), so a check edited after the incident
-opened may need the request repeated under the earlier column name.
+is matched by the check's tested column **as of the snapshot's write time** (resolved
+from the check's version history at the incident's `last_seen_at`), so a check edited
+after the incident fired still matches under the column it was captured against.
 
 ## Class 2 — workspace account data
 
 | Where | What | Retention | Controls |
 |---|---|---|---|
 | `users` | Email (unique, lower-cased), display name, OIDC subject id + issuer, workspace role | Life of the account | Role-gated admin surface; ADR 0033 two-axis authz |
+| `workspace_members` | Admitted email addresses (the **Admin → Members** list), initial role, who invited them | Until an Admin removes the entry | Admin-only surface; removal takes effect on the member's next request |
 | `sessions` | OTP-mode sign-in sessions — **token hash only** (never the token) | Server-side revocation; logout deletes | HttpOnly cookie; SHA-256 at rest |
 | `otp_codes` | One-time codes — **hashed**, attempt-capped | Expired codes purged daily (`purge_otp_codes` beat) | Rate limits + enumeration-resistant responses |
 | `api_keys` | PATs — **SHA-256 hash only**, name, last-used | Until revoked | `dq_live_` prefix supports secret scanning |

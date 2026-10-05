@@ -1,7 +1,11 @@
 # Deployment parity — Azure · AWS · Local
 
 How the three reference installations compare, as of 2026-08-16 (both clouds deployed from
-the same commit). The design intent (ADR
+the same commit). The two cloud reference deployments were retired on 2026-10-03; the
+stacks and workflows are still supported, and the "live-verified" cells below record what
+was verified while they ran.
+The prebuilt-image compose stack (`docker-compose.ghcr.yml`) is now the production-like
+installation the project runs itself. The design intent (ADR
 [0010](../adr/0010-provider-agnostic-infrastructure-seams.md) /
 [0028](../adr/0028-cloud-neutral-image-runtime-config-generic-oidc.md))
 is that **every difference lives in deploy-time configuration — there are zero
@@ -11,7 +15,7 @@ cloud-conditional code paths**, and the same container images run everywhere.
 
 | Concern | Azure (primary reference) | AWS (second reference) | Local (compose) |
 |---|---|---|---|
-| Compute | Container Apps: api / worker / frontend + migrate **job** | ECS Fargate: same three services + migrate **run-task** | docker-compose services |
+| Compute | Container Apps: api / worker / beat / frontend + migrate **job** | ECS Fargate: same four services + migrate **run-task** | docker-compose services |
 | Public surface | Frontend Container App (sole public ingress; api internal-only) | CloudFront → ALB → frontend (the ALB security group admits only the CloudFront managed prefix list; nginx re-verifies an origin-secret header) | `localhost` |
 | Images | One generic GHCR image set, tag `<sha>` | Same images, tag `aws-<sha>` | Same images |
 | Database | PostgreSQL (dedicated database + least-privilege app role) | RDS PostgreSQL | Postgres container |
@@ -25,14 +29,14 @@ cloud-conditional code paths**, and the same container images run everywhere.
 
 ## Features
 
-The application feature set — suites/checks across all nine datasource types, every monitor kind,
+The application feature set — suites/checks across all eleven datasource types, every monitor kind,
 assets/lineage/incidents, alerting, scheduling, the 54-tool MCP server, PATs, rate limiting —
 is the **same code everywhere**. Where the installations genuinely differ:
 
 | Capability | Azure | AWS | Local |
 |---|---|---|---|
 | Datasource runs | live-verified: Snowflake, Unity Catalog, ADLS, S3/S3-compatible, Iceberg | live-verified: Snowflake, Unity Catalog, native S3 | flat files, MinIO, Unity Catalog (Free Edition), Iceberg, PostgreSQL / MySQL / MariaDB / Trino containers; no live warehouse required |
-| PostgreSQL, MySQL/MariaDB, Trino, SQL Server, OneLake | ✅ | ✅ | ✅ (SQL Server's optional ODBC lane needs the driver installed by the operator) |
+| PostgreSQL, MySQL/MariaDB, Trino, SQL Server, OneLake, Athena, Redshift | ✅ | ✅ | ✅ (SQL Server's optional ODBC lane needs the driver installed by the operator; OneLake, Athena and Redshift need the cloud service itself) |
 | Assets / lineage / incidents / DQ scorecard | live-verified (Snowflake full-tier lineage, UC dbt lineage, inventory sync) | deployed — same code; warehouse-lineage sweep enabled but not yet exercised against that account's grants | ✅ (Marquez reference consumer via `--profile lineage`) |
 | Alerting — Teams / Slack | live-verified | deployed, unexercised | pointable anywhere |
 | Alerting — email | configured | live-verified (SES) | Mailpit |
@@ -58,7 +62,7 @@ deployment autoscales: `desired_count = 1` / `max_replicas = 3`.
 ## Deploying: Azure vs AWS
 
 Both deploy workflows are `workflow_dispatch`-only with the same shape — backend job first
-(build → **migrate, gated on success** → roll api + worker), then the frontend job gated on
+(build → **migrate, gated on success** → roll api + worker + beat), then the frontend job gated on
 the backend; a blank `image_tag` input defaults to the immutable commit SHA. The real
 differences:
 
@@ -80,7 +84,7 @@ Most backend env is **identical in shape on both clouds** (`ENVIRONMENT`, `DATAB
 `*_WEBHOOK_SECRET_NAME`s, the `EMAIL_*` block, `WAREHOUSE_LINEAGE_ENABLED`). The genuine
 differences:
 
-### Backend (api + worker)
+### Backend (api + worker + beat)
 
 | Concern | Azure | AWS |
 |---|---|---|
