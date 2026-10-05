@@ -676,7 +676,7 @@ flowchart LR
 Boundary notes:
 
 - **Defense in depth, not perimeter trust:** the API validates every request's bearer JWT itself (`fastapi-azure-auth` for REST, `JWTVerifier` for MCP — same tenant/audience/scope) even though it is only reachable through the frontend proxy. Platform-level auth (SWA EasyAuth) is explicitly disabled.
-- **The only endpoints that bypass user JWT auth** are the three orchestration webhook receivers — ADF · Airflow · dbt, each with its own secret scheme, above — the email-OTP sign-in endpoints (`/auth/otp/request` · `/auth/otp/verify`, rate-limited, ADR 0032) and the health probe. Webhook secrets live in Key Vault and are compared constant-time; they are never logged.
+- **The only endpoints that bypass user JWT auth** are the three orchestration webhook receivers — ADF · Airflow · dbt, each with its own secret scheme, above — the email-OTP sign-in endpoints (`/auth/otp/request` · `/auth/otp/verify`, rate-limited, ADR 0032), `POST /auth/logout` (session cookie only) and the health/readiness probes (`/healthz` · `/readyz`). Webhook secrets live in Key Vault and are compared constant-time; they are never logged.
 - **Nothing secret is baked into images or served to the browser.** The frontend's runtime `DATAQ_AUTH_*` config is non-secret OIDC metadata (ADR 0028); all real secrets resolve at use-time from Key Vault via user-assigned managed identity.
 - **MCP is fail-closed:** without resolvable auth config the `/mcp` mount does not come up at all (ADR 0008).
 

@@ -26,8 +26,9 @@ Open the suite and scroll to **Notifications**:
 1. Switch **Send alerts for this suite** on.
 2. Pick the **alert threshold**. The default, *On warn and worse*, is the right first choice:
    quiet for a passing run, loud the moment a check crosses a threshold you set.
-3. Under **Channels**, pick the channels this suite alerts through. Link none to fall back to
-   the workspace default. Webhook URLs live in the secret store and are never shown again
+3. Under **Channels**, pick the channels this suite alerts through. A workspace-wide
+   default destination (if your deployment configures one) is alerted as well, not instead.
+   Webhook URLs live in the secret store and are never shown again
    after an Admin saves the channel.
 4. **Save**.
 

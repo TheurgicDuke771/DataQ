@@ -68,7 +68,7 @@ Docker only — no cloud account or identity provider needed:
 
 ```bash
 curl -O https://raw.githubusercontent.com/TheurgicDuke771/DataQ/main/docker-compose.ghcr.yml
-export OPENBAO_TOKEN=$(openssl rand -hex 16)   # root token for the bundled vault
+export OPENBAO_TOKEN=$(openssl rand -hex 16)   # the app's token for the bundled vault
 export DATAQ_SIGNIN_EMAIL=you@example.com      # the address allowed to sign in
 docker compose -f docker-compose.ghcr.yml up
 ```
