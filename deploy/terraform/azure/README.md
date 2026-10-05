@@ -10,10 +10,8 @@ resources forced by free/trial subscription caps (1 Container App Environment an
 - the **Container Apps environment** `dataq-cae` (neutral name, `purpose=dataq-shared`),
 - the **Postgres Flexible Server** (tagged `purpose=dataq-shared`), named per deployment.
 
-Both shared resources were **owned by the harness stack**; this stack only
-*references* them (data sources). The harness and the reference deployment were retired
-2026-10-03, so a fresh deployment must create the resource group, the Container Apps
-environment and the Postgres server itself (by hand or its own stack) before applying this one. Everything the app creates is `dataq-app-*` /
+Both shared resources are **owned by the harness stack**; this stack only
+*references* them (data sources). Everything the app creates is `dataq-app-*` /
 `purpose=dataq-app`; any other resources in the group are untouched.
 
 ## What it creates
@@ -86,9 +84,8 @@ at runtime over the server's allow-Azure-services firewall rule.
 ```bash
 cd deploy/terraform/azure
 tofu init
-# image_tag / frontend_image_tag have no default: on an existing deployment pass what it
-# runs NOW, so any app the apply creates (e.g. dataq-app-beat, #1811) starts on the live
-# image. On a first apply, pass a published tag instead (e.g. `main-<sha>`).
+# image_tag / frontend_image_tag have no default: pass what prod runs NOW, so any
+# app the apply creates (e.g. dataq-app-beat, #1811) starts on the live image.
 IMG=$(az containerapp show -n dataq-app-worker -g dataq-rg --query 'properties.template.containers[0].image' -o tsv)
 FE=$(az containerapp show -n dataq-app-frontend -g dataq-rg --query 'properties.template.containers[0].image' -o tsv)
 TF_VAR_app_db_password='<the dataq_app password>' tofu plan -out=azure.plan \

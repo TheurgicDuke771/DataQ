@@ -218,7 +218,7 @@ are the reason this mode is opt-in rather than the default:
 ## Secrets
 
 - Datasource credentials, webhook signing keys, and channel secrets are held in a **secret
-  store behind a seam** — Azure Key Vault on the Azure stack, AWS Secrets
+  store behind a seam** — Azure Key Vault in the primary reference deployment, AWS Secrets
   Manager on the AWS stack, OpenBao/Vault self-hosted — never in the database or in git. The
   app reads them via a managed identity (Azure) or the task IAM role (AWS).
 - Secret **references** (names), not secret values, are stored alongside connections. Deleting
@@ -357,8 +357,7 @@ service-managed keys requires another restore.
 Meeting all three is a deployment topology, not a feature flag — which is why CMK is
 documented here rather than shipped as an option that could be enabled unsafely. A
 stack that provisions its own server and a purge-protected vault can adopt it; the
-maintainers' former reference deployment (retired 2026-10-03) did neither, so it was out of
-scope there.
+maintainers' reference deployment does neither, so it is out of scope there.
 
 ## Column classification from your warehouse
 

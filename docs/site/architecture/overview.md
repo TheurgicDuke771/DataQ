@@ -2,7 +2,7 @@
 
 > Keep these diagrams in sync with the code. When a new component, datasource, integration, or DB table is added, update the relevant diagram in the same PR.
 >
-> ☁️ **These diagrams are drawn using Azure's component names** (Container Apps, Key Vault, App Insights, Azure AD) because that's the reference deployment they were first traced through. The **AWS** reference deployment (ECS Fargate, Secrets Manager, CloudWatch+X-Ray, Cognito) sits behind the exact same seams, and both ship as IaC under `deploy/terraform/{azure,aws}` (the project's own live Azure and AWS environments were retired 2026-10-03; cloud hosting remains supported and recommended) — see [deployment parity](../operate/deployment-parity.md) for the side-by-side. Neither cloud is primary; read "Key Vault" / "App Insights" / "Azure AD" below as "the secret store" / "the observability backend" / "the OIDC authority" and substitute the AWS equivalent where relevant.
+> ☁️ **These diagrams are drawn using Azure's component names** (Container Apps, Key Vault, App Insights, Azure AD) because that's the concrete deployment they trace through. DataQ runs as an equally-live peer deployment on **AWS** (ECS Fargate, Secrets Manager, CloudWatch+X-Ray, Cognito) behind the exact same seams — see [deployment parity](../operate/deployment-parity.md) for the side-by-side. Neither cloud is primary; read "Key Vault" / "App Insights" / "Azure AD" below as "the secret store" / "the observability backend" / "the OIDC authority" and substitute the AWS equivalent where relevant.
 
 ```mermaid
 %%{init: {'flowchart': {'curve': 'linear'}}}%%

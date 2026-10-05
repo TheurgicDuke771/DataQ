@@ -9,13 +9,6 @@ repository's `deploy/README.md` and
 see [AWS reference deployment](#aws-reference-deployment) below). GCP is planned behind the
 same seams.
 
-> **Status (2026-10-03):** the project's own Azure and AWS reference deployments are retired;
-> no DataQ-operated cloud environment exists today. Both OpenTofu stacks and both Deploy
-> workflows remain supported, and cloud hosting is still the recommended production path.
-> "Live-verified" below describes what was verified while those deployments ran. The
-> production-like installation the project runs itself is the prebuilt-image stack
-> (`docker-compose.ghcr.yml`), with HTTPS from a CA the stack generates.
-
 ## Topology
 
 ```

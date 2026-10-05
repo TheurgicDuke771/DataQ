@@ -1,9 +1,7 @@
 # DataQ on AWS — Terraform (OpenTofu) runbook
 
-A second, parallel deployment target for DataQ (peer to `deploy/terraform/azure/`), into a
-fresh, dedicated AWS account. This stack was applied and live-verified from 2026-08-15; that
-reference deployment was retired with the rest of the project's cloud estate on 2026-10-03,
-and the stack and `deploy-aws.yml` remain supported. Unlike the
+A second, parallel deployment of DataQ (Azure stays the deployed prod — see
+`deploy/terraform/azure/`), into a fresh, dedicated AWS account. Unlike the
 Azure stack, nothing here is shared with another stack: this account exists
 only for this deployment.
 
@@ -97,7 +95,7 @@ the Azure `deploy.yml` runs, adapted to ECS:
    is deployment-specific and deliberately not tracked in the repo (#730).
    Set it with `gh variable set AWS_FRONTEND_URL --body "$(tofu output -raw frontend_url)"`.
 
-It is `workflow_dispatch`-only, takes an optional
+It is `workflow_dispatch`-only (Azure stays primary prod), takes an optional
 `image_tag` input (blank → `aws-<sha>`), and needs no AWS-side registry
 credential — the GHCR packages are public and ECS pulls them anonymously.
 
@@ -180,6 +178,6 @@ whatever `aws_region` says.
   = http-only`, cloudfront.tf) and let HSTS mean something end-to-end.
 - No private-subnet/NAT hardening — see `main.tf`'s decision note.
 - The Cognito `client_id`-vs-`aud` accommodation in `OidcBearerScheme` was
-  confirmed against a real token from this pool while it was live (2026-08-15:
+  confirmed against a real token from this pool (2026-08-15:
   Cognito access tokens carry neither `email` nor `aud`, so the profile comes
   from the userinfo endpoint) — see `OidcBearerScheme` in `backend/app/core/auth.py`.

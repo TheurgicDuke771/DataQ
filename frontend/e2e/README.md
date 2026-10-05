@@ -96,9 +96,8 @@ real datasource credentials are involved — dev-bypass only.
 
 ## Live smoke (opt-in — never in CI)
 
-Read-only specs in `e2e-live/` run against a **deployed** app with **real
-OIDC**, activated only when `E2E_LIVE_BASE_URL` is set (CI never sets it). No
-reference deployment is live since 2026-10-03, so point it at your own:
+Read-only specs in `e2e-live/` run against the **deployed** app with **real
+OIDC**, activated only when `E2E_LIVE_BASE_URL` is set (CI never sets it):
 
 ```bash
 E2E_LIVE_BASE_URL=https://<your-dataq-frontend-host> pnpm e2e

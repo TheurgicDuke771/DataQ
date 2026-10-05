@@ -1,11 +1,7 @@
 # Deployment parity — Azure · AWS · Local
 
 How the three reference installations compare, as of 2026-08-16 (both clouds deployed from
-the same commit). The two cloud reference deployments were retired on 2026-10-03; the
-stacks and workflows are still supported, and the "live-verified" cells below record what
-was verified while they ran.
-The prebuilt-image compose stack (`docker-compose.ghcr.yml`) is now the production-like
-installation the project runs itself. The design intent (ADR
+the same commit). The design intent (ADR
 [0010](../adr/0010-provider-agnostic-infrastructure-seams.md) /
 [0028](../adr/0028-cloud-neutral-image-runtime-config-generic-oidc.md))
 is that **every difference lives in deploy-time configuration — there are zero

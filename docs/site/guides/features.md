@@ -263,10 +263,9 @@ and/or a generic OTLP endpoint ([Observability](../operate/observability.md)).
 
 ## Deployment & portability
 
-Ships reference deployments for **both Azure Container Apps and AWS ECS Fargate** — two
-independent, equally-supported targets in `deploy/terraform/` (API + worker + frontend; the
-frontend is the sole public surface on each), plus a production-like single-host Docker
-stack (`docker-compose.ghcr.yml`) with TLS on every hop. Every cloud dependency sits behind a seam — OIDC auth, the secret
+Runs live today on **both Azure Container Apps and AWS ECS Fargate** — two independent,
+equally-real deployments (API + worker + frontend; the frontend is the sole public
+surface on each). Every cloud dependency sits behind a seam — OIDC auth, the secret
 store, observability export, and the orchestration providers are each swappable behind a
 provider-agnostic interface, which is what let AWS ship as a second target with zero app
 code differing between clouds ([Architecture](../architecture/overview.md), [deployment

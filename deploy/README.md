@@ -1,19 +1,13 @@
 # DataQ — deployment guide
 
-How DataQ is deployed to **Azure and AWS — two parallel, independently supported
-targets**, not a primary and a fallback. Infrastructure for both is **in-repo
-OpenTofu** (`deploy/terraform/azure/` and `deploy/terraform/aws/` —
+How DataQ v1 is deployed to **Azure and AWS — two parallel, independently live
+deployments**, not a primary and a fallback. Infrastructure for both is **in-repo
+OpenTofu** (`deploy/terraform/azure/` and `deploy/terraform/aws/`, both applied —
 [ADR 0024](../docs/site/adr/0024-app-deployment-infrastructure.md)); each app rolls out via
 its own workflow (Azure: [.github/workflows/deploy.yml](../.github/workflows/deploy.yml);
 AWS: [.github/workflows/deploy-aws.yml](../.github/workflows/deploy-aws.yml), both
-`workflow_dispatch`). This is the runbook to provision a fresh environment and to deploy
-a new image, on either cloud.
-
-> **Status (2026-10-03): the project's own reference deployments are retired.** Both stacks
-> were applied and live-verified (Azure from 2026-06-28, AWS from 2026-08-15) and were then
-> torn down along with the test harness; no DataQ-operated cloud environment exists today.
-> The IaC and both workflows remain supported. Where this guide says "this deployment",
-> "prod" or "live", it is describing that historical reference deployment. Related: [ADR 0025](../docs/site/adr/0025-production-image-pip-slim.md)
+`workflow_dispatch`). Both stacks are **live** — this is the runbook to provision a
+fresh environment and to deploy a new image, on either cloud. Related: [ADR 0025](../docs/site/adr/0025-production-image-pip-slim.md)
 (slim+pip image), [ADR 0023](../docs/site/adr/0023-container-image-registry-ghcr.md) (GHCR).
 
 This guide is written Azure-first because Azure was built first and most of the prose
@@ -126,7 +120,7 @@ mode for you. A production deployment must flip all of the following. Values liv
 DataQ is provider-agnostic by design — no cloud is baked into app code, and each
 target sits behind the same seams (ADR [0010](../docs/site/adr/0010-provider-agnostic-infrastructure-seams.md) /
 [0013](../docs/site/adr/0013-marketplace-distribution-and-anti-lock-in.md)). **Azure and AWS
-are both supported, at the same level** — neither is primary or a
+are both supported and live today, at the same level** — neither is primary or a
 fallback for the other; the choice is the deployer's. GCP remains planned.
 
 #### Azure — supported today
@@ -142,7 +136,7 @@ fallback for the other; the choice is the deployer's. GCP remains planned.
 
 #### AWS — supported today
 
-Stack: ECS Fargate (api + worker + beat + frontend) · RDS for PostgreSQL · ElastiCache for
+Live: ECS Fargate (api + worker + beat + frontend) · RDS for PostgreSQL · ElastiCache for
 Redis · Secrets Manager (`SecretStore` impl) · CloudWatch + OpenTelemetry via ADOT/X-Ray
 (observability) · Cognito behind the generic `get_current_user` OIDC contract · CloudFront
 as the public HTTPS surface. Full prerequisites, IAM, and provisioning steps live in the
@@ -187,9 +181,9 @@ eval stack (`DATAQ_AUTH_MODE=otp` by default, #1150) and prod (`=oidc`).
 
 ## One-time provisioning
 
-Your datasources are your own — DataQ only needs network reach and a credential for each.
-(The reference deployment's datasources came from an external OpenTofu test harness,
-ADR 0021, retired 2026-10-03.) Beyond that, this app needs:
+The datasource + compute infra is stood up by the external OpenTofu harness
+(ADR 0021) — see the harness repo's `README.md` (not git-tracked here). Beyond
+that, this app needs:
 
 1. An **ACA environment** + the three apps/job above (the backend image is on
    **GHCR**, not ACR — ADR 0023). The api/worker run `uvicorn …` / `celery …`;
@@ -331,8 +325,8 @@ after any environment reset.
 
 ### Workspace membership: the next deploy must go through the workflow
 
-The `workspace_members` migration (`0451ebdc77f3`) and the code that reads it landed in
-separate steps, so a deployment upgrading across them must roll through the workflow. The Deploy workflow runs
+The `workspace_members` migration and the code that reads it are on `main` in
+separate steps and neither has rolled yet. The Deploy workflow runs
 `alembic upgrade head` **before** it rolls images, so a normal deploy is safe in
 either order. A hand-rolled image roll — `az containerapp update`, or a revision
 rollback — ahead of the migration is not: the app would find no table.
@@ -512,9 +506,8 @@ a hang into a failed deploy — better, but still a failed deploy.
 
 ## AWS deployment
 
-DataQ deploys as a **fully independent stack on AWS** (live-verified from 2026-08-15 until
-the reference deployments were retired 2026-10-03) — a peer to the Azure deployment above,
-not a fallback or a secondary copy of it.
+DataQ runs as a **fully independent, live deployment on AWS** (since 2026-08-15) —
+a peer to the Azure deployment above, not a fallback or a secondary copy of it.
 Everything Azure-specific above has an AWS counterpart behind the same app seams
 (ADR 0010/0013/0028) — no app code differs between the clouds.
 
@@ -600,9 +593,8 @@ Terraform, listed here so the table's Azure values aren't mistaken for the only 
   (PATs, SAS, webhook secrets) is rotatable, so accidental-delete recovery is
   re-mint, not data loss. Revisit (flip to `true`) before any regulated or
   production-critical use.
-- **A deployment seeded from the reference/eval setup carries demo/test fixtures — tear them
-  down before any commercial or marketplace use.** (The reference deployment itself was
-  retired 2026-10-03.) Its connections (Snowflake/UC/ADLS/ADF/Airflow),
+- **This reference deployment carries demo/test fixtures — tear them down before any
+  commercial or marketplace use.** The live connections (Snowflake/UC/ADLS/ADF/Airflow),
   Flows A/B/C, demo users, and the deliberately-failing "seeded breach" check are the
   ADR 0021 test harness, not product. The harness Databricks workspace is **Free Edition
   (non-commercial licence)** — recorded 2026-07-03: fine for demo/eval, but before any

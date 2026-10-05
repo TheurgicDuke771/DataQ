@@ -1,7 +1,7 @@
 # Email-OTP browser lane (ADR 0032, #736)
 
 The third Playwright lane, beside `e2e/` (dev-bypass, the default CI lane) and
-`e2e-live/` (opt-in smoke against a deployed app). It drives the **`otp`** auth
+`e2e-live/` (opt-in smoke against the deployed app). It drives the **`otp`** auth
 mode end to end: type an address → a real email is sent → read the code back →
 sign in → get an HttpOnly session cookie.
 

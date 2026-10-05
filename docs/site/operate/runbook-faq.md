@@ -29,10 +29,6 @@ Full deploy steps + verification: the repository's **`deploy/README.md`**.
 
 > Scale numbers are in [perf-baseline.md](../architecture/perf-baseline.md).
 
-> The project's own deployed stack and its test harness were retired on 2026-10-03, so this
-> lane has no target of the project's today; point it at your own deployment and your own
-> suites. For the local prebuilt-image stack, `scripts/local-smoke.sh` is the smoke.
-
 Automated, opt-in (never CI):
 
 1. **API-level:** `DATAQ_API=https://<frontend-host> DATAQ_BEARER=<AAD token> python -m
@@ -80,7 +76,7 @@ can trigger from. You never write checks against them. See **[Concepts](../get-s
 one-time code and bundle the mailbox too (a local Mailpit inbox at `localhost:8025`), so
 there is no IdP *and* no SMTP relay to bring — `scripts/setup.sh` just asks which address
 may sign in.
-Azure and AWS are both supported deployment targets behind the app's seams (ADR 0010/0013), at the same level — neither is primary.
+Azure and AWS are both live deployment targets behind the app's seams (ADR 0010/0013), at the same level — neither is primary.
 
 **Where do failed-row samples go?** Stored with the result, **PII-redacted**, and purged
 after a retention window — never written to logs.
