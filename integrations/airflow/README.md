@@ -8,7 +8,7 @@ copy-paste, stdlib-only, and fail-safe (a delivery failure never breaks a DAG).
 
 > **Webhook vs. polling.** Callbacks are the near-real-time channel. For DAGs
 > that don't adopt this snippet, DataQ's `dagRuns` REST **polling fallback**
-> (every 10 min, lands in Week 5) backfills run status — at the cost of latency.
+> (every 10 min) backfills run status — at the cost of latency.
 > Adopting the snippet is what makes failure detection and trigger-on-success
 > prompt.
 
@@ -17,9 +17,10 @@ copy-paste, stdlib-only, and fail-safe (a delivery failure never breaks a DAG).
 The snippet signs each request with HMAC-SHA256. The key must be the **same**
 value on both sides:
 
-- **DataQ side:** stored in Key Vault as `airflow-webhook-secret` (resolved via
-  `settings.airflow_webhook_secret_name`; in dev, the `KV_SECRET_AIRFLOW_WEBHOOK_SECRET`
-  env var).
+- **DataQ side:** stored in DataQ's secret store (Key Vault, OpenBao or AWS Secrets
+  Manager) as `airflow-webhook-secret` (resolved via
+  `settings.airflow_webhook_secret_name`; with the env-var store, the
+  `KV_SECRET_AIRFLOW_WEBHOOK_SECRET` env var).
 - **Airflow side:** exposed to your workers as `DATAQ_WEBHOOK_SECRET`.
 
 Generate one and set it in both places:

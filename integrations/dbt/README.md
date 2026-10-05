@@ -19,8 +19,12 @@ tiny **post-build wrapper** you run right after `dbt build`, pointed at the run'
      `file:///<path>`.
    - `jobs` — the job names this project publishes (each polled at
      `<artifacts_uri>/<job>/latest/run_results.json`).
-   - the artifacts-store read credential as the connection secret (ADLS SAS / S3
-     secret key; none for `file://`).
+   - for `s3://`, `region` and `access_key_id` (plus `endpoint_url` for an
+     S3-compatible store such as MinIO); for `adls://`, optionally
+     `auth_type: service_principal` with `tenant_id`/`client_id`, and `account_url`
+     for Fabric OneLake.
+   - the artifacts-store read credential as the connection secret (ADLS SAS or
+     service-principal secret / S3 secret key; none for `file://`).
 2. **Store the HMAC signing key** in DataQ's secret store as `dbt-webhook-secret`
    (the same value you set as `DATAQ_WEBHOOK_SECRET` below).
 3. **Copy `dataq_dbt_callback.py`** next to your dbt build wrapper and invoke it

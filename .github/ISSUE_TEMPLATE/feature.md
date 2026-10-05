@@ -16,15 +16,15 @@ assignees: []
 
 ## Scope
 
-- Component(s): <!-- backend / frontend / celery / mcp / orchestration / datasource adapter / docs -->
-- Affected datasource(s): <!-- snowflake / adls / s3 / unity_catalog / iceberg / postgres / mysql / trino / mssql / all / n/a -->
+- Component(s): <!-- backend / frontend / celery / mcp / orchestration / datasource adapter / dataq-client CLI / docs -->
+- Affected datasource(s): <!-- snowflake / adls_gen2 / s3 / unity_catalog / iceberg / postgres / mysql / trino / mssql / athena / redshift / all / n/a -->
 - Affected orchestration provider(s): <!-- adf / airflow / dbt / all / n/a -->
 - Schema migration required? <!-- yes (describe) / no -->
 - New external dependency? <!-- yes (name + license) / no -->
 
 ## Roadmap alignment
 
-<!-- Does this map to a post-v1 roadmap theme (context/post-v1-roadmap.md) or an existing cycle milestone, or is it net-new? -->
+<!-- Does this map to a post-v1 roadmap theme (context/post-v1-roadmap.md), the forward roadmap (context/roadmap-v1.2-v1.3.md) or an existing cycle milestone, or is it net-new? -->
 
 
 ## Acceptance criteria

@@ -22,10 +22,10 @@ assignees: []
 
 ## Environment
 
-- Component: <!-- e.g. backend / frontend / celery worker / mcp / docker-compose / azure deploy -->
-- Branch / commit: <!-- git rev-parse HEAD -->
+- Component: <!-- e.g. backend / frontend / celery worker / mcp / dataq-client CLI / docker-compose / azure or aws deploy -->
+- DataQ version / commit: <!-- release tag, image tag, or git rev-parse HEAD -->
 - OS / browser (if relevant):
-- Datasource (if relevant): <!-- snowflake / adls / s3 / unity_catalog / iceberg / postgres / mysql / trino / mssql / n/a -->
+- Datasource (if relevant): <!-- snowflake / adls_gen2 / s3 / unity_catalog / iceberg / postgres / mysql / trino / mssql / athena / redshift / n/a -->
 - Orchestration provider (if relevant): <!-- adf / airflow / dbt / n/a -->
 
 ## Severity
