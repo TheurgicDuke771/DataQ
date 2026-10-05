@@ -14,7 +14,7 @@
 #                                   conda env, so there is no third copy (#2080).
 
 # ── Web framework ──
-fastapi==0.141.1
+fastapi==0.142.2
 uvicorn[standard]==0.54.0
 python-multipart==0.0.32          # required for FastAPI form data; CVE-2026-24486/40347/42561 (was 0.0.20)
 anthropic==1.8.0                  # MIT (rule 40); the LLMProvider seam's Anthropic impl (ADR 0042). Uses httpx2 internally — coexists with our httpx pin
