@@ -20,8 +20,11 @@ You will receive a response within **5 business days** acknowledging the report.
 Components in scope:
 - FastAPI backend (`/api/v1/*`, `/mcp`)
 - Authentication flow — generic OIDC sign-in (`oidc-client-ts`) + backend token validation, **email OTP sign-in** (ADR 0032: code request/verify, `dq_sess_` cookie sessions, signup allowlist, rate limits), and personal access tokens
-- Celery worker + GX execution path
+- Frontend container (nginx SPA — the sole public surface, proxying `/api` + `/mcp`)
+- Celery worker + check execution path (GX, Snowflake DMF, Databricks DQX job submission — ADR 0036)
+- The optional LLM provider seam (ADR 0042) and what it sends to a configured provider
 - Secret-store access patterns (the `SecretStore` seam; validated implementations: Azure Key Vault, AWS Secrets Manager, OpenBao/Vault KV v2 — ADR 0039)
+- The `dataq-client` Python package and `dataq` CLI (`packages/dataq-client`)
 
 Out of scope:
 - Vulnerabilities in third-party dependencies — report those upstream; we track them via Dependabot

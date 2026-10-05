@@ -127,7 +127,8 @@ logged as `orchestration_poll_failed` with `provider=dbt`. If lineage still look
 the dbt connection** (`Connections → the dbt connection → Test`): a red test is your answer.
 
 **2. Fixing the credential is not enough — the backlog is already stranded.** The poll only
-records builds whose `generated_at` falls inside its **15-minute lookback**. Once the credential
+records builds whose `generated_at` falls inside its **15-minute lookback** (the half-hourly gap
+recovery widens that to one hour, which still misses a longer outage). Once the credential
 is restored the poll starts succeeding and still records *nothing*, because every build produced
 during the outage is now older than the window. The artifacts are sitting right there in the
 store, and DataQ will not read them.
@@ -246,13 +247,13 @@ own case — Snowflake `ACCOUNT_USAGE` upper, Unity Catalog `system.access` lowe
 lineage is a **distinct seam** (`lineage.warehouse.WarehouseLineageProvider`, SQL → edge pairs),
 not a second `LineageProvider`.
 
-**Dark by default** (`WAREHOUSE_LINEAGE_ENABLED=true` to turn on): the views need a grant
+**On by default** (`WAREHOUSE_LINEAGE_ENABLED=false` opts a deployment out): the views need a grant
 (Snowflake `IMPORTED PRIVILEGES` on `SNOWFLAKE` — or the finer `SNOWFLAKE.GOVERNANCE_VIEWER`
 database role, which covers the ACCESS_HISTORY/OBJECT_DEPENDENCIES tiers without blanket
 ACCOUNT_USAGE; UC `SELECT` on `system.access`) the connection's principal may not have. A tier
 the role can't read **skips with a "not authorized" reason and the ladder descends** —
 tested live: a denied tier never aborts the tiers the role *can* read, and a fully-denied
-account reports classified-unavailable, never a confident empty. When enabled, a **daily beat** (`refresh_warehouse_lineage`) refreshes every
+account reports classified-unavailable, never a confident empty. A **daily beat** (`refresh_warehouse_lineage`) refreshes every
 Snowflake / Unity Catalog connection independently — one unreachable warehouse records a classified
 error and never aborts the sweep — writing edges tagged `source='snowflake'` / `'unity_catalog'`
 with the connection's id (the full-constraint regime, so a warehouse refresh never touches a dbt or
@@ -267,11 +268,11 @@ separately-gated `column_lineage` degrades honestly: table edges still land, wit
 Snowflake's column grain comes from `ACCESS_HISTORY`'s `objects_modified[].columns[].directSources`
 on **every** tier — including when `GET_LINEAGE` answers, whose table-domain rows carry no column
 names — as a refinement of the table edges, never a source of new ones; it only sees DML writes, so
-a view dependency never has pairs. Live-verified on an Enterprise account as a least-privileged
+a view dependency gets no pairs from it. Live-verified on an Enterprise account as a least-privileged
 reader role: the refinement runs on the `GET_LINEAGE` tier and records `captured`; an account whose
 writes are all COPY / `INSERT … VALUES` (empty `directSources`) and whose downstream layer is views
-honestly reads `none_recorded` on every edge. Column lineage *through views* exists in Snowflake
-(`GET_LINEAGE` at `COLUMN` domain) but is not read yet.
+honestly reads `none_recorded` on every `ACCESS_HISTORY`-only edge. Column lineage *through views*
+comes from `GET_LINEAGE` at `COLUMN` domain — see *Column lineage for views and dynamic tables* below.
 
 **Why an edge has no pairs is always stated** (ADR 0034 amendment 2026-09-27). Every
 lineage edge on the asset page, `GET /assets/{id}` and MCP `get_asset` carries a

@@ -67,7 +67,7 @@ in production — this page is the reference.)
 | POST | `/connections/{id}/test` | Test live connectivity. |
 | POST | `/connections/{id}/reauth` | Test a new credential, then rotate it in. |
 | GET | `/connections/{id}/versions` | Config-change history (ADR 0020 snapshots — never credentials). |
-| GET | `/connections/{id}/browse/catalog` | Unity Catalog only: one level of catalogs → schemas → tables (`?catalog=&schema=&limit=`). |
+| GET | `/connections/{id}/browse/catalog` | Unity Catalog: one level of catalogs → schemas → tables; Snowflake, Iceberg and the generic SQL engines (PostgreSQL, MySQL, Trino, SQL Server, Athena, Redshift): schemas → tables (`?catalog=&schema=&limit=`). |
 | GET | `/connections/{id}/browse/files` | ADLS Gen2 / S3 only: the folders and files directly under `?prefix=` in the connection's container/bucket. |
 
 **Roles (ADR 0033).** Connections are shared infrastructure holding credentials, so the gates
@@ -115,7 +115,9 @@ status first.
 credential is sent — `account` (Snowflake), `account_url` / `auth_type` / `tenant_id` / `client_id` (ADLS), `endpoint_url` (S3, dbt),
 `workspace_url` (Unity Catalog), `catalog_uri` / `warehouse` / `properties` /
 `secret_property` (Iceberg),
-`base_url` (Airflow), `artifacts_uri` (dbt) — must re-supply that credential in the same
+`base_url` (Airflow), `artifacts_uri` (dbt), `host` / `port` (the generic SQL engines — plus
+`sslmode` / `ca_bundle` / `auth_type` on Trino, `auth_type` / `tenant_id` / `client_id` /
+`ca_bundle` / `driver` on SQL Server, `region` / `work_group` / `s3_staging_dir` on Athena) — must re-supply that credential in the same
 request. Otherwise it returns `422` with `code: "credential_redirect"` and
 `detail.required` naming what to send. A stored credential is never forwarded to a
 destination the caller changed.
@@ -124,7 +126,7 @@ destination the caller changed.
 
 A reusable Teams/Slack/email/generic-webhook destination, defined once and referenced from any
 number of suites — the destination only; per-suite `alert_on`/enabled stays on
-`/suites/{id}/notifications` above.
+`/suites/{id}/notifications` (under Suites & checks below).
 
 A `webhook` channel posts an HMAC-SHA256-signed JSON body (header `X-DataQ-Signature`) to an
 admin-supplied `webhook_url` — the vendor-neutral way to reach PagerDuty, Opsgenie, ServiceNow,
@@ -178,7 +180,13 @@ URL); linking/unlinking a suite follows that suite's own `view`/`edit` grant.
 | GET | `/suites/{id}/checks/{cid}/versions` · POST `…/versions/{n}/restore` | Version history + restore (restore mints a new version). |
 | GET | `/suites/{id}/checks/{cid}/history` | Result history for the trend view (`metric_value` over time). |
 | GET | `/suites/{id}/checks/{cid}/baseline` · POST `…/rebaseline` | Read / recapture a monitor baseline (schema-drift, anomaly). |
-| GET | `/suites/{id}/export` · POST `/suites/import` | Portable suite document (env promotion). |
+| GET | `/suites/{id}/export` · POST `/suites/import` | Portable suite document (env promotion) — see [Suite document](suite-document.md). |
+| POST | `/suites/validate` | Run every import gate on a document and report all problems; creates nothing. |
+| POST | `/suites/{id}/apply` | Apply a document onto an existing suite (checks matched by name; `prune` deletes the rest), or report its drift. Idempotent. |
+| POST | `/suites/{id}/checks-bulk/delete` · `…/snooze` · `…/unsnooze` · `…/thresholds` | Act on many checks at once — all-or-nothing. |
+| GET | `/suites/{id}/suggestions` · POST `/suggestions/{id}/accept` · `/suggestions/{id}/reject` | Automatic-coverage review queue: proposed rules; accepting one creates the check. |
+| GET | `/suites/{id}/cadence` | The bound pipeline's cadence — a freshness-threshold hint. |
+| GET | `/suites/{id}/deletion_impact` | Exact dependent counts a suite delete would destroy. |
 | GET / PUT | `/suites/{id}/column-policy` | Read / set the failing-sample redaction policy. |
 | POST | `/suites/{id}/column-policy/suggest` | Heuristic PII-column suggestions from a profile. |
 | POST | `/suites/{id}/profile` | Column profiler (no persistence; audited as a data access). |
@@ -198,6 +206,9 @@ URL); linking/unlinking a suite follows that suite's own `view`/`edit` grant.
 | POST | `/runs/{id}/cancel` | Cancel a queued/running run. |
 | GET | `/runs/{id}/results/{rid}/comparison_report` | CSV/XLSX diff report of a comparison result (derived on demand, never stored). |
 | GET | `/dashboard/summary` | KPIs + run trend + per-suite performance. |
+| GET | `/dashboard/dimensions` | Each DQ dimension across every suite (workspace-wide, identical for every member). |
+| GET | `/dashboard/coverage` | Coverage of the asset inventory and the false-positive rate of automatic checks. |
+| GET | `/dashboard/onboarding` | Which first-run steps the workspace has done. |
 
 ### Assets & incidents
 
@@ -205,8 +216,10 @@ URL); linking/unlinking a suite follows that suite's own `view`/`edit` grant.
 |---|---|---|
 | GET | `/assets` · `/assets/{id}` | The monitored tables/files (ADR 0034/0037): health rollup, composing suites (grant-filtered), lineage. Paged, `X-Total-Count`. |
 | PATCH | `/assets/{id}` | Set owner / description (workspace-Admin-only). |
+| GET | `/assets/{id}/column-lineage` | Trace one column's lineage upstream or downstream. |
 | GET | `/incidents` · `/incidents/{id}` | Open/acknowledged/resolved incidents with the evidence card (suite-granted; 404-no-leak). |
 | POST | `/incidents/{id}/ack` · `/incidents/{id}/resolve` | Lifecycle transitions (requires `edit` on the suite). |
+| GET | `/incidents/{id}/narrative` | The latest root-cause narrative for an incident (`view`). |
 
 ### Scheduling & orchestration
 
@@ -218,6 +231,7 @@ URL); linking/unlinking a suite follows that suite's own `view`/`edit` grant.
 | GET / PATCH / DELETE | `/trigger-bindings/{id}` | Read / update (incl. enable/disable) / delete. |
 | GET | `/pipeline_runs` · `/orchestration/pipelines` | Monitored orchestrator runs. |
 | GET | `/orchestration/near-misses` | Succeeded pipeline runs that matched **no** enabled binding (why a trigger never fired). |
+| POST | `/orchestration/gate` | Pipeline gate (ADR 0046): start the bound suites for this pipeline run and report the verdict, or only read it. Idempotent per `provider_run_id`; poll until `state` is `passed` / `failed` / `error`. |
 | POST | `/orchestration/events/{provider}` | Inbound webhook (adf / airflow / dbt) — authenticated by shared-secret / HMAC, not a PAT. |
 
 ### LLM-assisted authoring (ADR 0042)
@@ -251,6 +265,11 @@ an outbound model request.
 | GET | `/admin/offboarding/{user_id}/preview` | What offboarding this user would do: suites they own with counts, live tokens and sessions, whether membership can be withdrawn here, and whether they are the last admin. Reserves nothing. |
 | POST | `/admin/offboarding/{user_id}` | Transfer every suite they own, revoke every token and session, withdraw their membership — one transaction. Last-admin guarded; `confirm_email` must match. A step that cannot run is reported in `skipped` with its reason. Authored history is kept (audited). |
 | GET | `/admin/audit-events` | The append-only audit log (config + data-access events, ADR 0041). |
+| GET | `/admin/audit-events/verify` | Verify the audit log's hash chain for tampering. |
+| POST | `/admin/data-subject-requests/export` · `…/erase` | Export or erase every captured sample cell naming `column` = `value` (GDPR/CCPA subject requests; erase is audited). |
+| GET | `/admin/health` | Workspace health — poll staleness, beat heartbeat, queue depth, and per-connection credential health. |
+| GET / PUT | `/admin/llm` · POST `/admin/llm/test` | Outbound-LLM provider config; the test probes a draft without saving it. |
+| POST | `/admin/auth-email/test` | Send a test email to the caller over the configured `AUTH_EMAIL_*` transport (throttled per admin). |
 | GET | `/admin/deployment` | Declared residency / deployment posture (`DEPLOYMENT_REGION`); `zero_sample_mode` is the effective value and `zero_sample_source` says which of env / setting turned it on. |
 | GET | `/admin/privacy` | Zero-sample mode: effective value, stored toggle, source, whether the environment pins it. |
 | PUT | `/admin/privacy` | Set zero-sample mode (audited); 409 when the environment pins it on and the request turns it off. |

@@ -2,7 +2,8 @@
 
 **Know your data is right before anyone else finds out it isn't.** DataQ runs automated checks
 against your tables and files — in Snowflake, Databricks Unity Catalog, Apache Iceberg,
-PostgreSQL, MySQL/MariaDB, Trino, SQL Server (Azure SQL, Synapse, Fabric), ADLS Gen2 or
+PostgreSQL, MySQL/MariaDB, Trino, SQL Server (Azure SQL, Synapse, Fabric), Amazon Athena,
+Amazon Redshift, ADLS Gen2 or
 Fabric OneLake, AWS S3 or any S3-compatible store — tells you when something is wrong, and alerts the
 team that owns it. It watches your Azure Data Factory, Airflow and dbt pipelines and runs the
 checks the moment a load finishes.
@@ -53,7 +54,7 @@ checks the moment a load finishes.
 | **See the whole estate** | An asset view rolls health up per table, with lineage pulled from dbt, your catalog or the warehouse itself, and incidents anchored to the asset they hit. |
 | **Alert the right people, once** | Teams, Slack, email and webhooks, routed by severity, de-duplicated so a broken check reports when it breaks, not on every run. |
 | **Run it where the data lives** | Reference deployments on Azure Container Apps and AWS ECS, the recommended way to run DataQ for production and enterprise teams; a single-host Docker stack for evaluation; bring your own identity provider or none at all. |
-| **Let assistants do the work** | Forty-eight MCP tools expose the same actions to Claude, Copilot and Cursor, every one honest about what it cannot see. |
+| **Let assistants do the work** | Fifty-four MCP tools expose the same actions to Claude, Copilot and Cursor, every one honest about what it cannot see. |
 
 ## Who it is for
 

@@ -12,18 +12,26 @@ the React UI a user actually clicks: `browser → Vite proxy → api → DB`.
 
 ## Specs
 
-| Spec                        | Covers                                                                                                                  |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `smoke.spec.ts`             | dev-bypass auth, app shell, sider nav                                                                                   |
-| `connections.spec.ts`       | seeded connections grouped by type, "Test all" health path                                                              |
-| `suites.spec.ts`            | seeded suite → checks; check + suite authoring round-trips                                                              |
-| `datasource-browse.spec.ts` | run-target browse pickers (UC catalog → schema → table, S3 folder → file); listings answered by `page.route`            |
-| `results.spec.ts`           | seeded runs, run-detail drill-down, pipeline-runs feed                                                                  |
-| `schedules.spec.ts`         | SchedulesPanel: add / pause / delete + invalid-cron 422 path                                                            |
-| `trigger-bindings.spec.ts`  | TriggersPanel: bind pipeline / disable / remove (seeded ADF connection)                                                 |
-| `notifications.spec.ts`     | NotificationsPanel: threshold routing persisted across reload; write-only webhook affordance                            |
-| `a11y.spec.ts`              | axe-core (`@axe-core/playwright`) scan of every route in both themes, ratcheted against a baseline — see below          |
-| `keyboard.spec.ts`          | keyboard-only traversal in a real browser: skip link, focus follows navigation, runs/assets/suites open without a mouse |
+| Spec                          | Covers                                                                                                                  |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `smoke.spec.ts`               | dev-bypass auth, app shell, sider nav                                                                                   |
+| `connections.spec.ts`         | seeded connections grouped by type, "Test all" health path                                                              |
+| `suites.spec.ts`              | seeded suite → checks; check + suite authoring round-trips                                                              |
+| `datasource-browse.spec.ts`   | run-target browse pickers (UC catalog → schema → table, S3 folder → file); listings answered by `page.route`            |
+| `results.spec.ts`             | seeded runs, run-detail drill-down, pipeline-runs feed                                                                  |
+| `schedules.spec.ts`           | SchedulesPanel: add / pause / delete + invalid-cron 422 path                                                            |
+| `trigger-bindings.spec.ts`    | TriggersPanel: bind pipeline / disable / remove (seeded ADF connection)                                                 |
+| `notifications.spec.ts`       | NotificationsPanel: threshold routing persisted across reload; write-only webhook affordance                            |
+| `a11y.spec.ts`                | axe-core (`@axe-core/playwright`) scan of every route in both themes, ratcheted against a baseline — see below          |
+| `keyboard.spec.ts`            | keyboard-only traversal in a real browser: skip link, focus follows navigation, runs/assets/suites open without a mouse |
+| `dashboard.spec.ts`           | Dashboard KPI cards, trend / per-suite / recent runs with seeded data, the get-started first-run path                   |
+| `check-editor.spec.ts`        | check-editor variants: freshness / volume / anomaly monitors, Monaco custom SQL, comparison                             |
+| `assets.spec.ts`              | Assets tree drill-down, the "All assets" table lens, health across ≥2 suites on a shared asset                          |
+| `lineage-graph.spec.ts`       | lineage graph on an asset (depth ≥2 both ways, clickable nodes) + its mobile scroll containment                         |
+| `admin.spec.ts`               | admin pages: overview health signals, deep links, integrations, compliance/audit chain, DSR, member roles + admission   |
+| `roles.spec.ts`               | per-role perspectives (ADR 0033): admin / member / viewer, using the PATs `seed_dev` mints                              |
+| `mobile-nav.spec.ts`          | 390px overlay nav: drawer instead of an inline sider, scrim closes without navigating                                   |
+| `share-drawer-mobile.spec.ts` | share drawer at 390px stays on-screen                                                                                   |
 
 ## Accessibility floor (#1670)
 
@@ -56,7 +64,7 @@ currently rendered value (see `notifications.spec.ts`).
 
    ```bash
    # dev-bypass is a contributor opt-in — see CONTRIBUTING.md "Developer bypass"
-   docker compose up -d            # postgres + redis + api + worker + frontend
+   docker compose up -d            # postgres + redis + openbao + api + worker + beat + frontend
    conda run -n dataq python -m backend.scripts.seed_dev
    ```
 

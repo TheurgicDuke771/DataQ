@@ -94,8 +94,8 @@ code in the bundled inbox at **`http://localhost:8025`**.
 - **Loopback-only:** both published ports (`:3000` and the inbox on `:8025`) bind to
   `127.0.0.1` — the stack is reachable from your own machine but never the LAN. That
   matters more than usual for `:8025`, which serves live sign-in codes to anyone who can
-  reach it. **Not for production** — a real deploy uses the OpenTofu stack
-  (`deploy/terraform/azure`, ADR 0024).
+  reach it. **Not for production** — a real deploy uses the OpenTofu stacks
+  (`deploy/terraform/azure` or `deploy/terraform/aws`, ADR 0024).
 - **Try it on real data:** add `--profile demo` to the `up` command. It also starts a
   sample warehouse (PostgreSQL) holding a small shop dataset with deliberate defects, and
   connects DataQ to it: a connection named *Demo warehouse (PostgreSQL)*, two suites
@@ -365,7 +365,7 @@ generates local-dev credentials on first run.
 ## Running tests
 
 The DB-backed tests need a real Postgres (`gen_random_uuid()`/jsonb, which SQLite
-can't host); notification tests also need Redis. The suite is ~4,800 tests and growing —
+can't host); notification tests also need Redis. The suite is ~6,500 tests and growing —
 exact counts below drift with every PR, so treat them as shapes, not contracts. There are
 three ways to run:
 

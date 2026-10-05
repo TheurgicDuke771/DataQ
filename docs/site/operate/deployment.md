@@ -17,6 +17,7 @@ AI clients ─MCP──► │  proxies /api + /mcp + /healthz same-origin
                    ▼
               FastAPI (internal ingress) ──► PostgreSQL
                    │  ├──► Celery worker ──► GX execution ──► your datasources
+                   │  ├──► Celery beat (the scheduler — its own process, never runs a task)
                    │  ├──► Redis (task queue)
                    │  ├──► Key Vault (secrets)
                    │  └──► App Insights / OTLP (observability)
@@ -28,7 +29,7 @@ frontend proxy (ADR 0028 §5).
 ## Prerequisites
 
 - A **container platform** — Azure Container Apps in the reference deploy (API + worker +
-  frontend apps, a one-shot migrate **job**, and Redis).
+  beat + frontend apps, a one-shot migrate **job**, and Redis).
 - **PostgreSQL** (a dedicated database + a least-privilege app role).
 - A **secret store** — Azure Key Vault, reached via a managed identity.
 - An **OIDC identity provider** — app registrations for the API (audience) and the SPA.
@@ -53,7 +54,7 @@ run, in order:
 2. **Runs migrations** — a Container Apps job runs `alembic upgrade head` and the workflow
    **waits for it to succeed** *before* rolling anything. Migrations are additive/
    backward-compatible, so the still-running old code tolerates the new schema.
-3. **Rolls** the API + worker, then the frontend (gated on the backend succeeding — no partial
+3. **Rolls** the API + worker + beat, then the frontend (gated on the backend succeeding — no partial
    deploys).
 
 Use an immutable image tag per release; push-on-merge is intentionally off.
@@ -154,7 +155,7 @@ configuration**:
 ```bash
 git clone <repo> && cd DataQ
 ./scripts/setup.sh          # conda env, hooks, images, migrations, seed data
-docker-compose up           # postgres + redis + openbao + api + worker + frontend
+docker-compose up           # postgres + redis + openbao + mailpit + api + worker + beat + frontend
 ```
 
 `.env.app.example` ships with the local-first values already selected
@@ -163,9 +164,11 @@ every `AZURE_*` key may stay empty. Nothing in the app reads an Azure SDK unless
 the corresponding seam is explicitly pointed at Azure.
 
 **What is not available locally** is *datasources*, not the platform: a
-Snowflake or ADLS **connection** needs a live Snowflake or ADLS to run against.
-The local-first path keeps flat files (local + S3), Unity Catalog (Databricks
-Free Edition), and Iceberg. The test suite is unaffected either way — its
+Snowflake, ADLS, Athena or Redshift **connection** needs the live service to run against.
+The local-first path keeps flat files (local, S3 and S3-compatible stores such as MinIO),
+Unity Catalog (Databricks Free Edition), Iceberg, and PostgreSQL / MySQL / MariaDB / Trino /
+SQL Server containers; `docker-compose --profile demo up` adds a seeded sample warehouse
+to run against. The test suite is unaffected either way — its
 datasource reads are stubbed, so `pytest` is green with no cloud credentials of
 any kind.
 

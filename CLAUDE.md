@@ -59,10 +59,15 @@ DataQ/
 │   │   ├── db/                  # SQLAlchemy models, session
 │   │   ├── api/                 # FastAPI routers (versioned: /api/v1/...)
 │   │   ├── services/            # business logic per domain
-│   │   ├── orchestration/       # OrchestrationProvider abstraction (ADF, Airflow)
+│   │   ├── orchestration/       # OrchestrationProvider abstraction (ADF, Airflow, dbt)
 │   │   ├── datasources/         # ConnectionAdapter + CheckRunner per type; gx_runner.py (shared GX translation), flatfile.py (flat-file IO + runner + batch resolution), sql.py (shared SQL-identifier allowlist — #428)
-│   │   └── mcp/                 # FastMCP tools (Week 7)
+│   │   ├── mcp/                 # FastMCP tools (54 at /mcp — ADR 0008)
+│   │   ├── alerting/            # ResultPublisher seam: Teams / Slack / email / webhook, routing, dedup, suppression
+│   │   ├── lineage/             # ADR 0034 lineage pull (dbt manifest, Marquez, warehouse-native) + OpenLineage emitter
+│   │   ├── llm/                 # LLMProvider seam (ADR 0042): anthropic + openai-compatible
+│   │   └── worker/              # Celery app + tasks (run_suite, beat-dispatched sweeps)
 │   ├── alembic/
+│   ├── scripts/                 # operator scripts (perf_baseline, one-off backfills)
 │   └── tests/                   # + tests/support/ (adversarial harness), tests/integration/ (end-to-end datasource runs)
 ├── frontend/                    # React + Vite + Ant Design (Node, pnpm)
 │   ├── src/
@@ -70,21 +75,28 @@ DataQ/
 ├── packages/
 │   └── dataq-client/            # Python client + `dataq` CLI (#1829): generated from docs/site/reference/openapi.json by scripts/generate-dataq-client.py (CI drift-checked), plus a hand-written convenience layer; its wheel + sdist are attached to the GitHub Release by publish-client.yml on a release tag (not on PyPI), or installed from main
 ├── docs/
-│   ├── site/                    # everything PUBLISHED to the docs site (docs_dir) — guides, architecture.md, adr/, compliance/
+│   ├── site/                    # everything PUBLISHED to the docs site (docs_dir) — guides, architecture/, adr/, compliance/
 │   └── *.md                     # internal planning docs (progress/retro/ops-log/…) — outside docs_dir, never built
 ├── marketing/                   # public GH Pages marketing site (index.html — the landing page); occupies the Pages ROOT, docs build one level down into site/docs/ (mkdocs.yml site_dir)
 ├── integrations/                # user-deployed snippets (NOT app code; e.g. Airflow DAG callback)
-│   └── airflow/                 # dataq_airflow_callback.py + setup README
+│   ├── adf/                     # ADF gate snippet (ADR 0046)
+│   ├── airflow/                 # dataq_airflow_callback.py + setup README
+│   └── dbt/                     # dbt post-build callback
+├── deploy/                      # deploy/README.md runbook + terraform/{azure,aws} (OpenTofu IaC — ADR 0024)
 ├── scripts/
-│   └── setup.sh                 # one-command dev env bootstrap
+│   ├── setup.sh                 # one-command dev env bootstrap
+│   ├── local-ca.sh / local-smoke.sh  # trust the prebuilt stack's CA / smoke it
+│   └── check-*.py               # pre-commit + CI guards (identifiers, docs publication, …)
 ├── context/                     # original product/roadmap context (read-only reference)
-│   └── DataQ_platform_roadmap.md
+│   ├── DataQ_platform_roadmap.md
+│   └── post-v1-roadmap.md, roadmap-v1.2-v1.3.md  # deferred-work index + forward roadmap
 ├── .github/
 │   ├── workflows/
 │   ├── pull_request_template.md
 │   ├── CODEOWNERS
 │   └── ISSUE_TEMPLATE/
-├── docker-compose.yml
+├── docker-compose.yml           # contributor stack
+├── docker-compose.ghcr.yml      # prebuilt-image, production-like local stack (HTTPS, generated CA)
 ├── environment.yml              # conda env — pip section points at backend/requirements-dev.txt
 ├── pyproject.toml               # Black + Ruff + mypy config
 ├── CONTRIBUTING.md
@@ -105,13 +117,11 @@ DataQ/
 - Unity Catalog / Databricks
 - Apache Iceberg (native `pyiceberg` read — ADR 0030; engine-registered Iceberg tables also work zero-code under the `snowflake`/`unity_catalog` connections)
 - PostgreSQL — any server, self-hosted or managed (#1678). The first engine on the **engine-generic SQL base** (ADR 0045, `datasources/generic_sql.py` + one `SqlEngineSpec` per engine, registry in `sql_engines.py`): pushdown only, read-only sessions, every SQL capability set derives from `GENERIC_SQL_TYPES`. MySQL/MariaDB (#1684, PyMySQL — never a GPL driver) is the second engine — **never copy the Snowflake adapter**.
-- Trino (#1685, `trino` client; one catalog per connection, TLS `verify-full` or explicit `disable`, no session read-only — access control is the guarantee).
+- Trino — any cluster (incl. Starburst), `trino` client, one catalog per connection (#1685), the federation multiplier on the same base. **No read-only session exists on Trino** — the Trino user's access control is the guarantee; names must be lower case; TLS `verify-full` or explicit `disable`, password/JWT only over verified TLS. Amazon Athena was split out to #2131.
 - Amazon Athena (#2131, `pyathena`, MIT): the endpoint is derived from the region, the credential an IAM access key (secret key as connect args, never in the URL); a Glue database is the schema. No read-only session — the IAM policy is the guarantee. Every check is a billed Athena query.
 - Amazon Redshift (#1682, `sqlalchemy-redshift` dialect over psycopg2, MIT): provisioned clusters and Serverless workgroups, database-user auth. Read-only sessions like PostgreSQL; names lower case; every TLS mode verifies against Amazon's CAs. GX is handed the schema as well as the scoped session (`gx_schema_with_session`) because GX's Redshift column lookup otherwise matches the table name in every schema.
-- SQL Server / Azure SQL / Synapse / Fabric SQL (`mssql`, #1679, ADR 0044): `python-tds` by default with DataQ's own SAN validator + named-instance routing fix; Fabric SQL endpoints go through the **optional user-installed ODBC lane** (`driver: odbc`, msodbcsql18 is never shipped in the image).
+- SQL Server / Azure SQL / Synapse / Fabric SQL (`mssql`, #1679, ADR 0044) on the same base. Driver `python-tds` (MIT, shipped) with DataQ's own SAN/hostname validator + named-instance routing fix (`datasources/mssql_tds.py`); TLS always verified; SQL login or Entra service principal. **Not read-only at the session** (TDS has no such setting) — the custom-SQL gate + a `db_datareader` login are the guard. Fabric SQL endpoints go through the **optional user-installed ODBC lane** (`driver: odbc`) permanently — the python-tds Fabric fix (#2126) was closed not-planned and the default driver refuses a Fabric host with an explained error; DataQ never ships msodbcsql18/pyodbc.
 - OneLake (Fabric lakehouse files) is not a separate type — an ADLS Gen2 connection with `auth_type: service_principal` pointed at `onelake.blob.fabric.microsoft.com` (#1680).
-- Trino — any cluster (incl. Starburst), one catalog per connection (#1685), the federation multiplier on the same base. **No read-only session exists on Trino** — the Trino user's access control is the guarantee; names must be lower case; password/JWT only over verified TLS. Amazon Athena was split out to #2131.
-- SQL Server / T-SQL (`mssql`, #1679, ADR 0044) — SQL Server, Azure SQL, Synapse, Fabric SQL on the same base. Driver `python-tds` (MIT, shipped) with DataQ's own hostname validator + named-instance fix (`datasources/mssql_tds.py`); TLS always verified; SQL login or Entra service principal. **Not read-only at the session** (TDS has no such setting) — the custom-SQL gate + a `db_datareader` login are the guard. Fabric needs the user-installed ODBC lane until #2126; DataQ never ships msodbcsql18/pyodbc.
 
 **Orchestration providers** are NOT datasources. They are workflow engines whose pipelines/DAGs we observe and react to. Their *only* four responsibilities in DataQ:
 
@@ -391,7 +401,7 @@ Update this section at the end of each week with: current week, the week's exit 
 | SQL editor | Monaco |
 | Auth | Three modes (ADR 0032): dev-bypass · email OTP (`dq_sess_` cookie sessions, local-stack default) · generic OIDC (`oidc-client-ts`, Azure AD + Cognito validated) + backend `fastapi-azure-auth`; PATs (`dq_live_`) for API/MCP |
 | Authorization | **Two axes (ADR 0033):** stored workspace role `users.role` (`admin \| member \| viewer`) × per-suite grants (`view \| edit`, ADR 0027). Both enforced on REST and MCP; both resolved per request, so a role change applies to existing PATs immediately |
-| Secrets | Azure Key Vault |
+| Secrets | `SecretStore` seam: Azure Key Vault · AWS Secrets Manager · OpenBao (KV v2, ADR 0039) · `env` (local dev only) |
 | Hosting | Azure Container Apps (API + worker + frontend; frontend = sole public surface, api internal — ADR 0028 §5) |
 | Observability | Azure Application Insights + structlog |
 | CI/CD | GitHub Actions |

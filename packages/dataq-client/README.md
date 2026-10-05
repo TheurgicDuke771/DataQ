@@ -29,11 +29,16 @@ export DATAQ_URL=https://dataq.example.com   # the host that serves the DataQ we
 export DATAQ_PAT=dq_live_...                 # from your CI secret store, never a flag
 
 dataq run <suite-id> --wait        # queue, wait, exit by the result
-dataq export <suite-id> -o orders.json
-dataq import orders.json --connection <connection-id>
+dataq gate --provider airflow --pipeline <dag-id> --env prod --run-id <pipeline-run-id>
+dataq export <suite-id> -o orders.yaml
+dataq import orders.yaml --connection <connection-id>
+dataq validate orders.yaml --connection <connection-id>   # creates nothing; exit 2 if invalid
+dataq drift orders.yaml --suite <suite-id>                # writes nothing; exit 2 on drift
+dataq apply orders.yaml --suite <suite-id>
 ```
 
-`dataq run --wait` and `dataq wait <run-id>` exit with:
+`dataq run --wait` and `dataq wait <run-id>` exit with (`dataq gate` maps its verdict onto the
+same codes: passed 0, failed 2, error 3):
 
 | Code | Meaning |
 |---|---|
@@ -41,7 +46,7 @@ dataq import orders.json --connection <connection-id>
 | 1 | The worst result was a warning |
 | 2 | A check failed (`fail` or `critical`) |
 | 3 | The run itself did not complete (failed or cancelled), or a check could not be evaluated |
-| 4 | A client, auth or transport problem; DataQ's verdict is unknown |
+| 4 | A client, auth or transport problem, or a timeout; DataQ's verdict is unknown |
 
 A CI gate is one step:
 
@@ -79,8 +84,8 @@ response (429) is raised as `RateLimitedError`, never retried in a tight loop.
 
 ## The whole API
 
-`DataQClient` covers the CI and notebook workflows: run, wait, export and import, and
-acknowledging or resolving an incident. Everything else in the REST API is in the generated
+`DataQClient` covers the CI and notebook workflows: run, wait, the pipeline gate, export,
+import, validate and apply, and acknowledging or resolving an incident. Everything else in the REST API is in the generated
 layer, typed from DataQ's OpenAPI spec:
 
 ```python

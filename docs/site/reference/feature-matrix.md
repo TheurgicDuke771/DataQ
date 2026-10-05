@@ -154,7 +154,7 @@ endpoint URL; every row in this column applies identically either way. See
 [Datasources & checks](../guides/datasources-checks.md#s3-compatible-object-stores).
 
 Custom SQL runs a SQL query, so it's **SQL-datasource only** (Snowflake, Unity Catalog, PostgreSQL,
-MySQL/MariaDB, Trino, SQL Server;
+MySQL/MariaDB, Trino, SQL Server, Athena, Redshift;
 there is no flat-file support, and no issue currently tracks adding it — flat files get freshness/volume monitors instead (see the rows above);
 Iceberg is not SQL-queryable — reads go through `pyiceberg` scans, not a query engine).
 **Comparison checks** (ADR [0015](../adr/0015-two-connection-comparison-check-model.md))
@@ -172,8 +172,8 @@ timestamp column** measures the object's arrival time instead — catching a pro
 stopped sending files, which a timestamp inside the data cannot see. Flat-file suites target a file or a batch pattern (e.g.
 `orders_*.csv`) in CSV, Parquet or JSON (JSON Lines / an array of flat objects; nested JSON is
 refused); Iceberg suites target a `namespace.table`. Dry-run
-preview works on every datasource with a runner — Snowflake, Unity Catalog, flat files,
-and Iceberg.
+preview works on every datasource with a runner — Snowflake, Unity Catalog, the generic SQL
+engines (PostgreSQL, MySQL/MariaDB, Trino, SQL Server, Athena, Redshift), flat files and Iceberg.
 
 ## Assets & lineage × datasources
 
@@ -224,6 +224,8 @@ five mechanisms:
 | Trino | `trino://{host}:{port}` / `catalog.schema.table` | ✅ (+ inventory sync) | ✅ (dbt-trino naming) | ✅ | ✅ | —⁴ |
 | PostgreSQL | `postgres://{host}:{port}` / `database.schema.table` | ✅ (+ inventory sync) | ✅ (dbt-postgres naming) | ✅ | ✅ | —⁴ |
 | SQL Server | `mssql://{host}:{port}` / `database.schema.table` | ✅ (+ inventory sync) | ✅ where dbt-sqlserver / dbt-fabric emit `database.schema.table` names | ✅ | ✅ | —⁴ |
+| Amazon Athena | `awsathena://athena.{region}.amazonaws.com` / `catalog.database.table` | ✅ (+ inventory sync) | ✅ where dbt-athena emits `catalog.database.table` names | ✅ | ✅ | —⁴ |
+| Amazon Redshift | `redshift://{cluster or workgroup}.{region}` / `database.schema.table` | ✅ (+ inventory sync) | ✅ (dbt-redshift naming) | ✅ | ✅ | —⁴ |
 | BI reports / dashboards | not yet materialized² | — | — | — | reserved² | — |
 
 ¹ dbt-managed Iceberg tables surface through the warehouse adapter (Snowflake/UC rows);
@@ -231,7 +233,7 @@ native `pyiceberg` connections have no dbt slice of their own.
 ³ Warehouse-native lineage reads a query engine's lineage view; a native `pyiceberg`
 connection has no engine to ask (an engine-registered Iceberg table is covered under its
 Snowflake/UC connection).
-⁴ PostgreSQL, MySQL, Trino and SQL Server keep no lineage log DataQ reads, so there is no warehouse-native pull; the
+⁴ PostgreSQL, MySQL, Trino, SQL Server, Athena and Redshift keep no lineage log DataQ reads, so there is no warehouse-native pull; the
 inventory sync still enumerates its tables (ADR 0040).
 ² The lineage graph's node-kind contract reserves `bi_report`/`dashboard` — a BI node
 (e.g. a Power BI report downstream of a mart) becomes representable the moment a capable
@@ -266,7 +268,7 @@ catalog knowing about them (mechanism ④).
 
 | Capability | Notes |
 |---|---|
-| Channels | Teams, Slack, email — each workspace default or per-suite override; reusable channels (incl. a generic webhook type) also exist, API-only currently — [details](../guides/notifications.md) |
+| Channels | Teams, Slack, email — each workspace default or per-suite override; reusable channels (incl. a generic webhook type) are managed by an Admin in Settings → Notification channels and linked to any number of suites — [details](../guides/notifications.md) |
 | Threshold | Per suite: fail-only / warn+ (default) / always |
 | Routing | Severity-aware urgency; critical escalates |
 | Dedup | First failure / escalation only; clean run resets |
@@ -293,7 +295,7 @@ credential (`auth_type: token`, the default — sent as `Authorization: Bearer �
 | Astronomer (Astro) | ✅ via an Astro **Deployment API token** as the Bearer credential, with `base_url` set to the deployment's Airflow URL (`https://<org>.astronomer.run/<deployment-id>`) | **Untested** — no Astro deployment has been exercised; compatible by construction, not by observation |
 | MWAA / Cloud Composer | Likely, same Bearer shape | **Untested** |
 
-The DAG-callback snippet in [`integrations/airflow/`](../../integrations/airflow/) is
+The DAG-callback snippet in [`integrations/airflow/`](https://github.com/TheurgicDuke771/DataQ/tree/main/integrations/airflow) is
 host-agnostic — it POSTs an HMAC-signed event to DataQ and needs only outbound network
 access from the worker, so it applies unchanged on a managed deployment.
 
@@ -331,6 +333,7 @@ risk that carries.
 
 | Surface | What |
 |---|---|
-| Web UI | Dashboard · Assets · Connections · Suites · Results · Profile · Admin · Settings (Assets lead as the primary lens — ADR 0034 nav inversion; the Dashboard opens with an asset-health strip, and suites/runs link back to their asset) |
+| Web UI | Dashboard · Assets · Connections · Suites · Results · Profile · Admin (incl. workspace Settings) (Assets lead as the primary lens — ADR 0034 nav inversion; the Dashboard opens with an asset-health strip, and suites/runs link back to their asset) |
 | REST API | Versioned `/api/v1` (Swagger in non-prod) |
+| Python client + `dataq` CLI | Generated from the OpenAPI spec, attached to each GitHub Release ([Python client](../guides/python-client.md)) |
 | MCP | 54 curated tools at `/mcp` for AI assistants (ADR 0008). Served in both auth modes — SSO and email OTP; under OTP the credential is a **PAT only** ([MCP setup](../guides/mcp-setup.md)) |

@@ -136,7 +136,7 @@ fallback for the other; the choice is the deployer's. GCP remains planned.
 
 #### AWS — supported today
 
-Live: ECS Fargate (api + worker + frontend) · RDS for PostgreSQL · ElastiCache for
+Live: ECS Fargate (api + worker + beat + frontend) · RDS for PostgreSQL · ElastiCache for
 Redis · Secrets Manager (`SecretStore` impl) · CloudWatch + OpenTelemetry via ADOT/X-Ray
 (observability) · Cognito behind the generic `get_current_user` OIDC contract · CloudFront
 as the public HTTPS surface. Full prerequisites, IAM, and provisioning steps live in the
@@ -230,7 +230,7 @@ that, this app needs:
    are easy to get wrong — #92).
 
    **Easiest path: the in-app webhook-config surface (#490).** Sign in as a
-   workspace admin → **Settings → Webhooks** to copy the ready-to-paste ADF
+   workspace admin → **Admin → Integrations** to copy the ready-to-paste ADF
    URL (host + current `?token=` from Key Vault) and the Airflow URL. Set
    `PUBLIC_BASE_URL` so the generated host is the public origin (the deploy sets
    it to the frontend Container App host; empty falls back to the request host). Paste the ADF URL
@@ -438,9 +438,10 @@ curl -s -o /dev/null -w "openapi (gated) %{http_code}\n"        $FE/api/v1/opena
 # SPA catch-all serving index.html (nginx serves the shell for any non-proxied path
 # since the ACA cutover), not a leaked schema.
 
-# api + worker rolled to the deployed tag?
+# api + worker + beat rolled to the deployed tag?
 az containerapp revision list -n dataq-app-api    -g dataq-rg --query "[?properties.active].properties.template.containers[0].image" -o tsv
 az containerapp revision list -n dataq-app-worker -g dataq-rg --query "[?properties.active].properties.template.containers[0].image" -o tsv
+az containerapp revision list -n dataq-app-beat   -g dataq-rg --query "[?properties.active].properties.template.containers[0].image" -o tsv
 ```
 
 > A `421 Misdirected Request` on `/mcp/` (instead of `401`) is a specific known failure —
@@ -511,7 +512,7 @@ Everything Azure-specific above has an AWS counterpart behind the same app seams
 (ADR 0010/0013/0028) — no app code differs between the clouds.
 
 - **Infra runbook:** [`deploy/terraform/aws/README.md`](terraform/aws/README.md) —
-  the OpenTofu stack (ECS Fargate api/worker/frontend + migrate task, RDS,
+  the OpenTofu stack (ECS Fargate api/worker/beat/frontend + migrate task, RDS,
   ElastiCache, Cognito, Secrets Manager, CloudFront→ALB ingress, SES alerts, ADOT
   sidecars → X-Ray), the apply recipe, the state-encryption rules, and the
   `-replace` procedure for rolling task-definition changes.

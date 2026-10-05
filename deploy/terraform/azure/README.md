@@ -20,9 +20,9 @@ Both shared resources are **owned by the harness stack**; this stack only
 |---|---|
 | Log Analytics workspace | `dataq-app-logs` |
 | Application Insights | `dataq-app-ai` |
-| User-assigned identity | `dataq-app-id` (api/worker → Key Vault) |
+| User-assigned identity | `dataq-app-id` (api/worker/beat → Key Vault) |
 | Key Vault (RBAC) | `dataq-app-kv-<suffix>` (SecretStore + webhook secrets) |
-| API / worker / migrate | `dataq-app-api` · `dataq-app-worker` · `dataq-app-migrate` (job) |
+| API / worker / beat / migrate | `dataq-app-api` · `dataq-app-worker` · `dataq-app-beat` (sole schedule dispatcher, #1811) · `dataq-app-migrate` (job) |
 | Frontend (Container App) | `dataq-app-frontend` (nginx SPA; proxies /api + /mcp same-origin to `dataq-app-api`) |
 | Redis broker (Container App) | `dataq-app-redis` (internal TCP, password-auth) |
 | Azure AD SSO app regs | `dataq-app-api-sso` (API) + `dataq-app-spa` (SPA) |
@@ -104,6 +104,7 @@ gh secret  set AZURE_SUBSCRIPTION_ID -b "$(tofu output -raw azure_subscription_i
 gh variable set AZURE_RESOURCE_GROUP -b "$(tofu output -raw resource_group)"
 gh variable set API_APP_NAME         -b "$(tofu output -raw api_app_name)"
 gh variable set WORKER_APP_NAME      -b "$(tofu output -raw worker_app_name)"
+gh variable set BEAT_APP_NAME        -b dataq-app-beat   # no output for it; fixed name in containerapps.tf
 gh variable set FRONTEND_APP_NAME    -b "$(tofu output -raw frontend_app_name)"
 gh variable set MIGRATE_JOB_NAME     -b "$(tofu output -raw migrate_job_name)"
 ```
