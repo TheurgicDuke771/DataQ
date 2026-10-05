@@ -13,9 +13,9 @@ repository's `CONTRIBUTING.md`. The short version:
 
 ## Editing these docs
 
-This site is **MkDocs Material** built from the repo's `docs/` folder and published to
+This site is **MkDocs Material** built from the repo's `docs/site/` folder (the mkdocs `docs_dir`) and published to
 GitHub Pages by the `docs` workflow on every push to `main`. To change a page, edit the
-Markdown under `docs/` and open a PR — the **Edit** pencil on any page links straight to
+Markdown under `docs/site/` and open a PR — the **Edit** pencil on any page links straight to
 the source. Preview locally:
 
 ```bash
@@ -29,7 +29,7 @@ Keep modules **short and plain-language**; link to the in-repo source of truth (
 ## Decision records
 
 Architecture decisions are recorded as **ADRs** in
-[`docs/adr/`](https://github.com/TheurgicDuke771/DataQ/tree/main/docs/site/adr).
+[`docs/site/adr/`](https://github.com/TheurgicDuke771/DataQ/tree/main/docs/site/adr).
 
 ## Ownership
 

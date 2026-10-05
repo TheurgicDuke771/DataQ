@@ -42,7 +42,7 @@ credentials are in the data directory and are kept.
 
 Run the **Deploy** workflow on the release tag (see [Deployment](deployment.md)). It builds
 the images, runs the migration job and waits for it to succeed, and only then rolls the API,
-the worker and the frontend. If the migration fails, nothing is rolled.
+the worker, the scheduler (beat) and the frontend. If the migration fails, nothing is rolled.
 
 Infrastructure changes are separate: if the changelog says the OpenTofu stack changed, run
 `tofu plan` and `tofu apply` on it first.

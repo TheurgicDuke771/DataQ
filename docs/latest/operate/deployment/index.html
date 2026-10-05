@@ -2608,6 +2608,7 @@ AI clients ─MCP──► │  proxies /api + /mcp + /healthz same-origin
                    ▼
               FastAPI (internal ingress) ──► PostgreSQL
                    │  ├──► Celery worker ──► GX execution ──► your datasources
+                   │  ├──► Celery beat (the scheduler — its own process, never runs a task)
                    │  ├──► Redis (task queue)
                    │  ├──► Key Vault (secrets)
                    │  └──► App Insights / OTLP (observability)
@@ -2617,7 +2618,7 @@ frontend proxy (ADR 0028 §5).</p>
 <h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link">¶</a></h2>
 <ul>
 <li>A <strong>container platform</strong> — Azure Container Apps in the reference deploy (API + worker +
-  frontend apps, a one-shot migrate <strong>job</strong>, and Redis).</li>
+  beat + frontend apps, a one-shot migrate <strong>job</strong>, and Redis).</li>
 <li><strong>PostgreSQL</strong> (a dedicated database + a least-privilege app role).</li>
 <li>A <strong>secret store</strong> — Azure Key Vault, reached via a managed identity.</li>
 <li>An <strong>OIDC identity provider</strong> — app registrations for the API (audience) and the SPA.</li>
@@ -2639,7 +2640,7 @@ run, in order:</p>
 <li><strong>Runs migrations</strong> — a Container Apps job runs <code>alembic upgrade head</code> and the workflow
    <strong>waits for it to succeed</strong> <em>before</em> rolling anything. Migrations are additive/
    backward-compatible, so the still-running old code tolerates the new schema.</li>
-<li><strong>Rolls</strong> the API + worker, then the frontend (gated on the backend succeeding — no partial
+<li><strong>Rolls</strong> the API + worker + beat, then the frontend (gated on the backend succeeding — no partial
    deploys).</li>
 </ol>
 <p>Use an immutable image tag per release; push-on-merge is intentionally off.</p>
@@ -2765,16 +2766,18 @@ configuration</strong>:</p>
 </table>
 <div class="highlight"><pre><span></span><code>git<span class="w"> </span>clone<span class="w"> </span>&lt;repo&gt;<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>DataQ
 ./scripts/setup.sh<span class="w">          </span><span class="c1"># conda env, hooks, images, migrations, seed data</span>
-docker-compose<span class="w"> </span>up<span class="w">           </span><span class="c1"># postgres + redis + openbao + api + worker + frontend</span>
+docker-compose<span class="w"> </span>up<span class="w">           </span><span class="c1"># postgres + redis + openbao + mailpit + api + worker + beat + frontend</span>
 </code></pre></div>
 <p><code>.env.app.example</code> ships with the local-first values already selected
 (<code>SECRET_STORE=openbao</code>, email OTP against the bundled catcher as the sign-in, both telemetry endpoints blank);
 every <code>AZURE_*</code> key may stay empty. Nothing in the app reads an Azure SDK unless
 the corresponding seam is explicitly pointed at Azure.</p>
 <p><strong>What is not available locally</strong> is <em>datasources</em>, not the platform: a
-Snowflake or ADLS <strong>connection</strong> needs a live Snowflake or ADLS to run against.
-The local-first path keeps flat files (local + S3), Unity Catalog (Databricks
-Free Edition), and Iceberg. The test suite is unaffected either way — its
+Snowflake, ADLS, Athena or Redshift <strong>connection</strong> needs the live service to run against.
+The local-first path keeps flat files (local, S3 and S3-compatible stores such as MinIO),
+Unity Catalog (Databricks Free Edition), Iceberg, and PostgreSQL / MySQL / MariaDB / Trino /
+SQL Server containers; <code>docker-compose --profile demo up</code> adds a seeded sample warehouse
+to run against. The test suite is unaffected either way — its
 datasource reads are stubbed, so <code>pytest</code> is green with no cloud credentials of
 any kind.</p>
 <h2 id="operating-notes">Operating notes<a class="headerlink" href="#operating-notes" title="Permanent link">¶</a></h2>

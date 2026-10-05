@@ -2524,8 +2524,8 @@ a third-party endpoint.</p>
 <tbody>
 <tr>
 <td>1</td>
-<td><strong>Monitored datasources</strong> — Snowflake, ADLS Gen2 / OneLake, S3 / S3-compatible, Unity Catalog, Iceberg, PostgreSQL, MySQL / MariaDB, Trino, SQL Server / Azure SQL / Fabric SQL</td>
-<td>Read-only queries; DQ check SQL</td>
+<td><strong>Monitored datasources</strong> — Snowflake, ADLS Gen2 / OneLake, S3 / S3-compatible, Unity Catalog, Iceberg, PostgreSQL, MySQL / MariaDB, Trino, SQL Server / Azure SQL / Synapse / Fabric SQL, Amazon Athena, Amazon Redshift</td>
+<td>Read-only queries; DQ check SQL (on Unity Catalog, a DQX-engine check also submits a serverless job to your own Databricks workspace)</td>
 <td>Reads whatever the monitored tables hold — this is the primary data flow</td>
 <td>Always (the product's purpose)</td>
 </tr>
@@ -2588,9 +2588,9 @@ a third-party endpoint.</p>
 <tr>
 <td>10</td>
 <td><strong>Lineage provider</strong> — Marquez / OpenLineage-compatible catalog</td>
-<td>Pull of lineage graph metadata</td>
-<td>No — table/job names, not row data</td>
-<td>When <code>LINEAGE_PROVIDER</code> is configured</td>
+<td>Pull of lineage graph metadata; and, separately, OpenLineage emission of a START + terminal RunEvent per suite run with DQ facets (never sample rows)</td>
+<td>No — table/job names and check outcomes, not row data</td>
+<td>Pull: when <code>LINEAGE_PROVIDER</code> is configured. Emission: when <code>OPENLINEAGE_URL</code> (or the library's own transport config) is set</td>
 </tr>
 </tbody>
 </table>

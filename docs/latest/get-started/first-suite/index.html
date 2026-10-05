@@ -2625,7 +2625,7 @@ value check, run it, read the result, and wired an alert.</p>
 <p>Open the app URL and sign in — the local/eval stack defaults to an <strong>email one-time code</strong>
 (check the bundled Mailpit inbox at <code>http://localhost:8025</code>); a production deployment
 typically uses your <strong>identity provider (SSO)</strong>. See
-<a href="../install/#choosing-an-auth-mode">Getting started</a> for the three sign-in modes. You land on
+<a href="../install/#choosing-an-auth-mode">Getting started</a> for the sign-in modes. You land on
 the <strong>Dashboard</strong> — empty for now, with a <strong>Get started</strong> panel listing the four steps this
 tutorial walks through (connect a data source, create a suite, add a check, run it). The
 panel offers the next step you are allowed to take, is the same for everyone in the
@@ -2649,8 +2649,8 @@ to set the connection up — then pick this tutorial back up at
 <p><em>Adding a Snowflake connection, start to finish (12 s)</em></p>
 </li>
 <li>
-<p>Pick your datasource type (Snowflake, Unity Catalog, ADLS Gen2, S3, or Apache
-   Iceberg). The form is spec-driven — it asks only for what that type needs.</p>
+<p>Pick your datasource type (Snowflake, Unity Catalog, ADLS Gen2, S3, Apache Iceberg,
+   PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena or Amazon Redshift). The form is spec-driven — it asks only for what that type needs.</p>
 <p><a class="glightbox" data-type="image" data-width="auto" data-height="auto" href="../../assets/screenshots/connection-type-picker.png" data-desc-position="bottom"><img alt="Choosing a datasource type: warehouses, lakehouses, cloud storage, and the optional orchestration providers" class="screenshot" src="../../assets/screenshots/connection-type-picker.png"></a></p>
 <p><a class="glightbox" data-type="image" data-width="auto" data-height="auto" href="../../assets/screenshots/connection-form-snowflake.png" data-desc-position="bottom"><img alt="The Snowflake connection form asks only for what Snowflake needs" class="screenshot" src="../../assets/screenshots/connection-form-snowflake.png"></a></p>
 </li>
@@ -2732,7 +2732,8 @@ You can <strong>cancel</strong> a run mid-flight.</p>
 <a href="../first-alert/">Your first alert</a>.</p>
 <ol>
 <li>
-<p>On the suite, open <strong>Notifications</strong> and add a channel — Teams, Slack, or email — and pick
+<p>On the suite, open <strong>Notifications</strong> and link a channel — Teams, Slack, email or a
+   webhook, defined by an Admin — and pick
    a threshold (the default <strong>warn-and-worse</strong> is a good start).</p>
 </li>
 <li>

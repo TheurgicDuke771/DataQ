@@ -31,7 +31,8 @@ the time of the breach. Read it as "when this last failed," never as "right now.
 | `sibling_checks` | Every other check's outcome in the **same run** | The run the failing result belongs to |
 | `same_asset_siblings` | The latest outcome of every *other* check targeting this **same asset**, across every suite, from the last 7 days | Every suite's results on this asset, not just this run's |
 | `upstream_pipeline_run` | The orchestration pipeline run that triggered this suite run, its duration, and its delay against that pipeline's own recent history | The linked `pipeline_runs` row, when one triggered this run |
-| `downstream_blast_radius` | The assets reachable downstream of this one via recorded lineage | The lineage graph, depth-capped |
+| `pipeline_trigger` | Whether an orchestration provider triggered this run, which one, and whether its pipeline run is recorded, ambiguous, or not recorded yet | The run's own `triggered_by` marker |
+| `downstream_blast_radius` | The assets reachable downstream of this one via recorded lineage (`assets`), plus the workspace's lineage-source health (`qualified_by`) | The lineage graph, depth-capped |
 | `profile_diff` | Always `null` | Not implemented — see below |
 
 ## The privacy guarantee
@@ -64,8 +65,11 @@ by it, and collapsing them into one "missing data" reading is the mistake this s
 prevent:
 
 - **`upstream_pipeline_run` is `null` for the ordinary case** — a manually-triggered or
-  scheduled run, which is most runs. It means no orchestration pipeline triggered this run, not
-  that one should have and didn't.
+  scheduled run, which is most runs. It is also `null` for a pipeline-triggered run whose
+  pipeline run is not recorded yet (the gate and callback paths start the suite before the
+  poller records it) or is ambiguous. `pipeline_trigger` tells these apart: it reads
+  `{"triggered": false}` for a manual or scheduled run, and names the provider and the
+  pipeline run's recording state otherwise.
 - **`kind_detail` is `null` for an ordinary expectation or comparison check** — the common case,
   where the result's own observed value already is the shape a reader wants, so there is nothing
   to lift out. For a freshness, volume, schema-drift, or anomaly check, by contrast, the card is
@@ -76,7 +80,7 @@ prevent:
   is genuinely nothing to show.** A `null` in one of these three specifically means the layer
   could not be built at all (an unexpected failure while assembling it) — distinct from an empty
   result, which means it was built successfully and found nothing.
-- **`downstream_blast_radius` being `[]` has three different real causes that read identically**:
+- **`downstream_blast_radius.assets` being `[]` has three different real causes that read identically**:
   the asset could not be resolved, the asset is a genuine lineage leaf, or the workspace has no
   lineage recorded at all. An empty list here is a floor, not proof that nothing is affected
   downstream.
@@ -88,8 +92,8 @@ prevent:
 
 When a narrative is generated over this card, every claim it makes must cite which of a closed,
 fixed set of layer names it rests on: `failing_result`, `kind_detail`, `metric_trend`,
-`sibling_checks`, `same_asset_siblings`, `upstream_pipeline_run`, `downstream_blast_radius`, and
-`check_history` — a longer per-check result history fetched alongside the card, not one of the
+`sibling_checks`, `same_asset_siblings`, `upstream_pipeline_run`, `pipeline_trigger`,
+`downstream_blast_radius`, and `check_history` — a longer per-check result history fetched alongside the card, not one of the
 card's own fields, since the card itself keeps only the last 10 points. `check`, `asset`, and the
 always-null `profile_diff` are identifying context, not evidence a hypothesis can be pinned to,
 so they are deliberately outside this set. A hypothesis that cannot point to a real layer in it

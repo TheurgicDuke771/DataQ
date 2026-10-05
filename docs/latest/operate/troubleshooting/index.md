@@ -20,8 +20,10 @@ the credential again.**
 You changed a field that decides where the credential is sent — a host, URL, or URI
 (Snowflake `account`, ADLS `account_url` / `auth_type` / `tenant_id` / `client_id`, S3/dbt `endpoint_url`, Unity Catalog
 `workspace_url`, Iceberg `catalog_uri` / `warehouse` / `properties` / `secret_property`,
-Airflow `base_url`, dbt
-`artifacts_uri`). Re-enter the credential in the same save and it will go through;
+PostgreSQL / MySQL / Redshift `host` / `port`, Trino `host` / `port` / `sslmode` / `ca_bundle` /
+`auth_type`, SQL Server `host` / `port` / `auth_type` / `tenant_id` / `client_id` / `ca_bundle` /
+`driver`, Athena `host` / `region` / `work_group` / `s3_staging_dir`, Airflow `base_url`, dbt
+`artifacts_uri` / `endpoint_url` / `account_url` / `auth_type` / `tenant_id` / `client_id`). Re-enter the credential in the same save and it will go through;
 `detail.required` on the API error names exactly what to send. See
 [Datasources & checks](../guides/datasources-checks.md#moving-a-connection-to-a-new-host).
 
@@ -40,7 +42,7 @@ credential** / re-auth) and the badge clears on the same request.
 The badge is **absent** for most credential types, and absence is not a clean bill of
 health: an S3 access key, a Snowflake key-pair, and a Databricks PAT carry no readable
 lifetime, so DataQ says nothing rather than guessing a date. Track those expiries wherever
-you issue them. DataQ PATs get the same warning on the **Profile → Access tokens** panel,
+you issue them. DataQ PATs get the same warning on the **Profile → Personal access tokens** panel,
 where they are stored with a known expiry.
 
 The date is re-read daily, so a credential rotated outside DataQ (in the Azure portal, say)

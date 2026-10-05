@@ -2645,7 +2645,7 @@ drift-checked in CI, so it cannot go stale the way an earlier hand-typed pass of
 </tr>
 <tr>
 <td>Server absent / connection refused locally</td>
-<td>The MCP server is unmounted unless the deployment has a working sign-in configuration — SSO (<code>AZURE_*</code>) or email OTP (<code>AUTH_EMAIL_*</code> + an allowlist); fail-closed by design.</td>
+<td>The MCP server is unmounted unless the deployment has a working sign-in configuration — SSO (<code>AZURE_*</code>, or <code>OIDC_ISSUER</code> + <code>OIDC_AUDIENCE</code>) or email OTP (<code>AUTH_EMAIL_*</code> + an allowlist); fail-closed by design.</td>
 </tr>
 <tr>
 <td>401 with an API key on an email-OTP deployment</td>

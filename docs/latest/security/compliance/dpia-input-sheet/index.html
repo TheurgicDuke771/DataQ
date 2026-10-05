@@ -2586,9 +2586,9 @@ surgically removes only the matching row/cell from <code>sample_failures</code> 
 other subjects — intact. <strong>The same on-demand erasure also scrubs <code>incidents.evidence</code></strong>
 (the row above): the matching cell is removed from an incident's stored snapshot in
 place, and the response reports result and incident hits separately. The snapshot
-is matched by the check's <em>current</em> tested column (an incident keeps no result row
-to resolve the column as of capture time), so a check edited after the incident
-opened may need the request repeated under the earlier column name.</p>
+is matched by the check's tested column <strong>as of the snapshot's write time</strong> (resolved
+from the check's version history at the incident's <code>last_seen_at</code>), so a check edited
+after the incident fired still matches under the column it was captured against.</p>
 <h2 id="class-2-workspace-account-data">Class 2 — workspace account data<a class="headerlink" href="#class-2-workspace-account-data" title="Permanent link">¶</a></h2>
 <table>
 <thead>
@@ -2605,6 +2605,12 @@ opened may need the request repeated under the earlier column name.</p>
 <td>Email (unique, lower-cased), display name, OIDC subject id + issuer, workspace role</td>
 <td>Life of the account</td>
 <td>Role-gated admin surface; ADR 0033 two-axis authz</td>
+</tr>
+<tr>
+<td><code>workspace_members</code></td>
+<td>Admitted email addresses (the <strong>Admin → Members</strong> list), initial role, who invited them</td>
+<td>Until an Admin removes the entry</td>
+<td>Admin-only surface; removal takes effect on the member's next request</td>
 </tr>
 <tr>
 <td><code>sessions</code></td>

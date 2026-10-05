@@ -2706,8 +2706,8 @@ curl --cacert dataq-local-ca.pem https://localhost:3000/healthz
 - <strong>Loopback-only:</strong> both published ports (<code>:3000</code> and the inbox on <code>:8025</code>) bind to
   <code>127.0.0.1</code> — the stack is reachable from your own machine but never the LAN. That
   matters more than usual for <code>:8025</code>, which serves live sign-in codes to anyone who can
-  reach it. <strong>Not for production</strong> — a real deploy uses the OpenTofu stack
-  (<code>deploy/terraform/azure</code>, ADR 0024).
+  reach it. <strong>Not for production</strong> — a real deploy uses the OpenTofu stacks
+  (<code>deploy/terraform/azure</code> or <code>deploy/terraform/aws</code>, ADR 0024).
 - <strong>Try it on real data:</strong> add <code>--profile demo</code> to the <code>up</code> command. It also starts a
   sample warehouse (PostgreSQL) holding a small shop dataset with deliberate defects, and
   connects DataQ to it: a connection named <em>Demo warehouse (PostgreSQL)</em>, two suites
@@ -2953,7 +2953,7 @@ copy it to <code>.env.app</code> (gitignored) and adjust. Never commit secrets; 
 generates local-dev credentials on first run.</p>
 <h2 id="running-tests">Running tests<a class="headerlink" href="#running-tests" title="Permanent link">¶</a></h2>
 <p>The DB-backed tests need a real Postgres (<code>gen_random_uuid()</code>/jsonb, which SQLite
-can't host); notification tests also need Redis. The suite is ~4,800 tests and growing —
+can't host); notification tests also need Redis. The suite is ~6,500 tests and growing —
 exact counts below drift with every PR, so treat them as shapes, not contracts. There are
 three ways to run:</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># 1. One command — brings up the compose Postgres + Redis, provisions a dedicated</span>

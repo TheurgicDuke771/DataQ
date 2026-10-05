@@ -3274,7 +3274,8 @@ are the reason this mode is opt-in rather than the default:</p>
 <ul>
 <li>The <strong>frontend is the only public surface</strong>; the API runs on <strong>internal ingress</strong> and is
   reached only through the frontend's same-origin <code>/api</code>, <code>/healthz</code>, and <code>/mcp</code> proxy
-  (ADR 0028 §5). All traffic is over <strong>HTTPS/TLS</strong>.</li>
+  (ADR 0028 §5). All public traffic is over <strong>HTTPS/TLS</strong>; the internal hops that are not
+  are listed under <a href="#encryption">Encryption</a>.</li>
 <li>The <strong>MCP</strong> AI-assistant endpoint is <strong>fail-closed</strong> — unauthenticated requests are rejected
   (ADR 0008), and it is not mounted at all unless the deployment has a working sign-in
   configuration. It authenticates from the <code>Authorization</code> header only and <strong>never reads a
@@ -3325,7 +3326,9 @@ are the reason this mode is opt-in rather than the default:</p>
 <li><strong>A stored credential is never sent to a destination the caller changed.</strong> Editing a config
   field that decides where a credential goes — Snowflake <code>account</code>, ADLS <code>account_url</code>/<code>auth_type</code>/<code>tenant_id</code>/<code>client_id</code>,
   S3/dbt <code>endpoint_url</code>, Unity Catalog <code>workspace_url</code>, Iceberg <code>catalog_uri</code>/<code>warehouse</code>/
-  <code>properties</code>/<code>secret_property</code>, Airflow <code>base_url</code>, dbt <code>artifacts_uri</code> — requires re-supplying that
+  <code>properties</code>/<code>secret_property</code>, the SQL engines' <code>host</code>/<code>port</code> (plus Trino's <code>sslmode</code>/<code>ca_bundle</code>/<code>auth_type</code>,
+  SQL Server's <code>auth_type</code>/<code>tenant_id</code>/<code>client_id</code>/<code>ca_bundle</code>/<code>driver</code>, Athena's <code>region</code>/<code>work_group</code>/
+  <code>s3_staging_dir</code>), Airflow <code>base_url</code>, dbt <code>artifacts_uri</code>/<code>endpoint_url</code>/<code>account_url</code> — requires re-supplying that
   credential in the same request, or the update is rejected (<code>422 credential_redirect</code>).
   Moving a connection to a new host is a supported operation; doing it with a credential you
   do not know is not. This is why an Admin, who may <strong>rotate</strong> a credential, still cannot

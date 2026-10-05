@@ -2562,7 +2562,7 @@
 <tr>
 <td><a href="0005-severity-tier-weights/">0005</a></td>
 <td>Severity tier weights (warn / fail / critical → health score)</td>
-<td>Accepted</td>
+<td>Accepted (amended 2026-09-06 — the weights are a workspace setting)</td>
 </tr>
 <tr>
 <td><a href="0006-adf-webhook-authentication/">0006</a></td>
@@ -2576,7 +2576,7 @@
 </tr>
 <tr>
 <td><a href="0008-mcp-server/">0008</a></td>
-<td>FastMCP server at <code>/mcp</code> — Azure AD token validated (same token as REST); everything exposed as tools rather than resources; thin wrappers reusing the service layer + per-suite authz; fail-closed without auth. <strong>Amended:</strong> 8 → 19 tools (Tier 1 reads), then 19 → 30 tools (Tier 2 edit-gated mutations + live-probe tools), then 30 → 33 → 38 (Tier 3A coherence), then 38 → 42 (Tier 3B batch 1 — assets + incidents reads) → 46 (Tier 3B batch 2 — incident lifecycle, <code>list_columns</code>, near-misses; Tier 3B complete) → 47 (<code>get_pipeline_status</code>, <code>get_adf_pipeline_status</code> kept as a deprecated alias) → 48 (<code>get_doc</code>, curated docs pages) → 51 (the reusable-notification-channel reads, <code>trace_column_lineage</code>) → <strong>52</strong> (<code>browse_connection</code>, run-target browsing; 28 read-only / 18 state-changing / 6 live-probe)</td>
+<td>FastMCP server at <code>/mcp</code> — Azure AD token validated (same token as REST); everything exposed as tools rather than resources; thin wrappers reusing the service layer + per-suite authz; fail-closed without auth. <strong>Amended:</strong> 8 → 19 tools (Tier 1 reads), then 19 → 30 tools (Tier 2 edit-gated mutations + live-probe tools), then 30 → 33 → 38 (Tier 3A coherence), then 38 → 42 (Tier 3B batch 1 — assets + incidents reads) → 46 (Tier 3B batch 2 — incident lifecycle, <code>list_columns</code>, near-misses; Tier 3B complete) → 47 (<code>get_pipeline_status</code>, <code>get_adf_pipeline_status</code> kept as a deprecated alias) → 48 (<code>get_doc</code>, curated docs pages) → 51 (the reusable-notification-channel reads, <code>trace_column_lineage</code>) → 52 (<code>browse_connection</code>, run-target browsing) → <strong>54</strong> (<code>get_coverage</code>, <code>list_suggested_rules</code>; 30 read-only / 18 state-changing / 6 live-probe)</td>
 <td>Accepted</td>
 </tr>
 <tr>

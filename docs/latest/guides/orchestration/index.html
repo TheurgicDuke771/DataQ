@@ -2775,7 +2775,8 @@ graph, and after 3 consecutive failures (~30 min) an <strong>alert is pushed</st
 logged as <code>orchestration_poll_failed</code> with <code>provider=dbt</code>. If lineage still looks wrong, <strong>test
 the dbt connection</strong> (<code>Connections → the dbt connection → Test</code>): a red test is your answer.</p>
 <p><strong>2. Fixing the credential is not enough — the backlog is already stranded.</strong> The poll only
-records builds whose <code>generated_at</code> falls inside its <strong>15-minute lookback</strong>. Once the credential
+records builds whose <code>generated_at</code> falls inside its <strong>15-minute lookback</strong> (the half-hourly gap
+recovery widens that to one hour, which still misses a longer outage). Once the credential
 is restored the poll starts succeeding and still records <em>nothing</em>, because every build produced
 during the outage is now older than the window. The artifacts are sitting right there in the
 store, and DataQ will not read them.</p>
@@ -2886,13 +2887,13 @@ own case — Snowflake <code>ACCOUNT_USAGE</code> upper, Unity Catalog <code>sys
 <strong>byte-identical to DataQ's asset identity</strong>, so no fold, no enumerate step. That is why warehouse
 lineage is a <strong>distinct seam</strong> (<code>lineage.warehouse.WarehouseLineageProvider</code>, SQL → edge pairs),
 not a second <code>LineageProvider</code>.</p>
-<p><strong>Dark by default</strong> (<code>WAREHOUSE_LINEAGE_ENABLED=true</code> to turn on): the views need a grant
+<p><strong>On by default</strong> (<code>WAREHOUSE_LINEAGE_ENABLED=false</code> opts a deployment out): the views need a grant
 (Snowflake <code>IMPORTED PRIVILEGES</code> on <code>SNOWFLAKE</code> — or the finer <code>SNOWFLAKE.GOVERNANCE_VIEWER</code>
 database role, which covers the ACCESS_HISTORY/OBJECT_DEPENDENCIES tiers without blanket
 ACCOUNT_USAGE; UC <code>SELECT</code> on <code>system.access</code>) the connection's principal may not have. A tier
 the role can't read <strong>skips with a "not authorized" reason and the ladder descends</strong> —
 tested live: a denied tier never aborts the tiers the role <em>can</em> read, and a fully-denied
-account reports classified-unavailable, never a confident empty. When enabled, a <strong>daily beat</strong> (<code>refresh_warehouse_lineage</code>) refreshes every
+account reports classified-unavailable, never a confident empty. A <strong>daily beat</strong> (<code>refresh_warehouse_lineage</code>) refreshes every
 Snowflake / Unity Catalog connection independently — one unreachable warehouse records a classified
 error and never aborts the sweep — writing edges tagged <code>source='snowflake'</code> / <code>'unity_catalog'</code>
 with the connection's id (the full-constraint regime, so a warehouse refresh never touches a dbt or
@@ -2906,11 +2907,11 @@ separately-gated <code>column_lineage</code> degrades honestly: table edges stil
 Snowflake's column grain comes from <code>ACCESS_HISTORY</code>'s <code>objects_modified[].columns[].directSources</code>
 on <strong>every</strong> tier — including when <code>GET_LINEAGE</code> answers, whose table-domain rows carry no column
 names — as a refinement of the table edges, never a source of new ones; it only sees DML writes, so
-a view dependency never has pairs. Live-verified on an Enterprise account as a least-privileged
+a view dependency gets no pairs from it. Live-verified on an Enterprise account as a least-privileged
 reader role: the refinement runs on the <code>GET_LINEAGE</code> tier and records <code>captured</code>; an account whose
 writes are all COPY / <code>INSERT … VALUES</code> (empty <code>directSources</code>) and whose downstream layer is views
-honestly reads <code>none_recorded</code> on every edge. Column lineage <em>through views</em> exists in Snowflake
-(<code>GET_LINEAGE</code> at <code>COLUMN</code> domain) but is not read yet.</p>
+honestly reads <code>none_recorded</code> on every <code>ACCESS_HISTORY</code>-only edge. Column lineage <em>through views</em>
+comes from <code>GET_LINEAGE</code> at <code>COLUMN</code> domain — see <em>Column lineage for views and dynamic tables</em> below.</p>
 <p><strong>Why an edge has no pairs is always stated</strong> (ADR 0034 amendment 2026-09-27). Every
 lineage edge on the asset page, <code>GET /assets/{id}</code> and MCP <code>get_asset</code> carries a
 <code>column_coverage</code>:</p>

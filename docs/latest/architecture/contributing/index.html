@@ -2496,9 +2496,9 @@ repository's <code>CONTRIBUTING.md</code>. The short version:</p>
 <li><strong>Backward-compatible migrations only</strong> (two-step deploys).</li>
 </ul>
 <h2 id="editing-these-docs">Editing these docs<a class="headerlink" href="#editing-these-docs" title="Permanent link">¶</a></h2>
-<p>This site is <strong>MkDocs Material</strong> built from the repo's <code>docs/</code> folder and published to
+<p>This site is <strong>MkDocs Material</strong> built from the repo's <code>docs/site/</code> folder (the mkdocs <code>docs_dir</code>) and published to
 GitHub Pages by the <code>docs</code> workflow on every push to <code>main</code>. To change a page, edit the
-Markdown under <code>docs/</code> and open a PR — the <strong>Edit</strong> pencil on any page links straight to
+Markdown under <code>docs/site/</code> and open a PR — the <strong>Edit</strong> pencil on any page links straight to
 the source. Preview locally:</p>
 <div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>requirements-docs.txt
 mkdocs<span class="w"> </span>serve<span class="w">         </span><span class="c1"># live-reload preview at http://127.0.0.1:8000</span>
@@ -2507,7 +2507,7 @@ mkdocs<span class="w"> </span>serve<span class="w">         </span><span class="
 <code>CONTRIBUTING.md</code>, <code>deploy/README.md</code>) rather than duplicating it.</p>
 <h2 id="decision-records">Decision records<a class="headerlink" href="#decision-records" title="Permanent link">¶</a></h2>
 <p>Architecture decisions are recorded as <strong>ADRs</strong> in
-<a href="https://github.com/TheurgicDuke771/DataQ/tree/main/docs/site/adr"><code>docs/adr/</code></a>.</p>
+<a href="https://github.com/TheurgicDuke771/DataQ/tree/main/docs/site/adr"><code>docs/site/adr/</code></a>.</p>
 <h2 id="ownership">Ownership<a class="headerlink" href="#ownership" title="Permanent link">¶</a></h2>
 <p>Docs owner / reviewer: <strong>@TheurgicDuke771</strong> (see
 <a href="https://github.com/TheurgicDuke771/DataQ/blob/main/.github/CODEOWNERS">CODEOWNERS</a>).</p>

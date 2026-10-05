@@ -1,6 +1,7 @@
 # Notifications & alerting
 
-DataQ alerts on run outcomes over **Microsoft Teams**, **Slack**, and **email** — all
+DataQ alerts on run outcomes over **Microsoft Teams**, **Slack**, **email** and generic
+HMAC-signed **webhooks** — all
 behind one `ResultPublisher` seam, so every channel gets the same severity-aware
 behaviour. Alerts fire from the worker as soon as a run reaches a terminal state.
 

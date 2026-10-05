@@ -2262,10 +2262,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#backend-api-worker" class="md-nav__link">
+  <a href="#backend-api-worker-beat" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Backend (api + worker)
+        Backend (api + worker + beat)
       
     </span>
   </a>
@@ -2488,10 +2488,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#backend-api-worker" class="md-nav__link">
+  <a href="#backend-api-worker-beat" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Backend (api + worker)
+        Backend (api + worker + beat)
       
     </span>
   </a>
@@ -2581,8 +2581,8 @@ cloud-conditional code paths</strong>, and the same container images run everywh
 <tbody>
 <tr>
 <td>Compute</td>
-<td>Container Apps: api / worker / frontend + migrate <strong>job</strong></td>
-<td>ECS Fargate: same three services + migrate <strong>run-task</strong></td>
+<td>Container Apps: api / worker / beat / frontend + migrate <strong>job</strong></td>
+<td>ECS Fargate: same four services + migrate <strong>run-task</strong></td>
 <td>docker-compose services</td>
 </tr>
 <tr>
@@ -2648,7 +2648,7 @@ cloud-conditional code paths</strong>, and the same container images run everywh
 </tbody>
 </table>
 <h2 id="features">Features<a class="headerlink" href="#features" title="Permanent link">¶</a></h2>
-<p>The application feature set — suites/checks across all nine datasource types, every monitor kind,
+<p>The application feature set — suites/checks across all eleven datasource types, every monitor kind,
 assets/lineage/incidents, alerting, scheduling, the 54-tool MCP server, PATs, rate limiting —
 is the <strong>same code everywhere</strong>. Where the installations genuinely differ:</p>
 <table>
@@ -2668,10 +2668,10 @@ is the <strong>same code everywhere</strong>. Where the installations genuinely 
 <td>flat files, MinIO, Unity Catalog (Free Edition), Iceberg, PostgreSQL / MySQL / MariaDB / Trino containers; no live warehouse required</td>
 </tr>
 <tr>
-<td>PostgreSQL, MySQL/MariaDB, Trino, SQL Server, OneLake</td>
+<td>PostgreSQL, MySQL/MariaDB, Trino, SQL Server, OneLake, Athena, Redshift</td>
 <td>✅</td>
 <td>✅</td>
-<td>✅ (SQL Server's optional ODBC lane needs the driver installed by the operator)</td>
+<td>✅ (SQL Server's optional ODBC lane needs the driver installed by the operator; OneLake, Athena and Redshift need the cloud service itself)</td>
 </tr>
 <tr>
 <td>Assets / lineage / incidents / DQ scorecard</td>
@@ -2751,7 +2751,7 @@ limiter at all. Front Door + WAF is the analogous Azure change and has not been 
 deployment autoscales: <code>desired_count = 1</code> / <code>max_replicas = 3</code>.</p>
 <h2 id="deploying-azure-vs-aws">Deploying: Azure vs AWS<a class="headerlink" href="#deploying-azure-vs-aws" title="Permanent link">¶</a></h2>
 <p>Both deploy workflows are <code>workflow_dispatch</code>-only with the same shape — backend job first
-(build → <strong>migrate, gated on success</strong> → roll api + worker), then the frontend job gated on
+(build → <strong>migrate, gated on success</strong> → roll api + worker + beat), then the frontend job gated on
 the backend; a blank <code>image_tag</code> input defaults to the immutable commit SHA. The real
 differences:</p>
 <table>
@@ -2806,7 +2806,7 @@ differences:</p>
 <code>RATE_LIMIT_XFF_TRUSTED_HOPS=3</code>, <code>CORS_ALLOW_ORIGINS=""</code>, <code>PUBLIC_BASE_URL</code>, the
 <code>*_WEBHOOK_SECRET_NAME</code>s, the <code>EMAIL_*</code> block, <code>WAREHOUSE_LINEAGE_ENABLED</code>). The genuine
 differences:</p>
-<h3 id="backend-api-worker">Backend (api + worker)<a class="headerlink" href="#backend-api-worker" title="Permanent link">¶</a></h3>
+<h3 id="backend-api-worker-beat">Backend (api + worker + beat)<a class="headerlink" href="#backend-api-worker-beat" title="Permanent link">¶</a></h3>
 <table>
 <thead>
 <tr>

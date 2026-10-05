@@ -2594,8 +2594,13 @@ the time of the breach. Read it as "when this last failed," never as "right now.
 <td>The linked <code>pipeline_runs</code> row, when one triggered this run</td>
 </tr>
 <tr>
+<td><code>pipeline_trigger</code></td>
+<td>Whether an orchestration provider triggered this run, which one, and whether its pipeline run is recorded, ambiguous, or not recorded yet</td>
+<td>The run's own <code>triggered_by</code> marker</td>
+</tr>
+<tr>
 <td><code>downstream_blast_radius</code></td>
-<td>The assets reachable downstream of this one via recorded lineage</td>
+<td>The assets reachable downstream of this one via recorded lineage (<code>assets</code>), plus the workspace's lineage-source health (<code>qualified_by</code>)</td>
 <td>The lineage graph, depth-capped</td>
 </tr>
 <tr>
@@ -2630,8 +2635,11 @@ by it, and collapsing them into one "missing data" reading is the mistake this s
 prevent:</p>
 <ul>
 <li><strong><code>upstream_pipeline_run</code> is <code>null</code> for the ordinary case</strong> — a manually-triggered or
-  scheduled run, which is most runs. It means no orchestration pipeline triggered this run, not
-  that one should have and didn't.</li>
+  scheduled run, which is most runs. It is also <code>null</code> for a pipeline-triggered run whose
+  pipeline run is not recorded yet (the gate and callback paths start the suite before the
+  poller records it) or is ambiguous. <code>pipeline_trigger</code> tells these apart: it reads
+  <code>{"triggered": false}</code> for a manual or scheduled run, and names the provider and the
+  pipeline run's recording state otherwise.</li>
 <li><strong><code>kind_detail</code> is <code>null</code> for an ordinary expectation or comparison check</strong> — the common case,
   where the result's own observed value already is the shape a reader wants, so there is nothing
   to lift out. For a freshness, volume, schema-drift, or anomaly check, by contrast, the card is
@@ -2642,7 +2650,7 @@ prevent:</p>
   is genuinely nothing to show.</strong> A <code>null</code> in one of these three specifically means the layer
   could not be built at all (an unexpected failure while assembling it) — distinct from an empty
   result, which means it was built successfully and found nothing.</li>
-<li><strong><code>downstream_blast_radius</code> being <code>[]</code> has three different real causes that read identically</strong>:
+<li><strong><code>downstream_blast_radius.assets</code> being <code>[]</code> has three different real causes that read identically</strong>:
   the asset could not be resolved, the asset is a genuine lineage leaf, or the workspace has no
   lineage recorded at all. An empty list here is a floor, not proof that nothing is affected
   downstream.</li>
@@ -2653,8 +2661,8 @@ prevent:</p>
 <h2 id="the-provenance-rule-a-narrative-inherits">The provenance rule a narrative inherits<a class="headerlink" href="#the-provenance-rule-a-narrative-inherits" title="Permanent link">¶</a></h2>
 <p>When a narrative is generated over this card, every claim it makes must cite which of a closed,
 fixed set of layer names it rests on: <code>failing_result</code>, <code>kind_detail</code>, <code>metric_trend</code>,
-<code>sibling_checks</code>, <code>same_asset_siblings</code>, <code>upstream_pipeline_run</code>, <code>downstream_blast_radius</code>, and
-<code>check_history</code> — a longer per-check result history fetched alongside the card, not one of the
+<code>sibling_checks</code>, <code>same_asset_siblings</code>, <code>upstream_pipeline_run</code>, <code>pipeline_trigger</code>,
+<code>downstream_blast_radius</code>, and <code>check_history</code> — a longer per-check result history fetched alongside the card, not one of the
 card's own fields, since the card itself keeps only the last 10 points. <code>check</code>, <code>asset</code>, and the
 always-null <code>profile_diff</code> are identifying context, not evidence a hypothesis can be pinned to,
 so they are deliberately outside this set. A hypothesis that cannot point to a real layer in it

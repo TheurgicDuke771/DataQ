@@ -9,7 +9,8 @@
 
 **Know your data is right before anyone else finds out it isn't.** DataQ runs automated checks
 against your tables and files — in Snowflake, Databricks Unity Catalog, Apache Iceberg,
-PostgreSQL, MySQL/MariaDB, Trino, SQL Server (Azure SQL, Synapse, Fabric), ADLS Gen2 or
+PostgreSQL, MySQL/MariaDB, Trino, SQL Server (Azure SQL, Synapse, Fabric), Amazon Athena,
+Amazon Redshift, ADLS Gen2 or
 Fabric OneLake, AWS S3 or any S3-compatible store — tells you when something is wrong, and alerts the
 team that owns it. It watches your Azure Data Factory, Airflow and dbt pipelines and runs the
 checks the moment a load finishes.
@@ -60,7 +61,7 @@ checks the moment a load finishes.
 | **See the whole estate** | An asset view rolls health up per table, with lineage pulled from dbt, your catalog or the warehouse itself, and incidents anchored to the asset they hit. |
 | **Alert the right people, once** | Teams, Slack, email and webhooks, routed by severity, de-duplicated so a broken check reports when it breaks, not on every run. |
 | **Run it where the data lives** | Reference deployments on Azure Container Apps and AWS ECS, the recommended way to run DataQ for production and enterprise teams; a single-host Docker stack for evaluation; bring your own identity provider or none at all. |
-| **Let assistants do the work** | Forty-eight MCP tools expose the same actions to Claude, Copilot and Cursor, every one honest about what it cannot see. |
+| **Let assistants do the work** | Fifty-four MCP tools expose the same actions to Claude, Copilot and Cursor, every one honest about what it cannot see. |
 
 ## Who it is for
 
@@ -242,8 +243,8 @@ flowchart LR
 - **Datasources** are stores you write data-quality checks *against*: **Snowflake**,
   **ADLS Gen2**, **AWS S3** (or any S3-compatible store — MinIO, Ceph, R2, Wasabi, Backblaze),
   **Unity Catalog (Databricks)**, **Apache Iceberg** (native read), and the generic SQL engines
-  **PostgreSQL**, **MySQL / MariaDB**, **Trino** and **SQL Server** (incl. Azure SQL, Synapse
-  and Fabric SQL). Fabric **OneLake** files are reached through an ADLS Gen2 connection.
+  **PostgreSQL**, **MySQL / MariaDB**, **Trino**, **SQL Server** (incl. Azure SQL, Synapse
+  and Fabric SQL), **Amazon Athena** and **Amazon Redshift**. Fabric **OneLake** files are reached through an ADLS Gen2 connection.
 - **Orchestration providers** are workflow engines DataQ *observes* — **Azure Data
   Factory (ADF)**, **Apache Airflow**, and **dbt**. DataQ does three things with them: monitor
   pipeline/DAG/build runs, detect failures in near-real-time, and **trigger a check suite when a
@@ -350,9 +351,10 @@ breaches — and silence when nothing changed.
 ## 1. Decide where alerts go
 
 Alerts are configured **per suite**, so the team that owns the data gets told about its data.
-Workspace-wide defaults (a Slack webhook, an SMTP sender, a Teams webhook) are set by whoever
-deployed DataQ through environment configuration; a suite can override the Teams webhook and
-the email recipients.
+Destinations are **channels** — a Teams or Slack webhook, an email recipient list, or a signed
+webhook — defined once by an Admin under **Admin → Settings → Notification channels** and then
+linked to any suite. Workspace-wide defaults (a Slack webhook, an SMTP sender, a Teams webhook)
+are set by whoever deployed DataQ through environment configuration.
 
 ![Admin → Settings → Notification channels: destinations are defined once here, then linked from each suite](../assets/screenshots/settings-notifications.png){ .screenshot }
 
@@ -362,16 +364,17 @@ the email recipients.
 
 Open the suite and scroll to **Notifications**:
 
-![A suite's Notifications panel: the on/off switch, the alert threshold, optional Teams and Slack webhooks, and email recipients](../assets/screenshots/suite-notifications.png){ .screenshot }
+![A suite's Notifications panel: the on/off switch, the alert threshold, and the linked channels](../assets/screenshots/suite-notifications.png){ .screenshot }
 
 *Everything an alert needs, on the suite itself.*
 
 1. Switch **Send alerts for this suite** on.
 2. Pick the **alert threshold**. The default, *On warn and worse*, is the right first choice:
    quiet for a passing run, loud the moment a check crosses a threshold you set.
-3. Optionally paste a **Teams** or **Slack** webhook for this suite, or list **email
-   recipients**. Leave a field blank to fall back to the workspace default. Webhook URLs are
-   write-only: after saving, the tag reads *set* and the URL is never shown again.
+3. Under **Channels**, pick the channels this suite alerts through. A workspace-wide
+   default destination (if your deployment configures one) is alerted as well, not instead.
+   Webhook URLs live in the secret store and are never shown again
+   after an Admin saves the channel.
 4. **Save**.
 
 ## 3. Prove it fires
@@ -417,7 +420,7 @@ value check, run it, read the result, and wired an alert.
 Open the app URL and sign in — the local/eval stack defaults to an **email one-time code**
 (check the bundled Mailpit inbox at `http://localhost:8025`); a production deployment
 typically uses your **identity provider (SSO)**. See
-[Getting started](install.md#choosing-an-auth-mode) for the three sign-in modes. You land on
+[Getting started](install.md#choosing-an-auth-mode) for the sign-in modes. You land on
 the **Dashboard** — empty for now, with a **Get started** panel listing the four steps this
 tutorial walks through (connect a data source, create a suite, add a check, run it). The
 panel offers the next step you are allowed to take, is the same for everyone in the
@@ -442,8 +445,8 @@ like this:
 
     *Adding a Snowflake connection, start to finish (12 s)*
 
-2. Pick your datasource type (Snowflake, Unity Catalog, ADLS Gen2, S3, or Apache
-   Iceberg). The form is spec-driven — it asks only for what that type needs.
+2. Pick your datasource type (Snowflake, Unity Catalog, ADLS Gen2, S3, Apache Iceberg,
+   PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena or Amazon Redshift). The form is spec-driven — it asks only for what that type needs.
 
     ![Choosing a datasource type: warehouses, lakehouses, cloud storage, and the optional orchestration providers](../assets/screenshots/connection-type-picker.png){ .screenshot }
 
@@ -534,7 +537,8 @@ If a run *failed to execute* (bad credential, unreachable store), it shows a pla
 The short version is below; the full walk-through with screenshots is
 [Your first alert](first-alert.md).
 
-1. On the suite, open **Notifications** and add a channel — Teams, Slack, or email — and pick
+1. On the suite, open **Notifications** and link a channel — Teams, Slack, email or a
+   webhook, defined by an Admin — and pick
    a threshold (the default **warn-and-worse** is a good start).
 
 2. Now a breaching run notifies you, with a deep link back to the run and the
@@ -658,8 +662,8 @@ code in the bundled inbox at **`http://localhost:8025`**.
 - **Loopback-only:** both published ports (`:3000` and the inbox on `:8025`) bind to
   `127.0.0.1` — the stack is reachable from your own machine but never the LAN. That
   matters more than usual for `:8025`, which serves live sign-in codes to anyone who can
-  reach it. **Not for production** — a real deploy uses the OpenTofu stack
-  (`deploy/terraform/azure`, ADR 0024).
+  reach it. **Not for production** — a real deploy uses the OpenTofu stacks
+  (`deploy/terraform/azure` or `deploy/terraform/aws`, ADR 0024).
 - **Try it on real data:** add `--profile demo` to the `up` command. It also starts a
   sample warehouse (PostgreSQL) holding a small shop dataset with deliberate defects, and
   connects DataQ to it: a connection named *Demo warehouse (PostgreSQL)*, two suites
@@ -929,7 +933,7 @@ generates local-dev credentials on first run.
 ## Running tests
 
 The DB-backed tests need a real Postgres (`gen_random_uuid()`/jsonb, which SQLite
-can't host); notification tests also need Redis. The suite is ~4,800 tests and growing —
+can't host); notification tests also need Redis. The suite is ~6,500 tests and growing —
 exact counts below drift with every PR, so treat them as shapes, not contracts. There are
 three ways to run:
 
@@ -1608,7 +1612,8 @@ re-runs the check and never changes the suite.
 ## Write SQL from a sentence
 
 Custom-SQL checks are the most flexible check type and the slowest to author. On a suite
-whose target is a table on a SQL datasource (Snowflake or Unity Catalog), start a check,
+whose target is a table on a SQL datasource (Snowflake, Unity Catalog or one of the generic
+SQL engines — PostgreSQL, MySQL, Trino, SQL Server, Athena, Redshift), start a check,
 pick **Custom SQL**, and describe the rule instead of writing it. **Generate from a
 description** sits beside the hand-written Custom SQL card — same check type underneath,
 just a different starting point. The description box appears only when you start from that
@@ -2043,10 +2048,11 @@ itself can be checked.
 
 Editing a field that decides *where* the credential is sent — Snowflake `account`, ADLS
 `account_url` / `auth_type` / `tenant_id` / `client_id`, S3/dbt `endpoint_url`, Unity Catalog `workspace_url`, Iceberg `catalog_uri` /
-`warehouse` / `properties` / `secret_property`, PostgreSQL / MySQL `host` / `port`, Trino
+`warehouse` / `properties` / `secret_property`, PostgreSQL / MySQL / Redshift `host` / `port`, Trino
 `host` / `port` / `sslmode` / `ca_bundle` / `auth_type`, SQL Server `host` / `port` / `auth_type` /
-`tenant_id` / `client_id` / `ca_bundle` / `driver`, Airflow
-`base_url`, dbt `artifacts_uri` —
+`tenant_id` / `client_id` / `ca_bundle` / `driver`, Athena `host` / `region` / `work_group` /
+`s3_staging_dir`, Airflow `base_url`, dbt `artifacts_uri` / `endpoint_url` / `account_url` /
+`auth_type` / `tenant_id` / `client_id` —
 requires re-entering
 that credential in the same save. The edit form asks for it as soon as you change one of
 those fields; through the API the request is rejected with `422 credential_redirect` until
@@ -2765,7 +2771,7 @@ expectation can sit side by side, so the label is per check, not per run.
 
 ## Author a check
 
-1. Create (or open) a **suite** and point it at a **target** — a table (Snowflake/UC/PostgreSQL), a
+1. Create (or open) a **suite** and point it at a **target** — a table (Snowflake, Unity Catalog or any of the SQL engines), a
    file/path or batch pattern (ADLS/S3), or an Iceberg `namespace.table`. On every datasource
    you can **browse** for it instead of typing it — see below.
 2. **Add check** opens a dedicated page (`/suites/<id>/checks/new`): pick a **category**,
@@ -2851,8 +2857,9 @@ or all of them).
 timestamp stored as text against a Python `strftime` format, and *Column values are valid
 JSON* parses a text payload column. Great Expectations implements both for dataframe
 batches only, so they are offered on flat files, Iceberg and Unity Catalog but **not on
-Snowflake**, where the editor hides them and the API rejects them — use a custom-SQL check
-(or a VARIANT column) there rather than saving a check that would error on every run.
+Snowflake or the generic SQL engines** (PostgreSQL, MySQL/MariaDB, Trino, SQL Server, Athena,
+Redshift), where the editor hides them and the API rejects them — use a custom-SQL check
+(or a VARIANT column on Snowflake) there rather than saving a check that would error on every run.
 
 ### Which expectation types are available
 
@@ -2890,7 +2897,7 @@ a two-part name would silently resolve against the session's default schema — 
 *different table*, quietly checked. A UC target without a schema therefore errors
 its custom-SQL checks (with that reason on the result) while every other check in
 the suite runs normally. Set the schema on the suite's run target to fix it.
-Snowflake, PostgreSQL, MySQL and Trino are unaffected — their schema comes from the connection.
+The other SQL datasources are unaffected — their schema comes from the connection or the run target.
 
 ### Snowflake DMF (ADR 0036)
 
@@ -3060,7 +3067,7 @@ accuracy, validity or consistency depending on why you wrote it. Under zero-samp
 *Did the shape change under you?* Capture a **baseline** column-name/type snapshot,
 then each run diffs the live snapshot against it and flags any add / drop /
 type-change. Introspection is per-datasource, never a `CheckRunner`/GX pass or a
-data scan: `information_schema` for Snowflake/Unity Catalog/PostgreSQL/MySQL/Trino, the Parquet footer (or
+data scan: `information_schema` for Snowflake/Unity Catalog/PostgreSQL/MySQL/Trino/SQL Server/Athena (Redshift reads `svv_columns`, which also lists late-binding views), the Parquet footer (or
 a bounded CSV header sample, or a JSON file's first 1 MiB) for ADLS Gen2/S3 flat files, and the loaded table's own
 metadata for Iceberg. Re-baseline explicitly once you've reviewed a drift and want
 it as the new normal — it is never re-baselined for you.
@@ -3148,9 +3155,9 @@ doesn't belong to. That matters because the point of dimensions is coverage —
 "this table has no Timeliness checks at all" is the actionable finding, and it
 would be a lie if unclassified checks were silently bucketed.
 
-Checks created before this feature landed are unclassified until you next edit
-them; they were deliberately not bulk-classified, so a derived guess is never
-mistaken for someone's decision.
+Checks created before this feature landed were classified once by the same
+derivation when it shipped (ADR 0038's §5 amendment); types with no derivable
+dimension, such as custom SQL, stayed unclassified.
 
 ### Type names for `expect_column_values_to_be_of_type`
 
@@ -3257,6 +3264,11 @@ Stores you write checks **against** (see [Datasources & checks](datasources-chec
 - **Apache Iceberg** — native `pyiceberg` read straight from object storage, no query
   engine in front: `namespace.table` addressing, REST / SQL / Glue / Hive catalogs,
   credential-less catalogs supported, also reads Delta UniForm tables (ADR 0030) through Unity Catalog's Iceberg REST catalog (`/api/2.1/unity-catalog/iceberg-rest`). Reading the data files needs Unity Catalog to vend storage credentials: the metastore must allow external data access, and the principal needs `EXTERNAL USE SCHEMA` on the schema. Databricks Free Edition's default storage supports neither, so there only the table metadata loads.
+- **PostgreSQL**, **MySQL / MariaDB**, **Trino**, **SQL Server** (incl. Azure SQL, Synapse
+  and Fabric SQL), **Amazon Athena** and **Amazon Redshift** — the generic SQL engines
+  (ADR 0044/0045): checks push down as SQL, read-only sessions wherever the engine has one.
+- **Fabric OneLake** lakehouse files — through an ADLS Gen2 connection with a service
+  principal, not a separate type.
 
 ## Checks & authoring
 
@@ -3275,6 +3287,8 @@ schema-drift / anomaly / comparison** monitor kinds:
   count, future-timestamp percent) can instead run on Snowflake's own **Data Metric Functions (DMF)** engine — a separate
   category in the check editor, selected per check. The same category runs **custom DMFs**
   your team created in Snowflake, over columns of the suite's table.
+  On a Unity Catalog connection, a **Databricks DQX** category runs DQX row rules as a
+  serverless job in your own workspace (ADR 0036).
 - **Custom SQL** — an escape hatch for cross-column/join rules: rows returned = failures.
   Read-only, single-statement (enforced). SQL datasources only.
 - **Freshness monitor** — hours since the latest timestamp (is the data stale?). On a
@@ -3283,7 +3297,8 @@ schema-drift / anomaly / comparison** monitor kinds:
   a timestamp inside the data cannot see.
 - **Volume monitor** — row count within an expected range (did the load land whole?).
   Freshness + volume are the auto-monitor kinds and run on **every** datasource: the SQL
-  datasources (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server), Apache Iceberg (computed natively via a
+  datasources (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server / Athena /
+  Redshift), Apache Iceberg (computed natively via a
   `pyiceberg` scan rather than SQL), and ADLS Gen2 / S3 flat files.
 - **Schema-drift monitor** — flags a column added, dropped, or type-changed against a
   stored baseline (did the shape change under you?). Also runs on **every** datasource —
@@ -3337,8 +3352,8 @@ Four ways a suite runs (all the same authz — [feature matrix](../reference/fea
   severity-weighted **health score**, pass rate, run counts, average duration, per-day
   trends, and per-suite performance. Assets are the primary lens (ADR 0034 nav inversion):
   the sidebar leads with **Assets** above Suites, and every suite/run links back to its asset.
-- **Warehouse inventory sync** (ADR 0040) — an opt-in per-connection toggle
-  (Snowflake / Unity Catalog connection forms) that enumerates every table the
+- **Warehouse inventory sync** (ADR 0040) — a per-connection toggle, on by default
+  (Snowflake / Unity Catalog / the generic SQL engines), that enumerates every table the
   connection can see into the asset view daily, so a table with no suite, run,
   or lineage signal is **visible as unmonitored** instead of invisible. Synced
   tables age out automatically once dropped from the warehouse. Unity Catalog
@@ -3403,6 +3418,9 @@ are **not** datasources ([Orchestration](orchestration.md)):
 
 All three sit behind one provider interface; **trigger bindings** map
 `(provider, pipeline/DAG/job, env) → suite`.
+A pipeline stage can also **gate** on DataQ (ADR 0046): `POST /api/v1/orchestration/gate`
+starts its bound suites for this run and waits for the verdict, or only reads it — DataQ
+answers, your DAG decides ([Gate a pipeline on DataQ](orchestration.md#gate-a-pipeline-on-dataq)).
 
 ## Alerting
 
@@ -3612,7 +3630,7 @@ The tools split three ways, not two:
 |---|---|
 | 401 on every request | Token expired (~1 h) → paste a fresh one. Or the client followed the `/mcp` → `/mcp/` redirect and dropped the header → use `/mcp/` directly. |
 | 307 responses | Missing trailing slash — configure `/mcp/`. |
-| Server absent / connection refused locally | The MCP server is unmounted unless the deployment has a working sign-in configuration — SSO (`AZURE_*`) or email OTP (`AUTH_EMAIL_*` + an allowlist); fail-closed by design. |
+| Server absent / connection refused locally | The MCP server is unmounted unless the deployment has a working sign-in configuration — SSO (`AZURE_*`, or `OIDC_ISSUER` + `OIDC_AUDIENCE`) or email OTP (`AUTH_EMAIL_*` + an allowlist); fail-closed by design. |
 | 401 with an API key on an email-OTP deployment | Check you sent the **API key**, not your session cookie/token: in OTP mode a `dq_live_…` key is the only credential `/mcp` accepts. |
 | Tool call returns "not found" for a suite you can see in the UI as someone else | MCP calls run as the token's user — suite access is per-user, same as the web app. |
 
@@ -3623,7 +3641,8 @@ The tools split three ways, not two:
 
 # Notifications & alerting
 
-DataQ alerts on run outcomes over **Microsoft Teams**, **Slack**, and **email** — all
+DataQ alerts on run outcomes over **Microsoft Teams**, **Slack**, **email** and generic
+HMAC-signed **webhooks** — all
 behind one `ResultPublisher` seam, so every channel gets the same severity-aware
 behaviour. Alerts fire from the worker as soon as a run reaches a terminal state.
 
@@ -3900,7 +3919,8 @@ logged as `orchestration_poll_failed` with `provider=dbt`. If lineage still look
 the dbt connection** (`Connections → the dbt connection → Test`): a red test is your answer.
 
 **2. Fixing the credential is not enough — the backlog is already stranded.** The poll only
-records builds whose `generated_at` falls inside its **15-minute lookback**. Once the credential
+records builds whose `generated_at` falls inside its **15-minute lookback** (the half-hourly gap
+recovery widens that to one hour, which still misses a longer outage). Once the credential
 is restored the poll starts succeeding and still records *nothing*, because every build produced
 during the outage is now older than the window. The artifacts are sitting right there in the
 store, and DataQ will not read them.
@@ -4019,13 +4039,13 @@ own case — Snowflake `ACCOUNT_USAGE` upper, Unity Catalog `system.access` lowe
 lineage is a **distinct seam** (`lineage.warehouse.WarehouseLineageProvider`, SQL → edge pairs),
 not a second `LineageProvider`.
 
-**Dark by default** (`WAREHOUSE_LINEAGE_ENABLED=true` to turn on): the views need a grant
+**On by default** (`WAREHOUSE_LINEAGE_ENABLED=false` opts a deployment out): the views need a grant
 (Snowflake `IMPORTED PRIVILEGES` on `SNOWFLAKE` — or the finer `SNOWFLAKE.GOVERNANCE_VIEWER`
 database role, which covers the ACCESS_HISTORY/OBJECT_DEPENDENCIES tiers without blanket
 ACCOUNT_USAGE; UC `SELECT` on `system.access`) the connection's principal may not have. A tier
 the role can't read **skips with a "not authorized" reason and the ladder descends** —
 tested live: a denied tier never aborts the tiers the role *can* read, and a fully-denied
-account reports classified-unavailable, never a confident empty. When enabled, a **daily beat** (`refresh_warehouse_lineage`) refreshes every
+account reports classified-unavailable, never a confident empty. A **daily beat** (`refresh_warehouse_lineage`) refreshes every
 Snowflake / Unity Catalog connection independently — one unreachable warehouse records a classified
 error and never aborts the sweep — writing edges tagged `source='snowflake'` / `'unity_catalog'`
 with the connection's id (the full-constraint regime, so a warehouse refresh never touches a dbt or
@@ -4040,11 +4060,11 @@ separately-gated `column_lineage` degrades honestly: table edges still land, wit
 Snowflake's column grain comes from `ACCESS_HISTORY`'s `objects_modified[].columns[].directSources`
 on **every** tier — including when `GET_LINEAGE` answers, whose table-domain rows carry no column
 names — as a refinement of the table edges, never a source of new ones; it only sees DML writes, so
-a view dependency never has pairs. Live-verified on an Enterprise account as a least-privileged
+a view dependency gets no pairs from it. Live-verified on an Enterprise account as a least-privileged
 reader role: the refinement runs on the `GET_LINEAGE` tier and records `captured`; an account whose
 writes are all COPY / `INSERT … VALUES` (empty `directSources`) and whose downstream layer is views
-honestly reads `none_recorded` on every edge. Column lineage *through views* exists in Snowflake
-(`GET_LINEAGE` at `COLUMN` domain) but is not read yet.
+honestly reads `none_recorded` on every `ACCESS_HISTORY`-only edge. Column lineage *through views*
+comes from `GET_LINEAGE` at `COLUMN` domain — see *Column lineage for views and dynamic tables* below.
 
 **Why an edge has no pairs is always stated** (ADR 0034 amendment 2026-09-27). Every
 lineage edge on the asset page, `GET /assets/{id}` and MCP `get_asset` carries a
@@ -4307,8 +4327,8 @@ instead of retrying in a loop.
 
 ## The rest of the API
 
-`DataQClient` covers running, waiting, exporting and importing suites, and acknowledging or
-resolving incidents. Every other REST endpoint is available through the generated layer, typed
+`DataQClient` covers running, waiting and gating, exporting, importing, validating and applying
+suites, and acknowledging or resolving incidents. Every other REST endpoint is available through the generated layer, typed
 from the API's own specification:
 
 ```python
@@ -4412,9 +4432,11 @@ to be safe". See [Prefer triggers over schedules](best-practices.md#prefer-trigg
 
 ## 6. Configure alerting
 
-**Do:** Suite → **Notifications** → pick channels (Teams / Slack / email), the threshold, and
-recipients. Store channel webhooks/keys as secrets (**Admin → Integrations** for the inbound
-ones).
+**Do:** an Admin defines the channels once (Teams / Slack / email / webhook) under
+**Admin → Settings → Notification channels**; then Suite → **Notifications** → link channels and
+pick the threshold. Linked channels add to any workspace-wide default destination; they do not
+replace it. Channel webhook URLs are kept in the secret store (**Admin → Integrations**
+holds the inbound ones).
 
 **Recommended:**
 
@@ -4626,8 +4648,8 @@ Changes that took effect without the deprecation window above, and why:
 
 | Release | Change | Why no deprecation window |
 |---|---|---|
-| Unreleased | `POST /connections`, a config- or credential-changing `PATCH /connections/{id}`, and `POST /connections/{id}/reauth` return `422 connection_test_failed_on_save` and write nothing when the connection's test fails; `PUT /admin/llm` does the same for an enabled provider (`422 llm_test_failed_on_save`). | A request this now refuses used to save a connection that could not work, and a failing re-auth used to overwrite a working credential. A client that wants the old behaviour sends the new optional `skip_test: true`, so no client is left without a path. |
-| Unreleased | On `PATCH /suites/{id}/checks/{id}`, an explicit `null` for `warn_threshold`, `fail_threshold` or `critical_threshold` now clears that threshold; before, it was ignored. Omitting the key keeps the stored value, as it always did. | It is a bug fix: a threshold, once set, could not be removed through the API or the check editor at all, and `null` had no documented meaning there. The Python client is unaffected (it omits fields you do not set). |
+| v1.2.0 | `POST /connections`, a config- or credential-changing `PATCH /connections/{id}`, and `POST /connections/{id}/reauth` return `422 connection_test_failed_on_save` and write nothing when the connection's test fails; `PUT /admin/llm` does the same for an enabled provider (`422 llm_test_failed_on_save`). | A request this now refuses used to save a connection that could not work, and a failing re-auth used to overwrite a working credential. A client that wants the old behaviour sends the new optional `skip_test: true`, so no client is left without a path. |
+| v1.2.0 | On `PATCH /suites/{id}/checks/{id}`, an explicit `null` for `warn_threshold`, `fail_threshold` or `critical_threshold` now clears that threshold; before, it was ignored. Omitting the key keeps the stored value, as it always did. | It is a bug fix: a threshold, once set, could not be removed through the API or the check editor at all, and `null` had no documented meaning there. The Python client is unaffected (it omits fields you do not set). |
 
 ## The export document's `version`
 
@@ -5104,7 +5126,7 @@ Great Expectations built-ins that look at the values in one or more columns. Eac
 | **Column values do not match regex** | `expect_column_values_to_not_match_regex` | No value matches the given regular expression — for catching a pattern that should never appear (a stray delimiter, an unredacted identifier). | Validity | `column`, `regex`, `mostly` *(optional)* | warn / fail / critical | Snowflake, ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL / MariaDB, Trino, Amazon Athena, Amazon Redshift — not SQL Server (no translation for that SQL dialect; refused at author time) · SQL pushdown on Unity Catalog |
 | **Column values match a list of regexes** | `expect_column_values_to_match_regex_list` | Every value matches the regexes in the list — by default ANY one of them is enough, for a column carrying several legitimate formats (e.g. two phone-number conventions). | Validity | `column`, `regex_list`, `match_on` *(optional)*, `mostly` *(optional)* | warn / fail / critical | Snowflake, ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL / MariaDB, Trino, Amazon Athena, Amazon Redshift — not SQL Server (no translation for that SQL dialect; refused at author time) · SQL pushdown on Unity Catalog |
 | **Column values match none of a list of regexes** | `expect_column_values_to_not_match_regex_list` | No value matches ANY regex in the list — a deny-list of forbidden formats. | Validity | `column`, `regex_list`, `mostly` *(optional)* | warn / fail / critical | Snowflake, ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL / MariaDB, Trino, Amazon Athena, Amazon Redshift — not SQL Server (no translation for that SQL dialect; refused at author time) · SQL pushdown on Unity Catalog |
-| **Column values are valid JSON** | `expect_column_values_to_be_json_parseable` | Every value parses as JSON — for a payload/metadata column stored as text. Not offered on Snowflake, PostgreSQL, MySQL, Trino or SQL Server: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there (or, on Snowflake, a VARIANT column). | Validity | `column`, `mostly` *(optional)* | warn / fail / critical | ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg — not Snowflake, PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena, Amazon Redshift (no SQL implementation; refused at author time) |
+| **Column values are valid JSON** | `expect_column_values_to_be_json_parseable` | Every value parses as JSON — for a payload/metadata column stored as text. Not offered on Snowflake, PostgreSQL, MySQL, Trino, SQL Server, Athena or Redshift: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there (or, on Snowflake, a VARIANT column). | Validity | `column`, `mostly` *(optional)* | warn / fail / critical | ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg — not Snowflake, PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena, Amazon Redshift (no SQL implementation; refused at author time) |
 | **Column values are of type** | `expect_column_values_to_be_of_type` | Every value in the column matches the given data type. | Validity | `column`, `type_`, `mostly` *(optional)* | warn / fail / critical | All datasources |
 | **Column values are of one of several types** | `expect_column_values_to_be_in_type_list` | Every value in the column matches at least one of the given data types — the tolerant sibling of “Column values are of type”, for a column whose type legitimately varies by datasource or load. | Validity | `column`, `type_list`, `mostly` *(optional)* | warn / fail / critical | All datasources |
 | **Compound columns unique** | `expect_compound_columns_to_be_unique` | The COMBINATION of values across the listed columns is distinct on every row — a multi-column primary or business key. Each column on its own may repeat freely. | Uniqueness | `column_list`, `mostly` *(optional)* | warn / fail / critical | All datasources · SQL pushdown on Unity Catalog |
@@ -5114,7 +5136,7 @@ Great Expectations built-ins that look at the values in one or more columns. Eac
 | **Columns sum to a total** | `expect_multicolumn_sum_to_equal` | Row by row, the listed columns add up to the given total — e.g. subtotal + tax + shipping = total. | Validity | `column_list`, `sum_total`, `mostly` *(optional)* | warn / fail / critical | All datasources · SQL pushdown on Unity Catalog |
 | **Column distinct values in set** | `expect_column_distinct_values_to_be_in_set` | Every DISTINCT value present in the column is one of an allowed set — reports WHICH unexpected values exist rather than how many rows carry them. Use “Column values in set” when you care about the row count. | Validity | `column`, `value_set` | None — pass/fail only | All datasources · SQL pushdown on Unity Catalog |
 | **Column distinct values contain set** | `expect_column_distinct_values_to_contain_set` | Every value in the given set appears at least once in the column — catches a category that stopped arriving. The column may also contain other values. | Completeness | `column`, `value_set` | None — pass/fail only | All datasources · SQL pushdown on Unity Catalog |
-| **Column values match a date format** | `expect_column_values_to_match_strftime_format` | Every value parses under the given strftime format — for a date or timestamp stored as text. Not offered on Snowflake, PostgreSQL, MySQL, Trino or SQL Server: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there. | Validity | `column`, `strftime_format`, `mostly` *(optional)* | warn / fail / critical | ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg — not Snowflake, PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena, Amazon Redshift (no SQL implementation; refused at author time) |
+| **Column values match a date format** | `expect_column_values_to_match_strftime_format` | Every value parses under the given strftime format — for a date or timestamp stored as text. Not offered on Snowflake, PostgreSQL, MySQL, Trino, SQL Server, Athena or Redshift: Great Expectations implements this one only for dataframe batches, so a SQL batch would error on every run. Use a custom-SQL check there. | Validity | `column`, `strftime_format`, `mostly` *(optional)* | warn / fail / critical | ADLS Gen2, AWS S3, Unity Catalog, Apache Iceberg — not Snowflake, PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena, Amazon Redshift (no SQL implementation; refused at author time) |
 
 ### Examples
 
@@ -6281,7 +6303,7 @@ endpoint URL; every row in this column applies identically either way. See
 [Datasources & checks](../guides/datasources-checks.md#s3-compatible-object-stores).
 
 Custom SQL runs a SQL query, so it's **SQL-datasource only** (Snowflake, Unity Catalog, PostgreSQL,
-MySQL/MariaDB, Trino, SQL Server;
+MySQL/MariaDB, Trino, SQL Server, Athena, Redshift;
 there is no flat-file support, and no issue currently tracks adding it — flat files get freshness/volume monitors instead (see the rows above);
 Iceberg is not SQL-queryable — reads go through `pyiceberg` scans, not a query engine).
 **Comparison checks** (ADR [0015](../adr/0015-two-connection-comparison-check-model.md))
@@ -6299,8 +6321,8 @@ timestamp column** measures the object's arrival time instead — catching a pro
 stopped sending files, which a timestamp inside the data cannot see. Flat-file suites target a file or a batch pattern (e.g.
 `orders_*.csv`) in CSV, Parquet or JSON (JSON Lines / an array of flat objects; nested JSON is
 refused); Iceberg suites target a `namespace.table`. Dry-run
-preview works on every datasource with a runner — Snowflake, Unity Catalog, flat files,
-and Iceberg.
+preview works on every datasource with a runner — Snowflake, Unity Catalog, the generic SQL
+engines (PostgreSQL, MySQL/MariaDB, Trino, SQL Server, Athena, Redshift), flat files and Iceberg.
 
 ## Assets & lineage × datasources
 
@@ -6351,6 +6373,8 @@ five mechanisms:
 | Trino | `trino://{host}:{port}` / `catalog.schema.table` | ✅ (+ inventory sync) | ✅ (dbt-trino naming) | ✅ | ✅ | —⁴ |
 | PostgreSQL | `postgres://{host}:{port}` / `database.schema.table` | ✅ (+ inventory sync) | ✅ (dbt-postgres naming) | ✅ | ✅ | —⁴ |
 | SQL Server | `mssql://{host}:{port}` / `database.schema.table` | ✅ (+ inventory sync) | ✅ where dbt-sqlserver / dbt-fabric emit `database.schema.table` names | ✅ | ✅ | —⁴ |
+| Amazon Athena | `awsathena://athena.{region}.amazonaws.com` / `catalog.database.table` | ✅ (+ inventory sync) | ✅ where dbt-athena emits `catalog.database.table` names | ✅ | ✅ | —⁴ |
+| Amazon Redshift | `redshift://{cluster or workgroup}.{region}` / `database.schema.table` | ✅ (+ inventory sync) | ✅ (dbt-redshift naming) | ✅ | ✅ | —⁴ |
 | BI reports / dashboards | not yet materialized² | — | — | — | reserved² | — |
 
 ¹ dbt-managed Iceberg tables surface through the warehouse adapter (Snowflake/UC rows);
@@ -6358,7 +6382,7 @@ native `pyiceberg` connections have no dbt slice of their own.
 ³ Warehouse-native lineage reads a query engine's lineage view; a native `pyiceberg`
 connection has no engine to ask (an engine-registered Iceberg table is covered under its
 Snowflake/UC connection).
-⁴ PostgreSQL, MySQL, Trino and SQL Server keep no lineage log DataQ reads, so there is no warehouse-native pull; the
+⁴ PostgreSQL, MySQL, Trino, SQL Server, Athena and Redshift keep no lineage log DataQ reads, so there is no warehouse-native pull; the
 inventory sync still enumerates its tables (ADR 0040).
 ² The lineage graph's node-kind contract reserves `bi_report`/`dashboard` — a BI node
 (e.g. a Power BI report downstream of a mart) becomes representable the moment a capable
@@ -6393,7 +6417,7 @@ catalog knowing about them (mechanism ④).
 
 | Capability | Notes |
 |---|---|
-| Channels | Teams, Slack, email — each workspace default or per-suite override; reusable channels (incl. a generic webhook type) also exist, API-only currently — [details](../guides/notifications.md) |
+| Channels | Teams, Slack, email — each workspace default or per-suite override; reusable channels (incl. a generic webhook type) are managed by an Admin in Settings → Notification channels and linked to any number of suites — [details](../guides/notifications.md) |
 | Threshold | Per suite: fail-only / warn+ (default) / always |
 | Routing | Severity-aware urgency; critical escalates |
 | Dedup | First failure / escalation only; clean run resets |
@@ -6420,7 +6444,7 @@ credential (`auth_type: token`, the default — sent as `Authorization: Bearer �
 | Astronomer (Astro) | ✅ via an Astro **Deployment API token** as the Bearer credential, with `base_url` set to the deployment's Airflow URL (`https://<org>.astronomer.run/<deployment-id>`) | **Untested** — no Astro deployment has been exercised; compatible by construction, not by observation |
 | MWAA / Cloud Composer | Likely, same Bearer shape | **Untested** |
 
-The DAG-callback snippet in [`integrations/airflow/`](../../integrations/airflow/) is
+The DAG-callback snippet in [`integrations/airflow/`](https://github.com/TheurgicDuke771/DataQ/tree/main/integrations/airflow) is
 host-agnostic — it POSTs an HMAC-signed event to DataQ and needs only outbound network
 access from the worker, so it applies unchanged on a managed deployment.
 
@@ -6458,8 +6482,9 @@ risk that carries.
 
 | Surface | What |
 |---|---|
-| Web UI | Dashboard · Assets · Connections · Suites · Results · Profile · Admin · Settings (Assets lead as the primary lens — ADR 0034 nav inversion; the Dashboard opens with an asset-health strip, and suites/runs link back to their asset) |
+| Web UI | Dashboard · Assets · Connections · Suites · Results · Profile · Admin (incl. workspace Settings) (Assets lead as the primary lens — ADR 0034 nav inversion; the Dashboard opens with an asset-health strip, and suites/runs link back to their asset) |
 | REST API | Versioned `/api/v1` (Swagger in non-prod) |
+| Python client + `dataq` CLI | Generated from the OpenAPI spec, attached to each GitHub Release ([Python client](../guides/python-client.md)) |
 | MCP | 54 curated tools at `/mcp` for AI assistants (ADR 0008). Served in both auth modes — SSO and email OTP; under OTP the credential is a **PAT only** ([MCP setup](../guides/mcp-setup.md)) |
 
 
@@ -6471,7 +6496,7 @@ risk that carries.
 
 | Term | Meaning |
 |---|---|
-| **Datasource** | A store DataQ runs checks *against*: Snowflake, ADLS Gen2 (incl. Fabric OneLake), S3, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL/MariaDB, Trino, SQL Server (Azure SQL / Synapse / Fabric SQL). |
+| **Datasource** | A store DataQ runs checks *against*: Snowflake, ADLS Gen2 (incl. Fabric OneLake), S3, Unity Catalog, Apache Iceberg, PostgreSQL, MySQL/MariaDB, Trino, SQL Server (Azure SQL / Synapse / Fabric SQL), Amazon Athena, Amazon Redshift. |
 | **Orchestration provider** | A workflow engine DataQ *observes* + triggers from: ADF, Airflow, dbt. Not a datasource. |
 | **Connection** | Stored credentials + config for one datasource or orchestration provider. |
 | **Suite** | A named set of checks that runs against one connection's target. |
@@ -6665,7 +6690,7 @@ in production — this page is the reference.)
 | POST | `/connections/{id}/test` | Test live connectivity. |
 | POST | `/connections/{id}/reauth` | Test a new credential, then rotate it in. |
 | GET | `/connections/{id}/versions` | Config-change history (ADR 0020 snapshots — never credentials). |
-| GET | `/connections/{id}/browse/catalog` | Unity Catalog only: one level of catalogs → schemas → tables (`?catalog=&schema=&limit=`). |
+| GET | `/connections/{id}/browse/catalog` | Unity Catalog: one level of catalogs → schemas → tables; Snowflake, Iceberg and the generic SQL engines (PostgreSQL, MySQL, Trino, SQL Server, Athena, Redshift): schemas → tables (`?catalog=&schema=&limit=`). |
 | GET | `/connections/{id}/browse/files` | ADLS Gen2 / S3 only: the folders and files directly under `?prefix=` in the connection's container/bucket. |
 
 **Roles (ADR 0033).** Connections are shared infrastructure holding credentials, so the gates
@@ -6713,7 +6738,9 @@ status first.
 credential is sent — `account` (Snowflake), `account_url` / `auth_type` / `tenant_id` / `client_id` (ADLS), `endpoint_url` (S3, dbt),
 `workspace_url` (Unity Catalog), `catalog_uri` / `warehouse` / `properties` /
 `secret_property` (Iceberg),
-`base_url` (Airflow), `artifacts_uri` (dbt) — must re-supply that credential in the same
+`base_url` (Airflow), `artifacts_uri` (dbt), `host` / `port` (the generic SQL engines — plus
+`sslmode` / `ca_bundle` / `auth_type` on Trino, `auth_type` / `tenant_id` / `client_id` /
+`ca_bundle` / `driver` on SQL Server, `region` / `work_group` / `s3_staging_dir` on Athena) — must re-supply that credential in the same
 request. Otherwise it returns `422` with `code: "credential_redirect"` and
 `detail.required` naming what to send. A stored credential is never forwarded to a
 destination the caller changed.
@@ -6722,7 +6749,7 @@ destination the caller changed.
 
 A reusable Teams/Slack/email/generic-webhook destination, defined once and referenced from any
 number of suites — the destination only; per-suite `alert_on`/enabled stays on
-`/suites/{id}/notifications` above.
+`/suites/{id}/notifications` (under Suites & checks below).
 
 A `webhook` channel posts an HMAC-SHA256-signed JSON body (header `X-DataQ-Signature`) to an
 admin-supplied `webhook_url` — the vendor-neutral way to reach PagerDuty, Opsgenie, ServiceNow,
@@ -6776,7 +6803,13 @@ URL); linking/unlinking a suite follows that suite's own `view`/`edit` grant.
 | GET | `/suites/{id}/checks/{cid}/versions` · POST `…/versions/{n}/restore` | Version history + restore (restore mints a new version). |
 | GET | `/suites/{id}/checks/{cid}/history` | Result history for the trend view (`metric_value` over time). |
 | GET | `/suites/{id}/checks/{cid}/baseline` · POST `…/rebaseline` | Read / recapture a monitor baseline (schema-drift, anomaly). |
-| GET | `/suites/{id}/export` · POST `/suites/import` | Portable suite document (env promotion). |
+| GET | `/suites/{id}/export` · POST `/suites/import` | Portable suite document (env promotion) — see [Suite document](suite-document.md). |
+| POST | `/suites/validate` | Run every import gate on a document and report all problems; creates nothing. |
+| POST | `/suites/{id}/apply` | Apply a document onto an existing suite (checks matched by name; `prune` deletes the rest), or report its drift. Idempotent. |
+| POST | `/suites/{id}/checks-bulk/delete` · `…/snooze` · `…/unsnooze` · `…/thresholds` | Act on many checks at once — all-or-nothing. |
+| GET | `/suites/{id}/suggestions` · POST `/suggestions/{id}/accept` · `/suggestions/{id}/reject` | Automatic-coverage review queue: proposed rules; accepting one creates the check. |
+| GET | `/suites/{id}/cadence` | The bound pipeline's cadence — a freshness-threshold hint. |
+| GET | `/suites/{id}/deletion_impact` | Exact dependent counts a suite delete would destroy. |
 | GET / PUT | `/suites/{id}/column-policy` | Read / set the failing-sample redaction policy. |
 | POST | `/suites/{id}/column-policy/suggest` | Heuristic PII-column suggestions from a profile. |
 | POST | `/suites/{id}/profile` | Column profiler (no persistence; audited as a data access). |
@@ -6796,6 +6829,9 @@ URL); linking/unlinking a suite follows that suite's own `view`/`edit` grant.
 | POST | `/runs/{id}/cancel` | Cancel a queued/running run. |
 | GET | `/runs/{id}/results/{rid}/comparison_report` | CSV/XLSX diff report of a comparison result (derived on demand, never stored). |
 | GET | `/dashboard/summary` | KPIs + run trend + per-suite performance. |
+| GET | `/dashboard/dimensions` | Each DQ dimension across every suite (workspace-wide, identical for every member). |
+| GET | `/dashboard/coverage` | Coverage of the asset inventory and the false-positive rate of automatic checks. |
+| GET | `/dashboard/onboarding` | Which first-run steps the workspace has done. |
 
 ### Assets & incidents
 
@@ -6803,8 +6839,10 @@ URL); linking/unlinking a suite follows that suite's own `view`/`edit` grant.
 |---|---|---|
 | GET | `/assets` · `/assets/{id}` | The monitored tables/files (ADR 0034/0037): health rollup, composing suites (grant-filtered), lineage. Paged, `X-Total-Count`. |
 | PATCH | `/assets/{id}` | Set owner / description (workspace-Admin-only). |
+| GET | `/assets/{id}/column-lineage` | Trace one column's lineage upstream or downstream. |
 | GET | `/incidents` · `/incidents/{id}` | Open/acknowledged/resolved incidents with the evidence card (suite-granted; 404-no-leak). |
 | POST | `/incidents/{id}/ack` · `/incidents/{id}/resolve` | Lifecycle transitions (requires `edit` on the suite). |
+| GET | `/incidents/{id}/narrative` | The latest root-cause narrative for an incident (`view`). |
 
 ### Scheduling & orchestration
 
@@ -6816,6 +6854,7 @@ URL); linking/unlinking a suite follows that suite's own `view`/`edit` grant.
 | GET / PATCH / DELETE | `/trigger-bindings/{id}` | Read / update (incl. enable/disable) / delete. |
 | GET | `/pipeline_runs` · `/orchestration/pipelines` | Monitored orchestrator runs. |
 | GET | `/orchestration/near-misses` | Succeeded pipeline runs that matched **no** enabled binding (why a trigger never fired). |
+| POST | `/orchestration/gate` | Pipeline gate (ADR 0046): start the bound suites for this pipeline run and report the verdict, or only read it. Idempotent per `provider_run_id`; poll until `state` is `passed` / `failed` / `error`. |
 | POST | `/orchestration/events/{provider}` | Inbound webhook (adf / airflow / dbt) — authenticated by shared-secret / HMAC, not a PAT. |
 
 ### LLM-assisted authoring (ADR 0042)
@@ -6849,6 +6888,11 @@ an outbound model request.
 | GET | `/admin/offboarding/{user_id}/preview` | What offboarding this user would do: suites they own with counts, live tokens and sessions, whether membership can be withdrawn here, and whether they are the last admin. Reserves nothing. |
 | POST | `/admin/offboarding/{user_id}` | Transfer every suite they own, revoke every token and session, withdraw their membership — one transaction. Last-admin guarded; `confirm_email` must match. A step that cannot run is reported in `skipped` with its reason. Authored history is kept (audited). |
 | GET | `/admin/audit-events` | The append-only audit log (config + data-access events, ADR 0041). |
+| GET | `/admin/audit-events/verify` | Verify the audit log's hash chain for tampering. |
+| POST | `/admin/data-subject-requests/export` · `…/erase` | Export or erase every captured sample cell naming `column` = `value` (GDPR/CCPA subject requests; erase is audited). |
+| GET | `/admin/health` | Workspace health — poll staleness, beat heartbeat, queue depth, and per-connection credential health. |
+| GET / PUT | `/admin/llm` · POST `/admin/llm/test` | Outbound-LLM provider config; the test probes a draft without saving it. |
+| POST | `/admin/auth-email/test` | Send a test email to the caller over the configured `AUTH_EMAIL_*` transport (throttled per admin). |
 | GET | `/admin/deployment` | Declared residency / deployment posture (`DEPLOYMENT_REGION`); `zero_sample_mode` is the effective value and `zero_sample_source` says which of env / setting turned it on. |
 | GET | `/admin/privacy` | Zero-sample mode: effective value, stored toggle, source, whether the environment pins it. |
 | PUT | `/admin/privacy` | Set zero-sample mode (audited); 409 when the environment pins it on and the request turns it off. |
@@ -7203,9 +7247,9 @@ repository's `CONTRIBUTING.md`. The short version:
 
 ## Editing these docs
 
-This site is **MkDocs Material** built from the repo's `docs/` folder and published to
+This site is **MkDocs Material** built from the repo's `docs/site/` folder (the mkdocs `docs_dir`) and published to
 GitHub Pages by the `docs` workflow on every push to `main`. To change a page, edit the
-Markdown under `docs/` and open a PR — the **Edit** pencil on any page links straight to
+Markdown under `docs/site/` and open a PR — the **Edit** pencil on any page links straight to
 the source. Preview locally:
 
 ```bash
@@ -7219,7 +7263,7 @@ Keep modules **short and plain-language**; link to the in-repo source of truth (
 ## Decision records
 
 Architecture decisions are recorded as **ADRs** in
-[`docs/adr/`](https://github.com/TheurgicDuke771/DataQ/tree/main/docs/site/adr).
+[`docs/site/adr/`](https://github.com/TheurgicDuke771/DataQ/tree/main/docs/site/adr).
 
 ## Ownership
 
@@ -7264,7 +7308,8 @@ the time of the breach. Read it as "when this last failed," never as "right now.
 | `sibling_checks` | Every other check's outcome in the **same run** | The run the failing result belongs to |
 | `same_asset_siblings` | The latest outcome of every *other* check targeting this **same asset**, across every suite, from the last 7 days | Every suite's results on this asset, not just this run's |
 | `upstream_pipeline_run` | The orchestration pipeline run that triggered this suite run, its duration, and its delay against that pipeline's own recent history | The linked `pipeline_runs` row, when one triggered this run |
-| `downstream_blast_radius` | The assets reachable downstream of this one via recorded lineage | The lineage graph, depth-capped |
+| `pipeline_trigger` | Whether an orchestration provider triggered this run, which one, and whether its pipeline run is recorded, ambiguous, or not recorded yet | The run's own `triggered_by` marker |
+| `downstream_blast_radius` | The assets reachable downstream of this one via recorded lineage (`assets`), plus the workspace's lineage-source health (`qualified_by`) | The lineage graph, depth-capped |
 | `profile_diff` | Always `null` | Not implemented — see below |
 
 ## The privacy guarantee
@@ -7297,8 +7342,11 @@ by it, and collapsing them into one "missing data" reading is the mistake this s
 prevent:
 
 - **`upstream_pipeline_run` is `null` for the ordinary case** — a manually-triggered or
-  scheduled run, which is most runs. It means no orchestration pipeline triggered this run, not
-  that one should have and didn't.
+  scheduled run, which is most runs. It is also `null` for a pipeline-triggered run whose
+  pipeline run is not recorded yet (the gate and callback paths start the suite before the
+  poller records it) or is ambiguous. `pipeline_trigger` tells these apart: it reads
+  `{"triggered": false}` for a manual or scheduled run, and names the provider and the
+  pipeline run's recording state otherwise.
 - **`kind_detail` is `null` for an ordinary expectation or comparison check** — the common case,
   where the result's own observed value already is the shape a reader wants, so there is nothing
   to lift out. For a freshness, volume, schema-drift, or anomaly check, by contrast, the card is
@@ -7309,7 +7357,7 @@ prevent:
   is genuinely nothing to show.** A `null` in one of these three specifically means the layer
   could not be built at all (an unexpected failure while assembling it) — distinct from an empty
   result, which means it was built successfully and found nothing.
-- **`downstream_blast_radius` being `[]` has three different real causes that read identically**:
+- **`downstream_blast_radius.assets` being `[]` has three different real causes that read identically**:
   the asset could not be resolved, the asset is a genuine lineage leaf, or the workspace has no
   lineage recorded at all. An empty list here is a floor, not proof that nothing is affected
   downstream.
@@ -7321,8 +7369,8 @@ prevent:
 
 When a narrative is generated over this card, every claim it makes must cite which of a closed,
 fixed set of layer names it rests on: `failing_result`, `kind_detail`, `metric_trend`,
-`sibling_checks`, `same_asset_siblings`, `upstream_pipeline_run`, `downstream_blast_radius`, and
-`check_history` — a longer per-check result history fetched alongside the card, not one of the
+`sibling_checks`, `same_asset_siblings`, `upstream_pipeline_run`, `pipeline_trigger`,
+`downstream_blast_radius`, and `check_history` — a longer per-check result history fetched alongside the card, not one of the
 card's own fields, since the card itself keeps only the last 10 points. `check`, `asset`, and the
 always-null `profile_diff` are identifying context, not evidence a hypothesis can be pinned to,
 so they are deliberately outside this set. A hypothesis that cannot point to a real layer in it
@@ -7408,13 +7456,15 @@ what the tool is supposed to require.
   in the next category, so the same test suite asserts none of them do. The majority of the
   surface.
 - **State-changing.** Creates, updates, deletes, or triggers something. Most are gated on
-  edit-level access to the suite (or other resource) the call acts on; a few that create a
-  resource with nothing yet to gate on — importing a suite, testing a not-yet-saved
-  connection — are instead gated on holding at least the Member workspace role.
+  edit-level access to the suite (or other resource) the call acts on; one that creates a
+  resource with nothing yet to gate on — importing a suite — is instead gated on holding at
+  least the Member workspace role.
 - **Live-probe.** Persists nothing in DataQ's own storage, but opens a live connection to a
   remote system using a stored credential — a real cost and a real side effect on that remote
   system even though nothing is saved here. These carry the same access requirement a
-  state-changing tool on the same resource would, not a separate tier of their own: "nothing was
+  state-changing tool on the same resource would (edit on the suite, or — for testing or
+  browsing a stored connection, which has no suite to gate on — the Member workspace role),
+  not a separate tier of their own: "nothing was
   written to our database" is not the same guarantee as "nothing happened," so the annotation
   exists to flag that distinction explicitly rather than leave it implied.
 
@@ -7534,7 +7584,7 @@ The flow reads left → right: **inputs** (Clients, Orchestration) drive the **D
 
 ## Data model (ER diagram)
 
-> Source of truth: [`backend/app/db/models.py`](https://github.com/TheurgicDuke771/DataQ/blob/main/backend/app/db/models.py) (28 tables). Update this diagram in the same PR as any model/migration change.
+> Source of truth: [`backend/app/db/models.py`](https://github.com/TheurgicDuke771/DataQ/blob/main/backend/app/db/models.py) (32 tables). Update this diagram in the same PR as any model/migration change.
 
 ```mermaid
 erDiagram
@@ -7584,7 +7634,7 @@ erDiagram
     connections {
         uuid id PK
         string name "unique per env"
-        string type "snowflake / adls_gen2 / s3 / unity_catalog / iceberg / postgres / mysql / trino / mssql / adf / airflow / dbt"
+        string type "snowflake / adls_gen2 / s3 / unity_catalog / iceberg / postgres / mysql / trino / mssql / athena / redshift / adf / airflow / dbt"
         string env "dev / qa / uat / prod"
         jsonb config "non-secret datasource config"
         string secret_ref "SecretStore key, never the credential"
@@ -7647,6 +7697,7 @@ erDiagram
         string kind "expectation / freshness / volume / schema_drift / anomaly / comparison (ADR 0012/0015)"
         string expectation_type
         string origin "user / auto / suggestion (ADR 0047)"
+        string engine "gx / dmf / dqx / dataplex — per-check evaluator, default gx (ADR 0036)"
         string dimension "DQ dimension (ADR 0038) — nullable; NULL = unclassified"
         uuid source_connection_id FK "comparison baseline datasource (ADR 0015; RESTRICT) — set iff kind='comparison'"
         numeric warn_threshold
@@ -8131,7 +8182,7 @@ flowchart LR
 Boundary notes:
 
 - **Defense in depth, not perimeter trust:** the API validates every request's bearer JWT itself (`fastapi-azure-auth` for REST, `JWTVerifier` for MCP — same tenant/audience/scope) even though it is only reachable through the frontend proxy. Platform-level auth (SWA EasyAuth) is explicitly disabled.
-- **The only endpoints that bypass user JWT auth** are the two orchestration webhook receivers (each with its own secret scheme, above) and the health probe. Webhook secrets live in Key Vault and are compared constant-time; they are never logged.
+- **The only endpoints that bypass user JWT auth** are the three orchestration webhook receivers — ADF · Airflow · dbt, each with its own secret scheme, above — the email-OTP sign-in endpoints (`/auth/otp/request` · `/auth/otp/verify`, rate-limited, ADR 0032), `POST /auth/logout` (session cookie only) and the health/readiness probes (`/healthz` · `/readyz`). Webhook secrets live in Key Vault and are compared constant-time; they are never logged.
 - **Nothing secret is baked into images or served to the browser.** The frontend's runtime `DATAQ_AUTH_*` config is non-secret OIDC metadata (ADR 0028); all real secrets resolve at use-time from Key Vault via user-assigned managed identity.
 - **MCP is fail-closed:** without resolvable auth config the `/mcp` mount does not come up at all (ADR 0008).
 
@@ -8143,7 +8194,7 @@ Boundary notes:
 - **The worker consumes two Celery queues.** `run_suite` and the periodic beat-dispatched tasks stay on the default `celery` queue; the three LLM intelligence tasks (`sql_generation` · `check_suggestion` · `rca_narrative`) route to a dedicated `llm` queue, so a backlog of long-running suite runs never starves an LLM request behind it. Both queues are consumed by the same worker process (`-Q celery,llm`) — this is queue separation for fair scheduling, not a second worker deployment.
 - **celery-beat is its own process/service, never embedded in the worker.** Beat only schedules — it enqueues tasks onto the broker, it never executes one — so a worker OOM (overlapping large suites under `worker_concurrency=4` and a 2 GiB hard limit) can never take the scheduler down with it. This is what stops orchestration polling, scheduled-suite dispatch, and every daily sweep from going silently dark because the process that ran them died. Exactly one beat instance may ever run (min=max=1 replica / desired_count=1) — a second would double-fire every periodic task.
 - **The outbound LLM intelligence layer is live, off by default.** An admin must configure a provider (Anthropic or an OpenAI-compatible endpoint) and credential before any call leaves the deployment. SQL generation and check suggestions send masked aggregate profiler statistics only; RCA narratives additionally send the triggering check's own `observed_value`, routed through the same column-policy/warehouse-tag redaction floor every other results surface applies, plus its `expected_value` (a check-authored threshold, never masked). Raw sample rows are never sent on any path. See [Security & data handling](../security/overview.md).
-- **All connection secrets via the deployment's secret store in production / staging** — Key Vault on Azure, Secrets Manager on AWS. Local dev may resolve secrets via `KV_SECRET_*` env vars through the `EnvSecretStore` backend (see `backend/app/core/secrets.py`). No credentials are ever hardcoded.
+- **All connection secrets via the deployment's secret store in production / staging** — Key Vault on Azure, Secrets Manager on AWS, OpenBao (KV v2) self-hosted (ADR [0039](../adr/0039-openbao-self-hosted-secret-backend.md)). Local dev may resolve secrets via `KV_SECRET_*` env vars through the `EnvSecretStore` backend (see `backend/app/core/secrets.py`). No credentials are ever hardcoded.
 - **The `/mcp` endpoint exposes the same service layer to AI clients.** The 54 FastMCP tools (30 read-only, 18 that change state, 6 live-probe tools gated like writes) are thin wrappers reusing the same services + per-suite authz + sample redaction as the REST API — no logic duplication. It mounts under **either** sign-in mode (SSO, email OTP) and stays unmounted, **fail-closed**, only when none is configured. Under SSO it validates the same OIDC bearer (Azure AD or Cognito — a `JWTVerifier` on the same tenant/audience/scope) or a PAT; **under email OTP a PAT is the only accepted credential** — a raw JWT and a session cookie are both rejected there, since there is no IdP-issued bearer to validate and a session is a browser-only credential. See [ADR 0008](../adr/0008-mcp-server.md) / [ADR 0032](../adr/0032-email-otp-signin.md).
 - **Interactive API docs are off in production.** `/docs`, `/redoc`, and `/openapi.json` are disabled when `ENVIRONMENT=prod` (the prod-docs gate); available in dev/staging.
 
@@ -10011,7 +10062,8 @@ are the reason this mode is opt-in rather than the default:
 
 - The **frontend is the only public surface**; the API runs on **internal ingress** and is
   reached only through the frontend's same-origin `/api`, `/healthz`, and `/mcp` proxy
-  (ADR 0028 §5). All traffic is over **HTTPS/TLS**.
+  (ADR 0028 §5). All public traffic is over **HTTPS/TLS**; the internal hops that are not
+  are listed under [Encryption](#encryption).
 - The **MCP** AI-assistant endpoint is **fail-closed** — unauthenticated requests are rejected
   (ADR 0008), and it is not mounted at all unless the deployment has a working sign-in
   configuration. It authenticates from the `Authorization` header only and **never reads a
@@ -10062,7 +10114,9 @@ are the reason this mode is opt-in rather than the default:
 - **A stored credential is never sent to a destination the caller changed.** Editing a config
   field that decides where a credential goes — Snowflake `account`, ADLS `account_url`/`auth_type`/`tenant_id`/`client_id`,
   S3/dbt `endpoint_url`, Unity Catalog `workspace_url`, Iceberg `catalog_uri`/`warehouse`/
-  `properties`/`secret_property`, Airflow `base_url`, dbt `artifacts_uri` — requires re-supplying that
+  `properties`/`secret_property`, the SQL engines' `host`/`port` (plus Trino's `sslmode`/`ca_bundle`/`auth_type`,
+  SQL Server's `auth_type`/`tenant_id`/`client_id`/`ca_bundle`/`driver`, Athena's `region`/`work_group`/
+  `s3_staging_dir`), Airflow `base_url`, dbt `artifacts_uri`/`endpoint_url`/`account_url` — requires re-supplying that
   credential in the same request, or the update is rejected (`422 credential_redirect`).
   Moving a connection to a new host is a supported operation; doing it with a credential you
   do not know is not. This is why an Admin, who may **rotate** a credential, still cannot
@@ -10665,7 +10719,7 @@ may have been read or altered by an unauthorized party.
 Record the **time of awareness** first; every regulatory clock runs from it.
 
 1. **Revoke what's compromised, narrowest first:**
-   - A PAT → delete it in *Profile → API keys* (or `DELETE /api/v1/me/api-keys/{key_id}`).
+   - A PAT → delete it in *Profile → Personal access tokens* (or `DELETE /api/v1/me/api-keys/{key_id}`).
      Role changes and revocations apply on the holder's **next request** — there
      is no token to wait out.
    - A user account → demote to `viewer` (Admin → Members) or disable at the IdP;
@@ -10761,7 +10815,7 @@ tables — and `incidents.evidence`, a stored snapshot of an incident's evidence
 card whose `failing_result.observed_value` can carry the same kind of literal
 warehouse cell value (see the [DPIA input sheet](dpia-input-sheet.md) for the
 full inventory). **This runbook's access/erasure endpoints below cover all three**
-(the incident snapshot is matched by the check's current tested column — see §5). A "data subject" in DataQ's own
+(the incident snapshot is matched by the check's tested column as of the snapshot's write time — see §5). A "data subject" in DataQ's own
 data is identified the same way the warehouse identifies them: a **`(column,
 value)` pair** — e.g. `column=email, value=alice@example.com` — not a DataQ user
 id (that is Class 2, workspace-account data, and is handled by ordinary account
@@ -11083,15 +11137,16 @@ surgically removes only the matching row/cell from `sample_failures` /
 other subjects — intact. **The same on-demand erasure also scrubs `incidents.evidence`**
 (the row above): the matching cell is removed from an incident's stored snapshot in
 place, and the response reports result and incident hits separately. The snapshot
-is matched by the check's *current* tested column (an incident keeps no result row
-to resolve the column as of capture time), so a check edited after the incident
-opened may need the request repeated under the earlier column name.
+is matched by the check's tested column **as of the snapshot's write time** (resolved
+from the check's version history at the incident's `last_seen_at`), so a check edited
+after the incident fired still matches under the column it was captured against.
 
 ## Class 2 — workspace account data
 
 | Where | What | Retention | Controls |
 |---|---|---|---|
 | `users` | Email (unique, lower-cased), display name, OIDC subject id + issuer, workspace role | Life of the account | Role-gated admin surface; ADR 0033 two-axis authz |
+| `workspace_members` | Admitted email addresses (the **Admin → Members** list), initial role, who invited them | Until an Admin removes the entry | Admin-only surface; removal takes effect on the member's next request |
 | `sessions` | OTP-mode sign-in sessions — **token hash only** (never the token) | Server-side revocation; logout deletes | HttpOnly cookie; SHA-256 at rest |
 | `otp_codes` | One-time codes — **hashed**, attempt-capped | Expired codes purged daily (`purge_otp_codes` beat) | Rate limits + enumeration-resistant responses |
 | `api_keys` | PATs — **SHA-256 hash only**, name, last-used | Until revoked | `dq_live_` prefix supports secret scanning |
@@ -11147,7 +11202,7 @@ a third-party endpoint.
 
 | # | Service (operator-chosen) | What DataQ sends | Personal data? | When active |
 |---|---|---|---|---|
-| 1 | **Monitored datasources** — Snowflake, ADLS Gen2 / OneLake, S3 / S3-compatible, Unity Catalog, Iceberg, PostgreSQL, MySQL / MariaDB, Trino, SQL Server / Azure SQL / Fabric SQL | Read-only queries; DQ check SQL | Reads whatever the monitored tables hold — this is the primary data flow | Always (the product's purpose) |
+| 1 | **Monitored datasources** — Snowflake, ADLS Gen2 / OneLake, S3 / S3-compatible, Unity Catalog, Iceberg, PostgreSQL, MySQL / MariaDB, Trino, SQL Server / Azure SQL / Synapse / Fabric SQL, Amazon Athena, Amazon Redshift | Read-only queries; DQ check SQL (on Unity Catalog, a DQX-engine check also submits a serverless job to your own Databricks workspace) | Reads whatever the monitored tables hold — this is the primary data flow | Always (the product's purpose) |
 | 2 | **Orchestration providers** — ADF, Airflow, dbt | Polling reads of pipeline/DAG run status; inbound webhooks | No — pipeline metadata only | When orchestration connections exist |
 | 3 | **Alert delivery** — MS Teams / Slack webhooks, SMTP email (incl. SES) | Check names, statuses, suite names and — when a failing sample is attached — **redacted** sample values | Potentially, in redacted failing samples; recipient addresses | When notifications are configured |
 | 4 | **Sign-in email (OTP)** — the configured SMTP relay | One-time codes to user email addresses | User email addresses (account identifiers, not warehouse content) | `otp` auth mode |
@@ -11156,7 +11211,7 @@ a third-party endpoint.
 | 7 | **Telemetry** — Azure Application Insights, AWS X-Ray/CloudWatch, any OTLP sink | Traces + structured logs, **PII-redacted at the logger** | Operational metadata; request ids, not warehouse values | When an exporter is configured |
 | 8 | **MCP AI clients** — whatever model provider stands behind a client holding a valid PAT | Run results, redacted failing samples, check configuration, via the 54 `/mcp` tools | Potentially, in redacted samples — the model provider and its jurisdiction are **chosen by the token holder** | When PATs are issued and `/mcp` is reachable |
 | 9 | **Outbound LLM intelligence** — DataQ calling a model on its own behalf | Schema + masked profiler statistics for SQL generation and check suggestions; RCA narratives additionally send the triggering check's own observed value, routed through that same column-policy/warehouse-tag masking floor, and its expected value (a check-authored threshold, not warehouse data, so never masked). Never raw sample rows | Potentially — profiler statistics or an observed value, both subject to the masking floor; model provider and jurisdiction are admin-chosen | **Live, off by default** — an admin must configure a provider + credential before any call leaves |
-| 10 | **Lineage provider** — Marquez / OpenLineage-compatible catalog | Pull of lineage graph metadata | No — table/job names, not row data | When `LINEAGE_PROVIDER` is configured |
+| 10 | **Lineage provider** — Marquez / OpenLineage-compatible catalog | Pull of lineage graph metadata; and, separately, OpenLineage emission of a START + terminal RunEvent per suite run with DQ facets (never sample rows) | No — table/job names and check outcomes, not row data | Pull: when `LINEAGE_PROVIDER` is configured. Emission: when `OPENLINEAGE_URL` (or the library's own transport config) is set |
 
 Cloud-platform services that *host* a deployment (the managed Postgres, Redis,
 container runtime, object storage of your chosen cloud) are your cloud provider
@@ -11213,7 +11268,7 @@ cloud-conditional code paths**, and the same container images run everywhere.
 
 | Concern | Azure (primary reference) | AWS (second reference) | Local (compose) |
 |---|---|---|---|
-| Compute | Container Apps: api / worker / frontend + migrate **job** | ECS Fargate: same three services + migrate **run-task** | docker-compose services |
+| Compute | Container Apps: api / worker / beat / frontend + migrate **job** | ECS Fargate: same four services + migrate **run-task** | docker-compose services |
 | Public surface | Frontend Container App (sole public ingress; api internal-only) | CloudFront → ALB → frontend (the ALB security group admits only the CloudFront managed prefix list; nginx re-verifies an origin-secret header) | `localhost` |
 | Images | One generic GHCR image set, tag `<sha>` | Same images, tag `aws-<sha>` | Same images |
 | Database | PostgreSQL (dedicated database + least-privilege app role) | RDS PostgreSQL | Postgres container |
@@ -11227,14 +11282,14 @@ cloud-conditional code paths**, and the same container images run everywhere.
 
 ## Features
 
-The application feature set — suites/checks across all nine datasource types, every monitor kind,
+The application feature set — suites/checks across all eleven datasource types, every monitor kind,
 assets/lineage/incidents, alerting, scheduling, the 54-tool MCP server, PATs, rate limiting —
 is the **same code everywhere**. Where the installations genuinely differ:
 
 | Capability | Azure | AWS | Local |
 |---|---|---|---|
 | Datasource runs | live-verified: Snowflake, Unity Catalog, ADLS, S3/S3-compatible, Iceberg | live-verified: Snowflake, Unity Catalog, native S3 | flat files, MinIO, Unity Catalog (Free Edition), Iceberg, PostgreSQL / MySQL / MariaDB / Trino containers; no live warehouse required |
-| PostgreSQL, MySQL/MariaDB, Trino, SQL Server, OneLake | ✅ | ✅ | ✅ (SQL Server's optional ODBC lane needs the driver installed by the operator) |
+| PostgreSQL, MySQL/MariaDB, Trino, SQL Server, OneLake, Athena, Redshift | ✅ | ✅ | ✅ (SQL Server's optional ODBC lane needs the driver installed by the operator; OneLake, Athena and Redshift need the cloud service itself) |
 | Assets / lineage / incidents / DQ scorecard | live-verified (Snowflake full-tier lineage, UC dbt lineage, inventory sync) | deployed — same code; warehouse-lineage sweep enabled but not yet exercised against that account's grants | ✅ (Marquez reference consumer via `--profile lineage`) |
 | Alerting — Teams / Slack | live-verified | deployed, unexercised | pointable anywhere |
 | Alerting — email | configured | live-verified (SES) | Mailpit |
@@ -11260,7 +11315,7 @@ deployment autoscales: `desired_count = 1` / `max_replicas = 3`.
 ## Deploying: Azure vs AWS
 
 Both deploy workflows are `workflow_dispatch`-only with the same shape — backend job first
-(build → **migrate, gated on success** → roll api + worker), then the frontend job gated on
+(build → **migrate, gated on success** → roll api + worker + beat), then the frontend job gated on
 the backend; a blank `image_tag` input defaults to the immutable commit SHA. The real
 differences:
 
@@ -11282,7 +11337,7 @@ Most backend env is **identical in shape on both clouds** (`ENVIRONMENT`, `DATAB
 `*_WEBHOOK_SECRET_NAME`s, the `EMAIL_*` block, `WAREHOUSE_LINEAGE_ENABLED`). The genuine
 differences:
 
-### Backend (api + worker)
+### Backend (api + worker + beat)
 
 | Concern | Azure | AWS |
 |---|---|---|
@@ -11331,6 +11386,7 @@ AI clients ─MCP──► │  proxies /api + /mcp + /healthz same-origin
                    ▼
               FastAPI (internal ingress) ──► PostgreSQL
                    │  ├──► Celery worker ──► GX execution ──► your datasources
+                   │  ├──► Celery beat (the scheduler — its own process, never runs a task)
                    │  ├──► Redis (task queue)
                    │  ├──► Key Vault (secrets)
                    │  └──► App Insights / OTLP (observability)
@@ -11342,7 +11398,7 @@ frontend proxy (ADR 0028 §5).
 ## Prerequisites
 
 - A **container platform** — Azure Container Apps in the reference deploy (API + worker +
-  frontend apps, a one-shot migrate **job**, and Redis).
+  beat + frontend apps, a one-shot migrate **job**, and Redis).
 - **PostgreSQL** (a dedicated database + a least-privilege app role).
 - A **secret store** — Azure Key Vault, reached via a managed identity.
 - An **OIDC identity provider** — app registrations for the API (audience) and the SPA.
@@ -11367,7 +11423,7 @@ run, in order:
 2. **Runs migrations** — a Container Apps job runs `alembic upgrade head` and the workflow
    **waits for it to succeed** *before* rolling anything. Migrations are additive/
    backward-compatible, so the still-running old code tolerates the new schema.
-3. **Rolls** the API + worker, then the frontend (gated on the backend succeeding — no partial
+3. **Rolls** the API + worker + beat, then the frontend (gated on the backend succeeding — no partial
    deploys).
 
 Use an immutable image tag per release; push-on-merge is intentionally off.
@@ -11468,7 +11524,7 @@ configuration**:
 ```bash
 git clone <repo> && cd DataQ
 ./scripts/setup.sh          # conda env, hooks, images, migrations, seed data
-docker-compose up           # postgres + redis + openbao + api + worker + frontend
+docker-compose up           # postgres + redis + openbao + mailpit + api + worker + beat + frontend
 ```
 
 `.env.app.example` ships with the local-first values already selected
@@ -11477,9 +11533,11 @@ every `AZURE_*` key may stay empty. Nothing in the app reads an Azure SDK unless
 the corresponding seam is explicitly pointed at Azure.
 
 **What is not available locally** is *datasources*, not the platform: a
-Snowflake or ADLS **connection** needs a live Snowflake or ADLS to run against.
-The local-first path keeps flat files (local + S3), Unity Catalog (Databricks
-Free Edition), and Iceberg. The test suite is unaffected either way — its
+Snowflake, ADLS, Athena or Redshift **connection** needs the live service to run against.
+The local-first path keeps flat files (local, S3 and S3-compatible stores such as MinIO),
+Unity Catalog (Databricks Free Edition), Iceberg, and PostgreSQL / MySQL / MariaDB / Trino /
+SQL Server containers; `docker-compose --profile demo up` adds a seeded sample warehouse
+to run against. The test suite is unaffected either way — its
 datasource reads are stubbed, so `pytest` is green with no cloud credentials of
 any kind.
 
@@ -11538,7 +11596,7 @@ the checklists — see the repository's `deploy/README.md`.
 | A check reports `error`, not `fail` | Its evaluation threw (cast failure, missing column, SQL error) — an operational problem with the check/target, not a data breach. Fix the check config or the schema drift. |
 | Scheduled run didn't happen at 9:00 | Check the schedule's **timezone** (9:00 in which zone?), whether it's **paused**, and whether the platform was down over the tick — missed ticks are [not backfilled](../guides/scheduling.md). |
 | No alert for a red run | See the [notifications troubleshooting table](../guides/notifications.md#troubleshooting) — threshold, dedup, and snooze all gate delivery. |
-| Freshness/volume check missing in the editor | Freshness and volume now run on **every** datasource including ADLS Gen2 / S3 flat files — on a flat file, omitting the timestamp column measures the file's **arrival time** instead. **Custom SQL** and **anomaly** monitors are Snowflake/UC-only (both need a SQL datasource); the **Snowflake DMF** engine is Snowflake-only. |
+| Freshness/volume check missing in the editor | Freshness and volume now run on **every** datasource including ADLS Gen2 / S3 flat files — on a flat file, omitting the timestamp column measures the file's **arrival time** instead. **Custom SQL** and **anomaly** monitors need a SQL datasource (Snowflake, Unity Catalog, PostgreSQL, MySQL/MariaDB, Trino, SQL Server, Athena, Redshift — not flat files or Iceberg); the **Snowflake DMF** engine is Snowflake-only and **Databricks DQX** is Unity Catalog-only. |
 
 ## Operating notes
 
@@ -11674,8 +11732,10 @@ the credential again.**
 You changed a field that decides where the credential is sent — a host, URL, or URI
 (Snowflake `account`, ADLS `account_url` / `auth_type` / `tenant_id` / `client_id`, S3/dbt `endpoint_url`, Unity Catalog
 `workspace_url`, Iceberg `catalog_uri` / `warehouse` / `properties` / `secret_property`,
-Airflow `base_url`, dbt
-`artifacts_uri`). Re-enter the credential in the same save and it will go through;
+PostgreSQL / MySQL / Redshift `host` / `port`, Trino `host` / `port` / `sslmode` / `ca_bundle` /
+`auth_type`, SQL Server `host` / `port` / `auth_type` / `tenant_id` / `client_id` / `ca_bundle` /
+`driver`, Athena `host` / `region` / `work_group` / `s3_staging_dir`, Airflow `base_url`, dbt
+`artifacts_uri` / `endpoint_url` / `account_url` / `auth_type` / `tenant_id` / `client_id`). Re-enter the credential in the same save and it will go through;
 `detail.required` on the API error names exactly what to send. See
 [Datasources & checks](../guides/datasources-checks.md#moving-a-connection-to-a-new-host).
 
@@ -11694,7 +11754,7 @@ credential** / re-auth) and the badge clears on the same request.
 The badge is **absent** for most credential types, and absence is not a clean bill of
 health: an S3 access key, a Snowflake key-pair, and a Databricks PAT carry no readable
 lifetime, so DataQ says nothing rather than guessing a date. Track those expiries wherever
-you issue them. DataQ PATs get the same warning on the **Profile → Access tokens** panel,
+you issue them. DataQ PATs get the same warning on the **Profile → Personal access tokens** panel,
 where they are stored with a known expiry.
 
 The date is re-read daily, so a credential rotated outside DataQ (in the Azure portal, say)
@@ -11826,7 +11886,7 @@ credentials are in the data directory and are kept.
 
 Run the **Deploy** workflow on the release tag (see [Deployment](deployment.md)). It builds
 the images, runs the migration job and waits for it to succeed, and only then rolls the API,
-the worker and the frontend. If the migration fails, nothing is rolled.
+the worker, the scheduler (beat) and the frontend. If the migration fails, nothing is rolled.
 
 Infrastructure changes are separate: if the changelog says the OpenTofu stack changed, run
 `tofu plan` and `tofu apply` on it first.
@@ -11914,10 +11974,10 @@ Each ADR captures a single significant architecture decision: the context, the d
 | [0002](0002-conventional-commits.md) | Conventional commits for PR titles and commit messages | Accepted |
 | [0003](0003-gx-only-for-v1.md) | GX-only for v1; DQX deferred to v1.1 for DLT/streaming | Accepted (amended by 0036 — suite-level `engine: gx \| dqx` toggle → check-level, connection-anchored) |
 | [0004](0004-orchestration-abstraction.md) | Unified `OrchestrationProvider` abstraction for ADF and Airflow | Accepted |
-| [0005](0005-severity-tier-weights.md) | Severity tier weights (warn / fail / critical → health score) | Accepted |
+| [0005](0005-severity-tier-weights.md) | Severity tier weights (warn / fail / critical → health score) | Accepted (amended 2026-09-06 — the weights are a workspace setting) |
 | [0006](0006-adf-webhook-authentication.md) | ADF webhook authentication (shared secret in URL + hard-cutover rotation) | Accepted |
 | [0007](0007-airflow-callback-model.md) | Airflow callback model (HMAC-signed webhook + polling fallback) | Accepted |
-| [0008](0008-mcp-server.md) | FastMCP server at `/mcp` — Azure AD token validated (same token as REST); everything exposed as tools rather than resources; thin wrappers reusing the service layer + per-suite authz; fail-closed without auth. **Amended:** 8 → 19 tools (Tier 1 reads), then 19 → 30 tools (Tier 2 edit-gated mutations + live-probe tools), then 30 → 33 → 38 (Tier 3A coherence), then 38 → 42 (Tier 3B batch 1 — assets + incidents reads) → 46 (Tier 3B batch 2 — incident lifecycle, `list_columns`, near-misses; Tier 3B complete) → 47 (`get_pipeline_status`, `get_adf_pipeline_status` kept as a deprecated alias) → 48 (`get_doc`, curated docs pages) → 51 (the reusable-notification-channel reads, `trace_column_lineage`) → **52** (`browse_connection`, run-target browsing; 28 read-only / 18 state-changing / 6 live-probe) | Accepted |
+| [0008](0008-mcp-server.md) | FastMCP server at `/mcp` — Azure AD token validated (same token as REST); everything exposed as tools rather than resources; thin wrappers reusing the service layer + per-suite authz; fail-closed without auth. **Amended:** 8 → 19 tools (Tier 1 reads), then 19 → 30 tools (Tier 2 edit-gated mutations + live-probe tools), then 30 → 33 → 38 (Tier 3A coherence), then 38 → 42 (Tier 3B batch 1 — assets + incidents reads) → 46 (Tier 3B batch 2 — incident lifecycle, `list_columns`, near-misses; Tier 3B complete) → 47 (`get_pipeline_status`, `get_adf_pipeline_status` kept as a deprecated alias) → 48 (`get_doc`, curated docs pages) → 51 (the reusable-notification-channel reads, `trace_column_lineage`) → 52 (`browse_connection`, run-target browsing) → **54** (`get_coverage`, `list_suggested_rules`; 30 read-only / 18 state-changing / 6 live-probe) | Accepted |
 | [0009](0009-flat-monorepo-layout.md) | Repo layout — flat monorepo (`backend/` + `frontend/`) | Accepted |
 | [0010](0010-provider-agnostic-infrastructure-seams.md) | Provider-agnostic infrastructure seams (Azure is the default, not the architecture) | Accepted |
 | [0011](0011-extensibility-seams-for-deferred-integrations.md) | Extensibility seams for deferred connectors and integrations | Accepted |

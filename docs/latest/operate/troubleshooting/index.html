@@ -2611,8 +2611,10 @@ the credential again.</strong></p>
 <p>You changed a field that decides where the credential is sent — a host, URL, or URI
 (Snowflake <code>account</code>, ADLS <code>account_url</code> / <code>auth_type</code> / <code>tenant_id</code> / <code>client_id</code>, S3/dbt <code>endpoint_url</code>, Unity Catalog
 <code>workspace_url</code>, Iceberg <code>catalog_uri</code> / <code>warehouse</code> / <code>properties</code> / <code>secret_property</code>,
-Airflow <code>base_url</code>, dbt
-<code>artifacts_uri</code>). Re-enter the credential in the same save and it will go through;
+PostgreSQL / MySQL / Redshift <code>host</code> / <code>port</code>, Trino <code>host</code> / <code>port</code> / <code>sslmode</code> / <code>ca_bundle</code> /
+<code>auth_type</code>, SQL Server <code>host</code> / <code>port</code> / <code>auth_type</code> / <code>tenant_id</code> / <code>client_id</code> / <code>ca_bundle</code> /
+<code>driver</code>, Athena <code>host</code> / <code>region</code> / <code>work_group</code> / <code>s3_staging_dir</code>, Airflow <code>base_url</code>, dbt
+<code>artifacts_uri</code> / <code>endpoint_url</code> / <code>account_url</code> / <code>auth_type</code> / <code>tenant_id</code> / <code>client_id</code>). Re-enter the credential in the same save and it will go through;
 <code>detail.required</code> on the API error names exactly what to send. See
 <a href="../../guides/datasources-checks/#moving-a-connection-to-a-new-host">Datasources &amp; checks</a>.</p>
 <p><strong>Creating or editing a connection returns <code>403</code>.</strong></p>
@@ -2626,7 +2628,7 @@ credential</strong> / re-auth) and the badge clears on the same request.</p>
 <p>The badge is <strong>absent</strong> for most credential types, and absence is not a clean bill of
 health: an S3 access key, a Snowflake key-pair, and a Databricks PAT carry no readable
 lifetime, so DataQ says nothing rather than guessing a date. Track those expiries wherever
-you issue them. DataQ PATs get the same warning on the <strong>Profile → Access tokens</strong> panel,
+you issue them. DataQ PATs get the same warning on the <strong>Profile → Personal access tokens</strong> panel,
 where they are stored with a known expiry.</p>
 <p>The date is re-read daily, so a credential rotated outside DataQ (in the Azure portal, say)
 updates within a day rather than needing a re-save here.</p>

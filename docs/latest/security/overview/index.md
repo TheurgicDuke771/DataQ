@@ -177,7 +177,8 @@ are the reason this mode is opt-in rather than the default:
 
 - The **frontend is the only public surface**; the API runs on **internal ingress** and is
   reached only through the frontend's same-origin `/api`, `/healthz`, and `/mcp` proxy
-  (ADR 0028 §5). All traffic is over **HTTPS/TLS**.
+  (ADR 0028 §5). All public traffic is over **HTTPS/TLS**; the internal hops that are not
+  are listed under [Encryption](#encryption).
 - The **MCP** AI-assistant endpoint is **fail-closed** — unauthenticated requests are rejected
   (ADR 0008), and it is not mounted at all unless the deployment has a working sign-in
   configuration. It authenticates from the `Authorization` header only and **never reads a
@@ -228,7 +229,9 @@ are the reason this mode is opt-in rather than the default:
 - **A stored credential is never sent to a destination the caller changed.** Editing a config
   field that decides where a credential goes — Snowflake `account`, ADLS `account_url`/`auth_type`/`tenant_id`/`client_id`,
   S3/dbt `endpoint_url`, Unity Catalog `workspace_url`, Iceberg `catalog_uri`/`warehouse`/
-  `properties`/`secret_property`, Airflow `base_url`, dbt `artifacts_uri` — requires re-supplying that
+  `properties`/`secret_property`, the SQL engines' `host`/`port` (plus Trino's `sslmode`/`ca_bundle`/`auth_type`,
+  SQL Server's `auth_type`/`tenant_id`/`client_id`/`ca_bundle`/`driver`, Athena's `region`/`work_group`/
+  `s3_staging_dir`), Airflow `base_url`, dbt `artifacts_uri`/`endpoint_url`/`account_url` — requires re-supplying that
   credential in the same request, or the update is rejected (`422 credential_redirect`).
   Moving a connection to a new host is a supported operation; doing it with a credential you
   do not know is not. This is why an Admin, who may **rotate** a credential, still cannot

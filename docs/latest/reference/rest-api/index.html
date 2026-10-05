@@ -2819,7 +2819,7 @@ in production — this page is the reference.)</p>
 <tr>
 <td>GET</td>
 <td><code>/connections/{id}/browse/catalog</code></td>
-<td>Unity Catalog only: one level of catalogs → schemas → tables (<code>?catalog=&amp;schema=&amp;limit=</code>).</td>
+<td>Unity Catalog: one level of catalogs → schemas → tables; Snowflake, Iceberg and the generic SQL engines (PostgreSQL, MySQL, Trino, SQL Server, Athena, Redshift): schemas → tables (<code>?catalog=&amp;schema=&amp;limit=</code>).</td>
 </tr>
 <tr>
 <td>GET</td>
@@ -2868,14 +2868,16 @@ status first.</p>
 credential is sent — <code>account</code> (Snowflake), <code>account_url</code> / <code>auth_type</code> / <code>tenant_id</code> / <code>client_id</code> (ADLS), <code>endpoint_url</code> (S3, dbt),
 <code>workspace_url</code> (Unity Catalog), <code>catalog_uri</code> / <code>warehouse</code> / <code>properties</code> /
 <code>secret_property</code> (Iceberg),
-<code>base_url</code> (Airflow), <code>artifacts_uri</code> (dbt) — must re-supply that credential in the same
+<code>base_url</code> (Airflow), <code>artifacts_uri</code> (dbt), <code>host</code> / <code>port</code> (the generic SQL engines — plus
+<code>sslmode</code> / <code>ca_bundle</code> / <code>auth_type</code> on Trino, <code>auth_type</code> / <code>tenant_id</code> / <code>client_id</code> /
+<code>ca_bundle</code> / <code>driver</code> on SQL Server, <code>region</code> / <code>work_group</code> / <code>s3_staging_dir</code> on Athena) — must re-supply that credential in the same
 request. Otherwise it returns <code>422</code> with <code>code: "credential_redirect"</code> and
 <code>detail.required</code> naming what to send. A stored credential is never forwarded to a
 destination the caller changed.</p>
 <h3 id="notification-channels">Notification channels<a class="headerlink" href="#notification-channels" title="Permanent link">¶</a></h3>
 <p>A reusable Teams/Slack/email/generic-webhook destination, defined once and referenced from any
 number of suites — the destination only; per-suite <code>alert_on</code>/enabled stays on
-<code>/suites/{id}/notifications</code> above.</p>
+<code>/suites/{id}/notifications</code> (under Suites &amp; checks below).</p>
 <p>A <code>webhook</code> channel posts an HMAC-SHA256-signed JSON body (header <code>X-DataQ-Signature</code>) to an
 admin-supplied <code>webhook_url</code> — the vendor-neutral way to reach PagerDuty, Opsgenie, ServiceNow,
 Jira, or a self-hosted receiver with no per-vendor code. The destination URL must be <code>https</code> and
@@ -2993,7 +2995,37 @@ URL); linking/unlinking a suite follows that suite's own <code>view</code>/<code
 <tr>
 <td>GET</td>
 <td><code>/suites/{id}/export</code> · POST <code>/suites/import</code></td>
-<td>Portable suite document (env promotion).</td>
+<td>Portable suite document (env promotion) — see <a href="../suite-document/">Suite document</a>.</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/suites/validate</code></td>
+<td>Run every import gate on a document and report all problems; creates nothing.</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/suites/{id}/apply</code></td>
+<td>Apply a document onto an existing suite (checks matched by name; <code>prune</code> deletes the rest), or report its drift. Idempotent.</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/suites/{id}/checks-bulk/delete</code> · <code>…/snooze</code> · <code>…/unsnooze</code> · <code>…/thresholds</code></td>
+<td>Act on many checks at once — all-or-nothing.</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/suites/{id}/suggestions</code> · POST <code>/suggestions/{id}/accept</code> · <code>/suggestions/{id}/reject</code></td>
+<td>Automatic-coverage review queue: proposed rules; accepting one creates the check.</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/suites/{id}/cadence</code></td>
+<td>The bound pipeline's cadence — a freshness-threshold hint.</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/suites/{id}/deletion_impact</code></td>
+<td>Exact dependent counts a suite delete would destroy.</td>
 </tr>
 <tr>
 <td>GET / PUT</td>
@@ -3077,6 +3109,21 @@ URL); linking/unlinking a suite follows that suite's own <code>view</code>/<code
 <td><code>/dashboard/summary</code></td>
 <td>KPIs + run trend + per-suite performance.</td>
 </tr>
+<tr>
+<td>GET</td>
+<td><code>/dashboard/dimensions</code></td>
+<td>Each DQ dimension across every suite (workspace-wide, identical for every member).</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/dashboard/coverage</code></td>
+<td>Coverage of the asset inventory and the false-positive rate of automatic checks.</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/dashboard/onboarding</code></td>
+<td>Which first-run steps the workspace has done.</td>
+</tr>
 </tbody>
 </table>
 <h3 id="assets-incidents">Assets &amp; incidents<a class="headerlink" href="#assets-incidents" title="Permanent link">¶</a></h3>
@@ -3101,6 +3148,11 @@ URL); linking/unlinking a suite follows that suite's own <code>view</code>/<code
 </tr>
 <tr>
 <td>GET</td>
+<td><code>/assets/{id}/column-lineage</code></td>
+<td>Trace one column's lineage upstream or downstream.</td>
+</tr>
+<tr>
+<td>GET</td>
 <td><code>/incidents</code> · <code>/incidents/{id}</code></td>
 <td>Open/acknowledged/resolved incidents with the evidence card (suite-granted; 404-no-leak).</td>
 </tr>
@@ -3108,6 +3160,11 @@ URL); linking/unlinking a suite follows that suite's own <code>view</code>/<code
 <td>POST</td>
 <td><code>/incidents/{id}/ack</code> · <code>/incidents/{id}/resolve</code></td>
 <td>Lifecycle transitions (requires <code>edit</code> on the suite).</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/incidents/{id}/narrative</code></td>
+<td>The latest root-cause narrative for an incident (<code>view</code>).</td>
 </tr>
 </tbody>
 </table>
@@ -3150,6 +3207,11 @@ URL); linking/unlinking a suite follows that suite's own <code>view</code>/<code
 <td>GET</td>
 <td><code>/orchestration/near-misses</code></td>
 <td>Succeeded pipeline runs that matched <strong>no</strong> enabled binding (why a trigger never fired).</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/orchestration/gate</code></td>
+<td>Pipeline gate (ADR 0046): start the bound suites for this pipeline run and report the verdict, or only read it. Idempotent per <code>provider_run_id</code>; poll until <code>state</code> is <code>passed</code> / <code>failed</code> / <code>error</code>.</td>
 </tr>
 <tr>
 <td>POST</td>
@@ -3268,6 +3330,31 @@ an outbound model request.</p>
 <td>GET</td>
 <td><code>/admin/audit-events</code></td>
 <td>The append-only audit log (config + data-access events, ADR 0041).</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/admin/audit-events/verify</code></td>
+<td>Verify the audit log's hash chain for tampering.</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/admin/data-subject-requests/export</code> · <code>…/erase</code></td>
+<td>Export or erase every captured sample cell naming <code>column</code> = <code>value</code> (GDPR/CCPA subject requests; erase is audited).</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/admin/health</code></td>
+<td>Workspace health — poll staleness, beat heartbeat, queue depth, and per-connection credential health.</td>
+</tr>
+<tr>
+<td>GET / PUT</td>
+<td><code>/admin/llm</code> · POST <code>/admin/llm/test</code></td>
+<td>Outbound-LLM provider config; the test probes a draft without saving it.</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/admin/auth-email/test</code></td>
+<td>Send a test email to the caller over the configured <code>AUTH_EMAIL_*</code> transport (throttled per admin).</td>
 </tr>
 <tr>
 <td>GET</td>

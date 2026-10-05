@@ -2791,7 +2791,7 @@ flowchart LR
 </table>
 <h2 id="data-model-er-diagram">Data model (ER diagram)<a class="headerlink" href="#data-model-er-diagram" title="Permanent link">¶</a></h2>
 <blockquote>
-<p>Source of truth: <a href="https://github.com/TheurgicDuke771/DataQ/blob/main/backend/app/db/models.py"><code>backend/app/db/models.py</code></a> (28 tables). Update this diagram in the same PR as any model/migration change.</p>
+<p>Source of truth: <a href="https://github.com/TheurgicDuke771/DataQ/blob/main/backend/app/db/models.py"><code>backend/app/db/models.py</code></a> (32 tables). Update this diagram in the same PR as any model/migration change.</p>
 </blockquote>
 <pre class="mermaid"><code>erDiagram
     users {
@@ -2840,7 +2840,7 @@ flowchart LR
     connections {
         uuid id PK
         string name "unique per env"
-        string type "snowflake / adls_gen2 / s3 / unity_catalog / iceberg / postgres / mysql / trino / mssql / adf / airflow / dbt"
+        string type "snowflake / adls_gen2 / s3 / unity_catalog / iceberg / postgres / mysql / trino / mssql / athena / redshift / adf / airflow / dbt"
         string env "dev / qa / uat / prod"
         jsonb config "non-secret datasource config"
         string secret_ref "SecretStore key, never the credential"
@@ -2903,6 +2903,7 @@ flowchart LR
         string kind "expectation / freshness / volume / schema_drift / anomaly / comparison (ADR 0012/0015)"
         string expectation_type
         string origin "user / auto / suggestion (ADR 0047)"
+        string engine "gx / dmf / dqx / dataplex — per-check evaluator, default gx (ADR 0036)"
         string dimension "DQ dimension (ADR 0038) — nullable; NULL = unclassified"
         uuid source_connection_id FK "comparison baseline datasource (ADR 0015; RESTRICT) — set iff kind='comparison'"
         numeric warn_threshold
@@ -3355,7 +3356,7 @@ flowchart LR
 <p>Boundary notes:</p>
 <ul>
 <li><strong>Defense in depth, not perimeter trust:</strong> the API validates every request's bearer JWT itself (<code>fastapi-azure-auth</code> for REST, <code>JWTVerifier</code> for MCP — same tenant/audience/scope) even though it is only reachable through the frontend proxy. Platform-level auth (SWA EasyAuth) is explicitly disabled.</li>
-<li><strong>The only endpoints that bypass user JWT auth</strong> are the two orchestration webhook receivers (each with its own secret scheme, above) and the health probe. Webhook secrets live in Key Vault and are compared constant-time; they are never logged.</li>
+<li><strong>The only endpoints that bypass user JWT auth</strong> are the three orchestration webhook receivers — ADF · Airflow · dbt, each with its own secret scheme, above — the email-OTP sign-in endpoints (<code>/auth/otp/request</code> · <code>/auth/otp/verify</code>, rate-limited, ADR 0032), <code>POST /auth/logout</code> (session cookie only) and the health/readiness probes (<code>/healthz</code> · <code>/readyz</code>). Webhook secrets live in Key Vault and are compared constant-time; they are never logged.</li>
 <li><strong>Nothing secret is baked into images or served to the browser.</strong> The frontend's runtime <code>DATAQ_AUTH_*</code> config is non-secret OIDC metadata (ADR 0028); all real secrets resolve at use-time from Key Vault via user-assigned managed identity.</li>
 <li><strong>MCP is fail-closed:</strong> without resolvable auth config the <code>/mcp</code> mount does not come up at all (ADR 0008).</li>
 </ul>
@@ -3367,7 +3368,7 @@ flowchart LR
 <li><strong>The worker consumes two Celery queues.</strong> <code>run_suite</code> and the periodic beat-dispatched tasks stay on the default <code>celery</code> queue; the three LLM intelligence tasks (<code>sql_generation</code> · <code>check_suggestion</code> · <code>rca_narrative</code>) route to a dedicated <code>llm</code> queue, so a backlog of long-running suite runs never starves an LLM request behind it. Both queues are consumed by the same worker process (<code>-Q celery,llm</code>) — this is queue separation for fair scheduling, not a second worker deployment.</li>
 <li><strong>celery-beat is its own process/service, never embedded in the worker.</strong> Beat only schedules — it enqueues tasks onto the broker, it never executes one — so a worker OOM (overlapping large suites under <code>worker_concurrency=4</code> and a 2 GiB hard limit) can never take the scheduler down with it. This is what stops orchestration polling, scheduled-suite dispatch, and every daily sweep from going silently dark because the process that ran them died. Exactly one beat instance may ever run (min=max=1 replica / desired_count=1) — a second would double-fire every periodic task.</li>
 <li><strong>The outbound LLM intelligence layer is live, off by default.</strong> An admin must configure a provider (Anthropic or an OpenAI-compatible endpoint) and credential before any call leaves the deployment. SQL generation and check suggestions send masked aggregate profiler statistics only; RCA narratives additionally send the triggering check's own <code>observed_value</code>, routed through the same column-policy/warehouse-tag redaction floor every other results surface applies, plus its <code>expected_value</code> (a check-authored threshold, never masked). Raw sample rows are never sent on any path. See <a href="../../security/overview/">Security &amp; data handling</a>.</li>
-<li><strong>All connection secrets via the deployment's secret store in production / staging</strong> — Key Vault on Azure, Secrets Manager on AWS. Local dev may resolve secrets via <code>KV_SECRET_*</code> env vars through the <code>EnvSecretStore</code> backend (see <code>backend/app/core/secrets.py</code>). No credentials are ever hardcoded.</li>
+<li><strong>All connection secrets via the deployment's secret store in production / staging</strong> — Key Vault on Azure, Secrets Manager on AWS, OpenBao (KV v2) self-hosted (ADR <a href="../../adr/0039-openbao-self-hosted-secret-backend/">0039</a>). Local dev may resolve secrets via <code>KV_SECRET_*</code> env vars through the <code>EnvSecretStore</code> backend (see <code>backend/app/core/secrets.py</code>). No credentials are ever hardcoded.</li>
 <li><strong>The <code>/mcp</code> endpoint exposes the same service layer to AI clients.</strong> The 54 FastMCP tools (30 read-only, 18 that change state, 6 live-probe tools gated like writes) are thin wrappers reusing the same services + per-suite authz + sample redaction as the REST API — no logic duplication. It mounts under <strong>either</strong> sign-in mode (SSO, email OTP) and stays unmounted, <strong>fail-closed</strong>, only when none is configured. Under SSO it validates the same OIDC bearer (Azure AD or Cognito — a <code>JWTVerifier</code> on the same tenant/audience/scope) or a PAT; <strong>under email OTP a PAT is the only accepted credential</strong> — a raw JWT and a session cookie are both rejected there, since there is no IdP-issued bearer to validate and a session is a browser-only credential. See <a href="../../adr/0008-mcp-server/">ADR 0008</a> / <a href="../../adr/0032-email-otp-signin/">ADR 0032</a>.</li>
 <li><strong>Interactive API docs are off in production.</strong> <code>/docs</code>, <code>/redoc</code>, and <code>/openapi.json</code> are disabled when <code>ENVIRONMENT=prod</code> (the prod-docs gate); available in dev/staging.</li>
 </ul>

@@ -2668,7 +2668,8 @@ suggested_next_checks}</code> shape shown above.<p></p>
 </details>
 <h2 id="write-sql-from-a-sentence">Write SQL from a sentence<a class="headerlink" href="#write-sql-from-a-sentence" title="Permanent link">¶</a></h2>
 <p>Custom-SQL checks are the most flexible check type and the slowest to author. On a suite
-whose target is a table on a SQL datasource (Snowflake or Unity Catalog), start a check,
+whose target is a table on a SQL datasource (Snowflake, Unity Catalog or one of the generic
+SQL engines — PostgreSQL, MySQL, Trino, SQL Server, Athena, Redshift), start a check,
 pick <strong>Custom SQL</strong>, and describe the rule instead of writing it. <strong>Generate from a
 description</strong> sits beside the hand-written Custom SQL card — same check type underneath,
 just a different starting point. The description box appears only when you start from that

@@ -2591,13 +2591,15 @@ what the tool is supposed to require.</p>
   in the next category, so the same test suite asserts none of them do. The majority of the
   surface.</li>
 <li><strong>State-changing.</strong> Creates, updates, deletes, or triggers something. Most are gated on
-  edit-level access to the suite (or other resource) the call acts on; a few that create a
-  resource with nothing yet to gate on — importing a suite, testing a not-yet-saved
-  connection — are instead gated on holding at least the Member workspace role.</li>
+  edit-level access to the suite (or other resource) the call acts on; one that creates a
+  resource with nothing yet to gate on — importing a suite — is instead gated on holding at
+  least the Member workspace role.</li>
 <li><strong>Live-probe.</strong> Persists nothing in DataQ's own storage, but opens a live connection to a
   remote system using a stored credential — a real cost and a real side effect on that remote
   system even though nothing is saved here. These carry the same access requirement a
-  state-changing tool on the same resource would, not a separate tier of their own: "nothing was
+  state-changing tool on the same resource would (edit on the suite, or — for testing or
+  browsing a stored connection, which has no suite to gate on — the Member workspace role),
+  not a separate tier of their own: "nothing was
   written to our database" is not the same guarantee as "nothing happened," so the annotation
   exists to flag that distinction explicitly rather than leave it implied.</li>
 </ul>

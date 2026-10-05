@@ -2510,22 +2510,24 @@
 breaches — and silence when nothing changed.</p>
 <h2 id="1-decide-where-alerts-go">1. Decide where alerts go<a class="headerlink" href="#1-decide-where-alerts-go" title="Permanent link">¶</a></h2>
 <p>Alerts are configured <strong>per suite</strong>, so the team that owns the data gets told about its data.
-Workspace-wide defaults (a Slack webhook, an SMTP sender, a Teams webhook) are set by whoever
-deployed DataQ through environment configuration; a suite can override the Teams webhook and
-the email recipients.</p>
+Destinations are <strong>channels</strong> — a Teams or Slack webhook, an email recipient list, or a signed
+webhook — defined once by an Admin under <strong>Admin → Settings → Notification channels</strong> and then
+linked to any suite. Workspace-wide defaults (a Slack webhook, an SMTP sender, a Teams webhook)
+are set by whoever deployed DataQ through environment configuration.</p>
 <p><a class="glightbox" data-type="image" data-width="auto" data-height="auto" href="../../assets/screenshots/settings-notifications.png" data-desc-position="bottom"><img alt="Admin → Settings → Notification channels: destinations are defined once here, then linked from each suite" class="screenshot" src="../../assets/screenshots/settings-notifications.png"></a></p>
 <p><em>Destinations live here; each suite decides which of them it uses and when.</em></p>
 <h2 id="2-turn-alerts-on-for-the-suite">2. Turn alerts on for the suite<a class="headerlink" href="#2-turn-alerts-on-for-the-suite" title="Permanent link">¶</a></h2>
 <p>Open the suite and scroll to <strong>Notifications</strong>:</p>
-<p><a class="glightbox" data-type="image" data-width="auto" data-height="auto" href="../../assets/screenshots/suite-notifications.png" data-desc-position="bottom"><img alt="A suite's Notifications panel: the on/off switch, the alert threshold, optional Teams and Slack webhooks, and email recipients" class="screenshot" src="../../assets/screenshots/suite-notifications.png"></a></p>
+<p><a class="glightbox" data-type="image" data-width="auto" data-height="auto" href="../../assets/screenshots/suite-notifications.png" data-desc-position="bottom"><img alt="A suite's Notifications panel: the on/off switch, the alert threshold, and the linked channels" class="screenshot" src="../../assets/screenshots/suite-notifications.png"></a></p>
 <p><em>Everything an alert needs, on the suite itself.</em></p>
 <ol>
 <li>Switch <strong>Send alerts for this suite</strong> on.</li>
 <li>Pick the <strong>alert threshold</strong>. The default, <em>On warn and worse</em>, is the right first choice:
    quiet for a passing run, loud the moment a check crosses a threshold you set.</li>
-<li>Optionally paste a <strong>Teams</strong> or <strong>Slack</strong> webhook for this suite, or list <strong>email
-   recipients</strong>. Leave a field blank to fall back to the workspace default. Webhook URLs are
-   write-only: after saving, the tag reads <em>set</em> and the URL is never shown again.</li>
+<li>Under <strong>Channels</strong>, pick the channels this suite alerts through. A workspace-wide
+   default destination (if your deployment configures one) is alerted as well, not instead.
+   Webhook URLs live in the secret store and are never shown again
+   after an Admin saves the channel.</li>
 <li><strong>Save</strong>.</li>
 </ol>
 <h2 id="3-prove-it-fires">3. Prove it fires<a class="headerlink" href="#3-prove-it-fires" title="Permanent link">¶</a></h2>

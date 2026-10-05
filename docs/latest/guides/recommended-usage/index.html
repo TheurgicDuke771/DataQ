@@ -2657,9 +2657,11 @@ when the data is ready and correlates results to the pipeline run. <strong>Sched
 no orchestrator (e.g. flat-file drops), at a cadence matched to arrival, not "every 5 minutes
 to be safe". See <a href="../best-practices/#prefer-triggers-over-schedules-where-an-orchestrator-exists">Prefer triggers over schedules</a>.</p>
 <h2 id="6-configure-alerting">6. Configure alerting<a class="headerlink" href="#6-configure-alerting" title="Permanent link">¶</a></h2>
-<p><strong>Do:</strong> Suite → <strong>Notifications</strong> → pick channels (Teams / Slack / email), the threshold, and
-recipients. Store channel webhooks/keys as secrets (<strong>Admin → Integrations</strong> for the inbound
-ones).</p>
+<p><strong>Do:</strong> an Admin defines the channels once (Teams / Slack / email / webhook) under
+<strong>Admin → Settings → Notification channels</strong>; then Suite → <strong>Notifications</strong> → link channels and
+pick the threshold. Linked channels add to any workspace-wide default destination; they do not
+replace it. Channel webhook URLs are kept in the secret store (<strong>Admin → Integrations</strong>
+holds the inbound ones).</p>
 <p><strong>Recommended:</strong></p>
 <ul>
 <li>Keep the default <strong>warn-and-worse</strong> threshold; drop to <strong>fail-only</strong> for noisy exploratory

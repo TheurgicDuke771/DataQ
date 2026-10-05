@@ -30,7 +30,7 @@ lists which).
 - [Datasources & checks](https://theurgicduke771.github.io/DataQ/docs/latest/guides/datasources-checks/index.md): Adding, editing, deleting or re-credentialing a connection requires the **Admin** workspace
 - [Features overview](https://theurgicduke771.github.io/DataQ/docs/latest/guides/features/index.md): Everything DataQ offers, by area. This is the readable tour — for the terse
 - [AI assistants (MCP)](https://theurgicduke771.github.io/DataQ/docs/latest/guides/mcp-setup/index.md): DataQ ships a built-in [MCP](https://modelcontextprotocol.io) server so AI assistants — Claude Desktop, Claude.ai, VS Code / GitHub Copilot, Cursor — can answer
-- [Notifications & alerting](https://theurgicduke771.github.io/DataQ/docs/latest/guides/notifications/index.md): DataQ alerts on run outcomes over **Microsoft Teams**, **Slack**, and **email** — all
+- [Notifications & alerting](https://theurgicduke771.github.io/DataQ/docs/latest/guides/notifications/index.md): DataQ alerts on run outcomes over **Microsoft Teams**, **Slack**, **email** and generic
 - [Orchestration](https://theurgicduke771.github.io/DataQ/docs/latest/guides/orchestration/index.md): DataQ **observes** your pipelines and can **run check suites when they finish** — it does
 - [Python client & CLI](https://theurgicduke771.github.io/DataQ/docs/latest/guides/python-client/index.md): `dataq-client` is a Python package and a `dataq` command for driving DataQ from scripts, CI
 - [Recommended usage](https://theurgicduke771.github.io/DataQ/docs/latest/guides/recommended-usage/index.md): How to **activate** each DataQ feature and the **recommended** way to configure it. This is

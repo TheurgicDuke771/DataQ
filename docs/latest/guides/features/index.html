@@ -2721,6 +2721,11 @@ and reacts to your pipelines — all behind SSO, with an AI-assistant surface.</
 <li><strong>Apache Iceberg</strong> — native <code>pyiceberg</code> read straight from object storage, no query
   engine in front: <code>namespace.table</code> addressing, REST / SQL / Glue / Hive catalogs,
   credential-less catalogs supported, also reads Delta UniForm tables (ADR 0030) through Unity Catalog's Iceberg REST catalog (<code>/api/2.1/unity-catalog/iceberg-rest</code>). Reading the data files needs Unity Catalog to vend storage credentials: the metastore must allow external data access, and the principal needs <code>EXTERNAL USE SCHEMA</code> on the schema. Databricks Free Edition's default storage supports neither, so there only the table metadata loads.</li>
+<li><strong>PostgreSQL</strong>, <strong>MySQL / MariaDB</strong>, <strong>Trino</strong>, <strong>SQL Server</strong> (incl. Azure SQL, Synapse
+  and Fabric SQL), <strong>Amazon Athena</strong> and <strong>Amazon Redshift</strong> — the generic SQL engines
+  (ADR 0044/0045): checks push down as SQL, read-only sessions wherever the engine has one.</li>
+<li><strong>Fabric OneLake</strong> lakehouse files — through an ADLS Gen2 connection with a service
+  principal, not a separate type.</li>
 </ul>
 <h2 id="checks-authoring">Checks &amp; authoring<a class="headerlink" href="#checks-authoring" title="Permanent link">¶</a></h2>
 <p>A check is one data-quality rule, authored in the UI. Seven kinds ship (<code>check.kind</code>): GX
@@ -2739,7 +2744,9 @@ schema-drift / anomaly / comparison</strong> monitor kinds:</p>
   connection, six column metrics (null count/percent, duplicate count, unique count, blank
   count, future-timestamp percent) can instead run on Snowflake's own <strong>Data Metric Functions (DMF)</strong> engine — a separate
   category in the check editor, selected per check. The same category runs <strong>custom DMFs</strong>
-  your team created in Snowflake, over columns of the suite's table.</p>
+  your team created in Snowflake, over columns of the suite's table.
+  On a Unity Catalog connection, a <strong>Databricks DQX</strong> category runs DQX row rules as a
+  serverless job in your own workspace (ADR 0036).</p>
 </li>
 <li><strong>Custom SQL</strong> — an escape hatch for cross-column/join rules: rows returned = failures.
   Read-only, single-statement (enforced). SQL datasources only.</li>
@@ -2749,7 +2756,8 @@ schema-drift / anomaly / comparison</strong> monitor kinds:</p>
   a timestamp inside the data cannot see.</li>
 <li><strong>Volume monitor</strong> — row count within an expected range (did the load land whole?).
   Freshness + volume are the auto-monitor kinds and run on <strong>every</strong> datasource: the SQL
-  datasources (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server), Apache Iceberg (computed natively via a
+  datasources (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server / Athena /
+  Redshift), Apache Iceberg (computed natively via a
   <code>pyiceberg</code> scan rather than SQL), and ADLS Gen2 / S3 flat files.</li>
 <li><strong>Schema-drift monitor</strong> — flags a column added, dropped, or type-changed against a
   stored baseline (did the shape change under you?). Also runs on <strong>every</strong> datasource —
@@ -2801,8 +2809,8 @@ schema-drift / anomaly / comparison</strong> monitor kinds:</p>
   severity-weighted <strong>health score</strong>, pass rate, run counts, average duration, per-day
   trends, and per-suite performance. Assets are the primary lens (ADR 0034 nav inversion):
   the sidebar leads with <strong>Assets</strong> above Suites, and every suite/run links back to its asset.</li>
-<li><strong>Warehouse inventory sync</strong> (ADR 0040) — an opt-in per-connection toggle
-  (Snowflake / Unity Catalog connection forms) that enumerates every table the
+<li><strong>Warehouse inventory sync</strong> (ADR 0040) — a per-connection toggle, on by default
+  (Snowflake / Unity Catalog / the generic SQL engines), that enumerates every table the
   connection can see into the asset view daily, so a table with no suite, run,
   or lineage signal is <strong>visible as unmonitored</strong> instead of invisible. Synced
   tables age out automatically once dropped from the warehouse. Unity Catalog
@@ -2865,7 +2873,10 @@ are <strong>not</strong> datasources (<a href="../orchestration/">Orchestration<
 <li><strong>dbt</strong> — post-build callback → HMAC webhook (+ 10-min <code>run_results.json</code> artifact poll).</li>
 </ul>
 <p>All three sit behind one provider interface; <strong>trigger bindings</strong> map
-<code>(provider, pipeline/DAG/job, env) → suite</code>.</p>
+<code>(provider, pipeline/DAG/job, env) → suite</code>.
+A pipeline stage can also <strong>gate</strong> on DataQ (ADR 0046): <code>POST /api/v1/orchestration/gate</code>
+starts its bound suites for this run and waits for the verdict, or only reads it — DataQ
+answers, your DAG decides (<a href="../orchestration/#gate-a-pipeline-on-dataq">Gate a pipeline on DataQ</a>).</p>
 <h2 id="alerting">Alerting<a class="headerlink" href="#alerting" title="Permanent link">¶</a></h2>
 <p>Delivered when a run breaches its threshold (<a href="../notifications/">Notifications &amp; alerting</a>):</p>
 <ul>

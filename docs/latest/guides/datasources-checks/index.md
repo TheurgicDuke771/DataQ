@@ -111,10 +111,11 @@ itself can be checked.
 
 Editing a field that decides *where* the credential is sent — Snowflake `account`, ADLS
 `account_url` / `auth_type` / `tenant_id` / `client_id`, S3/dbt `endpoint_url`, Unity Catalog `workspace_url`, Iceberg `catalog_uri` /
-`warehouse` / `properties` / `secret_property`, PostgreSQL / MySQL `host` / `port`, Trino
+`warehouse` / `properties` / `secret_property`, PostgreSQL / MySQL / Redshift `host` / `port`, Trino
 `host` / `port` / `sslmode` / `ca_bundle` / `auth_type`, SQL Server `host` / `port` / `auth_type` /
-`tenant_id` / `client_id` / `ca_bundle` / `driver`, Airflow
-`base_url`, dbt `artifacts_uri` —
+`tenant_id` / `client_id` / `ca_bundle` / `driver`, Athena `host` / `region` / `work_group` /
+`s3_staging_dir`, Airflow `base_url`, dbt `artifacts_uri` / `endpoint_url` / `account_url` /
+`auth_type` / `tenant_id` / `client_id` —
 requires re-entering
 that credential in the same save. The edit form asks for it as soon as you change one of
 those fields; through the API the request is rejected with `422 credential_redirect` until
@@ -833,7 +834,7 @@ expectation can sit side by side, so the label is per check, not per run.
 
 ## Author a check
 
-1. Create (or open) a **suite** and point it at a **target** — a table (Snowflake/UC/PostgreSQL), a
+1. Create (or open) a **suite** and point it at a **target** — a table (Snowflake, Unity Catalog or any of the SQL engines), a
    file/path or batch pattern (ADLS/S3), or an Iceberg `namespace.table`. On every datasource
    you can **browse** for it instead of typing it — see below.
 2. **Add check** opens a dedicated page (`/suites/<id>/checks/new`): pick a **category**,
@@ -919,8 +920,9 @@ or all of them).
 timestamp stored as text against a Python `strftime` format, and *Column values are valid
 JSON* parses a text payload column. Great Expectations implements both for dataframe
 batches only, so they are offered on flat files, Iceberg and Unity Catalog but **not on
-Snowflake**, where the editor hides them and the API rejects them — use a custom-SQL check
-(or a VARIANT column) there rather than saving a check that would error on every run.
+Snowflake or the generic SQL engines** (PostgreSQL, MySQL/MariaDB, Trino, SQL Server, Athena,
+Redshift), where the editor hides them and the API rejects them — use a custom-SQL check
+(or a VARIANT column on Snowflake) there rather than saving a check that would error on every run.
 
 ### Which expectation types are available
 
@@ -958,7 +960,7 @@ a two-part name would silently resolve against the session's default schema — 
 *different table*, quietly checked. A UC target without a schema therefore errors
 its custom-SQL checks (with that reason on the result) while every other check in
 the suite runs normally. Set the schema on the suite's run target to fix it.
-Snowflake, PostgreSQL, MySQL and Trino are unaffected — their schema comes from the connection.
+The other SQL datasources are unaffected — their schema comes from the connection or the run target.
 
 ### Snowflake DMF (ADR 0036)
 
@@ -1128,7 +1130,7 @@ accuracy, validity or consistency depending on why you wrote it. Under zero-samp
 *Did the shape change under you?* Capture a **baseline** column-name/type snapshot,
 then each run diffs the live snapshot against it and flags any add / drop /
 type-change. Introspection is per-datasource, never a `CheckRunner`/GX pass or a
-data scan: `information_schema` for Snowflake/Unity Catalog/PostgreSQL/MySQL/Trino, the Parquet footer (or
+data scan: `information_schema` for Snowflake/Unity Catalog/PostgreSQL/MySQL/Trino/SQL Server/Athena (Redshift reads `svv_columns`, which also lists late-binding views), the Parquet footer (or
 a bounded CSV header sample, or a JSON file's first 1 MiB) for ADLS Gen2/S3 flat files, and the loaded table's own
 metadata for Iceberg. Re-baseline explicitly once you've reviewed a drift and want
 it as the new normal — it is never re-baselined for you.
@@ -1216,9 +1218,9 @@ doesn't belong to. That matters because the point of dimensions is coverage —
 "this table has no Timeliness checks at all" is the actionable finding, and it
 would be a lie if unclassified checks were silently bucketed.
 
-Checks created before this feature landed are unclassified until you next edit
-them; they were deliberately not bulk-classified, so a derived guess is never
-mistaken for someone's decision.
+Checks created before this feature landed were classified once by the same
+derivation when it shipped (ADR 0038's §5 amendment); types with no derivable
+dimension, such as custom SQL, stayed unclassified.
 
 ### Type names for `expect_column_values_to_be_of_type`
 

@@ -2607,7 +2607,7 @@ credentials are in the data directory and are kept.</p>
 <h2 id="a-cloud-deployment">A cloud deployment<a class="headerlink" href="#a-cloud-deployment" title="Permanent link">¶</a></h2>
 <p>Run the <strong>Deploy</strong> workflow on the release tag (see <a href="../deployment/">Deployment</a>). It builds
 the images, runs the migration job and waits for it to succeed, and only then rolls the API,
-the worker and the frontend. If the migration fails, nothing is rolled.</p>
+the worker, the scheduler (beat) and the frontend. If the migration fails, nothing is rolled.</p>
 <p>Infrastructure changes are separate: if the changelog says the OpenTofu stack changed, run
 <code>tofu plan</code> and <code>tofu apply</code> on it first.</p>
 <h2 id="after-you-upgrade">After you upgrade<a class="headerlink" href="#after-you-upgrade" title="Permanent link">¶</a></h2>

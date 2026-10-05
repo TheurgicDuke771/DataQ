@@ -3424,10 +3424,11 @@ itself can be checked.</p>
 <h3 id="moving-a-connection-to-a-new-host">Moving a connection to a new host<a class="headerlink" href="#moving-a-connection-to-a-new-host" title="Permanent link">¶</a></h3>
 <p>Editing a field that decides <em>where</em> the credential is sent — Snowflake <code>account</code>, ADLS
 <code>account_url</code> / <code>auth_type</code> / <code>tenant_id</code> / <code>client_id</code>, S3/dbt <code>endpoint_url</code>, Unity Catalog <code>workspace_url</code>, Iceberg <code>catalog_uri</code> /
-<code>warehouse</code> / <code>properties</code> / <code>secret_property</code>, PostgreSQL / MySQL <code>host</code> / <code>port</code>, Trino
+<code>warehouse</code> / <code>properties</code> / <code>secret_property</code>, PostgreSQL / MySQL / Redshift <code>host</code> / <code>port</code>, Trino
 <code>host</code> / <code>port</code> / <code>sslmode</code> / <code>ca_bundle</code> / <code>auth_type</code>, SQL Server <code>host</code> / <code>port</code> / <code>auth_type</code> /
-<code>tenant_id</code> / <code>client_id</code> / <code>ca_bundle</code> / <code>driver</code>, Airflow
-<code>base_url</code>, dbt <code>artifacts_uri</code> —
+<code>tenant_id</code> / <code>client_id</code> / <code>ca_bundle</code> / <code>driver</code>, Athena <code>host</code> / <code>region</code> / <code>work_group</code> /
+<code>s3_staging_dir</code>, Airflow <code>base_url</code>, dbt <code>artifacts_uri</code> / <code>endpoint_url</code> / <code>account_url</code> /
+<code>auth_type</code> / <code>tenant_id</code> / <code>client_id</code> —
 requires re-entering
 that credential in the same save. The edit form asks for it as soon as you change one of
 those fields; through the API the request is rejected with <code>422 credential_redirect</code> until
@@ -4133,7 +4134,7 @@ read. Within one run a volume monitor (pushed down, exact) and a sampled
 expectation can sit side by side, so the label is per check, not per run.</p>
 <h2 id="author-a-check">Author a check<a class="headerlink" href="#author-a-check" title="Permanent link">¶</a></h2>
 <ol>
-<li>Create (or open) a <strong>suite</strong> and point it at a <strong>target</strong> — a table (Snowflake/UC/PostgreSQL), a
+<li>Create (or open) a <strong>suite</strong> and point it at a <strong>target</strong> — a table (Snowflake, Unity Catalog or any of the SQL engines), a
    file/path or batch pattern (ADLS/S3), or an Iceberg <code>namespace.table</code>. On every datasource
    you can <strong>browse</strong> for it instead of typing it — see below.</li>
 <li><strong>Add check</strong> opens a dedicated page (<code>/suites/&lt;id&gt;/checks/new</code>): pick a <strong>category</strong>,
@@ -4209,8 +4210,9 @@ or all of them).</p>
 timestamp stored as text against a Python <code>strftime</code> format, and <em>Column values are valid
 JSON</em> parses a text payload column. Great Expectations implements both for dataframe
 batches only, so they are offered on flat files, Iceberg and Unity Catalog but <strong>not on
-Snowflake</strong>, where the editor hides them and the API rejects them — use a custom-SQL check
-(or a VARIANT column) there rather than saving a check that would error on every run.</p>
+Snowflake or the generic SQL engines</strong> (PostgreSQL, MySQL/MariaDB, Trino, SQL Server, Athena,
+Redshift), where the editor hides them and the API rejects them — use a custom-SQL check
+(or a VARIANT column on Snowflake) there rather than saving a check that would error on every run.</p>
 <h3 id="which-expectation-types-are-available">Which expectation types are available<a class="headerlink" href="#which-expectation-types-are-available" title="Permanent link">¶</a></h3>
 <p>The complete, generated list — every type with its parameters, thresholds and the datasources
 it runs on — is the <a href="../../reference/check-types/">Check types reference</a>.</p>
@@ -4240,7 +4242,7 @@ a two-part name would silently resolve against the session's default schema — 
 <em>different table</em>, quietly checked. A UC target without a schema therefore errors
 its custom-SQL checks (with that reason on the result) while every other check in
 the suite runs normally. Set the schema on the suite's run target to fix it.
-Snowflake, PostgreSQL, MySQL and Trino are unaffected — their schema comes from the connection.</p>
+The other SQL datasources are unaffected — their schema comes from the connection or the run target.</p>
 <h3 id="snowflake-dmf-adr-0036">Snowflake DMF (ADR 0036)<a class="headerlink" href="#snowflake-dmf-adr-0036" title="Permanent link">¶</a></h3>
 <p>On a Snowflake connection, the check editor offers a separate <strong>Snowflake DMF</strong>
 category: your own custom DMFs (below), and seven system types — null count, null percent, duplicate count, unique count,
@@ -4400,7 +4402,7 @@ accuracy, validity or consistency depending on why you wrote it. Under zero-samp
 <p><em>Did the shape change under you?</em> Capture a <strong>baseline</strong> column-name/type snapshot,
 then each run diffs the live snapshot against it and flags any add / drop /
 type-change. Introspection is per-datasource, never a <code>CheckRunner</code>/GX pass or a
-data scan: <code>information_schema</code> for Snowflake/Unity Catalog/PostgreSQL/MySQL/Trino, the Parquet footer (or
+data scan: <code>information_schema</code> for Snowflake/Unity Catalog/PostgreSQL/MySQL/Trino/SQL Server/Athena (Redshift reads <code>svv_columns</code>, which also lists late-binding views), the Parquet footer (or
 a bounded CSV header sample, or a JSON file's first 1 MiB) for ADLS Gen2/S3 flat files, and the loaded table's own
 metadata for Iceberg. Re-baseline explicitly once you've reviewed a drift and want
 it as the new normal — it is never re-baselined for you.</p>
@@ -4504,9 +4506,9 @@ up as a <strong>coverage gap</strong> rather than being quietly filed under a di
 doesn't belong to. That matters because the point of dimensions is coverage —
 "this table has no Timeliness checks at all" is the actionable finding, and it
 would be a lie if unclassified checks were silently bucketed.</p>
-<p>Checks created before this feature landed are unclassified until you next edit
-them; they were deliberately not bulk-classified, so a derived guess is never
-mistaken for someone's decision.</p>
+<p>Checks created before this feature landed were classified once by the same
+derivation when it shipped (ADR 0038's §5 amendment); types with no derivable
+dimension, such as custom SQL, stayed unclassified.</p>
 <h3 id="type-names-for-expect_column_values_to_be_of_type">Type names for <code>expect_column_values_to_be_of_type</code><a class="headerlink" href="#type-names-for-expect_column_values_to_be_of_type" title="Permanent link">¶</a></h3>
 <p>Everything here applies equally to its sibling <strong>Column values are of one of several
 types</strong> (<code>expect_column_values_to_be_in_type_list</code>), whose <code>type_list</code> takes the same

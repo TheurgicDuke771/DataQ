@@ -2585,7 +2585,7 @@ may have been read or altered by an unauthorized party.</p>
 <p>Record the <strong>time of awareness</strong> first; every regulatory clock runs from it.</p>
 <ol>
 <li><strong>Revoke what's compromised, narrowest first:</strong></li>
-<li>A PAT → delete it in <em>Profile → API keys</em> (or <code>DELETE /api/v1/me/api-keys/{key_id}</code>).
+<li>A PAT → delete it in <em>Profile → Personal access tokens</em> (or <code>DELETE /api/v1/me/api-keys/{key_id}</code>).
      Role changes and revocations apply on the holder's <strong>next request</strong> — there
      is no token to wait out.</li>
 <li>A user account → demote to <code>viewer</code> (Admin → Members) or disable at the IdP;

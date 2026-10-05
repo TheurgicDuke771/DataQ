@@ -2663,12 +2663,12 @@ vulnerability open, the change can take effect immediately. It is still announce
 </thead>
 <tbody>
 <tr>
-<td>Unreleased</td>
+<td>v1.2.0</td>
 <td><code>POST /connections</code>, a config- or credential-changing <code>PATCH /connections/{id}</code>, and <code>POST /connections/{id}/reauth</code> return <code>422 connection_test_failed_on_save</code> and write nothing when the connection's test fails; <code>PUT /admin/llm</code> does the same for an enabled provider (<code>422 llm_test_failed_on_save</code>).</td>
 <td>A request this now refuses used to save a connection that could not work, and a failing re-auth used to overwrite a working credential. A client that wants the old behaviour sends the new optional <code>skip_test: true</code>, so no client is left without a path.</td>
 </tr>
 <tr>
-<td>Unreleased</td>
+<td>v1.2.0</td>
 <td>On <code>PATCH /suites/{id}/checks/{id}</code>, an explicit <code>null</code> for <code>warn_threshold</code>, <code>fail_threshold</code> or <code>critical_threshold</code> now clears that threshold; before, it was ignored. Omitting the key keeps the stored value, as it always did.</td>
 <td>It is a bug fix: a threshold, once set, could not be removed through the API or the check editor at all, and <code>null</code> had no documented meaning there. The Python client is unaffected (it omits fields you do not set).</td>
 </tr>
