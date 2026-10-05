@@ -12,7 +12,7 @@ value check, run it, read the result, and wired an alert.
 Open the app URL and sign in — the local/eval stack defaults to an **email one-time code**
 (check the bundled Mailpit inbox at `http://localhost:8025`); a production deployment
 typically uses your **identity provider (SSO)**. See
-[Getting started](install.md#choosing-an-auth-mode) for the three sign-in modes. You land on
+[Getting started](install.md#choosing-an-auth-mode) for the sign-in modes. You land on
 the **Dashboard** — empty for now, with a **Get started** panel listing the four steps this
 tutorial walks through (connect a data source, create a suite, add a check, run it). The
 panel offers the next step you are allowed to take, is the same for everyone in the
@@ -37,8 +37,8 @@ like this:
 
     *Adding a Snowflake connection, start to finish (12 s)*
 
-2. Pick your datasource type (Snowflake, Unity Catalog, ADLS Gen2, S3, or Apache
-   Iceberg). The form is spec-driven — it asks only for what that type needs.
+2. Pick your datasource type (Snowflake, Unity Catalog, ADLS Gen2, S3, Apache Iceberg,
+   PostgreSQL, MySQL / MariaDB, Trino, SQL Server, Amazon Athena or Amazon Redshift). The form is spec-driven — it asks only for what that type needs.
 
     ![Choosing a datasource type: warehouses, lakehouses, cloud storage, and the optional orchestration providers](../assets/screenshots/connection-type-picker.png){ .screenshot }
 
@@ -129,7 +129,8 @@ If a run *failed to execute* (bad credential, unreachable store), it shows a pla
 The short version is below; the full walk-through with screenshots is
 [Your first alert](first-alert.md).
 
-1. On the suite, open **Notifications** and add a channel — Teams, Slack, or email — and pick
+1. On the suite, open **Notifications** and link a channel — Teams, Slack, email or a
+   webhook, defined by an Admin — and pick
    a threshold (the default **warn-and-worse** is a good start).
 
 2. Now a breaching run notifies you, with a deep link back to the run and the

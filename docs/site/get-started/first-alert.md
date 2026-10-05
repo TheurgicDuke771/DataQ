@@ -6,9 +6,10 @@ breaches — and silence when nothing changed.
 ## 1. Decide where alerts go
 
 Alerts are configured **per suite**, so the team that owns the data gets told about its data.
-Workspace-wide defaults (a Slack webhook, an SMTP sender, a Teams webhook) are set by whoever
-deployed DataQ through environment configuration; a suite can override the Teams webhook and
-the email recipients.
+Destinations are **channels** — a Teams or Slack webhook, an email recipient list, or a signed
+webhook — defined once by an Admin under **Admin → Settings → Notification channels** and then
+linked to any suite. Workspace-wide defaults (a Slack webhook, an SMTP sender, a Teams webhook)
+are set by whoever deployed DataQ through environment configuration.
 
 ![Admin → Settings → Notification channels: destinations are defined once here, then linked from each suite](../assets/screenshots/settings-notifications.png){ .screenshot }
 
@@ -18,16 +19,16 @@ the email recipients.
 
 Open the suite and scroll to **Notifications**:
 
-![A suite's Notifications panel: the on/off switch, the alert threshold, optional Teams and Slack webhooks, and email recipients](../assets/screenshots/suite-notifications.png){ .screenshot }
+![A suite's Notifications panel: the on/off switch, the alert threshold, and the linked channels](../assets/screenshots/suite-notifications.png){ .screenshot }
 
 *Everything an alert needs, on the suite itself.*
 
 1. Switch **Send alerts for this suite** on.
 2. Pick the **alert threshold**. The default, *On warn and worse*, is the right first choice:
    quiet for a passing run, loud the moment a check crosses a threshold you set.
-3. Optionally paste a **Teams** or **Slack** webhook for this suite, or list **email
-   recipients**. Leave a field blank to fall back to the workspace default. Webhook URLs are
-   write-only: after saving, the tag reads *set* and the URL is never shown again.
+3. Under **Channels**, pick the channels this suite alerts through. Link none to fall back to
+   the workspace default. Webhook URLs live in the secret store and are never shown again
+   after an Admin saves the channel.
 4. **Save**.
 
 ## 3. Prove it fires

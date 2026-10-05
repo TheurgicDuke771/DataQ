@@ -20,6 +20,11 @@ Stores you write checks **against** (see [Datasources & checks](datasources-chec
 - **Apache Iceberg** — native `pyiceberg` read straight from object storage, no query
   engine in front: `namespace.table` addressing, REST / SQL / Glue / Hive catalogs,
   credential-less catalogs supported, also reads Delta UniForm tables (ADR 0030) through Unity Catalog's Iceberg REST catalog (`/api/2.1/unity-catalog/iceberg-rest`). Reading the data files needs Unity Catalog to vend storage credentials: the metastore must allow external data access, and the principal needs `EXTERNAL USE SCHEMA` on the schema. Databricks Free Edition's default storage supports neither, so there only the table metadata loads.
+- **PostgreSQL**, **MySQL / MariaDB**, **Trino**, **SQL Server** (incl. Azure SQL, Synapse
+  and Fabric SQL), **Amazon Athena** and **Amazon Redshift** — the generic SQL engines
+  (ADR 0044/0045): checks push down as SQL, read-only sessions wherever the engine has one.
+- **Fabric OneLake** lakehouse files — through an ADLS Gen2 connection with a service
+  principal, not a separate type.
 
 ## Checks & authoring
 
@@ -38,6 +43,8 @@ schema-drift / anomaly / comparison** monitor kinds:
   count, future-timestamp percent) can instead run on Snowflake's own **Data Metric Functions (DMF)** engine — a separate
   category in the check editor, selected per check. The same category runs **custom DMFs**
   your team created in Snowflake, over columns of the suite's table.
+  On a Unity Catalog connection, a **Databricks DQX** category runs DQX row rules as a
+  serverless job in your own workspace (ADR 0036).
 - **Custom SQL** — an escape hatch for cross-column/join rules: rows returned = failures.
   Read-only, single-statement (enforced). SQL datasources only.
 - **Freshness monitor** — hours since the latest timestamp (is the data stale?). On a
@@ -46,7 +53,8 @@ schema-drift / anomaly / comparison** monitor kinds:
   a timestamp inside the data cannot see.
 - **Volume monitor** — row count within an expected range (did the load land whole?).
   Freshness + volume are the auto-monitor kinds and run on **every** datasource: the SQL
-  datasources (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server), Apache Iceberg (computed natively via a
+  datasources (Snowflake / Unity Catalog / PostgreSQL / MySQL / Trino / SQL Server / Athena /
+  Redshift), Apache Iceberg (computed natively via a
   `pyiceberg` scan rather than SQL), and ADLS Gen2 / S3 flat files.
 - **Schema-drift monitor** — flags a column added, dropped, or type-changed against a
   stored baseline (did the shape change under you?). Also runs on **every** datasource —
@@ -100,8 +108,8 @@ Four ways a suite runs (all the same authz — [feature matrix](../reference/fea
   severity-weighted **health score**, pass rate, run counts, average duration, per-day
   trends, and per-suite performance. Assets are the primary lens (ADR 0034 nav inversion):
   the sidebar leads with **Assets** above Suites, and every suite/run links back to its asset.
-- **Warehouse inventory sync** (ADR 0040) — an opt-in per-connection toggle
-  (Snowflake / Unity Catalog connection forms) that enumerates every table the
+- **Warehouse inventory sync** (ADR 0040) — a per-connection toggle, on by default
+  (Snowflake / Unity Catalog / the generic SQL engines), that enumerates every table the
   connection can see into the asset view daily, so a table with no suite, run,
   or lineage signal is **visible as unmonitored** instead of invisible. Synced
   tables age out automatically once dropped from the warehouse. Unity Catalog
@@ -166,6 +174,9 @@ are **not** datasources ([Orchestration](orchestration.md)):
 
 All three sit behind one provider interface; **trigger bindings** map
 `(provider, pipeline/DAG/job, env) → suite`.
+A pipeline stage can also **gate** on DataQ (ADR 0046): `POST /api/v1/orchestration/gate`
+starts its bound suites for this run and waits for the verdict, or only reads it — DataQ
+answers, your DAG decides ([Gate a pipeline on DataQ](orchestration.md#gate-a-pipeline-on-dataq)).
 
 ## Alerting
 
@@ -252,9 +263,10 @@ and/or a generic OTLP endpoint ([Observability](../operate/observability.md)).
 
 ## Deployment & portability
 
-Runs live today on **both Azure Container Apps and AWS ECS Fargate** — two independent,
-equally-real deployments (API + worker + frontend; the frontend is the sole public
-surface on each). Every cloud dependency sits behind a seam — OIDC auth, the secret
+Ships reference deployments for **both Azure Container Apps and AWS ECS Fargate** — two
+independent, equally-supported targets in `deploy/terraform/` (API + worker + frontend; the
+frontend is the sole public surface on each), plus a production-like single-host Docker
+stack (`docker-compose.ghcr.yml`) with TLS on every hop. Every cloud dependency sits behind a seam — OIDC auth, the secret
 store, observability export, and the orchestration providers are each swappable behind a
 provider-agnostic interface, which is what let AWS ship as a second target with zero app
 code differing between clouds ([Architecture](../architecture/overview.md), [deployment

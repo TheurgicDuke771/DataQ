@@ -118,8 +118,8 @@ instead of retrying in a loop.
 
 ## The rest of the API
 
-`DataQClient` covers running, waiting, exporting and importing suites, and acknowledging or
-resolving incidents. Every other REST endpoint is available through the generated layer, typed
+`DataQClient` covers running, waiting and gating, exporting, importing, validating and applying
+suites, and acknowledging or resolving incidents. Every other REST endpoint is available through the generated layer, typed
 from the API's own specification:
 
 ```python
