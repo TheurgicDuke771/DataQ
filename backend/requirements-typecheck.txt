@@ -15,7 +15,7 @@
 #     pins. No second list to keep in step (#2080).
 
 anthropic==1.8.0
-fastapi==0.141.1
+fastapi==0.142.2
 fastapi-azure-auth==5.3.0
 fastmcp==4.0.10
 # fastmcp 4's mcp SDK depends on httpx2, not httpx, so httpx — imported directly by 11
