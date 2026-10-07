@@ -29,8 +29,8 @@
 | **v1.2 baseline** | `v1.2.0` — 2026-08-22 → 2026-10-04: 533 commits, 513 issues closed across eight weekly milestones plus 223 in the backlog, ADRs 0042–0047, datasources 5 → 11, MCP tools 46 → 54; ledger at [progress-v1.2.md](progress-v1.2.md), retro at [retro-v1.2.md](retro-v1.2.md) |
 | **Current cycle** | **v1.3 — 8 weeks, 2026-10-05 → 2026-11-29**, no net-new features: roadmap and filed features first (W1–W5), then bug fixes and security (W6), polish (W7), debt, decisions and the close (W8). Roadmap theme in [context/roadmap-v1.2-v1.3.md](../context/roadmap-v1.2-v1.3.md). |
 | **Environment** | No live cloud environment (estate retired 2026-10-03). Work is verified on the local stacks; live verification against Snowflake, Unity Catalog, Azure or AWS waits on [#2224](https://github.com/TheurgicDuke771/DataQ/issues/2224). |
-| **Open issues** | **84** open repo-wide (2026-10-07, live re-count), all in the eight v1.3 weekly milestones; `v1.3 Backlog` is empty and `v1.2 Backlog` is closed. |
-| **Open PRs** | **1 open** (2026-10-07): [#2412](https://github.com/TheurgicDuke771/DataQ/pull/2412), the #1762 promote-to-channel change. |
+| **Open issues** | **83** open repo-wide (2026-10-07, live re-count), all in the eight v1.3 weekly milestones; `v1.3 Backlog` is empty and `v1.2 Backlog` is closed. |
+| **Open PRs** | **0 open** (2026-10-07), apart from the one carrying this update. |
 
 ---
 
@@ -56,11 +56,13 @@ Named so nothing rolls silently (see the retro's "What rolls"):
 
 | Status | Task |
 |---|---|
-| ⬜ | [#1661](https://github.com/TheurgicDuke771/DataQ/issues/1661) feat(monitors): zero-config auto-baselines — unknown-unknown detection without an authored check |
+| ⬜ | [#1661](https://github.com/TheurgicDuke771/DataQ/issues/1661) feat(monitors): zero-config auto-baselines — unknown-unknown detection without an authored check — researched 2026-10-07: ADR 0047 already covers all but sensitivity config above the check level; needs an ADR 0047 amendment and one decision (see the issue) |
 | ✅ | [#2369](https://github.com/TheurgicDuke771/DataQ/issues/2369) feat(checks): enable/disable a check without deleting it (single and bulk) — migration [PR #2414](https://github.com/TheurgicDuke771/DataQ/pull/2414), code [PR #2415](https://github.com/TheurgicDuke771/DataQ/pull/2415) |
-| ⬜ | [#1674](https://github.com/TheurgicDuke771/DataQ/issues/1674) feat(privacy): profiler-side PII auto-detection as an additional classification source |
-| ⬜ | [#1675](https://github.com/TheurgicDuke771/DataQ/issues/1675) feat(monitors): pii_drift monitor kind — PII-looking data appearing in an unclassified column |
+| ⬜ | [#1674](https://github.com/TheurgicDuke771/DataQ/issues/1674) feat(privacy): profiler-side PII auto-detection as an additional classification source — researched 2026-10-07: five design decisions needed before code (see the issue) |
+| ⬜ | [#1675](https://github.com/TheurgicDuke771/DataQ/issues/1675) feat(monitors): pii_drift monitor kind — PII-looking data appearing in an unclassified column — blocked on #1674; also needs a migration widening the kind constraints |
 | ✅ | [#1762](https://github.com/TheurgicDuke771/DataQ/issues/1762) feat(notifications): promote an existing per-suite webhook to a reusable channel — [PR #2412](https://github.com/TheurgicDuke771/DataQ/pull/2412) (guided in-app action, no migration) |
+
+Filed from this week's reviews, in later weeks: [#2413](https://github.com/TheurgicDuke771/DataQ/issues/2413) (Week 6), [#2416](https://github.com/TheurgicDuke771/DataQ/issues/2416) (Week 6), [#2417](https://github.com/TheurgicDuke771/DataQ/issues/2417) (Week 7).
 
 ### v1.3 Week 2 — operating DataQ & the first outside user (due 2026-10-18)
 
@@ -125,6 +127,8 @@ Named so nothing rolls silently (see the retro's "What rolls"):
 | ⬜ | [#2311](https://github.com/TheurgicDuke771/DataQ/issues/2311) security(adf): enforce webhook replay/freshness on ADF alerts (firedDateTime) |
 | ⬜ | [#2392](https://github.com/TheurgicDuke771/DataQ/issues/2392) Docs workflow: a release tag's Pages deploy omits the version it just published, and one stuck deploy blocked every publish for four days |
 | ⬜ | [#2136](https://github.com/TheurgicDuke771/DataQ/issues/2136) Flaky test: test_revoke_all_for_user_is_attributed_to_the_actor orders audit events by a tied timestamp |
+| ⬜ | [#2413](https://github.com/TheurgicDuke771/DataQ/issues/2413) Promote to channel: a legacy ref whose secret is gone becomes a channel that never delivers |
+| ⬜ | [#2416](https://github.com/TheurgicDuke771/DataQ/issues/2416) A suite with no runnable check still runs and ends succeeded with zero results (dashboard, gate and coverage read it as clean) |
 
 ### v1.3 Week 7 — polish: MCP & API, performance, accessibility (due 2026-11-22)
 
@@ -150,6 +154,7 @@ Named so nothing rolls silently (see the retro's "What rolls"):
 | ⬜ | [#2064](https://github.com/TheurgicDuke771/DataQ/issues/2064) ux: in-app navigation never resets scroll — a new page opens at the previous page's scroll offset |
 | ⬜ | [#2061](https://github.com/TheurgicDuke771/DataQ/issues/2061) a11y: printing / PDF export from the dark theme inherits dark tokens |
 | ⬜ | [#2051](https://github.com/TheurgicDuke771/DataQ/issues/2051) a11y: the ratchet cannot detect under-reporting — a scan of a half-loaded page passes |
+| ⬜ | [#2417](https://github.com/TheurgicDuke771/DataQ/issues/2417) mcp: incident, history and snooze tools do not say when the check they describe is switched off |
 
 ### v1.3 Week 8 — test & dependency debt, decisions & cycle close (due 2026-11-29)
 
