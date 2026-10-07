@@ -1,0 +1,47 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "11f8999cabb6",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-2369-check-enable-disable",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/suites.py",
+    "backend/app/mcp/server.py",
+    "backend/app/services/check_service.py",
+    "backend/app/services/lineage_placement.py",
+    "backend/app/services/suite_io_service.py",
+    "backend/tests/api/test_checks.py",
+    "backend/tests/api/test_suites.py",
+    "backend/tests/mcp/test_mcp_tools.py",
+    "backend/tests/services/test_lineage_placement.py",
+    "docs/site/reference/changelog.md",
+    "docs/site/reference/suite-document.md",
+    "frontend/src/pages/CheckEdit.tsx",
+    "frontend/src/pages/Suites.tsx",
+    "frontend/tests/pages/CheckEdit.test.tsx",
+    "frontend/tests/pages/Suites.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/11/f8999cabb6/0/metadata.json",
+      "transcript": "/11/f8999cabb6/0/full.jsonl",
+      "compact_transcript": "/11/f8999cabb6/0/transcript.jsonl",
+      "content_hash": "/11/f8999cabb6/0/content_hash.txt",
+      "prompt": "/11/f8999cabb6/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 42,
+    "cache_creation_tokens": 45227,
+    "cache_read_tokens": 9547022,
+    "output_tokens": 24347,
+    "api_call_count": 21,
+    "subagent_tokens": {
+      "input_tokens": 26,
+      "cache_creation_tokens": 105083,
+      "cache_read_tokens": 1099876,
+      "output_tokens": 116,
+      "api_call_count": 13
+    }
+  }
+}
