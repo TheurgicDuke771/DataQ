@@ -35,7 +35,8 @@ def _has_column(db: Any, table: str) -> bool:
         db.scalar(
             text(
                 "SELECT count(*) FROM information_schema.columns "
-                "WHERE table_name = :table AND column_name = 'enabled'"
+                "WHERE table_schema = current_schema() "
+                "AND table_name = :table AND column_name = 'enabled'"
             ),
             {"table": table},
         )
@@ -95,6 +96,10 @@ def test_a_writer_that_predates_the_column_still_inserts_an_enabled_check(
     db_session: Any,
 ) -> None:
     """The release running while this migration deploys names no `enabled` in its INSERTs."""
+    # Down then up, so the default under test is the one the MIGRATION leaves on the
+    # column, not the one `create_all` built the fixture schema with.
+    _run(db_session, "downgrade")
+    _run(db_session, "upgrade")
     written_by_old_code = _check_with_version(db_session)
 
     assert _enabled(db_session, written_by_old_code) == (True, True)
