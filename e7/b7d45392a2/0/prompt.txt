@@ -1,0 +1,3 @@
+Okay, let's close the session after #2412 merged. 
+and create a proper handover node for the next session with all the details. 
+switch to main, sync with remote, remove all the dead worktrees and prune all the unnecessary remote and local branches.
