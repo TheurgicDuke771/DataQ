@@ -125,9 +125,34 @@ describe('CheckEdit', () => {
       warn_threshold: 5,
       fail_threshold: 10,
       critical_threshold: null,
+      // The switch's own state rides every save; a check loaded switched on stays on.
+      enabled: true,
     });
     expect(await screen.findByText('Suite detail')).toBeInTheDocument();
   });
+
+  it.each([
+    { flip: false, sent: false },
+    { flip: true, sent: true },
+  ])(
+    'saves a switched-off check with enabled=$sent when the switch is flipped=$flip',
+    async ({ flip, sent }) => {
+      const user = userEvent.setup();
+      mockGetSuite.mockResolvedValue(suite);
+      mockGetCheck.mockResolvedValue({ ...existing, enabled: false });
+      mockGetConnection.mockResolvedValue(connection);
+      mockUpdate.mockResolvedValue({ ...existing, enabled: sent });
+      renderPage();
+
+      const toggle = await screen.findByRole('switch', { name: 'Enabled' });
+      await waitFor(() => expect(toggle).not.toBeChecked());
+      if (flip) await user.click(toggle);
+      await user.click(screen.getByRole('button', { name: 'Save' }));
+
+      await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+      expect(mockUpdate.mock.calls[0][2]).toMatchObject({ enabled: sent });
+    },
+  );
 
   it('edits a custom SQL check in the plain editor, with no generate panel', async () => {
     // The panel belongs to the "Generate from a description" entry point on the add page.
@@ -716,6 +741,7 @@ describe('CheckEdit — anomaly monitor (#593)', () => {
       warn_threshold: null,
       fail_threshold: 3,
       critical_threshold: null,
+      enabled: true,
     });
   });
 });

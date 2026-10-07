@@ -39,6 +39,7 @@ class CheckVersionRead:
             version_no (int):
             warn_threshold (float | None):
             dimension (None | str | Unset):
+            enabled (bool | Unset):  Default: True.
             source_connection_id (None | Unset | UUID):
     """
 
@@ -55,6 +56,7 @@ class CheckVersionRead:
     version_no: int
     warn_threshold: float | None
     dimension: None | str | Unset = UNSET
+    enabled: bool | Unset = True
     source_connection_id: None | Unset | UUID = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
@@ -97,6 +99,8 @@ class CheckVersionRead:
         else:
             dimension = self.dimension
 
+        enabled = self.enabled
+
         source_connection_id: None | str | Unset
         if isinstance(self.source_connection_id, Unset):
             source_connection_id = UNSET
@@ -125,6 +129,8 @@ class CheckVersionRead:
         )
         if dimension is not UNSET:
             field_dict["dimension"] = dimension
+        if enabled is not UNSET:
+            field_dict["enabled"] = enabled
         if source_connection_id is not UNSET:
             field_dict["source_connection_id"] = source_connection_id
 
@@ -202,6 +208,8 @@ class CheckVersionRead:
 
         dimension = _parse_dimension(d.pop("dimension", UNSET))
 
+        enabled = d.pop("enabled", UNSET)
+
         def _parse_source_connection_id(data: object) -> None | Unset | UUID:
             if data is None:
                 return data
@@ -233,6 +241,7 @@ class CheckVersionRead:
             version_no=version_no,
             warn_threshold=warn_threshold,
             dimension=dimension,
+            enabled=enabled,
             source_connection_id=source_connection_id,
         )
 

@@ -23,6 +23,7 @@ class CheckUpdate:
         config (CheckUpdateConfigType0 | None | Unset):
         critical_threshold (float | None | str | Unset):
         dimension (None | str | Unset):
+        enabled (bool | None | Unset):
         engine (None | str | Unset):
         expectation_type (None | str | Unset):
         fail_threshold (float | None | str | Unset):
@@ -34,6 +35,7 @@ class CheckUpdate:
     config: CheckUpdateConfigType0 | None | Unset = UNSET
     critical_threshold: float | None | str | Unset = UNSET
     dimension: None | str | Unset = UNSET
+    enabled: bool | None | Unset = UNSET
     engine: None | str | Unset = UNSET
     expectation_type: None | str | Unset = UNSET
     fail_threshold: float | None | str | Unset = UNSET
@@ -63,6 +65,12 @@ class CheckUpdate:
             dimension = UNSET
         else:
             dimension = self.dimension
+
+        enabled: bool | None | Unset
+        if isinstance(self.enabled, Unset):
+            enabled = UNSET
+        else:
+            enabled = self.enabled
 
         engine: None | str | Unset
         if isinstance(self.engine, Unset):
@@ -111,6 +119,8 @@ class CheckUpdate:
             field_dict["critical_threshold"] = critical_threshold
         if dimension is not UNSET:
             field_dict["dimension"] = dimension
+        if enabled is not UNSET:
+            field_dict["enabled"] = enabled
         if engine is not UNSET:
             field_dict["engine"] = engine
         if expectation_type is not UNSET:
@@ -166,6 +176,15 @@ class CheckUpdate:
             return cast(None | str | Unset, data)
 
         dimension = _parse_dimension(d.pop("dimension", UNSET))
+
+        def _parse_enabled(data: object) -> bool | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(bool | None | Unset, data)
+
+        enabled = _parse_enabled(d.pop("enabled", UNSET))
 
         def _parse_engine(data: object) -> None | str | Unset:
             if data is None:
@@ -233,6 +252,7 @@ class CheckUpdate:
             config=config,
             critical_threshold=critical_threshold,
             dimension=dimension,
+            enabled=enabled,
             engine=engine,
             expectation_type=expectation_type,
             fail_threshold=fail_threshold,

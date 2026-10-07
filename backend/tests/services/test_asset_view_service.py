@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from backend.app.db.models import (
     DQ_DIMENSIONS,
@@ -324,6 +324,53 @@ def test_an_asset_with_no_checks_is_all_uncovered_not_a_perfect_score(db_session
 
     assert card.covered == []
     assert sorted(card.uncovered) == sorted(DQ_DIMENSIONS)
+
+
+def test_a_switched_off_check_covers_nothing_and_scores_nothing(db_session: Any) -> None:
+    """Its last result is still in the latest run. Counting it would score a dimension
+    the card also has to call uncovered."""
+    owner = _user(db_session)
+    asset = _suite_with_dimensioned_results(
+        db_session,
+        owner,
+        results=[("completeness", "pass"), ("uniqueness", "fail"), (None, "pass")],
+    )
+    db_session.execute(
+        update(Check).where(Check.dimension.is_distinct_from("completeness")).values(enabled=False)
+    )
+    db_session.commit()
+
+    card = _scorecard_for(db_session, asset, owner.id)
+
+    assert [(d.dimension, d.checks_total, d.score) for d in card.covered] == [
+        ("completeness", 1, 100.0)
+    ]
+    assert "uniqueness" in card.uncovered
+    assert card.unclassified_checks == 0
+
+
+def test_a_switched_off_checks_last_result_is_out_of_a_dimension_it_shares(
+    db_session: Any,
+) -> None:
+    """Two completeness checks, the failing one since switched off: the dimension is
+    scored on the one still running, not dragged down by a result nobody will refresh."""
+    owner = _user(db_session)
+    asset = _suite_with_dimensioned_results(
+        db_session, owner, results=[("completeness", "pass"), ("completeness", "fail")]
+    )
+    failing = db_session.scalar(
+        select(Check.id).join(Result, Result.check_id == Check.id).where(Result.status == "fail")
+    )
+    db_session.execute(update(Check).where(Check.id == failing).values(enabled=False))
+    db_session.commit()
+
+    (completeness,) = _scorecard_for(db_session, asset, owner.id).covered
+
+    assert (completeness.checks_total, completeness.checks_passing, completeness.score) == (
+        1,
+        1,
+        100.0,
+    )
 
 
 def test_unclassified_checks_are_counted_but_never_bucketed(db_session: Any) -> None:

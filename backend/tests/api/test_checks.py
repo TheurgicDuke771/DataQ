@@ -3654,3 +3654,170 @@ def test_bulk_thresholds_requires_edit_permission(client: TestClient, db_session
     )
 
     assert resp.status_code == 403
+
+
+# ── enable / disable (#2369) ─────────────────────────────────────────────────
+
+
+def _enabled(client: TestClient, sid: str, cid: str) -> bool:
+    return bool(client.get(f"/api/v1/suites/{sid}/checks/{cid}").json()["enabled"])
+
+
+def test_a_new_check_is_enabled_and_can_be_created_switched_off(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_id(client, db_session)
+    on = client.post(f"/api/v1/suites/{sid}/checks", json=_payload(name="on"))
+    off = client.post(f"/api/v1/suites/{sid}/checks", json=_payload(name="off", enabled=False))
+
+    assert (on.json()["enabled"], off.json()["enabled"]) == (True, False)
+    v1 = client.get(f"/api/v1/suites/{sid}/checks/{off.json()['id']}/versions").json()
+    assert [v["enabled"] for v in v1] == [False]
+
+
+def test_disabling_a_check_is_a_versioned_audited_update_and_keeps_everything_else(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_id(client, db_session)
+    cid = _make_check(client, sid, warn_threshold=1)
+    before = client.get(f"/api/v1/suites/{sid}/checks/{cid}").json()
+
+    resp = client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"enabled": False})
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {**before, "enabled": False}
+    versions = client.get(f"/api/v1/suites/{sid}/checks/{cid}/versions").json()
+    assert [(v["version_no"], v["enabled"]) for v in versions] == [(2, False), (1, True)]
+    (event,) = [
+        e
+        for e in db_session.query(AuditEvent).filter(AuditEvent.entity_type == "check")
+        if e.entity_id == uuid.UUID(cid) and e.action == "check.update"
+    ]
+    assert (event.before["enabled"], event.after["enabled"]) == (True, False)
+
+
+def test_setting_enabled_to_what_it_already_is_writes_nothing(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_id(client, db_session)
+    cid = _make_check(client, sid)
+
+    resp = client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"enabled": True})
+
+    assert resp.status_code == 200
+    versions = client.get(f"/api/v1/suites/{sid}/checks/{cid}/versions").json()
+    assert len(versions) == 1
+    assert _audit_actions(db_session, [cid]) == []
+
+
+def test_an_edit_that_omits_enabled_leaves_a_disabled_check_disabled(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_id(client, db_session)
+    cid = _make_check(client, sid)
+    client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"enabled": False})
+
+    client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"name": "renamed"})
+
+    assert _enabled(client, sid, cid) is False
+
+
+def test_restoring_a_version_never_switches_the_check_on_or_off(
+    client: TestClient, db_session: Any
+) -> None:
+    """v1 was recorded enabled. Restoring it brings back the config, not the switch."""
+    sid = _suite_id(client, db_session)
+    cid = _make_check(client, sid)
+    client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"config": {"column": "amount"}})
+    client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"enabled": False})
+
+    restored = client.post(f"/api/v1/suites/{sid}/checks/{cid}/versions/1/restore")
+
+    assert restored.status_code == 200, restored.text
+    assert restored.json()["config"] == {"column": "order_id"}
+    assert restored.json()["enabled"] is False
+    versions = client.get(f"/api/v1/suites/{sid}/checks/{cid}/versions").json()
+    assert versions[0]["enabled"] is False  # the restore's own snapshot says what it is NOW
+
+
+def test_bulk_enabled_changes_only_the_checks_not_already_in_that_state(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_id(client, db_session)
+    picked = [_make_check(client, sid, name=f"c{i}") for i in range(3)]
+    untouched = _make_check(client, sid, name="left alone")
+    client.patch(f"/api/v1/suites/{sid}/checks/{picked[0]}", json={"enabled": False})
+
+    off = client.post(
+        f"/api/v1/suites/{sid}/checks-bulk/enabled", json={"check_ids": picked, "enabled": False}
+    )
+
+    assert off.status_code == 200, off.text
+    body = off.json()
+    assert body["affected"] == 2  # picked[0] was already off
+    assert [(c["id"], c["enabled"]) for c in body["checks"]] == [(c, False) for c in picked]
+    assert _enabled(client, sid, untouched) is True
+    # One update each: the single PATCH on picked[0], one from the bulk call on the others.
+    assert _audit_actions(db_session, picked) == sorted((c, "check.update") for c in picked)
+    version_counts = [
+        len(client.get(f"/api/v1/suites/{sid}/checks/{c}/versions").json()) for c in picked
+    ]
+    assert version_counts == [2, 2, 2]
+
+    on = client.post(
+        f"/api/v1/suites/{sid}/checks-bulk/enabled", json={"check_ids": picked, "enabled": True}
+    )
+
+    assert on.json()["affected"] == 3
+    assert {c["enabled"] for c in on.json()["checks"]} == {True}
+
+
+def test_bulk_enabled_refuses_everything_when_one_id_is_foreign(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_id(client, db_session)
+    mine = _make_check(client, sid, name="mine")
+    foreign = _make_check(client, _suite_id(client, db_session), name="foreign")
+
+    resp = client.post(
+        f"/api/v1/suites/{sid}/checks-bulk/enabled",
+        json={"check_ids": [mine, foreign], "enabled": False},
+    )
+
+    assert resp.status_code == 404
+    assert _enabled(client, sid, mine) is True
+    assert _audit_actions(db_session, [mine, foreign]) == []
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"check_ids": []},
+        {"check_ids": [str(uuid.uuid4())]},  # no `enabled`: never guess a direction
+        {"check_ids": [str(uuid.uuid4())], "enabled": "maybe"},
+        {"check_ids": [str(uuid.uuid4()) for _ in range(501)], "enabled": False},
+    ],
+)
+def test_bulk_enabled_rejects_a_bad_request_shape(
+    client: TestClient, db_session: Any, body: dict[str, Any]
+) -> None:
+    sid = _suite_id(client, db_session)
+    resp = client.post(f"/api/v1/suites/{sid}/checks-bulk/enabled", json=body)
+    assert resp.status_code == 422
+
+
+def test_switching_a_check_off_needs_edit_permission(client: TestClient, db_session: Any) -> None:
+    owner, b, _e, sid = _owner_b_e_suite(db_session)
+    _as(owner)
+    cid = _make_check(client, sid)
+    _grant(client, owner, sid, b, "view")
+    _as(b)
+
+    single = client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"enabled": False})
+    bulk = client.post(
+        f"/api/v1/suites/{sid}/checks-bulk/enabled", json={"check_ids": [cid], "enabled": False}
+    )
+
+    assert (single.status_code, bulk.status_code) == (403, 403)
+    _as(owner)
+    assert _enabled(client, sid, cid) is True

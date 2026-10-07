@@ -188,9 +188,14 @@ Delivered when a run breaches its threshold ([Notifications & alerting](notifica
 - **Severity routing** — urgency scales with severity; critical escalates.
 - **Dedup** — you hear about a breakage once (and again on escalation); a clean run resets.
 - **Snooze** — silence a known-broken check for N hours (history + re-fire preserved).
+- **Disable a check** — switch a check off from its row or its editor. It keeps its
+  results, version history and baseline, and runs leave it out until you switch it back
+  on: no result, no alert, no incident. A disabled check shows a **Disabled** badge and
+  stops counting toward dimension coverage. Snooze mutes alerts while the check keeps
+  running; disable stops the check running.
 - **Bulk actions on checks** — tick checks on the suite page, or **Select all**, then
-  snooze, unsnooze or delete them together, or **Set thresholds** to give them all the
-  same warn, fail or critical value. It is all-or-nothing: if any one cannot be changed,
+  snooze, unsnooze, disable, enable or delete them together, or **Set thresholds** to
+  give them all the same warn, fail or critical value. It is all-or-nothing: if any one cannot be changed,
   none are, and the ones at fault are named. A bulk delete removes each check's results
   and history, as a single delete does. Thresholds can only be set on checks of one kind
   at a time, because a threshold is compared with the number that kind of check measures.
@@ -243,7 +248,7 @@ results surface applies. Raw sample rows never leave the deployment on any path.
 
 A curated **54-tool MCP server** at `/mcp` lets Claude / Copilot / Cursor list suites, read
 results, checks, runs, connections, schedules, trigger bindings, notification config and the
-reusable notification channels, trigger and cancel runs, poll status, add/update/delete/snooze
+reusable notification channels, trigger and cancel runs, poll status, add/update/delete/snooze/disable
 checks, dry-run a check preview, manage schedules and trigger bindings end-to-end (create /
 update / delete), import a suite and set its run target, read and restore a check's version
 history, read and set a suite's column policy, browse **assets** (the tables DataQ monitors,

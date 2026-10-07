@@ -80,6 +80,9 @@ def export_suite(session: Session, suite: Suite) -> dict[str, Any]:
         # documents and consumers stay byte-identical.
         if c.engine != GX_ENGINE:
             doc["engine"] = c.engine
+        # Same rule: only a switched-off check says so (#2369).
+        if not c.enabled:
+            doc["enabled"] = False
         if c.source_connection_id is not None:
             # RESTRICT FK: a referenced source connection cannot have been
             # deleted, so the row always resolves.
@@ -293,6 +296,7 @@ def import_suite(
             critical_threshold=c["critical_threshold"],
             # Document order: these rows share one `created_at`.
             ordinal=position,
+            enabled=c.get("enabled", True),
         )
         for position, (c, source_id) in enumerate(zip(checks, source_ids, strict=True), start=1)
     ]
@@ -360,6 +364,9 @@ def _check_diff(existing: Check, doc: dict[str, Any], source_id: uuid.UUID | Non
     ]
     if (existing.engine or GX_ENGINE) != doc.get("engine", GX_ENGINE):
         fields.append("engine")
+    # The document is the whole state: a check it does not switch off is switched on.
+    if existing.enabled != doc.get("enabled", True):
+        fields.append("enabled")
     # An absent `dimension` means "leave it"; so does an explicit null, because a check
     # cannot be un-classified through an update.
     if doc.get("dimension") is not None and existing.dimension != doc["dimension"]:
@@ -496,6 +503,7 @@ def apply_document(
                 # An explicit `dimension: null` means unclassified, as on import (ADR 0038).
                 unclassified="dimension" in body and body["dimension"] is None,
                 engine=body.get("engine", GX_ENGINE),
+                enabled=body.get("enabled", True),
                 actor_id=actor_id,
             )
         elif change.action == "update" and body is not None and current is not None:
@@ -512,6 +520,7 @@ def apply_document(
                 source_connection_id=source_id,
                 dimension=body.get("dimension"),
                 engine=body.get("engine", GX_ENGINE),
+                enabled=body.get("enabled", True),
                 actor_id=actor_id,
             )
         elif change.action == "delete" and current is not None:

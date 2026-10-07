@@ -586,8 +586,9 @@ def list_suites() -> list[dict[str, Any]]:
     Use this to discover what suites exist before drilling into results or
     triggering a run. Returns, per suite: its id, name, the datasource it runs
     against (snowflake / adls / s3 / unity_catalog / iceberg / postgres / mysql / mssql /
-    trino), the environment (dev / qa / uat), how many checks it has, and the status + time of
-    its most recent run
+    trino), the environment (dev / qa / uat), how many checks it has (``check_count``, which
+    includes checks that are switched off and so do not run; ``list_checks`` says which),
+    and the status + time of its most recent run
     (null if it has never run). Scoped to suites the user owns or has a share on
     (a workspace-admin sees every suite).
 
@@ -908,6 +909,10 @@ def _check_summary(check: Check) -> dict[str, Any]:
         # a gx one: same kind/type/config, no way to know which evaluator produced its results, or
         # that recreating it without `engine` would silently convert it to gx (#1531).
         "engine": check.engine or "gx",
+        # False = switched off: no run evaluates it. Without this a disabled check reads
+        # as a live rule, and "the suite checks X" would be asserted about something
+        # that has stopped being checked.
+        "enabled": check.enabled,
         "dimension": check.dimension,
         # Non-NULL exactly for `kind='comparison'` (a table CHECK enforces the
         # equivalence): the baseline connection the suite's dataset is diffed
@@ -955,9 +960,15 @@ def list_checks(
     against a platform-native engine like ``dmf``), its DQ dimension (accuracy /
     completeness / consistency / integrity / timeliness / uniqueness / validity,
     or null when unclassified), its configuration, the baseline connection for a
-    comparison check, any warn/fail/critical severity thresholds, and whether its
-    alerts are currently snoozed. This is the suite's *definition* — for how
-    those checks last performed, use ``get_suite_results``.
+    comparison check, any warn/fail/critical severity thresholds, whether its
+    alerts are currently snoozed, and ``enabled``. This is the suite's *definition* —
+    for how those checks last performed, use ``get_suite_results``.
+
+    **``enabled: false`` means the check is switched off and no run evaluates it.**
+    Do not describe such a check as something the suite verifies. It still appears
+    here, and its last result from before it was switched off still appears in older
+    runs, but it produces no new result, alert or incident, and it does not count
+    toward dimension coverage. ``total`` counts disabled checks too.
 
     A null ``alert_snoozed_until`` rules out a per-check snooze only — it does
     **not** mean an alert would have been delivered, which also depends on the
@@ -1139,6 +1150,9 @@ def list_check_versions(
                     # a check re-pointed dmf->gx->dmf has no visible history of
                     # that change without the value AS OF each version.
                     "engine": v.engine or "gx",
+                    # Whether the check was switched on at that version. Recorded
+                    # only: `restore_check_version` never changes it.
+                    "enabled": v.enabled,
                     # Snapshotted (ADR 0038) — reporting the check's CURRENT
                     # dimension beside an OLD config would misstate what the
                     # check was at that version.
@@ -2246,11 +2260,24 @@ def update_check(
     dimension: str | None = None,
     engine: str | None = None,
     clear_thresholds: list[Literal["warn", "fail", "critical"]] | None = None,
+    enabled: bool | None = None,
 ) -> dict[str, Any]:
-    """Change an existing check's definition — a partial update.
+    """Change an existing check's definition, or switch it off or on — a partial update.
 
     Use this for 'loosen the null check on email to warn at 2%' or 'rename that
     check'. Omitted **arguments** are left as they were.
+
+    **To stop a check running without deleting it, pass ``enabled=false``**; pass
+    ``enabled=true`` to switch it back on. A disabled check keeps its results,
+    version history and monitor baseline, and is left out of every run from the next
+    one on: no result, no alert, no incident, and it stops counting toward dimension
+    coverage. This is the right tool for 'stop running that check', 'disable it' or
+    'pause that check'; ``snooze_check`` only mutes alerts while the check keeps
+    running, and ``delete_check`` erases its history. Three things it does **not**
+    do: it does not cancel a run already in progress, it does not resolve an incident
+    that is already open on the check (resolve that yourself with
+    ``resolve_incident``, since no later run can pass and close it), and it does not
+    remove the check's results from past runs.
 
     ``config`` is the exception, and it matters: passing it **replaces the whole
     configuration**, it does not merge into it. So to change one setting you must
@@ -2331,6 +2358,7 @@ def update_check(
             critical_threshold=threshold("critical"),
             dimension=dimension,
             engine=engine,
+            enabled=enabled,
             actor_id=user.id,
         )
         return _check_summary(check)
@@ -2359,6 +2387,11 @@ def restore_check_version(
     restore is recorded as a new version on top, so the state you are replacing
     remains in ``list_check_versions`` and can itself be restored. Restoring the
     version the check is already on is a no-op and records nothing.
+
+    A restore never switches a check on or off. Each version records whether the
+    check was ``enabled`` at the time, but that is history only: a disabled check
+    stays disabled after a restore, so say so if the user expects it to start
+    running again, and use ``update_check`` with ``enabled=true`` for that.
 
     **An old snapshot can be refused.** It is re-validated against today's rules,
     not simply written back, so a version created before a validation rule
@@ -2391,8 +2424,10 @@ def delete_check(suite_id: str, check_id: str) -> dict[str, Any]:
     "erase that this check ever existed".
 
     This cannot be undone. Confirm with the user before calling it, say plainly
-    that result history is included, and prefer ``snooze_check`` when the intent
-    is only to stop the alerting. Requires edit access to the suite.
+    that result history is included, and prefer the two lesser actions when they
+    fit: ``update_check`` with ``enabled=false`` when the intent is to stop the
+    check running but keep its history, and ``snooze_check`` when it is only to
+    stop the alerting. Requires edit access to the suite.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
     cid = _parse_uuid(check_id, field="check_id")
@@ -2428,7 +2463,8 @@ def snooze_check(
 
     A snoozed check **still runs and still fails** — only the alert is
     suppressed. Do not describe a snoozed check as disabled, and do not reach for
-    this when the user wants the check to stop evaluating. Requires edit access.
+    this when the user wants the check to stop evaluating: that is
+    ``update_check`` with ``enabled=false``. Requires edit access.
 
     There is no separate unsnooze tool — omitting ``hours`` is how you
     un-mute. **The consequence is that "un-mute", "un-snooze", "turn

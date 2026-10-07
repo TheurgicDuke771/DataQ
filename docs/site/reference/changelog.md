@@ -5,7 +5,18 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ## Unreleased
 
-Nothing yet.
+### Added
+
+- **Disable a check without deleting it.** A check can be switched off from its row on the
+  suite page, from its editor, or many at once with **Disable selected** and **Enable
+  selected**. A disabled check keeps its results, version history and baseline and is left
+  out of every run until it is switched back on: it records no result and raises no alert
+  or incident, and it stops counting toward dimension coverage. Until now the only ways to
+  stop a check were to delete it, which erases its history, or to snooze it, which still
+  runs it. Disabling does not close an incident already open on the check. In the API,
+  `PATCH /suites/{id}/checks/{cid}` with `enabled`, and
+  `POST /suites/{id}/checks-bulk/enabled`; a suite document carries `enabled: false`; over
+  MCP, `update_check` takes `enabled`.
 
 ## v1.2.0 — 2026-10-04
 

@@ -47,6 +47,8 @@ class CheckCreate(ApiRequestModel):
     warn_threshold: Decimal | None = None
     fail_threshold: Decimal | None = None
     critical_threshold: Decimal | None = None
+    # False creates the check switched off: saved, but left out of every run.
+    enabled: bool = True
 
 
 class CheckUpdate(ApiRequestModel):
@@ -67,6 +69,9 @@ class CheckUpdate(ApiRequestModel):
     warn_threshold: Decimal | None = None
     fail_threshold: Decimal | None = None
     critical_threshold: Decimal | None = None
+    # False leaves the check, its history and its baseline in place but out of every
+    # run; true puts it back. PATCH convention: None = not provided.
+    enabled: bool | None = None
 
     def threshold(self, name: str) -> Decimal | svc._Keep | None:
         """What to hand the service: the value the client sent, or KEEP when it sent none."""
@@ -99,6 +104,10 @@ class CheckRead(ApiModel):
     # Alert snooze (suppression): when in the future, the check's alerts are muted
     # until then; NULL / past = active. Set via the snooze endpoints, not PATCH.
     alert_snoozed_until: datetime | None = None
+    # False = switched off: runs skip it entirely, so it produces no result, no alert and
+    # no incident, and it does not count toward dimension coverage. Not the same as a
+    # snooze, which still runs the check and only mutes its alerts.
+    enabled: bool = True
 
 
 @router.post(
@@ -127,6 +136,7 @@ def create_check(
         source_connection_id=payload.source_connection_id,
         dimension=payload.dimension,
         engine=payload.engine,
+        enabled=payload.enabled,
         actor_id=current_user.id,
     )
     return CheckRead.model_validate(check)
@@ -187,6 +197,7 @@ def update_check(
         source_connection_id=payload.source_connection_id,
         dimension=payload.dimension,
         engine=payload.engine,
+        enabled=payload.enabled,
         actor_id=current_user.id,
     )
     return CheckRead.model_validate(check)
@@ -305,8 +316,9 @@ class BulkSnoozeRequest(BulkChecksRequest):
 
 
 class BulkChecksResult(ApiModel):
-    """`affected` is how many checks were changed. It is always every check named in
-    the request: a bulk call changes all of them or, on any refusal, none.
+    """`affected` is how many checks were changed. It is every check named in the
+    request (a bulk call changes all of them or, on any refusal, none), except for
+    `checks-bulk/enabled`, which leaves out a check already in the requested state.
     """
 
     affected: int
@@ -340,6 +352,33 @@ def bulk_snooze_checks(
     return BulkChecksResult(
         affected=len(checks), checks=[CheckRead.model_validate(c) for c in checks]
     )
+
+
+class BulkEnabledRequest(BulkChecksRequest):
+    enabled: bool = Field(description="false switches the checks off; true switches them on")
+
+
+@router.post(
+    "/suites/{suite_id}/checks-bulk/enabled",
+    response_model=BulkChecksResult,
+    summary="Enable or disable many checks",
+    description=(
+        "A disabled check keeps its results, versions and baseline and is left out of "
+        "every run. `affected` counts the checks whose state changed; one already in the "
+        "requested state is returned unchanged. " + _BULK_ALL_OR_NOTHING
+    ),
+)
+def bulk_set_checks_enabled(
+    suite_id: uuid.UUID,
+    payload: BulkEnabledRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> BulkChecksResult:
+    require_permission(db, suite_id, current_user.id, minimum="edit")
+    checks, changed = svc.bulk_set_enabled(
+        db, suite_id, payload.check_ids, enabled=payload.enabled, actor_id=current_user.id
+    )
+    return BulkChecksResult(affected=changed, checks=[CheckRead.model_validate(c) for c in checks])
 
 
 @router.post(
@@ -462,6 +501,9 @@ class CheckVersionRead(ApiModel):
     warn_threshold: float | None
     fail_threshold: float | None
     critical_threshold: float | None
+    # Recorded, never restored: restoring a version brings back its definition and leaves
+    # the check switched on or off as it is now.
+    enabled: bool = True
     changed_by: uuid.UUID | None
     changed_by_name: str | None
     created_at: datetime

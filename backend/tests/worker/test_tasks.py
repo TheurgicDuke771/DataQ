@@ -155,6 +155,30 @@ def test_run_suite_executes_and_persists(monkeypatch: pytest.MonkeyPatch) -> Non
     assert len(session.added) == 2
 
 
+def test_run_suite_executes_only_the_checks_the_run_is_given(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The fake session returns every check for any query, so the filter itself is
+    proven against Postgres in `test_check_enabled.py`; this proves the worker asks."""
+    run, suite, connection, checks = _graph(2)
+    session = FakeSession(run=run, suite=suite, connection=connection, checks=checks)
+    runner = FakeRunner(SuiteOutcome(success=True, checks=[CheckOutcome("x", success=True)]))
+    monkeypatch.setattr(tasks, "build_check_runner", lambda **_kw: runner)
+    asked: list[Any] = []
+
+    def only_the_first(_session: Any, suite_id: Any) -> list[Check]:
+        asked.append(suite_id)
+        return [checks[0]]
+
+    monkeypatch.setattr(run_service, "runnable_checks", only_the_first)
+
+    status = tasks._run_suite(_sess(session), run_id=run.id)
+
+    assert status == "succeeded"
+    assert asked == [suite.id]
+    assert [row.check_id for row in session.added] == [checks[0].id]
+
+
 def test_run_suite_unity_catalog_threads_target_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
     """A Unity Catalog suite resolves its `catalog` (+ schema/table) from the target (#215) and
     threads it to the runner builder + the runner — the worker glue between `resolve_target` and

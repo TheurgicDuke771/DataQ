@@ -328,6 +328,8 @@ class CheckDocument(ApiModel):
     warn_threshold: Decimal | None = None
     fail_threshold: Decimal | None = None
     critical_threshold: Decimal | None = None
+    # False = switched off (left out of runs). Exported only when false.
+    enabled: bool = True
 
 
 class SuiteDocument(ApiModel):
@@ -366,6 +368,7 @@ class CheckDocumentIn(ApiRequestModel):
     warn_threshold: Decimal | None = None
     fail_threshold: Decimal | None = None
     critical_threshold: Decimal | None = None
+    enabled: bool = True
 
 
 class SuiteDocumentIn(ApiRequestModel):

@@ -5265,3 +5265,63 @@ def test_list_suggested_rules_returns_pending_by_default_and_everything_on_all(
         "waiting": "pending",
         "turned down": "rejected",
     }
+
+
+# ── a switched-off check (#2369) ─────────────────────────────────────────────
+
+
+def test_update_check_switches_a_check_off_and_reports_it(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    check = _check(db_session, suite, warn_threshold=Decimal("0.01"))
+    _as(monkeypatch, db_session, user)
+
+    out = server.update_check(str(suite.id), str(check.id), enabled=False)
+
+    assert out["enabled"] is False
+    assert (out["name"], out["warn_threshold"]) == ("not null email", 0.01)  # nothing else moved
+    listed = server.list_checks(str(suite.id))
+    assert [(c["name"], c["enabled"]) for c in listed["checks"]] == [("not null email", False)]
+    assert listed["total"] == 1  # a disabled check is still listed, and still counted
+    versions = server.list_check_versions(str(suite.id), str(check.id))["versions"]
+    assert versions[0]["enabled"] is False
+
+    back = server.update_check(str(suite.id), str(check.id), enabled=True)
+    assert back["enabled"] is True
+
+
+def test_update_check_without_enabled_leaves_a_disabled_check_disabled(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    check = _check(db_session, suite, enabled=False)
+    _as(monkeypatch, db_session, user)
+
+    out = server.update_check(str(suite.id), str(check.id), name="renamed")
+
+    assert (out["name"], out["enabled"]) == ("renamed", False)
+    assert server.get_check(str(suite.id), str(check.id))["enabled"] is False
+
+
+def test_restore_check_version_over_mcp_does_not_switch_the_check_back_on(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _as(monkeypatch, db_session, user)
+    created = server.create_check(
+        str(suite.id),
+        "not null email",
+        "expect_column_values_to_not_be_null",
+        config={"column": "EMAIL"},
+    )
+    server.update_check(str(suite.id), created["id"], config={"column": "PHONE"})
+    server.update_check(str(suite.id), created["id"], enabled=False)
+
+    restored = server.restore_check_version(str(suite.id), created["id"], 1)
+
+    assert restored["config"] == {"column": "EMAIL"}
+    assert restored["enabled"] is False

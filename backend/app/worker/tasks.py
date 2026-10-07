@@ -22,7 +22,6 @@ from backend.app.datasources.monitors import STATEFUL_MONITOR_KINDS
 from backend.app.datasources.registry import build_check_runner, owned_runner
 from backend.app.db.models import (
     ORCHESTRATION_PROVIDERS,
-    Check,
     Connection,
     Run,
     Suite,
@@ -116,7 +115,7 @@ def _run_suite(session: Session, *, run_id: uuid.UUID) -> str:
             if suite is None or connection is None:
                 raise RuntimeError("suite or connection not found for run")
             target = run_target.resolve_target(connection.type, suite.target)
-            checks = list(session.scalars(select(Check).where(Check.suite_id == suite.id)))
+            checks = run_service.runnable_checks(session, suite.id)
             runner = build_check_runner(
                 conn_type=connection.type,
                 config=connection.config,
