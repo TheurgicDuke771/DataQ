@@ -271,11 +271,11 @@ def test_the_notification_race_loser_records_an_update_not_a_create(
     real_get_config = notification_service.get_config
     calls = {"n": 0}
 
-    def _first_read_sees_nothing(session: Any, suite_id: Any) -> Any:
+    def _first_read_sees_nothing(session: Any, suite_id: Any, **kwargs: Any) -> Any:
         calls["n"] += 1
         if calls["n"] == 1:
             return None
-        return real_get_config(session, suite_id)
+        return real_get_config(session, suite_id, **kwargs)
 
     monkeypatch.setattr(notification_service, "get_config", _first_read_sees_nothing)
 

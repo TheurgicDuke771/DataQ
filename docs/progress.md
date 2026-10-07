@@ -29,8 +29,8 @@
 | **v1.2 baseline** | `v1.2.0` — 2026-08-22 → 2026-10-04: 533 commits, 513 issues closed across eight weekly milestones plus 223 in the backlog, ADRs 0042–0047, datasources 5 → 11, MCP tools 46 → 54; ledger at [progress-v1.2.md](progress-v1.2.md), retro at [retro-v1.2.md](retro-v1.2.md) |
 | **Current cycle** | **v1.3 — 8 weeks, 2026-10-05 → 2026-11-29**, no net-new features: roadmap and filed features first (W1–W5), then bug fixes and security (W6), polish (W7), debt, decisions and the close (W8). Roadmap theme in [context/roadmap-v1.2-v1.3.md](../context/roadmap-v1.2-v1.3.md). |
 | **Environment** | No live cloud environment (estate retired 2026-10-03). Work is verified on the local stacks; live verification against Snowflake, Unity Catalog, Azure or AWS waits on [#2224](https://github.com/TheurgicDuke771/DataQ/issues/2224). |
-| **Open issues** | **77** open repo-wide (2026-10-05, live re-count), all in the eight v1.3 weekly milestones; `v1.3 Backlog` is empty and `v1.2 Backlog` is closed. |
-| **Open PRs** | **0 open** (2026-10-05, live re-count); the v1.3 plan merged as [#2394](https://github.com/TheurgicDuke771/DataQ/pull/2394). |
+| **Open issues** | **84** open repo-wide (2026-10-07, live re-count), all in the eight v1.3 weekly milestones; `v1.3 Backlog` is empty and `v1.2 Backlog` is closed. |
+| **Open PRs** | **1 open** (2026-10-07): [#2412](https://github.com/TheurgicDuke771/DataQ/pull/2412), the #1762 promote-to-channel change. |
 
 ---
 
@@ -57,10 +57,10 @@ Named so nothing rolls silently (see the retro's "What rolls"):
 | Status | Task |
 |---|---|
 | ⬜ | [#1661](https://github.com/TheurgicDuke771/DataQ/issues/1661) feat(monitors): zero-config auto-baselines — unknown-unknown detection without an authored check |
-| ✅ | [#2369](https://github.com/TheurgicDuke771/DataQ/issues/2369) feat(checks): enable/disable a check without deleting it (single and bulk) — migration [PR #2414](https://github.com/TheurgicDuke771/DataQ/pull/2414), then the code |
+| ✅ | [#2369](https://github.com/TheurgicDuke771/DataQ/issues/2369) feat(checks): enable/disable a check without deleting it (single and bulk) — migration [PR #2414](https://github.com/TheurgicDuke771/DataQ/pull/2414), code [PR #2415](https://github.com/TheurgicDuke771/DataQ/pull/2415) |
 | ⬜ | [#1674](https://github.com/TheurgicDuke771/DataQ/issues/1674) feat(privacy): profiler-side PII auto-detection as an additional classification source |
 | ⬜ | [#1675](https://github.com/TheurgicDuke771/DataQ/issues/1675) feat(monitors): pii_drift monitor kind — PII-looking data appearing in an unclassified column |
-| ⬜ | [#1762](https://github.com/TheurgicDuke771/DataQ/issues/1762) feat(notifications): promote an existing per-suite webhook to a reusable channel |
+| ✅ | [#1762](https://github.com/TheurgicDuke771/DataQ/issues/1762) feat(notifications): promote an existing per-suite webhook to a reusable channel — [PR #2412](https://github.com/TheurgicDuke771/DataQ/pull/2412) (guided in-app action, no migration) |
 
 ### v1.3 Week 2 — operating DataQ & the first outside user (due 2026-10-18)
 

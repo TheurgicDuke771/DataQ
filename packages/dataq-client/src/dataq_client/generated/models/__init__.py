@@ -198,6 +198,9 @@ from .privacy_settings_read_source import PrivacySettingsReadSource
 from .privacy_settings_write import PrivacySettingsWrite
 from .probe_run_response import ProbeRunResponse
 from .profile_read import ProfileRead
+from .promote_destination import PromoteDestination
+from .promote_destination_destination import PromoteDestinationDestination
+from .promoted_channel_read import PromotedChannelRead
 from .queue_depth_read import QueueDepthRead
 from .rca_narrative_request import RcaNarrativeRequest
 from .readyz_response_readyz import ReadyzResponseReadyz
@@ -470,6 +473,9 @@ __all__ = (
     "PrivacySettingsWrite",
     "ProbeRunResponse",
     "ProfileRead",
+    "PromoteDestination",
+    "PromoteDestinationDestination",
+    "PromotedChannelRead",
     "QueueDepthRead",
     "RcaNarrativeRequest",
     "ReadyzResponseReadyz",

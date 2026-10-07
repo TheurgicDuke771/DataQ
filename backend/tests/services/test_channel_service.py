@@ -6,23 +6,27 @@ import uuid
 from typing import Any
 
 import pytest
-from sqlalchemy import insert
+from sqlalchemy import insert, select, update
 
 from backend.app.core.secrets import SecretNotFoundError
 from backend.app.db.models import (
+    AuditEvent,
     Connection,
     NotificationChannel,
     Suite,
+    SuiteNotification,
     SuiteNotificationChannel,
     User,
 )
 from backend.app.services import channel_service as svc
+from backend.app.services import notification_service
 from backend.app.services.channel_service import (
     ChannelCredentialRedirectError,
     ChannelFieldMismatchError,
     ChannelInUseError,
     ChannelNotFoundError,
     ChannelTypeInvalidError,
+    NothingToPromoteError,
     WebhookDestination,
 )
 from backend.app.services.notification_service import (
@@ -1012,3 +1016,194 @@ def test_update_channel_allows_a_url_change_with_no_stored_auth_header(db_sessio
         db_session, channel.id, webhook_url=new_url, secret_store=store
     )
     assert channel.webhook_url == new_url
+
+
+# ── promote a legacy per-suite destination to a channel (#1762) ──────────────
+
+
+def _legacy_config(db: Any, suite: Suite, store: FakeSecretStore, **fields: Any) -> None:
+    """A pre-#1926 row: inline destinations written straight to the columns."""
+    for ref in (fields.get("webhook_secret_ref"), fields.get("slack_webhook_secret_ref")):
+        if ref:
+            store.data[ref] = _TEAMS_URL
+    db.add(SuiteNotification(suite_id=suite.id, **fields))
+    db.commit()
+
+
+def test_promote_moves_the_secret_ref_without_reading_or_deleting_it(db_session: Any) -> None:
+    suite, store = _suite(db_session), FakeSecretStore()
+    _legacy_config(db_session, suite, store, webhook_secret_ref="suite-notif-abc")
+
+    channel = svc.promote_suite_destination(
+        db_session, suite.id, destination="teams", name="Platform Teams"
+    )
+
+    assert (channel.type, channel.webhook_secret_ref) == ("teams", "suite-notif-abc")
+    config = notification_service.get_config(db_session, suite.id)
+    assert config is not None and config.webhook_secret_ref is None
+    assert [c.id for c in svc.list_channels_for_suite(db_session, suite.id)] == [channel.id]
+    assert (store.requested, store.writes, store.deleted) == ([], [], [])
+    assert store.data["suite-notif-abc"] == _TEAMS_URL
+
+
+def test_promote_slack_leaves_the_other_legacy_destinations_alone(db_session: Any) -> None:
+    suite, store = _suite(db_session), FakeSecretStore()
+    _legacy_config(
+        db_session,
+        suite,
+        store,
+        webhook_secret_ref="suite-notif-t",
+        slack_webhook_secret_ref="suite-notif-slack-s",
+        email_recipients="a@x.io",
+    )
+
+    channel = svc.promote_suite_destination(db_session, suite.id, destination="slack", name="S")
+
+    assert (channel.type, channel.webhook_secret_ref) == ("slack", "suite-notif-slack-s")
+    config = notification_service.get_config(db_session, suite.id)
+    assert config is not None
+    assert config.slack_webhook_secret_ref is None
+    assert (config.webhook_secret_ref, config.email_recipients) == ("suite-notif-t", "a@x.io")
+
+
+def test_promote_email_copies_the_recipients(db_session: Any) -> None:
+    suite, store = _suite(db_session), FakeSecretStore()
+    _legacy_config(db_session, suite, store, email_recipients="a@x.io, b@x.io")
+
+    channel = svc.promote_suite_destination(db_session, suite.id, destination="email", name="E")
+
+    assert (channel.type, channel.email_recipients) == ("email", "a@x.io, b@x.io")
+    assert channel.webhook_secret_ref is None
+    assert svc.resolve_channel_email_recipients(db_session, suite.id) == ("a@x.io", "b@x.io")
+
+
+@pytest.mark.parametrize("has_row", [False, True])
+def test_promote_with_nothing_to_move_is_refused(db_session: Any, has_row: bool) -> None:
+    suite, store = _suite(db_session), FakeSecretStore()
+    if has_row:
+        _legacy_config(db_session, suite, store, slack_webhook_secret_ref="suite-notif-slack-s")
+
+    with pytest.raises(NothingToPromoteError):
+        svc.promote_suite_destination(db_session, suite.id, destination="teams", name="T")
+    assert svc.list_channels(db_session) == []
+
+
+def test_a_clear_after_promote_cannot_delete_the_channels_secret(db_session: Any) -> None:
+    """The legacy clear path deletes the ref it clears; after a promote there is none."""
+    suite, store = _suite(db_session), FakeSecretStore()
+    _legacy_config(db_session, suite, store, webhook_secret_ref="suite-notif-abc")
+    svc.promote_suite_destination(db_session, suite.id, destination="teams", name="T")
+
+    notification_service.upsert_config(
+        db_session, suite_id=suite.id, enabled=True, alert_on="warn", webhook="", secret_store=store
+    )
+    notification_service.delete_config(db_session, suite.id, secret_store=store)
+
+    assert store.deleted == []
+    assert svc.resolve_channel_webhooks(
+        db_session, suite.id, channel_type="teams", secret_store=store
+    ) == [_TEAMS_URL]
+
+
+def test_promote_is_audited_as_the_three_changes_it_makes(db_session: Any) -> None:
+    suite, store = _suite(db_session), FakeSecretStore()
+    actor = _user(db_session)
+    _legacy_config(db_session, suite, store, webhook_secret_ref="suite-notif-abc")
+
+    channel = svc.promote_suite_destination(
+        db_session, suite.id, destination="teams", name="T", actor_id=actor.id
+    )
+
+    events = {
+        e.action: e
+        for e in db_session.scalars(select(AuditEvent).where(AuditEvent.actor_user_id == actor.id))
+    }
+    assert set(events) == {
+        "notification_channel.create",
+        "suite_notification_channel.link",
+        "suite_notification.update",
+    }
+    created = events["notification_channel.create"]
+    assert created.entity_id == channel.id
+    assert created.after["promoted_from_suite_id"] == str(suite.id)
+    cleared = events["suite_notification.update"]
+    assert cleared.before["webhook_secret_ref"] == "suite-notif-abc"
+    assert cleared.after["webhook_secret_ref"] is None
+
+
+def test_promote_refuses_a_recipient_list_that_would_fail_every_send(db_session: Any) -> None:
+    suite, store = _suite(db_session), FakeSecretStore()
+    _legacy_config(db_session, suite, store, email_recipients="ok@x.io, not-an-address")
+
+    with pytest.raises(InvalidRecipientsError):
+        svc.promote_suite_destination(db_session, suite.id, destination="email", name="E")
+
+    db_session.rollback()
+    assert svc.list_channels(db_session) == []
+    config = notification_service.get_config(db_session, suite.id)
+    assert config is not None and config.email_recipients == "ok@x.io, not-an-address"
+
+
+def test_promote_on_a_missing_suite_is_a_404(db_session: Any) -> None:
+    from backend.app.services.suite_service import SuiteNotFoundError
+
+    with pytest.raises(SuiteNotFoundError):
+        svc.promote_suite_destination(db_session, uuid.uuid4(), destination="teams", name="T")
+
+
+def test_a_locked_read_refreshes_a_row_the_session_already_holds(db_session: Any) -> None:
+    """Without `populate_existing` the waiter keeps the ref someone else just moved."""
+    suite, store = _suite(db_session), FakeSecretStore()
+    _legacy_config(db_session, suite, store, webhook_secret_ref="suite-notif-abc")
+    held = notification_service.get_config(db_session, suite.id)
+    assert held is not None
+    db_session.execute(
+        update(SuiteNotification)
+        .where(SuiteNotification.suite_id == suite.id)
+        .values(webhook_secret_ref=None)
+        .execution_options(synchronize_session=False)
+    )
+    assert held.webhook_secret_ref == "suite-notif-abc"  # stale, as loaded
+
+    locked = notification_service.get_config(db_session, suite.id, for_update=True)
+
+    assert locked is held and locked.webhook_secret_ref is None
+
+
+# Presence is all `workspace_default_set` reads; the values are placeholders.
+_SMTP_TRANSPORT_SET = dict.fromkeys(("EMAIL_USERNAME", "EMAIL_PASSWORD_SECRET_NAME"), "set")
+
+
+@pytest.mark.parametrize(
+    ("env", "destination", "expected"),
+    [
+        ({}, "teams", False),
+        ({"TEAMS_WEBHOOK_SECRET_NAME": "ws-teams"}, "teams", True),
+        ({"TEAMS_WEBHOOK_SECRET_NAME": "ws-teams"}, "slack", False),
+        ({"SLACK_WEBHOOK_SECRET_NAME": "ws-slack"}, "slack", True),
+        # Recipients without the SMTP transport deliver nothing.
+        ({"EMAIL_TO": "ops@x.io"}, "email", False),
+        ({"EMAIL_TO": "ops@x.io", **_SMTP_TRANSPORT_SET}, "email", True),
+    ],
+)
+def test_workspace_default_set_reports_only_a_default_that_delivers(
+    monkeypatch: pytest.MonkeyPatch, env: dict[str, str], destination: str, expected: bool
+) -> None:
+    from backend.app.core.config import get_settings
+
+    for name in (
+        "TEAMS_WEBHOOK_SECRET_NAME",
+        "SLACK_WEBHOOK_SECRET_NAME",
+        "EMAIL_TO",
+        "EMAIL_USERNAME",
+        "EMAIL_PASSWORD_SECRET_NAME",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    get_settings.cache_clear()
+    try:
+        assert svc.workspace_default_set(destination) is expected
+    finally:
+        monkeypatch.undo()
+        get_settings.cache_clear()

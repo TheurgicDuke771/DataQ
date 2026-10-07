@@ -276,3 +276,48 @@ def unlink_suite_channel(
 ) -> None:
     require_permission(db, suite_id, current_user.id, minimum="edit")
     svc.unlink_suite(db, suite_id, channel_id, actor_id=current_user.id)
+
+
+class PromoteDestination(ApiRequestModel):
+    destination: Literal["teams", "slack", "email"] = Field(
+        description="Which of the suite's legacy inline destinations to move"
+    )
+    name: str = Field(min_length=1, max_length=128, description="Name for the new channel")
+
+
+class PromotedChannelRead(ApiModel):
+    channel: ChannelRead
+    #: A workspace-wide default is configured for this destination. An inline value
+    #: replaced it; a linked channel is delivered in addition to it, so the suite now
+    #: alerts both.
+    workspace_default_now_applies: bool
+
+
+@router.post(
+    "/suites/{suite_id}/notifications/promote",
+    response_model=PromotedChannelRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Promote a suite's legacy inline destination to a reusable channel",
+)
+def promote_suite_destination(
+    suite_id: uuid.UUID,
+    payload: PromoteDestination,
+    current_user: AdminUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> PromotedChannelRead:
+    """Creates a channel holding the suite's existing webhook (or recipient list), links
+    it to the suite and clears the legacy value. The webhook URL is moved, never read or
+    returned. Admin-only, like every channel mutation.
+    """
+    require_permission(db, suite_id, current_user.id, minimum="edit")
+    channel = svc.promote_suite_destination(
+        db,
+        suite_id,
+        destination=payload.destination,
+        name=payload.name,
+        actor_id=current_user.id,
+    )
+    return PromotedChannelRead(
+        channel=ChannelRead.from_model(channel),
+        workspace_default_now_applies=svc.workspace_default_set(payload.destination),
+    )

@@ -59,6 +59,8 @@ AUDITED: Final[dict[tuple[str, str], str]] = {
         "DELETE",
         "/api/v1/suites/{suite_id}/notification-channels/{channel_id}",
     ): "suite_notification_channel.unlink",
+    # Also writes the link and the suite_notification.update that clears the legacy value.
+    ("POST", "/api/v1/suites/{suite_id}/notifications/promote"): "notification_channel.create",
     ("POST", "/api/v1/schedules"): "schedule.create",
     ("PATCH", "/api/v1/schedules/{schedule_id}"): "schedule.update",
     ("DELETE", "/api/v1/schedules/{schedule_id}"): "schedule.delete",

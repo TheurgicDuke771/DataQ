@@ -102,3 +102,26 @@ export async function linkSuiteChannel(suiteId: string, channelId: string): Prom
 export async function unlinkSuiteChannel(suiteId: string, channelId: string): Promise<void> {
   await api.delete(`/suites/${suiteId}/notification-channels/${channelId}`);
 }
+
+/** The three per-suite destinations that predate channels (backend `PromoteDestination`). */
+export type LegacyDestination = 'teams' | 'slack' | 'email';
+
+/** Mirrors `PromotedChannelRead`. */
+export interface PromotedChannel {
+  channel: NotificationChannel;
+  /** The suite's own value no longer overrides the workspace default for this destination. */
+  workspace_default_now_applies: boolean;
+}
+
+/** Admin-only. Moves a suite's legacy inline destination into a new channel linked to it. */
+export async function promoteSuiteDestination(
+  suiteId: string,
+  destination: LegacyDestination,
+  name: string,
+): Promise<PromotedChannel> {
+  const { data } = await api.post<PromotedChannel>(`/suites/${suiteId}/notifications/promote`, {
+    destination,
+    name,
+  });
+  return data;
+}

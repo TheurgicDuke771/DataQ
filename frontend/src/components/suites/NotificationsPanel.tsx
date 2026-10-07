@@ -1,4 +1,17 @@
-import { App, Alert, Button, Card, Flex, Select, Spin, Switch, Tag, Typography } from 'antd';
+import {
+  App,
+  Alert,
+  Button,
+  Card,
+  Flex,
+  Input,
+  Modal,
+  Select,
+  Spin,
+  Switch,
+  Tag,
+  Typography,
+} from 'antd';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
@@ -10,12 +23,15 @@ import {
   type SuiteNotificationUpdate,
 } from '../../api/notifications';
 import {
+  type LegacyDestination,
   linkSuiteChannel,
   listChannels,
   listSuiteChannels,
   type NotificationChannel,
+  promoteSuiteDestination,
   unlinkSuiteChannel,
 } from '../../api/notificationChannels';
+import { useIsWorkspaceAdmin } from '../../auth/useMe';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { useAsyncData } from '../../hooks/useAsyncData';
 import { errorMessage } from '../../utils/errors';
@@ -38,6 +54,8 @@ export function NotificationsPanel({
   canManage: boolean;
 }) {
   const { state, reload } = useAsyncData(() => getNotifications(suiteId));
+  // Bumped when a promote links a new channel, so the picker refetches the linked set.
+  const [channelsEpoch, setChannelsEpoch] = useState(0);
   const legacy =
     state.status === 'ok' &&
     (state.data.has_webhook || state.data.has_slack_webhook || !!state.data.email_recipients);
@@ -76,7 +94,7 @@ export function NotificationsPanel({
               initialAlertOn={state.data.alert_on}
               onChanged={reload}
             />
-            <ChannelPicker suiteId={suiteId} canManage={canManage} />
+            <ChannelPicker key={channelsEpoch} suiteId={suiteId} canManage={canManage} />
           </Flex>
         )}
       </Card>
@@ -86,6 +104,10 @@ export function NotificationsPanel({
           canManage={canManage}
           config={state.data}
           onChanged={reload}
+          onPromoted={() => {
+            setChannelsEpoch((n) => n + 1);
+            reload();
+          }}
         />
       )}
     </Flex>
@@ -240,19 +262,23 @@ function ChannelPickerBody({
 }
 
 /** Shown only while a suite still carries a per-suite webhook or recipient list from
- *  before channels existed. Nothing here can be SET — an editor can only clear it and
- *  link a channel instead; setting stays an Admin escape hatch on the API. */
+ *  before channels existed. Nothing here can be SET — an editor can only clear it; an
+ *  admin can also promote it to a channel, which keeps the destination (#1762). */
 function LegacyDestinations({
   suiteId,
   canManage,
   config,
   onChanged,
+  onPromoted,
 }: {
   suiteId: string;
   canManage: boolean;
   config: SuiteNotification;
   onChanged: () => void;
+  onPromoted: () => void;
 }) {
+  const isAdmin = useIsWorkspaceAdmin();
+  const [promoting, setPromoting] = useState<{ destination: LegacyDestination; label: string }>();
   const { run, loading } = useAsyncAction('Could not clear the destination');
   // Clearing sends the loaded (server-known) enabled/alert_on so it never persists an
   // unsaved edit from the form above (#639 review).
@@ -265,10 +291,26 @@ function LegacyDestinations({
       });
       onChanged();
     });
-  const rows: { label: string; set: boolean; extra: Partial<SuiteNotificationUpdate> }[] = [
-    { label: 'Teams webhook', set: config.has_webhook, extra: { webhook: '' } },
-    { label: 'Slack webhook', set: config.has_slack_webhook, extra: { slack_webhook: '' } },
+  const rows: {
+    destination: LegacyDestination;
+    label: string;
+    set: boolean;
+    extra: Partial<SuiteNotificationUpdate>;
+  }[] = [
     {
+      destination: 'teams',
+      label: 'Teams webhook',
+      set: config.has_webhook,
+      extra: { webhook: '' },
+    },
+    {
+      destination: 'slack',
+      label: 'Slack webhook',
+      set: config.has_slack_webhook,
+      extra: { slack_webhook: '' },
+    },
+    {
+      destination: 'email',
       label: `Email recipients${config.email_recipients ? ` (${config.email_recipients})` : ''}`,
       set: !!config.email_recipients,
       extra: { email_recipients: '' },
@@ -281,7 +323,10 @@ function LegacyDestinations({
         <Flex vertical gap={2}>
           <Typography.Text strong>Legacy inline destinations</Typography.Text>
           <Typography.Text type="secondary" style={{ fontSize: 12, fontWeight: 400 }}>
-            Set on this suite before channels existed. Move it to a channel above, then clear it.
+            Set on this suite before channels existed.{' '}
+            {isAdmin
+              ? 'Promote it to a channel to keep the destination and reuse it on other suites.'
+              : 'A workspace admin can promote it to a channel; clearing it removes the destination.'}
           </Typography.Text>
         </Flex>
       }
@@ -292,6 +337,16 @@ function LegacyDestinations({
           .map((r) => (
             <Flex key={r.label} align="center" gap={8} wrap>
               <Tag color="warning">{r.label}</Tag>
+              {isAdmin && (
+                <Button
+                  size="small"
+                  type="primary"
+                  disabled={loading}
+                  onClick={() => setPromoting({ destination: r.destination, label: r.label })}
+                >
+                  Promote to channel
+                </Button>
+              )}
               {canManage && (
                 <Button size="small" loading={loading} onClick={clear(r.extra)}>
                   Clear
@@ -300,7 +355,84 @@ function LegacyDestinations({
             </Flex>
           ))}
       </Flex>
+      {promoting && (
+        <PromoteModal
+          suiteId={suiteId}
+          destination={promoting.destination}
+          label={promoting.label}
+          onClose={() => setPromoting(undefined)}
+          onPromoted={onPromoted}
+        />
+      )}
     </Card>
+  );
+}
+
+function PromoteModal({
+  suiteId,
+  destination,
+  label,
+  onClose,
+  onPromoted,
+}: {
+  suiteId: string;
+  destination: LegacyDestination;
+  label: string;
+  onClose: () => void;
+  onPromoted: () => void;
+}) {
+  const { message } = App.useApp();
+  const [name, setName] = useState('');
+  const { run, loading } = useAsyncAction('Could not promote the destination');
+  const trimmed = name.trim();
+
+  const onOk = () => {
+    if (loading) return; // Enter held down, or pressed again before the first call returns
+    void run(async () => {
+      const result = await promoteSuiteDestination(suiteId, destination, trimmed);
+      if (result.workspace_default_now_applies) {
+        message.warning(
+          `Promoted to "${result.channel.name}". A workspace default is configured for ` +
+            'this destination, so this suite alerts it as well as the channel.',
+          8,
+        );
+      } else {
+        message.success(`Promoted to "${result.channel.name}"`);
+      }
+      onClose();
+      onPromoted();
+    });
+  };
+
+  return (
+    <Modal
+      open
+      title="Promote to channel"
+      okText="Promote"
+      okButtonProps={{ disabled: !trimmed }}
+      confirmLoading={loading}
+      onOk={onOk}
+      onCancel={onClose}
+    >
+      <Flex vertical gap={12}>
+        <Typography.Text>
+          Creates a workspace channel from this suite&apos;s {label.toLowerCase()}, links it to this
+          suite and removes the inline value. Alerts keep going to the same place.
+        </Typography.Text>
+        <Input
+          aria-label="Channel name"
+          placeholder="Channel name"
+          maxLength={128}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onPressEnter={() => trimmed && onOk()}
+        />
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          If another suite holds the same destination, link this channel there and clear that
+          suite&apos;s inline value instead of promoting it again.
+        </Typography.Text>
+      </Flex>
+    </Modal>
   );
 }
 

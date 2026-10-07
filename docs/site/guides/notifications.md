@@ -24,10 +24,23 @@ through **both** — delivery is additive, not either/or.
 
 **Legacy inline destinations.** Before channels existed a suite could carry its own Teams
 or Slack webhook or recipient list. Those keep delivering, and the suite's panel shows them
-as a separate *Legacy inline destinations* card with a **Clear** per entry so an editor can
-move the suite onto a channel and retire the override. Setting a new inline destination
-is not possible any more — not from the app and not from the API, for anyone: the request
-is refused with the field named. A suite's destinations are the channels, full stop.
+as a separate *Legacy inline destinations* card. A workspace admin gets **Promote to
+channel** per entry: it creates a channel from the existing value under the name you give,
+links it to the suite and removes the inline value, in one step. The webhook URL is moved,
+never shown, so this works even when nobody still has the URL. An editor who is not an
+admin gets **Clear**, which removes the destination. Setting a new inline destination is
+not possible any more — not from the app and not from the API, for anyone: the request is
+refused with the field named.
+
+Two things to know before promoting:
+
+- **The workspace default may start applying.** An inline value replaced the workspace-wide
+  default for that suite; a linked channel is delivered in addition to it. If the deployment
+  sets a workspace default for that destination, the suite alerts both after the promote,
+  and the app says so when it happens.
+- **Promote once per destination, then link.** Promoting the same webhook from a second
+  suite creates a second channel. Link the first channel to the other suites and clear
+  their inline value instead, so a later rotation touches one place.
 
 ### What an alert email says
 
