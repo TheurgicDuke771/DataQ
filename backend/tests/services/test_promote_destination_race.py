@@ -91,7 +91,7 @@ def test_a_clear_racing_a_promote_cannot_delete_the_moved_secret(
         return real_record(session, **kwargs)
 
     monkeypatch.setattr(audit_service, "record_entity_change", slow_record)
-    errors: list[BaseException] = []
+    errors: list[Exception] = []
 
     def promote() -> None:
         with Session(_db_engine) as s:
@@ -99,7 +99,7 @@ def test_a_clear_racing_a_promote_cannot_delete_the_moved_secret(
                 channel_service.promote_suite_destination(
                     s, suite_id, destination="teams", name="Race", actor_id=admin_id
                 )
-            except BaseException as exc:
+            except Exception as exc:
                 errors.append(exc)
 
     def clear() -> None:
@@ -114,7 +114,7 @@ def test_a_clear_racing_a_promote_cannot_delete_the_moved_secret(
                     secret_store=store,
                     actor_id=admin_id,
                 )
-            except BaseException as exc:
+            except Exception as exc:
                 errors.append(exc)
 
     first = threading.Thread(target=promote, name="promote")
