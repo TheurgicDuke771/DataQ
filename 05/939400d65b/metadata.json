@@ -1,0 +1,54 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "05939400d65b",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1762-promote-suite-destination",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/notification_channels.py",
+    "backend/app/services/channel_service.py",
+    "backend/app/services/notification_service.py",
+    "backend/tests/api/test_audit_events.py",
+    "backend/tests/api/test_notification_channels.py",
+    "backend/tests/services/test_channel_service.py",
+    "backend/tests/services/test_notification_service.py",
+    "backend/tests/services/test_promote_destination_race.py",
+    "backend/tests/support/audit_coverage.py",
+    "docs/progress.md",
+    "docs/site/guides/notifications.md",
+    "docs/site/reference/changelog.md",
+    "docs/site/reference/openapi.json",
+    "docs/site/reference/rest-api.md",
+    "frontend/src/api/notificationChannels.ts",
+    "frontend/src/components/suites/NotificationsPanel.tsx",
+    "frontend/tests/components/NotificationsPanel.test.tsx",
+    "packages/dataq-client/src/dataq_client/generated/api/notification_channels/promote_suite_destination.py",
+    "packages/dataq-client/src/dataq_client/generated/models/__init__.py",
+    "packages/dataq-client/src/dataq_client/generated/models/promote_destination.py",
+    "packages/dataq-client/src/dataq_client/generated/models/promote_destination_destination.py",
+    "packages/dataq-client/src/dataq_client/generated/models/promoted_channel_read.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/05/939400d65b/0/metadata.json",
+      "transcript": "/05/939400d65b/0/full.jsonl",
+      "compact_transcript": "/05/939400d65b/0/transcript.jsonl",
+      "content_hash": "/05/939400d65b/0/content_hash.txt",
+      "prompt": "/05/939400d65b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 68,
+    "cache_creation_tokens": 262154,
+    "cache_read_tokens": 7287542,
+    "output_tokens": 36768,
+    "api_call_count": 34,
+    "subagent_tokens": {
+      "input_tokens": 156,
+      "cache_creation_tokens": 554147,
+      "cache_read_tokens": 8739185,
+      "output_tokens": 4995,
+      "api_call_count": 78
+    }
+  }
+}
