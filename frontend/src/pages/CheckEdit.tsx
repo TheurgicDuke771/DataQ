@@ -1,5 +1,17 @@
 import { HistoryOutlined, LineChartOutlined } from '@ant-design/icons';
-import { App, Button, Card, Drawer, Flex, Form, Input, Select, Spin, Typography } from 'antd';
+import {
+  App,
+  Button,
+  Card,
+  Drawer,
+  Flex,
+  Form,
+  Input,
+  Select,
+  Spin,
+  Switch,
+  Typography,
+} from 'antd';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
@@ -158,6 +170,7 @@ function CheckEditForm({
       warn_threshold: check.warn_threshold ?? undefined,
       fail_threshold: check.fail_threshold ?? undefined,
       critical_threshold: check.critical_threshold ?? undefined,
+      enabled: check.enabled ?? true,
     });
   }, [check, form]);
 
@@ -197,7 +210,14 @@ function CheckEditForm({
             return u;
           })();
       try {
-        await updateCheck(suiteId, check.id, update);
+        await updateCheck(suiteId, check.id, {
+          ...update,
+          // Only when the switch was moved on this page. Sending the value loaded at page
+          // open would undo a disable someone made elsewhere in the meantime.
+          ...(typeof values.enabled === 'boolean' && values.enabled !== (check.enabled ?? true)
+            ? { enabled: values.enabled }
+            : {}),
+        });
       } catch (err) {
         // The backend names the field it refused on (e.g. the sampling to row-count conflict, #1333
         // F5).
@@ -288,6 +308,15 @@ function CheckEditForm({
             />
           </Form.Item>
         )}
+
+        <Form.Item
+          label="Enabled"
+          name="enabled"
+          valuePropName="checked"
+          extra="Switched off, the check is kept with its results and history but runs skip it."
+        >
+          <Switch aria-label="Enabled" />
+        </Form.Item>
 
         <Flex justify="space-between" align="center" gap={8}>
           <Flex gap={8}>

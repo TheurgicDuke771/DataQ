@@ -32,6 +32,7 @@ AUDITED: Final[dict[tuple[str, str], str]] = {
     ("DELETE", "/api/v1/suites/{suite_id}/checks/{check_id}/snooze"): "check.unsnooze",
     ("POST", "/api/v1/suites/{suite_id}/checks-bulk/snooze"): "check.snooze",
     ("POST", "/api/v1/suites/{suite_id}/checks-bulk/unsnooze"): "check.unsnooze",
+    ("POST", "/api/v1/suites/{suite_id}/checks-bulk/enabled"): "check.update",
     ("POST", "/api/v1/suites/{suite_id}/checks-bulk/delete"): "check.delete",
     ("POST", "/api/v1/suites/{suite_id}/checks-bulk/thresholds"): "check.update",
     (

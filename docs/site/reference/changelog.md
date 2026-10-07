@@ -7,6 +7,18 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ### Added
 
+- **Disable a check without deleting it.** A check can be switched off from its row on the
+  suite page, from its editor, or many at once with **Disable selected** and **Enable
+  selected**. A disabled check keeps its results, version history and baseline and is left
+  out of every run until it is switched back on: it records no result and raises no alert
+  or incident, and it stops counting toward dimension coverage. Until now the only ways to
+  stop a check were to delete it, which erases its history, or to snooze it, which still
+  runs it. Disabling does not close an incident already open on the check. In the API,
+  `PATCH /suites/{id}/checks/{cid}` with `enabled`, and
+  `POST /suites/{id}/checks-bulk/enabled`; a suite document carries `enabled: false`, and
+  applying a file that does not mention `enabled` leaves each check's switch alone; over
+  MCP, `update_check` takes `enabled`, `list_suites` adds `enabled_check_count`,
+  `trigger_suite_run` returns `enabled_checks`, and each result carries `check_enabled`.
 - **Promote a suite's old inline webhook to a channel.** A suite that still carries its own
   Teams or Slack webhook or recipient list from before channels existed now offers a
   workspace admin **Promote to channel** on the suite's notification panel. It creates a

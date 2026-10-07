@@ -18,8 +18,9 @@ T = TypeVar("T", bound="BulkChecksResult")
 
 @_attrs_define
 class BulkChecksResult:
-    """`affected` is how many checks were changed. It is always every check named in
-    the request: a bulk call changes all of them or, on any refusal, none.
+    """`affected` is how many checks were changed. It is every check named in the
+    request (a bulk call changes all of them or, on any refusal, none), except for
+    `checks-bulk/enabled`, which leaves out a check already in the requested state.
 
         Attributes:
             affected (int):

@@ -30,6 +30,7 @@ from .beat_health_read_status import BeatHealthReadStatus
 from .browse_file_read import BrowseFileRead
 from .bulk_checks_request import BulkChecksRequest
 from .bulk_checks_result import BulkChecksResult
+from .bulk_enabled_request import BulkEnabledRequest
 from .bulk_snooze_request import BulkSnoozeRequest
 from .bulk_thresholds_request import BulkThresholdsRequest
 from .catalog_browse_read import CatalogBrowseRead
@@ -308,6 +309,7 @@ __all__ = (
     "BrowseFileRead",
     "BulkChecksRequest",
     "BulkChecksResult",
+    "BulkEnabledRequest",
     "BulkSnoozeRequest",
     "BulkThresholdsRequest",
     "CatalogBrowseRead",

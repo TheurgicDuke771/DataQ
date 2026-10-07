@@ -87,6 +87,13 @@ known upstream incident). A run alerts only if at least one **un-snoozed** check
 failing; when every failing check is snoozed, the alert is suppressed. Snoozes expire
 automatically.
 
+A snoozed check still runs, still records its result and can still open an incident. To
+stop a check running altogether while keeping its history, **disable** it from its row or
+its editor instead. A disabled check produces no result, so it cannot alert. Two things to
+know: disabling does not close an incident that is already open on the check (no later
+run can pass and resolve it, so resolve it yourself), and the check's results in past runs
+stay as they were.
+
 ## Connection poll-health alerts
 
 Run alerts tell you a **check** broke. This one tells you the **pipe** broke.

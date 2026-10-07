@@ -750,12 +750,27 @@ class RunProgress:
     batched_pending: bool
 
 
+def runnable_checks(session: Session, suite_id: uuid.UUID) -> list[Check]:
+    """The checks a run of this suite executes: every one that is switched on (#2369).
+
+    A switched-off check is not part of the run at all. It gets no result row, not even a
+    ``skip``: a skip reads as "this data was not verified" on the asset and in the alert,
+    which is a verdict about a check nobody asked to run.
+    """
+    return list(
+        session.scalars(select(Check).where(Check.suite_id == suite_id, Check.enabled.is_(True)))
+    )
+
+
 def get_run_progress(session: Session, run: Run) -> RunProgress:
     """Assemble a run's progress from the suite's checks + the run's results."""
     checks = list(
         session.scalars(select(Check).where(Check.suite_id == run.suite_id).order_by(*CHECK_ORDER))
     )
     results = {r.check_id: r for r in list_results(session, run.id)}
+    # A switched-off check is not in the run. One that was on when this run took it
+    # still has its result here and still belongs to that run's picture.
+    checks = [c for c in checks if c.enabled or c.id in results]
     counts: dict[str, int] = dict.fromkeys(RESULT_STATUSES, 0)
     per_check: list[CheckProgress] = []
     completed = 0

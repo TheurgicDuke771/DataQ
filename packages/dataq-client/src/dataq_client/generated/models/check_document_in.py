@@ -26,6 +26,7 @@ class CheckDocumentIn:
         config (CheckDocumentInConfig | Unset):
         critical_threshold (float | None | str | Unset):
         dimension (None | str | Unset):
+        enabled (bool | Unset):  Default: True.
         engine (str | Unset):  Default: 'gx'.
         fail_threshold (float | None | str | Unset):
         kind (str | Unset):  Default: 'expectation'.
@@ -38,6 +39,7 @@ class CheckDocumentIn:
     config: CheckDocumentInConfig | Unset = UNSET
     critical_threshold: float | None | str | Unset = UNSET
     dimension: None | str | Unset = UNSET
+    enabled: bool | Unset = True
     engine: str | Unset = "gx"
     fail_threshold: float | None | str | Unset = UNSET
     kind: str | Unset = "expectation"
@@ -66,6 +68,8 @@ class CheckDocumentIn:
             dimension = UNSET
         else:
             dimension = self.dimension
+
+        enabled = self.enabled
 
         engine = self.engine
 
@@ -105,6 +109,8 @@ class CheckDocumentIn:
             field_dict["critical_threshold"] = critical_threshold
         if dimension is not UNSET:
             field_dict["dimension"] = dimension
+        if enabled is not UNSET:
+            field_dict["enabled"] = enabled
         if engine is not UNSET:
             field_dict["engine"] = engine
         if fail_threshold is not UNSET:
@@ -153,6 +159,8 @@ class CheckDocumentIn:
 
         dimension = _parse_dimension(d.pop("dimension", UNSET))
 
+        enabled = d.pop("enabled", UNSET)
+
         engine = d.pop("engine", UNSET)
 
         def _parse_fail_threshold(data: object) -> float | None | str | Unset:
@@ -198,6 +206,7 @@ class CheckDocumentIn:
             config=config,
             critical_threshold=critical_threshold,
             dimension=dimension,
+            enabled=enabled,
             engine=engine,
             fail_threshold=fail_threshold,
             kind=kind,

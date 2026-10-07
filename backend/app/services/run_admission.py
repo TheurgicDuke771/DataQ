@@ -18,7 +18,6 @@ import uuid
 from dataclasses import dataclass, replace
 from typing import Any
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import get_settings
@@ -28,7 +27,7 @@ from backend.app.core.secrets import get_secret_store
 from backend.app.datasources.base import ResolvedTarget
 from backend.app.datasources.sql_engines import GENERIC_SQL_TYPES
 from backend.app.db.models import COMPARISON_KIND, Check, Connection, Run, Suite
-from backend.app.services import run_target
+from backend.app.services import run_service, run_target
 
 log = get_logger(__name__)
 
@@ -269,7 +268,7 @@ def estimate_run_memory(session: Session, run: Run) -> MemoryEstimate | None:
         target = run_target.resolve_target(connection.type, suite.target)
     except Exception:
         return None
-    checks = list(session.scalars(select(Check).where(Check.suite_id == suite.id)))
+    checks = run_service.runnable_checks(session, suite.id)
     comparison = _comparison_bytes(checks)
     try:
         estimate = _dataset_estimate(run, connection, target, checks)

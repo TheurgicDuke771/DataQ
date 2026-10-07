@@ -101,7 +101,8 @@ def test_downgrade_removes_the_column_and_upgrade_puts_it_back(db_session: Any) 
             db_session.scalar(
                 text(
                     "SELECT count(*) FROM information_schema.columns "
-                    "WHERE table_name = 'checks' AND column_name = 'ordinal'"
+                    "WHERE table_schema = current_schema() "
+                    "AND table_name = 'checks' AND column_name = 'ordinal'"
                 )
             )
         )

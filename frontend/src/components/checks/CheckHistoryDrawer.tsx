@@ -78,6 +78,10 @@ export function CheckHistoryDrawer({
             <ConfigJson config={version.config} />
           </Descriptions.Item>
           <Descriptions.Item label="Thresholds">{formatThresholds(version)}</Descriptions.Item>
+          {/* Recorded, not restorable: only a version at which the check was off says so. */}
+          {version.enabled === false && (
+            <Descriptions.Item label="State">Disabled</Descriptions.Item>
+          )}
         </Descriptions>
       )}
       renderActions={
@@ -86,7 +90,7 @@ export function CheckHistoryDrawer({
               !isCurrent && (
                 <Popconfirm
                   title={`Restore v${version.version_no}?`}
-                  description="Creates a new version with this snapshot's config; nothing is deleted."
+                  description="Creates a new version with this snapshot's config; nothing is deleted. Whether the check is enabled stays as it is now."
                   okText="Restore"
                   onConfirm={() => handleRestore(version.version_no)}
                 >

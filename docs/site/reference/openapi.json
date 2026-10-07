@@ -1330,7 +1330,7 @@
         "type": "object"
       },
       "BulkChecksResult": {
-        "description": "`affected` is how many checks were changed. It is always every check named in\nthe request: a bulk call changes all of them or, on any refusal, none.",
+        "description": "`affected` is how many checks were changed. It is every check named in the\nrequest (a bulk call changes all of them or, on any refusal, none), except for\n`checks-bulk/enabled`, which leaves out a check already in the requested state.",
         "properties": {
           "affected": {
             "title": "Affected",
@@ -1348,6 +1348,32 @@
           "affected"
         ],
         "title": "BulkChecksResult",
+        "type": "object"
+      },
+      "BulkEnabledRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "check_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Check Ids",
+            "type": "array"
+          },
+          "enabled": {
+            "description": "false switches the checks off; true switches them on",
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "check_ids",
+          "enabled"
+        ],
+        "title": "BulkEnabledRequest",
         "type": "object"
       },
       "BulkSnoozeRequest": {
@@ -1938,6 +1964,11 @@
             ],
             "title": "Dimension"
           },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
           "engine": {
             "default": "gx",
             "maxLength": 32,
@@ -2043,6 +2074,11 @@
             ],
             "title": "Dimension"
           },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
           "engine": {
             "default": "gx",
             "maxLength": 32,
@@ -2143,6 +2179,11 @@
               }
             ],
             "title": "Dimension"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
           },
           "engine": {
             "default": "gx",
@@ -2418,6 +2459,11 @@
             ],
             "title": "Dimension"
           },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
           "engine": {
             "title": "Engine",
             "type": "string"
@@ -2610,6 +2656,17 @@
             ],
             "title": "Dimension"
           },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
           "engine": {
             "anyOf": [
               {
@@ -2752,6 +2809,11 @@
               }
             ],
             "title": "Dimension"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
           },
           "engine": {
             "title": "Engine",
@@ -15082,6 +15144,60 @@
           }
         },
         "summary": "Delete many checks",
+        "tags": [
+          "checks"
+        ]
+      }
+    },
+    "/api/v1/suites/{suite_id}/checks-bulk/enabled": {
+      "post": {
+        "description": "A disabled check keeps its results, versions and baseline and is left out of every run. `affected` counts the checks whose state changed; one already in the requested state is returned unchanged. All-or-nothing: if any id is not a check of this suite the request is refused with 404 and nothing is changed. Duplicate ids count once.",
+        "operationId": "bulk_set_checks_enabled",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suite_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Suite Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkEnabledRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkChecksResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enable or disable many checks",
         "tags": [
           "checks"
         ]

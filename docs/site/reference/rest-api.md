@@ -175,7 +175,7 @@ URL); linking/unlinking a suite follows that suite's own `view`/`edit` grant.
 | GET / POST | `/suites` | List / create a suite. |
 | GET / PATCH / DELETE | `/suites/{id}` | Read / update / delete. |
 | GET / POST | `/suites/{id}/checks` | List / add checks. |
-| GET / PATCH / DELETE | `/suites/{id}/checks/{cid}` | Read / update / delete a check. |
+| GET / PATCH / DELETE | `/suites/{id}/checks/{cid}` | Read / update / delete a check. `PATCH` with `{"enabled": false}` switches it off (kept with its history, left out of runs); `true` switches it back on. |
 | POST | `/suites/{id}/checks/dryrun` | Preview a check against live data (no persistence). |
 | POST | `/suites/{id}/checks/{cid}/snooze` · DELETE to clear | Snooze a check's alerts for N hours. |
 | GET | `/suites/{id}/checks/{cid}/versions` · POST `…/versions/{n}/restore` | Version history + restore (restore mints a new version). |
@@ -184,7 +184,7 @@ URL); linking/unlinking a suite follows that suite's own `view`/`edit` grant.
 | GET | `/suites/{id}/export` · POST `/suites/import` | Portable suite document (env promotion) — see [Suite document](suite-document.md). |
 | POST | `/suites/validate` | Run every import gate on a document and report all problems; creates nothing. |
 | POST | `/suites/{id}/apply` | Apply a document onto an existing suite (checks matched by name; `prune` deletes the rest), or report its drift. Idempotent. |
-| POST | `/suites/{id}/checks-bulk/delete` · `…/snooze` · `…/unsnooze` · `…/thresholds` | Act on many checks at once — all-or-nothing. |
+| POST | `/suites/{id}/checks-bulk/delete` · `…/snooze` · `…/unsnooze` · `…/thresholds` · `…/enabled` | Act on many checks at once — all-or-nothing. `…/enabled` takes `{"check_ids": […], "enabled": true \| false}`; its `affected` counts only the checks whose state changed. |
 | GET | `/suites/{id}/suggestions` · POST `/suggestions/{id}/accept` · `/suggestions/{id}/reject` | Automatic-coverage review queue: proposed rules; accepting one creates the check. |
 | GET | `/suites/{id}/cadence` | The bound pipeline's cadence — a freshness-threshold hint. |
 | GET | `/suites/{id}/deletion_impact` | Exact dependent counts a suite delete would destroy. |

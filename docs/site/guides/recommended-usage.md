@@ -92,7 +92,8 @@ holds the inbound ones).
 - Keep the default **warn-and-worse** threshold; drop to **fail-only** for noisy exploratory
   suites rather than turning alerts off.
 - **Snooze** a known-broken check during an incident instead of deleting it — the history and
-  the re-fire on expiry are the point.
+  the re-fire on expiry are the point. **Disable** one you want to stop running for now; it
+  keeps its history too.
 - Trust **dedup**: a red suite that's quiet is dedup working; the Results page is ground truth.
 
 See [Alerting hygiene](best-practices.md#alerting-hygiene).
