@@ -4,3 +4,5 @@ coverage/
 playwright-report/
 test-results/
 e2e-live/.auth/
+dist-demo/
+demo-fixtures.json

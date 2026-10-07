@@ -9,7 +9,9 @@ const tseslint = require('typescript-eslint');
 const prettierConfig = require('eslint-config-prettier');
 
 module.exports = tseslint.config(
-  { ignores: ['dist', 'coverage', 'node_modules', 'playwright-report', 'test-results'] },
+  {
+    ignores: ['dist', 'dist-demo', 'coverage', 'node_modules', 'playwright-report', 'test-results'],
+  },
   {
     extends: [js.configs.recommended, ...tseslint.configs.strict, prettierConfig],
     files: ['**/*.{ts,tsx}'],
@@ -56,6 +58,7 @@ module.exports = tseslint.config(
       'e2e-otp/**/*.ts',
       'e2e-live/**/*.ts',
       'e2e-docs/**/*.ts',
+      'e2e-demo/**/*.ts',
     ],
     languageOptions: {
       globals: globals.node,

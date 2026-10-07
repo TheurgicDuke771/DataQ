@@ -24,6 +24,7 @@ import { useIsWorkspaceAdmin } from './auth/useMe';
 import { logout } from './auth/authClient';
 import { useOtpSession } from './auth/otpSessionContext';
 import { BrandMark } from './components/BrandMark';
+import { IS_DEMO } from './demo/flag';
 import { ThemeToggle } from './components/ThemeToggle';
 import { ProfileCompletionPrompt } from './components/profile/ProfileCompletionPrompt';
 import { ScrollableTableFocus } from './components/shared/ScrollableTableFocus';
@@ -56,6 +57,10 @@ const Results = lazy(() => import('./pages/Results').then((m) => ({ default: m.R
 const RunDetail = lazy(() => import('./pages/RunDetail').then((m) => ({ default: m.RunDetail })));
 const Profile = lazy(() => import('./pages/Profile').then((m) => ({ default: m.Profile })));
 const NotFound = lazy(() => import('./pages/NotFound').then((m) => ({ default: m.NotFound })));
+// Only the static demo build loads this (#2419); elsewhere the import is compiled away.
+const DemoBadge = IS_DEMO
+  ? lazy(() => import('./demo/DemoBadge').then((m) => ({ default: m.DemoBadge })))
+  : null;
 
 const { Header, Sider, Content } = Layout;
 
@@ -173,6 +178,11 @@ export function App() {
               </Typography.Text>
             </Flex>
           </Link>
+          {DemoBadge && (
+            <Suspense fallback={null}>
+              <DemoBadge compact={narrow} />
+            </Suspense>
+          )}
           <ThemeToggle />
           <UserMenu />
         </Header>
@@ -407,7 +417,7 @@ function UserMenu() {
           </Typography.Text>
           {user.isDev && (
             <Tag color="orange" style={{ marginTop: 4, width: 'fit-content' }}>
-              DEV BYPASS
+              {IS_DEMO ? 'DEMO' : 'DEV BYPASS'}
             </Tag>
           )}
         </Flex>

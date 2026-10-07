@@ -10,6 +10,7 @@ import { MeProvider } from './auth/MeProvider';
 import { OtpSessionProvider } from './auth/OtpSessionProvider';
 import { completeSigninIfCallback } from './auth/authClient';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { IS_DEMO } from './demo/flag';
 import { ThemeModeProvider } from './themeMode/ThemeModeProvider';
 // Self-hosted fonts (visual-fidelity pass, ADR 0022) — Inter for UI text, JetBrains Mono for
 // code/SQL/identifiers.
@@ -29,7 +30,11 @@ const rootEl: HTMLElement = maybeRoot;
 
 // Auth lifecycle (issue #62, generic OIDC per ADR 0028): if this load is the IdP redirect back,
 // complete the code exchange BEFORE React renders so the first paint reflects post-login state.
+// Empty at the site root; the demo build is served from a sub-path (#2419).
+const routerBasename = import.meta.env.BASE_URL.replace(/\/$/, '') || undefined;
+
 async function bootstrap() {
+  if (IS_DEMO) (await import('./demo/install')).installDemo();
   await completeSigninIfCallback();
   createRoot(rootEl).render(
     <StrictMode>
@@ -43,7 +48,7 @@ async function bootstrap() {
               <OtpSessionProvider>
                 <CurrentUserProvider>
                   <MeProvider>
-                    <BrowserRouter>
+                    <BrowserRouter basename={routerBasename}>
                       <App />
                     </BrowserRouter>
                   </MeProvider>
