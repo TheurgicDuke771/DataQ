@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bekiprx3g</task-id>
+<tool-use-id>toolu_012NkcJJpcrir9EH3XHmTPVc</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-arijit-Coding-Python-DataQ/f0817e63-d0fa-45a3-bca3-64e0cf781a62/tasks/bekiprx3g.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for PR 2415 CI" completed (exit code 0)</summary>
+</task-notification>
