@@ -3673,10 +3673,23 @@ through **both** — delivery is additive, not either/or.
 
 **Legacy inline destinations.** Before channels existed a suite could carry its own Teams
 or Slack webhook or recipient list. Those keep delivering, and the suite's panel shows them
-as a separate *Legacy inline destinations* card with a **Clear** per entry so an editor can
-move the suite onto a channel and retire the override. Setting a new inline destination
-is not possible any more — not from the app and not from the API, for anyone: the request
-is refused with the field named. A suite's destinations are the channels, full stop.
+as a separate *Legacy inline destinations* card. A workspace admin gets **Promote to
+channel** per entry: it creates a channel from the existing value under the name you give,
+links it to the suite and removes the inline value, in one step. The webhook URL is moved,
+never shown, so this works even when nobody still has the URL. An editor who is not an
+admin gets **Clear**, which removes the destination. Setting a new inline destination is
+not possible any more — not from the app and not from the API, for anyone: the request is
+refused with the field named.
+
+Two things to know before promoting:
+
+- **The workspace default may start applying.** An inline value replaced the workspace-wide
+  default for that suite; a linked channel is delivered in addition to it. If the deployment
+  sets a workspace default for that destination, the suite alerts both after the promote,
+  and the app says so when it happens.
+- **Promote once per destination, then link.** Promoting the same webhook from a second
+  suite creates a second channel. Link the first channel to the other suites and clear
+  their inline value instead, so a later rotation touches one place.
 
 ### What an alert email says
 
@@ -4711,6 +4724,14 @@ the per-PR history lives in the repo's commit log and pull requests.
   applying a file that does not mention `enabled` leaves each check's switch alone; over
   MCP, `update_check` takes `enabled`, `list_suites` adds `enabled_check_count`,
   `trigger_suite_run` returns `enabled_checks`, and each result carries `check_enabled`.
+- **Promote a suite's old inline webhook to a channel.** A suite that still carries its own
+  Teams or Slack webhook or recipient list from before channels existed now offers a
+  workspace admin **Promote to channel** on the suite's notification panel. It creates a
+  channel from the existing value, links it to the suite and removes the inline value; the
+  webhook URL is moved without being shown, so it works when nobody still has the URL. If
+  the deployment sets a workspace default for that destination, the suite alerts it as well
+  afterwards, and the app says so. In the API,
+  `POST /suites/{id}/notifications/promote`.
 
 ## v1.2.0 — 2026-10-04
 
@@ -6815,6 +6836,7 @@ carry a stored credential to a URL the caller didn't just prove they still contr
 | GET / PATCH / DELETE | `/notification-channels/{id}` | Read / update / delete (refused with `409 channel_in_use` while any suite still references it). |
 | GET | `/suites/{id}/notification-channels` | List a suite's linked channels. |
 | PUT / DELETE | `/suites/{id}/notification-channels/{channel_id}` | Link / unlink a channel (linking is idempotent — relinking is a no-op, not a conflict). |
+| POST | `/suites/{id}/notifications/promote` | Admin only. Move a suite's legacy inline destination (`teams`, `slack` or `email`) into a new channel linked to that suite. `409 nothing_to_promote` when the suite has no such value. |
 
 **Roles.** Same split as connections: create/update/delete are **Admin-only** (a webhook URL is
 a credential); list/read are open to any authenticated user (`has_webhook` only, never the

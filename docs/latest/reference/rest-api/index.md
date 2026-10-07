@@ -162,6 +162,7 @@ carry a stored credential to a URL the caller didn't just prove they still contr
 | GET / PATCH / DELETE | `/notification-channels/{id}` | Read / update / delete (refused with `409 channel_in_use` while any suite still references it). |
 | GET | `/suites/{id}/notification-channels` | List a suite's linked channels. |
 | PUT / DELETE | `/suites/{id}/notification-channels/{channel_id}` | Link / unlink a channel (linking is idempotent — relinking is a no-op, not a conflict). |
+| POST | `/suites/{id}/notifications/promote` | Admin only. Move a suite's legacy inline destination (`teams`, `slack` or `email`) into a new channel linked to that suite. `409 nothing_to_promote` when the suite has no such value. |
 
 **Roles.** Same split as connections: create/update/delete are **Admin-only** (a webhook URL is
 a credential); list/read are open to any authenticated user (`has_webhook` only, never the

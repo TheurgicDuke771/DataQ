@@ -2932,6 +2932,11 @@ carry a stored credential to a URL the caller didn't just prove they still contr
 <td><code>/suites/{id}/notification-channels/{channel_id}</code></td>
 <td>Link / unlink a channel (linking is idempotent — relinking is a no-op, not a conflict).</td>
 </tr>
+<tr>
+<td>POST</td>
+<td><code>/suites/{id}/notifications/promote</code></td>
+<td>Admin only. Move a suite's legacy inline destination (<code>teams</code>, <code>slack</code> or <code>email</code>) into a new channel linked to that suite. <code>409 nothing_to_promote</code> when the suite has no such value.</td>
+</tr>
 </tbody>
 </table>
 <p><strong>Roles.</strong> Same split as connections: create/update/delete are <strong>Admin-only</strong> (a webhook URL is

@@ -2679,6 +2679,14 @@ the per-PR history lives in the repo's commit log and pull requests.</p>
   applying a file that does not mention <code>enabled</code> leaves each check's switch alone; over
   MCP, <code>update_check</code> takes <code>enabled</code>, <code>list_suites</code> adds <code>enabled_check_count</code>,
   <code>trigger_suite_run</code> returns <code>enabled_checks</code>, and each result carries <code>check_enabled</code>.</li>
+<li><strong>Promote a suite's old inline webhook to a channel.</strong> A suite that still carries its own
+  Teams or Slack webhook or recipient list from before channels existed now offers a
+  workspace admin <strong>Promote to channel</strong> on the suite's notification panel. It creates a
+  channel from the existing value, links it to the suite and removes the inline value; the
+  webhook URL is moved without being shown, so it works when nobody still has the URL. If
+  the deployment sets a workspace default for that destination, the suite alerts it as well
+  afterwards, and the app says so. In the API,
+  <code>POST /suites/{id}/notifications/promote</code>.</li>
 </ul>
 <h2 id="v120-2026-10-04">v1.2.0 — 2026-10-04<a class="headerlink" href="#v120-2026-10-04" title="Permanent link">¶</a></h2>
 <h3 id="breaking">Breaking<a class="headerlink" href="#breaking" title="Permanent link">¶</a></h3>
