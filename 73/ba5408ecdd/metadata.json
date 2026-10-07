@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "73ba5408ecdd",
+  "strategy": "manual-commit",
+  "branch": "feature/static-demo",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "docs/site/get-started/install.md",
+    "marketing/index.html"
+  ],
+  "sessions": [
+    {
+      "metadata": "/73/ba5408ecdd/0/metadata.json",
+      "transcript": "/73/ba5408ecdd/0/full.jsonl",
+      "compact_transcript": "/73/ba5408ecdd/0/transcript.jsonl",
+      "content_hash": "/73/ba5408ecdd/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 0,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "output_tokens": 0,
+    "api_call_count": 0
+  }
+}
