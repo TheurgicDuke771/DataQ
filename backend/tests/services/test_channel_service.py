@@ -1170,6 +1170,10 @@ def test_a_locked_read_refreshes_a_row_the_session_already_holds(db_session: Any
     assert locked is held and locked.webhook_secret_ref is None
 
 
+# Presence is all `workspace_default_set` reads; the values are placeholders.
+_SMTP_TRANSPORT_SET = dict.fromkeys(("EMAIL_USERNAME", "EMAIL_PASSWORD_SECRET_NAME"), "set")
+
+
 @pytest.mark.parametrize(
     ("env", "destination", "expected"),
     [
@@ -1179,15 +1183,7 @@ def test_a_locked_read_refreshes_a_row_the_session_already_holds(db_session: Any
         ({"SLACK_WEBHOOK_SECRET_NAME": "ws-slack"}, "slack", True),
         # Recipients without the SMTP transport deliver nothing.
         ({"EMAIL_TO": "ops@x.io"}, "email", False),
-        (
-            {
-                "EMAIL_TO": "ops@x.io",
-                "EMAIL_USERNAME": "mailer",
-                "EMAIL_PASSWORD_SECRET_NAME": "smtp-pw",
-            },
-            "email",
-            True,
-        ),
+        ({"EMAIL_TO": "ops@x.io", **_SMTP_TRANSPORT_SET}, "email", True),
     ],
 )
 def test_workspace_default_set_reports_only_a_default_that_delivers(
