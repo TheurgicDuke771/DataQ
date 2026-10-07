@@ -23,11 +23,20 @@ describe('fixtureKey', () => {
     expect(fixtureKey('GET', '/suites/')).toBe(fixtureKey('GET', '/api/v1/suites'));
   });
 
-  it('replaces a timestamp value, which never repeats between recording and replay', () => {
-    const recorded = fixtureKey('GET', '/runs?since=2026-10-01T10:00:00.000Z');
-    const replayed = fixtureKey('GET', '/runs?since=2026-11-20T08:30:00.000Z');
-    expect(recorded).toBe('GET /runs?since=<ts>');
+  it('keys a timestamp by its distance from now, so it matches at replay', () => {
+    const recordedAt = Date.parse('2026-10-08T10:00:03Z');
+    const replayedAt = Date.parse('2026-11-27T08:30:00Z');
+    const recorded = fixtureKey('GET', '/runs?since=2026-10-01T10:00:00.000Z', recordedAt);
+    const replayed = fixtureKey('GET', '/runs?since=2026-11-20T08:30:00.000Z', replayedAt);
+    expect(recorded).toBe('GET /runs?since=<now-168h>');
     expect(replayed).toBe(recorded);
+  });
+
+  it('keeps two time windows apart', () => {
+    const now = Date.parse('2026-10-08T10:00:00Z');
+    expect(fixtureKey('GET', '/runs?since=2026-10-07T10:00:00Z', now)).not.toBe(
+      fixtureKey('GET', '/runs?since=2026-10-01T10:00:00Z', now),
+    );
   });
 
   it('keeps a plain value distinct', () => {
@@ -73,30 +82,38 @@ describe('lookup', () => {
 });
 
 describe('shiftDates', () => {
+  const CAPTURED = Date.parse('2026-10-01T00:00:00Z');
+
   it('moves timestamps and dates by whole days, at any depth, keeping the time of day', () => {
     const shifted = shiftDates(
       {
         at: '2026-09-30T23:15:00.123456+00:00',
         day: '2026-12-31',
-        rows: [{ ts: '2026-02-28T01:00:00Z' }],
+        rows: [{ ts: '2026-08-30T01:00:00Z' }],
       },
       2,
+      CAPTURED,
     );
     expect(shifted).toEqual({
       at: '2026-10-02T23:15:00.123456+00:00',
       day: '2027-01-02',
-      rows: [{ ts: '2026-03-02T01:00:00Z' }],
+      rows: [{ ts: '2026-09-01T01:00:00Z' }],
     });
+  });
+
+  it('leaves a date far from the recording as recorded: a threshold or a row value', () => {
+    const value = { min_value: '2024-01-01', born: '1990-05-17T00:00:00Z', expires: '2029-01-01' };
+    expect(shiftDates(value, 9, CAPTURED)).toEqual(value);
   });
 
   it('leaves everything that is not a date alone', () => {
     const value = { cron: '0 2 * * *', id: '2026-10', n: 20261001, ok: true, none: null };
-    expect(shiftDates(value, 5)).toEqual(value);
+    expect(shiftDates(value, 5, CAPTURED)).toEqual(value);
   });
 
   it('returns the same object when there is nothing to shift', () => {
     const value = { at: '2026-10-01T00:00:00Z' };
-    expect(shiftDates(value, 0)).toBe(value);
+    expect(shiftDates(value, 0, CAPTURED)).toBe(value);
   });
 });
 

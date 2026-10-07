@@ -1,7 +1,12 @@
 import axios, { AxiosError } from 'axios';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createDemoAdapter, NOT_RECORDED_MESSAGE, READ_ONLY_MESSAGE } from '../../src/demo/adapter';
+import {
+  createDemoAdapter,
+  NOT_RECORDED_MESSAGE,
+  READ_ONLY_MESSAGE,
+  UNAVAILABLE_MESSAGE,
+} from '../../src/demo/adapter';
 import type { FixtureBundle } from '../../src/demo/fixtures';
 import { DEMO_NOTICE_EVENT } from '../../src/demo/notices';
 
@@ -96,6 +101,19 @@ describe('demo adapter', () => {
       expect(load).not.toHaveBeenCalled();
     },
   );
+
+  it('answers 503 in the API error shape when the recording cannot be loaded', async () => {
+    const http = axios.create({
+      baseURL: '/api/v1',
+      adapter: createDemoAdapter(() => Promise.reject(new Error('offline'))),
+    });
+    const failure = (await http.get('/runs').catch((e: unknown) => e)) as AxiosError<{
+      error: { message: string };
+    }>;
+    expect(axios.isAxiosError(failure)).toBe(true);
+    expect(failure.response?.status).toBe(503);
+    expect(failure.response?.data.error.message).toBe(UNAVAILABLE_MESSAGE);
+  });
 
   it('resolves a refused status when the caller accepts it', async () => {
     const { http } = client();

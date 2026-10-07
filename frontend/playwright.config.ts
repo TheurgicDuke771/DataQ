@@ -135,7 +135,8 @@ export default defineConfig({
       : []),
   ],
   webServer:
-    liveBaseURL || docsEnabled
+    // A capture pointed at its own stack needs no server from here.
+    liveBaseURL || docsEnabled || (demoLane === 'capture' && process.env.E2E_DEMO_BASE_URL)
       ? undefined
       : demoLane === 'smoke'
         ? [

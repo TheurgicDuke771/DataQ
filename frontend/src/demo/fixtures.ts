@@ -30,34 +30,49 @@ const ISO_DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const DAY_MS = 86_400_000;
 
-/** A timestamp in a query string is "now minus a window": it never repeats, so it cannot key. */
-const normalizeValue = (v: string) => (ISO_DATETIME.test(v) ? '<ts>' : v);
+const HOUR_MS = 3_600_000;
 
-function split(url: string): { path: string; params: [string, string][] } {
+/**
+ * A timestamp in a query string is "now minus a window": the instant never repeats between
+ * recording and replay, but its distance from now does. Keying on that distance keeps a 24-hour
+ * window and a 7-day one apart.
+ */
+function normalizeValue(v: string, now: number): string {
+  if (!ISO_DATETIME.test(v)) return v;
+  const at = Date.parse(v);
+  return Number.isNaN(at) ? v : `<now${Math.round((at - now) / HOUR_MS)}h>`;
+}
+
+function split(url: string, now: number): { path: string; params: [string, string][] } {
   const parsed = new URL(url, 'http://demo.invalid');
   const path = parsed.pathname.startsWith(API_PREFIX)
     ? parsed.pathname.slice(API_PREFIX.length)
     : parsed.pathname;
   const params = [...parsed.searchParams.entries()]
-    .map(([k, v]): [string, string] => [k, normalizeValue(v)])
+    .map(([k, v]): [string, string] => [k, normalizeValue(v, now)])
     .sort(([ak, av], [bk, bv]) => (ak === bk ? av.localeCompare(bv) : ak.localeCompare(bk)));
   return { path: path.replace(/\/+$/, '') || '/', params };
 }
 
 /** `GET /suites?limit=50` — the method, the path under /api/v1, and the sorted query. */
-export function fixtureKey(method: string, url: string): string {
-  const { path, params } = split(url);
+export function fixtureKey(method: string, url: string, now: number = Date.now()): string {
+  const { path, params } = split(url, now);
   const query = params.map(([k, v]) => `${k}=${v}`).join('&');
   return `${method.toUpperCase()} ${path}${query ? `?${query}` : ''}`;
 }
 
 /** The exact recording, else the same path's recording that shares the most query parameters. */
-export function lookup(bundle: FixtureBundle, method: string, url: string): Lookup | null {
-  const key = fixtureKey(method, url);
+export function lookup(
+  bundle: FixtureBundle,
+  method: string,
+  url: string,
+  now: number = Date.now(),
+): Lookup | null {
+  const key = fixtureKey(method, url, now);
   const exact = bundle.entries[key];
   if (exact) return { response: exact, approximate: false };
 
-  const { path, params } = split(url);
+  const { path, params } = split(url, now);
   const wanted = new Set(params.map(([k, v]) => `${k}=${v}`));
   const prefix = `${method.toUpperCase()} ${path}`;
   let best: { response: RecordedResponse; shared: number; extra: number } | null = null;
@@ -79,21 +94,31 @@ function shiftDate(isoDate: string, days: number): string {
   return moved.toISOString().slice(0, 10);
 }
 
+/** How far from the recording a date may lie and still be an event of the demo workspace. */
+const SHIFT_WINDOW = { before: 120 * DAY_MS, after: 400 * DAY_MS };
+
 /**
- * Move every date in a recorded payload forward by whole days, so data recorded last week still
- * reads as recent. Whole days keep date-only and timestamp fields consistent with each other.
+ * Move the workspace's own dates (runs, schedules, incidents, trend buckets) forward by whole
+ * days, so data recorded last week still reads as recent. Whole days keep date-only and
+ * timestamp fields consistent with each other. A date far from the recording is somebody's
+ * data or a configured threshold, not an event, and is left as recorded.
  */
-export function shiftDates<T>(value: T, days: number): T {
+export function shiftDates<T>(value: T, days: number, capturedAt: number): T {
   if (days === 0) return value;
   if (typeof value === 'string') {
-    if (ISO_DATE.test(value)) return shiftDate(value, days) as T;
-    if (ISO_DATETIME.test(value))
-      return (shiftDate(value.slice(0, 10), days) + value.slice(10)) as T;
-    return value;
+    const isDate = ISO_DATE.test(value);
+    if (!isDate && !ISO_DATETIME.test(value)) return value;
+    const offset = Date.parse(isDate ? `${value}T00:00:00Z` : value) - capturedAt;
+    if (Number.isNaN(offset) || offset < -SHIFT_WINDOW.before || offset > SHIFT_WINDOW.after) {
+      return value;
+    }
+    return (shiftDate(value.slice(0, 10), days) + value.slice(10)) as T;
   }
-  if (Array.isArray(value)) return value.map((v) => shiftDates(v, days)) as T;
+  if (Array.isArray(value)) return value.map((v) => shiftDates(v, days, capturedAt)) as T;
   if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, shiftDates(v, days)])) as T;
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [k, shiftDates(v, days, capturedAt)]),
+    ) as T;
   }
   return value;
 }

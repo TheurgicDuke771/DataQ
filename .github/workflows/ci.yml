@@ -554,7 +554,7 @@ jobs:
     needs: frontend-e2e
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     permissions:
       contents: write
       actions: write
@@ -570,6 +570,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           test -f index.html && test -f demo-fixtures.json
+          # What docs.yml waits to see served before it calls the deploy live.
+          echo "$GITHUB_SHA" > version.txt
           git init -q -b demo-site
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -580,7 +582,19 @@ jobs:
       - name: Redeploy Pages with the new demo
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run docs.yml --repo "$GITHUB_REPOSITORY" --ref main -f demo_only=true
+        # docs.yml runs share one concurrency group that holds a single pending run: queueing
+        # behind a pending run cancels it, and a cancelled release-tag run would leave that
+        # version's docs unpublished. So wait until none is running or queued.
+        run: |
+          for attempt in $(seq 1 60); do
+            active="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow docs.yml --limit 20 \
+              --json status --jq '[.[] | select(.status != "completed")] | length')"
+            [ "$active" = "0" ] && break
+            echo "docs.yml has $active run(s) in flight; waiting"
+            sleep 20
+          done
+          [ "$active" = "0" ] || { echo "::error::docs.yml stayed busy for 20 minutes"; exit 1; }
+          gh workflow run docs.yml --repo "$GITHUB_REPOSITORY" --ref main -f demo_only=true
 
   frontend-audit:
     # Job name kept verbatim: it is the pinned required-check context on the main ruleset (same rule

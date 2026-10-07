@@ -27,12 +27,16 @@ describe('installDemo', () => {
     expect(fetchMock).toHaveBeenCalledWith('/DataQ/demo/demo-fixtures.json');
   });
 
-  it('fails every read when the fixture file is missing', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => Promise.resolve(new Response('', { status: 404 }))),
-    );
+  it('fails a read while the fixture file is missing, and recovers once it is there', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('', { status: 404 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(bundle)));
+    vi.stubGlobal('fetch', fetchMock);
     installDemo('/');
-    await expect(api.get('/me')).rejects.toThrow('demo fixtures failed to load (404)');
+
+    await expect(api.get('/me')).rejects.toMatchObject({ response: { status: 503 } });
+    expect((await api.get('/me')).status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

@@ -11,6 +11,7 @@ import { announce } from './notices';
 export const READ_ONLY_MESSAGE =
   'This is a read-only demo. Install DataQ to run it against your own data.';
 export const NOT_RECORDED_MESSAGE = 'This view is not part of the read-only demo.';
+export const UNAVAILABLE_MESSAGE = 'The demo data did not load. Reload the page to try again.';
 
 function respond(
   config: InternalAxiosRequestConfig,
@@ -52,7 +53,12 @@ export function createDemoAdapter(load: () => Promise<FixtureBundle>): AxiosAdap
       announce('read-only');
       return respond(config, 403, envelope('demo_read_only', READ_ONLY_MESSAGE));
     }
-    const bundle = await load();
+    let bundle: FixtureBundle;
+    try {
+      bundle = await load();
+    } catch {
+      return respond(config, 503, envelope('demo_unavailable', UNAVAILABLE_MESSAGE));
+    }
     const found = lookup(bundle, method, axios.getUri(config));
     if (!found) {
       announce('not-recorded');
@@ -60,6 +66,7 @@ export function createDemoAdapter(load: () => Promise<FixtureBundle>): AxiosAdap
     }
     if (found.approximate) announce('approximate');
     const { status, data, headers } = found.response;
-    return respond(config, status, shiftDates(data, daysSince(bundle.capturedAt)), headers);
+    const shifted = shiftDates(data, daysSince(bundle.capturedAt), Date.parse(bundle.capturedAt));
+    return respond(config, status, shifted, headers);
   };
 }

@@ -110,15 +110,21 @@ jobs:
           }
           cp -r marketing/. site/
           # The static demo (#2419): ci.yml's publish-demo job keeps its latest build as the
-          # single commit of `demo-site`. Absent only before that job has ever run.
-          if git fetch origin demo-site --depth=1; then
+          # single commit of `demo-site`. Only a branch that does not exist is skipped (true
+          # before that job has ever run); a fetch that fails must not publish a site without
+          # the demo the marketing page links to.
+          if git ls-remote --exit-code --heads origin demo-site >/dev/null; then
+            git fetch origin demo-site --depth=1
             mkdir site/demo
             git --work-tree=site/demo checkout FETCH_HEAD -- .
             git reset -q
             test -f site/demo/index.html
-            echo "demo=true" >> "$GITHUB_OUTPUT"
-          else
+            echo "demo=$(cat site/demo/version.txt)" >> "$GITHUB_OUTPUT"
+          elif [ $? -eq 2 ]; then
             echo "::warning::no demo-site branch yet — publishing without /demo/"
+          else
+            echo "::error::could not query the demo-site branch"
+            exit 1
           fi
 
       - uses: actions/upload-pages-artifact@v5
@@ -155,18 +161,19 @@ jobs:
           echo "::error::docs/${VERSION} is not in the live versions.json after 5 minutes"
           exit 1
 
-      - name: The demo is live
-        if: needs.build.outputs.demo == 'true'
+      - name: The demo in this deploy is live
+        if: needs.build.outputs.demo != ''
         env:
           PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+          DEMO_VERSION: ${{ needs.build.outputs.demo }}
         run: |
           for attempt in $(seq 1 20); do
-            if curl -fsS "${PAGE_URL%/}/demo/demo-fixtures.json?run=${GITHUB_RUN_ID}-${attempt}" \
-                | grep -q '"capturedAt"'; then
-              echo "demo is live"
+            live="$(curl -fsS "${PAGE_URL%/}/demo/version.txt?run=${GITHUB_RUN_ID}-${attempt}" || true)"
+            if [ "$live" = "$DEMO_VERSION" ]; then
+              echo "demo ${DEMO_VERSION} is live"
               exit 0
             fi
             sleep 15
           done
-          echo "::error::/demo/ is not being served after 5 minutes"
+          echo "::error::/demo/ is not serving ${DEMO_VERSION} after 5 minutes"
           exit 1

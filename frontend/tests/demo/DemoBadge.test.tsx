@@ -1,10 +1,10 @@
 import { act, render, screen } from '@testing-library/react';
 import { App } from 'antd';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { DemoBadge } from '../../src/demo/DemoBadge';
 import { INSTALL_GUIDE_URL } from '../../src/demo/flag';
-import { announce } from '../../src/demo/notices';
+import { announce, subscribe } from '../../src/demo/notices';
 
 const mount = (compact = false) =>
   render(
@@ -14,6 +14,9 @@ const mount = (compact = false) =>
   );
 
 describe('DemoBadge', () => {
+  // Drop anything announced while no badge was mounted.
+  afterEach(() => subscribe(() => undefined)());
+
   it('labels the shell as a demo and links to the install guide', () => {
     mount();
     expect(screen.getByText('Read-only demo · sample data')).toBeInTheDocument();
@@ -46,6 +49,12 @@ describe('DemoBadge', () => {
     mount();
     act(() => announce(kind));
     expect(await screen.findByText(title)).toBeInTheDocument();
+  });
+
+  it('shows a notice raised before it mounted', async () => {
+    announce('not-recorded');
+    mount();
+    expect(await screen.findByText('Not in the demo')).toBeInTheDocument();
   });
 
   it('stops listening once unmounted', () => {

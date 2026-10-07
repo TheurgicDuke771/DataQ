@@ -57,6 +57,20 @@ test('the dashboard shows the seeded workspace and says it is a demo', async ({ 
   await expect(page.getByText('Read-only demo · sample data')).toBeVisible();
 });
 
+test('the recording still answers a visitor who arrives nine days after it was made', async ({
+  page,
+}) => {
+  const { escaped, notices } = await watch(page);
+  await page.clock.install({ time: Date.parse(bundle.capturedAt) + 9 * 86_400_000 });
+  const outside: string[] = [];
+  for (const route of ['/dashboard', '/results', '/admin/compliance']) {
+    await visit(page, route);
+    for (const kind of await notices()) outside.push(`${kind} on ${route}`);
+  }
+  expect(outside).toEqual([]);
+  expect(escaped).toEqual([]);
+});
+
 test('a deep link survives the static host answering 404', async ({ page }) => {
   const suite = bundle.routes.find((r) => /^\/suites\/[0-9a-f-]{36}$/.test(r));
   if (!suite) throw new Error('the recording has no suite route');
