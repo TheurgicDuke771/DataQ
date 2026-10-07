@@ -287,8 +287,9 @@ class PromoteDestination(ApiRequestModel):
 
 class PromotedChannelRead(ApiModel):
     channel: ChannelRead
-    #: The suite's own value no longer overrides the workspace-wide default for this
-    #: destination, so alerts now go there as well as to the new channel.
+    #: A workspace-wide default is configured for this destination. An inline value
+    #: replaced it; a linked channel is delivered in addition to it, so the suite now
+    #: alerts both.
     workspace_default_now_applies: bool
 
 

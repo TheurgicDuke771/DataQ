@@ -6,7 +6,7 @@ import uuid
 from typing import Any
 
 import pytest
-from sqlalchemy import insert, select
+from sqlalchemy import insert, select, update
 
 from backend.app.core.secrets import SecretNotFoundError
 from backend.app.db.models import (
@@ -1129,3 +1129,85 @@ def test_promote_is_audited_as_the_three_changes_it_makes(db_session: Any) -> No
     cleared = events["suite_notification.update"]
     assert cleared.before["webhook_secret_ref"] == "suite-notif-abc"
     assert cleared.after["webhook_secret_ref"] is None
+
+
+def test_promote_refuses_a_recipient_list_that_would_fail_every_send(db_session: Any) -> None:
+    suite, store = _suite(db_session), FakeSecretStore()
+    _legacy_config(db_session, suite, store, email_recipients="ok@x.io, not-an-address")
+
+    with pytest.raises(InvalidRecipientsError):
+        svc.promote_suite_destination(db_session, suite.id, destination="email", name="E")
+
+    db_session.rollback()
+    assert svc.list_channels(db_session) == []
+    config = notification_service.get_config(db_session, suite.id)
+    assert config is not None and config.email_recipients == "ok@x.io, not-an-address"
+
+
+def test_promote_on_a_missing_suite_is_a_404(db_session: Any) -> None:
+    from backend.app.services.suite_service import SuiteNotFoundError
+
+    with pytest.raises(SuiteNotFoundError):
+        svc.promote_suite_destination(db_session, uuid.uuid4(), destination="teams", name="T")
+
+
+def test_a_locked_read_refreshes_a_row_the_session_already_holds(db_session: Any) -> None:
+    """Without `populate_existing` the waiter keeps the ref someone else just moved."""
+    suite, store = _suite(db_session), FakeSecretStore()
+    _legacy_config(db_session, suite, store, webhook_secret_ref="suite-notif-abc")
+    held = notification_service.get_config(db_session, suite.id)
+    assert held is not None
+    db_session.execute(
+        update(SuiteNotification)
+        .where(SuiteNotification.suite_id == suite.id)
+        .values(webhook_secret_ref=None)
+        .execution_options(synchronize_session=False)
+    )
+    assert held.webhook_secret_ref == "suite-notif-abc"  # stale, as loaded
+
+    locked = notification_service.get_config(db_session, suite.id, for_update=True)
+
+    assert locked is held and locked.webhook_secret_ref is None
+
+
+@pytest.mark.parametrize(
+    ("env", "destination", "expected"),
+    [
+        ({}, "teams", False),
+        ({"TEAMS_WEBHOOK_SECRET_NAME": "ws-teams"}, "teams", True),
+        ({"TEAMS_WEBHOOK_SECRET_NAME": "ws-teams"}, "slack", False),
+        ({"SLACK_WEBHOOK_SECRET_NAME": "ws-slack"}, "slack", True),
+        # Recipients without the SMTP transport deliver nothing.
+        ({"EMAIL_TO": "ops@x.io"}, "email", False),
+        (
+            {
+                "EMAIL_TO": "ops@x.io",
+                "EMAIL_USERNAME": "mailer",
+                "EMAIL_PASSWORD_SECRET_NAME": "smtp-pw",
+            },
+            "email",
+            True,
+        ),
+    ],
+)
+def test_workspace_default_set_reports_only_a_default_that_delivers(
+    monkeypatch: pytest.MonkeyPatch, env: dict[str, str], destination: str, expected: bool
+) -> None:
+    from backend.app.core.config import get_settings
+
+    for name in (
+        "TEAMS_WEBHOOK_SECRET_NAME",
+        "SLACK_WEBHOOK_SECRET_NAME",
+        "EMAIL_TO",
+        "EMAIL_USERNAME",
+        "EMAIL_PASSWORD_SECRET_NAME",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    get_settings.cache_clear()
+    try:
+        assert svc.workspace_default_set(destination) is expected
+    finally:
+        monkeypatch.undo()
+        get_settings.cache_clear()

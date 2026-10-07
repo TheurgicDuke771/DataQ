@@ -111,7 +111,8 @@ def put_notifications(
     if inline:
         raise svc.InlineDestinationNotAllowedError(
             "a suite does not take its own webhook or recipient list — link one of the "
-            "channels an Admin configured under Settings; existing values can only be cleared",
+            "channels an Admin configured under Settings; an existing value can only be "
+            "cleared, or promoted to a channel by an Admin",
             detail={"fields": inline},
         )
     config = svc.upsert_config(

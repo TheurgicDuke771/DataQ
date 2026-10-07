@@ -386,13 +386,14 @@ function PromoteModal({
   const { run, loading } = useAsyncAction('Could not promote the destination');
   const trimmed = name.trim();
 
-  const onOk = () =>
+  const onOk = () => {
+    if (loading) return; // Enter held down, or pressed again before the first call returns
     void run(async () => {
       const result = await promoteSuiteDestination(suiteId, destination, trimmed);
       if (result.workspace_default_now_applies) {
         message.warning(
-          `Promoted to "${result.channel.name}". This suite now also alerts the workspace ` +
-            'default destination, which its own value used to override.',
+          `Promoted to "${result.channel.name}". A workspace default is configured for ` +
+            'this destination, so this suite alerts it as well as the channel.',
           8,
         );
       } else {
@@ -401,6 +402,7 @@ function PromoteModal({
       onClose();
       onPromoted();
     });
+  };
 
   return (
     <Modal

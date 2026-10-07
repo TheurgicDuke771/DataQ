@@ -207,7 +207,21 @@ describe('NotificationsPanel', () => {
     await userEvent.type(screen.getByRole('textbox', { name: 'Channel name' }), 'Platform');
     await userEvent.click(screen.getByRole('button', { name: 'Promote' }));
 
-    expect(await screen.findByText(/now also alerts the workspace default/)).toBeInTheDocument();
+    expect(await screen.findByText(/alerts it as well as the channel/)).toBeInTheDocument();
+  });
+
+  it('sends one request when Enter is pressed again before the first returns', async () => {
+    mockIsAdmin.mockReturnValue(true);
+    mockGet.mockResolvedValue({ ...CONFIG, has_webhook: true });
+    mockListChannels.mockResolvedValue([]);
+    mockListSuiteChannels.mockResolvedValue([]);
+    mockPromote.mockReturnValue(new Promise(() => {})); // never settles
+    renderPanel();
+    await userEvent.click(await screen.findByRole('button', { name: 'Promote to channel' }));
+
+    await userEvent.type(screen.getByRole('textbox', { name: 'Channel name' }), 'P{Enter}{Enter}');
+
+    expect(mockPromote).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the dialog open and reports a failed promote', async () => {

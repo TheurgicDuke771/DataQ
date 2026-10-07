@@ -42,7 +42,8 @@ class InvalidWebhookError(DataQError):
 
 class InlineDestinationNotAllowedError(DataQError):
     """A suite never takes its own webhook or recipient list (#1926): destinations
-    are the channels an Admin configured. Existing inline values can only be cleared."""
+    are the channels an Admin configured. An existing inline value can be cleared, or
+    promoted to a channel by an Admin (#1762)."""
 
     status_code = 422
     code = "inline_destination_not_allowed"
@@ -206,7 +207,9 @@ def get_config(
     """
     stmt = select(SuiteNotification).where(SuiteNotification.suite_id == suite_id)
     if for_update:
-        stmt = stmt.with_for_update()
+        # populate_existing: a row this session already loaded would otherwise keep its
+        # pre-lock values, and the waiter would act on a ref someone else just took.
+        stmt = stmt.with_for_update().execution_options(populate_existing=True)
     return session.scalars(stmt).first()
 
 

@@ -27,6 +27,7 @@ from backend.app.db.models import (
     SuiteNotificationChannel,
 )
 from backend.app.services import audit_service, notification_service
+from backend.app.services.suite_service import SuiteNotFoundError
 
 log = get_logger(__name__)
 
@@ -632,15 +633,21 @@ _PROMOTABLE: dict[str, tuple[str, str]] = {
 
 def workspace_default_set(destination: str) -> bool:
     """Whether the deployment configures a workspace-wide default for ``destination`` —
-    what a suite falls back to once its own legacy value is gone. Reads settings only,
-    never a secret.
+    what a suite with no inline value of its own is also delivered to. Reads settings
+    only, never a secret. Email counts only with the SMTP transport configured, the same
+    gate `EmailPublisher` applies before it sends anything.
     """
     settings = get_settings()
+    if destination == "email":
+        return bool(
+            settings.email_to.strip()
+            and settings.email_username
+            and settings.email_password_secret_name
+        )
     return bool(
         {
             "teams": settings.teams_webhook_secret_name,
             "slack": settings.slack_webhook_secret_name,
-            "email": settings.email_to.strip(),
         }[destination]
     )
 
@@ -659,6 +666,14 @@ def promote_suite_destination(
     column is nulled so the secret has exactly one owner.
     """
     legacy_attr, channel_attr = _PROMOTABLE[destination]
+    # Suite row first, then its config: the order a suite delete takes them (the row,
+    # then the cascade), so the two cannot deadlock, and the link below cannot lose its
+    # suite between the check and the insert.
+    suite_exists = session.scalar(
+        select(Suite.id).where(Suite.id == suite_id).with_for_update(read=True, key_share=True)
+    )
+    if suite_exists is None:
+        raise SuiteNotFoundError("suite not found", detail={"suite_id": str(suite_id)})
     config = notification_service.get_config(session, suite_id, for_update=True)
     value = getattr(config, legacy_attr) if config is not None else None
     if config is None or not value:
@@ -666,6 +681,10 @@ def promote_suite_destination(
             f"this suite has no legacy {destination} destination to promote",
             detail={"destination": destination},
         )
+    if destination == "email":
+        # A list stored before recipients were validated would fail every send of every
+        # suite the channel is later linked to, not just this one.
+        notification_service.assert_valid_recipients(value)
 
     channel = NotificationChannel(name=name, type=destination, created_by=actor_id)
     setattr(channel, channel_attr, value)

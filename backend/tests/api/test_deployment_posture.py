@@ -153,3 +153,37 @@ def test_per_suite_alerting_counts_as_an_alert_transfer(
     assert (
         after["enabled"] is True
     ), "a suite-level webhook is an outbound transfer and must be reported as one"
+
+
+def test_a_linked_channel_counts_as_an_alert_transfer(client: TestClient, db_session: Any) -> None:
+    """A suite that alerts only through a linked channel has no inline value to count."""
+    from backend.app.db.models import (
+        Connection,
+        NotificationChannel,
+        Suite,
+        SuiteNotificationChannel,
+    )
+
+    owner = _user(db_session, "admin")
+    conn = Connection(
+        name=f"c-{uuid.uuid4().hex[:8]}",
+        type="snowflake",
+        env="dev",
+        config={"account": "x"},
+        created_by=owner.id,
+    )
+    db_session.add(conn)
+    db_session.flush()
+    suite = Suite(name=f"s-{uuid.uuid4().hex[:8]}", connection_id=conn.id, created_by=owner.id)
+    channel = NotificationChannel(name="ops", type="teams", webhook_secret_ref="channel-x")
+    db_session.add_all([suite, channel])
+    db_session.flush()
+    db_session.add(SuiteNotificationChannel(suite_id=suite.id, channel_id=channel.id))
+    db_session.commit()
+
+    alert = next(
+        t
+        for t in client.get("/api/v1/admin/deployment").json()["external_transfers"]
+        if t["name"] == "alert_delivery"
+    )
+    assert alert["enabled"] is True

@@ -23,6 +23,7 @@ from backend.app.db.models import (
     Run,
     Suite,
     SuiteNotification,
+    SuiteNotificationChannel,
     User,
 )
 from backend.app.db.session import get_db
@@ -965,6 +966,8 @@ def get_deployment_posture(db: Annotated[Session, Depends(get_db)]) -> Deploymen
             )
         )
     )
+    # A linked channel delivers whether or not the suite has an inline value of its own.
+    channel_alerting = bool(db.scalar(select(func.count()).select_from(SuiteNotificationChannel)))
     zero_sample = privacy_settings_service.zero_sample_mode(db)
     transfers = [
         ExternalTransfer(
@@ -974,7 +977,8 @@ def get_deployment_posture(db: Annotated[Session, Depends(get_db)]) -> Deploymen
                 or settings.slack_webhook_secret_name
                 or settings.email_to
             )
-            or per_suite_alerting,
+            or per_suite_alerting
+            or channel_alerting,
             detail=_zero_sample_detail(
                 zero_sample=zero_sample,
                 on=(

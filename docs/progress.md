@@ -60,7 +60,7 @@ Named so nothing rolls silently (see the retro's "What rolls"):
 | ⬜ | [#2369](https://github.com/TheurgicDuke771/DataQ/issues/2369) feat(checks): enable/disable a check without deleting it (single and bulk) |
 | ⬜ | [#1674](https://github.com/TheurgicDuke771/DataQ/issues/1674) feat(privacy): profiler-side PII auto-detection as an additional classification source |
 | ⬜ | [#1675](https://github.com/TheurgicDuke771/DataQ/issues/1675) feat(monitors): pii_drift monitor kind — PII-looking data appearing in an unclassified column |
-| 🟡 | [#1762](https://github.com/TheurgicDuke771/DataQ/issues/1762) feat(notifications): promote an existing per-suite webhook to a reusable channel |
+| ✅ | [#1762](https://github.com/TheurgicDuke771/DataQ/issues/1762) feat(notifications): promote an existing per-suite webhook to a reusable channel — [PR #2412](https://github.com/TheurgicDuke771/DataQ/pull/2412) (guided in-app action, no migration) |
 
 ### v1.3 Week 2 — operating DataQ & the first outside user (due 2026-10-18)
 
