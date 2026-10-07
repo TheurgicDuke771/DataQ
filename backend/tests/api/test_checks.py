@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import update
 from sqlalchemy.exc import StatementError
 
 from backend.app.core.auth import get_current_user
@@ -1159,7 +1160,7 @@ def test_a_version_snapshot_carries_the_checks_enabled_state(
 ) -> None:
     """A release that cannot toggle a check yet must still not record a disabled one as
     enabled in its history (#2369: the column ships before the code that sets it)."""
-    from sqlalchemy import select, update
+    from sqlalchemy import select
 
     sid = _suite_id(client, db_session)
     cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
@@ -3821,3 +3822,26 @@ def test_switching_a_check_off_needs_edit_permission(client: TestClient, db_sess
     assert (single.status_code, bulk.status_code) == (403, 403)
     _as(owner)
     assert _enabled(client, sid, cid) is True
+
+
+def test_a_check_whose_stored_definition_no_longer_validates_can_still_be_switched_off(
+    client: TestClient, db_session: Any
+) -> None:
+    """The check most worth switching off is the one erroring every run. A rename of it
+    is refused for its thresholds; the switch touches no definition and is not."""
+    sid = _suite_id(client, db_session)
+    cid = _make_check(client, sid, warn_threshold=1, fail_threshold=5)
+    # A row from before threshold ordering was enforced.
+    db_session.execute(
+        update(Check).where(Check.id == uuid.UUID(cid)).values(warn_threshold=9, fail_threshold=5)
+    )
+    db_session.commit()
+    rename = client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"name": "renamed"})
+    assert rename.status_code == 422, "precondition: the stored definition is refused"
+
+    off = client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"enabled": False})
+
+    assert off.status_code == 200, off.text
+    assert off.json()["enabled"] is False
+    versions = client.get(f"/api/v1/suites/{sid}/checks/{cid}/versions").json()
+    assert [(v["version_no"], v["enabled"]) for v in versions] == [(2, False), (1, True)]

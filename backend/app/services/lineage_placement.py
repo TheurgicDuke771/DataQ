@@ -101,7 +101,12 @@ def _equivalent_checks(
     rows = session.execute(
         select(Check, Suite)
         .join(Suite, Suite.id == Check.suite_id)
-        .where(Suite.asset_id.in_(list(by_asset)), Check.expectation_type == expectation_type)
+        # A switched-off check covers nothing, here as on the scorecard.
+        .where(
+            Suite.asset_id.in_(list(by_asset)),
+            Check.expectation_type == expectation_type,
+            Check.enabled.is_(True),
+        )
         .order_by(Check.name, Check.id)
     ).all()
     out: list[tuple[Check, Suite, _Node]] = []

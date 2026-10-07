@@ -125,23 +125,24 @@ describe('CheckEdit', () => {
       warn_threshold: 5,
       fail_threshold: 10,
       critical_threshold: null,
-      // The switch's own state rides every save; a check loaded switched on stays on.
-      enabled: true,
     });
+    // The switch was not moved, so the save says nothing about it: a disable made
+    // elsewhere while this page was open is not undone.
+    expect(mockUpdate.mock.calls[0][2]).not.toHaveProperty('enabled');
     expect(await screen.findByText('Suite detail')).toBeInTheDocument();
   });
 
   it.each([
-    { flip: false, sent: false },
+    { flip: false, sent: undefined },
     { flip: true, sent: true },
   ])(
-    'saves a switched-off check with enabled=$sent when the switch is flipped=$flip',
+    'saves a switched-off check sending enabled=$sent when the switch is flipped=$flip',
     async ({ flip, sent }) => {
       const user = userEvent.setup();
       mockGetSuite.mockResolvedValue(suite);
       mockGetCheck.mockResolvedValue({ ...existing, enabled: false });
       mockGetConnection.mockResolvedValue(connection);
-      mockUpdate.mockResolvedValue({ ...existing, enabled: sent });
+      mockUpdate.mockResolvedValue({ ...existing, enabled: sent ?? false });
       renderPage();
 
       const toggle = await screen.findByRole('switch', { name: 'Enabled' });
@@ -150,7 +151,7 @@ describe('CheckEdit', () => {
       await user.click(screen.getByRole('button', { name: 'Save' }));
 
       await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
-      expect(mockUpdate.mock.calls[0][2]).toMatchObject({ enabled: sent });
+      expect((mockUpdate.mock.calls[0][2] as { enabled?: boolean }).enabled).toBe(sent);
     },
   );
 
@@ -741,7 +742,6 @@ describe('CheckEdit — anomaly monitor (#593)', () => {
       warn_threshold: null,
       fail_threshold: 3,
       critical_threshold: null,
-      enabled: true,
     });
   });
 });

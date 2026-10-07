@@ -890,7 +890,7 @@ function ChecksList({
                     onClick={() =>
                       void runBulk(
                         () => bulkSetChecksEnabled(suiteId, selectedIds, false),
-                        (n) => `${plural(n)} disabled`,
+                        (n) => (n ? `${plural(n)} disabled` : 'Already disabled: nothing changed'),
                       ).catch(() => undefined)
                     }
                   >
@@ -902,7 +902,7 @@ function ChecksList({
                     onClick={() =>
                       void runBulk(
                         () => bulkSetChecksEnabled(suiteId, selectedIds, true),
-                        (n) => `${plural(n)} enabled`,
+                        (n) => (n ? `${plural(n)} enabled` : 'Already enabled: nothing changed'),
                       ).catch(() => undefined)
                     }
                   >

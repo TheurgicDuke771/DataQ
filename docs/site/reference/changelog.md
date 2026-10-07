@@ -15,8 +15,10 @@ the per-PR history lives in the repo's commit log and pull requests.
   stop a check were to delete it, which erases its history, or to snooze it, which still
   runs it. Disabling does not close an incident already open on the check. In the API,
   `PATCH /suites/{id}/checks/{cid}` with `enabled`, and
-  `POST /suites/{id}/checks-bulk/enabled`; a suite document carries `enabled: false`; over
-  MCP, `update_check` takes `enabled`.
+  `POST /suites/{id}/checks-bulk/enabled`; a suite document carries `enabled: false`, and
+  applying a file that does not mention `enabled` leaves each check's switch alone; over
+  MCP, `update_check` takes `enabled`, `list_suites` adds `enabled_check_count`,
+  `trigger_suite_run` returns `enabled_checks`, and each result carries `check_enabled`.
 
 ## v1.2.0 — 2026-10-04
 

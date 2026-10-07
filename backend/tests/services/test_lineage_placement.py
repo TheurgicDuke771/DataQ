@@ -321,3 +321,19 @@ def test_validate_output_attaches_the_advice(db_session: Session, world: dict[st
     )
     (suggestion,) = out["suggestions"]
     assert suggestion["lineage"]["recommendation"] == lp.PLACE_AT_ORIGIN
+
+
+def test_a_switched_off_upstream_check_is_not_coverage(
+    db_session: Session, world: dict[str, Any]
+) -> None:
+    """It has stopped running, so telling the author it already covers the column would
+    talk them out of the only check that would."""
+    upstream = _suite(db_session, world["conn"], world["me"], world["silver"])
+    check = _check(db_session, upstream, UNIQUE, "CUSTOMER_ID")
+    check.enabled = False
+    db_session.commit()
+
+    out = _advice(db_session, world, "customer_id")
+
+    assert out["recommendation"] != lp.ALREADY_COVERED_UPSTREAM
+    assert out["equivalent_upstream_checks"] == []

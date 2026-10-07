@@ -1193,6 +1193,24 @@ def update_check(
     check = get_check(session, suite_id, check_id)
     # Before any field below is mutated.
     audit_before = audit_service.snapshot("check", check)
+    definition_untouched = all(
+        v is None for v in (name, expectation_type, config, source_connection_id, dimension, engine)
+    ) and all(t is KEEP for t in (warn_threshold, fail_threshold, critical_threshold))
+    if enabled is not None and definition_untouched:
+        # Only the switch: nothing about the definition is re-validated, so a check whose
+        # stored config today's validators refuse (and which is erroring every run for it)
+        # can still be switched off. The bulk path has the same rule.
+        check.enabled = enabled
+        check = _record_version_and_commit(
+            session,
+            check,
+            check_id,
+            actor_id,
+            audit_action="check.update",
+            audit_before=audit_before,
+        )
+        log.info("check_enabled_set", check_id=str(check.id), enabled=enabled)
+        return check
     validate_lengths(name=name, expectation_type=expectation_type)
     validate_dimension(dimension)
     if engine is not None:

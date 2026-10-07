@@ -26,6 +26,7 @@ from backend.app.db.models import (
 from backend.app.services import audit_service, check_service, suite_service
 from backend.app.services.check_dimension import derive_dimension
 from backend.app.services.check_service import (
+    CheckConfigInvalidError,
     record_check_version,
     reject_dataframe_only_expectation,
     reject_thresholds_on_unbanded,
@@ -148,6 +149,9 @@ def _validate_check(
     resolved source connection id.
     """
     validate_kind(c["kind"])
+    # No Pydantic layer on the MCP door: a non-boolean would reach a NOT NULL boolean column.
+    if not isinstance(c.get("enabled", True), bool):
+        raise CheckConfigInvalidError("enabled must be true or false", detail={"field": "enabled"})
     # ADR 0036 §5: a document carrying a native-engine check imports only where the target
     # connection offers that engine — the same save-time validation as CRUD.
     validate_engine(c.get("engine", GX_ENGINE), connection_type=connection.type)
@@ -364,8 +368,9 @@ def _check_diff(existing: Check, doc: dict[str, Any], source_id: uuid.UUID | Non
     ]
     if (existing.engine or GX_ENGINE) != doc.get("engine", GX_ENGINE):
         fields.append("engine")
-    # The document is the whole state: a check it does not switch off is switched on.
-    if existing.enabled != doc.get("enabled", True):
+    # Like `dimension`: a file that does not mention `enabled` leaves the switch alone, so
+    # re-applying a file written before the field existed cannot switch a check back on.
+    if "enabled" in doc and existing.enabled != doc["enabled"]:
         fields.append("enabled")
     # An absent `dimension` means "leave it"; so does an explicit null, because a check
     # cannot be un-classified through an update.
@@ -520,7 +525,7 @@ def apply_document(
                 source_connection_id=source_id,
                 dimension=body.get("dimension"),
                 engine=body.get("engine", GX_ENGINE),
-                enabled=body.get("enabled", True),
+                enabled=body.get("enabled"),
                 actor_id=actor_id,
             )
         elif change.action == "delete" and current is not None:

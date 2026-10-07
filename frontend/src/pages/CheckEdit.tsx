@@ -212,8 +212,11 @@ function CheckEditForm({
       try {
         await updateCheck(suiteId, check.id, {
           ...update,
-          // Only what the switch actually holds: an unset value must never switch a check on.
-          ...(typeof values.enabled === 'boolean' ? { enabled: values.enabled } : {}),
+          // Only when the switch was moved on this page. Sending the value loaded at page
+          // open would undo a disable someone made elsewhere in the meantime.
+          ...(typeof values.enabled === 'boolean' && values.enabled !== (check.enabled ?? true)
+            ? { enabled: values.enabled }
+            : {}),
         });
       } catch (err) {
         // The backend names the field it refused on (e.g. the sampling to row-count conflict, #1333

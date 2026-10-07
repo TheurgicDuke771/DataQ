@@ -3269,8 +3269,14 @@ def test_apply_switches_a_check_off_and_back_on_as_the_document_says(
     assert (changed["action"], changed["fields"]) == ("update", ["enabled"])
     assert _stored_enabled(db_session, sid)["notnull"] is False
 
-    # The document is the whole state: one that no longer says "off" switches it on.
-    on = _apply(client, sid, [_doc_check("notnull")])
+    # A file that does not mention `enabled` leaves the switch alone: re-applying one
+    # written before the field existed must not start the check running again.
+    silent = _apply(client, sid, [_doc_check("notnull")])
+
+    assert _actions(silent.json())["notnull"] == "unchanged"
+    assert _stored_enabled(db_session, sid)["notnull"] is False
+
+    on = _apply(client, sid, [_doc_check("notnull", enabled=True)])
 
     assert next(c for c in on.json()["checks"] if c["name"] == "notnull")["fields"] == ["enabled"]
     assert _stored_enabled(db_session, sid)["notnull"] is True

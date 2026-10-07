@@ -440,12 +440,13 @@ class SuiteValidationRead(ApiModel):
 
 
 def _document_checks(doc: SuiteDocumentIn) -> list[dict[str, Any]]:
-    # `dimension` is dropped when the payload did not SET it.
+    # `dimension` and `enabled` are dropped when the payload did not SET them: for both,
+    # "not mentioned" and the default value mean different things downstream.
     return [
         {
             k: v
             for k, v in c.model_dump().items()
-            if k != "dimension" or "dimension" in c.model_fields_set
+            if k not in ("dimension", "enabled") or k in c.model_fields_set
         }
         for c in doc.checks
     ]

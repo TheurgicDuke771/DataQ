@@ -5325,3 +5325,108 @@ def test_restore_check_version_over_mcp_does_not_switch_the_check_back_on(
 
     assert restored["config"] == {"column": "EMAIL"}
     assert restored["enabled"] is False
+
+
+def test_results_say_when_a_check_has_been_switched_off_since_the_run(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """Its last failure is still in the latest run. Without the flag that reads as
+    something the suite is still reporting."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    still_on = _check(db_session, suite, name="on")
+    since_off = _check(db_session, suite, name="since off")
+    run = Run(suite_id=suite.id, status="succeeded")
+    db_session.add(run)
+    db_session.flush()
+    db_session.add_all(
+        [
+            Result(run_id=run.id, check_id=still_on.id, status="pass"),
+            Result(run_id=run.id, check_id=since_off.id, status="fail"),
+        ]
+    )
+    since_off.enabled = False
+    db_session.commit()
+    _as(monkeypatch, db_session, user)
+
+    out = server.get_suite_results(str(suite.id))
+
+    assert {c["name"]: (c["status"], c["check_enabled"]) for c in out["checks"]} == {
+        "on": ("pass", True),
+        "since off": ("fail", False),
+    }
+
+
+def test_trigger_suite_run_says_how_many_checks_the_run_will_execute(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _check(db_session, suite, name="on")
+    _check(db_session, suite, name="off", enabled=False)
+    monkeypatch.setattr(run_dispatch, "dispatch_or_fail", lambda *a, **k: True)
+    _as(monkeypatch, db_session, user)
+
+    assert server.trigger_suite_run(str(suite.id))["enabled_checks"] == 1
+    listed = {s["id"]: s for s in server.list_suites()}[str(suite.id)]
+    assert (listed["check_count"], listed["enabled_check_count"]) == (2, 1)
+
+
+def test_a_suite_with_every_check_off_reports_zero_checks_to_run(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    """The run still starts and still succeeds; the 0 is what stops that reading as clean."""
+    user = _user(db_session)
+    suite = _suite(db_session, user)
+    _check(db_session, suite, enabled=False)
+    monkeypatch.setattr(run_dispatch, "dispatch_or_fail", lambda *a, **k: True)
+    _as(monkeypatch, db_session, user)
+
+    assert server.trigger_suite_run(str(suite.id))["enabled_checks"] == 0
+    assert server.list_suites()[0]["enabled_check_count"] == 0
+
+
+def test_import_suite_carries_a_switched_off_check_across(
+    db_session: Any, monkeypatch: Any
+) -> None:
+    user = _user(db_session)
+    source = _suite(db_session, user)
+    _check(db_session, source, name="on")
+    _check(db_session, source, name="off", enabled=False)
+    target_connection = _suite(db_session, user).connection_id
+    _as(monkeypatch, db_session, user)
+    doc = server.export_suite(str(source.id))
+
+    imported = server.import_suite(str(target_connection), name="copy", checks=doc["checks"])
+
+    # By name: the two rows share a `created_at` and have no ordinal, so their order is not fixed.
+    assert {c["name"]: c.get("enabled", True) for c in doc["checks"]} == {"on": True, "off": False}
+    listed = server.list_checks(imported["id"])["checks"]
+    assert {c["name"]: c["enabled"] for c in listed} == {"on": True, "off": False}
+
+
+@pytest.mark.parametrize("bad", [None, "false", 0])
+def test_import_suite_refuses_an_enabled_that_is_not_a_boolean(
+    db_session: Any, monkeypatch: Any, bad: Any
+) -> None:
+    """No Pydantic on this door: the value would otherwise reach a NOT NULL boolean column
+    and surface as an opaque internal failure."""
+    user = _user(db_session)
+    connection_id = _suite(db_session, user).connection_id
+    _as(monkeypatch, db_session, user)
+    check = {
+        "name": "c",
+        "kind": "expectation",
+        "expectation_type": "expect_column_values_to_not_be_null",
+        "config": {"column": "EMAIL"},
+        "warn_threshold": None,
+        "fail_threshold": None,
+        "critical_threshold": None,
+        "enabled": bad,
+    }
+
+    with pytest.raises(ToolError) as exc:
+        server.import_suite(str(connection_id), name="bad", checks=[check])
+
+    assert "enabled" in str(exc.value)
+    assert len(suite_service.list_suites(db_session, user_id=user.id)) == 1

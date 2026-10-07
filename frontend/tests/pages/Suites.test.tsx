@@ -517,6 +517,17 @@ describe('Suites', () => {
       );
     });
 
+    it('says nothing changed when every selected check was already in that state', async () => {
+      const user = await openWithChecks();
+      mockBulkEnabled.mockResolvedValue({ affected: 0, checks: [] });
+
+      await user.click(screen.getByRole('checkbox', { name: 'Select alpha' }));
+      await user.click(screen.getByRole('button', { name: 'Disable selected' }));
+
+      expect(await screen.findByText('Already disabled: nothing changed')).toBeInTheDocument();
+      expect(screen.queryByText(/0 checks/)).not.toBeInTheDocument();
+    });
+
     it('selects every check with "Select all" and unsnoozes them', async () => {
       const user = await openWithChecks();
       mockBulkUnsnooze.mockResolvedValue({ affected: 3, checks: [] });
