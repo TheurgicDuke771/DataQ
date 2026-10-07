@@ -1,0 +1,39 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "a3898cdab04f",
+  "strategy": "manual-commit",
+  "branch": "feature/static-demo",
+  "checkpoints_count": 3,
+  "files_touched": [
+    ".github/workflows/ci.yml",
+    ".github/workflows/docs.yml",
+    "frontend/e2e-demo/smoke.spec.ts",
+    "frontend/playwright.config.ts",
+    "frontend/src/demo/DemoBadge.tsx",
+    "frontend/src/demo/adapter.ts",
+    "frontend/src/demo/fixtures.ts",
+    "frontend/src/demo/flag.ts",
+    "frontend/src/demo/install.ts",
+    "frontend/src/demo/notices.ts",
+    "frontend/tests/demo/DemoBadge.test.tsx",
+    "frontend/tests/demo/adapter.test.ts",
+    "frontend/tests/demo/fixtures.test.ts",
+    "frontend/tests/demo/install.test.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/a3/898cdab04f/0/metadata.json",
+      "transcript": "/a3/898cdab04f/0/full.jsonl",
+      "compact_transcript": "/a3/898cdab04f/0/transcript.jsonl",
+      "content_hash": "/a3/898cdab04f/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 18,
+    "cache_creation_tokens": 23680,
+    "cache_read_tokens": 2434207,
+    "output_tokens": 15464,
+    "api_call_count": 9
+  }
+}
