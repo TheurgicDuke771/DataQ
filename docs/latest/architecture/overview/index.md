@@ -199,6 +199,7 @@ erDiagram
         numeric critical_threshold
         jsonb config "GX expectation kwargs"
         timestamptz alert_snoozed_until
+        bool enabled "false = kept with its history, left out of runs"
     }
     monitor_baselines {
         uuid id PK
@@ -233,6 +234,7 @@ erDiagram
         numeric warn_threshold
         numeric fail_threshold
         numeric critical_threshold
+        bool enabled
         uuid changed_by FK "SET NULL"
     }
     audit_events {
