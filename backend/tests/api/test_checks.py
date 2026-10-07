@@ -1154,6 +1154,28 @@ def test_create_records_initial_version(client: TestClient, db_session: Any) -> 
     assert v1["changed_by_name"]  # the dev-bypass actor authored it
 
 
+def test_a_version_snapshot_carries_the_checks_enabled_state(
+    client: TestClient, db_session: Any
+) -> None:
+    """A release that cannot toggle a check yet must still not record a disabled one as
+    enabled in its history (#2369: the column ships before the code that sets it)."""
+    from sqlalchemy import select, update
+
+    sid = _suite_id(client, db_session)
+    cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]
+    db_session.execute(update(Check).where(Check.id == uuid.UUID(cid)).values(enabled=False))
+    db_session.expire_all()
+
+    client.patch(f"/api/v1/suites/{sid}/checks/{cid}", json={"config": {"column": "amount"}})
+
+    snapshots = db_session.execute(
+        select(CheckVersion.version_no, CheckVersion.enabled)
+        .where(CheckVersion.check_id == uuid.UUID(cid))
+        .order_by(CheckVersion.version_no)
+    ).all()
+    assert [tuple(row) for row in snapshots] == [(1, True), (2, False)]
+
+
 def test_update_appends_version_newest_first(client: TestClient, db_session: Any) -> None:
     sid = _suite_id(client, db_session)
     cid = client.post(f"/api/v1/suites/{sid}/checks", json=_payload()).json()["id"]

@@ -853,6 +853,7 @@ def record_check_version(
         warn_threshold=check.warn_threshold,
         fail_threshold=check.fail_threshold,
         critical_threshold=check.critical_threshold,
+        enabled=check.enabled,
         changed_by=actor_id,
     )
     session.add(version)
