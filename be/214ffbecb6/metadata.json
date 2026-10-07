@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "be214ffbecb6",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1762-promote-suite-destination",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/tests/services/test_channel_service.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/be/214ffbecb6/0/metadata.json",
+      "transcript": "/be/214ffbecb6/0/full.jsonl",
+      "compact_transcript": "/be/214ffbecb6/0/transcript.jsonl",
+      "content_hash": "/be/214ffbecb6/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 10,
+    "cache_creation_tokens": 8702,
+    "cache_read_tokens": 1432827,
+    "output_tokens": 5130,
+    "api_call_count": 5
+  }
+}
