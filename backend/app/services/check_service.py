@@ -898,6 +898,7 @@ def create_check(
     origin: str = "user",
     machine_write: bool = False,
     unclassified: bool = False,
+    enabled: bool = True,
 ) -> Check:
     """Create a check in a suite, recording its first version (#280).
 
@@ -996,6 +997,7 @@ def create_check(
         critical_threshold=critical_threshold,
         origin=origin,
         ordinal=next_check_ordinal(session, suite_id),
+        enabled=enabled,
     )
     session.add(check)
     session.flush()  # assign check.id so the v1 snapshot can reference it
@@ -1179,6 +1181,7 @@ def update_check(
     source_connection_id: uuid.UUID | None = None,
     dimension: str | None = None,
     engine: str | None = None,
+    enabled: bool | None = None,
     actor_id: uuid.UUID | None = None,
 ) -> Check:
     """Partial update, snapshotting the post-update state as a new version (#280).
@@ -1190,6 +1193,24 @@ def update_check(
     check = get_check(session, suite_id, check_id)
     # Before any field below is mutated.
     audit_before = audit_service.snapshot("check", check)
+    definition_untouched = all(
+        v is None for v in (name, expectation_type, config, source_connection_id, dimension, engine)
+    ) and all(t is KEEP for t in (warn_threshold, fail_threshold, critical_threshold))
+    if enabled is not None and definition_untouched:
+        # Only the switch: nothing about the definition is re-validated, so a check whose
+        # stored config today's validators refuse (and which is erroring every run for it)
+        # can still be switched off. The bulk path has the same rule.
+        check.enabled = enabled
+        check = _record_version_and_commit(
+            session,
+            check,
+            check_id,
+            actor_id,
+            audit_action="check.update",
+            audit_before=audit_before,
+        )
+        log.info("check_enabled_set", check_id=str(check.id), enabled=enabled)
+        return check
     validate_lengths(name=name, expectation_type=expectation_type)
     validate_dimension(dimension)
     if engine is not None:
@@ -1268,6 +1289,8 @@ def update_check(
         check.dimension = dimension
     if engine is not None:
         check.engine = engine
+    if enabled is not None:
+        check.enabled = enabled
     check = _record_version_and_commit(
         session, check, check_id, actor_id, audit_action="check.update", audit_before=audit_before
     )
@@ -1422,6 +1445,52 @@ def bulk_snooze_checks(
         hours=hours,
     )
     return checks
+
+
+def bulk_set_enabled(
+    session: Session,
+    suite_id: uuid.UUID,
+    check_ids: Sequence[uuid.UUID],
+    *,
+    enabled: bool,
+    actor_id: uuid.UUID | None = None,
+) -> tuple[list[Check], int]:
+    """Enable or disable many checks in one transaction (#2369). Each check that actually
+    changes gets the version and the ``check.update`` audit event a single PATCH writes;
+    one already in the requested state is left alone. Returns the checks and how many
+    of them changed.
+    """
+    checks = _checks_for_bulk(session, suite_id, check_ids)
+    changed = 0
+    for check in checks:
+        if check.enabled == enabled:
+            continue
+        changed += 1
+        audit_before = audit_service.snapshot("check", check)
+        check.enabled = enabled
+        record_check_version(session, check, actor_id=actor_id)
+        audit_service.record_entity_change(
+            session,
+            action="check.update",
+            entity_type="check",
+            entity=check,
+            actor=actor_id,
+            before=audit_before,
+        )
+    try:
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        if _VERSION_UNIQUE_CONSTRAINT not in str(exc.orig):
+            raise
+        raise CheckEditConflictError(
+            "one of these checks was edited concurrently — reload and retry",
+            detail={"suite_id": str(suite_id)},
+        ) from exc
+    for check in checks:
+        session.refresh(check)
+    log.info("checks_bulk_enabled_set", suite_id=str(suite_id), count=changed, enabled=enabled)
+    return checks, changed
 
 
 def bulk_delete_checks(

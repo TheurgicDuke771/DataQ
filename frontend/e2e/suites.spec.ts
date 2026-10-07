@@ -55,7 +55,9 @@ test.describe('Suites page', () => {
     await expect(page.locator('[role="listitem"]').filter({ hasText: name })).toHaveCount(0);
   });
 
-  test('bulk snooze, unsnooze and delete act on exactly the selected checks', async ({ page }) => {
+  test('bulk snooze, unsnooze, thresholds, disable and delete act on exactly the selected checks', async ({
+    page,
+  }) => {
     const stamp = Date.now();
     const names = [`e2e bulk a ${stamp}`, `e2e bulk b ${stamp}`];
 
@@ -107,6 +109,16 @@ test.describe('Suites page', () => {
     await dialog.getByRole('button', { name: 'Apply to 2 checks' }).click();
     for (const row of rows) await expect(row.getByText('· fail 5')).toBeVisible();
     await expect(dialog).toHaveCount(0);
+
+    // Disable: both rows are badged and offer Enable; the seeded row is untouched.
+    await selectBoth();
+    await page.getByRole('button', { name: 'Disable selected', exact: true }).click();
+    for (const row of rows) await expect(row.getByText('Disabled', { exact: true })).toBeVisible();
+    await expect(seeded.getByText('Disabled', { exact: true })).toHaveCount(0);
+    // Re-enable one from its own row; the other stays off.
+    await rows[0].getByRole('button', { name: 'Enable', exact: true }).click();
+    await expect(rows[0].getByText('Disabled', { exact: true })).toHaveCount(0);
+    await expect(rows[1].getByText('Disabled', { exact: true })).toBeVisible();
 
     // Delete: confirm names the count; only the two throwaway checks go.
     await selectBoth();

@@ -488,6 +488,11 @@ def _run_results_payload(
                 # instead of name-matching back through `list_checks`.
                 "check_id": str(r.check_id) if r.check_id else None,
                 "name": checks[r.check_id].name if r.check_id in checks else None,
+                # Whether the check is switched on NOW, not when this result was
+                # written. False means it has been switched off since: this result is
+                # its last and no later run will replace it, so a failure here is not
+                # something the suite is still reporting.
+                "check_enabled": checks[r.check_id].enabled if r.check_id in checks else None,
                 # WHO evaluated this check (ADR 0036) — a dmf result's
                 # `metric_value`/`observed_value` is a Snowflake DMF metric, not a
                 # GX expectation output, and the two have different semantics an
@@ -586,8 +591,10 @@ def list_suites() -> list[dict[str, Any]]:
     Use this to discover what suites exist before drilling into results or
     triggering a run. Returns, per suite: its id, name, the datasource it runs
     against (snowflake / adls / s3 / unity_catalog / iceberg / postgres / mysql / mssql /
-    trino), the environment (dev / qa / uat), how many checks it has, and the status + time of
-    its most recent run
+    trino), the environment (dev / qa / uat), how many checks it has (``check_count``),
+    how many of those are switched on and so actually run (``enabled_check_count`` —
+    quote this one for "how many checks run on orders"; ``list_checks`` says which are
+    off), and the status + time of its most recent run
     (null if it has never run). Scoped to suites the user owns or has a share on
     (a workspace-admin sees every suite).
 
@@ -621,6 +628,15 @@ def list_suites() -> list[dict[str, Any]]:
             .tuples()
             .all()
         )
+        enabled_counts: dict[uuid.UUID, int] = dict(
+            session.execute(
+                select(Check.suite_id, func.count())
+                .where(Check.suite_id.in_(suite_ids), Check.enabled.is_(True))
+                .group_by(Check.suite_id)
+            )
+            .tuples()
+            .all()
+        )
         # The SHARED latest-run statement (#889), not a fourth hand-rolled copy.
         # It also carries the `id` tie-break, so two runs sharing a `created_at`
         # resolve deterministically here as they do everywhere else — the same
@@ -642,6 +658,8 @@ def list_suites() -> list[dict[str, Any]]:
                     "datasource": connection.type if connection else None,
                     "env": connection.env if connection else None,
                     "check_count": int(check_count or 0),
+                    # How many of those a run actually executes.
+                    "enabled_check_count": int(enabled_counts.get(s.id, 0)),
                     "last_run": (
                         {
                             "status": last_run.status,
@@ -697,16 +715,24 @@ def get_suite_results(suite_id: str) -> dict[str, Any]:
     (e.g. a passing one). Returns an empty result set if the suite has never
     run. Requires at least view access to the suite.
 
-    ``engine`` is the check's **current** engine, not the one that produced this
-    particular result — like ``name``, it is not snapshotted per result. If the
-    check was re-pointed to a different engine after this run, this reflects the
-    new engine; use ``list_check_versions`` for the engine as of a specific
-    edit.
+    ``engine`` is the engine that produced this particular result, resolved from
+    the check's version history as of the result — not the check's current one, so
+    a check re-pointed to a different engine after this run still shows the old
+    engine here. ``name`` is the check's current name.
+
+    ``check_enabled`` says whether that check is switched on **now**. ``false``
+    means it was switched off after this run: the result is its last, no later run
+    will replace it, and a failure shown here is not something the suite is still
+    reporting. Say that it is disabled rather than calling it an active failure.
+    Checks that were already off when the run started are not in ``checks`` at all.
 
     If the latest run has not finished successfully, `checks` is empty and
     `run.results_final` is false — the run is still executing, or it failed and
     never produced a complete account. Report the run's status in that case; do
-    not describe the suite's quality from it. If it is ``queued``, read
+    not describe the suite's quality from it. A third case: `checks` empty with
+    `run.results_final` true means the run finished having evaluated nothing —
+    the suite has no checks, or every one is switched off (``list_checks``). That
+    is not a clean bill of health. If it is ``queued``, read
     ``run.queued_reason``: ``awaiting_worker_memory`` means worker-memory
     admission control is holding it back, not that it is stuck (see
     ``get_run_results`` for the full explanation).
@@ -908,6 +934,10 @@ def _check_summary(check: Check) -> dict[str, Any]:
         # a gx one: same kind/type/config, no way to know which evaluator produced its results, or
         # that recreating it without `engine` would silently convert it to gx (#1531).
         "engine": check.engine or "gx",
+        # False = switched off: no run evaluates it. Without this a disabled check reads
+        # as a live rule, and "the suite checks X" would be asserted about something
+        # that has stopped being checked.
+        "enabled": check.enabled,
         "dimension": check.dimension,
         # Non-NULL exactly for `kind='comparison'` (a table CHECK enforces the
         # equivalence): the baseline connection the suite's dataset is diffed
@@ -955,9 +985,15 @@ def list_checks(
     against a platform-native engine like ``dmf``), its DQ dimension (accuracy /
     completeness / consistency / integrity / timeliness / uniqueness / validity,
     or null when unclassified), its configuration, the baseline connection for a
-    comparison check, any warn/fail/critical severity thresholds, and whether its
-    alerts are currently snoozed. This is the suite's *definition* — for how
-    those checks last performed, use ``get_suite_results``.
+    comparison check, any warn/fail/critical severity thresholds, whether its
+    alerts are currently snoozed, and ``enabled``. This is the suite's *definition* —
+    for how those checks last performed, use ``get_suite_results``.
+
+    **``enabled: false`` means the check is switched off and no run evaluates it.**
+    Do not describe such a check as something the suite verifies. It still appears
+    here, and its last result from before it was switched off still appears in older
+    runs, but it produces no new result, alert or incident, and it does not count
+    toward dimension coverage. ``total`` counts disabled checks too.
 
     A null ``alert_snoozed_until`` rules out a per-check snooze only — it does
     **not** mean an alert would have been delivered, which also depends on the
@@ -1139,6 +1175,9 @@ def list_check_versions(
                     # a check re-pointed dmf->gx->dmf has no visible history of
                     # that change without the value AS OF each version.
                     "engine": v.engine or "gx",
+                    # Whether the check was switched on at that version. Recorded
+                    # only: `restore_check_version` never changes it.
+                    "enabled": v.enabled,
                     # Snapshotted (ADR 0038) — reporting the check's CURRENT
                     # dimension beside an OLD config would misstate what the
                     # check was at that version.
@@ -1930,7 +1969,9 @@ def export_suite(suite_id: str) -> dict[str, Any]:
     suite's name and description plus every check in stable creation order, each
     with its kind, expectation type, DQ dimension, configuration and severity
     thresholds — the same document the app's export produces, so it can be handed
-    back to DataQ's import.
+    back to DataQ's import. A check that is switched off carries ``enabled: false``
+    (the key is absent for one that is on), and ``import_suite`` re-creates it
+    switched off.
 
     It carries **check definitions only**: no results, no run history, no
     credentials — and also **no connection, no run target, no schedules, no
@@ -1989,9 +2030,15 @@ def trigger_suite_run(suite_id: str) -> dict[str, Any]:
 
     There is no de-duplication: calling twice starts two concurrent runs, and
     this tool cannot see a run a schedule or pipeline trigger started moments
-    ago — check ``list_runs`` before re-triggering. Every check in the suite
-    runs, including snoozed ones (a snooze mutes alerting only); there is no way
-    to run a single check.
+    ago — check ``list_runs`` before re-triggering. Every check that is switched
+    on runs, including snoozed ones (a snooze mutes alerting only); there is no
+    way to run a single check. A check with ``enabled: false`` is left out
+    entirely and gets no result in the run.
+
+    ``enabled_checks`` in the response is how many checks this run will execute.
+    **When it is 0 the run still starts and still ends ``succeeded``, having
+    verified nothing** — say so instead of reporting a clean run, and point at
+    ``list_checks`` to see what is switched off.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
     with _ctx() as (session, user), _service_errors():
@@ -2011,7 +2058,11 @@ def trigger_suite_run(suite_id: str) -> dict[str, Any]:
         # Report the queued state at dispatch, not a post-commit reload of
         # `run.status` (expire_on_commit) which a fast worker may already have
         # flipped — poll `get_run_status` for live progress.
-        return {"run_id": run_id, "status": "queued"}
+        return {
+            "run_id": run_id,
+            "status": "queued",
+            "enabled_checks": len(run_service.runnable_checks(session, sid)),
+        }
 
 
 @mcp.tool
@@ -2036,6 +2087,10 @@ def get_run_status(run_id: str) -> dict[str, Any]:
     polls without being stuck — no check has evaluated any data yet, and it starts
     on its own once room frees up or its wait budget runs out. A null
     ``queued_reason`` on a queued run is the ordinary case, waiting on the broker.
+
+    The checks listed are the ones this run took: a check that was switched off
+    (``enabled: false``) when it started is absent, and ``total_checks`` does not
+    count it. A ``succeeded`` run with ``total_checks`` 0 verified nothing.
     """
     rid = _parse_uuid(run_id, field="run_id")
     with _ctx() as (session, user), _service_errors():
@@ -2246,11 +2301,27 @@ def update_check(
     dimension: str | None = None,
     engine: str | None = None,
     clear_thresholds: list[Literal["warn", "fail", "critical"]] | None = None,
+    enabled: bool | None = None,
 ) -> dict[str, Any]:
-    """Change an existing check's definition — a partial update.
+    """Change an existing check's definition, or switch it off or on — a partial update.
 
     Use this for 'loosen the null check on email to warn at 2%' or 'rename that
     check'. Omitted **arguments** are left as they were.
+
+    **To stop a check running without deleting it, pass ``enabled=false``**; pass
+    ``enabled=true`` to switch it back on. A disabled check keeps its results,
+    version history and monitor baseline, and is left out of every run from the next
+    one on: no result, no alert, no incident, and it stops counting toward dimension
+    coverage. This is the right tool for 'stop running that check', 'disable it' or
+    'pause that check'; ``snooze_check`` only mutes alerts while the check keeps
+    running, and ``delete_check`` erases its history. The dimension scorecard on
+    ``get_asset`` drops the check at once, but the asset's overall health and the
+    suite's latest results still show its last verdict until the next run; offer
+    ``trigger_suite_run`` if the user wants that now. Three things it does **not**
+    do: it does not cancel a run already in progress, it does not resolve an incident
+    that is already open on the check (resolve that yourself with
+    ``resolve_incident``, since no later run can pass and close it), and it does not
+    remove the check's results from past runs.
 
     ``config`` is the exception, and it matters: passing it **replaces the whole
     configuration**, it does not merge into it. So to change one setting you must
@@ -2331,6 +2402,7 @@ def update_check(
             critical_threshold=threshold("critical"),
             dimension=dimension,
             engine=engine,
+            enabled=enabled,
             actor_id=user.id,
         )
         return _check_summary(check)
@@ -2359,6 +2431,11 @@ def restore_check_version(
     restore is recorded as a new version on top, so the state you are replacing
     remains in ``list_check_versions`` and can itself be restored. Restoring the
     version the check is already on is a no-op and records nothing.
+
+    A restore never switches a check on or off. Each version records whether the
+    check was ``enabled`` at the time, but that is history only: a disabled check
+    stays disabled after a restore, so say so if the user expects it to start
+    running again, and use ``update_check`` with ``enabled=true`` for that.
 
     **An old snapshot can be refused.** It is re-validated against today's rules,
     not simply written back, so a version created before a validation rule
@@ -2391,8 +2468,10 @@ def delete_check(suite_id: str, check_id: str) -> dict[str, Any]:
     "erase that this check ever existed".
 
     This cannot be undone. Confirm with the user before calling it, say plainly
-    that result history is included, and prefer ``snooze_check`` when the intent
-    is only to stop the alerting. Requires edit access to the suite.
+    that result history is included, and prefer the two lesser actions when they
+    fit: ``update_check`` with ``enabled=false`` when the intent is to stop the
+    check running but keep its history, and ``snooze_check`` when it is only to
+    stop the alerting. Requires edit access to the suite.
     """
     sid = _parse_uuid(suite_id, field="suite_id")
     cid = _parse_uuid(check_id, field="check_id")
@@ -2428,7 +2507,8 @@ def snooze_check(
 
     A snoozed check **still runs and still fails** — only the alert is
     suppressed. Do not describe a snoozed check as disabled, and do not reach for
-    this when the user wants the check to stop evaluating. Requires edit access.
+    this when the user wants the check to stop evaluating: that is
+    ``update_check`` with ``enabled=false``. Requires edit access.
 
     There is no separate unsnooze tool — omitting ``hours`` is how you
     un-mute. **The consequence is that "un-mute", "un-snooze", "turn
@@ -3198,6 +3278,11 @@ def import_suite(
     enabled more types, is refused as a whole — the error names the offending type
     and lists the accepted ones, so remove or replace that check and re-import.
 
+    A check the document marks ``enabled: false`` is created switched off and will
+    not run; the returned ``check_count`` includes it. If the source suite had
+    disabled checks, say how many came across switched off rather than reporting
+    them all as recreated and running.
+
     Requires the **member** workspace role (creating a suite is not a read-only
     action) and a datasource connection — orchestration providers cannot be suite
     datasources.
@@ -3541,9 +3626,16 @@ def get_asset(asset_id: str) -> dict[str, Any]:
       is how many more compose the asset. When that count is above zero, say so:
       the listed checks are not the whole story behind the summary.
 
-    `scorecard.uncovered` names DQ dimensions with **no checks at all** — the
-    actionable half, and usually a better answer to "how is this asset doing?"
-    than the score. A dimension `score` of `null` means nothing evaluated, which
+    `scorecard.uncovered` names DQ dimensions with **no check that is switched
+    on** — the actionable half, and usually a better answer to "how is this asset
+    doing?" than the score. A switched-off check covers nothing, so a dimension can
+    be uncovered while a disabled check for it still exists: look in ``list_checks``
+    before telling someone to write a new one. The scorecard's ``checks_total`` and
+    ``unclassified_checks`` count switched-on checks only, and drop a check the
+    moment it is switched off; the asset's overall ``summary`` is the latest run's
+    verdict and only changes at the next run, so the two can disagree in between.
+
+    A dimension `score` of `null` means nothing evaluated, which
     is neither 0 nor 100. `unclassified_checks` are checks with no dimension
     (custom SQL, or never classified) and are deliberately not bucketed anywhere.
 
@@ -4419,8 +4511,8 @@ def get_coverage(
     noisy?'. Returns two workspace-wide figures with the counts behind them.
 
     **Coverage.** ``coverage_pct`` (a percentage, 0 to 100) is ``assets_watched / assets_total``:
-    assets with at least one suite whose run **succeeded** — finished and
-    evaluated its checks, whatever they found — and started in the last
+    assets with at least one suite whose run **succeeded** — finished, whatever
+    its checks found — and started in the last
     ``coverage_window_days`` (7). A run that errored or was cancelled does not
     count. ``assets_watched_authored`` are watched by a suite a person wrote;
     ``assets_watched_auto_only`` only by automatic coverage. An asset whose
@@ -4428,6 +4520,9 @@ def get_coverage(
     not mean "no checks", and this is a stricter test than ``list_assets``'
     ``monitored`` (any suite targets it), so the two counts differ; use
     ``get_asset`` before telling someone a table has no checks.
+    A suite whose checks are all switched off still runs and still succeeds, so
+    its asset counts as watched here while ``get_asset`` reports every dimension
+    uncovered: watched means a successful run exists, not that anything was checked.
     ``assets_total`` is every asset in the inventory, including ones excluded
     from automatic coverage and ones the inventory no longer sees, so the
     percentage is not "share of what coverage is meant to reach", and it reads

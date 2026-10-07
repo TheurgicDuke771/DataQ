@@ -59,6 +59,7 @@ and never a silently ignored line.
 | `warn_threshold`, `fail_threshold`, `critical_threshold` | no | Severity bands. They must be ordered warn ≤ fail ≤ critical, and only types that measure a number accept them. |
 | `dimension` | no | `accuracy`, `completeness`, `consistency`, `integrity`, `timeliness`, `uniqueness` or `validity`. **Leave the field out** to have it derived from the check type. Write `dimension: null` to keep the check unclassified on purpose. |
 | `engine` | no (default `gx`) | What evaluates the check. A native engine (`dmf`, `dqx`) imports only onto a connection that offers it. |
+| `enabled` | no | `false` keeps the check in the suite but leaves it out of every run. An export writes the field only for a check that is switched off. On import, a check without the field is created switched on. |
 | `source_connection` | comparison checks only | `{name, env}` of the connection the comparison reads its source from. It must already exist in the workspace under that name and environment. |
 
 ## What the document does not carry
@@ -152,6 +153,7 @@ Checks are matched by **name**:
 | in the file, not in the suite | creates it |
 | in both, and differs | updates it |
 | in both, and the same | nothing |
+| in both, and the file sets `enabled` to something else | switches it. A file that does not mention `enabled` leaves the switch as it is, so re-applying an older file never starts a disabled check running again; write `enabled: true` to switch one on |
 | in the suite, not in the file | leaves it alone, and lists it under `unmanaged`. With `prune: true`, deletes it together with its results and history. |
 
 The suite's name and description are updated from the file. Its connection, target,

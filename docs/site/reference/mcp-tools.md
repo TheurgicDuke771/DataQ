@@ -67,7 +67,7 @@ connection mutation, and a credential must never transit an LLM.
 | `set_column_policy` | `edit` on the suite | Set which columns are masked in this suite's failing-sample rows. |
 | `snooze_check` | `edit` on the suite | Mute a check's alerts for a while — or un-mute it now. |
 | `trigger_suite_run` | `edit` on the suite | Trigger an asynchronous run of a suite's checks; returns a run id to poll. |
-| `update_check` | `edit` on the suite | Change an existing check's definition — a partial update. |
+| `update_check` | `edit` on the suite | Change an existing check's definition, or switch it off or on — a partial update. |
 | `update_schedule` | `edit` on the suite | Change a suite's cron schedule — its cadence, its timezone, or pause/resume it. |
 | `update_suite` | `edit` on the suite | Change a suite's name, description, or **what it runs against**. |
 | `update_trigger_binding` | `edit` on the suite | Enable or disable an orchestration trigger without deleting it. |

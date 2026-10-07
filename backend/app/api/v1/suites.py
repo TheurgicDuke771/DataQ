@@ -328,6 +328,8 @@ class CheckDocument(ApiModel):
     warn_threshold: Decimal | None = None
     fail_threshold: Decimal | None = None
     critical_threshold: Decimal | None = None
+    # False = switched off (left out of runs). Exported only when false.
+    enabled: bool = True
 
 
 class SuiteDocument(ApiModel):
@@ -366,6 +368,7 @@ class CheckDocumentIn(ApiRequestModel):
     warn_threshold: Decimal | None = None
     fail_threshold: Decimal | None = None
     critical_threshold: Decimal | None = None
+    enabled: bool = True
 
 
 class SuiteDocumentIn(ApiRequestModel):
@@ -437,12 +440,13 @@ class SuiteValidationRead(ApiModel):
 
 
 def _document_checks(doc: SuiteDocumentIn) -> list[dict[str, Any]]:
-    # `dimension` is dropped when the payload did not SET it.
+    # `dimension` and `enabled` are dropped when the payload did not SET them: for both,
+    # "not mentioned" and the default value mean different things downstream.
     return [
         {
             k: v
             for k, v in c.model_dump().items()
-            if k != "dimension" or "dimension" in c.model_fields_set
+            if k not in ("dimension", "enabled") or k in c.model_fields_set
         }
         for c in doc.checks
     ]

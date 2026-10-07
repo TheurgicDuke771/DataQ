@@ -273,6 +273,7 @@ catalog knowing about them (mechanism ④).
 | Routing | Severity-aware urgency; critical escalates |
 | Dedup | First failure / escalation only; clean run resets |
 | Snooze | Per check, N hours |
+| Disable a check | Per check or in bulk; kept with its history, left out of runs |
 
 ## Orchestration providers (not datasources)
 

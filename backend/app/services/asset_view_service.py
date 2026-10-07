@@ -366,8 +366,8 @@ def _scorecard(
     # ── what exists (coverage) ──
     check_rows = session.execute(
         select(Check.dimension, func.count())
-        .where(Check.suite_id.in_(suite_scope))
-        .group_by(Check.dimension)
+        # A switched-off check verifies nothing, so it covers nothing.
+        .where(Check.suite_id.in_(suite_scope), Check.enabled.is_(True)).group_by(Check.dimension)
     ).all()
     checks_by_dimension = {d: n for d, n in check_rows if d is not None}
     unclassified = sum(n for d, n in check_rows if d is None)
@@ -386,8 +386,10 @@ def _scorecard(
         .select_from(Result)
         .join(Check, Check.id == Result.check_id)
         .join(runs, runs.c.id == Result.run_id)
-        # Only runs whose result set is complete may be scored (#318).
-        .where(runs.c.status.in_(AGGREGATABLE_RUN_STATUSES))
+        # Only runs whose result set is complete may be scored (#318). A check switched
+        # off since that run is out of the coverage count above, so its last result is
+        # out of the score too: the card never scores a dimension it calls uncovered.
+        .where(runs.c.status.in_(AGGREGATABLE_RUN_STATUSES), Check.enabled.is_(True))
         .group_by(Check.dimension, Result.status)
     ).all()
     for dimension, status, count in result_rows:

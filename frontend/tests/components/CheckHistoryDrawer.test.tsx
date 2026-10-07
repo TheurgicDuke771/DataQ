@@ -71,6 +71,18 @@ describe('CheckHistoryDrawer', () => {
     expect(screen.getByText('Warn ≥ 0.9')).toBeInTheDocument();
   });
 
+  it('marks only the versions at which the check was switched off', async () => {
+    mockList.mockResolvedValue([
+      version({ version_no: 3, enabled: true }),
+      version({ version_no: 2, enabled: false }),
+      version({ version_no: 1 }), // predates the field
+    ]);
+    renderDrawer();
+
+    await screen.findByText('v3');
+    expect(screen.getAllByText('Disabled')).toHaveLength(1);
+  });
+
   it('falls back to Unknown for a system/removed author', async () => {
     mockList.mockResolvedValue([version({ changed_by: null, changed_by_name: null })]);
     renderDrawer();

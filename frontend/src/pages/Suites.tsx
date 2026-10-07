@@ -31,6 +31,7 @@ import {
   canRunSuite,
   type Check,
   bulkDeleteChecks,
+  bulkSetChecksEnabled,
   bulkSetThresholds,
   bulkSnoozeChecks,
   bulkUnsnoozeChecks,
@@ -44,12 +45,14 @@ import {
   rebaselineCheck,
   snoozeCheck,
   type Suite,
+  updateCheck,
 } from '../api/suites';
 import { AssetLink } from '../components/assets/AssetLink';
 import { AutomaticTag } from '../components/suites/AutomaticTag';
 import { DimensionTag, EngineTag, formatThresholdsCompact } from '../components/checks/checkBadges';
 import { BULK_CHECKS_MAX, exceedsBulkLimit } from '../components/checks/bulkLimit';
 import { BulkThresholdsModal } from '../components/checks/BulkThresholdsModal';
+import { DisabledTag, isDisabled } from '../components/checks/enabled';
 import { isSnoozed, SnoozedTag } from '../components/checks/snooze';
 import { ConnectionTypeAvatar } from '../components/connections/connectionVisuals';
 import { useCanAuthor, useWorkspaceRole } from '../auth/useMe';
@@ -696,6 +699,20 @@ function ChecksList({
     }
   };
 
+  const onSetEnabled = async (check: Check, enabled: boolean) => {
+    try {
+      await updateCheck(suiteId, check.id, { enabled });
+      message.success(
+        enabled
+          ? `${check.name}: enabled, it runs again from the next run`
+          : `${check.name}: disabled, runs skip it and its history is kept`,
+      );
+      onChanged();
+    } catch (err) {
+      message.error(`${enabled ? 'Enable' : 'Disable'} failed: ${errorMessage(err)}`);
+    }
+  };
+
   const onUnsnooze = async (check: Check) => {
     try {
       await clearCheckSnooze(suiteId, check.id);
@@ -869,6 +886,30 @@ function ChecksList({
                   </Button>
                   <Button
                     size="small"
+                    disabled={bulkBusy || overBulkLimit}
+                    onClick={() =>
+                      void runBulk(
+                        () => bulkSetChecksEnabled(suiteId, selectedIds, false),
+                        (n) => (n ? `${plural(n)} disabled` : 'Already disabled: nothing changed'),
+                      ).catch(() => undefined)
+                    }
+                  >
+                    Disable selected
+                  </Button>
+                  <Button
+                    size="small"
+                    disabled={bulkBusy || overBulkLimit}
+                    onClick={() =>
+                      void runBulk(
+                        () => bulkSetChecksEnabled(suiteId, selectedIds, true),
+                        (n) => (n ? `${plural(n)} enabled` : 'Already enabled: nothing changed'),
+                      ).catch(() => undefined)
+                    }
+                  >
+                    Enable selected
+                  </Button>
+                  <Button
+                    size="small"
                     danger
                     disabled={bulkBusy || overBulkLimit}
                     onClick={onBulkDelete}
@@ -930,6 +971,18 @@ function ChecksList({
                         </Button>,
                       ]
                     : []),
+                  ...(canEditChecks
+                    ? [
+                        <Button
+                          key="enabled"
+                          type="link"
+                          size="small"
+                          onClick={() => onSetEnabled(check, isDisabled(check))}
+                        >
+                          {isDisabled(check) ? 'Enable' : 'Disable'}
+                        </Button>,
+                      ]
+                    : []),
                   <Button key="edit" type="link" size="small" onClick={() => onEdit(check)}>
                     Edit
                   </Button>,
@@ -953,7 +1006,10 @@ function ChecksList({
                         onChange={(e) => toggle(check.id, e.target.checked)}
                       />
                     )}
-                    <Typography.Text strong>{check.name}</Typography.Text>
+                    <Typography.Text strong type={isDisabled(check) ? 'secondary' : undefined}>
+                      {check.name}
+                    </Typography.Text>
+                    <DisabledTag check={check} />
                     {/* Engine + dimension badges (#1551, checkBadges.tsx). */}
                     <EngineTag engine={check.engine} />
                     <AutomaticTag origin={check.origin} />

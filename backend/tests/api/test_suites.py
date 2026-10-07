@@ -11,7 +11,7 @@ from typing import Any, get_args
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.engine.default import DefaultDialect
 from sqlalchemy.exc import OperationalError
 
@@ -19,6 +19,7 @@ from backend.app.core.auth import get_current_user
 from backend.app.db.models import (
     Asset,
     Check,
+    CheckVersion,
     Connection,
     NotificationChannel,
     PipelineRun,
@@ -3186,3 +3187,107 @@ def test_a_check_with_no_ordinal_is_numbered_before_a_new_one_is_added(
 
     assert created.status_code == 201, created.text
     assert listed == [*before, "unnumbered", "added-after"]
+
+
+# ── a switched-off check in a suite document (#2369) ─────────────────────────
+
+
+def _disable(db_session: Any, sid: str, name: str) -> None:
+    db_session.execute(
+        update(Check)
+        .where(Check.suite_id == uuid.UUID(sid), Check.name == name)
+        .values(enabled=False)
+    )
+    db_session.commit()
+
+
+def _stored_enabled(db_session: Any, sid: str) -> dict[str, bool]:
+    db_session.expire_all()
+    rows = db_session.scalars(select(Check).where(Check.suite_id == uuid.UUID(sid)))
+    return {c.name: c.enabled for c in rows}
+
+
+def test_export_names_only_the_checks_that_are_switched_off(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_with_checks(client, db_session)
+    _disable(db_session, sid, "notnull")
+
+    exported = {c["name"]: c for c in client.get(f"/api/v1/suites/{sid}/export").json()["checks"]}
+
+    assert exported["notnull"]["enabled"] is False
+    assert exported["rowcount"]["enabled"] is True  # the schema default, for an older reader
+
+
+def test_a_switched_off_check_survives_an_export_import_round_trip(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_with_checks(client, db_session)
+    _disable(db_session, sid, "notnull")
+    document = client.get(f"/api/v1/suites/{sid}/export").json()
+
+    imported = client.post(
+        "/api/v1/suites/import",
+        json={"connection_id": str(_connection(db_session).id), "document": document},
+    )
+
+    assert imported.status_code == 201, imported.text
+    new_id = imported.json()["id"]
+    assert _stored_enabled(db_session, new_id) == {"rowcount": True, "notnull": False}
+    versions = db_session.execute(
+        select(Check.name, CheckVersion.enabled)
+        .join(CheckVersion)
+        .where(Check.suite_id == uuid.UUID(new_id))
+    ).all()
+    assert dict(versions) == {"rowcount": True, "notnull": False}
+
+
+def test_a_document_that_predates_the_field_imports_every_check_switched_on(
+    client: TestClient, db_session: Any
+) -> None:
+    resp = client.post(
+        "/api/v1/suites/import",
+        json={
+            "connection_id": str(_connection(db_session).id),
+            "document": {"name": "old doc", "checks": [_doc_check("a")]},
+        },
+    )
+
+    assert resp.status_code == 201, resp.text
+    assert _stored_enabled(db_session, resp.json()["id"]) == {"a": True}
+
+
+def test_apply_switches_a_check_off_and_back_on_as_the_document_says(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_with_checks(client, db_session)
+
+    off = _apply(client, sid, [_doc_check("notnull", enabled=False)])
+
+    assert off.status_code == 200, off.text
+    changed = next(c for c in off.json()["checks"] if c["name"] == "notnull")
+    assert (changed["action"], changed["fields"]) == ("update", ["enabled"])
+    assert _stored_enabled(db_session, sid)["notnull"] is False
+
+    # A file that does not mention `enabled` leaves the switch alone: re-applying one
+    # written before the field existed must not start the check running again.
+    silent = _apply(client, sid, [_doc_check("notnull")])
+
+    assert _actions(silent.json())["notnull"] == "unchanged"
+    assert _stored_enabled(db_session, sid)["notnull"] is False
+
+    on = _apply(client, sid, [_doc_check("notnull", enabled=True)])
+
+    assert next(c for c in on.json()["checks"] if c["name"] == "notnull")["fields"] == ["enabled"]
+    assert _stored_enabled(db_session, sid)["notnull"] is True
+
+
+def test_apply_creates_a_check_switched_off_when_the_document_says_so(
+    client: TestClient, db_session: Any
+) -> None:
+    sid = _suite_with_checks(client, db_session)
+
+    resp = _apply(client, sid, [_doc_check("parked", enabled=False)])
+
+    assert resp.status_code == 200, resp.text
+    assert _stored_enabled(db_session, sid)["parked"] is False

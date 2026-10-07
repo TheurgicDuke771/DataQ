@@ -57,7 +57,7 @@ Named so nothing rolls silently (see the retro's "What rolls"):
 | Status | Task |
 |---|---|
 | ⬜ | [#1661](https://github.com/TheurgicDuke771/DataQ/issues/1661) feat(monitors): zero-config auto-baselines — unknown-unknown detection without an authored check |
-| ⬜ | [#2369](https://github.com/TheurgicDuke771/DataQ/issues/2369) feat(checks): enable/disable a check without deleting it (single and bulk) |
+| ✅ | [#2369](https://github.com/TheurgicDuke771/DataQ/issues/2369) feat(checks): enable/disable a check without deleting it (single and bulk) — migration [PR #2414](https://github.com/TheurgicDuke771/DataQ/pull/2414), then the code |
 | ⬜ | [#1674](https://github.com/TheurgicDuke771/DataQ/issues/1674) feat(privacy): profiler-side PII auto-detection as an additional classification source |
 | ⬜ | [#1675](https://github.com/TheurgicDuke771/DataQ/issues/1675) feat(monitors): pii_drift monitor kind — PII-looking data appearing in an unclassified column |
 | ⬜ | [#1762](https://github.com/TheurgicDuke771/DataQ/issues/1762) feat(notifications): promote an existing per-suite webhook to a reusable channel |

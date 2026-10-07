@@ -156,6 +156,7 @@ _CHECK_FIELDS: Final[tuple[str, ...]] = (
     # Snooze is a deliberate act with a compliance-visible effect — it suppresses
     # alerting on a failing check — so the field it writes is in the payload.
     "alert_snoozed_until",
+    "enabled",
 )
 
 # `config` is deliberately ABSENT.

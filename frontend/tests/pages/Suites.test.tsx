@@ -14,6 +14,7 @@ import {
   bulkDeleteChecks,
   bulkSetThresholds,
   bulkSnoozeChecks,
+  bulkSetChecksEnabled,
   bulkUnsnoozeChecks,
   clearCheckSnooze,
   deleteCheck,
@@ -24,6 +25,7 @@ import {
   rebaselineCheck,
   snoozeCheck,
   type Suite,
+  updateCheck,
 } from '../../src/api/suites';
 import { BULK_CHECKS_MAX, exceedsBulkLimit } from '../../src/components/checks/bulkLimit';
 import { Suites } from '../../src/pages/Suites';
@@ -48,6 +50,8 @@ vi.mock('../../src/api/suites', async (importOriginal) => {
     bulkUnsnoozeChecks: vi.fn(),
     bulkDeleteChecks: vi.fn(),
     bulkSetThresholds: vi.fn(),
+    bulkSetChecksEnabled: vi.fn(),
+    updateCheck: vi.fn(),
     rebaselineCheck: vi.fn(),
   };
 });
@@ -70,6 +74,8 @@ const mockRebaseline = vi.mocked(rebaselineCheck);
 const mockClearSnooze = vi.mocked(clearCheckSnooze);
 const mockBulkSnooze = vi.mocked(bulkSnoozeChecks);
 const mockBulkUnsnooze = vi.mocked(bulkUnsnoozeChecks);
+const mockBulkEnabled = vi.mocked(bulkSetChecksEnabled);
+const mockUpdateCheck = vi.mocked(updateCheck);
 const mockBulkDelete = vi.mocked(bulkDeleteChecks);
 const mockBulkThresholds = vi.mocked(bulkSetThresholds);
 const mockRunSuite = vi.mocked(runSuite);
@@ -394,6 +400,63 @@ describe('Suites', () => {
     expect(await screen.findByText(/Snoozed until/)).toBeInTheDocument();
   });
 
+  it('disables a check from its row, badges it, and offers Enable in its place', async () => {
+    const user = userEvent.setup();
+    mockListConnections.mockResolvedValue([connection]);
+    mockListSuites.mockResolvedValue([suite({ my_permission: 'edit' })]);
+    const on = check();
+    const off = check({ enabled: false });
+    mockListChecks.mockResolvedValueOnce([on]).mockResolvedValue([off]);
+    mockUpdateCheck.mockResolvedValue(off);
+
+    renderPage();
+    await user.click(await screen.findByText('orders-suite'));
+    await screen.findByText('order_id not null');
+    expect(screen.queryByText('Disabled')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Disable' }));
+
+    await waitFor(() =>
+      expect(mockUpdateCheck).toHaveBeenCalledWith('s1', 'chk1', { enabled: false }),
+    );
+    expect(await screen.findByText('Disabled')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Disable' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Enable' }));
+
+    await waitFor(() =>
+      expect(mockUpdateCheck).toHaveBeenLastCalledWith('s1', 'chk1', { enabled: true }),
+    );
+  });
+
+  it('reports a failed disable and leaves the row as it was', async () => {
+    const user = userEvent.setup();
+    mockListConnections.mockResolvedValue([connection]);
+    mockListSuites.mockResolvedValue([suite({ my_permission: 'edit' })]);
+    mockListChecks.mockResolvedValue([check()]);
+    mockUpdateCheck.mockRejectedValue(new Error('boom'));
+
+    renderPage();
+    await user.click(await screen.findByText('orders-suite'));
+    await user.click(await screen.findByRole('button', { name: 'Disable' }));
+
+    expect(await screen.findByText(/Disable failed: boom/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Disable' })).toBeInTheDocument();
+  });
+
+  it('shows a viewer the Disabled badge but no way to change it', async () => {
+    const user = userEvent.setup();
+    mockListConnections.mockResolvedValue([connection]);
+    mockListSuites.mockResolvedValue([suite({ my_permission: 'view' })]);
+    mockListChecks.mockResolvedValue([check({ enabled: false })]);
+
+    renderPage();
+    await user.click(await screen.findByText('orders-suite'));
+
+    expect(await screen.findByText('Disabled')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Enable' })).not.toBeInTheDocument();
+  });
+
   describe('bulk check actions', () => {
     const three = [
       check({ id: 'a', name: 'alpha' }),
@@ -431,6 +494,38 @@ describe('Suites', () => {
       await waitFor(() => expect(mockBulkSnooze).toHaveBeenCalledWith('s1', ['a', 'c'], 24));
       expect(await screen.findByText('2 checks: alerts snoozed for 24 hours')).toBeInTheDocument();
       await waitFor(() => expect(screen.queryByText('2 selected')).not.toBeInTheDocument());
+    });
+
+    it('disables exactly the selected checks, then enables them', async () => {
+      const user = await openWithChecks();
+      mockBulkEnabled.mockResolvedValue({ affected: 1, checks: [] });
+
+      await user.click(screen.getByRole('checkbox', { name: 'Select alpha' }));
+      await user.click(screen.getByRole('checkbox', { name: 'Select beta' }));
+      await user.click(screen.getByRole('button', { name: 'Disable selected' }));
+
+      await waitFor(() => expect(mockBulkEnabled).toHaveBeenCalledWith('s1', ['a', 'b'], false));
+      // The count is what the server changed, not what was selected.
+      expect(await screen.findByText('1 check disabled')).toBeInTheDocument();
+      await waitFor(() => expect(screen.queryByText('2 selected')).not.toBeInTheDocument());
+
+      await user.click(screen.getByRole('checkbox', { name: 'Select all' }));
+      await user.click(screen.getByRole('button', { name: 'Enable selected' }));
+
+      await waitFor(() =>
+        expect(mockBulkEnabled).toHaveBeenLastCalledWith('s1', ['a', 'b', 'c'], true),
+      );
+    });
+
+    it('says nothing changed when every selected check was already in that state', async () => {
+      const user = await openWithChecks();
+      mockBulkEnabled.mockResolvedValue({ affected: 0, checks: [] });
+
+      await user.click(screen.getByRole('checkbox', { name: 'Select alpha' }));
+      await user.click(screen.getByRole('button', { name: 'Disable selected' }));
+
+      expect(await screen.findByText('Already disabled: nothing changed')).toBeInTheDocument();
+      expect(screen.queryByText(/0 checks/)).not.toBeInTheDocument();
     });
 
     it('selects every check with "Select all" and unsnoozes them', async () => {

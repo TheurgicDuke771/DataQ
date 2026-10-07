@@ -162,6 +162,9 @@ export interface Check {
   /** Alert suppression (#370): in the future = alerts muted until then; null /
    *  past = active. Set via the snooze endpoints, never PATCH. */
   alert_snoozed_until: string | null;
+  /** `false` = switched off: kept with its history, left out of every run. Optional so
+   *  older fixtures need no change; absent means switched on. */
+  enabled?: boolean;
 }
 
 export async function listChecks(suiteId: string): Promise<Check[]> {
@@ -209,6 +212,8 @@ export interface CheckUpdate {
   warn_threshold?: number | null;
   fail_threshold?: number | null;
   critical_threshold?: number | null;
+  /** Switch the check off (`false`) or back on (`true`); omit to leave it. */
+  enabled?: boolean;
 }
 
 export async function createCheck(suiteId: string, payload: CheckCreate): Promise<Check> {
@@ -241,7 +246,8 @@ export async function clearCheckSnooze(suiteId: string, checkId: string): Promis
   return data;
 }
 
-/** Result of a bulk check action — all-or-nothing, so `affected` is every check named. */
+/** Result of a bulk check action — all-or-nothing, so `affected` is every check named
+ *  (for enable/disable: every check whose state actually changed). */
 export interface BulkChecksResult {
   affected: number;
   checks: Check[];
@@ -277,6 +283,19 @@ export async function bulkDeleteChecks(
 ): Promise<BulkChecksResult> {
   const { data } = await api.post<BulkChecksResult>(`/suites/${suiteId}/checks-bulk/delete`, {
     check_ids: checkIds,
+  });
+  return data;
+}
+
+/** Switch many checks off or on at once. A disabled check keeps its history. */
+export async function bulkSetChecksEnabled(
+  suiteId: string,
+  checkIds: string[],
+  enabled: boolean,
+): Promise<BulkChecksResult> {
+  const { data } = await api.post<BulkChecksResult>(`/suites/${suiteId}/checks-bulk/enabled`, {
+    check_ids: checkIds,
+    enabled,
   });
   return data;
 }
@@ -321,6 +340,9 @@ export interface CheckVersion {
   warn_threshold: number | null;
   fail_threshold: number | null;
   critical_threshold: number | null;
+  /** Whether the check was switched on at this version. History only: a restore
+   *  never changes it. Optional so older fixtures need no change. */
+  enabled?: boolean;
   changed_by: string | null;
   changed_by_name: string | null;
   created_at: string;
