@@ -14,8 +14,10 @@ import {
   listChannels,
   listSuiteChannels,
   type NotificationChannel,
+  promoteSuiteDestination,
   unlinkSuiteChannel,
 } from '../../src/api/notificationChannels';
+import { useIsWorkspaceAdmin } from '../../src/auth/useMe';
 import { NotificationsPanel } from '../../src/components/suites/NotificationsPanel';
 import { selectOption } from '../support/antd';
 
@@ -30,7 +32,10 @@ vi.mock('../../src/api/notificationChannels', () => ({
   listSuiteChannels: vi.fn(),
   linkSuiteChannel: vi.fn(),
   unlinkSuiteChannel: vi.fn(),
+  promoteSuiteDestination: vi.fn(),
 }));
+
+vi.mock('../../src/auth/useMe', () => ({ useIsWorkspaceAdmin: vi.fn(() => false) }));
 
 const mockGet = vi.mocked(getNotifications);
 const mockPut = vi.mocked(putNotifications);
@@ -38,6 +43,8 @@ const mockListChannels = vi.mocked(listChannels);
 const mockListSuiteChannels = vi.mocked(listSuiteChannels);
 const mockLink = vi.mocked(linkSuiteChannel);
 const mockUnlink = vi.mocked(unlinkSuiteChannel);
+const mockPromote = vi.mocked(promoteSuiteDestination);
+const mockIsAdmin = vi.mocked(useIsWorkspaceAdmin);
 
 const CONFIG: SuiteNotification = {
   configured: true,
@@ -76,7 +83,10 @@ function renderPanel(props: Partial<Parameters<typeof NotificationsPanel>[0]> = 
   );
 }
 
-afterEach(() => vi.clearAllMocks());
+afterEach(() => {
+  vi.clearAllMocks();
+  mockIsAdmin.mockReturnValue(false);
+});
 
 // Every NotificationsPanel test mounts the ChannelPicker too — default it empty so
 // tests that don't care about channels aren't left hanging on an unresolved fetch.
@@ -147,6 +157,73 @@ describe('NotificationsPanel', () => {
       alert_on: 'fail',
       slack_webhook: '',
     });
+  });
+
+  it('offers Promote to channel to an admin only', async () => {
+    mockGet.mockResolvedValue({ ...CONFIG, has_webhook: true });
+    renderPanel();
+    await screen.findByText('Legacy inline destinations');
+    expect(screen.getByRole('button', { name: 'Clear' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Promote to channel' })).not.toBeInTheDocument();
+  });
+
+  it('promotes a legacy destination under the name given and refetches the linked channels', async () => {
+    mockIsAdmin.mockReturnValue(true);
+    mockGet.mockResolvedValueOnce({ ...CONFIG, has_slack_webhook: true }).mockResolvedValue(CONFIG);
+    mockListChannels.mockResolvedValue([]);
+    mockListSuiteChannels.mockResolvedValue([]);
+    mockPromote.mockResolvedValue({
+      channel: channel({ name: 'Orders Slack', type: 'slack' }),
+      workspace_default_now_applies: false,
+    });
+    renderPanel();
+    await userEvent.click(await screen.findByRole('button', { name: 'Promote to channel' }));
+
+    const promote = screen.getByRole('button', { name: 'Promote' });
+    expect(promote).toBeDisabled(); // no name yet
+    await userEvent.type(screen.getByRole('textbox', { name: 'Channel name' }), '  Orders Slack ');
+    await userEvent.click(promote);
+
+    await waitFor(() => expect(mockPromote).toHaveBeenCalledWith('s1', 'slack', 'Orders Slack'));
+    expect(await screen.findByText('Promoted to "Orders Slack"')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByText('Legacy inline destinations')).not.toBeInTheDocument(),
+    );
+    expect(mockListSuiteChannels).toHaveBeenCalledTimes(2);
+    expect(mockPut).not.toHaveBeenCalled();
+  });
+
+  it('warns when the workspace default starts applying after a promote', async () => {
+    mockIsAdmin.mockReturnValue(true);
+    mockGet.mockResolvedValue({ ...CONFIG, has_webhook: true });
+    mockListChannels.mockResolvedValue([]);
+    mockListSuiteChannels.mockResolvedValue([]);
+    mockPromote.mockResolvedValue({
+      channel: channel({ name: 'Platform' }),
+      workspace_default_now_applies: true,
+    });
+    renderPanel();
+    await userEvent.click(await screen.findByRole('button', { name: 'Promote to channel' }));
+    await userEvent.type(screen.getByRole('textbox', { name: 'Channel name' }), 'Platform');
+    await userEvent.click(screen.getByRole('button', { name: 'Promote' }));
+
+    expect(await screen.findByText(/now also alerts the workspace default/)).toBeInTheDocument();
+  });
+
+  it('keeps the dialog open and reports a failed promote', async () => {
+    mockIsAdmin.mockReturnValue(true);
+    mockGet.mockResolvedValue({ ...CONFIG, has_webhook: true });
+    mockListChannels.mockResolvedValue([]);
+    mockListSuiteChannels.mockResolvedValue([]);
+    mockPromote.mockRejectedValue(new Error('boom'));
+    renderPanel();
+    await userEvent.click(await screen.findByRole('button', { name: 'Promote to channel' }));
+    await userEvent.type(screen.getByRole('textbox', { name: 'Channel name' }), 'Platform');
+    await userEvent.click(screen.getByRole('button', { name: 'Promote' }));
+
+    expect(await screen.findByText(/Could not promote the destination: boom/)).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Channel name' })).toBeInTheDocument();
+    expect(mockGet).toHaveBeenCalledTimes(1);
   });
 
   it('surfaces a save failure', async () => {

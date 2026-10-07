@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from backend.app.core.config import get_settings
 from backend.app.core.errors import DataQError
 from backend.app.core.logging import get_logger
 from backend.app.core.secrets import SecretNotFoundError, SecretStore
@@ -56,6 +57,13 @@ class ChannelFieldMismatchError(DataQError):
 
     status_code = 422
     code = "channel_field_mismatch"
+
+
+class NothingToPromoteError(DataQError):
+    """Raised when the suite carries no legacy value for the destination named."""
+
+    status_code = 409
+    code = "nothing_to_promote"
 
 
 class ChannelCredentialRedirectError(DataQError):
@@ -612,6 +620,98 @@ def link_suite(
         before=None,
     )
     session.commit()
+
+
+#: destination → (the legacy `SuiteNotification` column, the channel column it moves to).
+_PROMOTABLE: dict[str, tuple[str, str]] = {
+    "teams": ("webhook_secret_ref", "webhook_secret_ref"),
+    "slack": ("slack_webhook_secret_ref", "webhook_secret_ref"),
+    "email": ("email_recipients", "email_recipients"),
+}
+
+
+def workspace_default_set(destination: str) -> bool:
+    """Whether the deployment configures a workspace-wide default for ``destination`` —
+    what a suite falls back to once its own legacy value is gone. Reads settings only,
+    never a secret.
+    """
+    settings = get_settings()
+    return bool(
+        {
+            "teams": settings.teams_webhook_secret_name,
+            "slack": settings.slack_webhook_secret_name,
+            "email": settings.email_to.strip(),
+        }[destination]
+    )
+
+
+def promote_suite_destination(
+    session: Session,
+    suite_id: uuid.UUID,
+    *,
+    destination: str,
+    name: str,
+    actor_id: uuid.UUID | None = None,
+) -> NotificationChannel:
+    """Move a suite's legacy inline destination into a new channel linked to that suite
+    (#1762), in one transaction. A webhook moves by its SecretStore REF — the URL is never
+    read, and the secret is never deleted, because the channel now owns it. The legacy
+    column is nulled so the secret has exactly one owner.
+    """
+    legacy_attr, channel_attr = _PROMOTABLE[destination]
+    config = notification_service.get_config(session, suite_id, for_update=True)
+    value = getattr(config, legacy_attr) if config is not None else None
+    if config is None or not value:
+        raise NothingToPromoteError(
+            f"this suite has no legacy {destination} destination to promote",
+            detail={"destination": destination},
+        )
+
+    channel = NotificationChannel(name=name, type=destination, created_by=actor_id)
+    setattr(channel, channel_attr, value)
+    session.add(channel)
+    session.flush()
+    audit_service.record_entity_change(
+        session,
+        action="notification_channel.create",
+        entity_type="notification_channel",
+        entity=channel,
+        actor=actor_id,
+        before=None,
+        annotations={"promoted_from_suite_id": str(suite_id)},
+    )
+
+    link = SuiteNotificationChannel(suite_id=suite_id, channel_id=channel.id)
+    session.add(link)
+    session.flush()
+    audit_service.record_entity_change(
+        session,
+        action="suite_notification_channel.link",
+        entity_type="suite_notification_channel",
+        entity=link,
+        actor=actor_id,
+        before=None,
+    )
+
+    audit_before = audit_service.snapshot("suite_notification", config)
+    setattr(config, legacy_attr, None)
+    audit_service.record_entity_change(
+        session,
+        action="suite_notification.update",
+        entity_type="suite_notification",
+        entity=config,
+        actor=actor_id,
+        before=audit_before,
+    )
+    session.commit()
+    session.refresh(channel)
+    log.info(
+        "suite_destination_promoted",
+        suite_id=str(suite_id),
+        channel_id=str(channel.id),
+        destination=destination,
+    )
+    return channel
 
 
 def unlink_suite(

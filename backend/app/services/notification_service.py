@@ -195,11 +195,19 @@ def assert_valid_recipients(raw: str) -> None:
             raise InvalidRecipientsError(f"invalid email recipient: {addr!r}")
 
 
-def get_config(session: Session, suite_id: uuid.UUID) -> SuiteNotification | None:
-    """The suite's notification config, or None if it has never been saved."""
-    return session.scalars(
-        select(SuiteNotification).where(SuiteNotification.suite_id == suite_id)
-    ).first()
+def get_config(
+    session: Session, suite_id: uuid.UUID, *, for_update: bool = False
+) -> SuiteNotification | None:
+    """The suite's notification config, or None if it has never been saved.
+
+    ``for_update`` row-locks it: every path that takes a secret ref off the row (a clear,
+    a delete, a promote to a channel) reads under the lock, so two of them can never both
+    act on the same ref — the loser sees it already gone (#1762).
+    """
+    stmt = select(SuiteNotification).where(SuiteNotification.suite_id == suite_id)
+    if for_update:
+        stmt = stmt.with_for_update()
+    return session.scalars(stmt).first()
 
 
 def apply_secret_webhook(
@@ -250,7 +258,7 @@ def upsert_config(
     if email_recipients:
         assert_valid_recipients(email_recipients)
 
-    config = get_config(session, suite_id)
+    config = get_config(session, suite_id, for_update=True)
     # Before any field is assigned below. `None` here means the row did not exist,
     # so the event reads as a create rather than an update with a blank prior state.
     audit_before = audit_service.snapshot("suite_notification", config)
@@ -265,7 +273,7 @@ def upsert_config(
         except IntegrityError:
             # A concurrent request won the insert — update its row instead of
             # 500-ing on the unique violation (#384).
-            config = get_config(session, suite_id)
+            config = get_config(session, suite_id, for_update=True)
             if config is None:  # pragma: no cover — the winner's row must exist post-rollback
                 raise
             # Re-snapshot: the outer `audit_before` is None because OUR read found no row, but the
@@ -325,7 +333,7 @@ def delete_config(
     actor_id: uuid.UUID | None = None,
 ) -> bool:
     """Delete a suite's config (revert to defaults). Returns whether a row existed."""
-    config = get_config(session, suite_id)
+    config = get_config(session, suite_id, for_update=True)
     if config is None:
         return False
     # Capture both webhook refs before delete so we can soft-delete them after commit.

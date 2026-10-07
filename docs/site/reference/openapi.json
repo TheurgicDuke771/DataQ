@@ -7338,6 +7338,51 @@
         "title": "ProfileRead",
         "type": "object"
       },
+      "PromoteDestination": {
+        "additionalProperties": false,
+        "properties": {
+          "destination": {
+            "description": "Which of the suite's legacy inline destinations to move",
+            "enum": [
+              "teams",
+              "slack",
+              "email"
+            ],
+            "title": "Destination",
+            "type": "string"
+          },
+          "name": {
+            "description": "Name for the new channel",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "destination",
+          "name"
+        ],
+        "title": "PromoteDestination",
+        "type": "object"
+      },
+      "PromotedChannelRead": {
+        "properties": {
+          "channel": {
+            "$ref": "#/components/schemas/ChannelRead"
+          },
+          "workspace_default_now_applies": {
+            "title": "Workspace Default Now Applies",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "channel",
+          "workspace_default_now_applies"
+        ],
+        "title": "PromotedChannelRead",
+        "type": "object"
+      },
       "QueueDepthRead": {
         "properties": {
           "depth": {
@@ -16492,6 +16537,60 @@
         "summary": "Create or update a suite's notification config",
         "tags": [
           "notifications"
+        ]
+      }
+    },
+    "/api/v1/suites/{suite_id}/notifications/promote": {
+      "post": {
+        "description": "Creates a channel holding the suite's existing webhook (or recipient list), links\nit to the suite and clears the legacy value. The webhook URL is moved, never read or\nreturned. Admin-only, like every channel mutation.",
+        "operationId": "promote_suite_destination",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suite_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Suite Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromoteDestination"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromotedChannelRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Promote a suite's legacy inline destination to a reusable channel",
+        "tags": [
+          "notification-channels"
         ]
       }
     },

@@ -83,11 +83,11 @@ def test_upsert_recovers_from_concurrent_first_write_race(
     real_get = svc.get_config
     seen = {"n": 0}
 
-    def stale_then_real(session: Any, suite_id: Any) -> Any:
+    def stale_then_real(session: Any, suite_id: Any, **kwargs: Any) -> Any:
         # First read (in upsert) returns None to drive the INSERT path; the
         # post-conflict re-fetch returns the real winner row.
         seen["n"] += 1
-        return None if seen["n"] == 1 else real_get(session, suite_id)
+        return None if seen["n"] == 1 else real_get(session, suite_id, **kwargs)
 
     monkeypatch.setattr(svc, "get_config", stale_then_real)
 

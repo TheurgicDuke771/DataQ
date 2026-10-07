@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.app.db.models import Connection, Suite, User
+from backend.app.db.models import Connection, Suite, SuiteNotification, User
 from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.tests.support.fake_secret_store import FakeSecretStore, override_secret_store
@@ -519,3 +519,112 @@ def test_payload_template_is_hidden_from_a_non_admin_suite_scoped_read(
     row = next(c for c in resp.json() if c["id"] == created["id"])
     assert row["payload_template"] is None
     assert row["has_payload_template"] is True
+
+
+# ── promote a legacy per-suite destination (#1762) ───────────────────────────
+
+
+def _legacy(db: Any, suite: Suite, store: FakeSecretStore) -> None:
+    store.data["suite-notif-abc"] = _TEAMS_URL
+    db.add(SuiteNotification(suite_id=suite.id, webhook_secret_ref="suite-notif-abc"))
+    db.commit()
+
+
+def _promote(client: TestClient, suite: Suite, headers: Any, **body: Any) -> Any:
+    return client.post(
+        f"/api/v1/suites/{suite.id}/notifications/promote",
+        json={"destination": "teams", "name": "Platform Teams", **body},
+        headers=headers,
+    )
+
+
+@pytest.mark.parametrize("role", ROLES)
+def test_promote_is_admin_only_even_for_the_suite_owner(
+    client: TestClient, db_session: Any, as_role: Any, secret_store: FakeSecretStore, role: str
+) -> None:
+    user, headers = as_role(role)
+    suite = _suite(db_session, user)
+    _legacy(db_session, suite, secret_store)
+
+    resp = _promote(client, suite, headers)
+
+    assert resp.status_code == (201 if role == "admin" else 403)
+    after = client.get(f"/api/v1/suites/{suite.id}/notifications", headers=headers).json()
+    assert after["has_webhook"] is (role != "admin")
+
+
+def test_promote_returns_the_linked_channel_and_never_the_webhook(
+    client: TestClient, db_session: Any, as_role: Any, secret_store: FakeSecretStore
+) -> None:
+    user, headers = as_role("admin")
+    suite = _suite(db_session, user)
+    _legacy(db_session, suite, secret_store)
+
+    resp = _promote(client, suite, headers)
+
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["channel"]["name"] == "Platform Teams"
+    assert body["channel"]["has_webhook"] is True
+    assert body["workspace_default_now_applies"] is False
+    assert _TEAMS_URL not in resp.text
+    linked = client.get(f"/api/v1/suites/{suite.id}/notification-channels", headers=headers)
+    assert [c["id"] for c in linked.json()] == [body["channel"]["id"]]
+
+
+def test_promote_reports_when_the_workspace_default_takes_over(
+    client: TestClient,
+    db_session: Any,
+    as_role: Any,
+    secret_store: FakeSecretStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.app.core.config import get_settings
+
+    monkeypatch.setenv("TEAMS_WEBHOOK_SECRET_NAME", "workspace-teams")
+    get_settings.cache_clear()
+    try:
+        user, headers = as_role("admin")
+        suite = _suite(db_session, user)
+        _legacy(db_session, suite, secret_store)
+        resp = _promote(client, suite, headers)
+        assert resp.json()["workspace_default_now_applies"] is True
+    finally:
+        monkeypatch.undo()
+        get_settings.cache_clear()
+
+
+def test_promote_twice_is_a_409_not_a_second_channel(
+    client: TestClient, db_session: Any, as_role: Any, secret_store: FakeSecretStore
+) -> None:
+    user, headers = as_role("admin")
+    suite = _suite(db_session, user)
+    _legacy(db_session, suite, secret_store)
+    first = _promote(client, suite, headers)
+    assert first.status_code == 201
+
+    again = _promote(client, suite, headers)
+
+    assert again.status_code == 409
+    assert again.json()["error"]["code"] == "nothing_to_promote"
+    channels = client.get("/api/v1/notification-channels", headers=headers)
+    assert len(channels.json()) == 1
+
+
+def test_promote_validates_the_request(
+    client: TestClient, db_session: Any, as_role: Any, secret_store: FakeSecretStore
+) -> None:
+    user, headers = as_role("admin")
+    suite = _suite(db_session, user)
+    _legacy(db_session, suite, secret_store)
+
+    bad_destination = _promote(client, suite, headers, destination="webhook")
+    assert bad_destination.status_code == 422
+    blank_name = _promote(client, suite, headers, name="")
+    assert blank_name.status_code == 422
+    missing = client.post(
+        f"/api/v1/suites/{uuid.uuid4()}/notifications/promote",
+        json={"destination": "teams", "name": "T"},
+        headers=headers,
+    )
+    assert missing.status_code == 404
