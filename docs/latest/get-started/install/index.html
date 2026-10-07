@@ -2629,6 +2629,9 @@
   on your machine, no cloud account.</li>
 <li><strong>Develop / contribute</strong> → build from source with <code>scripts/setup.sh</code> (<a href="#develop-from-source">further down</a>).</li>
 </ul>
+<p>Only want to look around first? The <a href="https://theurgicduke771.github.io/DataQ/demo/">read-only demo</a>
+is the same UI over recorded sample data, in your browser, with nothing to install. It cannot
+save, run or connect to anything; the steps below give you a DataQ that can.</p>
 <h2 id="evaluate-locally-from-prebuilt-images">Evaluate locally from prebuilt images<a class="headerlink" href="#evaluate-locally-from-prebuilt-images" title="Permanent link">¶</a></h2>
 <p><a class="glightbox" data-type="image" data-width="auto" data-height="auto" href="../../assets/screenshots/connections-list.png" data-desc-position="bottom"><img alt="After sign-in: the Connections page, where the first thing you add is a datasource" class="screenshot" src="../../assets/screenshots/connections-list.png"></a></p>
 <p><strong>Prerequisite:</strong> Docker (Compose v2). No source checkout, no conda, no Node, no Azure
@@ -2636,10 +2639,13 @@ tenant.</p>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-O<span class="w"> </span>https://raw.githubusercontent.com/TheurgicDuke771/DataQ/main/docker-compose.ghcr.yml
 <span class="nb">export</span><span class="w"> </span><span class="nv">OPENBAO_TOKEN</span><span class="o">=</span><span class="k">$(</span>openssl<span class="w"> </span>rand<span class="w"> </span>-hex<span class="w"> </span><span class="m">16</span><span class="k">)</span><span class="w">     </span><span class="c1"># root token for the bundled vault</span>
 <span class="nb">export</span><span class="w"> </span><span class="nv">DATAQ_SIGNIN_EMAIL</span><span class="o">=</span>you@example.com<span class="w">        </span><span class="c1"># the address allowed to sign in</span>
-docker<span class="w"> </span>compose<span class="w"> </span>-f<span class="w"> </span>docker-compose.ghcr.yml<span class="w"> </span>up
+docker<span class="w"> </span>compose<span class="w"> </span>-f<span class="w"> </span>docker-compose.ghcr.yml<span class="w"> </span>--profile<span class="w"> </span>demo<span class="w"> </span>up
 </code></pre></div>
 <p>This pulls the published images from GHCR and brings up Postgres + Redis + the API +
 Celery worker + the UI + a local mail catcher, runs migrations, and seeds demo data.
+<code>--profile demo</code> adds a connected sample warehouse whose suites have already run, so your
+first sign-in shows real results (<a href="#the-demo-profile">details below</a>); leave it out to start
+without one.
 Open <strong><code>https://localhost:3000</code></strong>, type the address you exported, and read the 6-digit
 code in the bundled inbox at <strong><code>http://localhost:8025</code></strong>.</p>
 <ul>
@@ -2708,7 +2714,7 @@ curl --cacert dataq-local-ca.pem https://localhost:3000/healthz
   matters more than usual for <code>:8025</code>, which serves live sign-in codes to anyone who can
   reach it. <strong>Not for production</strong> — a real deploy uses the OpenTofu stacks
   (<code>deploy/terraform/azure</code> or <code>deploy/terraform/aws</code>, ADR 0024).
-- <strong>Try it on real data:</strong> add <code>--profile demo</code> to the <code>up</code> command. It also starts a
+- <a id="the-demo-profile"></a><strong>The demo profile:</strong> <code>--profile demo</code> also starts a
   sample warehouse (PostgreSQL) holding a small shop dataset with deliberate defects, and
   connects DataQ to it: a connection named <em>Demo warehouse (PostgreSQL)</em>, two suites
   (<em>Shop orders</em> and <em>Shop customers</em>) whose checks cover value rules, custom SQL,

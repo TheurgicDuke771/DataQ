@@ -579,6 +579,10 @@ Three tracks, matched to why you're here:
   on your machine, no cloud account.
 - **Develop / contribute** → build from source with `scripts/setup.sh` ([further down](#develop-from-source)).
 
+Only want to look around first? The [read-only demo](https://theurgicduke771.github.io/DataQ/demo/)
+is the same UI over recorded sample data, in your browser, with nothing to install. It cannot
+save, run or connect to anything; the steps below give you a DataQ that can.
+
 ## Evaluate locally from prebuilt images
 
 ![After sign-in: the Connections page, where the first thing you add is a datasource](../assets/screenshots/connections-list.png){ .screenshot }
@@ -590,11 +594,14 @@ tenant.
 curl -O https://raw.githubusercontent.com/TheurgicDuke771/DataQ/main/docker-compose.ghcr.yml
 export OPENBAO_TOKEN=$(openssl rand -hex 16)     # root token for the bundled vault
 export DATAQ_SIGNIN_EMAIL=you@example.com        # the address allowed to sign in
-docker compose -f docker-compose.ghcr.yml up
+docker compose -f docker-compose.ghcr.yml --profile demo up
 ```
 
 This pulls the published images from GHCR and brings up Postgres + Redis + the API +
 Celery worker + the UI + a local mail catcher, runs migrations, and seeds demo data.
+`--profile demo` adds a connected sample warehouse whose suites have already run, so your
+first sign-in shows real results ([details below](#the-demo-profile)); leave it out to start
+without one.
 Open **`https://localhost:3000`**, type the address you exported, and read the 6-digit
 code in the bundled inbox at **`http://localhost:8025`**.
 
@@ -664,7 +671,7 @@ code in the bundled inbox at **`http://localhost:8025`**.
   matters more than usual for `:8025`, which serves live sign-in codes to anyone who can
   reach it. **Not for production** — a real deploy uses the OpenTofu stacks
   (`deploy/terraform/azure` or `deploy/terraform/aws`, ADR 0024).
-- **Try it on real data:** add `--profile demo` to the `up` command. It also starts a
+- <a id="the-demo-profile"></a>**The demo profile:** `--profile demo` also starts a
   sample warehouse (PostgreSQL) holding a small shop dataset with deliberate defects, and
   connects DataQ to it: a connection named *Demo warehouse (PostgreSQL)*, two suites
   (*Shop orders* and *Shop customers*) whose checks cover value rules, custom SQL,
