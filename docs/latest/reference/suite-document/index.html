@@ -2773,6 +2773,11 @@ and never a silently ignored line.</p>
 <td>What evaluates the check. A native engine (<code>dmf</code>, <code>dqx</code>) imports only onto a connection that offers it.</td>
 </tr>
 <tr>
+<td><code>enabled</code></td>
+<td>no</td>
+<td><code>false</code> keeps the check in the suite but leaves it out of every run. An export writes the field only for a check that is switched off. On import, a check without the field is created switched on.</td>
+</tr>
+<tr>
 <td><code>source_connection</code></td>
 <td>comparison checks only</td>
 <td><code>{name, env}</code> of the connection the comparison reads its source from. It must already exist in the workspace under that name and environment.</td>
@@ -2887,6 +2892,10 @@ applying the same file twice changes nothing the second time.</p>
 <tr>
 <td>in both, and the same</td>
 <td>nothing</td>
+</tr>
+<tr>
+<td>in both, and the file sets <code>enabled</code> to something else</td>
+<td>switches it. A file that does not mention <code>enabled</code> leaves the switch as it is, so re-applying an older file never starts a disabled check running again; write <code>enabled: true</code> to switch one on</td>
 </tr>
 <tr>
 <td>in the suite, not in the file</td>

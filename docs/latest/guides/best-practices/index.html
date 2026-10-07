@@ -2655,6 +2655,9 @@ profiler support, and cheaper evaluation.</p>
   exploratory suites rather than disabling alerts.</li>
 <li><strong>Snooze</strong> a known-broken check during an incident instead of deleting it — the
   history and the re-fire on expiry are the point.</li>
+<li><strong>Disable</strong> a check you want to stop running for now (a table being rebuilt, a rule
+  under review) instead of deleting it. Deleting erases its results, versions and
+  baseline; disabling keeps all three.</li>
 <li>Dedup means you hear about a breakage <strong>once</strong> (and again on escalation) — if a suite
   feels quiet while red, that's dedup working; the Results page is the ground truth.</li>
 </ul>

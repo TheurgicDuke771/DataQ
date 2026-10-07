@@ -2965,7 +2965,7 @@ URL); linking/unlinking a suite follows that suite's own <code>view</code>/<code
 <tr>
 <td>GET / PATCH / DELETE</td>
 <td><code>/suites/{id}/checks/{cid}</code></td>
-<td>Read / update / delete a check.</td>
+<td>Read / update / delete a check. <code>PATCH</code> with <code>{"enabled": false}</code> switches it off (kept with its history, left out of runs); <code>true</code> switches it back on.</td>
 </tr>
 <tr>
 <td>POST</td>
@@ -3009,8 +3009,8 @@ URL); linking/unlinking a suite follows that suite's own <code>view</code>/<code
 </tr>
 <tr>
 <td>POST</td>
-<td><code>/suites/{id}/checks-bulk/delete</code> · <code>…/snooze</code> · <code>…/unsnooze</code> · <code>…/thresholds</code></td>
-<td>Act on many checks at once — all-or-nothing.</td>
+<td><code>/suites/{id}/checks-bulk/delete</code> · <code>…/snooze</code> · <code>…/unsnooze</code> · <code>…/thresholds</code> · <code>…/enabled</code></td>
+<td>Act on many checks at once — all-or-nothing. <code>…/enabled</code> takes <code>{"check_ids": […], "enabled": true \| false}</code>; its <code>affected</code> counts only the checks whose state changed.</td>
 </tr>
 <tr>
 <td>GET</td>

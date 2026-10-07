@@ -1915,6 +1915,9 @@ profiler support, and cheaper evaluation.
   exploratory suites rather than disabling alerts.
 - **Snooze** a known-broken check during an incident instead of deleting it — the
   history and the re-fire on expiry are the point.
+- **Disable** a check you want to stop running for now (a table being rebuilt, a rule
+  under review) instead of deleting it. Deleting erases its results, versions and
+  baseline; disabling keeps all three.
 - Dedup means you hear about a breakage **once** (and again on escalation) — if a suite
   feels quiet while red, that's dedup working; the Results page is the ground truth.
 
@@ -3432,9 +3435,14 @@ Delivered when a run breaches its threshold ([Notifications & alerting](notifica
 - **Severity routing** — urgency scales with severity; critical escalates.
 - **Dedup** — you hear about a breakage once (and again on escalation); a clean run resets.
 - **Snooze** — silence a known-broken check for N hours (history + re-fire preserved).
+- **Disable a check** — switch a check off from its row or its editor. It keeps its
+  results, version history and baseline, and runs leave it out until you switch it back
+  on: no result, no alert, no incident. A disabled check shows a **Disabled** badge and
+  stops counting toward dimension coverage. Snooze mutes alerts while the check keeps
+  running; disable stops the check running.
 - **Bulk actions on checks** — tick checks on the suite page, or **Select all**, then
-  snooze, unsnooze or delete them together, or **Set thresholds** to give them all the
-  same warn, fail or critical value. It is all-or-nothing: if any one cannot be changed,
+  snooze, unsnooze, disable, enable or delete them together, or **Set thresholds** to
+  give them all the same warn, fail or critical value. It is all-or-nothing: if any one cannot be changed,
   none are, and the ones at fault are named. A bulk delete removes each check's results
   and history, as a single delete does. Thresholds can only be set on checks of one kind
   at a time, because a threshold is compared with the number that kind of check measures.
@@ -3487,7 +3495,7 @@ results surface applies. Raw sample rows never leave the deployment on any path.
 
 A curated **54-tool MCP server** at `/mcp` lets Claude / Copilot / Cursor list suites, read
 results, checks, runs, connections, schedules, trigger bindings, notification config and the
-reusable notification channels, trigger and cancel runs, poll status, add/update/delete/snooze
+reusable notification channels, trigger and cancel runs, poll status, add/update/delete/snooze/disable
 checks, dry-run a check preview, manage schedules and trigger bindings end-to-end (create /
 update / delete), import a suite and set its run target, read and restore a check's version
 history, read and set a suite's column policy, browse **assets** (the tables DataQ monitors,
@@ -3714,6 +3722,13 @@ Snooze a specific check's alerts for N hours from the suite's check list (e.g. d
 known upstream incident). A run alerts only if at least one **un-snoozed** check is
 failing; when every failing check is snoozed, the alert is suppressed. Snoozes expire
 automatically.
+
+A snoozed check still runs, still records its result and can still open an incident. To
+stop a check running altogether while keeping its history, **disable** it from its row or
+its editor instead. A disabled check produces no result, so it cannot alert. Two things to
+know: disabling does not close an incident that is already open on the check (no later
+run can pass and resolve it, so resolve it yourself), and the check's results in past runs
+stay as they were.
 
 ## Connection poll-health alerts
 
@@ -4443,7 +4458,8 @@ holds the inbound ones).
 - Keep the default **warn-and-worse** threshold; drop to **fail-only** for noisy exploratory
   suites rather than turning alerts off.
 - **Snooze** a known-broken check during an incident instead of deleting it — the history and
-  the re-fire on expiry are the point.
+  the re-fire on expiry are the point. **Disable** one you want to stop running for now; it
+  keeps its history too.
 - Trust **dedup**: a red suite that's quiet is dedup working; the Results page is ground truth.
 
 See [Alerting hygiene](best-practices.md#alerting-hygiene).
@@ -4681,7 +4697,20 @@ the per-PR history lives in the repo's commit log and pull requests.
 
 ## Unreleased
 
-Nothing yet.
+### Added
+
+- **Disable a check without deleting it.** A check can be switched off from its row on the
+  suite page, from its editor, or many at once with **Disable selected** and **Enable
+  selected**. A disabled check keeps its results, version history and baseline and is left
+  out of every run until it is switched back on: it records no result and raises no alert
+  or incident, and it stops counting toward dimension coverage. Until now the only ways to
+  stop a check were to delete it, which erases its history, or to snooze it, which still
+  runs it. Disabling does not close an incident already open on the check. In the API,
+  `PATCH /suites/{id}/checks/{cid}` with `enabled`, and
+  `POST /suites/{id}/checks-bulk/enabled`; a suite document carries `enabled: false`, and
+  applying a file that does not mention `enabled` leaves each check's switch alone; over
+  MCP, `update_check` takes `enabled`, `list_suites` adds `enabled_check_count`,
+  `trigger_suite_run` returns `enabled_checks`, and each result carries `check_enabled`.
 
 ## v1.2.0 — 2026-10-04
 
@@ -6422,6 +6451,7 @@ catalog knowing about them (mechanism ④).
 | Routing | Severity-aware urgency; critical escalates |
 | Dedup | First failure / escalation only; clean run resets |
 | Snooze | Per check, N hours |
+| Disable a check | Per check or in bulk; kept with its history, left out of runs |
 
 ## Orchestration providers (not datasources)
 
@@ -6596,7 +6626,7 @@ connection mutation, and a credential must never transit an LLM.
 | `set_column_policy` | `edit` on the suite | Set which columns are masked in this suite's failing-sample rows. |
 | `snooze_check` | `edit` on the suite | Mute a check's alerts for a while — or un-mute it now. |
 | `trigger_suite_run` | `edit` on the suite | Trigger an asynchronous run of a suite's checks; returns a run id to poll. |
-| `update_check` | `edit` on the suite | Change an existing check's definition — a partial update. |
+| `update_check` | `edit` on the suite | Change an existing check's definition, or switch it off or on — a partial update. |
 | `update_schedule` | `edit` on the suite | Change a suite's cron schedule — its cadence, its timezone, or pause/resume it. |
 | `update_suite` | `edit` on the suite | Change a suite's name, description, or **what it runs against**. |
 | `update_trigger_binding` | `edit` on the suite | Enable or disable an orchestration trigger without deleting it. |
@@ -6797,7 +6827,7 @@ URL); linking/unlinking a suite follows that suite's own `view`/`edit` grant.
 | GET / POST | `/suites` | List / create a suite. |
 | GET / PATCH / DELETE | `/suites/{id}` | Read / update / delete. |
 | GET / POST | `/suites/{id}/checks` | List / add checks. |
-| GET / PATCH / DELETE | `/suites/{id}/checks/{cid}` | Read / update / delete a check. |
+| GET / PATCH / DELETE | `/suites/{id}/checks/{cid}` | Read / update / delete a check. `PATCH` with `{"enabled": false}` switches it off (kept with its history, left out of runs); `true` switches it back on. |
 | POST | `/suites/{id}/checks/dryrun` | Preview a check against live data (no persistence). |
 | POST | `/suites/{id}/checks/{cid}/snooze` · DELETE to clear | Snooze a check's alerts for N hours. |
 | GET | `/suites/{id}/checks/{cid}/versions` · POST `…/versions/{n}/restore` | Version history + restore (restore mints a new version). |
@@ -6806,7 +6836,7 @@ URL); linking/unlinking a suite follows that suite's own `view`/`edit` grant.
 | GET | `/suites/{id}/export` · POST `/suites/import` | Portable suite document (env promotion) — see [Suite document](suite-document.md). |
 | POST | `/suites/validate` | Run every import gate on a document and report all problems; creates nothing. |
 | POST | `/suites/{id}/apply` | Apply a document onto an existing suite (checks matched by name; `prune` deletes the rest), or report its drift. Idempotent. |
-| POST | `/suites/{id}/checks-bulk/delete` · `…/snooze` · `…/unsnooze` · `…/thresholds` | Act on many checks at once — all-or-nothing. |
+| POST | `/suites/{id}/checks-bulk/delete` · `…/snooze` · `…/unsnooze` · `…/thresholds` · `…/enabled` | Act on many checks at once — all-or-nothing. `…/enabled` takes `{"check_ids": […], "enabled": true \| false}`; its `affected` counts only the checks whose state changed. |
 | GET | `/suites/{id}/suggestions` · POST `/suggestions/{id}/accept` · `/suggestions/{id}/reject` | Automatic-coverage review queue: proposed rules; accepting one creates the check. |
 | GET | `/suites/{id}/cadence` | The bound pipeline's cadence — a freshness-threshold hint. |
 | GET | `/suites/{id}/deletion_impact` | Exact dependent counts a suite delete would destroy. |
@@ -6974,6 +7004,7 @@ and never a silently ignored line.
 | `warn_threshold`, `fail_threshold`, `critical_threshold` | no | Severity bands. They must be ordered warn ≤ fail ≤ critical, and only types that measure a number accept them. |
 | `dimension` | no | `accuracy`, `completeness`, `consistency`, `integrity`, `timeliness`, `uniqueness` or `validity`. **Leave the field out** to have it derived from the check type. Write `dimension: null` to keep the check unclassified on purpose. |
 | `engine` | no (default `gx`) | What evaluates the check. A native engine (`dmf`, `dqx`) imports only onto a connection that offers it. |
+| `enabled` | no | `false` keeps the check in the suite but leaves it out of every run. An export writes the field only for a check that is switched off. On import, a check without the field is created switched on. |
 | `source_connection` | comparison checks only | `{name, env}` of the connection the comparison reads its source from. It must already exist in the workspace under that name and environment. |
 
 ## What the document does not carry
@@ -7067,6 +7098,7 @@ Checks are matched by **name**:
 | in the file, not in the suite | creates it |
 | in both, and differs | updates it |
 | in both, and the same | nothing |
+| in both, and the file sets `enabled` to something else | switches it. A file that does not mention `enabled` leaves the switch as it is, so re-applying an older file never starts a disabled check running again; write `enabled: true` to switch one on |
 | in the suite, not in the file | leaves it alone, and lists it under `unmanaged`. With `prune: true`, deletes it together with its results and history. |
 
 The suite's name and description are updated from the file. Its connection, target,

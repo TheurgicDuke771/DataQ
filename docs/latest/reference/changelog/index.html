@@ -1511,6 +1511,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Unreleased">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1537,7 +1554,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#added" class="md-nav__link">
+  <a href="#added_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Added
@@ -1559,7 +1576,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#added_1" class="md-nav__link">
+  <a href="#added_2" class="md-nav__link">
     <span class="md-ellipsis">
       
         Added
@@ -1592,7 +1609,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#added_2" class="md-nav__link">
+  <a href="#added_3" class="md-nav__link">
     <span class="md-ellipsis">
       
         Added
@@ -2484,6 +2501,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Unreleased">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2510,7 +2544,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#added" class="md-nav__link">
+  <a href="#added_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Added
@@ -2532,7 +2566,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#added_1" class="md-nav__link">
+  <a href="#added_2" class="md-nav__link">
     <span class="md-ellipsis">
       
         Added
@@ -2565,7 +2599,7 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#added_2" class="md-nav__link">
+  <a href="#added_3" class="md-nav__link">
     <span class="md-ellipsis">
       
         Added
@@ -2631,7 +2665,21 @@
 <p>Notable, user-facing changes. Dates are the release/merge date. This is a curated summary —
 the per-PR history lives in the repo's commit log and pull requests.</p>
 <h2 id="unreleased">Unreleased<a class="headerlink" href="#unreleased" title="Permanent link">¶</a></h2>
-<p>Nothing yet.</p>
+<h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">¶</a></h3>
+<ul>
+<li><strong>Disable a check without deleting it.</strong> A check can be switched off from its row on the
+  suite page, from its editor, or many at once with <strong>Disable selected</strong> and <strong>Enable
+  selected</strong>. A disabled check keeps its results, version history and baseline and is left
+  out of every run until it is switched back on: it records no result and raises no alert
+  or incident, and it stops counting toward dimension coverage. Until now the only ways to
+  stop a check were to delete it, which erases its history, or to snooze it, which still
+  runs it. Disabling does not close an incident already open on the check. In the API,
+  <code>PATCH /suites/{id}/checks/{cid}</code> with <code>enabled</code>, and
+  <code>POST /suites/{id}/checks-bulk/enabled</code>; a suite document carries <code>enabled: false</code>, and
+  applying a file that does not mention <code>enabled</code> leaves each check's switch alone; over
+  MCP, <code>update_check</code> takes <code>enabled</code>, <code>list_suites</code> adds <code>enabled_check_count</code>,
+  <code>trigger_suite_run</code> returns <code>enabled_checks</code>, and each result carries <code>check_enabled</code>.</li>
+</ul>
 <h2 id="v120-2026-10-04">v1.2.0 — 2026-10-04<a class="headerlink" href="#v120-2026-10-04" title="Permanent link">¶</a></h2>
 <h3 id="breaking">Breaking<a class="headerlink" href="#breaking" title="Permanent link">¶</a></h3>
 <ul>
@@ -2684,7 +2732,7 @@ the per-PR history lives in the repo's commit log and pull requests.</p>
   refuses to lose its last one. Over MCP, <code>update_check</code> gains <code>clear_thresholds</code>.</p>
 </li>
 </ul>
-<h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">¶</a></h3>
+<h3 id="added_1">Added<a class="headerlink" href="#added_1" title="Permanent link">¶</a></h3>
 <ul>
 <li><strong>An upgrade guide and a support policy.</strong> <a href="../../operate/upgrading/">Upgrading</a> covers what to
   back up, the steps for the prebuilt-image stack and a cloud deployment, and rolling back.
@@ -2821,7 +2869,7 @@ the per-PR history lives in the repo's commit log and pull requests.</p>
   a superseded preview request instead of merely ignoring its answer.</p>
 </li>
 </ul>
-<h3 id="added_1">Added<a class="headerlink" href="#added_1" title="Permanent link">¶</a></h3>
+<h3 id="added_2">Added<a class="headerlink" href="#added_2" title="Permanent link">¶</a></h3>
 <ul>
 <li>
 <p><strong>ADLS Gen2 connections can authenticate as an Entra ID service principal — which also
@@ -2991,7 +3039,7 @@ the per-PR history lives in the repo's commit log and pull requests.</p>
   <a href="../../guides/admin/">admin control centre guide</a>.</p>
 </li>
 </ul>
-<h3 id="added_2">Added<a class="headerlink" href="#added_2" title="Permanent link">¶</a></h3>
+<h3 id="added_3">Added<a class="headerlink" href="#added_3" title="Permanent link">¶</a></h3>
 <ul>
 <li><strong>Admin → Integrations is an operations page.</strong> Regenerate any provider's webhook secret
   or signing key (shown once; the previous value keeps working for a short grace window),
