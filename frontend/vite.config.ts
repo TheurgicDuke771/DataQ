@@ -13,6 +13,10 @@ const apiProxyTarget = process.env.VITE_API_PROXY_TARGET || 'http://localhost:80
 
 export default defineConfig({
   plugins: [react()],
+  // Always a literal, so every build but `pnpm demo:build` compiles the demo code away (#2419).
+  define: {
+    'import.meta.env.VITE_DEMO': JSON.stringify(process.env.VITE_DEMO ?? ''),
+  },
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
@@ -79,7 +83,15 @@ export default defineConfig({
     // so keep Vitest out of them. (Miss one and it fails with Playwright's
     // "did not expect test() to be called here", which reads like a version
     // conflict and is really just the wrong runner.)
-    exclude: [...configDefaults.exclude, 'e2e/**', 'e2e-otp/**', 'e2e-docs/**', 'e2e-live/**'],
+    exclude: [
+      ...configDefaults.exclude,
+      'e2e/**',
+      'e2e-otp/**',
+      'e2e-docs/**',
+      'e2e-live/**',
+      'e2e-demo/**',
+      'dist-demo/**',
+    ],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],

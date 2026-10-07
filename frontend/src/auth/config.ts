@@ -1,5 +1,7 @@
 /** Auth configuration — sourced at RUNTIME, not build time (ADR 0028). */
 
+import { IS_DEMO } from '../demo/flag';
+
 export type AuthMode = 'real' | 'otp' | 'dev_bypass' | 'unconfigured';
 
 /** The runtime auth contract injected via `window.__DATAQ_CONFIG__.auth`. */
@@ -81,7 +83,7 @@ export const AUTH_METHOD_LABELS: Record<AuthMode, string> = {
 export const authMethodLabel = AUTH_METHOD_LABELS[authMode];
 
 export const DEV_USER = {
-  name: 'Dev Bypass User',
+  name: IS_DEMO ? 'Demo User' : 'Dev Bypass User',
   username: 'dev-bypass@dataq.local',
   homeAccountId: 'dev-bypass',
   isDev: true as const,
