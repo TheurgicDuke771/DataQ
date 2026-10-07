@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "8e99c7d8037b",
+  "strategy": "manual-commit",
+  "branch": "feature/issue-1762-promote-suite-destination",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/app/api/v1/admin.py",
+    "backend/app/api/v1/notification_channels.py",
+    "backend/app/api/v1/notifications.py",
+    "backend/app/services/channel_service.py",
+    "backend/app/services/notification_service.py",
+    "backend/tests/api/test_deployment_posture.py",
+    "backend/tests/services/test_channel_service.py",
+    "docs/progress.md",
+    "frontend/src/components/suites/NotificationsPanel.tsx",
+    "frontend/tests/components/NotificationsPanel.test.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/8e/99c7d8037b/0/metadata.json",
+      "transcript": "/8e/99c7d8037b/0/full.jsonl",
+      "compact_transcript": "/8e/99c7d8037b/0/transcript.jsonl",
+      "content_hash": "/8e/99c7d8037b/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 20,
+    "cache_creation_tokens": 19029,
+    "cache_read_tokens": 2711308,
+    "output_tokens": 12683,
+    "api_call_count": 10
+  }
+}
