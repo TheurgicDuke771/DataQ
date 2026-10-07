@@ -576,6 +576,8 @@ class Check(Base):
     )
     # Mute alerts until this moment (UTC); NULL/past = active.
     alert_snoozed_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # False = kept, with its history, but left out of every run (#2369).
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _updated_at()
 
@@ -690,6 +692,7 @@ class CheckVersion(Base):
     warn_threshold: Mapped[Decimal | None] = mapped_column(Numeric)
     fail_threshold: Mapped[Decimal | None] = mapped_column(Numeric)
     critical_threshold: Mapped[Decimal | None] = mapped_column(Numeric)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     changed_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
