@@ -1,0 +1,1 @@
+import{a as e}from"./vendor-CBTEino6.js";import{t}from"./index-BebslELV.js";function n(n){if(!e.isAxiosError(n))return;let r=n.response?.data?.error;if(typeof r?.code==`string`)return{code:r.code,message:typeof r.message==`string`?r.message:t(n),detail:r.detail??{}}}function r(e,t){let n=e[t];return Array.isArray(n)?n.filter(e=>typeof e==`string`):[]}export{r as n,n as t};

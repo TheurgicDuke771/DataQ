@@ -1,0 +1,1 @@
+import{t as e}from"./react-XKeT_0Ah.js";import{m as t}from"./index-BebslELV.js";var n=e();function r(){return(0,n.jsx)(t,{code:404})}export{r as NotFound};

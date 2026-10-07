@@ -1,0 +1,1 @@
+import{i as e}from"./antd-RGG79qBw.js";import{t}from"./react-XKeT_0Ah.js";import{t as n}from"./health-heY_um7R.js";var r=t();function i({summary:t}){let{label:i,color:a}=n(t);return(0,r.jsx)(e,{color:a,children:i})}export{i as t};

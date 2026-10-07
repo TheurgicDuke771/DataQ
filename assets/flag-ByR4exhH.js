@@ -1,0 +1,1 @@
+var e=`https://theurgicduke771.github.io/DataQ/docs/latest/get-started/install/`;export{e as t};
