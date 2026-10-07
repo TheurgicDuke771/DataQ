@@ -481,6 +481,27 @@ jobs:
           done
           [ -n "${ok:-}" ] || { echo "playwright install-deps failed after 3 attempts"; exit 1; }
 
+      # ── Static demo (#2419) ────────────────────────────────────────────── Recorded BEFORE the
+      # E2E specs, which write to the seeded workspace. Never committed: every run records the
+      # API responses behind each route, builds the demo and drives the built files with no API,
+      # so a change that breaks the published demo fails here.
+      - name: Static demo — record, build, smoke
+        working-directory: frontend
+        env:
+          VITE_API_PROXY_TARGET: http://localhost:8000
+        run: |
+          pnpm demo:capture
+          pnpm demo:build
+          pnpm demo:smoke
+
+      - name: Upload the static demo
+        uses: actions/upload-artifact@v7
+        with:
+          name: demo-site
+          path: frontend/dist-demo/
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Playwright E2E
         working-directory: frontend
         # CI=true → Playwright starts its own Vite dev server (proxying to the
@@ -524,6 +545,42 @@ jobs:
           name: playwright-report
           path: frontend/playwright-report/
           retention-days: 7
+
+  publish-demo:
+    name: Publish the static demo
+    # Every push to main republishes the demo that frontend-e2e just recorded and built (#2419).
+    # The build is kept as the single commit of the `demo-site` branch — force-pushed, so it
+    # never accumulates history — and docs.yml, the one Pages deployer, puts it at /demo/.
+    needs: frontend-e2e
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: demo-site
+          path: demo
+
+      - name: Push the build to the demo-site branch
+        working-directory: demo
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test -f index.html && test -f demo-fixtures.json
+          git init -q -b demo-site
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Static demo built from ${GITHUB_SHA}"
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" demo-site
+
+      - name: Redeploy Pages with the new demo
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run docs.yml --repo "$GITHUB_REPOSITORY" --ref main -f demo_only=true
 
   frontend-audit:
     # Job name kept verbatim: it is the pinned required-check context on the main ruleset (same rule

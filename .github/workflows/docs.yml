@@ -28,6 +28,11 @@ on:
       - requirements-docs.txt
       - .github/workflows/docs.yml
   workflow_dispatch:
+    inputs:
+      demo_only:
+        description: Redeploy Pages with the current demo-site branch, without republishing the docs
+        type: boolean
+        default: false
 
 permissions:
   contents: write # mike commits to gh-pages
@@ -46,17 +51,21 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.name }}
+      demo: ${{ steps.assemble.outputs.demo }}
     steps:
       - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v7
+        if: ${{ !inputs.demo_only }}
         with:
           python-version: "3.13"
 
       - run: pip install -r requirements-docs.txt
+        if: ${{ !inputs.demo_only }}
 
       # Every build (PRs included) must be strict-clean before anything is published.
       - run: mkdocs build --strict
+        if: ${{ !inputs.demo_only }}
 
       - name: Resolve the version to publish
         if: github.event_name != 'pull_request'
@@ -71,7 +80,7 @@ jobs:
           fi
 
       - name: Publish this version to gh-pages (mike)
-        if: github.event_name != 'pull_request'
+        if: ${{ github.event_name != 'pull_request' && !inputs.demo_only }}
         # The tag name reaches the shell through env, never interpolated into the script.
         env:
           MIKE_VERSION: ${{ steps.version.outputs.name }}
@@ -83,8 +92,9 @@ jobs:
           mike deploy --push --deploy-prefix docs --title "$MIKE_TITLE" "$MIKE_VERSION"
           mike set-default --push --deploy-prefix docs latest
 
-      - name: Assemble the Pages artifact (gh-pages + marketing root)
+      - name: Assemble the Pages artifact (gh-pages + marketing root + the static demo)
         if: github.event_name != 'pull_request'
+        id: assemble
         env:
           MIKE_VERSION: ${{ steps.version.outputs.name }}
         run: |
@@ -99,6 +109,17 @@ jobs:
             exit 1
           }
           cp -r marketing/. site/
+          # The static demo (#2419): ci.yml's publish-demo job keeps its latest build as the
+          # single commit of `demo-site`. Absent only before that job has ever run.
+          if git fetch origin demo-site --depth=1; then
+            mkdir site/demo
+            git --work-tree=site/demo checkout FETCH_HEAD -- .
+            git reset -q
+            test -f site/demo/index.html
+            echo "demo=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::no demo-site branch yet — publishing without /demo/"
+          fi
 
       - uses: actions/upload-pages-artifact@v5
         if: github.event_name != 'pull_request'
@@ -132,4 +153,20 @@ jobs:
             sleep 15
           done
           echo "::error::docs/${VERSION} is not in the live versions.json after 5 minutes"
+          exit 1
+
+      - name: The demo is live
+        if: needs.build.outputs.demo == 'true'
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          for attempt in $(seq 1 20); do
+            if curl -fsS "${PAGE_URL%/}/demo/demo-fixtures.json?run=${GITHUB_RUN_ID}-${attempt}" \
+                | grep -q '"capturedAt"'; then
+              echo "demo is live"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::/demo/ is not being served after 5 minutes"
           exit 1

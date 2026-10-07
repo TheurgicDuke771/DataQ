@@ -20,5 +20,13 @@
     },
     "types": ["node", "vite/client"]
   },
-  "include": ["src", "tests", "e2e", "scripts", "vite.config.ts", "playwright.config.ts"]
+  "include": [
+    "src",
+    "tests",
+    "e2e",
+    "e2e-demo",
+    "scripts",
+    "vite.config.ts",
+    "playwright.config.ts"
+  ]
 }

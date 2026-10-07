@@ -38,6 +38,13 @@ const baseURL = liveBaseURL || process.env.E2E_BASE_URL || 'http://localhost:300
 // Opt-in via E2E_DOCS=1; never in CI.
 const docsEnabled = !liveBaseURL && process.env.E2E_DOCS === '1';
 const docsBaseURL = process.env.E2E_DOCS_BASE_URL || 'http://127.0.0.1:3001';
+// Static-demo lane (#2419), opt-in via E2E_DEMO. `capture` records the API responses behind
+// every route of the seeded dev-bypass stack; `smoke` drives the built demo (dist-demo/) from a
+// static server that behaves like GitHub Pages, with no API at all. See e2e-demo/README.md.
+const demoLane = liveBaseURL ? undefined : process.env.E2E_DEMO;
+const demoBase = process.env.DEMO_BASE || '/DataQ/demo/';
+const demoPort = process.env.E2E_DEMO_PORT || '4173';
+const demoSmokeURL = `http://127.0.0.1:${demoPort}${demoBase}`;
 
 export default defineConfig({
   testDir: liveBaseURL ? './e2e-live' : './e2e',
@@ -78,6 +85,29 @@ export default defineConfig({
           },
         ]
       : []),
+    ...(demoLane === 'capture'
+      ? [
+          {
+            name: 'demo-capture',
+            testDir: './e2e-demo',
+            testMatch: 'capture.spec.ts',
+            use: {
+              ...devices['Desktop Chrome'],
+              baseURL: process.env.E2E_DEMO_BASE_URL || baseURL,
+            },
+          },
+        ]
+      : []),
+    ...(demoLane === 'smoke'
+      ? [
+          {
+            name: 'demo-smoke',
+            testDir: './e2e-demo',
+            testMatch: 'smoke.spec.ts',
+            use: { ...devices['Desktop Chrome'], baseURL: demoSmokeURL },
+          },
+        ]
+      : []),
     ...(otpEnabled
       ? [
           {
@@ -107,38 +137,47 @@ export default defineConfig({
   webServer:
     liveBaseURL || docsEnabled
       ? undefined
-      : [
-          {
-            command: 'pnpm dev --host --port 3000',
-            url: baseURL,
-            // Locally: reuse the compose/`pnpm dev` server already on :3000. In CI:
-            // start a fresh one (the api is already up on :8000 from a prior step).
-            reuseExistingServer: !process.env.CI,
-            timeout: 120_000,
-            env: {
-              VITE_AUTH_DEV_BYPASS: 'true',
-              VITE_API_PROXY_TARGET: process.env.VITE_API_PROXY_TARGET || 'http://localhost:8000',
+      : demoLane === 'smoke'
+        ? [
+            {
+              command: 'node e2e-demo/pages-server.mjs',
+              url: demoSmokeURL,
+              reuseExistingServer: false,
+              env: { DEMO_BASE: demoBase, E2E_DEMO_PORT: demoPort },
             },
-          },
-          ...(otpEnabled
-            ? [
-                {
-                  command: 'pnpm dev --host --port 3100',
-                  url: otpBaseURL,
-                  reuseExistingServer: !process.env.CI,
-                  timeout: 120_000,
-                  // Deliberately NO auth env: the mode is injected per page as
-                  // window.__DATAQ_CONFIG__, which is what production does.
-                  env: {
-                    // 127.0.0.1, not `localhost`: the stack script binds uvicorn to
-                    // the v4 loopback, and `localhost` resolves to ::1 first on
-                    // hosts with IPv6 in /etc/hosts. Node's happy-eyeballs would
-                    // usually recover, but "usually" is not what a CI lane wants.
-                    VITE_API_PROXY_TARGET:
-                      process.env.E2E_OTP_API_TARGET || 'http://127.0.0.1:8100',
+          ]
+        : [
+            {
+              command: 'pnpm dev --host --port 3000',
+              url: baseURL,
+              // Locally: reuse the compose/`pnpm dev` server already on :3000. In CI:
+              // start a fresh one (the api is already up on :8000 from a prior step).
+              reuseExistingServer: !process.env.CI,
+              timeout: 120_000,
+              env: {
+                VITE_AUTH_DEV_BYPASS: 'true',
+                VITE_API_PROXY_TARGET: process.env.VITE_API_PROXY_TARGET || 'http://localhost:8000',
+              },
+            },
+            ...(otpEnabled
+              ? [
+                  {
+                    command: 'pnpm dev --host --port 3100',
+                    url: otpBaseURL,
+                    reuseExistingServer: !process.env.CI,
+                    timeout: 120_000,
+                    // Deliberately NO auth env: the mode is injected per page as
+                    // window.__DATAQ_CONFIG__, which is what production does.
+                    env: {
+                      // 127.0.0.1, not `localhost`: the stack script binds uvicorn to
+                      // the v4 loopback, and `localhost` resolves to ::1 first on
+                      // hosts with IPv6 in /etc/hosts. Node's happy-eyeballs would
+                      // usually recover, but "usually" is not what a CI lane wants.
+                      VITE_API_PROXY_TARGET:
+                        process.env.E2E_OTP_API_TARGET || 'http://127.0.0.1:8100',
+                    },
                   },
-                },
-              ]
-            : []),
-        ],
+                ]
+              : []),
+          ],
 });

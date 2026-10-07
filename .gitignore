@@ -72,6 +72,9 @@ coverage/
 
 # Playwright (browser E2E artifacts + downloaded browsers)
 frontend/test-results/
+# Static demo (#2419): recorded in CI, never committed
+frontend/dist-demo/
+frontend/demo-fixtures.json
 frontend/playwright-report/
 frontend/playwright/.cache/
 # live-smoke captured OIDC session (bearer material -- never commit)

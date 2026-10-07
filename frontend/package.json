@@ -17,6 +17,9 @@
     "e2e": "playwright test",
     "e2e:otp": "playwright test --project=otp",
     "e2e:ui": "playwright test --ui",
+    "demo:capture": "E2E_DEMO=capture playwright test --project=demo-capture",
+    "demo:build": "node scripts/demo/build.mjs",
+    "demo:smoke": "E2E_DEMO=smoke playwright test --project=demo-smoke",
     "typecheck": "tsc --noEmit",
     "a11y:baseline": "A11Y_BASELINE=1 vitest run tests/a11y && A11Y_BASELINE=1 playwright test e2e/a11y.spec.ts --workers=1 && E2E_OTP=1 A11Y_BASELINE=1 playwright test --project=otp e2e-otp/a11y.spec.ts --workers=1"
   },

@@ -12,6 +12,13 @@
     var m = location.pathname.match(/^(\/DataQ)?\/docs\/(?!latest\/|v\d)(.*)$/);
     if (m) {
       location.replace((m[1] || '') + '/docs/latest/' + m[2] + location.search + location.hash);
+      return;
+    }
+    // The demo is a single-page app: a deep link (/demo/suites/…) is not a file, so the host
+    // answers with this page. Hand the route to the app, which restores it (demo/config.js).
+    var d = location.pathname.match(/^((?:\/DataQ)?\/demo)(\/.+)$/);
+    if (d) {
+      location.replace(d[1] + '/?__route=' + encodeURIComponent(d[2] + location.search + location.hash));
     }
   })();
 </script>
