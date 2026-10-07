@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "6da00a29178f",
+  "strategy": "manual-commit",
+  "branch": "chore/issue-2369-check-enabled-migration",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "backend/alembic/versions/da99e8d41845_check_enabled.py",
+    "backend/app/db/models.py",
+    "backend/tests/db/test_check_enabled_migration.py",
+    "docs/site/architecture/overview.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/6d/a00a29178f/0/metadata.json",
+      "transcript": "/6d/a00a29178f/0/full.jsonl",
+      "compact_transcript": "/6d/a00a29178f/0/transcript.jsonl",
+      "content_hash": "/6d/a00a29178f/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12,
+    "cache_creation_tokens": 9373,
+    "cache_read_tokens": 1778550,
+    "output_tokens": 7178,
+    "api_call_count": 6
+  }
+}
