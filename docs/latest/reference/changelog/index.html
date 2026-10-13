@@ -2667,6 +2667,11 @@ the per-PR history lives in the repo's commit log and pull requests.</p>
 <h2 id="unreleased">Unreleased<a class="headerlink" href="#unreleased" title="Permanent link">¶</a></h2>
 <h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">¶</a></h3>
 <ul>
+<li><strong>Anomaly checks on a value per day or week.</strong> Two new anomaly metrics,
+  <code>period_row_count</code> and <code>period_sum</code>, watch the rows or the summed amount in each calendar
+  period of a date column, for tables whose whole-table row count only grows. A period is
+  judged once it is complete and has settled (<code>timezone</code>, <code>settle_hours</code>), and each period
+  gets one stored point.</li>
 <li><strong>Tune automatic coverage in one place.</strong> The thresholds and history window of the
   automatic row-count, freshness and column-profile checks are now settings, not fixed
   numbers. A workspace admin sets them in <strong>Admin → Settings → Automatic coverage</strong>

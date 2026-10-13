@@ -4491,6 +4491,36 @@ deviation first, and its metric (the z-score the thresholds read) is the largest
 <code>orders</code>, three runs build the history. When a load then leaves <code>customer_email</code> empty,
 the next run reports <code>customer_email</code> · <code>null_pct</code> · value <code>100</code> against a mean of about
 <code>2</code>, and fails.</p>
+<p><strong>Per-period metrics</strong> watch a value for each calendar day or week instead of the whole
+table: <code>period_row_count</code> is the rows whose date falls in the period, and <code>period_sum</code> is
+the sum of a numeric column over them. Use them for a table that only grows, where the
+whole-table row count has no "normal" to return to: orders per day, sales amount per week.</p>
+<ul>
+<li><code>date_column</code> says which column dates a row, <code>period</code> is <code>day</code> or <code>week</code> (Monday to
+  Sunday), and <code>period_sum</code> also names a <code>value_column</code>.</li>
+<li>Only <strong>complete</strong> periods are judged. <code>timezone</code> (an IANA name spelled exactly, default
+  <code>UTC</code>) is the zone the date column's values are written in, and decides when a day ends.
+  A period is judged once it has been closed for <code>settle_hours</code> (default 6), so a suite that
+  runs just after midnight does not judge yesterday before the nightly load has landed.
+  Raise it for a table that fills in slowly.</li>
+<li>Set <code>timezone</code> to the data's zone, not to where you are. If the column holds UTC
+  timestamps and <code>timezone</code> is <code>Asia/Tokyo</code>, a morning run in Tokyo judges a UTC day that
+  still has hours to go, and that short count becomes the day's stored point.</li>
+<li>Each period gets <strong>one</strong> stored point, written the first time it is judged. Running the
+  suite again the same day measures the period again and reports it, but the baseline keeps
+  the first value, and rows that arrive later do not revise it. The result's <code>recorded</code> field
+  says whether this run stored a point.</li>
+<li>A row is placed by the date the warehouse returns for <code>date_column</code>. A timestamp with a
+  time zone is read in the warehouse session's zone, which DataQ does not set, so for such a
+  column <code>timezone</code> only decides when a period counts as complete.</li>
+<li>A period with no rows counts as 0, for the sum as well.</li>
+<li>Changing <code>date_column</code>, <code>period</code> or <code>value_column</code> starts the history again, because the
+  earlier points measured something else. Changing <code>timezone</code> or <code>settle_hours</code> does not.</li>
+</ul>
+<p>For example, <code>{"target_metric": "period_sum", "date_column": "ordered_at", "value_column":
+"amount", "window": 14, "min_points": 7}</code> on <code>orders</code>, run daily at 07:00 UTC, judges
+yesterday's sales each morning against the fourteen days before it. In the check editor,
+choose <strong>Rows per period</strong> or <strong>Sum per period</strong> as the anomaly's target metric.</p>
 <h3 id="comparison-check-all-datasources-adr-0015">Comparison check (all datasources — ADR 0015)<a class="headerlink" href="#comparison-check-all-datasources-adr-0015" title="Permanent link">¶</a></h3>
 <p><em>Does this dataset reconcile against that one?</em> A comparison check diffs the suite's
 dataset (the <strong>target under test</strong>) against a <strong>baseline</strong> on any other datasource
