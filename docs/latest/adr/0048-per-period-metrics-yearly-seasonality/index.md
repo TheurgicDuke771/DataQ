@@ -69,12 +69,21 @@ this time of year usually looks like.
      weekday); a week to the week containing that date. There is no "week 53" case. A peak
      tied to a fixed date (25 December) or to a moving one (a sale) does not line up this
      way, and needs a declared period (decision 4).
-   - *Scoring.* The expected value is the level now times the index. The run is scored on its
-     distance from that, against the spread of the same distance over the prior periods
-     (each prior's value less its own expected value). Nothing is divided by the index, so
-     an index of zero (the shop was closed that day last year) is an ordinary case: zero is
-     expected. A sale that ran at 2.4 times its surrounding weeks last year is expected at
-     2.4 times now, so arriving at 2.4 times is normal and arriving flat is not.
+   - *Scoring.* The expected value is the level now times the index. The run is scored on
+     how far it is from that **in proportion to it**, against how far each prior period was
+     from what was expected of it. A sale that ran at 2.4 times its surrounding weeks last
+     year is expected at 2.4 times now, so arriving near 2.4 times is normal and arriving
+     flat is not; and a sale day five times an ordinary day has five times the room.
+
+     > **Amended 2026-10-14.** As first written the distance was taken in the metric's own
+     > units, so a peak had only an ordinary day's room and a sale that repeated within the
+     > range of earlier years still alerted. It is proportional now. With two or more
+     > earlier years, how much they disagreed about the size of the peak is added to the
+     > spread, and the result shows each year's ratio: two years with a sale and one without
+     > make a loose comparison, and the check says so instead of pretending to precision.
+     > Where the expected value is zero (the shop was closed that day last year) there is no
+     > proportion to take, and the distance is taken as it stands.
+
    - *When it does not apply.* The index is used only where it means something: the level
      then was above zero and neither it nor the matched value is negative. Otherwise, and
      for a period with no earlier year to match, the index is 1, which is exactly today's
@@ -92,6 +101,14 @@ this time of year usually looks like.
    can only accumulate: there is nothing to seed a past row count from. Weekday seasonality
    stays as it is and combines with it. The column profile does not get it: it is hundreds
    of series per check, and three years of each is not a baseline, it is a warehouse.
+
+   > **Amended 2026-10-14.** The first build tried "one stored point a day, the day's last
+   > run" for the whole-table metrics, and it was wrong: a check that runs hourly was scored
+   > against the previous days' last readings (a freshness age of one hour against priors of
+   > twenty-one), and switching the setting on or off threw history away. A whole-table
+   > metric needs its run-by-run points kept as they are, with a separate one-a-day series
+   > for the yearly index beside them. That is its own phase; until it ships, `yearly` is
+   > accepted on the per-period metrics only.
 
    Automatic coverage (ADR 0047) gets it through the setting it already has: the baseline
    shape gains a `yearly` switch, default off, which applies to the automatic row-count and
@@ -132,12 +149,13 @@ this time of year usually looks like.
 
 1. Per-period metrics: measurement, validation, one point per settled period.
 2. Seeding from the table and three-year retention.
-3. Yearly seasonality in scoring, for every single-number metric.
+3. Yearly seasonality in scoring, for the per-period metrics.
 4. The declared calendar (schema first, on its own), and attaching entries to a check.
 5. Detected periods and the read surfaces (REST, MCP).
 6. Check editor, trend view and calendar UI; user docs.
-7. The `yearly` switch in the automatic-coverage baseline shape, with an amendment to
-   ADR 0047.
+7. Yearly seasonality for the whole-table metrics (a one-a-day series beside the run-by-run
+   points), then the `yearly` switch in the automatic-coverage baseline shape, with an
+   amendment to ADR 0047.
 
 ## Consequences
 
