@@ -62,6 +62,17 @@ export async function getWorkspaceDimensions(): Promise<Scorecard> {
   return data;
 }
 
+/** One slice of the false-positive rate; a slice with nothing stated is not listed. */
+export interface FalsePositiveGroup {
+  /** The baseline (`volume`, `freshness`, `profile`, `schema`, `other`) or the connection id. */
+  key: string;
+  label: string;
+  stated: number;
+  false_positive: number;
+  /** `false_positive / stated` for this slice, as a percentage. */
+  rate: number;
+}
+
 /** Mirrors `CoverageFiguresRead` — workspace-wide, counts only. */
 export interface CoverageFigures {
   assets_total: number;
@@ -79,6 +90,9 @@ export interface CoverageFigures {
   false_positive: number;
   /** `false_positive / stated`. Null when nothing was stated: not measured, not zero. */
   false_positive_rate: number | null;
+  /** The same rate by which automatic check, and by connection. Absent on older payloads. */
+  false_positives_by_baseline?: FalsePositiveGroup[];
+  false_positives_by_connection?: FalsePositiveGroup[];
 }
 
 export async function getCoverageFigures(): Promise<CoverageFigures> {

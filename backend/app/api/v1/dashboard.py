@@ -120,6 +120,20 @@ def get_workspace_dimensions(
     return asset_view_service.workspace_scorecard(db)
 
 
+class FalsePositiveGroupRead(ApiModel):
+    """One slice of the false-positive rate. `rate` is `false_positive / stated` for the
+    slice; a slice with nothing stated is not listed."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    #: The baseline (`volume`, `freshness`, `profile`, `schema`, `other`) or the connection id.
+    key: str
+    label: str
+    stated: int
+    false_positive: int
+    rate: float
+
+
 class CoverageFiguresRead(ApiModel):
     """How much of the inventory is watched, and how often automatic checks cry wolf.
 
@@ -135,6 +149,11 @@ class CoverageFiguresRead(ApiModel):
     resolved WITH a stated resolution; `unstated` those without. NULL when nothing was
     stated — which is "not measured", not "no false positives". Auto-resolved incidents
     are in none of these numbers.
+
+    `false_positives_by_baseline` and `false_positives_by_connection` split that same rate
+    by which automatic check the incident was on and by connection. Each lists only slices
+    with a stated resolution and sums to `stated`. A slice over one or two incidents is an
+    anecdote; read `stated` beside its `rate`.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -151,6 +170,8 @@ class CoverageFiguresRead(ApiModel):
     unstated: int
     false_positive: int
     false_positive_rate: float | None
+    false_positives_by_baseline: list[FalsePositiveGroupRead]
+    false_positives_by_connection: list[FalsePositiveGroupRead]
 
 
 @router.get(

@@ -1,6 +1,8 @@
-import { Card, Col, Row, Spin, Statistic, Typography } from 'antd';
+import { Card, Col, Row, Spin, Statistic, Table, Typography } from 'antd';
+import { Link } from 'react-router-dom';
 
-import { getCoverageFigures } from '../../api/dashboard';
+import { type FalsePositiveGroup, getCoverageFigures } from '../../api/dashboard';
+import { useIsWorkspaceAdmin } from '../../auth/useMe';
 import { useAsyncData } from '../../hooks/useAsyncData';
 
 /**
@@ -10,6 +12,7 @@ import { useAsyncData } from '../../hooks/useAsyncData';
  */
 export function CoveragePanel() {
   const { state } = useAsyncData(() => getCoverageFigures());
+  const isAdmin = useIsWorkspaceAdmin();
 
   if (state.status === 'loading') return <Spin />;
   if (state.status === 'error') {
@@ -49,6 +52,68 @@ export function CoveragePanel() {
           </Typography.Text>
         </Col>
       </Row>
+      {f.stated > 0 && (
+        <Row gutter={[24, 16]} style={{ marginTop: 16 }}>
+          <Col xs={24} md={12}>
+            <Breakdown
+              title="By automatic check"
+              column="Check"
+              groups={f.false_positives_by_baseline ?? []}
+            />
+          </Col>
+          <Col xs={24} md={12}>
+            <Breakdown
+              title="By connection"
+              column="Connection"
+              groups={f.false_positives_by_connection ?? []}
+            />
+          </Col>
+          <Col span={24}>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              Only checks and connections with a resolved incident that said what it was are listed;
+              the rest were not measured.{' '}
+              {isAdmin ? (
+                <>
+                  A check that cries wolf can be made less sensitive in{' '}
+                  <Link to="/admin/settings">Admin → Settings → Automatic coverage</Link>.
+                </>
+              ) : (
+                'A workspace admin can make a check that cries wolf less sensitive.'
+              )}
+            </Typography.Text>
+          </Col>
+        </Row>
+      )}
     </Card>
+  );
+}
+
+function Breakdown({
+  title,
+  column,
+  groups,
+}: {
+  title: string;
+  column: string;
+  groups: FalsePositiveGroup[];
+}) {
+  if (groups.length === 0) return null;
+  return (
+    <Table<FalsePositiveGroup>
+      size="small"
+      title={() => <Typography.Text strong>{title}</Typography.Text>}
+      rowKey="key"
+      pagination={false}
+      dataSource={groups}
+      columns={[
+        { title: column, dataIndex: 'label' },
+        {
+          title: 'False positives',
+          align: 'right',
+          render: (_, g) => `${g.false_positive} of ${g.stated}`,
+        },
+        { title: 'Rate', align: 'right', render: (_, g) => `${g.rate}%` },
+      ]}
+    />
   );
 }
