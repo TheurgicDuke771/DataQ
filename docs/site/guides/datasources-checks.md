@@ -1274,6 +1274,35 @@ whole-table row count has no "normal" to return to: orders per day, sales amount
   on the next two runs and then stops; dropping the check's baseline starts over.
 - A per-period check keeps three years of periods on top of its window.
 
+**Yearly seasonality** (`yearly: true`) makes a check compare with the same time in earlier
+years as well as with its recent window. It is for data with a yearly rhythm: a sale every
+November, a quiet week at the end of December.
+
+- The check works out how this time last year compared with the weeks around it then, and
+  expects the same now. If last year's sale week ran at 2.4 times its surroundings, 2.4 times
+  the current level is expected this year: arriving at that is normal, and arriving flat (a
+  load that failed during the sale) fails.
+- The days after a peak are not judged against the peak, because the peak was expected too.
+- A day is matched to the same weekday nearest the same date a year back, and a week to the
+  week containing that date. With two or three earlier years the middle one is used.
+- It needs a year of history. A per-period check gets that at once from seeding, where the
+  table still holds its past; a whole-table check (row count, freshness age) has to
+  accumulate it, one stored point a day. Until a period has an earlier year to compare with,
+  the check scores exactly as it does without the setting and the result says why:
+  `yearly.applied` is `false` with a `reason`.
+- When it is applied, the result's `yearly` gives the `level`, the `index`, the `expected`
+  value and the earlier periods it was `matched` to, and `mean` is that expected value.
+- One earlier year cannot tell a yearly event from a one-off. The check uses it and says how
+  many `years` stand behind the comparison.
+- A peak tied to a fixed date (25 December) or one that moves by more than a few days is not
+  lined up by this matching.
+- Not available for the column profile.
+
+For example, a daily `period_sum` check on `orders.amount` with `yearly` on, created in
+October 2025 on a table that holds 2024: on Wednesday 26 November 2025, in the sale, it
+expects about 2.4 times the last fortnight's level because Wednesday 27 November 2024 ran at
+2.4 times its own. Sales of 240 against a level of 100 pass; sales of 100 fail.
+
 For example, `{"target_metric": "period_sum", "date_column": "ordered_at", "value_column":
 "amount", "window": 14, "min_points": 7}` on `orders`, run daily at 07:00 UTC, judges
 yesterday's sales each morning against the fourteen days before it. In the check editor,

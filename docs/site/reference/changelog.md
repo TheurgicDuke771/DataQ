@@ -14,6 +14,11 @@ the per-PR history lives in the repo's commit log and pull requests.
   gets one stored point. On its first run a check seeds up to three years of history from
   the table's own rows (marked `backfilled`, apart from what later runs observe), so it
   scores at once; `backfill: false` turns that off.
+- **Yearly seasonality for anomaly checks.** With `yearly` on, a row-count, freshness or
+  per-period anomaly check also compares with the same time in earlier years: a peak that
+  came last year is expected this year, the days after it are not judged against it, and a
+  peak that fails to arrive is flagged. It applies once the history reaches back a year and
+  each result says whether it was applied and what was expected.
 - **Tune automatic coverage in one place.** The thresholds and history window of the
   automatic row-count, freshness and column-profile checks are now settings, not fixed
   numbers. A workspace admin sets them in **Admin → Settings → Automatic coverage**

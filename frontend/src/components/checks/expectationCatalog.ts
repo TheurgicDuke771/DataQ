@@ -938,6 +938,18 @@ export const EXPECTATION_CATALOG: ExpectationSpec[] = [
         defaultValue: false,
         help: 'Score against history from the same weekday instead of the raw rolling window (retains window × 7 observations).',
       },
+      {
+        name: 'yearly',
+        label: 'Yearly seasonality',
+        type: 'boolean',
+        optional: true,
+        defaultValue: false,
+        help: 'Also compare with the same time in earlier years: a peak that came last year is expected this year, and one that fails to arrive is flagged. It applies once the history reaches back a year; until then the check scores as usual and each result says so. A whole-table metric then keeps one point a day.',
+        showWhen: {
+          field: 'target_metric',
+          oneOf: ['row_count', 'freshness_age_hours', ...PERIOD_METRICS],
+        },
+      },
     ],
     thresholds: {
       help: 'Band the anomaly z-score — how many standard deviations this run is from the learned baseline (higher = worse). A fail or critical threshold is required. The check reports skip (not a verdict) until the minimum points of history accrue.',

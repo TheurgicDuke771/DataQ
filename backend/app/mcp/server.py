@@ -2249,6 +2249,20 @@ def create_check(
       runs report ``skip``, not a false anomaly.
     - ``seasonality`` (optional): set to compare against the same day-of-week
       rather than a flat rolling window.
+    - ``yearly`` (optional, not for ``column_profile``): also compare with the
+      same time in earlier years, for data with a yearly rhythm ('sales spike
+      every November'). A peak that came last year is then expected this year
+      and one that fails to arrive is flagged. **It does nothing until the
+      check's history reaches back a year**: until then the check scores as if
+      the setting were off, and ``observed_value.yearly`` says
+      ``applied: false`` with the ``reason``. Do not tell a user the check is
+      "accounting for seasonality" without reading that field. A per-period
+      metric can have the year at once from seeding; ``row_count`` and
+      ``freshness_age_hours`` must accumulate it over a year of runs, keeping
+      one point a day. When applied, ``yearly`` carries ``expected``, ``index``
+      and the earlier periods ``matched``, and ``mean`` is the expected value,
+      not an average of recent runs. One earlier year (``years: 1``) cannot
+      tell a yearly event from a one-off; say how many years stand behind it.
 
     **Per-period metrics** are for a table that only grows, where a whole-table
     ``row_count`` has no normal to return to ('alert me when daily orders look
