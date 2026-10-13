@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.4",
+  "checkpoint_id": "f02c34801a1c",
+  "strategy": "manual-commit",
+  "branch": "docs/adr-0048-yearly-seasonality-2440",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "docs/site/adr/0048-per-period-metrics-yearly-seasonality.md",
+    "docs/site/adr/README.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f0/2c34801a1c/0/metadata.json",
+      "transcript": "/f0/2c34801a1c/0/full.jsonl",
+      "compact_transcript": "/f0/2c34801a1c/0/transcript.jsonl",
+      "content_hash": "/f0/2c34801a1c/0/content_hash.txt",
+      "prompt": "/f0/2c34801a1c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 6,
+    "cache_creation_tokens": 6247,
+    "cache_read_tokens": 1668690,
+    "output_tokens": 7941,
+    "api_call_count": 3
+  }
+}

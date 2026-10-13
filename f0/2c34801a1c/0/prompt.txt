@@ -1,0 +1,2 @@
+Does this seasonality applies other places in DataQ or just this automated check coverage only?
+If it is only latter, we need to find a way to apply it in other places also (like the anomaly detection).
